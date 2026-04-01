@@ -1,0 +1,51 @@
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-toggle-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  margin-bottom: 8px;
+}
+
+.settings-toggle-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-alt);
+}
+
+.toggle-switch {
+  width: 64px;
+  height: 34px;
+  border: 1px solid var(--line);
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.toggle-switch.enabled {
+  background: var(--bg-toggle-on);
+  border-color: rgba(194, 65, 12, 0.25);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: var(--ink);
+  transition: transform 0.22s ease;
+}
+
+.toggle-switch.enabled .toggle-knob {
+  transform: translateX(30px);
+}

@@ -1,0 +1,105 @@
+.build-card-settings-dialog {
+  width: min(760px, calc(100vw - 64px));
+  max-width: 760px;
+}
+
+.build-card-preview-wrap {
+  margin: 0 0 24px;
+}
+
+.build-card-preview {
+  cursor: default;
+  transform: none !important;
+  min-height: 142px;
+}
+
+.build-card-preview-badge {
+  background: rgba(26, 26, 26, 0.74);
+}
+
+.build-card-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.build-card-upload-button {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.build-card-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+  margin-bottom: 8px;
+}
+
+.build-card-dropdown-field {
+  min-width: 0;
+}
+
+.build-card-dropdown-field .inline-dropdown-grid {
+  margin-top: 0;
+}
+
+.build-card-dropdown-field .inline-dropdown-trigger-inner {
+  min-height: 52px;
+  padding-right: 80px;
+}
+
+.build-card-dropdown-field .inline-dropdown-label {
+  margin-bottom: 14px;
+}
+
+.build-card-dropdown-field .inline-dropdown-menu {
+  z-index: 120;
+}
+
+.build-card-color-field,
+.build-card-slider-field {
+  margin: 0;
+}
+
+.build-card-color-field input[type="color"] {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--line);
+  background: transparent;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.build-card-slider-field .es-root {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.build-card-slider-field .es-body {
+  padding: 12px 0 2px;
+}
+
+.build-card-slider-field .es-body--bare {
+  padding-top: 12px;
+}
+
+.build-card-slider-field .es-ticks {
+  margin-top: 10px;
+}
+
+.build-card-slider-field .es-tick-label {
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .build-card-controls-grid {
+    grid-template-columns: 1fr;
+  }
+}

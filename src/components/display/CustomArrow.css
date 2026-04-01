@@ -1,0 +1,69 @@
+.custom-arrow {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  transition: transform 0.2s ease;
+}
+
+.custom-arrow span {
+  position: absolute;
+  top: 8px;
+  width: 7px;
+  height: 1.5px;
+  background: var(--muted);
+  transition: background 0.2s ease;
+}
+
+.custom-arrow span:first-child {
+  left: 2px;
+  transform: rotate(45deg);
+}
+
+.custom-arrow span:last-child {
+  right: 2px;
+  transform: rotate(-45deg);
+}
+
+.custom-arrow.open {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.inline-dropdown.open .custom-arrow span,
+.box-dropdown.open .custom-arrow span {
+  background: var(--accent);
+}
+
+.inline-dropdown .custom-arrow {
+  position: relative;
+  top: 0;
+  right: 0;
+  transform: translateY(0);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.inline-dropdown.open .custom-arrow {
+  transform: translateY(0) rotate(180deg);
+}
+
+.dropdown-block .custom-arrow {
+  position: relative;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  transform: translateY(0);
+}
+
+.dropdown-block.open .custom-arrow {
+  transform: translateY(0) rotate(180deg);
+}
+
+.dropdown-block .custom-arrow span {
+  background: var(--muted);
+}

@@ -1,0 +1,15 @@
+.csa-content::-webkit-scrollbar {
+  display: none;
+}
+
+.csa-track {
+  user-select: none;
+}
+
+.csa-thumb {
+  opacity: 1;
+}
+
+.csa-thumb:active {
+  cursor: grabbing;
+}
