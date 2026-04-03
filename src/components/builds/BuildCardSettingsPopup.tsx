@@ -4,6 +4,7 @@ import { BuildCardEditor } from "./BuildCardEditor";
 import "./BuildCardSettingsPopup.css";
 
 export type BuildCardImageFit = "cover" | "stretch";
+export type BuildCardBadgeVisibility = "on" | "off" | "always";
 export type BuildCardPreviewSize = {
   width: number;
   height: number;
@@ -16,7 +17,7 @@ export type BuildCardAppearance = {
   backgroundColor: string;
   backgroundOpacity: number;
   badgeEnabled: boolean;
-  badgeVisible: boolean;
+  badgeVisibility: BuildCardBadgeVisibility;
   badgeText: string;
   badgeColor: string;
   badgeTextColor: string;
@@ -29,8 +30,8 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
   badgeEnabled: true,
-  badgeVisible: true,
-  badgeText: "%build_name%",
+  badgeVisibility: "on",
+  badgeText: "^%build_state%",
   badgeColor: "#c2410c",
   badgeTextColor: "#ffffff",
 };
@@ -74,6 +75,24 @@ export function getBuildCardBadgeText(appearance?: BuildCardAppearance | null) {
   return raw || DEFAULT_BUILD_CARD_APPEARANCE.badgeText;
 }
 
+export function getBuildCardBadgeVisibility(
+  appearance?: BuildCardAppearance | null,
+): BuildCardBadgeVisibility {
+  return appearance?.badgeVisibility ?? DEFAULT_BUILD_CARD_APPEARANCE.badgeVisibility;
+}
+
+export function shouldShowBuildCardBadge(
+  appearance: BuildCardAppearance | null | undefined,
+  isRunning: boolean,
+): boolean {
+  if (!appearance?.badgeEnabled) return false;
+
+  const visibility = getBuildCardBadgeVisibility(appearance);
+  if (visibility === "always") return true;
+  if (visibility === "off") return false;
+  return isRunning;
+}
+
 export function getBuildCardBadgeStyle(
   appearance?: BuildCardAppearance | null,
 ): CSSProperties | undefined {
@@ -103,10 +122,21 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
   }
 
   const draft = value as Partial<BuildCardAppearance>;
+  const legacyVisibility = (draft as { badgeVisible?: boolean | string }).badgeVisible;
   const normalizedBadgeColor = normalizeHexColor(
     draft.badgeColor,
     DEFAULT_BUILD_CARD_APPEARANCE.badgeColor,
   );
+  const badgeVisibility: BuildCardBadgeVisibility =
+    draft.badgeVisibility === "always" || legacyVisibility === "always"
+      ? "always"
+      : draft.badgeVisibility === "off"
+        ? "off"
+        : draft.badgeVisibility === "on"
+          ? "on"
+          : typeof legacyVisibility === "boolean"
+            ? (legacyVisibility ? "on" : "off")
+            : DEFAULT_BUILD_CARD_APPEARANCE.badgeVisibility;
   return {
     image: typeof draft.image === "string" ? draft.image : "",
     imageFit: draft.imageFit === "stretch" ? "stretch" : "cover",
@@ -130,10 +160,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       typeof draft.badgeEnabled === "boolean"
         ? draft.badgeEnabled
         : DEFAULT_BUILD_CARD_APPEARANCE.badgeEnabled,
-    badgeVisible:
-      typeof draft.badgeVisible === "boolean"
-        ? draft.badgeVisible
-        : DEFAULT_BUILD_CARD_APPEARANCE.badgeVisible,
+    badgeVisibility,
     badgeText:
       typeof draft.badgeText === "string" && draft.badgeText.trim()
         ? draft.badgeText.trim()
@@ -210,6 +237,7 @@ type Props = {
   buildLoader: string;
   buildRamGb: number;
   lastPlayedLabel: string;
+  badgePreviewText: string;
   previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;

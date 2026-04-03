@@ -115,6 +115,7 @@
 
 .bce-preview-card {
   width: var(--bce-preview-card-width, 100%);
+  height: var(--bce-preview-card-height, auto);
   max-width: 100%;
   cursor: default;
   transform: none !important;

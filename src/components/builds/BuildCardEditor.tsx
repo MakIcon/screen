@@ -8,7 +8,8 @@ import { CustomScrollArea } from "../layout/CustomScrollArea";
 import {
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
-  getBuildCardBadgeText,
+  getBuildCardBadgeVisibility,
+  shouldShowBuildCardBadge,
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./BuildCardSettingsPopup";
@@ -79,6 +80,7 @@ type Props = {
   buildLoader: string;
   buildRamGb: number;
   lastPlayedLabel: string;
+  badgePreviewText: string;
   previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;
@@ -94,6 +96,7 @@ export function BuildCardEditor({
   buildLoader,
   buildRamGb,
   lastPlayedLabel,
+  badgePreviewText,
   previewCardSize,
   draft,
   onDraftChange,
@@ -196,12 +199,12 @@ export function BuildCardEditor({
             >
               <div className="instance-card-top">
                 <span className="instance-name">{buildName}</span>
-                {draft.badgeEnabled && draft.badgeVisible && (
+                {shouldShowBuildCardBadge(draft, true) && (
                   <span
                     className="instance-running-badge"
                     style={getBuildCardBadgeStyle(draft)}
                   >
-                    {getBuildCardBadgeText(draft)}
+                    {badgePreviewText}
                   </span>
                 )}
               </div>
@@ -444,21 +447,30 @@ export function BuildCardEditor({
                 <div className="bce-mode-switch">
                   <button
                     type="button"
-                    className={`bce-mode-pill ${draft.badgeVisible ? "bce-mode-pill--active" : ""}`}
+                    className={`bce-mode-pill ${getBuildCardBadgeVisibility(draft) === "on" ? "bce-mode-pill--active" : ""}`}
                     onClick={() =>
-                      onDraftChange((prev) => ({ ...prev, badgeVisible: true }))
+                      onDraftChange((prev) => ({ ...prev, badgeVisibility: "on" }))
                     }
                   >
                     On
                   </button>
                   <button
                     type="button"
-                    className={`bce-mode-pill ${!draft.badgeVisible ? "bce-mode-pill--active" : ""}`}
+                    className={`bce-mode-pill ${getBuildCardBadgeVisibility(draft) === "off" ? "bce-mode-pill--active" : ""}`}
                     onClick={() =>
-                      onDraftChange((prev) => ({ ...prev, badgeVisible: false }))
+                      onDraftChange((prev) => ({ ...prev, badgeVisibility: "off" }))
                     }
                   >
                     Off
+                  </button>
+                  <button
+                    type="button"
+                    className={`bce-mode-pill ${getBuildCardBadgeVisibility(draft) === "always" ? "bce-mode-pill--active" : ""}`}
+                    onClick={() =>
+                      onDraftChange((prev) => ({ ...prev, badgeVisibility: "always" }))
+                    }
+                  >
+                    Always
                   </button>
                 </div>
               </EditorRow>
@@ -468,7 +480,7 @@ export function BuildCardEditor({
                   className="bce-text-input bce-badge-text-input"
                   type="text"
                   maxLength={22}
-                  placeholder="RUNNING"
+                  placeholder="^%build_state%"
                   value={draft.badgeText}
                   onChange={(e) =>
                     onDraftChange((prev) => ({ ...prev, badgeText: e.target.value }))

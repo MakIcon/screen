@@ -14,4 +14,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  color: var(--ink);
+  line-height: normal;
+  letter-spacing: normal;
 }

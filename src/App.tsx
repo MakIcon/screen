@@ -18,7 +18,9 @@ import {
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
+  getBuildCardBadgeVisibility,
   normalizeBuildCardAppearance,
+  shouldShowBuildCardBadge,
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
@@ -37,9 +39,9 @@ import type {
   TabKey,
   UpdateInstancePayload,
 } from "./types";
-import { formatLastPlayed, formatPlaytime, sumPlaytimeSecs } from "./utils/playtime";
+import { formatLastPlayed, formatPlaytime } from "./utils/playtime";
 import { resolvePlaceholders } from "./utils/placeholders";
-import { usePlaceholders } from "./hooks/usePlaceholders";
+import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from "./hooks/usePlaceholders";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -267,7 +269,37 @@ export default function App() {
     [instances, selectedInstanceId]
   );
 
-  const resolve = usePlaceholders(instances, selectedInstance, systemRamGb);
+  const buildSettingsTargetInstance =
+    buildSettingsTargetId
+      ? instances.find((instance) => instance.id === buildSettingsTargetId) || null
+      : null;
+  const selectedBuildState =
+    selectedInstance && isRunning(selectedInstance.id) ? "RUNNING" : "";
+  const resolve = usePlaceholders(
+    instances,
+    selectedInstance,
+    systemRamGb,
+    accountType,
+    selectedBuildState,
+  );
+  const resolveForTarget = (
+    template: string,
+    target: PlaceholderTarget,
+    overrides: {
+      accountType?: string;
+      buildState?: string;
+    } = {},
+  ) =>
+    resolvePlaceholders(
+      template,
+      buildPlaceholderContext({
+        instances,
+        target,
+        systemRamGb,
+        accountType: overrides.accountType ?? accountType,
+        buildState: overrides.buildState ?? "",
+      }),
+    );
 
   const createPreviewName = createBuildName.trim() || "MY BUILD";
   const createPreviewVersion = createVersion || "1.21.1";
@@ -317,6 +349,22 @@ export default function App() {
   const fabricInstances = useMemo(
     () => instances.filter((item) => item.loader.toLowerCase() === "fabric"),
     [instances]
+  );
+
+  const buildCardPreviewTarget: PlaceholderTarget =
+    buildSettingsTargetInstance ?? {
+      name: createPreviewName,
+      version: createPreviewVersion,
+      loader: createPreviewLoader,
+      ram: createPreviewRam,
+      playtimeSecs: 0,
+      lastPlayed: "0",
+      status: "",
+    };
+  const buildCardPreviewBadgeText = resolveForTarget(
+    getBuildCardBadgeText(buildCardSettingsDraft),
+    buildCardPreviewTarget,
+    { buildState: "RUNNING" },
   );
 
   const selectedModTarget = useMemo(
@@ -1548,23 +1596,22 @@ const isScrollableElement = (target: EventTarget | null) => {
                   >
                     <div className="instance-card-top">
                       <span className="instance-name">{instance.name}</span>
-                      {isRunning(instance.id) && cardAppearance.badgeEnabled && (
+                      {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
                         <span
                           className="instance-running-badge"
                           style={getBuildCardBadgeStyle(cardAppearance)}
                         >
-                          {resolvePlaceholders(getBuildCardBadgeText(cardAppearance), {
-                            systemRamGb,
-                            buildName: instance.name,
-                            buildVersion: instance.version,
-                            buildLoader: instance.loader,
-                            buildRam: instance.ram,
-                            buildPlaytimeSecs: instance.playtimeSecs,
-                            buildLastPlayed: instance.lastPlayed,
-                            buildStatus: instance.status,
-                            totalPlaytimeSecs: sumPlaytimeSecs(instances),
-                            totalBuilds: instances.length,
-                          })}
+                          {resolveForTarget(
+                            getBuildCardBadgeText(cardAppearance),
+                            instance,
+                            {
+                              buildState:
+                                isRunning(instance.id) ||
+                                getBuildCardBadgeVisibility(cardAppearance) === "always"
+                                  ? "RUNNING"
+                                  : "",
+                            },
+                          )}
                         </span>
                       )}
                     </div>
@@ -1991,14 +2038,30 @@ const isScrollableElement = (target: EventTarget | null) => {
             />
           </div>
 
-          <div className="detail-grid">
+          <div className="detail-grid detail-grid--sidebar">
             <div className="detail-block">
               <span className="detail-title">TARGET VERSION</span>
-              <strong>{selectedModTarget?.version || selectedModrinthVersion || "—"}</strong>
+              <span className="detail-value">
+                {resolveForTarget(
+                  "%build_version%",
+                  selectedModTarget ?? {
+                    version: selectedModrinthVersion,
+                    loader: "Fabric",
+                  },
+                )}
+              </span>
             </div>
             <div className="detail-block">
               <span className="detail-title">LOADER</span>
-              <strong>FABRIC</strong>
+              <span className="detail-value">
+                {resolveForTarget(
+                  "%build_loader%",
+                  selectedModTarget ?? {
+                    version: selectedModrinthVersion,
+                    loader: "Fabric",
+                  },
+                )}
+              </span>
             </div>
           </div>
 
@@ -2235,14 +2298,16 @@ installedMods.map((mod) => {
             />
           </div>
 
-          <div className="detail-grid">
+          <div className="detail-grid detail-grid--sidebar">
             <div className="detail-block">
               <span className="detail-title">TARGET VERSION</span>
-              <strong>{selectedInstance?.version || "—"}</strong>
+              <span className="detail-value">
+                {resolveForTarget("%build_version%", selectedInstance)}
+              </span>
             </div>
             <div className="detail-block">
               <span className="detail-title">FOLDER</span>
-              <strong>RESOURCEPACKS</strong>
+              <span className="detail-value">RESOURCEPACKS</span>
             </div>
           </div>
 
@@ -2475,14 +2540,16 @@ installedMods.map((mod) => {
             />
           </div>
 
-          <div className="detail-grid">
+          <div className="detail-grid detail-grid--sidebar">
             <div className="detail-block">
               <span className="detail-title">TARGET VERSION</span>
-              <strong>{selectedShaderTarget?.version || "—"}</strong>
+              <span className="detail-value">
+                {resolveForTarget("%build_version%", selectedShaderTarget)}
+              </span>
             </div>
             <div className="detail-block">
               <span className="detail-title">FOLDER</span>
-              <strong>SHADERPACKS</strong>
+              <span className="detail-value">SHADERPACKS</span>
             </div>
           </div>
 
@@ -2565,7 +2632,6 @@ installedMods.map((mod) => {
             <div className="memory-readout">
               <span className="memory-number">{settingsRamDraft}</span>
               <span className="memory-unit">GB</span>
-              <span className="memory-hint">/ {resolve("%system_ram_max%")} MAX</span>
             </div>
 
             <div className="settings-element-slider">
@@ -2650,11 +2716,11 @@ installedMods.map((mod) => {
             </div>
             <div className="stat-row">
               <span>ACCOUNT</span>
-              <strong>{accountType}</strong>
+              <strong>{resolve("%account_type%")}</strong>
             </div>
             <div className="stat-row">
               <span>SYSTEM RAM</span>
-              <strong>{systemRamGb} GB</strong>
+              <strong>{resolve("%system_ram_max%")}</strong>
             </div>
             <div className="stat-row">
               <span>DEFAULT BUILD RAM</span>
@@ -2826,11 +2892,16 @@ installedMods.map((mod) => {
       {buildCardSettingsOpen && (
         <BuildCardSettingsPopup
           isCreateMode={!buildSettingsTargetId}
-          buildName={buildSettingsTargetId ? selectedInstance?.name || "SELECTED BUILD" : createPreviewName}
-          buildVersion={buildSettingsTargetId ? selectedInstance?.version || "—" : createPreviewVersion}
-          buildLoader={buildSettingsTargetId ? selectedInstance?.loader || "—" : createPreviewLoader}
-          buildRamGb={buildSettingsTargetId ? selectedInstance?.ram || 0 : createPreviewRam}
-          lastPlayedLabel={buildSettingsTargetId ? formatLastPlayed(selectedInstance?.lastPlayed ?? "0") : "Never played"}
+          buildName={buildSettingsTargetInstance?.name || createPreviewName}
+          buildVersion={buildSettingsTargetInstance?.version || createPreviewVersion}
+          buildLoader={buildSettingsTargetInstance?.loader || createPreviewLoader}
+          buildRamGb={buildSettingsTargetInstance?.ram || createPreviewRam}
+          lastPlayedLabel={
+            buildSettingsTargetInstance
+              ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0")
+              : "Never played"
+          }
+          badgePreviewText={buildCardPreviewBadgeText}
           previewCardSize={buildCardPreviewSize}
           draft={buildCardSettingsDraft}
           onDraftChange={setBuildCardSettingsDraft}
