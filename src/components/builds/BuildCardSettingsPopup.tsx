@@ -1,10 +1,13 @@
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
-import { useMemo, useState } from "react";
+import { ElementPopup } from "../popup/ElementPopup";
+import { BuildCardEditor } from "./BuildCardEditor";
 import "./BuildCardSettingsPopup.css";
-import { InlineDropdown } from "../inputs/InlineDropdown";
-import { ElementSlider } from "../inputs/ElementSlider";
 
 export type BuildCardImageFit = "cover" | "stretch";
+export type BuildCardPreviewSize = {
+  width: number;
+  height: number;
+};
 
 export type BuildCardAppearance = {
   image: string;
@@ -12,6 +15,11 @@ export type BuildCardAppearance = {
   imageOpacity: number;
   backgroundColor: string;
   backgroundOpacity: number;
+  badgeEnabled: boolean;
+  badgeVisible: boolean;
+  badgeText: string;
+  badgeColor: string;
+  badgeTextColor: string;
 };
 
 export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
@@ -20,6 +28,11 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   imageOpacity: 0.78,
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
+  badgeEnabled: true,
+  badgeVisible: true,
+  badgeText: "RUNNING",
+  badgeColor: "#c2410c",
+  badgeTextColor: "#ffffff",
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -27,13 +40,16 @@ function clampUnit(value: number, fallback: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function normalizeHexColor(value: string | undefined) {
+function normalizeHexColor(
+  value: string | undefined,
+  fallback = DEFAULT_BUILD_CARD_APPEARANCE.backgroundColor,
+) {
   const raw = (value || "").trim();
   if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
   if (/^#[0-9a-fA-F]{3}$/.test(raw)) {
     return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`;
   }
-  return DEFAULT_BUILD_CARD_APPEARANCE.backgroundColor;
+  return fallback;
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -44,12 +60,42 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${clampUnit(alpha, 1)})`;
 }
 
+function getContrastTextColor(hex: string) {
+  const normalized = normalizeHexColor(hex);
+  const r = parseInt(normalized.slice(1, 3), 16);
+  const g = parseInt(normalized.slice(3, 5), 16);
+  const b = parseInt(normalized.slice(5, 7), 16);
+  const luminance = (r * 299 + g * 587 + b * 114) / 1000;
+  return luminance >= 148 ? "#1a1a1a" : "#ffffff";
+}
+
+export function getBuildCardBadgeText(appearance?: BuildCardAppearance | null) {
+  const raw = appearance?.badgeText?.trim();
+  return raw || DEFAULT_BUILD_CARD_APPEARANCE.badgeText;
+}
+
+export function getBuildCardBadgeStyle(
+  appearance?: BuildCardAppearance | null,
+): CSSProperties | undefined {
+  if (!appearance) return undefined;
+
+  const badgeColor = normalizeHexColor(
+    appearance.badgeColor,
+    DEFAULT_BUILD_CARD_APPEARANCE.badgeColor,
+  );
+  const badgeTextColor = normalizeHexColor(
+    appearance.badgeTextColor,
+    getContrastTextColor(badgeColor),
+  );
+  return {
+    backgroundColor: badgeColor,
+    color: badgeTextColor,
+  };
+}
+
 export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearance {
   if (typeof value === "string") {
-    return {
-      ...DEFAULT_BUILD_CARD_APPEARANCE,
-      image: value,
-    };
+    return { ...DEFAULT_BUILD_CARD_APPEARANCE, image: value };
   }
 
   if (!value || typeof value !== "object") {
@@ -57,6 +103,10 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
   }
 
   const draft = value as Partial<BuildCardAppearance>;
+  const normalizedBadgeColor = normalizeHexColor(
+    draft.badgeColor,
+    DEFAULT_BUILD_CARD_APPEARANCE.badgeColor,
+  );
   return {
     image: typeof draft.image === "string" ? draft.image : "",
     imageFit: draft.imageFit === "stretch" ? "stretch" : "cover",
@@ -66,12 +116,32 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
       DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
     ),
-    backgroundColor: normalizeHexColor(draft.backgroundColor),
+    backgroundColor: normalizeHexColor(
+      draft.backgroundColor,
+      DEFAULT_BUILD_CARD_APPEARANCE.backgroundColor,
+    ),
     backgroundOpacity: clampUnit(
       typeof draft.backgroundOpacity === "number"
         ? draft.backgroundOpacity
         : DEFAULT_BUILD_CARD_APPEARANCE.backgroundOpacity,
       DEFAULT_BUILD_CARD_APPEARANCE.backgroundOpacity,
+    ),
+    badgeEnabled:
+      typeof draft.badgeEnabled === "boolean"
+        ? draft.badgeEnabled
+        : DEFAULT_BUILD_CARD_APPEARANCE.badgeEnabled,
+    badgeVisible:
+      typeof draft.badgeVisible === "boolean"
+        ? draft.badgeVisible
+        : DEFAULT_BUILD_CARD_APPEARANCE.badgeVisible,
+    badgeText:
+      typeof draft.badgeText === "string" && draft.badgeText.trim()
+        ? draft.badgeText.trim()
+        : DEFAULT_BUILD_CARD_APPEARANCE.badgeText,
+    badgeColor: normalizedBadgeColor,
+    badgeTextColor: normalizeHexColor(
+      draft.badgeTextColor,
+      getContrastTextColor(normalizedBadgeColor),
     ),
   };
 }
@@ -107,43 +177,28 @@ export function getBuildCardAppearanceStyle(
       : undefined,
     backgroundPosition: hasImage ? "center, center" : undefined,
     backgroundRepeat: hasImage ? "no-repeat, no-repeat" : undefined,
+    borderColor: hasImage ? "transparent" : undefined,
   };
 }
 
 export function SettingsGearIcon() {
   return (
     <svg
-      width="18"
-      height="18"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       <path
-        d="M12 3.75L13.089 5.915C13.265 6.265 13.596 6.51 13.982 6.576L16.375 6.983L14.664 8.72C14.389 8.999 14.263 9.391 14.327 9.777L14.727 12.188L12.589 11.086C12.244 10.908 11.834 10.908 11.489 11.086L9.351 12.188L9.751 9.777C9.815 9.391 9.689 8.999 9.414 8.72L7.703 6.983L10.096 6.576C10.482 6.51 10.813 6.265 10.989 5.915L12 3.75Z"
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
         stroke="currentColor"
-        strokeWidth="1.45"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path
-        d="M5.248 9.37L6.807 10.022C7.129 10.157 7.361 10.44 7.429 10.78L7.759 12.441L6.52 13.627C6.269 13.867 6.159 14.223 6.227 14.564L6.569 16.259L5.066 15.426C4.758 15.255 4.385 15.236 4.061 15.374L2.5 16.039L2.79 14.37C2.849 14.032 2.751 13.686 2.527 13.426L1.5 12.236L3.24 11.98C3.592 11.928 3.898 11.715 4.046 11.391L5.248 9.37Z"
-        stroke="currentColor"
-        strokeWidth="1.45"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.9"
-      />
-      <path
-        d="M18.752 9.37L17.193 10.022C16.871 10.157 16.639 10.44 16.571 10.78L16.241 12.441L17.48 13.627C17.731 13.867 17.841 14.223 17.773 14.564L17.431 16.259L18.934 15.426C19.242 15.255 19.615 15.236 19.939 15.374L21.5 16.039L21.21 14.37C21.151 14.032 21.249 13.686 21.473 13.426L22.5 12.236L20.76 11.98C20.408 11.928 20.102 11.715 19.954 11.391L18.752 9.37Z"
-        stroke="currentColor"
-        strokeWidth="1.45"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.9"
-      />
-      <circle cx="12" cy="14.25" r="2.75" stroke="currentColor" strokeWidth="1.55" />
     </svg>
   );
 }
@@ -155,6 +210,7 @@ type Props = {
   buildLoader: string;
   buildRamGb: number;
   lastPlayedLabel: string;
+  previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;
   onUploadImage: (file: File | null) => void;
@@ -163,169 +219,14 @@ type Props = {
   onSave: () => void;
 };
 
-export function BuildCardSettingsPopup({
-  isCreateMode,
-  buildName,
-  buildVersion,
-  buildLoader,
-  buildRamGb,
-  lastPlayedLabel,
-  draft,
-  onDraftChange,
-  onUploadImage,
-  onResetAll,
-  onClose,
-  onSave,
-}: Props) {
-  const [openDropdown, setOpenDropdown] = useState(false);
-
-  const fitValue = useMemo(
-    () => (draft.imageFit === "stretch" ? "FIT WHOLE IMAGE" : "FILL CARD"),
-    [draft.imageFit],
-  );
-
+export function BuildCardSettingsPopup(props: Props) {
   return (
-    <div className="confirm-overlay" onClick={onClose}>
-      <div
-        className="confirm-dialog build-card-settings-dialog"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span className="confirm-label">
-          {isCreateMode ? "CREATE BUILD SETTINGS" : "BUILD SETTINGS"}
-        </span>
-        <p className="confirm-title">{buildName}</p>
-        <p className="confirm-body">
-          Настрой фон карточки версии: картинку, режим заполнения, прозрачность фото, цвет фона и его прозрачность.
-        </p>
-
-        <div className="build-card-preview-wrap">
-          <div
-            className={`instance-card build-card-preview ${draft.image ? "instance-card-with-image" : ""}`}
-            style={getBuildCardAppearanceStyle(draft)}
-          >
-            <div className="instance-card-top">
-              <span className="instance-name">{buildName}</span>
-              <span className="instance-running-badge build-card-preview-badge">
-                PREVIEW
-              </span>
-            </div>
-            <div className="instance-card-meta">
-              <span>{buildVersion}</span>
-              <span>{buildLoader}</span>
-              <span>{buildRamGb} GB</span>
-              <span>{lastPlayedLabel}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="build-card-upload-row">
-          <label className="ghost-action build-card-upload-button">
-            UPLOAD IMAGE
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                onUploadImage(e.target.files?.[0] ?? null);
-                e.currentTarget.value = "";
-              }}
-              hidden
-            />
-          </label>
-          <button
-            className="ghost-action"
-            type="button"
-            onClick={() =>
-              onDraftChange((prev) => ({
-                ...prev,
-                image: "",
-              }))
-            }
-          >
-            CLEAR IMAGE
-          </button>
-          <button className="ghost-action" type="button" onClick={onResetAll}>
-            RESET ALL
-          </button>
-        </div>
-
-        <div className="build-card-controls-grid">
-          <div className="build-card-dropdown-field">
-            <InlineDropdown
-              label="IMAGE FIT"
-              value={fitValue}
-              options={["FILL CARD", "FIT WHOLE IMAGE"]}
-              isOpen={openDropdown}
-              onToggle={() => setOpenDropdown((prev) => !prev)}
-              onSelect={(value) => {
-                onDraftChange((prev) => ({
-                  ...prev,
-                  imageFit: value === "FIT WHOLE IMAGE" ? "stretch" : "cover",
-                }));
-                setOpenDropdown(false);
-              }}
-            />
-          </div>
-
-          <label className="field compact-field build-card-color-field">
-            <span>BACKGROUND COLOR</span>
-            <input
-              type="color"
-              value={draft.backgroundColor}
-              onChange={(e) =>
-                onDraftChange((prev) => ({
-                  ...prev,
-                  backgroundColor: e.target.value,
-                }))
-              }
-            />
-          </label>
-
-          <div className="field compact-field build-card-slider-field">
-            <span>IMAGE OPACITY — {Math.round(draft.imageOpacity * 100)}%</span>
-            <ElementSlider
-              showHeader={false}
-              min={0}
-              max={100}
-              step={10}
-              value={Math.round(draft.imageOpacity * 100)}
-              tickMode="every"
-              onChange={(value) =>
-                onDraftChange((prev) => ({
-                  ...prev,
-                  imageOpacity: Number(value) / 100,
-                }))
-              }
-            />
-          </div>
-
-          <div className="field compact-field build-card-slider-field">
-            <span>BACKGROUND OPACITY — {Math.round(draft.backgroundOpacity * 100)}%</span>
-            <ElementSlider
-              showHeader={false}
-              min={0}
-              max={100}
-              step={10}
-              value={Math.round(draft.backgroundOpacity * 100)}
-              tickMode="every"
-              onChange={(value) =>
-                onDraftChange((prev) => ({
-                  ...prev,
-                  backgroundOpacity: Number(value) / 100,
-                }))
-              }
-            />
-          </div>
-        </div>
-
-        <div className="confirm-actions">
-          <button className="primary-action" type="button" onClick={onSave}>
-            SAVE
-          </button>
-          <button className="ghost-action" type="button" onClick={onClose}>
-            CLOSE
-          </button>
-        </div>
-      </div>
-    </div>
+    <ElementPopup
+      open
+      onClose={props.onClose}
+      className="build-card-settings-dialog"
+    >
+      <BuildCardEditor {...props} />
+    </ElementPopup>
   );
 }

@@ -16,8 +16,11 @@ import {
   DEFAULT_BUILD_CARD_APPEARANCE,
   SettingsGearIcon,
   getBuildCardAppearanceStyle,
+  getBuildCardBadgeStyle,
+  getBuildCardBadgeText,
   normalizeBuildCardAppearance,
   type BuildCardAppearance,
+  type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
 import type {
   ActionResult,
@@ -141,10 +144,13 @@ export default function App() {
   const [buildSettingsTargetId, setBuildSettingsTargetId] = useState<string | null>(null);
   const [buildCardSettingsOpen, setBuildCardSettingsOpen] = useState(false);
   const [buildCardSettingsDraft, setBuildCardSettingsDraft] = useState<BuildCardAppearance>({ ...DEFAULT_BUILD_CARD_APPEARANCE });
+  const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(null);
 
 
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
+  const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
 
   const persistBuildCardAppearances = (next: Record<string, BuildCardAppearance>) => {
     setBuildCardAppearances(next);
@@ -156,6 +162,31 @@ export default function App() {
     return normalizeBuildCardAppearance(buildCardAppearances[targetId]);
   };
 
+  const pickBuildCardPreviewSourceElement = (targetId: string | null | undefined) => {
+    const fallbackId = selectedInstanceId || pickPreferredInstance(instances)?.id || null;
+    const resolvedId = targetId ?? fallbackId;
+
+    if (resolvedId) {
+      const instanceCard = instanceCardRefs.current.get(resolvedId);
+      if (instanceCard) return instanceCard;
+    }
+
+    return createCardMeasureRef.current;
+  };
+
+  const measureBuildCardPreviewElement = (
+    element: Element | null,
+  ): BuildCardPreviewSize | null => {
+    if (!(element instanceof HTMLElement)) return null;
+    const rect = element.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+  };
+
   const openBuildCardSettings = (targetId?: string | null) => {
     const resolvedTargetId =
       targetId === undefined ? (selectedInstance?.id ?? null) : targetId;
@@ -164,12 +195,16 @@ export default function App() {
       getBuildCardAppearance(resolvedTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY)
     );
     setBuildCardSettingsOpen(true);
+    setBuildCardPreviewSize(
+      measureBuildCardPreviewElement(pickBuildCardPreviewSourceElement(resolvedTargetId))
+    );
   };
 
   const closeBuildCardSettings = () => {
     setBuildCardSettingsOpen(false);
     setBuildSettingsTargetId(null);
     setBuildCardSettingsDraft({ ...DEFAULT_BUILD_CARD_APPEARANCE });
+    setBuildCardPreviewSize(null);
   };
 
   const saveBuildCardSettings = () => {
@@ -218,6 +253,46 @@ export default function App() {
   const createPreviewVersion = createVersion || "1.21.1";
   const createPreviewLoader = createLoader || "Vanilla";
   const createPreviewRam = clampRamToSystem(createRamGb, systemRamGb);
+  const createMeasureAppearance =
+    buildCardSettingsOpen && !buildSettingsTargetId
+      ? normalizeBuildCardAppearance(buildCardSettingsDraft)
+      : getBuildCardAppearance(CREATE_BUILD_CARD_DRAFT_KEY);
+
+  useEffect(() => {
+    if (!buildCardSettingsOpen) {
+      setBuildCardPreviewSize(null);
+      return;
+    }
+
+    const sourceElement = pickBuildCardPreviewSourceElement(buildSettingsTargetId);
+    if (!sourceElement) {
+      setBuildCardPreviewSize(null);
+      return;
+    }
+
+    const syncPreviewSize = () => {
+      setBuildCardPreviewSize(measureBuildCardPreviewElement(sourceElement));
+    };
+
+    syncPreviewSize();
+
+    const resizeObserver = new ResizeObserver(syncPreviewSize);
+    resizeObserver.observe(sourceElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [
+    buildCardSettingsOpen,
+    buildSettingsTargetId,
+    selectedInstanceId,
+    instances.length,
+    createPreviewName,
+    createPreviewVersion,
+    createPreviewLoader,
+    createPreviewRam,
+    buildCardSettingsDraft,
+  ]);
 
   const fabricInstances = useMemo(
     () => instances.filter((item) => item.loader.toLowerCase() === "fabric"),
@@ -1406,6 +1481,24 @@ const isScrollableElement = (target: EventTarget | null) => {
               onWheel={(e: any) => e.stopPropagation()}
               style={{ flex: 1, minHeight: 0 }}
             >
+              <div style={{ height: 0, overflow: "hidden", pointerEvents: "none" }} aria-hidden="true">
+                <div
+                  ref={createCardMeasureRef}
+                  className={`instance-card ${createMeasureAppearance.image ? "instance-card-with-image" : ""}`}
+                  style={getBuildCardAppearanceStyle(createMeasureAppearance)}
+                >
+                  <div className="instance-card-top">
+                    <span className="instance-name">{createPreviewName}</span>
+                  </div>
+                  <div className="instance-card-meta">
+                    <span>{createPreviewVersion}</span>
+                    <span>{createPreviewLoader}</span>
+                    <span>{createPreviewRam} GB</span>
+                    <span>NEVER</span>
+                  </div>
+                </div>
+              </div>
+
               {instances.length === 0 ? (
                 <div className="empty-state-box">
                   <strong>NO BUILDS YET</strong>
@@ -1419,6 +1512,13 @@ const isScrollableElement = (target: EventTarget | null) => {
                   return (
                   <button
                     key={instance.id}
+                    ref={(node) => {
+                      if (node) {
+                        instanceCardRefs.current.set(instance.id, node);
+                      } else {
+                        instanceCardRefs.current.delete(instance.id);
+                      }
+                    }}
                     className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""}`}
                     style={cardStyle}
                     onClick={() => {
@@ -1431,8 +1531,13 @@ const isScrollableElement = (target: EventTarget | null) => {
                   >
                     <div className="instance-card-top">
                       <span className="instance-name">{instance.name}</span>
-                      {isRunning(instance.id) && (
-                        <span className="instance-running-badge">RUNNING</span>
+                      {isRunning(instance.id) && cardAppearance.badgeEnabled && (
+                        <span
+                          className="instance-running-badge"
+                          style={getBuildCardBadgeStyle(cardAppearance)}
+                        >
+                          {getBuildCardBadgeText(cardAppearance)}
+                        </span>
                       )}
                     </div>
                     <div className="instance-card-meta">
@@ -1671,8 +1776,8 @@ const isScrollableElement = (target: EventTarget | null) => {
                   <button className="ghost-action" type="button" onClick={handleInstallSelected} disabled={working}>INSTALL</button>
                   <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
                   <button className="ghost-action" type="button" onClick={() => setCreateMode(true)}>NEW BUILD</button>
-                  {advancedSettingsEnabled ? (
-                    <div className="instance-side-actions">
+                  <div className="instance-side-actions">
+                    {advancedSettingsEnabled && (
                       <button
                         className="ghost-action icon-square-action settings-icon-action"
                         type="button"
@@ -1681,18 +1786,7 @@ const isScrollableElement = (target: EventTarget | null) => {
                       >
                         <SettingsGearIcon />
                       </button>
-                      <button
-                        className="ghost-action icon-square-action trash-action"
-                        type="button"
-                        title="Удалить сборку"
-                        onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
+                    )}
                     <button
                       className="ghost-action icon-square-action trash-action"
                       type="button"
@@ -1703,7 +1797,7 @@ const isScrollableElement = (target: EventTarget | null) => {
                         <path d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     </button>
-                  )}
+                  </div>
                 </div>
               </>
             )}
@@ -2708,6 +2802,7 @@ installedMods.map((mod) => {
           buildLoader={buildSettingsTargetId ? selectedInstance?.loader || "—" : createPreviewLoader}
           buildRamGb={buildSettingsTargetId ? selectedInstance?.ram || 0 : createPreviewRam}
           lastPlayedLabel={buildSettingsTargetId ? selectedInstance?.lastPlayed || "NEVER" : "NEVER"}
+          previewCardSize={buildCardPreviewSize}
           draft={buildCardSettingsDraft}
           onDraftChange={setBuildCardSettingsDraft}
           onUploadImage={handleBuildCardImagePicked}

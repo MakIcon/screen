@@ -348,11 +348,15 @@ textarea {
 .instance-side-actions {
   width: 42px;
   min-width: 42px;
-  display: grid;
-  grid-template-rows: 42px 42px;
-  gap: 8px;
-  margin-left: 6px;
-  align-self: flex-end;
+  height: 42px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.instance-side-actions .settings-icon-action {
+  position: absolute;
+  top: -50px;
+  left: 0;
 }
 
 button:disabled {
@@ -1890,8 +1894,8 @@ button:disabled {
 
 
 .build-card-settings-dialog {
-  width: min(680px, calc(100vw - 64px));
-  max-width: 680px;
+  width: min(900px, calc(100vw - 48px));
+  max-width: 900px;
 }
 
 .build-card-preview-wrap {
