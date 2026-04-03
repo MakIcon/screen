@@ -18,7 +18,7 @@ export type InstanceItem = {
   pid?: number | null;
   ram: number;
   lastPlayed: string;
-  playtimeHours: number;
+  playtimeSecs: number;
   createdAt: string;
   gameDir: string;
 };

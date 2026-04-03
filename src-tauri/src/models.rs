@@ -56,7 +56,8 @@ pub struct InstanceItem {
     pub status: String,
     pub ram: u32,
     pub last_played: String,
-    pub playtime_hours: u32,
+    #[serde(default)]
+    pub playtime_secs: u64,
     pub created_at: String,
     pub game_dir: String,
 }

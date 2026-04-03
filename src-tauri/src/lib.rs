@@ -22,6 +22,7 @@ pub fn run() {
             commands::launcher::launch_instance,
             commands::launcher::kill_instance,
             commands::launcher::is_process_alive,
+            commands::launcher::record_playtime,
             commands::launcher::open_instance_folder,
             commands::system::get_system_memory_gb,
             commands::modrinth::get_modrinth_fabric_versions,

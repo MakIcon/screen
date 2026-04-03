@@ -86,7 +86,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         status: "EMPTY".to_string(),
         ram: normalized_ram(payload.ram),
         last_played: "NEVER".to_string(),
-        playtime_hours: 0,
+        playtime_secs: 0,
         created_at: now_string(),
         game_dir: game_dir.to_string_lossy().to_string(),
     };
@@ -162,7 +162,7 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         status: old_item.status,
         ram: normalized_ram(payload.ram),
         last_played: old_item.last_played,
-        playtime_hours: old_item.playtime_hours,
+        playtime_secs: old_item.playtime_secs,
         created_at: old_item.created_at,
         game_dir: final_instance_dir.join("minecraft").to_string_lossy().to_string(),
     };

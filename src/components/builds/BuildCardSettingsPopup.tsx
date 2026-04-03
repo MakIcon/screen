@@ -30,7 +30,7 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   backgroundOpacity: 0,
   badgeEnabled: true,
   badgeVisible: true,
-  badgeText: "RUNNING",
+  badgeText: "%build_name%",
   badgeColor: "#c2410c",
   badgeTextColor: "#ffffff",
 };

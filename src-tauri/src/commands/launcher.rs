@@ -8,7 +8,7 @@ use crate::{
         update_instance_status,
     },
     models::ActionResult,
-    paths::read_instances,
+    paths::{read_instances, write_instances},
 };
 
 #[tauri::command]
@@ -89,6 +89,16 @@ pub fn is_process_alive(pid: u32) -> bool {
         }
         Err(_) => false,
     }
+}
+
+#[tauri::command]
+pub async fn record_playtime(instance_id: String, elapsed_secs: u64) -> Result<(), String> {
+    let mut items = read_instances().await?;
+    if let Some(index) = items.iter().position(|i| i.id == instance_id) {
+        items[index].playtime_secs = items[index].playtime_secs.saturating_add(elapsed_secs);
+        write_instances(&items).await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

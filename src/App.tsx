@@ -37,6 +37,9 @@ import type {
   TabKey,
   UpdateInstancePayload,
 } from "./types";
+import { formatLastPlayed, formatPlaytime, sumPlaytimeSecs } from "./utils/playtime";
+import { resolvePlaceholders } from "./utils/placeholders";
+import { usePlaceholders } from "./hooks/usePlaceholders";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -129,10 +132,24 @@ export default function App() {
   const [runningInstances, setRunningInstances] = useState<Map<string, number>>(new Map());
   // helpers
   const isRunning = (id: string) => runningInstances.has(id);
-  const addRunning = (id: string, pid: number) =>
+  const addRunning = (id: string, pid: number) => {
+    launchTimestampsRef.current.set(id, Math.floor(Date.now() / 1000));
     setRunningInstances((prev) => new Map(prev).set(id, pid));
+  };
   const removeRunning = (id: string) =>
     setRunningInstances((prev) => { const m = new Map(prev); m.delete(id); return m; });
+  const handleInstanceStopped = async (id: string) => {
+    const launchTs = launchTimestampsRef.current.get(id);
+    launchTimestampsRef.current.delete(id);
+    removeRunning(id);
+    if (launchTs !== undefined) {
+      const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - launchTs);
+      try {
+        await invoke("record_playtime", { instanceId: id, elapsedSecs: elapsed });
+        await refreshInstances(id);
+      } catch (err) { console.error("record_playtime failed", err); }
+    }
+  };
 
   const [confirmPendingId, setConfirmPendingId] = useState<string | null>(null);
   const [confirmPendingName, setConfirmPendingName] = useState("");
@@ -150,6 +167,7 @@ export default function App() {
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const launchTimestampsRef = useRef<Map<string, number>>(new Map());
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
 
   const persistBuildCardAppearances = (next: Record<string, BuildCardAppearance>) => {
@@ -248,6 +266,8 @@ export default function App() {
     () => instances.find((x) => x.id === selectedInstanceId) || null,
     [instances, selectedInstanceId]
   );
+
+  const resolve = usePlaceholders(instances, selectedInstance, systemRamGb);
 
   const createPreviewName = createBuildName.trim() || "MY BUILD";
   const createPreviewVersion = createVersion || "1.21.1";
@@ -696,9 +716,9 @@ export default function App() {
       for (const [id, pid] of runningInstances) {
         try {
           const alive = await invoke<boolean>("is_process_alive", { pid });
-          if (!alive) removeRunning(id);
+          if (!alive) void handleInstanceStopped(id);
         } catch {
-          removeRunning(id);
+          void handleInstanceStopped(id);
         }
       }
     }, 3000);
@@ -1003,9 +1023,8 @@ const isScrollableElement = (target: EventTarget | null) => {
       await invoke("kill_instance", { pid });
     } catch (error) {
       console.error(error);
-    } finally {
-      removeRunning(instanceId);
     }
+    void handleInstanceStopped(instanceId);
   };
 
   const handleDeleteInstance = async (instanceId: string) => {
@@ -1407,24 +1426,22 @@ const isScrollableElement = (target: EventTarget | null) => {
             <div className="hero-meta two-col-meta">
               <div className="meta-block">
                 <span className="meta-title">BUILD</span>
-                <strong>{selectedInstance.name}</strong>
+                <strong>{resolve("%build_name%")}</strong>
               </div>
 
               <div className="meta-block">
                 <span className="meta-title">MC / LOADER</span>
-                <strong>
-                  {selectedInstance.version} / {selectedInstance.loader}
-                </strong>
+                <strong>{resolve("%build_version% / %build_loader%")}</strong>
               </div>
 
               <div className="meta-block">
                 <span className="meta-title">LAST PLAYED</span>
-                <strong>{selectedInstance.lastPlayed}</strong>
+                <strong>{resolve("%build_last_played%")}</strong>
               </div>
 
               <div className="meta-block">
                 <span className="meta-title">TIME IN GAME</span>
-                <strong>{selectedInstance.playtimeHours} H</strong>
+                <strong>{resolve("%build_playtime%")}</strong>
               </div>
             </div>
 
@@ -1536,7 +1553,18 @@ const isScrollableElement = (target: EventTarget | null) => {
                           className="instance-running-badge"
                           style={getBuildCardBadgeStyle(cardAppearance)}
                         >
-                          {getBuildCardBadgeText(cardAppearance)}
+                          {resolvePlaceholders(getBuildCardBadgeText(cardAppearance), {
+                            systemRamGb,
+                            buildName: instance.name,
+                            buildVersion: instance.version,
+                            buildLoader: instance.loader,
+                            buildRam: instance.ram,
+                            buildPlaytimeSecs: instance.playtimeSecs,
+                            buildLastPlayed: instance.lastPlayed,
+                            buildStatus: instance.status,
+                            totalPlaytimeSecs: sumPlaytimeSecs(instances),
+                            totalBuilds: instances.length,
+                          })}
                         </span>
                       )}
                     </div>
@@ -1544,7 +1572,7 @@ const isScrollableElement = (target: EventTarget | null) => {
                       <span>{instance.version}</span>
                       <span>{instance.loader}</span>
                       <span>{instance.ram} GB</span>
-                      <span>{instance.lastPlayed}</span>
+                      <span>{formatLastPlayed(instance.lastPlayed)}</span>
                     </div>
                   </button>
                 );
@@ -1739,8 +1767,8 @@ const isScrollableElement = (target: EventTarget | null) => {
                     )}
                   </div>
                   <div className="detail-block">
-                    <span className="detail-title">MODE</span>
-                    <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>OFFLINE VANILLA</strong>
+                    <span className="detail-title">TIME IN BUILD</span>
+                    <strong>{formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}</strong>
                   </div>
                 </div>
 
@@ -2537,6 +2565,7 @@ installedMods.map((mod) => {
             <div className="memory-readout">
               <span className="memory-number">{settingsRamDraft}</span>
               <span className="memory-unit">GB</span>
+              <span className="memory-hint">/ {resolve("%system_ram_max%")} MAX</span>
             </div>
 
             <div className="settings-element-slider">
@@ -2674,12 +2703,12 @@ installedMods.map((mod) => {
         <div className="mockup-overlay">
           <div className="mockup-block">
             <span className="mockup-label">ACTIVE BUILD</span>
-            <strong>{selectedInstance.name}</strong>
+            <strong>{resolve("%build_name%")}</strong>
           </div>
 
           <div className="mockup-block">
-            <span className="mockup-label">TIME IN GAME</span>
-            <strong>{selectedInstance.playtimeHours} H</strong>
+            <span className="mockup-label">TOTAL TIME IN GAME</span>
+            <strong>{resolve("%total_playtime%")}</strong>
           </div>
 
           <div className="mockup-split-row">
@@ -2801,7 +2830,7 @@ installedMods.map((mod) => {
           buildVersion={buildSettingsTargetId ? selectedInstance?.version || "—" : createPreviewVersion}
           buildLoader={buildSettingsTargetId ? selectedInstance?.loader || "—" : createPreviewLoader}
           buildRamGb={buildSettingsTargetId ? selectedInstance?.ram || 0 : createPreviewRam}
-          lastPlayedLabel={buildSettingsTargetId ? selectedInstance?.lastPlayed || "NEVER" : "NEVER"}
+          lastPlayedLabel={buildSettingsTargetId ? formatLastPlayed(selectedInstance?.lastPlayed ?? "0") : "Never played"}
           previewCardSize={buildCardPreviewSize}
           draft={buildCardSettingsDraft}
           onDraftChange={setBuildCardSettingsDraft}

@@ -225,7 +225,7 @@ pub async fn spawn_minecraft_and_persist(
     let mut items = read_instances().await?;
     if let Some(index) = items.iter().position(|i| i.id == instance.id) {
         items[index].status = "READY".to_string();
-        items[index].last_played = "JUST NOW".to_string();
+        items[index].last_played = crate::paths::now_string();
         write_instances(&items).await?;
     }
 
