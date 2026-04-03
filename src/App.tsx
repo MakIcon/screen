@@ -60,12 +60,10 @@ export default function App() {
 
   const [manifest, setManifest] = useState<MinecraftManifest | null>(null);
   const [manifestLoading, setManifestLoading] = useState(true);
-  const [manifestError, setManifestError] = useState("");
 
   const [instances, setInstances] = useState<InstanceItem[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
 
-  const [memoryGb, setMemoryGb] = useState(4);
   const [wheelTabSwitching, setWheelTabSwitching] = useState(true);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showPreReleases, setShowPreReleases] = useState(false);
@@ -125,9 +123,6 @@ export default function App() {
   const [shaderInstallBusyId, setShaderInstallBusyId] = useState<string | null>(null);
   const [installedShaders, setInstalledShaders] = useState<InstalledModView[]>([]);
   const [installedShadersLoading, setInstalledShadersLoading] = useState(false);
-  const [shaderTargetMods, setShaderTargetMods] = useState<InstalledModView[]>([]);
-
-  const [viewingMod, setViewingMod] = useState<ModrinthProject | null>(null);
 
   const [installProgress, setInstallProgress] = useState<InstallProgressPayload | null>(null);
 
@@ -377,16 +372,6 @@ export default function App() {
     [instances, selectedInstanceId]
   );
 
-  const selectedShaderFabricTarget = useMemo(
-    () =>
-      instances.find(
-        (item) =>
-          item.id === selectedInstanceId &&
-          item.loader.toLowerCase() === "fabric"
-      ) || null,
-    [instances, selectedInstanceId]
-  );
-
   const availableManifestVersions = useMemo(() => {
     if (!manifest) return [];
 
@@ -452,8 +437,6 @@ export default function App() {
     const bootstrap = async () => {
       try {
         setManifestLoading(true);
-        setManifestError("");
-
         const [manifestResponse, instanceResponse, systemRamResponse, settingsResponse] =
           await Promise.all([
             invoke<MinecraftManifest>("get_minecraft_manifest"),
@@ -479,18 +462,15 @@ export default function App() {
           const preferredInstance = pickPreferredInstance(instanceResponse) || instanceResponse[0];
           const initialRam = clampRamToSystem(preferredInstance.ram, systemRamResponse);
           setSelectedInstanceId(preferredInstance.id);
-          setMemoryGb(initialRam);
           setInstanceRamDraft(initialRam);
         } else {
           const fallbackRam = clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse);
-          setMemoryGb(fallbackRam);
           setInstanceRamDraft(fallbackRam);
         }
 
         setCreateRamGb(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
       } catch (error) {
         console.error(error);
-        setManifestError(String(error));
       } finally {
         setManifestLoading(false);
       }
@@ -592,27 +572,6 @@ export default function App() {
 
     void loadInstalledShaders();
   }, [selectedShaderTarget?.id, working, shaderInstallBusyId]);
-
-  useEffect(() => {
-    const loadShaderTargetMods = async () => {
-      if (!selectedShaderFabricTarget) {
-        setShaderTargetMods([]);
-        return;
-      }
-
-      try {
-        const result = await invoke<InstalledModView[]>("list_installed_mods", {
-          instanceId: selectedShaderFabricTarget.id,
-        });
-        setShaderTargetMods(result);
-      } catch (error) {
-        console.error(error);
-        setShaderTargetMods([]);
-      }
-    };
-
-    void loadShaderTargetMods();
-  }, [selectedShaderFabricTarget?.id, working, shaderInstallBusyId]);
 
   useEffect(() => {
     const loadModrinthMods = async () => {
@@ -800,7 +759,6 @@ export default function App() {
 
     const targetItem = fresh.find((i) => i.id === target) || preferredInstance;
     const targetRam = clampRamToSystem(targetItem.ram, systemRamGb);
-    setMemoryGb(targetRam);
     setInstanceRamDraft(targetRam);
   };
 
@@ -895,7 +853,6 @@ const isScrollableElement = (target: EventTarget | null) => {
     setInstances((prev) =>
       prev.map((item) => (item.id === selectedInstance.id ? updated : item))
     );
-    setMemoryGb(updated.ram);
     setInstanceRamDraft(updated.ram);
 
     await invoke<InstanceItem>("update_instance", {
@@ -1589,7 +1546,6 @@ const isScrollableElement = (target: EventTarget | null) => {
                     onClick={() => {
                       setSelectedInstanceId(instance.id);
                       setCreateMode(false);
-                      setMemoryGb(clampRamToSystem(instance.ram, systemRamGb));
                       setInstanceRamEditorOpen(false);
                     }}
                     type="button"
@@ -1761,7 +1717,6 @@ const isScrollableElement = (target: EventTarget | null) => {
                       if (found) {
                         const nextRam = clampRamToSystem(found.ram, systemRamGb);
                         setSelectedInstanceId(found.id);
-                        setMemoryGb(nextRam);
                         setInstanceRamDraft(nextRam);
                       }
                       setOpenDropdown(null);
@@ -1806,7 +1761,6 @@ const isScrollableElement = (target: EventTarget | null) => {
                           onChange={(value) => {
                             const nextValue = clampRamToSystem(value, systemRamGb);
                             setInstanceRamDraft(nextValue);
-                            setMemoryGb(nextValue);
                           }}
                           onCommit={() => void commitSelectedInstanceRam()}
                         />
@@ -1944,11 +1898,9 @@ const isScrollableElement = (target: EventTarget | null) => {
   const category = item.displayCategories?.[0] || item.categories?.[0] || "Fabric";
   const installing = modrinthInstallBusyId === item.projectId;
   return (
-    <div 
-      className="mod-card modrinth-card" 
+    <div
+      className="mod-card modrinth-card"
       key={item.projectId}
-      onClick={() => setViewingMod(item)} // Открытие модалки при клике на карточку
-      style={{ cursor: 'pointer' }}
     >
       <div className="mod-card-head">
         <div className="mod-title-row">
@@ -2203,8 +2155,6 @@ installedMods.map((mod) => {
                       <div
                         className="mod-card modrinth-card"
                         key={item.projectId}
-                        onClick={() => setViewingMod(item)}
-                        style={{ cursor: "pointer" }}
                       >
                         <div className="mod-card-head">
                           <div className="mod-title-row">
@@ -2447,8 +2397,6 @@ installedMods.map((mod) => {
                       <div
                         className="mod-card modrinth-card"
                         key={item.projectId}
-                        onClick={() => setViewingMod(item)}
-                        style={{ cursor: "pointer" }}
                       >
                         <div className="mod-card-head">
                           <div className="mod-title-row">
