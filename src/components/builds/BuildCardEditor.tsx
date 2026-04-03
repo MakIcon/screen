@@ -3,14 +3,19 @@ import { useState } from "react";
 import "./BuildCardEditor.css";
 import { InlineDropdown } from "../inputs/InlineDropdown";
 import { ElementSlider } from "../inputs/ElementSlider";
+import { ElementToggle } from "../inputs/ElementToggle";
 import { ColorPicker } from "../color-picker/ColorPicker";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
+import { BuildCardContentView } from "./BuildCardContentView";
 import {
+  createBuildCardContentTag,
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeVisibility,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
+  type BuildCardContentMode,
+  type BuildCardContentTag,
   type BuildCardPreviewSize,
 } from "./BuildCardSettingsPopup";
 
@@ -74,6 +79,176 @@ function detectMode(draft: BuildCardAppearance): BgMode {
   return "url";
 }
 
+function alphaColor(hex: string, opacity: number) {
+  const normalizedOpacity = Math.max(0, Math.min(100, opacity));
+  const alpha = Math.round((normalizedOpacity / 100) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hex}${alpha}`;
+}
+
+type ContentTagRowProps = {
+  tag: BuildCardContentTag;
+  mode: BuildCardContentMode;
+  previewText: string;
+  onUpdate: (tag: BuildCardContentTag) => void;
+  onDelete: () => void;
+};
+
+function ContentTagRow({
+  tag,
+  mode,
+  previewText,
+  onUpdate,
+  onDelete,
+}: ContentTagRowProps) {
+  const [open, setOpen] = useState(false);
+  const labelPrefix = mode === "tags" ? "Tag" : "Text";
+
+  return (
+    <div className="bce-tag-row">
+      <div className="bce-tag-row-head">
+        <button
+          type="button"
+          className="bce-tag-toggle"
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <span
+            className={`bce-tag-preview ${mode === "text" ? "bce-tag-preview--text" : ""}`}
+            style={
+              mode === "tags"
+                ? {
+                    borderColor: tag.borderColor,
+                    backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),
+                    color: tag.textColor,
+                    fontSize: `${tag.fontSize}px`,
+                  }
+                : {
+                    color: alphaColor(tag.fillColor, tag.fillOpacity),
+                    WebkitTextStroke: `0.55px ${tag.borderColor}`,
+                    textShadow: `0 0 0 ${tag.borderColor}`,
+                    paintOrder: "stroke fill",
+                    fontSize: `${tag.fontSize}px`,
+                  }
+            }
+          >
+            {previewText || tag.text || `${labelPrefix} tag`}
+          </span>
+
+          <span className="bce-tag-caption">{tag.text || `${labelPrefix} placeholder`}</span>
+
+          <svg
+            className={`bce-section-chevron ${open ? "bce-section-chevron--open" : ""}`}
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="2 3 5 6 8 3" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          className="bce-tag-delete"
+          onClick={onDelete}
+          aria-label="Delete tag"
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <line x1="2" y1="2" x2="8" y2="8" />
+            <line x1="8" y1="2" x2="2" y2="8" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div className="bce-tag-row-body">
+          <EditorRow label="Text">
+            <input
+              className="bce-text-input"
+              type="text"
+              placeholder="^%build_version%"
+              value={tag.text}
+              onChange={(e) => onUpdate({ ...tag, text: e.target.value })}
+            />
+          </EditorRow>
+
+          <EditorRow label="Size">
+            <div className="bce-slider-field">
+              <span className="bce-slider-value">{tag.fontSize}px</span>
+              <div className="bce-slider">
+                <ElementSlider
+                  showHeader={false}
+                  min={8}
+                  max={28}
+                  step={1}
+                  value={tag.fontSize}
+                  tickMode="none"
+                  onChange={(value) => onUpdate({ ...tag, fontSize: value })}
+                />
+              </div>
+            </div>
+          </EditorRow>
+
+          <EditorRow label={mode === "tags" ? "Border" : "Stroke"} alignTop>
+            <ColorPicker
+              value={tag.borderColor}
+              onChange={(hex) => onUpdate({ ...tag, borderColor: hex })}
+            />
+          </EditorRow>
+
+          <EditorRow label={mode === "tags" ? "Fill" : "Text"} alignTop>
+            <ColorPicker
+              value={tag.fillColor}
+              onChange={(hex) => onUpdate({ ...tag, fillColor: hex })}
+            />
+          </EditorRow>
+
+          {mode === "tags" && (
+            <EditorRow label="Text" alignTop>
+              <ColorPicker
+                value={tag.textColor}
+                onChange={(hex) => onUpdate({ ...tag, textColor: hex })}
+              />
+            </EditorRow>
+          )}
+
+          <EditorRow label={mode === "tags" ? "Fill %" : "Text %"}>
+            <div className="bce-slider-field">
+              <span className="bce-slider-value">{tag.fillOpacity}%</span>
+              <div className="bce-slider">
+                <ElementSlider
+                  showHeader={false}
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={tag.fillOpacity}
+                  tickMode="none"
+                  onChange={(value) => onUpdate({ ...tag, fillOpacity: value })}
+                />
+              </div>
+            </div>
+          </EditorRow>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Props = {
   buildName: string;
   buildVersion: string;
@@ -81,6 +256,7 @@ type Props = {
   buildRamGb: number;
   lastPlayedLabel: string;
   badgePreviewText: string;
+  resolvePreviewText: (template: string) => string;
   previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;
@@ -97,6 +273,7 @@ export function BuildCardEditor({
   buildRamGb,
   lastPlayedLabel,
   badgePreviewText,
+  resolvePreviewText,
   previewCardSize,
   draft,
   onDraftChange,
@@ -108,7 +285,9 @@ export function BuildCardEditor({
   const [mode, setMode] = useState<BgMode>(() => detectMode(draft));
   const [fitOpen, setFitOpen] = useState(false);
   const [backgroundOpen, setBackgroundOpen] = useState(true);
+  const [layoutOpen, setLayoutOpen] = useState(true);
   const [badgeOpen, setBadgeOpen] = useState(true);
+  const [contentOpen, setContentOpen] = useState(true);
   const [urlInput, setUrlInput] = useState(() =>
     draft.image && !draft.image.startsWith("data:") ? draft.image : "",
   );
@@ -135,7 +314,10 @@ export function BuildCardEditor({
 
   function applyUrl(raw: string) {
     const url = raw.trim();
-    onDraftChange((prev) => ({ ...prev, image: url }));
+    onDraftChange((prev) => ({
+      ...prev,
+      image: url,
+    }));
   }
 
   const fitLabel = draft.imageFit === "stretch" ? "FIT WHOLE IMAGE" : "FILL CARD";
@@ -143,13 +325,21 @@ export function BuildCardEditor({
     mode === "color"
       ? Math.round(draft.backgroundOpacity * 100)
       : Math.round(draft.imageOpacity * 100);
+  const previewContentTags = draft.contentTags.map((tag) => ({
+    ...tag,
+    text: resolvePreviewText(tag.text),
+  }));
+  const basePreviewHeight = previewCardSize?.height ?? 86;
+  const heightValue = draft.cardHeight > 0 ? draft.cardHeight : basePreviewHeight;
   const layoutStyle = previewCardSize
     ? ({
         ["--bce-preview-card-width" as string]: `${previewCardSize.width}px`,
-        ["--bce-preview-card-height" as string]: `${previewCardSize.height}px`,
+        ["--bce-preview-card-height" as string]: `${heightValue}px`,
         ["--bce-preview-shell-width" as string]: `${previewCardSize.width}px`,
       } satisfies CSSProperties)
-    : undefined;
+    : ({
+        ["--bce-preview-card-height" as string]: `${heightValue}px`,
+      } satisfies CSSProperties);
 
   function handleOpacityChange(v: number) {
     if (mode === "color") {
@@ -158,6 +348,28 @@ export function BuildCardEditor({
     }
 
     onDraftChange((prev) => ({ ...prev, imageOpacity: v / 100 }));
+  }
+
+  function updateContentTag(tagId: string, nextTag: BuildCardContentTag) {
+    onDraftChange((prev) => ({
+      ...prev,
+      contentTags: prev.contentTags.map((tag) => (tag.id === tagId ? nextTag : tag)),
+    }));
+  }
+
+  function deleteContentTag(tagId: string) {
+    onDraftChange((prev) => ({
+      ...prev,
+      contentTags: prev.contentTags.filter((tag) => tag.id !== tagId),
+    }));
+  }
+
+  function addContentTag() {
+    onDraftChange((prev) => ({
+      ...prev,
+      contentEnabled: true,
+      contentTags: [...prev.contentTags, createBuildCardContentTag(prev.contentMode)],
+    }));
   }
 
   return (
@@ -208,11 +420,24 @@ export function BuildCardEditor({
                   </span>
                 )}
               </div>
-              <div className="instance-card-meta">
-                <span>{buildVersion}</span>
-                <span>{buildLoader}</span>
-                <span>{buildRamGb} GB</span>
-                <span>{lastPlayedLabel}</span>
+              <div
+                className={`instance-card-meta ${draft.contentEnabled ? "instance-card-meta--content" : ""}`}
+              >
+                {draft.contentEnabled ? (
+                  <BuildCardContentView
+                    mode={draft.contentMode}
+                    align={draft.contentTextAlign}
+                    tags={previewContentTags}
+                    strokeEnabled={draft.contentTextStrokeEnabled}
+                  />
+                ) : (
+                  <>
+                    <span>{buildVersion}</span>
+                    <span>{buildLoader}</span>
+                    <span>{buildRamGb} GB</span>
+                    <span>{lastPlayedLabel}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -416,6 +641,32 @@ export function BuildCardEditor({
             </EditorSection>
 
             <EditorSection
+              title="Layout"
+              open={layoutOpen}
+              onToggle={() => setLayoutOpen((prev) => !prev)}
+            >
+              <EditorRow label="Height">
+                <div className="bce-slider-field">
+                  <span className="bce-slider-value">{heightValue}px</span>
+                  <div className="bce-slider">
+                    <ElementSlider
+                      showHeader={false}
+                      min={72}
+                      max={260}
+                      step={4}
+                      value={heightValue}
+                      tickMode="custom"
+                      customTicks={[72, 96, 120, 144, 168, 192, 224, 260]}
+                      onChange={(value) =>
+                        onDraftChange((prev) => ({ ...prev, cardHeight: Number(value) }))
+                      }
+                    />
+                  </div>
+                </div>
+              </EditorRow>
+            </EditorSection>
+
+            <EditorSection
               title="Badge"
               open={badgeOpen}
               onToggle={() => setBadgeOpen((prev) => !prev)}
@@ -505,6 +756,138 @@ export function BuildCardEditor({
                   }
                 />
               </EditorRow>
+            </EditorSection>
+
+            <EditorSection
+              title="Content"
+              open={contentOpen}
+              onToggle={() => setContentOpen((prev) => !prev)}
+            >
+              <EditorRow label="Enable">
+                <div className="bce-mode-switch">
+                  <button
+                    type="button"
+                    className={`bce-mode-pill ${draft.contentEnabled ? "bce-mode-pill--active" : ""}`}
+                    onClick={() =>
+                      onDraftChange((prev) => ({ ...prev, contentEnabled: true }))
+                    }
+                  >
+                    On
+                  </button>
+                  <button
+                    type="button"
+                    className={`bce-mode-pill ${!draft.contentEnabled ? "bce-mode-pill--active" : ""}`}
+                    onClick={() =>
+                      onDraftChange((prev) => ({ ...prev, contentEnabled: false }))
+                    }
+                  >
+                    Off
+                  </button>
+                </div>
+              </EditorRow>
+
+              <EditorRow label="Mode">
+                <div className="bce-mode-switch">
+                  <button
+                    type="button"
+                    className={`bce-mode-pill ${draft.contentMode === "text" ? "bce-mode-pill--active" : ""}`}
+                    onClick={() =>
+                      onDraftChange((prev) => ({ ...prev, contentMode: "text" }))
+                    }
+                  >
+                    Plain text
+                  </button>
+                  <button
+                    type="button"
+                    className={`bce-mode-pill ${draft.contentMode === "tags" ? "bce-mode-pill--active" : ""}`}
+                    onClick={() =>
+                      onDraftChange((prev) => ({ ...prev, contentMode: "tags" }))
+                    }
+                  >
+                    Tags
+                  </button>
+                </div>
+              </EditorRow>
+
+              {draft.contentMode === "text" && (
+                <>
+                  <EditorRow label="Align">
+                    <div className="bce-mode-switch">
+                      {(["left", "center", "right"] as const).map((align) => (
+                        <button
+                          key={align}
+                          type="button"
+                          className={`bce-mode-pill ${draft.contentTextAlign === align ? "bce-mode-pill--active" : ""}`}
+                          onClick={() =>
+                            onDraftChange((prev) => ({
+                              ...prev,
+                              contentTextAlign: align,
+                            }))
+                          }
+                        >
+                          {align === "left" ? "Left" : align === "center" ? "Center" : "Right"}
+                        </button>
+                      ))}
+                    </div>
+                  </EditorRow>
+
+                  <div className="bce-content-toggle-wrap">
+                    <ElementToggle
+                      title="TEXT OUTLINE"
+                      note="Draw a stroke around plain text placeholders."
+                      enabled={draft.contentTextStrokeEnabled}
+                      onToggle={() =>
+                        onDraftChange((prev) => ({
+                          ...prev,
+                          contentTextStrokeEnabled: !prev.contentTextStrokeEnabled,
+                        }))
+                      }
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="bce-tag-list">
+                {draft.contentTags.length === 0 ? (
+                  <div className="bce-tag-empty">
+                    Add a tag to show build placeholders inside the card content area.
+                  </div>
+                ) : (
+                  draft.contentTags.map((tag, index) => (
+                    <ContentTagRow
+                      key={tag.id}
+                      tag={tag}
+                      mode={draft.contentMode}
+                      previewText={previewContentTags[index]?.text ?? ""}
+                      onUpdate={(nextTag) => updateContentTag(tag.id, nextTag)}
+                      onDelete={() => deleteContentTag(tag.id)}
+                    />
+                  ))
+                )}
+              </div>
+
+              <button type="button" className="bce-add-tag" onClick={addContentTag}>
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <line x1="5" y1="1.5" x2="5" y2="8.5" />
+                  <line x1="1.5" y1="5" x2="8.5" y2="5" />
+                </svg>
+                Add tag
+              </button>
+
+              <p className="bce-content-hint">
+                Use placeholders like `%build_name%`, `%build_version%`, `%build_loader%`,
+                `%build_ram%`, `%build_last_played%` or `%build_state%`. Prefix with `^`
+                to force uppercase.
+              </p>
             </EditorSection>
           </div>
         </CustomScrollArea>

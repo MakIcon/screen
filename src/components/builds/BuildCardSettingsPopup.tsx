@@ -9,11 +9,25 @@ export type BuildCardPreviewSize = {
   width: number;
   height: number;
 };
+export type BuildCardTextAlign = "left" | "center" | "right";
+export type BuildCardContentMode = "tags" | "text";
+export type BuildCardContentTag = {
+  id: string;
+  text: string;
+  borderColor: string;
+  fillColor: string;
+  textColor: string;
+  fillOpacity: number;
+  fontSize: number;
+};
+
+let buildCardTagSeed = 0;
 
 export type BuildCardAppearance = {
   image: string;
   imageFit: BuildCardImageFit;
   imageOpacity: number;
+  cardHeight: number;
   backgroundColor: string;
   backgroundOpacity: number;
   badgeEnabled: boolean;
@@ -21,12 +35,101 @@ export type BuildCardAppearance = {
   badgeText: string;
   badgeColor: string;
   badgeTextColor: string;
+  contentEnabled: boolean;
+  contentMode: BuildCardContentMode;
+  contentTextAlign: BuildCardTextAlign;
+  contentTextStrokeEnabled: boolean;
+  contentTags: BuildCardContentTag[];
 };
+
+function clampPercent(value: number, fallback: number) {
+  if (Number.isNaN(value)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function clampFontSize(value: number, fallback: number) {
+  if (Number.isNaN(value)) return fallback;
+  return Math.min(28, Math.max(8, Math.round(value)));
+}
+
+function clampCardHeight(value: number, fallback: number) {
+  if (Number.isNaN(value)) return fallback;
+  return Math.min(260, Math.max(0, Math.round(value)));
+}
+
+export function createBuildCardContentTag(
+  mode: BuildCardContentMode = "tags",
+  overrides: Partial<BuildCardContentTag> = {},
+): BuildCardContentTag {
+  buildCardTagSeed += 1;
+  const defaultFillOpacity = mode === "text" ? 100 : 14;
+  const defaultBorderColor = mode === "text" ? "#334155" : "#475569";
+  const defaultFillColor = mode === "text" ? "#1f2937" : "#94a3b8";
+  const normalizedBorderColor = normalizeHexColor(overrides.borderColor, defaultBorderColor);
+  return {
+    id: overrides.id ?? `build-card-tag-${Date.now()}-${buildCardTagSeed}`,
+    text: overrides.text ?? "^%build_version%",
+    borderColor: normalizedBorderColor,
+    fillColor: normalizeHexColor(overrides.fillColor, defaultFillColor),
+    textColor: normalizeHexColor(
+      overrides.textColor,
+      mode === "text" ? normalizedBorderColor : "#0f172a",
+    ),
+    fillOpacity: clampPercent(
+      typeof overrides.fillOpacity === "number" ? overrides.fillOpacity : defaultFillOpacity,
+      defaultFillOpacity,
+    ),
+    fontSize: clampFontSize(
+      typeof overrides.fontSize === "number" ? overrides.fontSize : 9,
+      9,
+    ),
+  };
+}
+
+export const DEFAULT_BUILD_CARD_CONTENT_TAGS: BuildCardContentTag[] = [
+  createBuildCardContentTag("tags", {
+    id: "build-card-tag-version",
+    text: "^%build_version%",
+    borderColor: "#334155",
+    fillColor: "#94a3b8",
+    textColor: "#0f172a",
+    fillOpacity: 16,
+  }),
+  createBuildCardContentTag("tags", {
+    id: "build-card-tag-loader",
+    text: "^%build_loader%",
+    borderColor: "#166534",
+    fillColor: "#22c55e",
+    textColor: "#14532d",
+    fillOpacity: 16,
+  }),
+  createBuildCardContentTag("tags", {
+    id: "build-card-tag-ram",
+    text: "^%build_ram%",
+    borderColor: "#1d4ed8",
+    fillColor: "#3b82f6",
+    textColor: "#1e3a8a",
+    fillOpacity: 16,
+  }),
+  createBuildCardContentTag("tags", {
+    id: "build-card-tag-last-played",
+    text: "^%build_last_played%",
+    borderColor: "#b45309",
+    fillColor: "#f59e0b",
+    textColor: "#92400e",
+    fillOpacity: 18,
+  }),
+];
+
+export function cloneBuildCardContentTags(tags: BuildCardContentTag[]) {
+  return tags.map((tag) => ({ ...tag }));
+}
 
 export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   image: "",
   imageFit: "cover",
   imageOpacity: 0.78,
+  cardHeight: 0,
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
   badgeEnabled: true,
@@ -34,6 +137,11 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   badgeText: "^%build_state%",
   badgeColor: "#c2410c",
   badgeTextColor: "#ffffff",
+  contentEnabled: false,
+  contentMode: "tags",
+  contentTextAlign: "left",
+  contentTextStrokeEnabled: true,
+  contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -51,6 +159,42 @@ function normalizeHexColor(
     return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`;
   }
   return fallback;
+}
+
+function normalizeBuildCardContentTag(
+  value: unknown,
+  fallback: BuildCardContentTag,
+  mode: BuildCardContentMode,
+): BuildCardContentTag {
+  if (!value || typeof value !== "object") {
+    return { ...fallback };
+  }
+
+  const draft = value as Partial<BuildCardContentTag>;
+  return createBuildCardContentTag(mode, {
+    id:
+      typeof draft.id === "string" && draft.id.trim()
+        ? draft.id.trim()
+        : fallback.id,
+    text:
+      typeof draft.text === "string" && draft.text.length > 0
+        ? draft.text
+        : fallback.text,
+    borderColor: normalizeHexColor(draft.borderColor, fallback.borderColor),
+    fillColor: normalizeHexColor(draft.fillColor, fallback.fillColor),
+    textColor: normalizeHexColor(
+      draft.textColor,
+      fallback.textColor,
+    ),
+    fillOpacity: clampPercent(
+      typeof draft.fillOpacity === "number" ? draft.fillOpacity : fallback.fillOpacity,
+      fallback.fillOpacity,
+    ),
+    fontSize: clampFontSize(
+      typeof draft.fontSize === "number" ? draft.fontSize : fallback.fontSize,
+      fallback.fontSize,
+    ),
+  });
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -114,11 +258,18 @@ export function getBuildCardBadgeStyle(
 
 export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearance {
   if (typeof value === "string") {
-    return { ...DEFAULT_BUILD_CARD_APPEARANCE, image: value };
+    return {
+      ...DEFAULT_BUILD_CARD_APPEARANCE,
+      image: value,
+      contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
+    };
   }
 
   if (!value || typeof value !== "object") {
-    return { ...DEFAULT_BUILD_CARD_APPEARANCE };
+    return {
+      ...DEFAULT_BUILD_CARD_APPEARANCE,
+      contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
+    };
   }
 
   const draft = value as Partial<BuildCardAppearance>;
@@ -137,6 +288,22 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
           : typeof legacyVisibility === "boolean"
             ? (legacyVisibility ? "on" : "off")
             : DEFAULT_BUILD_CARD_APPEARANCE.badgeVisibility;
+  const contentMode: BuildCardContentMode =
+    draft.contentMode === "text" ? "text" : "tags";
+  const contentTextAlign: BuildCardTextAlign =
+    draft.contentTextAlign === "center" || draft.contentTextAlign === "right"
+      ? draft.contentTextAlign
+      : DEFAULT_BUILD_CARD_APPEARANCE.contentTextAlign;
+  const contentTags = Array.isArray(draft.contentTags)
+    ? draft.contentTags.map((tag, index) =>
+        normalizeBuildCardContentTag(
+          tag,
+          DEFAULT_BUILD_CARD_CONTENT_TAGS[index] ??
+            createBuildCardContentTag(contentMode),
+          contentMode,
+        ),
+      )
+    : cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS);
   return {
     image: typeof draft.image === "string" ? draft.image : "",
     imageFit: draft.imageFit === "stretch" ? "stretch" : "cover",
@@ -145,6 +312,12 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         ? draft.imageOpacity
         : DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
       DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
+    ),
+    cardHeight: clampCardHeight(
+      typeof draft.cardHeight === "number"
+        ? draft.cardHeight
+        : DEFAULT_BUILD_CARD_APPEARANCE.cardHeight,
+      DEFAULT_BUILD_CARD_APPEARANCE.cardHeight,
     ),
     backgroundColor: normalizeHexColor(
       draft.backgroundColor,
@@ -170,6 +343,17 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       draft.badgeTextColor,
       getContrastTextColor(normalizedBadgeColor),
     ),
+    contentEnabled:
+      typeof draft.contentEnabled === "boolean"
+        ? draft.contentEnabled
+        : DEFAULT_BUILD_CARD_APPEARANCE.contentEnabled,
+    contentMode,
+    contentTextAlign,
+    contentTextStrokeEnabled:
+      typeof draft.contentTextStrokeEnabled === "boolean"
+        ? draft.contentTextStrokeEnabled
+        : DEFAULT_BUILD_CARD_APPEARANCE.contentTextStrokeEnabled,
+    contentTags,
   };
 }
 
@@ -205,6 +389,7 @@ export function getBuildCardAppearanceStyle(
     backgroundPosition: hasImage ? "center, center" : undefined,
     backgroundRepeat: hasImage ? "no-repeat, no-repeat" : undefined,
     borderColor: hasImage ? "transparent" : undefined,
+    minHeight: appearance.cardHeight > 0 ? `${appearance.cardHeight}px` : undefined,
   };
 }
 
@@ -238,6 +423,7 @@ type Props = {
   buildRamGb: number;
   lastPlayedLabel: string;
   badgePreviewText: string;
+  resolvePreviewText: (template: string) => string;
   previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;

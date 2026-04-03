@@ -718,6 +718,74 @@ button:disabled {
   letter-spacing: 1px;
 }
 
+.instance-card-meta--content {
+  display: block;
+}
+
+.build-card-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.build-card-content--tags,
+.build-card-content--text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+}
+
+.build-card-content--tags {
+  gap: 6px 8px;
+}
+
+.build-card-content--text {
+  gap: 6px 10px;
+}
+
+.build-card-content--center {
+  justify-content: center;
+}
+
+.build-card-content--right {
+  justify-content: flex-end;
+}
+
+.build-card-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border: 1px solid;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.build-card-content-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.build-card-inline-tag {
+  display: inline-block;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.build-card-content-separator {
+  color: var(--muted-soft);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .pack-badges {
   display: flex;
   align-items: center;

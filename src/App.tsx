@@ -24,6 +24,7 @@ import {
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
+import { BuildCardContentView } from "./components/builds/BuildCardContentView";
 import type {
   ActionResult,
   CreateInstancePayload,
@@ -361,6 +362,18 @@ export default function App() {
     buildCardPreviewTarget,
     { buildState: "RUNNING" },
   );
+  const resolveBuildCardContentTags = (
+    appearance: BuildCardAppearance,
+    target: PlaceholderTarget,
+    overrides: {
+      accountType?: string;
+      buildState?: string;
+    } = {},
+  ) =>
+    appearance.contentTags.map((tag) => ({
+      ...tag,
+      text: resolveForTarget(tag.text, target, overrides),
+    }));
 
   const selectedModTarget = useMemo(
     () => fabricInstances.find((item) => item.id === selectedInstanceId) || fabricInstances[0] || null,
@@ -1512,11 +1525,28 @@ const isScrollableElement = (target: EventTarget | null) => {
                   <div className="instance-card-top">
                     <span className="instance-name">{createPreviewName}</span>
                   </div>
-                  <div className="instance-card-meta">
-                    <span>{createPreviewVersion}</span>
-                    <span>{createPreviewLoader}</span>
-                    <span>{createPreviewRam} GB</span>
-                    <span>NEVER</span>
+                  <div
+                    className={`instance-card-meta ${createMeasureAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
+                  >
+                    {createMeasureAppearance.contentEnabled ? (
+                      <BuildCardContentView
+                        mode={createMeasureAppearance.contentMode}
+                        align={createMeasureAppearance.contentTextAlign}
+                        strokeEnabled={createMeasureAppearance.contentTextStrokeEnabled}
+                        tags={resolveBuildCardContentTags(
+                          createMeasureAppearance,
+                          buildCardPreviewTarget,
+                          { buildState: "RUNNING" },
+                        )}
+                      />
+                    ) : (
+                      <>
+                        <span>{createPreviewVersion}</span>
+                        <span>{createPreviewLoader}</span>
+                        <span>{createPreviewRam} GB</span>
+                        <span>NEVER</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1530,6 +1560,11 @@ const isScrollableElement = (target: EventTarget | null) => {
                 sortedInstances.map((instance) => {
                   const cardAppearance = getBuildCardAppearance(instance.id);
                   const cardStyle: CSSProperties | undefined = getBuildCardAppearanceStyle(cardAppearance);
+                  const resolvedContentTags = resolveBuildCardContentTags(
+                    cardAppearance,
+                    instance,
+                    { buildState: isRunning(instance.id) ? "RUNNING" : "" },
+                  );
 
                   return (
                   <button
@@ -1571,11 +1606,24 @@ const isScrollableElement = (target: EventTarget | null) => {
                         </span>
                       )}
                     </div>
-                    <div className="instance-card-meta">
-                      <span>{instance.version}</span>
-                      <span>{instance.loader}</span>
-                      <span>{instance.ram} GB</span>
-                      <span>{formatLastPlayed(instance.lastPlayed)}</span>
+                    <div
+                      className={`instance-card-meta ${cardAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
+                    >
+                      {cardAppearance.contentEnabled ? (
+                        <BuildCardContentView
+                          mode={cardAppearance.contentMode}
+                          align={cardAppearance.contentTextAlign}
+                          strokeEnabled={cardAppearance.contentTextStrokeEnabled}
+                          tags={resolvedContentTags}
+                        />
+                      ) : (
+                        <>
+                          <span>{instance.version}</span>
+                          <span>{instance.loader}</span>
+                          <span>{instance.ram} GB</span>
+                          <span>{formatLastPlayed(instance.lastPlayed)}</span>
+                        </>
+                      )}
                     </div>
                   </button>
                 );
@@ -2850,6 +2898,9 @@ installedMods.map((mod) => {
               : "Never played"
           }
           badgePreviewText={buildCardPreviewBadgeText}
+          resolvePreviewText={(template) =>
+            resolveForTarget(template, buildCardPreviewTarget, { buildState: "RUNNING" })
+          }
           previewCardSize={buildCardPreviewSize}
           draft={buildCardSettingsDraft}
           onDraftChange={setBuildCardSettingsDraft}
