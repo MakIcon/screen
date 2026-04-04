@@ -11,6 +11,10 @@ export type BuildCardPreviewSize = {
 };
 export type BuildCardTextAlign = "left" | "center" | "right";
 export type BuildCardContentMode = "tags" | "text";
+export type BuildCardElementPosition = {
+  x: number;
+  y: number;
+};
 export type BuildCardContentTag = {
   id: string;
   text: string;
@@ -23,6 +27,30 @@ export type BuildCardContentTag = {
 
 let buildCardTagSeed = 0;
 
+export const BUILD_CARD_TITLE_ELEMENT_ID = "title";
+export const BUILD_CARD_BADGE_ELEMENT_ID = "badge";
+
+const DEFAULT_TITLE_POSITION: BuildCardElementPosition = { x: 0, y: 0 };
+const DEFAULT_BADGE_POSITION: BuildCardElementPosition = { x: 0.76, y: 0 };
+const DEFAULT_TAG_POSITION_PRESETS: BuildCardElementPosition[] = [
+  { x: 0, y: 0.62 },
+  { x: 0.28, y: 0.62 },
+  { x: 0.5, y: 0.62 },
+  { x: 0.72, y: 0.62 },
+  { x: 0, y: 0.8 },
+  { x: 0.28, y: 0.8 },
+  { x: 0.5, y: 0.8 },
+  { x: 0.72, y: 0.8 },
+];
+
+export function getDefaultBuildCardTitlePosition(): BuildCardElementPosition {
+  return { ...DEFAULT_TITLE_POSITION };
+}
+
+export function getDefaultBuildCardBadgePosition(): BuildCardElementPosition {
+  return { ...DEFAULT_BADGE_POSITION };
+}
+
 export type BuildCardAppearance = {
   image: string;
   imageFit: BuildCardImageFit;
@@ -30,16 +58,22 @@ export type BuildCardAppearance = {
   cardHeight: number;
   backgroundColor: string;
   backgroundOpacity: number;
+  titleText: string;
+  titleFontSize: number;
+  titleColor: string;
+  titlePosition: BuildCardElementPosition;
   badgeEnabled: boolean;
   badgeVisibility: BuildCardBadgeVisibility;
   badgeText: string;
   badgeColor: string;
   badgeTextColor: string;
+  badgePosition: BuildCardElementPosition;
   contentEnabled: boolean;
   contentMode: BuildCardContentMode;
   contentTextAlign: BuildCardTextAlign;
   contentTextStrokeEnabled: boolean;
   contentTags: BuildCardContentTag[];
+  contentTagPositions: Record<string, BuildCardElementPosition>;
 };
 
 function clampPercent(value: number, fallback: number) {
@@ -52,9 +86,71 @@ function clampFontSize(value: number, fallback: number) {
   return Math.min(28, Math.max(8, Math.round(value)));
 }
 
+function clampTitleFontSize(value: number, fallback: number) {
+  if (Number.isNaN(value)) return fallback;
+  return Math.min(32, Math.max(10, Math.round(value)));
+}
+
 function clampCardHeight(value: number, fallback: number) {
   if (Number.isNaN(value)) return fallback;
   return Math.min(260, Math.max(0, Math.round(value)));
+}
+
+function clampLayoutUnit(value: number, fallback: number) {
+  if (Number.isNaN(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+
+function normalizeBuildCardElementPosition(
+  value: unknown,
+  fallback: BuildCardElementPosition,
+): BuildCardElementPosition {
+  if (!value || typeof value !== "object") {
+    return { ...fallback };
+  }
+
+  const draft = value as Partial<BuildCardElementPosition>;
+  return {
+    x: clampLayoutUnit(typeof draft.x === "number" ? draft.x : fallback.x, fallback.x),
+    y: clampLayoutUnit(typeof draft.y === "number" ? draft.y : fallback.y, fallback.y),
+  };
+}
+
+export function getDefaultBuildCardTagPosition(index: number): BuildCardElementPosition {
+  const preset = DEFAULT_TAG_POSITION_PRESETS[index];
+  if (preset) {
+    return { ...preset };
+  }
+
+  const row = Math.floor(index / 4);
+  const col = index % 4;
+  return {
+    x: clampLayoutUnit(col * 0.24, 0),
+    y: clampLayoutUnit(0.62 + row * 0.18, 0.62),
+  };
+}
+
+export function createDefaultBuildCardTagPositions(tags: BuildCardContentTag[]) {
+  return Object.fromEntries(
+    tags.map((tag, index) => [tag.id, getDefaultBuildCardTagPosition(index)]),
+  ) as Record<string, BuildCardElementPosition>;
+}
+
+function normalizeBuildCardTagPositions(
+  value: unknown,
+  tags: BuildCardContentTag[],
+): Record<string, BuildCardElementPosition> {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return Object.fromEntries(
+    tags.map((tag, index) => [
+      tag.id,
+      normalizeBuildCardElementPosition(source[tag.id], getDefaultBuildCardTagPosition(index)),
+    ]),
+  ) as Record<string, BuildCardElementPosition>;
 }
 
 export function createBuildCardContentTag(
@@ -132,16 +228,22 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   cardHeight: 0,
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
+  titleText: "%build_name%",
+  titleFontSize: 13,
+  titleColor: "#1a1a1a",
+  titlePosition: { ...DEFAULT_TITLE_POSITION },
   badgeEnabled: true,
   badgeVisibility: "on",
   badgeText: "^%build_state%",
   badgeColor: "#c2410c",
   badgeTextColor: "#ffffff",
+  badgePosition: { ...DEFAULT_BADGE_POSITION },
   contentEnabled: false,
   contentMode: "tags",
   contentTextAlign: "left",
   contentTextStrokeEnabled: true,
   contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
+  contentTagPositions: createDefaultBuildCardTagPositions(DEFAULT_BUILD_CARD_CONTENT_TAGS),
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -217,6 +319,11 @@ function getContrastTextColor(hex: string) {
 export function getBuildCardBadgeText(appearance?: BuildCardAppearance | null) {
   const raw = appearance?.badgeText?.trim();
   return raw || DEFAULT_BUILD_CARD_APPEARANCE.badgeText;
+}
+
+export function getBuildCardTitleText(appearance?: BuildCardAppearance | null) {
+  const raw = appearance?.titleText?.trim();
+  return raw || DEFAULT_BUILD_CARD_APPEARANCE.titleText;
 }
 
 export function getBuildCardBadgeVisibility(
@@ -329,6 +436,24 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.backgroundOpacity,
       DEFAULT_BUILD_CARD_APPEARANCE.backgroundOpacity,
     ),
+    titleText:
+      typeof draft.titleText === "string" && draft.titleText.trim()
+        ? draft.titleText.trim()
+        : DEFAULT_BUILD_CARD_APPEARANCE.titleText,
+    titleFontSize: clampTitleFontSize(
+      typeof draft.titleFontSize === "number"
+        ? draft.titleFontSize
+        : DEFAULT_BUILD_CARD_APPEARANCE.titleFontSize,
+      DEFAULT_BUILD_CARD_APPEARANCE.titleFontSize,
+    ),
+    titleColor: normalizeHexColor(
+      draft.titleColor,
+      DEFAULT_BUILD_CARD_APPEARANCE.titleColor,
+    ),
+    titlePosition: normalizeBuildCardElementPosition(
+      draft.titlePosition,
+      DEFAULT_TITLE_POSITION,
+    ),
     badgeEnabled:
       typeof draft.badgeEnabled === "boolean"
         ? draft.badgeEnabled
@@ -343,6 +468,10 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       draft.badgeTextColor,
       getContrastTextColor(normalizedBadgeColor),
     ),
+    badgePosition: normalizeBuildCardElementPosition(
+      draft.badgePosition,
+      DEFAULT_BADGE_POSITION,
+    ),
     contentEnabled:
       typeof draft.contentEnabled === "boolean"
         ? draft.contentEnabled
@@ -354,6 +483,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         ? draft.contentTextStrokeEnabled
         : DEFAULT_BUILD_CARD_APPEARANCE.contentTextStrokeEnabled,
     contentTags,
+    contentTagPositions: normalizeBuildCardTagPositions(draft.contentTagPositions, contentTags),
   };
 }
 
