@@ -25,6 +25,7 @@ import {
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "./components/builds/BuildCardContentView";
+import { BuildStatsModal } from "./components/builds/BuildStatsModal";
 import type {
   ActionResult,
   CreateInstancePayload,
@@ -126,6 +127,7 @@ export default function App() {
   const [installedShadersLoading, setInstalledShadersLoading] = useState(false);
 
   const [installProgress, setInstallProgress] = useState<InstallProgressPayload | null>(null);
+  const [statsInstanceId, setStatsInstanceId] = useState<string | null>(null);
 
   const [runningInstances, setRunningInstances] = useState<Map<string, number>>(new Map());
   // helpers
@@ -1852,7 +1854,7 @@ const isScrollableElement = (target: EventTarget | null) => {
                   )}
                   <button className="ghost-action" type="button" onClick={handleInstallSelected} disabled={working}>INSTALL</button>
                   <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
-                  <button className="ghost-action" type="button" onClick={() => setCreateMode(true)}>NEW BUILD</button>
+                  <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
                   <div className="instance-side-actions">
                     {advancedSettingsEnabled && (
                       <button
@@ -2910,6 +2912,13 @@ installedMods.map((mod) => {
           onSave={saveBuildCardSettings}
         />
       )}
+
+      {statsInstanceId && (() => {
+        const si = instances.find((i) => i.id === statsInstanceId);
+        return si ? (
+          <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+        ) : null;
+      })()}
 
       {confirmPendingId && (
         <div className="confirm-overlay" onClick={() => { setConfirmPendingId(null); setConfirmPendingName(""); }}>

@@ -1958,6 +1958,498 @@ button:disabled {
   padding: 16px 28px;
 }
 
+/* ===== Build Stats Modal ===== */
+.stats-modal {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  width: 800px;
+  max-width: 96vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: var(--surface-shadow-strong);
+  animation: confirm-dialog-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stats-modal-head {
+  padding: 36px 44px 0;
+}
+
+.stats-modal-name {
+  margin: 6px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding-right: 36px;
+  word-break: break-word;
+}
+
+.stats-tab-bar {
+  display: flex;
+  padding: 22px 44px 0;
+  border-bottom: 1px solid var(--line);
+  margin-top: 20px;
+}
+
+.stats-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  margin-right: 30px;
+  margin-bottom: -1px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+  white-space: nowrap;
+}
+
+.stats-tab-btn:hover { color: var(--ink); }
+.stats-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Dir switcher — pushed to the right of the tab bar */
+.tl-dir-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-bottom: 1px;
+}
+
+.tl-dir-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 3px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tl-dir-btn:hover {
+  color: var(--ink);
+  background: var(--bg-hover-strong);
+  border-color: var(--line);
+}
+
+.tl-dir-btn.active {
+  color: var(--accent);
+  background: rgba(194,65,12,0.06);
+  border-color: rgba(194,65,12,0.2);
+}
+
+.stats-tab-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 44px 40px;
+}
+
+.stats-tab-body::-webkit-scrollbar { width: 3px; }
+.stats-tab-body::-webkit-scrollbar-thumb { background: var(--line-strong); }
+
+/* ── Timeline ── */
+.tl-root { display: flex; flex-direction: column; }
+
+.tl-row {
+  display: flex;
+  gap: 0;
+  cursor: default;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.tl-row:hover { background: var(--bg-hover); }
+
+/* Spine: the vertical line + dot column */
+.tl-spine-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  padding-top: 3px;
+}
+
+.tl-dot-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.tl-dot {
+  border-radius: 50%;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tl-row:hover .tl-dot {
+  transform: scale(1.35);
+}
+
+/* Dot sizes & colours by kind */
+.tl-row--created .tl-dot {
+  width: 14px; height: 14px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(194,65,12,0.12);
+}
+.tl-row--created:hover .tl-dot {
+  box-shadow: 0 0 0 5px rgba(194,65,12,0.16);
+}
+.tl-row--launched .tl-dot {
+  width: 12px; height: 12px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(47,111,69,0.12);
+}
+.tl-row--launched:hover .tl-dot {
+  box-shadow: 0 0 0 5px rgba(47,111,69,0.16);
+}
+.tl-row--mod .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--ink);
+}
+.tl-row--pack .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--muted);
+}
+.tl-row--shader .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--warning);
+}
+
+/* Segment (line between dots) */
+.tl-seg {
+  flex: 1;
+  width: 1px;
+  background: var(--line-strong);
+  min-height: 10px;
+  margin: 4px 0 0;
+}
+
+/* Right body */
+.tl-body {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 22px;
+}
+
+.tl-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Kind tag / badge */
+.tl-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+.tl-tag--created  { color: var(--accent);   background: rgba(194,65,12,0.08); }
+.tl-tag--launched { color: var(--success);  background: rgba(47,111,69,0.08); }
+.tl-tag--mod      { color: var(--ink);      background: rgba(26,26,26,0.06); }
+.tl-tag--pack     { color: var(--muted);    background: rgba(26,26,26,0.05); }
+.tl-tag--shader   { color: var(--warning);  background: rgba(139,123,86,0.1); }
+
+.tl-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tl-date {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+/* Hover-reveal details */
+.tl-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding-top 0.18s ease;
+  padding-top: 0;
+}
+
+.tl-row:hover .tl-reveal {
+  max-height: 120px;
+  opacity: 1;
+  padding-top: 7px;
+}
+
+.tl-reveal-line {
+  display: block;
+  font-size: 12px;
+  color: var(--text-subtle);
+  line-height: 1.5;
+}
+
+/* ── Horizontal timeline (fixed width, no scroll) ── */
+.tl-h-root {
+  position: relative;
+  width: 100%;
+  height: 130px;
+  margin: 6px 0 4px;
+}
+
+.tl-h-track {
+  position: absolute;
+  top: 43px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* Each event is absolutely positioned along the track */
+.tl-h-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: default;
+  z-index: 1;
+}
+
+/* Date label – above the track, hidden until hover */
+.tl-h-date {
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 5px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+
+.tl-h-mark:hover .tl-h-date { opacity: 1; }
+
+/* Square marker */
+.tl-h-square {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tl-h-mark:hover .tl-h-square { transform: scale(1.4); }
+
+/* Square colors matching vertical dots */
+.tl-h-mark--created  .tl-h-square { background: var(--accent);  box-shadow: 0 0 0 3px rgba(194,65,12,0.15); }
+.tl-h-mark--launched .tl-h-square { background: var(--success); box-shadow: 0 0 0 3px rgba(47,111,69,0.15); }
+.tl-h-mark--mod      .tl-h-square { background: var(--ink); }
+.tl-h-mark--pack     .tl-h-square { background: var(--muted); }
+.tl-h-mark--shader   .tl-h-square { background: var(--warning); }
+
+.tl-h-mark--created:hover  .tl-h-square { box-shadow: 0 0 0 5px rgba(194,65,12,0.20); }
+.tl-h-mark--launched:hover .tl-h-square { box-shadow: 0 0 0 5px rgba(47,111,69,0.20); }
+
+/* Short abbreviation below square — always visible */
+.tl-h-short {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+.tl-h-mark--created  .tl-h-short { color: var(--accent); }
+.tl-h-mark--launched .tl-h-short { color: var(--success); }
+.tl-h-mark--mod      .tl-h-short { color: var(--ink); }
+.tl-h-mark--pack     .tl-h-short { color: var(--muted); }
+.tl-h-mark--shader   .tl-h-short { color: var(--warning); }
+
+/* Title and kind tag — fade in on hover */
+.tl-h-hover-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.2s ease, opacity 0.18s ease;
+}
+
+.tl-h-mark:hover .tl-h-hover-info {
+  max-height: 60px;
+  opacity: 1;
+}
+
+.tl-h-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* ── Playtime Spectrum (heatmap tab) ── */
+.spectrum-root { padding: 4px 0 0; }
+
+.spectrum-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  display: block;
+}
+
+.spectrum-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+/* pulsing halo around the last-played peak dot */
+.spectrum-halo {
+  animation: sp-halo 2.6s ease-in-out infinite;
+}
+
+@keyframes sp-halo {
+  0%, 100% { opacity: 0.25; r: 6; }
+  50%       { opacity: 0;    r: 14; }
+}
+
+/* flatline scan animation when no data */
+.spectrum-scan {
+  animation: sp-scan 3s ease-in-out infinite;
+}
+
+@keyframes sp-scan {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  20%  { opacity: 0.6; }
+  80%  { opacity: 0.6; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+/* Hoverable bar overlay */
+.spectrum-bars {
+  position: relative;
+}
+
+/* Stats row */
+.spectrum-stats {
+  display: flex;
+  gap: 0;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.spectrum-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 40px;
+}
+
+.spectrum-stat-val {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+}
+
+.spectrum-stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+
+/* Tooltip */
+.spectrum-tip {
+  position: fixed;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--surface-shadow-soft);
+  z-index: 300;
+  transition: opacity 0.12s;
+}
+
+.spectrum-tip-sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.stats-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Placeholder tabs */
+.stats-coming-soon {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.stats-coming-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+
+.stats-coming-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .iris-state {
   display: inline-flex;
   align-items: center;
