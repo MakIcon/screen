@@ -68,12 +68,17 @@ function IconHorizontal() {
 }
 
 // ─── Playtime Spectrum ──────────────────────────────────────────────────────
-interface WeekBar {
-  start: Date;
-  hours: number;
+interface DayCell {
+  date: Date;
+  weekIdx: number;   // column
+  dayOfWeek: number; // 0 = Monday … 6 = Sunday
   isLastPlayed: boolean;
-  label: string; // tooltip
+  isCreated: boolean;
+  isFuture: boolean;
+  label: string;
 }
+
+const DAY_LABELS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
 
 function HeatmapTab({ instance }: { instance: InstanceItem }) {
   const [tip, setTip] = useState<{ x: number; y: number; text: string; sub: string } | null>(null);
@@ -82,86 +87,108 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
   const lastPlayedTs = parseInt(instance.lastPlayed,  10);
   const totalHrs     = instance.playtimeSecs / 3600;
 
-  // Build 52 weekly bars
-  const bars = useMemo<WeekBar[]>(() => {
-    const today = new Date(); today.setHours(23, 59, 59, 0);
-    const start = new Date(today);
-    start.setDate(start.getDate() - 52 * 7 + 1);
-    // align to Monday
-    const dow = start.getDay();
-    start.setDate(start.getDate() - (dow === 0 ? 6 : dow - 1));
+  const daysSinceCreation = !isNaN(createdTs) && createdTs > 0
+    ? Math.max(1, Math.floor((Date.now() / 1000 - createdTs) / 86400))
+    : null;
+  const weeksSinceCreation = daysSinceCreation
+    ? Math.max(1, Math.floor(daysSinceCreation / 7))
+    : null;
+
+  // One cell per day, from creation Monday → today + 52 weeks
+  const days = useMemo<DayCell[]>(() => {
+    const now = new Date(); now.setHours(23, 59, 59, 0);
+
+    const createdDate = !isNaN(createdTs) && createdTs > 0
+      ? new Date(createdTs * 1000) : new Date();
+
+    // Align start to Monday of creation week
+    const start = new Date(createdDate);
+    start.setHours(0, 0, 0, 0);
+    const dow0 = start.getDay();
+    start.setDate(start.getDate() - (dow0 === 0 ? 6 : dow0 - 1));
+
+    // End = today + 52 weeks
+    const end = new Date(now);
+    end.setDate(end.getDate() + 52 * 7);
 
     const lpDate = !isNaN(lastPlayedTs) && lastPlayedTs > 0
       ? new Date(lastPlayedTs * 1000) : null;
+    const lpStr      = lpDate ? lpDate.toDateString() : "";
+    const createdStr = createdDate.toDateString();
 
-    const result: WeekBar[] = [];
+    const result: DayCell[] = [];
     const cur = new Date(start);
+    let idx = 0;
 
-    while (cur <= today) {
-      const wStart = new Date(cur);
-      const wEnd   = new Date(cur); wEnd.setDate(wEnd.getDate() + 6);
-      const isLP   = lpDate ? lpDate >= wStart && lpDate <= wEnd : false;
-      const month  = wStart.toLocaleDateString("ru-RU", { month: "long" });
-      const y1     = wStart.toLocaleDateString("ru-RU", { day: "numeric" });
-      const y2     = wEnd.toLocaleDateString("ru-RU",   { day: "numeric", year: "numeric" });
+    while (cur <= end) {
+      const weekIdx   = Math.floor(idx / 7);
+      const dayOfWeek = idx % 7; // 0 = Mon (start is always Monday)
+      const curStr    = cur.toDateString();
 
       result.push({
-        start: new Date(wStart),
-        hours: isLP ? totalHrs : 0,
-        isLastPlayed: isLP,
-        label: `${y1} – ${y2} ${month}`,
+        date:         new Date(cur),
+        weekIdx,
+        dayOfWeek,
+        isLastPlayed: curStr === lpStr,
+        isCreated:    curStr === createdStr,
+        isFuture:     cur > now,
+        label: cur.toLocaleDateString("ru-RU", {
+          weekday: "long", day: "numeric", month: "long", year: "numeric",
+        }),
       });
-      cur.setDate(cur.getDate() + 7);
+
+      cur.setDate(cur.getDate() + 1);
+      idx++;
     }
     return result;
   }, [instance]);
 
-  const hasData    = lastPlayedTs > 0 && totalHrs > 0;
-  const maxHours   = Math.max(...bars.map(b => b.hours), 0.01);
+  const numWeeks = days.length > 0 ? days[days.length - 1].weekIdx + 1 : 0;
+  const hasData  = lastPlayedTs > 0 && totalHrs > 0;
 
-  // SVG layout constants
-  const N       = bars.length;
-  const BAR_W   = 7;
-  const SLOT    = 11;          // bar + gap
-  const PAD_L   = 6;
+  // Layout constants (viewBox units)
+  const PAD_L   = 22;   // room for day labels
   const PAD_R   = 6;
-  const PAD_T   = 10;
-  const PAD_B   = 28;          // room for month labels
-  const HALF_H  = 70;          // max half-height of a bar
-  const SVG_W   = N * SLOT + PAD_L + PAD_R;
-  const SVG_H   = PAD_T + HALF_H * 2 + PAD_B;
-  const CY      = PAD_T + HALF_H; // vertical center (baseline)
+  const PAD_T   = 6;
+  const PAD_B   = 22;
+  const ROW_H   = 13;
+  const ROW_GAP = 3;
+  const SLOT    = 11;   // week column width
+  const BAR_W   = 6;
+  const HALF    = (ROW_H - 2) / 2; // 5.5 — half-height of a full bar
 
-  // Month label positions
-  const monthLabels: { x: number; text: string }[] = [];
-  bars.forEach((b, i) => {
-    const isNew = i === 0 || bars[i - 1].start.getMonth() !== b.start.getMonth();
-    if (isNew) {
-      monthLabels.push({
-        x: PAD_L + i * SLOT,
-        text: b.start.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""),
-      });
-    }
-  });
+  const SVG_W = PAD_L + numWeeks * SLOT + PAD_R;
+  const SVG_H = PAD_T + 7 * ROW_H + 6 * ROW_GAP + PAD_B;
 
-  function barHalf(hours: number): number {
-    if (hours <= 0) return 1.5;
-    return Math.max(4, (hours / maxHours) * HALF_H);
+  function rowCY(dow: number): number {
+    return PAD_T + dow * (ROW_H + ROW_GAP) + ROW_H / 2;
   }
 
-  const lpBar = bars.find(b => b.isLastPlayed);
-  const lpIdx = bars.findIndex(b => b.isLastPlayed);
+  // Month label per first week of each month
+  const monthLabels: { x: number; text: string }[] = [];
+  let prevMonth = -1;
+  for (let w = 0; w < numWeeks; w++) {
+    const monday = days.find(d => d.weekIdx === w && d.dayOfWeek === 0);
+    if (monday) {
+      const m = monday.date.getMonth();
+      if (m !== prevMonth) {
+        monthLabels.push({
+          x:    PAD_L + w * SLOT,
+          text: monday.date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""),
+        });
+        prevMonth = m;
+      }
+    }
+  }
 
-  const createdDate = !isNaN(createdTs) && createdTs > 0
-    ? new Date(createdTs * 1000) : null;
+  const lpCell = days.find(d => d.isLastPlayed);
   const lastPlayedDate = !isNaN(lastPlayedTs) && lastPlayedTs > 0
     ? new Date(lastPlayedTs * 1000) : null;
 
   return (
     <div className="spectrum-root">
-      <span className="spectrum-label">АКТИВНОСТЬ · ПОСЛЕДНИЕ 52 НЕДЕЛИ</span>
+      <span className="spectrum-label">АКТИВНОСТЬ · ИСТОРИЯ СБОРКИ</span>
 
-      {/* SVG waveform */}
       <svg
         className="spectrum-svg"
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
@@ -169,90 +196,131 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
         style={{ height: SVG_H }}
       >
         <defs>
-          {/* Accent gradient: transparent → orange → transparent (symmetric) */}
           <linearGradient id="sp-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#c2410c" stopOpacity="0"/>
-            <stop offset="40%"  stopColor="#c2410c" stopOpacity="0.85"/>
+            <stop offset="0%"   stopColor="#c2410c" stopOpacity="0.1"/>
+            <stop offset="35%"  stopColor="#c2410c" stopOpacity="0.9"/>
             <stop offset="50%"  stopColor="#c2410c" stopOpacity="1"/>
-            <stop offset="60%"  stopColor="#c2410c" stopOpacity="0.85"/>
-            <stop offset="100%" stopColor="#c2410c" stopOpacity="0"/>
+            <stop offset="65%"  stopColor="#c2410c" stopOpacity="0.9"/>
+            <stop offset="100%" stopColor="#c2410c" stopOpacity="0.1"/>
           </linearGradient>
-
-          {/* Faint gradient for zero bars */}
           <linearGradient id="sp-zero" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%"   stopColor="#1a1a1a" stopOpacity="0"/>
-            <stop offset="50%"  stopColor="#1a1a1a" stopOpacity="0.08"/>
+            <stop offset="50%"  stopColor="#1a1a1a" stopOpacity="0.09"/>
             <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0"/>
           </linearGradient>
-
-          {/* Soft glow filter for the active bar */}
-          <filter id="sp-glow" x="-60%" y="-40%" width="220%" height="180%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+          <linearGradient id="sp-future" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#1a1a1a" stopOpacity="0"/>
+            <stop offset="50%"  stopColor="#1a1a1a" stopOpacity="0.03"/>
+            <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0"/>
+          </linearGradient>
+          <filter id="sp-glow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
             <feMerge>
               <feMergeNode in="blur"/>
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
-
-          {/* Scan gradient for flatline (no data) */}
           <linearGradient id="sp-scan-grad" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%"   stopColor="#c2410c" stopOpacity="0"/>
-            <stop offset="50%"  stopColor="#c2410c" stopOpacity="0.5"/>
+            <stop offset="50%"  stopColor="#c2410c" stopOpacity="0.4"/>
             <stop offset="100%" stopColor="#c2410c" stopOpacity="0"/>
           </linearGradient>
         </defs>
 
-        {/* Baseline */}
-        <line
-          x1={PAD_L} y1={CY} x2={PAD_L + N * SLOT} y2={CY}
-          stroke="rgba(26,26,26,0.1)" strokeWidth="1"
-        />
+        {/* Day-of-week labels */}
+        {DAY_LABELS.map((lbl, d) => (
+          <text
+            key={`dl-${d}`}
+            x={PAD_L - 4}
+            y={rowCY(d) + 3.5}
+            fontSize="7.5"
+            fontWeight="600"
+            fontFamily="Inter, sans-serif"
+            fill="rgba(122,122,122,0.6)"
+            textAnchor="end"
+          >{lbl}</text>
+        ))}
 
-        {/* All bars */}
-        {bars.map((b, i) => {
-          const x   = PAD_L + i * SLOT;
-          const hh  = barHalf(b.hours);
-          const isZ = b.hours <= 0;
+        {/* Horizontal separators between rows */}
+        {[1,2,3,4,5,6].map(d => (
+          <line
+            key={`sep-${d}`}
+            x1={PAD_L - 16}
+            y1={PAD_T + d * (ROW_H + ROW_GAP) - ROW_GAP / 2}
+            x2={PAD_L + numWeeks * SLOT}
+            y2={PAD_T + d * (ROW_H + ROW_GAP) - ROW_GAP / 2}
+            stroke="rgba(26,26,26,0.06)"
+            strokeWidth="1"
+          />
+        ))}
+
+        {/* Day cells */}
+        {days.map((cell, i) => {
+          const x  = PAD_L + cell.weekIdx * SLOT;
+          const cy = rowCY(cell.dayOfWeek);
+
+          // Creation day → colored stripe
+          if (cell.isCreated && !cell.isLastPlayed) {
+            const rowTop = PAD_T + cell.dayOfWeek * (ROW_H + ROW_GAP);
+            return (
+              <g
+                key={i}
+                onMouseEnter={(e) => setTip({ x: e.clientX + 12, y: e.clientY - 8, text: cell.label, sub: "создана" })}
+                onMouseMove={(e) => setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null)}
+                onMouseLeave={() => setTip(null)}
+                style={{ cursor: "default" }}
+              >
+                <rect x={x} y={rowTop + 1} width={BAR_W} height={ROW_H - 2} rx="1" fill="#c2410c" opacity="0.1" />
+                <rect x={x + (BAR_W - 1.5) / 2} y={rowTop + 1} width={1.5} height={ROW_H - 2} fill="#c2410c" opacity="0.55" />
+              </g>
+            );
+          }
+
+          const hh   = cell.isLastPlayed ? HALF : 1.5;
+          const fill = cell.isLastPlayed
+            ? "url(#sp-grad)"
+            : cell.isFuture ? "url(#sp-future)" : "url(#sp-zero)";
+
           return (
             <rect
               key={i}
               x={x}
-              y={CY - hh}
+              y={cy - hh}
               width={BAR_W}
               height={hh * 2}
-              rx="1.5"
-              fill={isZ ? "url(#sp-zero)" : "url(#sp-grad)"}
-              filter={b.isLastPlayed ? "url(#sp-glow)" : undefined}
+              rx="1"
+              fill={fill}
+              filter={cell.isLastPlayed ? "url(#sp-glow)" : undefined}
               style={{ cursor: "default" }}
               onMouseEnter={(e) => {
-                const hrs = b.hours > 0 ? `${b.hours.toFixed(1)} ч наиграно` : "нет данных";
-                setTip({ x: e.clientX + 12, y: e.clientY - 8, text: b.label, sub: hrs });
+                const sub = cell.isLastPlayed
+                  ? `${totalHrs.toFixed(1)} ч наиграно`
+                  : cell.isFuture ? "будущее" : "нет данных";
+                setTip({ x: e.clientX + 12, y: e.clientY - 8, text: cell.label, sub });
               }}
-              onMouseMove={(e) => {
-                setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null);
-              }}
+              onMouseMove={(e) => setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null)}
               onMouseLeave={() => setTip(null)}
             />
           );
         })}
 
-        {/* Glowing halo + peak dot on the last-played bar */}
-        {hasData && lpIdx >= 0 && lpBar && (() => {
-          const cx = PAD_L + lpIdx * SLOT + BAR_W / 2;
-          const cy = CY - barHalf(lpBar.hours);
+        {/* Glow + peak dot on last-played day */}
+        {hasData && lpCell && (() => {
+          const cx = PAD_L + lpCell.weekIdx * SLOT + BAR_W / 2;
+          const cy = rowCY(lpCell.dayOfWeek) - HALF;
           return (
             <g>
-              <circle cx={cx} cy={cy} r="8"  fill="#c2410c" opacity="0.18" className="spectrum-halo"/>
-              <circle cx={cx} cy={cy} r="3"  fill="#c2410c"/>
-              <circle cx={cx} cy={cy} r="1.5" fill="#fff" opacity="0.8"/>
+              <circle cx={cx} cy={cy} r="6"   fill="#c2410c" opacity="0.18" className="spectrum-halo"/>
+              <circle cx={cx} cy={cy} r="2.5" fill="#c2410c"/>
+              <circle cx={cx} cy={cy} r="1.2" fill="#fff" opacity="0.8"/>
             </g>
           );
         })()}
 
-        {/* Flatline scan animation when no playtime */}
+        {/* Flatline scan when no playtime — runs through Thursday row */}
         {!hasData && (
           <rect
-            x={0} y={CY - 1} width={SVG_W * 0.35} height={2}
+            x={0} y={rowCY(3) - 1} width={SVG_W * 0.35} height={2}
             fill="url(#sp-scan-grad)"
             className="spectrum-scan"
           />
@@ -263,42 +331,44 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
           <text
             key={i}
             x={ml.x}
-            y={SVG_H - 6}
+            y={SVG_H - 5}
             fontSize="8"
             fontWeight="700"
             fontFamily="Inter, sans-serif"
             fill="rgba(122,122,122,0.75)"
             textAnchor="start"
-          >
-            {ml.text}
-          </text>
+          >{ml.text}</text>
         ))}
       </svg>
 
-      {/* Fixed tooltip */}
       {tip && (
         <div className="spectrum-tip" style={{ left: tip.x, top: tip.y }}>
           {tip.text}
-          <span className="spectrum-tip-sub">{tip.sub}</span>
+          {tip.sub && <span className="spectrum-tip-sub">{tip.sub}</span>}
         </div>
       )}
 
-      {/* Stats row */}
       <div className="spectrum-stats">
         <div className="spectrum-stat">
           <span className="spectrum-stat-val">{totalHrs.toFixed(1)} ч</span>
           <span className="spectrum-stat-label">ВСЕГО</span>
         </div>
+        {totalHrs > 0 && weeksSinceCreation && (
+          <div className="spectrum-stat">
+            <span className="spectrum-stat-val">{(totalHrs / weeksSinceCreation).toFixed(1)} ч</span>
+            <span className="spectrum-stat-label">В НЕДЕЛЮ</span>
+          </div>
+        )}
+        {totalHrs > 0 && daysSinceCreation && (
+          <div className="spectrum-stat">
+            <span className="spectrum-stat-val">{(totalHrs / daysSinceCreation).toFixed(2)} ч</span>
+            <span className="spectrum-stat-label">В ДЕНЬ</span>
+          </div>
+        )}
         {lastPlayedDate && (
           <div className="spectrum-stat">
             <span className="spectrum-stat-val">{fmtDateShort(lastPlayedDate)}</span>
             <span className="spectrum-stat-label">ПОСЛЕДНИЙ СЕАНС</span>
-          </div>
-        )}
-        {createdDate && (
-          <div className="spectrum-stat">
-            <span className="spectrum-stat-val">{fmtDateShort(createdDate)}</span>
-            <span className="spectrum-stat-label">СОЗДАНА</span>
           </div>
         )}
       </div>

@@ -2240,7 +2240,10 @@ button:disabled {
   align-items: center;
   cursor: default;
   z-index: 1;
+  pointer-events: none; /* only the square/short/info capture events */
 }
+
+.tl-h-mark:hover { z-index: 10; }
 
 /* Date label – above the track, hidden until hover */
 .tl-h-date {
@@ -2265,6 +2268,8 @@ button:disabled {
   border-radius: 2px;
   flex-shrink: 0;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .tl-h-mark:hover .tl-h-square { transform: scale(1.4); }
@@ -2285,6 +2290,7 @@ button:disabled {
   font-weight: 800;
   letter-spacing: 0.5px;
   margin-top: 6px;
+  pointer-events: auto;
 }
 
 .tl-h-mark--created  .tl-h-short { color: var(--accent); }
@@ -2304,6 +2310,7 @@ button:disabled {
   overflow: hidden;
   opacity: 0;
   transition: max-height 0.2s ease, opacity 0.18s ease;
+  pointer-events: auto;
 }
 
 .tl-h-mark:hover .tl-h-hover-info {
