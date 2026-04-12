@@ -1,6 +1,7 @@
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
 import { clampRamToSystem } from "../utils/ram";
+import type { Theme } from "../hooks/useTheme";
 
 interface SettingsTabProps {
   systemRamGb: number;
@@ -18,6 +19,8 @@ interface SettingsTabProps {
   resolve: (template: string) => string;
   manifestLoading: boolean;
   manifest: object | null;
+  theme: Theme;
+  toggleTheme: () => void;
 }
 
 export function SettingsTab({
@@ -36,6 +39,8 @@ export function SettingsTab({
   resolve,
   manifestLoading,
   manifest,
+  theme,
+  toggleTheme,
 }: SettingsTabProps) {
   return (
     <section className="launcher-panel">
@@ -65,6 +70,40 @@ export function SettingsTab({
                 }}
                 onCommit={() => void saveSettingsRam()}
               />
+            </div>
+          </div>
+
+          <div className="theme-switch-row">
+            <span className="theme-switch-label">APPEARANCE</span>
+            <div className="theme-switch">
+              <button
+                className={`theme-switch-btn${theme === "light" ? " active" : ""}`}
+                type="button"
+                onClick={() => theme !== "light" && toggleTheme()}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                  <circle cx="5.5" cy="5.5" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
+                  <line x1="5.5" y1="0" x2="5.5" y2="1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="5.5" y1="9.5" x2="5.5" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="0" y1="5.5" x2="1.5" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="9.5" y1="5.5" x2="11" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="1.6" y1="1.6" x2="2.65" y2="2.65" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="8.35" y1="8.35" x2="9.4" y2="9.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="1.6" y1="9.4" x2="2.65" y2="8.35" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="8.35" y1="2.65" x2="9.4" y2="1.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+                LIGHT
+              </button>
+              <button
+                className={`theme-switch-btn${theme === "dark" ? " active" : ""}`}
+                type="button"
+                onClick={() => theme !== "dark" && toggleTheme()}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                  <path d="M9.5 7A4.5 4.5 0 0 1 4 1.5a4.5 4.5 0 1 0 5.5 5.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+                </svg>
+                DARK
+              </button>
             </div>
           </div>
 

@@ -122,6 +122,67 @@
   z-index: 1;
 }
 
+/* ── Theme switcher ── */
+
+.theme-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  margin-bottom: 0;
+}
+
+.theme-switch-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.theme-switch {
+  display: flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.theme-switch-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+
+.theme-switch-btn + .theme-switch-btn {
+  border-left: 1px solid var(--line-strong);
+}
+
+.theme-switch-btn:hover:not(.active) {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+
+.theme-switch-btn.active {
+  color: var(--accent);
+  background: var(--bg-hover-strong);
+  cursor: default;
+}
+
+.theme-switch-btn svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 /* ── Toggle switches ── */
 
 .settings-toggle-block {

@@ -40,6 +40,7 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { useModActions } from "./hooks/useModActions";
 import { usePackActions } from "./hooks/usePackActions";
 import { useShaderActions } from "./hooks/useShaderActions";
+import { useTheme } from "./hooks/useTheme";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -130,6 +131,7 @@ export default function App() {
   const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(null);
 
 
+  const { theme, toggleTheme } = useTheme();
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -1059,6 +1061,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             resolve={resolve}
             manifestLoading={manifestLoading}
             manifest={manifest}
+            theme={theme}
+            toggleTheme={toggleTheme}
           />
         );
       default:
