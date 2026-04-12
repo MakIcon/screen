@@ -131,7 +131,7 @@ export default function App() {
   const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(null);
 
 
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -1062,7 +1062,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             manifestLoading={manifestLoading}
             manifest={manifest}
             theme={theme}
-            toggleTheme={toggleTheme}
+            setTheme={setTheme}
           />
         );
       default:

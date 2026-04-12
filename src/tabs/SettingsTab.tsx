@@ -3,6 +3,32 @@ import { ElementToggle } from "../components/inputs/ElementToggle";
 import { clampRamToSystem } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
 
+const SunIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+    <circle cx="5.5" cy="5.5" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
+    <line x1="5.5" y1="0" x2="5.5" y2="1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="5.5" y1="9.5" x2="5.5" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="0" y1="5.5" x2="1.5" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="9.5" y1="5.5" x2="11" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="1.6" y1="1.6" x2="2.65" y2="2.65" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="8.35" y1="8.35" x2="9.4" y2="9.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="1.6" y1="9.4" x2="2.65" y2="8.35" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    <line x1="8.35" y1="2.65" x2="9.4" y2="1.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+    <path d="M9.5 7A4.5 4.5 0 0 1 4 1.5a4.5 4.5 0 1 0 5.5 5.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+  </svg>
+);
+
+const VoidIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+    <circle cx="5.5" cy="5.5" r="3.5" fill="currentColor"/>
+  </svg>
+);
+
 interface SettingsTabProps {
   systemRamGb: number;
   settingsRamDraft: number;
@@ -20,7 +46,7 @@ interface SettingsTabProps {
   manifestLoading: boolean;
   manifest: object | null;
   theme: Theme;
-  toggleTheme: () => void;
+  setTheme: (t: Theme) => void;
 }
 
 export function SettingsTab({
@@ -40,7 +66,7 @@ export function SettingsTab({
   manifestLoading,
   manifest,
   theme,
-  toggleTheme,
+  setTheme,
 }: SettingsTabProps) {
   return (
     <section className="launcher-panel">
@@ -79,30 +105,26 @@ export function SettingsTab({
               <button
                 className={`theme-switch-btn${theme === "light" ? " active" : ""}`}
                 type="button"
-                onClick={() => theme !== "light" && toggleTheme()}
+                onClick={() => theme !== "light" && setTheme("light")}
               >
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                  <circle cx="5.5" cy="5.5" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
-                  <line x1="5.5" y1="0" x2="5.5" y2="1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="5.5" y1="9.5" x2="5.5" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="0" y1="5.5" x2="1.5" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="9.5" y1="5.5" x2="11" y2="5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="1.6" y1="1.6" x2="2.65" y2="2.65" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="8.35" y1="8.35" x2="9.4" y2="9.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="1.6" y1="9.4" x2="2.65" y2="8.35" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                  <line x1="8.35" y1="2.65" x2="9.4" y2="1.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
+                <SunIcon />
                 LIGHT
               </button>
               <button
                 className={`theme-switch-btn${theme === "dark" ? " active" : ""}`}
                 type="button"
-                onClick={() => theme !== "dark" && toggleTheme()}
+                onClick={() => theme !== "dark" && setTheme("dark")}
               >
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                  <path d="M9.5 7A4.5 4.5 0 0 1 4 1.5a4.5 4.5 0 1 0 5.5 5.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                </svg>
+                <MoonIcon />
                 DARK
+              </button>
+              <button
+                className={`theme-switch-btn${theme === "void" ? " active" : ""}`}
+                type="button"
+                onClick={() => theme !== "void" && setTheme("void")}
+              >
+                <VoidIcon />
+                VOID
               </button>
             </div>
           </div>

@@ -106,3 +106,58 @@
   --slider-tick: #3a3732;
   --slider-tick-label: #5a5650;
 }
+
+/* =====================================================
+   VOID THEME — чистый чёрный, без текстур и градиентов
+   ===================================================== */
+[data-theme="void"] {
+  --bg: #000000;
+  --bg-elevated: #080808;
+  --bg-panel: rgba(8, 8, 8, 0.92);
+  --bg-panel-strong: rgba(8, 8, 8, 0.98);
+  --bg-card: rgba(255, 255, 255, 0.025);
+  --bg-card-strong: rgba(255, 255, 255, 0.04);
+  --bg-field: rgba(255, 255, 255, 0.04);
+  --bg-overlay: #000000;
+  --bg-overlay-soft: rgba(0, 0, 0, 0.98);
+  --bg-hover: rgba(255, 255, 255, 0.025);
+  --bg-hover-strong: rgba(194, 65, 12, 0.07);
+  --bg-selected: rgba(194, 65, 12, 0.05);
+  --bg-toggle-on: rgba(194, 65, 12, 0.09);
+
+  --ink: #d8d5cf;
+  --accent: #f26522;
+  --line: rgba(255, 255, 255, 0.05);
+  --line-strong: rgba(255, 255, 255, 0.09);
+  --muted: #4a4a4a;
+  --muted-strong: #6a6a6a;
+  --muted-soft: #383838;
+  --text-soft: #999;
+  --text-subtle: #888;
+  --text-alt: #666;
+
+  --success: #4ade80;
+  --warning: #c9a96e;
+  --danger: #ff453a;
+
+  --surface-shadow: 0 14px 30px rgba(0, 0, 0, 0.6);
+  --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.55);
+  --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.5);
+  --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.75);
+
+  --slider-shell: #0d0d0d;
+  --slider-shell-line: #181818;
+  --slider-label: #505050;
+  --slider-badge-text: #d8d5cf;
+  --slider-badge-bg: #181818;
+  --slider-badge-border: #242424;
+  --slider-rail: #181818;
+  --slider-fill: #d8d5cf;
+  --slider-thumb-ring: #d8d5cf;
+  --slider-tick: #242424;
+  --slider-tick-label: #3e3e3e;
+}
+
+/* убираем шум и градиент на карточках в void-теме */
+[data-theme="void"] .paper-texture { opacity: 0; }
+[data-theme="void"] .panel-card::before { display: none; }
