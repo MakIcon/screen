@@ -1,0 +1,56 @@
+/* =====================================================
+   ANIMATIONS — tear-эффект закрытия окна
+   ===================================================== */
+
+.gallery-root.tearing {
+  background: transparent !important;
+  border: none !important;
+}
+
+.tear-half {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  z-index: 100;
+  will-change: transform, opacity;
+  overflow: hidden;
+}
+
+.fixed-content {
+  width: 100vw;
+  height: 100vh;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.tearing .left-half {
+  animation: tear-out-left 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.tearing .right-half {
+  animation: tear-out-right 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes tear-out-left {
+  0% {
+    transform: scale(1) translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.92) translate(-25%, 10%) rotate(-5deg);
+    opacity: 0;
+  }
+}
+
+@keyframes tear-out-right {
+  0% {
+    transform: scale(1) translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.92) translate(25%, 10%) rotate(5deg);
+    opacity: 0;
+  }
+}

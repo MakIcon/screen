@@ -1,0 +1,107 @@
+/* =====================================================
+   FORMS — поля, форм-сетки, тулбар, create-loader
+   ===================================================== */
+
+.form-grid {
+  display: grid;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.single-form-grid {
+  grid-template-columns: 1fr;
+  margin-top: 24px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+
+.field input,
+.field select {
+  height: 46px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  padding: 0 14px;
+  outline: none;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.field input::placeholder {
+  color: var(--muted-soft);
+}
+
+.field input[readonly] {
+  color: var(--muted-strong);
+}
+
+.compact-field input,
+.compact-field select {
+  height: 42px;
+}
+
+.toolbar-row {
+  display: grid;
+  gap: 14px;
+  align-items: end;
+  position: relative;
+  z-index: 1;
+}
+
+.toolbar-row-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mod-list {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  max-height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.mod-list .csa-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 10px;
+}
+
+/* ── Create build form specifics ── */
+
+.create-loader-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.create-loader-subrow {
+  min-width: 0;
+}
+
+.detail-grid-create {
+  align-items: start;
+}
+
+.create-loader-detail-block .inline-dropdown-trigger {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.create-loader-detail-block .inline-dropdown-label:empty {
+  display: none;
+}

@@ -1,30 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
-import { InlineDropdown } from "./components/inputs/InlineDropdown";
-import { CustomScrollArea } from "./components/layout/CustomScrollArea";
-import { TAB_INDEX, TAB_ORDER, TAB_TITLE, LOADER_OPTIONS} from "./constants/tabs";
+import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
 import { clampRamToSystem } from "./utils/ram";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { HoverRevealValue } from "./components/display/HoverRevealValue";
-import { ElementSlider } from "./components/inputs/ElementSlider";
-import { ElementToggle } from "./components/inputs/ElementToggle";
 import {
   BuildCardSettingsPopup,
   DEFAULT_BUILD_CARD_APPEARANCE,
-  SettingsGearIcon,
-  getBuildCardAppearanceStyle,
-  getBuildCardBadgeStyle,
   getBuildCardBadgeText,
-  getBuildCardBadgeVisibility,
   normalizeBuildCardAppearance,
-  shouldShowBuildCardBadge,
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
-import { BuildCardContentView } from "./components/builds/BuildCardContentView";
 import { BuildStatsModal } from "./components/builds/BuildStatsModal";
 import type {
   ActionResult,
@@ -41,9 +30,16 @@ import type {
   TabKey,
   UpdateInstancePayload,
 } from "./types";
-import { formatLastPlayed, formatPlaytime } from "./utils/playtime";
+import { formatLastPlayed } from "./utils/playtime";
 import { resolvePlaceholders } from "./utils/placeholders";
 import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from "./hooks/usePlaceholders";
+import { OverviewTab } from "./tabs/OverviewTab";
+import { OverviewPanel } from "./tabs/OverviewPanel";
+import { InstancesTab } from "./tabs/InstancesTab";
+import { ModsTab } from "./tabs/ModsTab";
+import { ResourcePacksTab } from "./tabs/ResourcePacksTab";
+import { ShadersTab } from "./tabs/ShadersTab";
+import { SettingsTab } from "./tabs/SettingsTab";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -1392,1422 +1388,190 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
-  const renderOverview = () => {
-    if (!selectedInstance) {
-      return (
-        <section className="launcher-panel">
-          <div className="panel-grid panel-grid-overview-minimal">
-            <div className="panel-card hero-card overview-minimal-card">
-              <span className="panel-label">NO BUILDS</span>
-
-              <h2>
-                Create your
-                <br />
-                first build.
-              </h2>
-
-              <p className="panel-text">
-                BUILDS теперь создают реальные инстансы, скачивают official files и могут запускаться в
-                offline mode.
-              </p>
-
-              <div className="action-row">
-                <button
-                  className="primary-action play-last-button"
-                  type="button"
-                  onClick={() => setTabAnimated("instances")}
-                >
-                  OPEN BUILDS
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    return (
-      <section className="launcher-panel">
-        <div className="panel-grid panel-grid-overview-minimal">
-          <div className="panel-card hero-card overview-minimal-card">
-            <span className="panel-label">LAST SESSION</span>
-
-            <h2>
-              Play last
-              <br />
-              build.
-            </h2>
-
-            <p className="panel-text">
-              Реальный offline launcher: client, libraries, natives и assets скачиваются автоматически
-              перед стартом.
-            </p>
-
-            <div className="hero-meta two-col-meta">
-              <div className="meta-block">
-                <span className="meta-title">BUILD</span>
-                <strong>{resolve("%build_name%")}</strong>
-              </div>
-
-              <div className="meta-block">
-                <span className="meta-title">MC / LOADER</span>
-                <strong>{resolve("%build_version% / %build_loader%")}</strong>
-              </div>
-
-              <div className="meta-block">
-                <span className="meta-title">LAST PLAYED</span>
-                <strong>{resolve("%build_last_played%")}</strong>
-              </div>
-
-              <div className="meta-block">
-                <span className="meta-title">TIME IN GAME</span>
-                <strong>{resolve("%build_playtime%")}</strong>
-              </div>
-            </div>
-
-            <div className="action-row">
-              {isRunning(selectedInstance.id) ? (
-                <button
-                  className="primary-action play-last-button kill-action"
-                  type="button"
-                  onClick={() => handleKillGame(selectedInstance.id)}
-                >
-                  ✕ KILL GAME
-                </button>
-              ) : (
-                <button
-                  className="primary-action play-last-button"
-                  type="button"
-                  onClick={() => handleLaunchSelected()}
-                  disabled={working}
-                >
-                  {working ? "WORKING..." : "PLAY LAST"}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  };
-
-  const renderInstances = () => {
-    const sortedInstances = [...instances].reverse();
-    const showCreator = createMode || instances.length === 0 || !selectedInstance;
-    return (
-      <section className="launcher-panel">
-        <div className="panel-grid panel-grid-instances-fixed">
-          <div className="panel-card instances-list-card">
-            <div className="card-topline">
-              <span className="panel-label">INSTANCE LIBRARY</span>
-              <button
-                className="ghost-action"
-                type="button"
-                onClick={() => {
-                  setCreateMode(true);
-                  setCreateError("");
-                  setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
-                }}
-              >
-                CREATE BUILD
-              </button>
-            </div>
-
-            <CustomScrollArea
-              className="instance-stack"
-              onWheel={(e: any) => e.stopPropagation()}
-              style={{ flex: 1, minHeight: 0 }}
-            >
-              <div style={{ height: 0, overflow: "hidden", pointerEvents: "none" }} aria-hidden="true">
-                <div
-                  ref={createCardMeasureRef}
-                  className={`instance-card ${createMeasureAppearance.image ? "instance-card-with-image" : ""}`}
-                  style={getBuildCardAppearanceStyle(createMeasureAppearance)}
-                >
-                  <div className="instance-card-top">
-                    <span className="instance-name">{createPreviewName}</span>
-                  </div>
-                  <div
-                    className={`instance-card-meta ${createMeasureAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
-                  >
-                    {createMeasureAppearance.contentEnabled ? (
-                      <BuildCardContentView
-                        mode={createMeasureAppearance.contentMode}
-                        align={createMeasureAppearance.contentTextAlign}
-                        strokeEnabled={createMeasureAppearance.contentTextStrokeEnabled}
-                        tags={resolveBuildCardContentTags(
-                          createMeasureAppearance,
-                          buildCardPreviewTarget,
-                          { buildState: "RUNNING" },
-                        )}
-                      />
-                    ) : (
-                      <>
-                        <span>{createPreviewVersion}</span>
-                        <span>{createPreviewLoader}</span>
-                        <span>{createPreviewRam} GB</span>
-                        <span>NEVER</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {instances.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>NO BUILDS YET</strong>
-                  <p>Создай первую сборку, чтобы начать установку.</p>
-                </div>
-              ) : (
-                sortedInstances.map((instance) => {
-                  const cardAppearance = getBuildCardAppearance(instance.id);
-                  const cardStyle: CSSProperties | undefined = getBuildCardAppearanceStyle(cardAppearance);
-                  const resolvedContentTags = resolveBuildCardContentTags(
-                    cardAppearance,
-                    instance,
-                    { buildState: isRunning(instance.id) ? "RUNNING" : "" },
-                  );
-
-                  return (
-                  <button
-                    key={instance.id}
-                    ref={(node) => {
-                      if (node) {
-                        instanceCardRefs.current.set(instance.id, node);
-                      } else {
-                        instanceCardRefs.current.delete(instance.id);
-                      }
-                    }}
-                    className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""}`}
-                    style={cardStyle}
-                    onClick={() => {
-                      setSelectedInstanceId(instance.id);
-                      setCreateMode(false);
-                      setInstanceRamEditorOpen(false);
-                    }}
-                    type="button"
-                  >
-                    <div className="instance-card-top">
-                      <span className="instance-name">{instance.name}</span>
-                      {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
-                        <span
-                          className="instance-running-badge"
-                          style={getBuildCardBadgeStyle(cardAppearance)}
-                        >
-                          {resolveForTarget(
-                            getBuildCardBadgeText(cardAppearance),
-                            instance,
-                            {
-                              buildState:
-                                isRunning(instance.id) ||
-                                getBuildCardBadgeVisibility(cardAppearance) === "always"
-                                  ? "RUNNING"
-                                  : "",
-                            },
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className={`instance-card-meta ${cardAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
-                    >
-                      {cardAppearance.contentEnabled ? (
-                        <BuildCardContentView
-                          mode={cardAppearance.contentMode}
-                          align={cardAppearance.contentTextAlign}
-                          strokeEnabled={cardAppearance.contentTextStrokeEnabled}
-                          tags={resolvedContentTags}
-                        />
-                      ) : (
-                        <>
-                          <span>{instance.version}</span>
-                          <span>{instance.loader}</span>
-                          <span>{instance.ram} GB</span>
-                          <span>{formatLastPlayed(instance.lastPlayed)}</span>
-                        </>
-                      )}
-                    </div>
-                  </button>
-                );
-                })
-              )}
-            </CustomScrollArea>
-          </div>
-
-          <div className="panel-card instance-details-card">
-            {showCreator ? (
-              <>
-                <span className="panel-label">CREATE NEW BUILD</span>
-                <div className="form-grid single-form-grid">
-                  <label className="field">
-                    <span>BUILD NAME</span>
-                    <input
-                      placeholder="My Vanilla Build"
-                      value={createBuildName}
-                      onChange={(e) => setCreateBuildName(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="inline-dropdown-grid" style={{ marginTop: 24 }}>
-                  <InlineDropdown
-                    label="MC VERSION"
-                    value={createVersion || "SELECT VERSION"}
-                    options={minecraftVersions}
-                    isOpen={openDropdown === "create-version"}
-                    onToggle={() => setOpenDropdown(openDropdown === "create-version" ? null : "create-version")}
-                    onSelect={(value) => {
-                      setCreateVersion(value);
-                      setOpenDropdown(null);
-                    }}
-                  />
-
-                  <div className="create-loader-stack">
-                    <InlineDropdown
-                      label="LOADER"
-                      value={createLoader}
-                      options={LOADER_OPTIONS}
-                      isOpen={openDropdown === "create-loader"}
-                      onToggle={() => setOpenDropdown(openDropdown === "create-loader" ? null : "create-loader")}
-                      onSelect={(value) => {
-                        const nextLoader = value as LoaderType;
-                        setCreateLoader(nextLoader);
-                        if (nextLoader !== "Fabric") {
-                          setCreateFabricLoaderVersion("");
-                        }
-                        setOpenDropdown(null);
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
-                  <div className="detail-block">
-                    <span className="detail-title">INITIAL RAM</span>
-                    <strong>{createRamGb} GB</strong>
-                    <div style={{ marginTop: 14 }}>
-                      <button className="ghost-action" type="button" onClick={() => setCreateRamEditorOpen(!createRamEditorOpen)}>
-                        {createRamEditorOpen ? "HIDE RAM" : "EDIT RAM"}
-                      </button>
-                    </div>
-                    {createRamEditorOpen && (
-                      <div className="inline-ram-slider-wrap">
-                        <ElementSlider
-                          showHeader={false}
-                          min={1}
-                          max={systemRamGb}
-                          step={1}
-                          value={createRamGb}
-                          tickMode="custom"
-                          customTicks={Array.from(new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])).sort((a, b) => a - b)}
-                          onChange={(value) => setCreateRamGb(clampRamToSystem(value, systemRamGb))}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {createLoader === "Fabric" ? (
-                    <div className="detail-block create-loader-detail-block">
-                      <span className="detail-title">FABRIC LOADER VERSION</span>
-                      <InlineDropdown
-                        label=""
-                        value={
-                          fabricLoaderVersionsLoading
-                            ? "LOADING..."
-                            : createFabricLoaderVersion || "SELECT FABRIC VERSION"
-                        }
-                        options={fabricLoaderVersions}
-                        isOpen={openDropdown === "create-fabric-loader"}
-                        onToggle={() =>
-                          setOpenDropdown(
-                            openDropdown === "create-fabric-loader" ? null : "create-fabric-loader"
-                          )
-                        }
-                        onSelect={(value) => {
-                          setCreateFabricLoaderVersion(value);
-                          setOpenDropdown(null);
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                {createError && <p className="panel-text" style={{ color: "var(--accent)" }}>{createError}</p>}
-
-                <div className="instance-actions">
-                  <button className="primary-action" type="button" onClick={handleCreateBuild} disabled={working}>
-                    {working ? "WORKING..." : "CREATE BUILD"}
-                  </button>
-                  {instances.length > 0 && <button className="ghost-action" onClick={() => setCreateMode(false)}>CANCEL</button>}
-                  {advancedSettingsEnabled && (
-                    <button
-                      className="ghost-action icon-square-action settings-icon-action"
-                      type="button"
-                      onClick={() => openBuildCardSettings(null)}
-                      title="Build settings"
-                    >
-                      <SettingsGearIcon />
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="panel-label">BUILD CONFIGURATION</span>
-
-                <div className="inline-dropdown-grid">
-                  <InlineDropdown
-                    label="SELECT BUILD"
-                    value={selectedInstance?.name || "NO BUILD"}
-                    options={instances.map((i) => i.name)}
-                    isOpen={openDropdown === "build"}
-                    onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
-                    onSelect={(value) => {
-                      const found = instances.find((i) => i.name === value);
-                      if (found) {
-                        const nextRam = clampRamToSystem(found.ram, systemRamGb);
-                        setSelectedInstanceId(found.id);
-                        setInstanceRamDraft(nextRam);
-                      }
-                      setOpenDropdown(null);
-                    }}
-                  />
-
-                  <div className="detail-block">
-                    <span className="detail-title">MC VERSION</span>
-                    <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>{selectedInstance?.version}</strong>
-                  </div>
-
-                  <div className="detail-block">
-                    <span className="detail-title">LOADER</span>
-                    <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>{selectedInstance?.loader}</strong>
-                  </div>
-
-                  <div className="detail-block">
-                    <span className="detail-title">SOURCE</span>
-                    <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>OFFICIAL</strong>
-                  </div>
-                </div>
-
-                <div className="detail-grid" style={{ marginTop: 24 }}>
-                  <div className="detail-block">
-                    <span className="detail-title">RAM ALLOCATED</span>
-                    <strong>{instanceRamDraft} GB</strong>
-                    <div style={{ marginTop: 14 }}>
-                      <button className="ghost-action" type="button" onClick={() => setInstanceRamEditorOpen(!instanceRamEditorOpen)}>
-                        {instanceRamEditorOpen ? "HIDE RAM" : "EDIT RAM"}
-                      </button>
-                    </div>
-                    {instanceRamEditorOpen && (
-                      <div className="inline-ram-slider-wrap">
-                        <ElementSlider
-                          showHeader={false}
-                          min={1}
-                          max={systemRamGb}
-                          step={1}
-                          value={instanceRamDraft}
-                          tickMode="custom"
-                          customTicks={Array.from(new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])).sort((a, b) => a - b)}
-                          onChange={(value) => {
-                            const nextValue = clampRamToSystem(value, systemRamGb);
-                            setInstanceRamDraft(nextValue);
-                          }}
-                          onCommit={() => void commitSelectedInstanceRam()}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="detail-block">
-                    <span className="detail-title">TIME IN BUILD</span>
-                    <strong>{formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}</strong>
-                  </div>
-                </div>
-
-                {(busyMessage || actionError) && (
-                  <div className="status-box">
-                    {busyMessage && <p className="panel-text">{busyMessage}</p>}
-                    {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
-                  </div>
-                )}
-
-                {installProgress && (
-                  <div className="download-progress-box">
-                    <div className="download-progress-head">
-                      <span>{installProgress.phase.toUpperCase()}</span>
-                      <strong>{Math.round(installProgress.percent)}%</strong>
-                    </div>
-                    <div className="download-progress-track">
-                      <div className="download-progress-fill" style={{ width: `${installProgress.percent}%` }} />
-                    </div>
-                  </div>
-                )}
-
-                <div className="instance-actions">
-                  {selectedInstance && isRunning(selectedInstance.id) ? (
-                    <button className="primary-action kill-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
-                      ✕ KILL GAME
-                    </button>
-                  ) : (
-                    <button className="primary-action" type="button" onClick={() => handleLaunchSelected()} disabled={working}>
-                      {working ? "WORKING..." : "PLAY BUILD"}
-                    </button>
-                  )}
-                  <button className="ghost-action" type="button" onClick={handleInstallSelected} disabled={working}>INSTALL</button>
-                  <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
-                  <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
-                  <div className="instance-side-actions">
-                    {advancedSettingsEnabled && (
-                      <button
-                        className="ghost-action icon-square-action settings-icon-action"
-                        type="button"
-                        onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
-                        title="Build settings"
-                      >
-                        <SettingsGearIcon />
-                      </button>
-                    )}
-                    <button
-                      className="ghost-action icon-square-action trash-action"
-                      type="button"
-                      title="Удалить сборку"
-                      onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-    );
-  };
-
-  const renderMods = () => (
-    <section className="launcher-panel">
-      <div className="panel-grid panel-grid-catalog-fixed">
-        <div className="panel-card catalog-toolbar-card">
-          <div className="toolbar-row toolbar-row-single modrinth-toolbar-grid">
-            <label className="field compact-field search-field">
-              <span>MODRINTH SEARCH</span>
-              <input
-                placeholder="Search Fabric mods..."
-                value={modSearch}
-                onChange={(e) => setModSearch(e.target.value)}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="panel-card mod-list-card">
-          <div className="card-topline">
-            <span className="panel-label">DISCOVER / INSTALL</span>
-            <span className="status-code">{modrinthItems.length} / {modrinthTotalHits} RESULTS</span>
-          </div>
-
-          {modrinthError && (
-            <p className="panel-text" style={{ color: "var(--accent)", marginTop: 0 }}>
-              {modrinthError}
-            </p>
-          )}
-
-          {!selectedModTarget ? (
-            <div className="empty-state-box">
-              <strong>NO FABRIC BUILDS</strong>
-              <p>Создай Fabric-сборку во вкладке BUILDS, чтобы устанавливать моды с Modrinth.</p>
-            </div>
-          ) : (
-            <CustomScrollArea
-              className="mod-list mods-feed"
-              onWheel={(e: any) => e.stopPropagation()}
-              onScroll={(e) => {
-                const target = e.currentTarget;
-                const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-                if (remaining < 280) {
-                  void handleLoadMoreMods();
-                }
-              }}
-              style={{ flex: 1, minHeight: 0 }}
-            >
-              {modrinthLoading && modrinthItems.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>LOADING MODS</strong>
-                  <p>Подтягиваю список модов с Modrinth.</p>
-                </div>
-              ) : modrinthItems.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>NOTHING FOUND</strong>
-                  <p>Попробуй другой запрос или другую Fabric-версию.</p>
-                </div>
-              ) : (
-                <>
-{modrinthItems.map((item) => {
-  const category = item.displayCategories?.[0] || item.categories?.[0] || "Fabric";
-  const installing = modrinthInstallBusyId === item.projectId;
-  return (
-    <div
-      className="mod-card modrinth-card"
-      key={item.projectId}
-    >
-      <div className="mod-card-head">
-        <div className="mod-title-row">
-          <h3>{item.title}</h3>
-          <span className="mod-category">{category.toUpperCase()}</span>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}> 
-          {/* stopPropagation чтобы клик по кнопке не открывал модалку */}
-          {item.installed ? (
-            <>
-              <button
-                className="ghost-action"
-                style={{ color: 'var(--accent)', borderColor: 'rgba(194, 65, 12, 0.2)' }}
-                type="button"
-                onClick={() => void handleUninstallMod(item.projectId)}
-                disabled={installing}
-              >
-                {installing ? "..." : "REMOVE"}
-              </button>
-              <button
-                className="ghost-action installed"
-                type="button"
-                onClick={() => void handleInstallMod(item.projectId)}
-                disabled={installing}
-              >
-                {installing ? "..." : "UPDATE"}
-              </button>
-            </>
-          ) : (
-            <button
-              className="primary-action"
-              style={{ padding: '10px 20px', fontSize: '10px' }}
-              type="button"
-              onClick={() => void handleInstallMod(item.projectId)}
-              disabled={installing || !selectedModTarget}
-            >
-              {installing ? "INSTALLING..." : "INSTALL"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ПЕРЕНЕСЛИ ОПИСАНИЕ ВЫШЕ */}
-      <p className="mod-description" style={{ marginTop: '4px', marginBottom: '12px' }}>
-        {item.description.length > 160 
-          ? item.description.substring(0, 160) + "..." 
-          : item.description}
-      </p>
-
-      <div className="mod-meta-strip">
-        <span>BY {item.author.toUpperCase()}</span>
-        <span>{item.downloads.toLocaleString()} DOWNLOADS</span>
-        <span>{item.follows.toLocaleString()} FOLLOWERS</span>
-      </div>
-    </div>
-  );
-})}
-
-                  {modrinthLoadingMore && (
-                    <div className="catalog-loading-row">Loading more mods...</div>
-                  )}
-                </>
-              )}
-            </CustomScrollArea>
-          )}
-        </div>
-
-        <div className="panel-card install-sidebar-card">
-          <span className="panel-label">CURRENT TARGET</span>
-
-          <div style={{ marginBottom: 24 }}>
-            <InlineDropdown
-              label="FABRIC BUILD"
-              value={selectedModTarget?.name || "SELECT FABRIC BUILD"}
-              options={fabricInstances.map((i) => i.name)}
-              isOpen={openDropdown === "target-mods"}
-              onToggle={() => setOpenDropdown(openDropdown === "target-mods" ? null : "target-mods")}
-              onSelect={(value) => {
-                const found = fabricInstances.find((i) => i.name === value);
-                if (found) {
-                  setSelectedInstanceId(found.id);
-                  setSelectedModrinthVersion(found.version);
-                }
-                setOpenDropdown(null);
-              }}
-            />
-          </div>
-
-          <div className="detail-grid detail-grid--sidebar">
-            <div className="detail-block">
-              <span className="detail-title">TARGET VERSION</span>
-              <span className="detail-value">
-                {resolveForTarget(
-                  "%build_version%",
-                  selectedModTarget ?? {
-                    version: selectedModrinthVersion,
-                    loader: "Fabric",
-                  },
-                )}
-              </span>
-            </div>
-            <div className="detail-block">
-              <span className="detail-title">LOADER</span>
-              <span className="detail-value">
-                {resolveForTarget(
-                  "%build_loader%",
-                  selectedModTarget ?? {
-                    version: selectedModrinthVersion,
-                    loader: "Fabric",
-                  },
-                )}
-              </span>
-            </div>
-          </div>
-
-          <div className="installed-mods-block">
-            <div className="card-topline installed-mods-head">
-              <span className="panel-label">INSTALLED MODS</span>
-              <span className="status-code">{installedMods.length}</span>
-            </div>
-
-            <div className="installed-mods-list">
-              {installedModsLoading ? (
-                <div className="catalog-loading-row">Reading installed mods...</div>
-              ) : installedMods.length === 0 ? (
-                <div className="empty-state-box compact-empty">
-                  <strong>EMPTY</strong>
-                  <p>Пока что в этой сборке нет установленных модов.</p>
-                </div>
-              ) : (
-installedMods.map((mod) => {
-  const uninstalling = modrinthInstallBusyId === mod.projectId;
-
-  return (
-    <div
-      className="installed-mod-swipe"
-      key={`${mod.filename}-${mod.projectId ?? "local"}`}
-    >
-      <div className="installed-mod-delete-slot">
-        <button
-          className="installed-mod-delete-btn"
-          type="button"
-          title="Удалить мод"
-          disabled={uninstalling || !mod.projectId}
-          onClick={() => mod.projectId && void handleUninstallMod(mod.projectId)}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
-
-      <div className="installed-mod-row">
-        <div>
-          <strong>{mod.title}</strong>
-          <span>{mod.versionNumber || mod.filename}</span>
-        </div>
-        <em>{mod.source.toUpperCase()}</em>
-      </div>
-    </div>
-  );
-})
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-
-  const renderResourcepacks = () => (
-    <section className="launcher-panel">
-      <div className="panel-grid panel-grid-catalog-fixed">
-        <div className="panel-card catalog-toolbar-card">
-          <div className="toolbar-row toolbar-row-single">
-            <label className="field compact-field search-field">
-              <span>PACK SEARCH</span>
-              <input
-                placeholder="Search resource packs..."
-                value={packSearch}
-                onChange={(e) => setPackSearch(e.target.value)}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="panel-card mod-list-card">
-          <div className="card-topline">
-            <span className="panel-label">RESOURCE PACKS</span>
-            <span className="status-code">
-              {packItems.length} / {packTotalHits} RESULTS
-            </span>
-          </div>
-
-          {packError && (
-            <p className="panel-text" style={{ color: "var(--accent)", marginTop: 0 }}>
-              {packError}
-            </p>
-          )}
-
-          {!selectedInstance ? (
-            <div className="empty-state-box">
-              <strong>NO BUILDS</strong>
-              <p>Создай сборку во вкладке BUILDS, чтобы ставить resource packs с Modrinth.</p>
-            </div>
-          ) : (
-            <CustomScrollArea
-              className="mod-list mods-feed"
-              onWheel={(e: any) => e.stopPropagation()}
-              onScroll={(e) => {
-                const target = e.currentTarget;
-                const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-                if (remaining < 280) {
-                  void handleLoadMorePacks();
-                }
-              }}
-              style={{ flex: 1, minHeight: 0 }}
-            >
-                {packLoading && packItems.length === 0 ? (
-                  <div className="empty-state-box loading-state-box">
-                    <strong>LOADING RESOURCE PACKS</strong>
-                    <p>Подгружаю каталог resource packs.</p>
-                  </div>
-                ) : packItems.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>NOTHING FOUND</strong>
-                  <p>Попробуй другой запрос или другую версию Minecraft.</p>
-                </div>
-              ) : (
-                <>
-                  {packItems.map((item) => {
-                    const category =
-                      item.displayCategories?.[0] ||
-                      item.categories?.[0] ||
-                      "Resource Pack";
-                    const installing = packInstallBusyId === item.projectId;
-
-                    return (
-                      <div
-                        className="mod-card modrinth-card"
-                        key={item.projectId}
-                      >
-                        <div className="mod-card-head">
-                          <div className="mod-title-row">
-                            <h3>{item.title}</h3>
-                            <span className="mod-category">{category.toUpperCase()}</span>
-                          </div>
-
-                          <div
-                            style={{ display: "flex", gap: "8px" }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {item.installed ? (
-                              <>
-                                <button
-                                  className="ghost-action"
-                                  style={{
-                                    color: "var(--accent)",
-                                    borderColor: "rgba(194, 65, 12, 0.2)",
-                                  }}
-                                  type="button"
-                                  onClick={() => void handleUninstallPack(item.projectId)}
-                                  disabled={installing}
-                                >
-                                  {installing ? "..." : "REMOVE"}
-                                </button>
-                                <button
-                                  className="ghost-action installed"
-                                  type="button"
-                                  onClick={() => void handleInstallPack(item.projectId)}
-                                  disabled={installing}
-                                >
-                                  {installing ? "..." : "UPDATE"}
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                className="primary-action"
-                                style={{ padding: "10px 20px", fontSize: "10px" }}
-                                type="button"
-                                onClick={() => void handleInstallPack(item.projectId)}
-                                disabled={installing || !selectedInstance}
-                              >
-                                {installing ? "INSTALLING..." : "INSTALL"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <p
-                          className="mod-description"
-                          style={{ marginTop: "4px", marginBottom: "12px" }}
-                        >
-                          {item.description.length > 160
-                            ? item.description.substring(0, 160) + "..."
-                            : item.description}
-                        </p>
-
-                        <div className="mod-meta-strip">
-                          <span>BY {item.author.toUpperCase()}</span>
-                          <span>{item.downloads.toLocaleString()} DOWNLOADS</span>
-                          <span>{item.follows.toLocaleString()} FOLLOWERS</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {packLoadingMore && (
-                    <div className="catalog-loading-row">Loading more packs...</div>
-                  )}
-                </>
-              )}
-            </CustomScrollArea>
-          )}
-        </div>
-
-        <div className="panel-card install-sidebar-card">
-          <span className="panel-label">ACTIVE PROFILE</span>
-
-          <div style={{ marginBottom: 24 }}>
-            <InlineDropdown
-              label="TARGET BUILD"
-              value={selectedInstance?.name || "SELECT BUILD"}
-              options={instances.map((i) => i.name)}
-              isOpen={openDropdown === "target-packs"}
-              onToggle={() => setOpenDropdown(openDropdown === "target-packs" ? null : "target-packs")}
-              onSelect={(value) => {
-                const found = instances.find((i) => i.name === value);
-                if (found) setSelectedInstanceId(found.id);
-                setOpenDropdown(null);
-              }}
-            />
-          </div>
-
-          <div className="detail-grid detail-grid--sidebar">
-            <div className="detail-block">
-              <span className="detail-title">TARGET VERSION</span>
-              <span className="detail-value">
-                {resolveForTarget("%build_version%", selectedInstance)}
-              </span>
-            </div>
-            <div className="detail-block">
-              <span className="detail-title">FOLDER</span>
-              <span className="detail-value">RESOURCEPACKS</span>
-            </div>
-          </div>
-
-          <div className="installed-mods-block">
-            <div className="card-topline installed-mods-head">
-              <span className="panel-label">INSTALLED PACKS</span>
-              <span className="status-code">{installedPacks.length}</span>
-            </div>
-
-            <div className="installed-mods-list">
-              {installedPacksLoading ? (
-                <div className="catalog-loading-row">Reading installed resource packs...</div>
-              ) : installedPacks.length === 0 ? (
-                <div className="empty-state-box compact-empty">
-                  <strong>EMPTY</strong>
-                  <p>Пока что в этой сборке нет установленных resource packs.</p>
-                </div>
-              ) : (
-                installedPacks.map((pack) => {
-                  const uninstalling = packInstallBusyId === pack.projectId;
-
-                  return (
-                    <div className="installed-mod-swipe" key={pack.filename}>
-                      <div
-                        className="installed-mod-delete-slot"
-                        style={{ opacity: 1, pointerEvents: "auto" }}
-                      >
-                      <button
-                        className="installed-mod-delete-btn"
-                        type="button"
-                        title="Удалить ресурс пак"
-                        disabled={!pack.projectId || uninstalling}
-                        onClick={() => pack.projectId && void handleUninstallPack(pack.projectId)}
-                      >
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 14 14"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-                            stroke="currentColor"
-                            strokeWidth="1.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      </div>
-
-                      <div className="installed-mod-row">
-                        <div>
-                          <strong>{pack.title}</strong>
-                          <span>{pack.versionNumber || pack.filename}</span>
-                        </div>
-                        <em>{pack.source.toUpperCase()}</em>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-
-  const renderShaders = () => (
-    <section className="launcher-panel">
-      <div className="panel-grid panel-grid-catalog-fixed">
-        <div className="panel-card catalog-toolbar-card">
-          <div className="toolbar-row toolbar-row-single">
-            <label className="field compact-field search-field">
-              <span>SHADER SEARCH</span>
-              <input
-                placeholder="Search shaders..."
-                value={shaderSearch}
-                onChange={(e) => setShaderSearch(e.target.value)}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="panel-card mod-list-card">
-          <div className="card-topline">
-            <span className="panel-label">SHADERPACKS</span>
-            <span className="status-code">{shaderItems.length} / {shaderTotalHits} RESULTS</span>
-          </div>
-
-          {shaderError && (
-            <p className="panel-text" style={{ color: "var(--accent)", marginTop: 0 }}>
-              {shaderError}
-            </p>
-          )}
-
-          {!selectedShaderTarget ? (
-            <div className="empty-state-box">
-              <strong>NO BUILDS</strong>
-              <p>Создай сборку во вкладке BUILDS, чтобы ставить shaderpacks с Modrinth.</p>
-            </div>
-          ) : (
-            <CustomScrollArea
-              className="mod-list mods-feed"
-              onWheel={(e: any) => e.stopPropagation()}
-              onScroll={(e) => {
-                const target = e.currentTarget;
-                const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-                if (remaining < 280) {
-                  void handleLoadMoreShaders();
-                }
-              }}
-              style={{ flex: 1, minHeight: 0 }}
-            >
-                {shaderLoading && shaderItems.length === 0 ? (
-                  <div className="empty-state-box loading-state-box">
-                    <strong>LOADING SHADERS</strong>
-                    <p>Подгружаю каталог shaderpacks.</p>
-                  </div>
-                ) : shaderItems.length === 0 ? (
-                <div className="empty-state-box">
-                  <strong>NOTHING FOUND</strong>
-                  <p>Попробуй другой запрос или другую версию Minecraft.</p>
-                </div>
-              ) : (
-                <>
-                  {shaderItems.map((item) => {
-                    const category =
-                      item.displayCategories?.[0] ||
-                      item.categories?.[0] ||
-                      "Shader";
-                    const installing = shaderInstallBusyId === item.projectId;
-
-                    return (
-                      <div
-                        className="mod-card modrinth-card"
-                        key={item.projectId}
-                      >
-                        <div className="mod-card-head">
-                          <div className="mod-title-row">
-                            <h3>{item.title}</h3>
-                            <span className="mod-category">{category.toUpperCase()}</span>
-                          </div>
-
-                          <div
-                            style={{ display: "flex", gap: "8px" }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {item.installed ? (
-                              <>
-                                <button
-                                  className="ghost-action installed"
-                                  type="button"
-                                  disabled
-                                >
-                                  DOWNLOADED
-                                </button>
-                                <button
-                                  className="ghost-action"
-                                  type="button"
-                                  disabled={installing}
-                                  onClick={() => void handleUninstallShader(item.projectId)}
-                                >
-                                  {installing ? "REMOVING..." : "DELETE"}
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                className="ghost-action"
-                                type="button"
-                                disabled={installing}
-                                onClick={() => void handleInstallShader(item.projectId)}
-                              >
-                                {installing ? "INSTALLING..." : "INSTALL"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <p className="mod-description">
-                          {item.description.length > 160
-                            ? `${item.description.slice(0, 160)}...`
-                            : item.description}
-                        </p>
-
-                        <div className="mod-meta-strip">
-                          <span>BY {item.author.toUpperCase()}</span>
-                          <span>{item.downloads.toLocaleString()} DOWNLOADS</span>
-                          <span>{item.follows.toLocaleString()} FOLLOWERS</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {shaderLoadingMore && (
-                    <div className="catalog-loading-row">Loading more shaders...</div>
-                  )}
-                </>
-              )}
-            </CustomScrollArea>
-          )}
-        </div>
-
-        <div className="panel-card install-sidebar-card">
-          <span className="panel-label">ACTIVE PROFILE</span>
-
-          <div style={{ marginBottom: 24 }}>
-            <InlineDropdown
-              label="TARGET BUILD"
-              value={selectedShaderTarget?.name || "SELECT BUILD"}
-              options={instances.map((i) => i.name)}
-              isOpen={openDropdown === "target-shaders"}
-              onToggle={() =>
-                setOpenDropdown(openDropdown === "target-shaders" ? null : "target-shaders")
-              }
-              onSelect={(value) => {
-                const found = instances.find((i) => i.name === value);
-                if (found) setSelectedInstanceId(found.id);
-                setOpenDropdown(null);
-              }}
-              instanceInfos={instances.map((i) => ({
-                name: i.name,
-                id: i.id,
-                loader: i.loader,
-              }))}
-            />
-          </div>
-
-          <div className="detail-grid detail-grid--sidebar">
-            <div className="detail-block">
-              <span className="detail-title">TARGET VERSION</span>
-              <span className="detail-value">
-                {resolveForTarget("%build_version%", selectedShaderTarget)}
-              </span>
-            </div>
-            <div className="detail-block">
-              <span className="detail-title">FOLDER</span>
-              <span className="detail-value">SHADERPACKS</span>
-            </div>
-          </div>
-
-          <div className="installed-mods-block">
-            <div className="card-topline installed-mods-head">
-              <span className="panel-label">INSTALLED SHADERS</span>
-              <span className="status-code">{installedShaders.length}</span>
-            </div>
-
-            <div className="installed-mods-list">
-              {installedShadersLoading ? (
-                <div className="catalog-loading-row">Reading installed shaders...</div>
-              ) : installedShaders.length === 0 ? (
-                <div className="empty-state-box compact-empty">
-                  <strong>EMPTY</strong>
-                  <p>Пока что в этой сборке нет установленных shaderpacks.</p>
-                </div>
-              ) : (
-                installedShaders.map((shader) => {
-                  const uninstalling = shaderInstallBusyId === shader.projectId;
-
-                  return (
-                    <div className="installed-mod-swipe" key={shader.filename}>
-                      <div
-                        className="installed-mod-delete-slot"
-                        style={{ opacity: 1, pointerEvents: "auto" }}
-                      >
-<button
-  className="installed-mod-delete-btn"
-  type="button"
-  title="Удалить шейдер"
-  disabled={!shader.projectId || uninstalling}
-  onClick={() =>
-    shader.projectId && void handleUninstallShader(shader.projectId)
-  }
->
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 14 14"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path
-      d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-</button>
-                      </div>
-
-                      <div className="installed-mod-row">
-                        <div>
-                          <strong>{shader.title}</strong>
-                          <span>{shader.versionNumber || shader.filename}</span>
-                        </div>
-                        <em>{shader.source.toUpperCase()}</em>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-
-  const renderSettings = () => (
-    <section className="launcher-panel">
-      <div className="panel-grid simple-two-col-fixed">
-        <div className="panel-card">
-          <span className="panel-label">LAUNCHER SETTINGS</span>
-
-          <div className="settings-memory-block">
-            <div className="memory-readout">
-              <span className="memory-number">{settingsRamDraft}</span>
-              <span className="memory-unit">GB</span>
-            </div>
-
-            <div className="settings-element-slider">
-              <ElementSlider
-                showHeader={false}
-                min={1}
-                max={systemRamGb}
-                step={1}
-                value={settingsRamDraft}
-                tickMode="custom"
-                customTicks={Array.from(new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])).sort((a, b) => a - b)}
-                onChange={(value) => {
-                  setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
-                }}
-                onCommit={() => void saveSettingsRam()}
-              />
-            </div>
-          </div>
-
-
-          <div className="settings-toggle-block">
-            <ElementToggle
-              title="WHEEL TAB SWITCHING"
-              note="Переключение вкладок движением колеса мыши."
-              enabled={wheelTabSwitching}
-              onToggle={() => setWheelTabSwitching((prev) => !prev)}
-            />
-
-            <ElementToggle
-              title="SHOW SNAPSHOTS"
-              note="Показывать snapshot версии в списке доступных установок."
-              enabled={showSnapshots}
-              onToggle={() => setShowSnapshots((prev) => !prev)}
-            />
-
-            <ElementToggle
-              title="SHOW PRE-RELEASES"
-              note="Показывать pre-release и release candidate версии."
-              enabled={showPreReleases}
-              onToggle={() => setShowPreReleases((prev) => !prev)}
-            />
-
-            <ElementToggle
-              title="ADVANCED SETTINGS"
-              note="Включает кнопку SETTINGS у сборок и в режиме создания для кастомного фона карточки версии."
-              enabled={advancedSettingsEnabled}
-              onToggle={() => {
-                setAdvancedSettingsEnabled((prev) => {
-                  const next = !prev;
-                  window.localStorage.setItem(
-                    ADVANCED_SETTINGS_STORAGE_KEY,
-                    String(next)
-                  );
-                  return next;
-                });
-              }}
-            />
-          </div>
-
-          <div className="form-grid single-form-grid">
-            <label className="field">
-              <span>JAVA PATH</span>
-              <input value="JAVA_HOME or PATH" readOnly />
-            </label>
-          </div>
-        </div>
-
-        <div className="panel-card">
-          <span className="panel-label">RUNTIME</span>
-          <div className="stat-list">
-            <div className="stat-row">
-              <span>WINDOW ENGINE</span>
-              <strong>TAURI</strong>
-            </div>
-            <div className="stat-row">
-              <span>CORE</span>
-              <strong>RUST</strong>
-            </div>
-            <div className="stat-row">
-              <span>FRONTEND</span>
-              <strong>REACT</strong>
-            </div>
-            <div className="stat-row">
-              <span>ACCOUNT</span>
-              <strong>{resolve("%account_type%")}</strong>
-            </div>
-            <div className="stat-row">
-              <span>SYSTEM RAM</span>
-              <strong>{resolve("%system_ram_max%")}</strong>
-            </div>
-            <div className="stat-row">
-              <span>DEFAULT BUILD RAM</span>
-              <strong>{settingsRamDraft} GB</strong>
-            </div>
-            <div className="stat-row">
-              <span>SNAPSHOTS</span>
-              <strong>{showSnapshots ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>PRE-RELEASES</span>
-              <strong>{showPreReleases ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>ADVANCED SETTINGS</span>
-              <strong>{advancedSettingsEnabled ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>MANIFEST</span>
-              <strong>{manifestLoading ? "LOADING" : manifest ? "READY" : "ERROR"}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
 
   const renderMainContent = () => {
     switch (activeTab) {
-      case "overview": return renderOverview();
-      case "instances": return renderInstances();
-      case "mods": return renderMods();
-      case "resourcepacks": return renderResourcepacks();
-      case "shaders": return renderShaders();
-      case "settings": return renderSettings();
-      default: return renderOverview();
+      case "overview":
+        return (
+          <OverviewTab
+            selectedInstance={selectedInstance}
+            isRunning={isRunning}
+            resolve={resolve}
+            handleKillGame={handleKillGame}
+            handleLaunchSelected={handleLaunchSelected}
+            working={working}
+            setTabAnimated={setTabAnimated}
+          />
+        );
+      case "instances":
+        return (
+          <InstancesTab
+            instances={instances}
+            selectedInstance={selectedInstance}
+            selectedInstanceId={selectedInstanceId}
+            setSelectedInstanceId={setSelectedInstanceId}
+            instanceCardRefs={instanceCardRefs}
+            createCardMeasureRef={createCardMeasureRef}
+            createMode={createMode}
+            setCreateMode={setCreateMode}
+            createBuildName={createBuildName}
+            setCreateBuildName={setCreateBuildName}
+            createVersion={createVersion}
+            setCreateVersion={setCreateVersion}
+            createLoader={createLoader}
+            setCreateLoader={setCreateLoader}
+            fabricLoaderVersions={fabricLoaderVersions}
+            fabricLoaderVersionsLoading={fabricLoaderVersionsLoading}
+            createFabricLoaderVersion={createFabricLoaderVersion}
+            setCreateFabricLoaderVersion={setCreateFabricLoaderVersion}
+            createError={createError}
+            setCreateError={setCreateError}
+            createRamGb={createRamGb}
+            setCreateRamGb={setCreateRamGb}
+            createRamEditorOpen={createRamEditorOpen}
+            setCreateRamEditorOpen={setCreateRamEditorOpen}
+            instanceRamDraft={instanceRamDraft}
+            setInstanceRamDraft={setInstanceRamDraft}
+            instanceRamEditorOpen={instanceRamEditorOpen}
+            setInstanceRamEditorOpen={setInstanceRamEditorOpen}
+            commitSelectedInstanceRam={commitSelectedInstanceRam}
+            systemRamGb={systemRamGb}
+            launcherSettings={launcherSettings}
+            minecraftVersions={minecraftVersions}
+            openDropdown={openDropdown}
+            setOpenDropdown={setOpenDropdown}
+            working={working}
+            busyMessage={busyMessage}
+            actionError={actionError}
+            installProgress={installProgress}
+            advancedSettingsEnabled={advancedSettingsEnabled}
+            getBuildCardAppearance={getBuildCardAppearance}
+            buildCardSettingsOpen={buildCardSettingsOpen}
+            buildSettingsTargetId={buildSettingsTargetId}
+            buildCardSettingsDraft={buildCardSettingsDraft}
+            buildCardPreviewSize={buildCardPreviewSize}
+            buildCardPreviewTarget={buildCardPreviewTarget}
+            createPreviewName={createPreviewName}
+            createPreviewVersion={createPreviewVersion}
+            createPreviewLoader={createPreviewLoader}
+            createPreviewRam={createPreviewRam}
+            createMeasureAppearance={createMeasureAppearance}
+            resolveBuildCardContentTags={resolveBuildCardContentTags}
+            resolveForTarget={resolveForTarget}
+            isRunning={isRunning}
+            handleCreateBuild={handleCreateBuild}
+            handleInstallSelected={handleInstallSelected}
+            handleLaunchSelected={handleLaunchSelected}
+            handleKillGame={handleKillGame}
+            handleDeleteInstance={handleDeleteInstance}
+            handleOpenFolder={handleOpenFolder}
+            setStatsInstanceId={setStatsInstanceId}
+            openBuildCardSettings={openBuildCardSettings}
+          />
+        );
+      case "mods":
+        return (
+          <ModsTab
+            modSearch={modSearch}
+            setModSearch={setModSearch}
+            modrinthItems={modrinthItems}
+            modrinthTotalHits={modrinthTotalHits}
+            modrinthLoading={modrinthLoading}
+            modrinthLoadingMore={modrinthLoadingMore}
+            modrinthError={modrinthError}
+            modrinthInstallBusyId={modrinthInstallBusyId}
+            installedMods={installedMods}
+            installedModsLoading={installedModsLoading}
+            fabricInstances={fabricInstances}
+            selectedModTarget={selectedModTarget}
+            selectedModrinthVersion={selectedModrinthVersion}
+            setSelectedModrinthVersion={setSelectedModrinthVersion}
+            setSelectedInstanceId={setSelectedInstanceId}
+            openDropdown={openDropdown}
+            setOpenDropdown={setOpenDropdown}
+            resolveForTarget={resolveForTarget}
+            handleLoadMoreMods={handleLoadMoreMods}
+            handleInstallMod={handleInstallMod}
+            handleUninstallMod={handleUninstallMod}
+          />
+        );
+      case "resourcepacks":
+        return (
+          <ResourcePacksTab
+            packSearch={packSearch}
+            setPackSearch={setPackSearch}
+            packItems={packItems}
+            packTotalHits={packTotalHits}
+            packLoading={packLoading}
+            packLoadingMore={packLoadingMore}
+            packError={packError}
+            packInstallBusyId={packInstallBusyId}
+            installedPacks={installedPacks}
+            installedPacksLoading={installedPacksLoading}
+            instances={instances}
+            selectedInstance={selectedInstance}
+            setSelectedInstanceId={setSelectedInstanceId}
+            openDropdown={openDropdown}
+            setOpenDropdown={setOpenDropdown}
+            resolveForTarget={resolveForTarget}
+            handleLoadMorePacks={handleLoadMorePacks}
+            handleInstallPack={handleInstallPack}
+            handleUninstallPack={handleUninstallPack}
+          />
+        );
+      case "shaders":
+        return (
+          <ShadersTab
+            shaderSearch={shaderSearch}
+            setShaderSearch={setShaderSearch}
+            shaderItems={shaderItems}
+            shaderTotalHits={shaderTotalHits}
+            shaderLoading={shaderLoading}
+            shaderLoadingMore={shaderLoadingMore}
+            shaderError={shaderError}
+            shaderInstallBusyId={shaderInstallBusyId}
+            installedShaders={installedShaders}
+            installedShadersLoading={installedShadersLoading}
+            instances={instances}
+            selectedShaderTarget={selectedShaderTarget}
+            setSelectedInstanceId={setSelectedInstanceId}
+            openDropdown={openDropdown}
+            setOpenDropdown={setOpenDropdown}
+            resolveForTarget={resolveForTarget}
+            handleLoadMoreShaders={handleLoadMoreShaders}
+            handleInstallShader={handleInstallShader}
+            handleUninstallShader={handleUninstallShader}
+          />
+        );
+      case "settings":
+        return (
+          <SettingsTab
+            systemRamGb={systemRamGb}
+            settingsRamDraft={settingsRamDraft}
+            setSettingsRamDraft={setSettingsRamDraft}
+            saveSettingsRam={saveSettingsRam}
+            wheelTabSwitching={wheelTabSwitching}
+            setWheelTabSwitching={setWheelTabSwitching}
+            showSnapshots={showSnapshots}
+            setShowSnapshots={setShowSnapshots}
+            showPreReleases={showPreReleases}
+            setShowPreReleases={setShowPreReleases}
+            advancedSettingsEnabled={advancedSettingsEnabled}
+            onToggleAdvanced={() => {
+              setAdvancedSettingsEnabled((prev) => {
+                const next = !prev;
+                window.localStorage.setItem("screenlauncher-advanced-settings-enabled", String(next));
+                return next;
+              });
+            }}
+            resolve={resolve}
+            manifestLoading={manifestLoading}
+            manifest={manifest}
+          />
+        );
+      default:
+        return null;
     }
-  };
-
-  const renderRightPanel = () => {
-    if (activeTab !== "overview" || !selectedInstance) return null;
-
-    return (
-      <div className="image-mockup launcher-mockup">
-        <div className="lines-pattern" />
-        <div className="mockup-overlay">
-          <div className="mockup-block">
-            <span className="mockup-label">ACTIVE BUILD</span>
-            <strong>{resolve("%build_name%")}</strong>
-          </div>
-
-          <div className="mockup-block">
-            <span className="mockup-label">TOTAL TIME IN GAME</span>
-            <strong>{resolve("%total_playtime%")}</strong>
-          </div>
-
-          <div className="mockup-split-row">
-            <div className="mockup-block">
-              <span className="mockup-label">NICKNAME</span>
-
-              <HoverRevealValue value={nickname}>
-                <input
-                  className="mockup-input mockup-input-uppercase"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  spellCheck={false}
-                />
-              </HoverRevealValue>
-            </div>
-
-            <div className="mockup-block mockup-account-dropdown">
-              <InlineDropdown
-                label="ACCOUNT"
-                value={accountType}
-                options={["OFFLINE", "MICROSOFT"]}
-                isOpen={openDropdown === "account"}
-                onToggle={() =>
-                  setOpenDropdown(openDropdown === "account" ? null : "account")
-                }
-                onSelect={(value) => {
-                  setAccountType(value);
-                  setOpenDropdown(null);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   const mainUI = (
@@ -2854,7 +1618,18 @@ installedMods.map((mod) => {
           <div className={`content-wrap launcher-wrap ${tabAnimating ? "tab-animated" : ""}`}>
             {renderMainContent()}
           </div>
-          {renderRightPanel()}
+
+          {activeTab === "overview" && selectedInstance && (
+            <OverviewPanel
+              resolve={resolve}
+              nickname={nickname}
+              setNickname={setNickname}
+              accountType={accountType}
+              setAccountType={setAccountType}
+              openDropdown={openDropdown}
+              setOpenDropdown={setOpenDropdown}
+            />
+          )}
         </section>
       </main>
 
@@ -2885,7 +1660,6 @@ installedMods.map((mod) => {
           </div>
         </>
       )}
-
 
       {buildCardSettingsOpen && (
         <BuildCardSettingsPopup

@@ -1,0 +1,108 @@
+/* =====================================================
+   THEME — все цветовые переменные и токены.
+   Для тёмной темы: document.documentElement.dataset.theme = 'dark'
+   ===================================================== */
+
+:root {
+  /* Backgrounds */
+  --bg: #f8f7f2;
+  --bg-elevated: #f0efeb;
+  --bg-panel: rgba(248, 247, 242, 0.65);
+  --bg-panel-strong: rgba(248, 247, 242, 0.82);
+  --bg-card: rgba(255, 255, 255, 0.3);
+  --bg-card-strong: rgba(255, 255, 255, 0.42);
+  --bg-field: rgba(255, 255, 255, 0.38);
+  --bg-overlay: rgba(248, 247, 242, 0.98);
+  --bg-overlay-soft: rgba(248, 247, 242, 0.95);
+  --bg-hover: rgba(26, 26, 26, 0.025);
+  --bg-hover-strong: rgba(194, 65, 12, 0.04);
+  --bg-selected: rgba(194, 65, 12, 0.03);
+  --bg-toggle-on: rgba(194, 65, 12, 0.06);
+
+  /* Text & Ink */
+  --ink: #1a1a1a;
+  --accent: #c2410c;
+  --line: rgba(26, 26, 26, 0.1);
+  --line-strong: rgba(26, 26, 26, 0.18);
+  --muted: #7a7a7a;
+  --muted-strong: #666;
+  --muted-soft: #999;
+  --text-soft: #444;
+  --text-subtle: #555;
+  --text-alt: #777;
+
+  /* Semantic */
+  --success: #2f6f45;
+  --warning: #8b7b56;
+  --danger: #ff453a;
+
+  /* Shadows */
+  --surface-shadow: 0 14px 30px rgba(0, 0, 0, 0.05);
+  --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.08);
+  --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.06);
+  --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.14);
+
+  /* Slider */
+  --slider-shell: #f0ede8;
+  --slider-shell-line: #d9d5ce;
+  --slider-label: #8a8278;
+  --slider-badge-text: #1a1714;
+  --slider-badge-bg: #e4e0d9;
+  --slider-badge-border: #cec9c2;
+  --slider-rail: #d1cdc6;
+  --slider-fill: #1a1714;
+  --slider-thumb-ring: #1a1714;
+  --slider-tick: #c8c2bb;
+  --slider-tick-label: #a89f95;
+}
+
+/* =====================================================
+   DARK THEME
+   ===================================================== */
+[data-theme="dark"] {
+  --bg: #111110;
+  --bg-elevated: #1a1917;
+  --bg-panel: rgba(17, 17, 16, 0.72);
+  --bg-panel-strong: rgba(17, 17, 16, 0.88);
+  --bg-card: rgba(255, 255, 255, 0.04);
+  --bg-card-strong: rgba(255, 255, 255, 0.07);
+  --bg-field: rgba(255, 255, 255, 0.06);
+  --bg-overlay: rgba(17, 17, 16, 0.98);
+  --bg-overlay-soft: rgba(17, 17, 16, 0.95);
+  --bg-hover: rgba(255, 255, 255, 0.035);
+  --bg-hover-strong: rgba(194, 65, 12, 0.08);
+  --bg-selected: rgba(194, 65, 12, 0.06);
+  --bg-toggle-on: rgba(194, 65, 12, 0.1);
+
+  --ink: #e8e6e1;
+  --accent: #f26522;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --muted: #666;
+  --muted-strong: #888;
+  --muted-soft: #555;
+  --text-soft: #bbb;
+  --text-subtle: #aaa;
+  --text-alt: #888;
+
+  --success: #4ade80;
+  --warning: #c9a96e;
+  --danger: #ff453a;
+
+  --surface-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
+  --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.35);
+  --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.3);
+  --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  --slider-shell: #1e1d1b;
+  --slider-shell-line: #2a2825;
+  --slider-label: #6a6460;
+  --slider-badge-text: #e8e6e1;
+  --slider-badge-bg: #2a2825;
+  --slider-badge-border: #3a3732;
+  --slider-rail: #2e2c28;
+  --slider-fill: #e8e6e1;
+  --slider-thumb-ring: #e8e6e1;
+  --slider-tick: #3a3732;
+  --slider-tick-label: #5a5650;
+}

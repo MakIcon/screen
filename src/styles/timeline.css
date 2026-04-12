@@ -1,0 +1,262 @@
+/* =====================================================
+   TIMELINE — компонент истории событий сборки
+   ===================================================== */
+
+.tl-root { display: flex; flex-direction: column; }
+
+.tl-row {
+  display: flex;
+  gap: 0;
+  cursor: default;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.tl-row:hover { background: var(--bg-hover); }
+
+.tl-spine-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  padding-top: 3px;
+}
+
+.tl-dot-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.tl-dot {
+  border-radius: 50%;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tl-row:hover .tl-dot {
+  transform: scale(1.35);
+}
+
+.tl-row--created .tl-dot {
+  width: 14px; height: 14px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.12);
+}
+.tl-row--created:hover .tl-dot {
+  box-shadow: 0 0 0 5px rgba(194, 65, 12, 0.16);
+}
+.tl-row--launched .tl-dot {
+  width: 12px; height: 12px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(47, 111, 69, 0.12);
+}
+.tl-row--launched:hover .tl-dot {
+  box-shadow: 0 0 0 5px rgba(47, 111, 69, 0.16);
+}
+.tl-row--mod .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--ink);
+}
+.tl-row--pack .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--muted);
+}
+.tl-row--shader .tl-dot {
+  width: 9px; height: 9px;
+  background: var(--warning);
+}
+
+.tl-seg {
+  flex: 1;
+  width: 1px;
+  background: var(--line-strong);
+  min-height: 10px;
+  margin: 4px 0 0;
+}
+
+.tl-body {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 22px;
+}
+
+.tl-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tl-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+.tl-tag--created  { color: var(--accent);   background: rgba(194, 65, 12, 0.08); }
+.tl-tag--launched { color: var(--success);  background: rgba(47, 111, 69, 0.08); }
+.tl-tag--mod      { color: var(--ink);      background: rgba(26, 26, 26, 0.06); }
+.tl-tag--pack     { color: var(--muted);    background: rgba(26, 26, 26, 0.05); }
+.tl-tag--shader   { color: var(--warning);  background: rgba(139, 123, 86, 0.1); }
+
+.tl-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tl-date {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.tl-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.22s ease, opacity 0.18s ease, padding-top 0.18s ease;
+  padding-top: 0;
+}
+
+.tl-row:hover .tl-reveal {
+  max-height: 120px;
+  opacity: 1;
+  padding-top: 7px;
+}
+
+.tl-reveal-line {
+  display: block;
+  font-size: 12px;
+  color: var(--text-subtle);
+  line-height: 1.5;
+}
+
+/* ── Horizontal timeline ── */
+
+.tl-h-root {
+  position: relative;
+  width: 100%;
+  height: 130px;
+  margin: 6px 0 4px;
+}
+
+.tl-h-track {
+  position: absolute;
+  top: 43px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.tl-h-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: default;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.tl-h-mark:hover { z-index: 10; }
+
+.tl-h-date {
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 5px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+
+.tl-h-mark:hover .tl-h-date { opacity: 1; }
+
+.tl-h-square {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tl-h-mark:hover .tl-h-square { transform: scale(1.4); }
+
+.tl-h-mark--created  .tl-h-square { background: var(--accent);  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.15); }
+.tl-h-mark--launched .tl-h-square { background: var(--success); box-shadow: 0 0 0 3px rgba(47, 111, 69, 0.15); }
+.tl-h-mark--mod      .tl-h-square { background: var(--ink); }
+.tl-h-mark--pack     .tl-h-square { background: var(--muted); }
+.tl-h-mark--shader   .tl-h-square { background: var(--warning); }
+
+.tl-h-mark--created:hover  .tl-h-square { box-shadow: 0 0 0 5px rgba(194, 65, 12, 0.20); }
+.tl-h-mark--launched:hover .tl-h-square { box-shadow: 0 0 0 5px rgba(47, 111, 69, 0.20); }
+
+.tl-h-short {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+  pointer-events: auto;
+}
+
+.tl-h-mark--created  .tl-h-short { color: var(--accent); }
+.tl-h-mark--launched .tl-h-short { color: var(--success); }
+.tl-h-mark--mod      .tl-h-short { color: var(--ink); }
+.tl-h-mark--pack     .tl-h-short { color: var(--muted); }
+.tl-h-mark--shader   .tl-h-short { color: var(--warning); }
+
+.tl-h-hover-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.2s ease, opacity 0.18s ease;
+  pointer-events: auto;
+}
+
+.tl-h-mark:hover .tl-h-hover-info {
+  max-height: 60px;
+  opacity: 1;
+}
+
+.tl-h-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}

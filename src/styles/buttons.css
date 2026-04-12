@@ -1,0 +1,138 @@
+/* =====================================================
+   BUTTONS — все кнопки и action-элементы
+   ===================================================== */
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+
+.primary-action {
+  background: var(--ink);
+  color: var(--bg);
+  border: none;
+  padding: 20px 35px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.primary-action:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.kill-action {
+  background: var(--accent);
+  color: #fff;
+}
+
+.kill-action:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.ghost-action {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 14px 18px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.ghost-action:hover {
+  opacity: 0.75;
+  border-color: var(--line-strong);
+}
+
+.ghost-action.installed {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.ghost-action.installed:hover {
+  opacity: 0.9;
+  border-color: var(--accent);
+}
+
+.trash-action {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  flex-shrink: 0;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trash-action:hover {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.35);
+  opacity: 1;
+}
+
+.icon-square-action {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
+  padding: 0;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-icon-action {
+  color: var(--muted);
+}
+
+.settings-icon-action:hover {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.35);
+  opacity: 1;
+}
+
+.instance-side-actions {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.instance-side-actions .settings-icon-action {
+  position: absolute;
+  top: -50px;
+  left: 0;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.divider-line {
+  width: 80px;
+  height: 1px;
+  background: var(--line);
+}
+
+.status-code {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-soft);
+  letter-spacing: 1px;
+}

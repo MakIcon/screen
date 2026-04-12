@@ -1,0 +1,246 @@
+/* =====================================================
+   MODALS — оверлеи, диалоги, статус-боксы, прогресс
+   ===================================================== */
+
+/* ── Empty & status states ── */
+
+.empty-state-box {
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  padding: 20px;
+}
+
+.empty-state-box strong {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.empty-state-box p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.status-box {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: var(--bg-card);
+}
+
+/* ── Download progress ── */
+
+.download-progress-box {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  padding: 14px;
+  background: var(--bg-card);
+}
+
+.download-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.download-progress-track {
+  width: 100%;
+  height: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.18s ease;
+}
+
+.download-progress-meta {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--muted-strong);
+  line-height: 1.4;
+}
+
+/* ── Delete confirmation ── */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 26, 0.35);
+  backdrop-filter: blur(3px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: confirm-overlay-in 0.18s ease;
+}
+
+@keyframes confirm-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.confirm-dialog {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  padding: 36px 40px 32px;
+  min-width: 340px;
+  max-width: 420px;
+  position: relative;
+  box-shadow: var(--surface-shadow-strong);
+  animation: confirm-dialog-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes confirm-dialog-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.confirm-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+
+.confirm-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  word-break: break-word;
+}
+
+.confirm-body {
+  margin: 0 0 28px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-subtle);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.confirm-btn-delete {
+  padding: 16px 28px;
+}
+
+/* ── Stats modal ── */
+
+.stats-modal {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  width: 800px;
+  max-width: 96vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: var(--surface-shadow-strong);
+  animation: confirm-dialog-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stats-modal-head {
+  padding: 36px 44px 0;
+}
+
+.stats-modal-name {
+  margin: 6px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding-right: 36px;
+  word-break: break-word;
+}
+
+.stats-tab-bar {
+  display: flex;
+  padding: 22px 44px 0;
+  border-bottom: 1px solid var(--line);
+  margin-top: 20px;
+}
+
+.stats-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  margin-right: 30px;
+  margin-bottom: -1px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+  white-space: nowrap;
+}
+
+.stats-tab-btn:hover { color: var(--ink); }
+
+.stats-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tl-dir-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-bottom: 1px;
+}
+
+.tl-dir-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 3px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.tl-dir-btn:hover {
+  color: var(--ink);
+  background: var(--bg-hover-strong);
+  border-color: var(--line);
+}
+
+.tl-dir-btn.active {
+  color: var(--accent);
+  background: rgba(194, 65, 12, 0.06);
+  border-color: rgba(194, 65, 12, 0.2);
+}
+
+.stats-tab-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 44px 40px;
+}
+
+.stats-tab-body::-webkit-scrollbar { width: 3px; }
+.stats-tab-body::-webkit-scrollbar-thumb { background: var(--line-strong); }

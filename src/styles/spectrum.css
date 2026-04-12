@@ -1,0 +1,155 @@
+/* =====================================================
+   SPECTRUM — heatmap, статистика, iris-индикаторы
+   ===================================================== */
+
+.spectrum-root { padding: 4px 0 0; }
+
+.spectrum-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  display: block;
+}
+
+.spectrum-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.spectrum-halo {
+  animation: sp-halo 2.6s ease-in-out infinite;
+}
+
+@keyframes sp-halo {
+  0%, 100% { opacity: 0.25; r: 6; }
+  50%       { opacity: 0;    r: 14; }
+}
+
+.spectrum-scan {
+  animation: sp-scan 3s ease-in-out infinite;
+}
+
+@keyframes sp-scan {
+  0%   { transform: translateX(-120%); opacity: 0; }
+  20%  { opacity: 0.6; }
+  80%  { opacity: 0.6; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+.spectrum-bars {
+  position: relative;
+}
+
+.spectrum-stats {
+  display: flex;
+  gap: 0;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.spectrum-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 40px;
+}
+
+.spectrum-stat-val {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+}
+
+.spectrum-stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+
+.spectrum-tip {
+  position: fixed;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--surface-shadow-soft);
+  z-index: 300;
+  transition: opacity 0.12s;
+}
+
+.spectrum-tip-sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Stats placeholders ── */
+
+.stats-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.stats-coming-soon {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.stats-coming-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+
+.stats-coming-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+/* ── Iris state indicator ── */
+
+.iris-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.iris-state.ok {
+  color: #166534;
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.22);
+}
+
+.iris-state.bad {
+  color: #b42318;
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.2);
+}
