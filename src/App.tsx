@@ -21,12 +21,9 @@ import type {
   DropdownKey,
   InstanceItem,
   InstallProgressPayload,
-  InstalledModView,
   LauncherSettings,
   LoaderType,
   MinecraftManifest,
-  ModrinthProject,
-  ModrinthSearchResponse,
   TabKey,
   UpdateInstancePayload,
 } from "./types";
@@ -40,6 +37,9 @@ import { ModsTab } from "./tabs/ModsTab";
 import { ResourcePacksTab } from "./tabs/ResourcePacksTab";
 import { ShadersTab } from "./tabs/ShadersTab";
 import { SettingsTab } from "./tabs/SettingsTab";
+import { useModActions } from "./hooks/useModActions";
+import { usePackActions } from "./hooks/usePackActions";
+import { useShaderActions } from "./hooks/useShaderActions";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -90,37 +90,7 @@ export default function App() {
   const [nickname, setNickname] = useState("PLAYER");
   const [accountType, setAccountType] = useState("OFFLINE");
 
-  const [modSearch, setModSearch] = useState("");
-  const [packSearch, setPackSearch] = useState("");
-  const [shaderSearch, setShaderSearch] = useState("");
-  const [modrinthVersionOptions, setModrinthVersionOptions] = useState<string[]>([]);
-  const [selectedModrinthVersion, setSelectedModrinthVersion] = useState("");
-  const [modrinthItems, setModrinthItems] = useState<ModrinthProject[]>([]);
-  const [modrinthTotalHits, setModrinthTotalHits] = useState(0);
-  const [modrinthLoading, setModrinthLoading] = useState(false);
-  const [modrinthLoadingMore, setModrinthLoadingMore] = useState(false);
-  const [modrinthError, setModrinthError] = useState("");
-  const [modrinthInstallBusyId, setModrinthInstallBusyId] = useState<string | null>(null);
-  const [installedMods, setInstalledMods] = useState<InstalledModView[]>([]);
-  const [installedModsLoading, setInstalledModsLoading] = useState(false);
-
-  const [packItems, setPackItems] = useState<ModrinthProject[]>([]);
-  const [packTotalHits, setPackTotalHits] = useState(0);
-  const [packLoading, setPackLoading] = useState(false);
-  const [packLoadingMore, setPackLoadingMore] = useState(false);
-  const [packError, setPackError] = useState("");
-  const [packInstallBusyId, setPackInstallBusyId] = useState<string | null>(null);
-  const [installedPacks, setInstalledPacks] = useState<InstalledModView[]>([]);
-  const [installedPacksLoading, setInstalledPacksLoading] = useState(false);
-
-  const [shaderItems, setShaderItems] = useState<ModrinthProject[]>([]);
-  const [shaderTotalHits, setShaderTotalHits] = useState(0);
-  const [shaderLoading, setShaderLoading] = useState(false);
-  const [shaderLoadingMore, setShaderLoadingMore] = useState(false);
-  const [shaderError, setShaderError] = useState("");
-  const [shaderInstallBusyId, setShaderInstallBusyId] = useState<string | null>(null);
-  const [installedShaders, setInstalledShaders] = useState<InstalledModView[]>([]);
-  const [installedShadersLoading, setInstalledShadersLoading] = useState(false);
+  // mod / pack / shader state lives in their hooks — wired up after selectedModTarget/selectedShaderTarget are derived
 
   const [installProgress, setInstallProgress] = useState<InstallProgressPayload | null>(null);
   const [statsInstanceId, setStatsInstanceId] = useState<string | null>(null);
@@ -383,6 +353,31 @@ export default function App() {
     [instances, selectedInstanceId]
   );
 
+  const {
+    modSearch, setModSearch,
+    selectedModrinthVersion, setSelectedModrinthVersion,
+    modrinthItems, modrinthTotalHits, modrinthLoading, modrinthLoadingMore, modrinthError,
+    modrinthInstallBusyId,
+    installedMods, installedModsLoading,
+    handleLoadMoreMods, handleInstallMod, handleUninstallMod,
+  } = useModActions({ activeTab, selectedModTarget, setActionError, setBusyMessage });
+
+  const {
+    packSearch, setPackSearch,
+    packItems, packTotalHits, packLoading, packLoadingMore, packError,
+    packInstallBusyId,
+    installedPacks, installedPacksLoading,
+    handleLoadMorePacks, handleInstallPack, handleUninstallPack,
+  } = usePackActions({ activeTab, selectedInstance, setActionError, setBusyMessage });
+
+  const {
+    shaderSearch, setShaderSearch,
+    shaderItems, shaderTotalHits, shaderLoading, shaderLoadingMore, shaderError,
+    shaderInstallBusyId,
+    installedShaders, installedShadersLoading,
+    handleLoadMoreShaders, handleInstallShader, handleUninstallShader,
+  } = useShaderActions({ activeTab, selectedShaderTarget, setActionError, setBusyMessage });
+
   const availableManifestVersions = useMemo(() => {
     if (!manifest) return [];
 
@@ -489,205 +484,6 @@ export default function App() {
 
     void bootstrap();
   }, []);
-
-  useEffect(() => {
-    const loadModrinthVersions = async () => {
-      try {
-        const versions = await invoke<string[]>("get_modrinth_fabric_versions");
-        setModrinthVersionOptions(versions);
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-    void loadModrinthVersions();
-  }, []);
-
-  useEffect(() => {
-    if (selectedModTarget?.version) {
-      setSelectedModrinthVersion(selectedModTarget.version);
-      return;
-    }
-
-    setSelectedModrinthVersion((current) => current || modrinthVersionOptions[0] || "");
-  }, [selectedModTarget?.version, modrinthVersionOptions]);
-
-  useEffect(() => {
-    const loadInstalledMods = async () => {
-      if (!selectedModTarget) {
-        setInstalledMods([]);
-        return;
-      }
-
-      try {
-        setInstalledModsLoading(true);
-        const result = await invoke<InstalledModView[]>("list_installed_mods", {
-          instanceId: selectedModTarget.id,
-        });
-        setInstalledMods(result);
-      } catch (error) {
-        console.error(error);
-        setInstalledMods([]);
-      } finally {
-        setInstalledModsLoading(false);
-      }
-    };
-
-    void loadInstalledMods();
-  }, [selectedModTarget?.id, working, modrinthInstallBusyId]);
-
-  useEffect(() => {
-    const loadInstalledPacks = async () => {
-      if (!selectedInstance) {
-        setInstalledPacks([]);
-        return;
-      }
-
-      try {
-        setInstalledPacksLoading(true);
-        const result = await invoke<InstalledModView[]>("list_installed_resourcepacks", {
-          instanceId: selectedInstance.id,
-        });
-        setInstalledPacks(result);
-      } catch (error) {
-        console.error(error);
-        setInstalledPacks([]);
-      } finally {
-        setInstalledPacksLoading(false);
-      }
-    };
-
-    void loadInstalledPacks();
-  }, [selectedInstance?.id, working, packInstallBusyId]);
-
-  useEffect(() => {
-    const loadInstalledShaders = async () => {
-      if (!selectedShaderTarget) {
-        setInstalledShaders([]);
-        return;
-      }
-
-      try {
-        setInstalledShadersLoading(true);
-        const result = await invoke<InstalledModView[]>("list_installed_shaders", {
-          instanceId: selectedShaderTarget.id,
-        });
-        setInstalledShaders(result);
-      } catch (error) {
-        console.error(error);
-        setInstalledShaders([]);
-      } finally {
-        setInstalledShadersLoading(false);
-      }
-    };
-
-    void loadInstalledShaders();
-  }, [selectedShaderTarget?.id, working, shaderInstallBusyId]);
-
-  useEffect(() => {
-    const loadModrinthMods = async () => {
-      if (activeTab !== "mods" || !selectedModrinthVersion) {
-        return;
-      }
-
-      try {
-        setModrinthLoading(true);
-        setModrinthError("");
-        const result = await invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-          instanceId: selectedModTarget?.id ?? null,
-          query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion,
-          offset: 0,
-          limit: 24,
-        });
-        setModrinthItems(result.hits);
-        setModrinthTotalHits(result.totalHits);
-      } catch (error) {
-        console.error(error);
-        setModrinthItems([]);
-        setModrinthTotalHits(0);
-        setModrinthError(String(error));
-      } finally {
-        setModrinthLoading(false);
-      }
-    };
-
-    const timer = window.setTimeout(() => {
-      void loadModrinthMods();
-    }, 180);
-
-    return () => window.clearTimeout(timer);
-  }, [activeTab, modSearch, selectedModTarget?.id, selectedModrinthVersion]);
-
-  useEffect(() => {
-    const loadResourcepacks = async () => {
-      if (activeTab !== "resourcepacks" || !selectedInstance?.version) {
-        return;
-      }
-
-      try {
-        setPackLoading(true);
-        setPackError("");
-        const result = await invoke<ModrinthSearchResponse>("search_modrinth_resourcepacks", {
-          instanceId: selectedInstance.id,
-          query: packSearch.trim(),
-          gameVersion: selectedInstance.version,
-          offset: 0,
-          limit: 24,
-        });
-        setPackItems(result.hits);
-        setPackTotalHits(result.totalHits);
-      } catch (error) {
-        console.error(error);
-        setPackItems([]);
-        setPackTotalHits(0);
-        setPackError(String(error));
-      } finally {
-        setPackLoading(false);
-      }
-    };
-
-    const timer = window.setTimeout(() => {
-      void loadResourcepacks();
-    }, 180);
-
-    return () => window.clearTimeout(timer);
-  }, [activeTab, packSearch, selectedInstance?.id, selectedInstance?.version]);
-
-  useEffect(() => {
-    const loadShaders = async () => {
-      if (activeTab !== "shaders" || !selectedShaderTarget?.version) {
-        return;
-      }
-
-      try {
-        setShaderLoading(true);
-        setShaderError("");
-        const result = await invoke<ModrinthSearchResponse>("search_modrinth_shaders", {
-          instanceId: selectedShaderTarget.id,
-          query: shaderSearch.trim(),
-          gameVersion: selectedShaderTarget.version,
-          offset: 0,
-          limit: 24,
-        });
-        setShaderItems(result.hits);
-        setShaderTotalHits(result.totalHits);
-      } catch (error) {
-        console.error(error);
-        setShaderItems([]);
-        setShaderTotalHits(0);
-        setShaderError(String(error));
-      } finally {
-        setShaderLoading(false);
-      }
-    };
-
-    const timer = window.setTimeout(() => {
-      void loadShaders();
-    }, 180);
-
-    return () => window.clearTimeout(timer);
-  }, [activeTab, shaderSearch, selectedShaderTarget?.id, selectedShaderTarget?.version]);
 
   useEffect(() => {
     const onClose = () => setOpenDropdown(null);
@@ -1083,310 +879,6 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
-  const handleLoadMoreMods = async () => {
-    if (!selectedModrinthVersion || modrinthLoadingMore || modrinthLoading) return;
-    if (modrinthItems.length >= modrinthTotalHits) return;
-
-    try {
-      setModrinthLoadingMore(true);
-      const result = await invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-        instanceId: selectedModTarget?.id ?? null,
-        query: modSearch.trim(),
-        gameVersion: selectedModrinthVersion,
-        offset: modrinthItems.length,
-        limit: 24,
-      });
-      setModrinthItems((prev) => {
-        const seen = new Set(prev.map((item) => item.projectId));
-        return [...prev, ...result.hits.filter((item) => !seen.has(item.projectId))];
-      });
-      setModrinthTotalHits(result.totalHits);
-    } catch (error) {
-      console.error(error);
-      setModrinthError(String(error));
-    } finally {
-      setModrinthLoadingMore(false);
-    }
-  };
-
-  const handleInstallMod = async (projectId: string) => {
-    if (!selectedModTarget) return;
-
-    try {
-      setModrinthInstallBusyId(projectId);
-      setActionError("");
-      setBusyMessage("Installing Modrinth mod...");
-      await invoke<ActionResult>("install_modrinth_project", {
-        instanceId: selectedModTarget.id,
-        projectId,
-      });
-
-      const [modsResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-          instanceId: selectedModTarget.id,
-          query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion || selectedModTarget.version,
-          offset: 0,
-          limit: Math.max(modrinthItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_mods", { instanceId: selectedModTarget.id }),
-      ]);
-
-      setModrinthItems(modsResult.hits);
-      setModrinthTotalHits(modsResult.totalHits);
-      setInstalledMods(installedResult);
-      setBusyMessage("Mod install finished");
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    } finally {
-      setModrinthInstallBusyId(null);
-      window.setTimeout(() => setBusyMessage(""), 800);
-    }
-  };
-
-  const handleUninstallMod = async (projectId: string) => {
-    if (!selectedModTarget) return;
-
-    // Находим имя файла по projectId в списке уже установленных модов
-    const modEntry = installedMods.find(m => m.projectId === projectId);
-    if (!modEntry) return;
-
-    try {
-      setModrinthInstallBusyId(projectId);
-      setBusyMessage("Uninstalling mod...");
-      await invoke("uninstall_modrinth_mod", {
-        instanceId: selectedModTarget.id,
-        filename: modEntry.filename
-      });
-      
-      // Обновляем списки
-      const [modsResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-          instanceId: selectedModTarget.id,
-          query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion,
-          offset: 0,
-          limit: Math.max(modrinthItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_mods", { instanceId: selectedModTarget.id }),
-      ]);
-
-      setModrinthItems(modsResult.hits);
-      setInstalledMods(installedResult);
-    } catch (error) {
-      setActionError(String(error));
-    } finally {
-      setModrinthInstallBusyId(null);
-      setBusyMessage("");
-    }
-  };
-
-  const handleLoadMorePacks = async () => {
-    if (!selectedInstance?.version || packLoadingMore || packLoading) return;
-    if (packItems.length >= packTotalHits) return;
-
-    try {
-      setPackLoadingMore(true);
-      const result = await invoke<ModrinthSearchResponse>("search_modrinth_resourcepacks", {
-        instanceId: selectedInstance.id,
-        query: packSearch.trim(),
-        gameVersion: selectedInstance.version,
-        offset: packItems.length,
-        limit: 24,
-      });
-      setPackItems((prev) => {
-        const seen = new Set(prev.map((item) => item.projectId));
-        return [...prev, ...result.hits.filter((item) => !seen.has(item.projectId))];
-      });
-      setPackTotalHits(result.totalHits);
-    } catch (error) {
-      console.error(error);
-      setPackError(String(error));
-    } finally {
-      setPackLoadingMore(false);
-    }
-  };
-
-  const handleInstallPack = async (projectId: string) => {
-    if (!selectedInstance) return;
-
-    try {
-      setPackInstallBusyId(projectId);
-      setActionError("");
-      setBusyMessage("Installing resource pack...");
-      await invoke<ActionResult>("install_modrinth_resourcepack", {
-        instanceId: selectedInstance.id,
-        projectId,
-      });
-
-      const [packsResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_resourcepacks", {
-          instanceId: selectedInstance.id,
-          query: packSearch.trim(),
-          gameVersion: selectedInstance.version,
-          offset: 0,
-          limit: Math.max(packItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_resourcepacks", {
-          instanceId: selectedInstance.id,
-        }),
-      ]);
-
-      setPackItems(packsResult.hits);
-      setPackTotalHits(packsResult.totalHits);
-      setInstalledPacks(installedResult);
-      setBusyMessage("Resource pack install finished");
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    } finally {
-      setPackInstallBusyId(null);
-      window.setTimeout(() => setBusyMessage(""), 800);
-    }
-  };
-
-  const handleUninstallPack = async (projectId: string) => {
-    if (!selectedInstance) return;
-
-    const packEntry = installedPacks.find((p) => p.projectId === projectId);
-    if (!packEntry) return;
-
-    try {
-      setPackInstallBusyId(projectId);
-      setBusyMessage("Uninstalling resource pack...");
-      await invoke<ActionResult>("uninstall_modrinth_resourcepack", {
-        instanceId: selectedInstance.id,
-        filename: packEntry.filename,
-      });
-
-      const [packsResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_resourcepacks", {
-          instanceId: selectedInstance.id,
-          query: packSearch.trim(),
-          gameVersion: selectedInstance.version,
-          offset: 0,
-          limit: Math.max(packItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_resourcepacks", {
-          instanceId: selectedInstance.id,
-        }),
-      ]);
-
-      setPackItems(packsResult.hits);
-      setPackTotalHits(packsResult.totalHits);
-      setInstalledPacks(installedResult);
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    } finally {
-      setPackInstallBusyId(null);
-      setBusyMessage("");
-    }
-  };
-
-  const handleLoadMoreShaders = async () => {
-    if (!selectedShaderTarget?.version || shaderLoadingMore || shaderLoading) return;
-    if (shaderItems.length >= shaderTotalHits) return;
-
-    try {
-      setShaderLoadingMore(true);
-      const result = await invoke<ModrinthSearchResponse>("search_modrinth_shaders", {
-        instanceId: selectedShaderTarget.id,
-        query: shaderSearch.trim(),
-        gameVersion: selectedShaderTarget.version,
-        offset: shaderItems.length,
-        limit: 24,
-      });
-      setShaderItems((prev) => {
-        const seen = new Set(prev.map((item) => item.projectId));
-        return [...prev, ...result.hits.filter((item) => !seen.has(item.projectId))];
-      });
-      setShaderTotalHits(result.totalHits);
-    } catch (error) {
-      console.error(error);
-      setShaderError(String(error));
-    } finally {
-      setShaderLoadingMore(false);
-    }
-  };
-
-  const handleInstallShader = async (projectId: string) => {
-    if (!selectedShaderTarget) return;
-
-    try {
-      setShaderInstallBusyId(projectId);
-      setActionError("");
-      setBusyMessage("Installing shader...");
-      await invoke<ActionResult>("install_modrinth_shader", {
-        instanceId: selectedShaderTarget.id,
-        projectId,
-      });
-
-      const [shadersResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_shaders", {
-          instanceId: selectedShaderTarget.id,
-          query: shaderSearch.trim(),
-          gameVersion: selectedShaderTarget.version,
-          offset: 0,
-          limit: Math.max(shaderItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_shaders", {
-          instanceId: selectedShaderTarget.id,
-        }),
-      ]);
-
-      setShaderItems(shadersResult.hits);
-      setShaderTotalHits(shadersResult.totalHits);
-      setInstalledShaders(installedResult);
-      setBusyMessage("Shader install finished");
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    } finally {
-      setShaderInstallBusyId(null);
-      window.setTimeout(() => setBusyMessage(""), 800);
-    }
-  };
-
-  const handleUninstallShader = async (projectId: string) => {
-    if (!selectedShaderTarget) return;
-
-    const shaderEntry = installedShaders.find((item) => item.projectId === projectId);
-    if (!shaderEntry) return;
-
-    try {
-      setShaderInstallBusyId(projectId);
-      setBusyMessage("Uninstalling shader...");
-      await invoke<ActionResult>("uninstall_modrinth_shader", {
-        instanceId: selectedShaderTarget.id,
-        filename: shaderEntry.filename,
-      });
-
-      const [shadersResult, installedResult] = await Promise.all([
-        invoke<ModrinthSearchResponse>("search_modrinth_shaders", {
-          instanceId: selectedShaderTarget.id,
-          query: shaderSearch.trim(),
-          gameVersion: selectedShaderTarget.version,
-          offset: 0,
-          limit: Math.max(shaderItems.length, 24),
-        }),
-        invoke<InstalledModView[]>("list_installed_shaders", {
-          instanceId: selectedShaderTarget.id,
-        }),
-      ]);
-
-      setShaderItems(shadersResult.hits);
-      setShaderTotalHits(shadersResult.totalHits);
-      setInstalledShaders(installedResult);
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    } finally {
-      setShaderInstallBusyId(null);
-      setBusyMessage("");
-    }
-  };
 
 
   const renderMainContent = () => {
