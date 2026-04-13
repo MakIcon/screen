@@ -4,7 +4,7 @@ use reqwest::Client;
 use tauri::AppHandle;
 
 use crate::{
-    models::{InstanceItem, VersionMeta},
+    models::{InstanceItem, MicrosoftAccount, VersionMeta},
     paths::{
         assets_root, clamp_ram_to_system, libraries_root, offline_uuid, read_instances,
         versions_root, write_instances,
@@ -54,6 +54,7 @@ pub async fn build_launch_command(
     app: &AppHandle,
     instance: &InstanceItem,
     nickname: &str,
+    ms_account: Option<&MicrosoftAccount>,
 ) -> Result<(String, Vec<String>), String> {
     let client = Client::new();
     let resolved_version_id = effective_version_id_for_instance(instance)?;
@@ -83,12 +84,22 @@ pub async fn build_launch_command(
         .map(|x| x.id.clone())
         .or_else(|| resolved.assets.clone())
         .unwrap_or_else(|| "legacy".to_string());
-    let username = if nickname.trim().is_empty() {
-        "PLAYER".to_string()
+    let (username, auth_uuid, auth_access_token, user_type) = if let Some(acc) = ms_account {
+        (
+            acc.username.clone(),
+            acc.uuid.clone(),
+            acc.access_token.clone(),
+            "msa".to_string(),
+        )
     } else {
-        nickname.trim().to_string()
+        let un = if nickname.trim().is_empty() {
+            "PLAYER".to_string()
+        } else {
+            nickname.trim().to_string()
+        };
+        let uu = offline_uuid(&un);
+        (un, uu, "0".to_string(), "legacy".to_string())
     };
-    let uuid = offline_uuid(&username);
 
     let mut tokens: HashMap<&str, String> = HashMap::new();
     tokens.insert("auth_player_name", username.clone());
@@ -96,10 +107,10 @@ pub async fn build_launch_command(
     tokens.insert("game_directory", game_dir.to_string_lossy().to_string());
     tokens.insert("assets_root", assets.to_string_lossy().to_string());
     tokens.insert("assets_index_name", asset_index_name.clone());
-    tokens.insert("auth_uuid", uuid);
-    tokens.insert("auth_access_token", "0".to_string());
-    tokens.insert("auth_session", "0".to_string());
-    tokens.insert("user_type", "legacy".to_string());
+    tokens.insert("auth_uuid", auth_uuid);
+    tokens.insert("auth_access_token", auth_access_token.clone());
+    tokens.insert("auth_session", auth_access_token);
+    tokens.insert("user_type", user_type);
     tokens.insert("version_type", "release".to_string());
     tokens.insert("natives_directory", natives_dir.to_string_lossy().to_string());
     tokens.insert("launcher_name", "ScreenLauncher".to_string());
@@ -134,13 +145,16 @@ pub async fn build_launch_command(
         "-Djava.net.preferIPv4Stack=true".to_string(),
     ];
 
-    args.extend(vec![
-        "-Dminecraft.api.env=custom".to_string(),
-        "-Dminecraft.api.auth.host=https://nope.invalid".to_string(),
-        "-Dminecraft.api.account.host=https://nope.invalid".to_string(),
-        "-Dminecraft.api.session.host=https://nope.invalid".to_string(),
-        "-Dminecraft.api.services.host=https://nope.invalid".to_string(),
-    ]);
+    // For offline accounts block the real auth endpoints; MS accounts use real ones
+    if ms_account.is_none() {
+        args.extend(vec![
+            "-Dminecraft.api.env=custom".to_string(),
+            "-Dminecraft.api.auth.host=https://nope.invalid".to_string(),
+            "-Dminecraft.api.account.host=https://nope.invalid".to_string(),
+            "-Dminecraft.api.session.host=https://nope.invalid".to_string(),
+            "-Dminecraft.api.services.host=https://nope.invalid".to_string(),
+        ]);
+    }
 
     if is_modern_mc(&instance.version) {
         args.extend(vec![

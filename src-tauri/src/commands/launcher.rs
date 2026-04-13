@@ -3,6 +3,7 @@ use std::{path::PathBuf, process::Command};
 use tauri::AppHandle;
 
 use crate::{
+    commands::auth::{read_accounts, refresh_account_if_expired},
     minecraft::{
         build_launch_command, install_instance_files, spawn_minecraft_and_persist,
         update_instance_status,
@@ -41,6 +42,7 @@ pub async fn launch_instance(
     app: AppHandle,
     instance_id: String,
     nickname: String,
+    ms_account_id: Option<String>,
 ) -> Result<ActionResult, String> {
     let items = read_instances().await?;
     let instance = items
@@ -49,9 +51,21 @@ pub async fn launch_instance(
         .cloned()
         .ok_or_else(|| "Instance not found".to_string())?;
 
+    // Resolve Microsoft account (refresh token if needed)
+    let ms_account = if let Some(acc_id) = ms_account_id {
+        let accounts = read_accounts().await?;
+        if let Some(acc) = accounts.into_iter().find(|a| a.id == acc_id) {
+            Some(refresh_account_if_expired(&acc).await?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     update_instance_status(&instance.id, "UPDATING").await?;
     install_instance_files(&app, &instance).await?;
-    let (java_bin, args) = build_launch_command(&app, &instance, &nickname).await?;
+    let (java_bin, args) = build_launch_command(&app, &instance, &nickname, ms_account.as_ref()).await?;
     let pid = spawn_minecraft_and_persist(&instance, java_bin, args).await?;
 
     Ok(ActionResult {

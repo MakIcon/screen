@@ -257,6 +257,17 @@ pub struct LauncherSettings {
     pub default_ram_gb: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MicrosoftAccount {
+    pub id: String,
+    pub uuid: String,
+    pub username: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: u64,
+}
+
 impl Default for LauncherSettings {
     fn default() -> Self {
         Self { default_ram_gb: 4 }

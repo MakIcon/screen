@@ -23,10 +23,12 @@ import type {
   InstallProgressPayload,
   LauncherSettings,
   LoaderType,
+  MicrosoftAccount,
   MinecraftManifest,
   TabKey,
   UpdateInstancePayload,
 } from "./types";
+import { MicrosoftAccountsModal } from "./components/modals/MicrosoftAccountsModal";
 import { formatLastPlayed } from "./utils/playtime";
 import { resolvePlaceholders } from "./utils/placeholders";
 import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from "./hooks/usePlaceholders";
@@ -90,6 +92,9 @@ export default function App() {
 
   const [nickname, setNickname] = useState("PLAYER");
   const [accountType, setAccountType] = useState("OFFLINE");
+  const [msAccounts, setMsAccounts] = useState<MicrosoftAccount[]>([]);
+  const [activeMsAccountId, setActiveMsAccountId] = useState<string | null>(null);
+  const [showMsModal, setShowMsModal] = useState(false);
 
   // mod / pack / shader state lives in their hooks — wired up after selectedModTarget/selectedShaderTarget are derived
 
@@ -445,18 +450,23 @@ export default function App() {
     const bootstrap = async () => {
       try {
         setManifestLoading(true);
-        const [manifestResponse, instanceResponse, systemRamResponse, settingsResponse] =
+        const [manifestResponse, instanceResponse, systemRamResponse, settingsResponse, msAccountsResponse] =
           await Promise.all([
             invoke<MinecraftManifest>("get_minecraft_manifest"),
             invoke<InstanceItem[]>("list_instances"),
             invoke<number>("get_system_memory_gb"),
             invoke<LauncherSettings>("get_launcher_settings"),
+            invoke<MicrosoftAccount[]>("list_microsoft_accounts"),
           ]);
 
         setManifest(manifestResponse);
         setInstances(instanceResponse);
         setSystemRamGb(systemRamResponse);
         setLauncherSettings(settingsResponse);
+        setMsAccounts(msAccountsResponse);
+        if (msAccountsResponse.length > 0) {
+          setActiveMsAccountId(msAccountsResponse[0].id);
+        }
         setSettingsRamDraft(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
 
         const preferredVersion =
@@ -805,6 +815,7 @@ const isScrollableElement = (target: EventTarget | null) => {
       const result = await invoke<ActionResult>("launch_instance", {
         instanceId: target.id,
         nickname,
+        msAccountId: accountType === "MICROSOFT" ? (activeMsAccountId ?? undefined) : undefined,
       });
 
       await refreshInstances(target.id);
@@ -1124,6 +1135,25 @@ const isScrollableElement = (target: EventTarget | null) => {
               setAccountType={setAccountType}
               openDropdown={openDropdown}
               setOpenDropdown={setOpenDropdown}
+              msAccounts={msAccounts}
+              activeMsAccountId={activeMsAccountId}
+              onOpenMsModal={() => setShowMsModal(true)}
+            />
+          )}
+
+          {showMsModal && (
+            <MicrosoftAccountsModal
+              accounts={msAccounts}
+              activeAccountId={activeMsAccountId}
+              onSelect={(id) => setActiveMsAccountId(id || null)}
+              onAccountsChange={(updated) => {
+                setMsAccounts(updated);
+                if (updated.length > 0 && !updated.find((a) => a.id === activeMsAccountId)) {
+                  setActiveMsAccountId(updated[0].id);
+                }
+                if (updated.length === 0) setActiveMsAccountId(null);
+              }}
+              onClose={() => setShowMsModal(false)}
             />
           )}
         </section>

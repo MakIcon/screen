@@ -12,6 +12,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             window_fx::start_gallery_unfold,
+            commands::auth::start_microsoft_auth,
+            commands::auth::list_microsoft_accounts,
+            commands::auth::remove_microsoft_account,
             commands::system::get_minecraft_manifest,
             commands::system::get_fabric_loader_versions,
             commands::instances::list_instances,

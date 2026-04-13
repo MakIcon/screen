@@ -26,3 +26,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 zip = { version = "8.2.0", default-features = false, features = ["deflate"] }
 md5 = "0.8.0"
 sysinfo = "0.38.4"
+url = "2"

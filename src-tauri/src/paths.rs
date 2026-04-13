@@ -47,6 +47,9 @@ pub fn libraries_root() -> Result<PathBuf, String> {
 pub fn assets_root() -> Result<PathBuf, String> {
     Ok(shared_root()?.join("assets"))
 }
+pub fn accounts_path() -> Result<PathBuf, String> {
+    Ok(launcher_root()?.join("accounts.json"))
+}
 
 pub fn detect_system_memory_gb() -> u32 {
     let mut sys = System::new_all();

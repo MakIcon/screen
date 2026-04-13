@@ -117,6 +117,15 @@ export type LauncherSettings = {
   defaultRamGb: number;
 };
 
+export type MicrosoftAccount = {
+  id: string;
+  uuid: string;
+  username: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+};
+
 export type DropdownKey =
   | null
   | "build"

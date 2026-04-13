@@ -57,6 +57,63 @@
   letter-spacing: 1px;
 }
 
+/* Microsoft account row inside overview panel */
+.mockup-ms-account {
+  flex: 1;
+  min-width: 0;
+}
+
+.mockup-ms-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.mockup-ms-row--empty {
+  opacity: 0.6;
+}
+
+.mockup-ms-avatar {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+.mockup-ms-avatar img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.mockup-ms-name {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mockup-ms-none {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ── Panel card ── */
 
 .panel-card {
@@ -211,6 +268,7 @@
   text-align: left;
   border: 1px solid var(--line);
   background: var(--bg-card);
+  color: var(--ink);
   padding: 16px;
   cursor: pointer;
   transition: border-color 0.2s, transform 0.2s, background 0.2s;
@@ -219,7 +277,7 @@
 
 .instance-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(26, 26, 26, 0.22);
+  border-color: var(--line-strong);
 }
 
 .instance-card.selected {
