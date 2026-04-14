@@ -273,3 +273,46 @@ impl Default for LauncherSettings {
         Self { default_ram_gb: 4 }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedItem {
+    pub project_id: Option<String>,
+    pub title: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceExportData {
+    pub schema_version: u32,
+    pub name: String,
+    pub version: String,
+    pub loader: String,
+    #[serde(default)]
+    pub fabric_loader_version: Option<String>,
+    pub ram: u32,
+    #[serde(default)]
+    pub mods: Vec<ExportedItem>,
+    #[serde(default)]
+    pub shaders: Vec<ExportedItem>,
+    #[serde(default)]
+    pub resource_packs: Vec<ExportedItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportInstancePayload {
+    pub name: String,
+    pub version: String,
+    pub loader: String,
+    #[serde(default)]
+    pub fabric_loader_version: Option<String>,
+    pub ram: u32,
+    #[serde(default)]
+    pub mods: Vec<ExportedItem>,
+    #[serde(default)]
+    pub shaders: Vec<ExportedItem>,
+    #[serde(default)]
+    pub resource_packs: Vec<ExportedItem>,
+}

@@ -106,6 +106,8 @@ interface InstancesTabProps {
   handleLaunchSelected: () => Promise<void>;
   handleKillGame: (id: string) => Promise<void>;
   handleDeleteInstance: (id: string) => void;
+  handleExportInstance: (id: string) => void;
+  handleImportBuild: () => void;
   handleOpenFolder: () => Promise<void>;
   setStatsInstanceId: (id: string | null) => void;
   openBuildCardSettings: (targetId?: string | null) => void;
@@ -166,6 +168,8 @@ export function InstancesTab({
   handleLaunchSelected,
   handleKillGame,
   handleDeleteInstance,
+  handleExportInstance,
+  handleImportBuild,
   handleOpenFolder,
   setStatsInstanceId,
   openBuildCardSettings,
@@ -180,17 +184,29 @@ export function InstancesTab({
         <div className="panel-card instances-list-card">
           <div className="card-topline">
             <span className="panel-label">INSTANCE LIBRARY</span>
-            <button
-              className="ghost-action"
-              type="button"
-              onClick={() => {
-                setCreateMode(true);
-                setCreateError("");
-                setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
-              }}
-            >
-              CREATE BUILD
-            </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                className="ghost-action icon-square-action"
+                type="button"
+                title="Импортировать сборку из файла"
+                onClick={handleImportBuild}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M7 9.5L4.5 7M7 9.5L9.5 7M7 9.5V3.5M2.5 11.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <button
+                className="ghost-action"
+                type="button"
+                onClick={() => {
+                  setCreateMode(true);
+                  setCreateError("");
+                  setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
+                }}
+              >
+                CREATE BUILD
+              </button>
+            </div>
           </div>
 
           <CustomScrollArea
@@ -540,6 +556,16 @@ export function InstancesTab({
                 <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
                 <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
                 <div className="instance-side-actions">
+                  <button
+                    className="ghost-action icon-square-action"
+                    type="button"
+                    title="Экспортировать сборку"
+                    onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M7 3.5L9.5 6M7 3.5L4.5 6M7 3.5V9.5M2.5 11.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
                   {advancedSettingsEnabled && (
                     <button
                       className="ghost-action icon-square-action settings-icon-action"

@@ -3,9 +3,15 @@ use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
 
+use std::collections::HashMap;
+
 use crate::{
+    commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
     minecraft::{is_fabric_loader, normalized_ram},
-    models::{CreateInstancePayload, InstanceItem, UpdateInstancePayload},
+    models::{
+        CreateInstancePayload, ExportedItem, InstanceExportData, ImportInstancePayload,
+        InstanceItem, UpdateInstancePayload,
+    },
     paths::{
         instances_root, make_instance_dir_name, now_string, read_instances, sanitize_name,
         unique_instance_dir, write_instances,
@@ -179,4 +185,201 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         .map_err(|e| format!("write instance meta error: {e}"))?;
 
     Ok(updated_item)
+}
+
+#[tauri::command]
+pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExportData, String> {
+    let items = read_instances().await?;
+    let instance = items
+        .into_iter()
+        .find(|i| i.id == instance_id)
+        .ok_or_else(|| "Instance not found".to_string())?;
+
+    let game_dir = PathBuf::from(&instance.game_dir);
+
+    let read_modrinth_state = |path: PathBuf| async move {
+        if !path.exists() {
+            return Vec::<ExportedItem>::new();
+        }
+        let raw = fs::read_to_string(&path).await.unwrap_or_default();
+        let state: HashMap<String, InstalledModEntry> =
+            serde_json::from_str(&raw).unwrap_or_default();
+        state
+            .values()
+            .map(|e| ExportedItem {
+                project_id: Some(e.project_id.clone()),
+                title: e.title.clone(),
+                source: "modrinth".to_string(),
+            })
+            .collect()
+    };
+
+    let mods = read_modrinth_state(
+        game_dir.join("mods").join(".screenlauncher-modrinth.json"),
+    )
+    .await;
+
+    let shaders = read_modrinth_state(
+        game_dir
+            .join("shaderpacks")
+            .join(".screenlauncher-modrinth-shaderpacks.json"),
+    )
+    .await;
+
+    let resource_packs = read_modrinth_state(
+        game_dir
+            .join("resourcepacks")
+            .join(".screenlauncher-modrinth-resourcepacks.json"),
+    )
+    .await;
+
+    Ok(InstanceExportData {
+        schema_version: 1,
+        name: instance.name,
+        version: instance.version,
+        loader: instance.loader,
+        fabric_loader_version: instance.fabric_loader_version,
+        ram: instance.ram,
+        mods,
+        shaders,
+        resource_packs,
+    })
+}
+
+#[tauri::command]
+pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceItem, String> {
+    let mut items = read_instances().await?;
+    let clean_name = sanitize_name(&payload.name);
+
+    if clean_name.is_empty() {
+        return Err("Build name is empty".into());
+    }
+
+    if items.iter().any(|i| i.name.eq_ignore_ascii_case(&clean_name)) {
+        return Err("Build with this name already exists".into());
+    }
+
+    let clean_loader = payload.loader.trim().to_string();
+    let is_fabric = is_fabric_loader(&clean_loader);
+    let fabric_loader_version = if is_fabric {
+        payload.fabric_loader_version.clone()
+    } else {
+        None
+    };
+
+    let id = format!("inst-{}", uuid::Uuid::new_v4());
+    let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
+    let game_dir = instance_dir.join("minecraft");
+
+    fs::create_dir_all(&game_dir)
+        .await
+        .map_err(|e| format!("create instance dir error: {e}"))?;
+
+    let item = InstanceItem {
+        id: id.clone(),
+        name: clean_name.to_uppercase(),
+        version: payload.version.clone(),
+        loader: if is_fabric {
+            "Fabric".to_string()
+        } else {
+            "Vanilla".to_string()
+        },
+        fabric_loader_version,
+        status: "EMPTY".to_string(),
+        ram: normalized_ram(payload.ram),
+        last_played: "NEVER".to_string(),
+        playtime_secs: 0,
+        created_at: now_string(),
+        game_dir: game_dir.to_string_lossy().to_string(),
+    };
+
+    let meta_path = instance_dir.join("instance.json");
+    let raw = serde_json::to_string_pretty(&item)
+        .map_err(|e| format!("serialize instance meta error: {e}"))?;
+
+    fs::write(meta_path, raw)
+        .await
+        .map_err(|e| format!("write instance meta error: {e}"))?;
+
+    items.push(item.clone());
+    write_instances(&items).await?;
+
+    let loaders: Vec<&str> = if is_fabric { vec!["fabric"] } else { vec![] };
+
+    // Install mods
+    if !payload.mods.is_empty() {
+        if let Ok(client) = build_client() {
+            let mods_dir = game_dir.join("mods");
+            let _ = fs::create_dir_all(&mods_dir).await;
+            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
+            for mod_item in &payload.mods {
+                if mod_item.source == "modrinth" {
+                    if let Some(ref pid) = mod_item.project_id {
+                        let _ = install_project_to_dir(
+                            &client, &item, pid, &mods_dir, &loaders, &mut state,
+                        )
+                        .await;
+                    }
+                }
+            }
+            if !state.is_empty() {
+                let p = mods_dir.join(".screenlauncher-modrinth.json");
+                if let Ok(s) = serde_json::to_string_pretty(&state) {
+                    let _ = fs::write(p, s).await;
+                }
+            }
+        }
+    }
+
+    // Install shaders
+    if !payload.shaders.is_empty() {
+        if let Ok(client) = build_client() {
+            let shaders_dir = game_dir.join("shaderpacks");
+            let _ = fs::create_dir_all(&shaders_dir).await;
+            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
+            for shader in &payload.shaders {
+                if shader.source == "modrinth" {
+                    if let Some(ref pid) = shader.project_id {
+                        let _ = install_project_to_dir(
+                            &client, &item, pid, &shaders_dir, &[], &mut state,
+                        )
+                        .await;
+                    }
+                }
+            }
+            if !state.is_empty() {
+                let p = shaders_dir.join(".screenlauncher-modrinth-shaderpacks.json");
+                if let Ok(s) = serde_json::to_string_pretty(&state) {
+                    let _ = fs::write(p, s).await;
+                }
+            }
+        }
+    }
+
+    // Install resource packs
+    if !payload.resource_packs.is_empty() {
+        if let Ok(client) = build_client() {
+            let packs_dir = game_dir.join("resourcepacks");
+            let _ = fs::create_dir_all(&packs_dir).await;
+            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
+            for pack in &payload.resource_packs {
+                if pack.source == "modrinth" {
+                    if let Some(ref pid) = pack.project_id {
+                        let _ = install_project_to_dir(
+                            &client, &item, pid, &packs_dir, &[], &mut state,
+                        )
+                        .await;
+                    }
+                }
+            }
+            if !state.is_empty() {
+                let p = packs_dir.join(".screenlauncher-modrinth-resourcepacks.json");
+                if let Ok(s) = serde_json::to_string_pretty(&state) {
+                    let _ = fs::write(p, s).await;
+                }
+            }
+        }
+    }
+
+    Ok(item)
 }

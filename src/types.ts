@@ -126,6 +126,35 @@ export type MicrosoftAccount = {
   expiresAt: number;
 };
 
+export type ExportedItem = {
+  projectId: string | null;
+  title: string;
+  source: string;
+};
+
+export type InstanceExportData = {
+  schemaVersion: number;
+  name: string;
+  version: string;
+  loader: string;
+  fabricLoaderVersion?: string | null;
+  ram: number;
+  mods: ExportedItem[];
+  shaders: ExportedItem[];
+  resourcePacks: ExportedItem[];
+};
+
+export type ImportInstancePayload = {
+  name: string;
+  version: string;
+  loader: string;
+  fabricLoaderVersion?: string | null;
+  ram: number;
+  mods: ExportedItem[];
+  shaders: ExportedItem[];
+  resourcePacks: ExportedItem[];
+};
+
 export type DropdownKey =
   | null
   | "build"

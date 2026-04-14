@@ -1,0 +1,37 @@
+.option-toggle {
+  width: 38px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.option-toggle.on {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.option-toggle.disabled {
+  opacity: 0.32;
+  cursor: default;
+  pointer-events: none;
+}
+
+.option-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--muted);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s;
+}
+
+.option-toggle.on .option-toggle-knob {
+  transform: translateX(16px);
+  background: var(--bg);
+}

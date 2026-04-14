@@ -19,6 +19,8 @@ import type {
   ActionResult,
   CreateInstancePayload,
   DropdownKey,
+  ExportedItem,
+  InstanceExportData,
   InstanceItem,
   InstallProgressPayload,
   LauncherSettings,
@@ -43,6 +45,7 @@ import { useModActions } from "./hooks/useModActions";
 import { usePackActions } from "./hooks/usePackActions";
 import { useShaderActions } from "./hooks/useShaderActions";
 import { useTheme } from "./hooks/useTheme";
+import { OptionToggle } from "./components/inputs/OptionToggle";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -125,6 +128,28 @@ export default function App() {
 
   const [confirmPendingId, setConfirmPendingId] = useState<string | null>(null);
   const [confirmPendingName, setConfirmPendingName] = useState("");
+
+  // Export modal
+  const [exportInstanceId, setExportInstanceId] = useState<string | null>(null);
+  const [exportData, setExportData] = useState<InstanceExportData | null>(null);
+  const [exportOptions, setExportOptions] = useState({
+    name: true, ram: true, mods: true, shaders: true, resourcePacks: true,
+  });
+
+  // Alt+hover list preview (shared between export/import)
+  const altHoverRef = useRef<{ items: ExportedItem[]; label: string; el: HTMLElement } | null>(null);
+  const [listPreview, setListPreview] = useState<{ items: ExportedItem[]; label: string; rect: DOMRect } | null>(null);
+
+  // Import modal
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState<InstanceExportData | null>(null);
+  const [importOptions, setImportOptions] = useState({
+    name: true, ram: true, mods: true, shaders: true, resourcePacks: true,
+  });
+  const [importCustomName, setImportCustomName] = useState("");
+  const [importWorking, setImportWorking] = useState(false);
+  const [importError, setImportError] = useState("");
 
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
 
@@ -426,6 +451,26 @@ export default function App() {
     const closeMenus = () => setOpenDropdown(null);
     window.addEventListener("click", closeMenus);
     return () => window.removeEventListener("click", closeMenus);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Alt" && altHoverRef.current) {
+        const { items, label, el } = altHoverRef.current;
+        if (items.length > 0) {
+          setListPreview({ items, label, rect: el.getBoundingClientRect() });
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Alt") setListPreview(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   useEffect(() => {
@@ -892,7 +937,110 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  // ── Export ──
+  const handleExportInstance = async (instanceId: string) => {
+    setExportInstanceId(instanceId);
+    setExportData(null);
+    try {
+      const data = await invoke<InstanceExportData>("get_instance_export_data", { instanceId });
+      setExportData(data);
+      setExportOptions({
+        name: true,
+        ram: true,
+        mods: data.mods.length > 0,
+        shaders: data.shaders.length > 0,
+        resourcePacks: data.resourcePacks.length > 0,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
+  const handleExportDownload = () => {
+    if (!exportData || !exportInstanceId) return;
+    const out = {
+      schemaVersion: 1,
+      name: exportOptions.name ? exportData.name : "",
+      version: exportData.version,
+      loader: exportData.loader,
+      fabricLoaderVersion: exportData.fabricLoaderVersion ?? null,
+      ram: exportOptions.ram ? exportData.ram : 0,
+      mods: exportOptions.mods ? exportData.mods : [] as ExportedItem[],
+      shaders: exportOptions.shaders ? exportData.shaders : [] as ExportedItem[],
+      resourcePacks: exportOptions.resourcePacks ? exportData.resourcePacks : [] as ExportedItem[],
+    };
+    const json = JSON.stringify(out, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(exportOptions.name && exportData.name ? exportData.name : "build").toLowerCase().replace(/\s+/g, "-")}.slbuild`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setExportInstanceId(null);
+  };
+
+  // ── Import ──
+  const handleImportBuild = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as InstanceExportData;
+        setImportData(data);
+        setImportCustomName(data.name || "");
+        setImportOptions({
+          name: !!data.name,
+          ram: !!data.ram,
+          mods: (data.mods?.length ?? 0) > 0,
+          shaders: (data.shaders?.length ?? 0) > 0,
+          resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
+        });
+        setImportError("");
+        setImportModalOpen(true);
+      } catch {
+        setImportError("Не удалось прочитать файл. Убедитесь, что это корректный .slbuild файл.");
+        setImportModalOpen(true);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleImportConfirm = async () => {
+    if (!importData) return;
+    setImportWorking(true);
+    setImportError("");
+    const name = importOptions.name ? importData.name : importCustomName;
+    try {
+      const newInstance = await invoke<InstanceItem>("import_instance", {
+        payload: {
+          name,
+          version: importData.version,
+          loader: importData.loader,
+          fabricLoaderVersion: importData.fabricLoaderVersion ?? null,
+          ram: importOptions.ram ? importData.ram : (launcherSettings?.defaultRamGb ?? 4),
+          mods: importOptions.mods ? (importData.mods ?? []) : [],
+          shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
+          resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
+        },
+      });
+      await refreshInstances(newInstance.id);
+      setImportModalOpen(false);
+      setImportData(null);
+    } catch (err) {
+      setImportError(String(err));
+    } finally {
+      setImportWorking(false);
+    }
+  };
 
   const renderMainContent = () => {
     switch (activeTab) {
@@ -969,6 +1117,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             handleLaunchSelected={handleLaunchSelected}
             handleKillGame={handleKillGame}
             handleDeleteInstance={handleDeleteInstance}
+            handleExportInstance={handleExportInstance}
+            handleImportBuild={handleImportBuild}
             handleOpenFolder={handleOpenFolder}
             setStatsInstanceId={setStatsInstanceId}
             openBuildCardSettings={openBuildCardSettings}
@@ -1247,6 +1397,192 @@ const isScrollableElement = (target: EventTarget | null) => {
           </div>
         </div>
       )}
+
+      {/* ── Export modal ── */}
+      {exportInstanceId && (() => {
+        const inst = instances.find((i) => i.id === exportInstanceId);
+        type ExportKey = keyof typeof exportOptions;
+        type ExportRow = { key: ExportKey; label: string; meta?: string; items?: ExportedItem[] };
+        const rows: ExportRow[] = [
+          { key: "name",          label: "BUILD NAME",     meta: exportData?.name },
+          { key: "ram",           label: "RAM SETTINGS",   meta: exportData ? `${exportData.ram} GB` : undefined },
+          { key: "mods",          label: "MODS",           meta: exportData ? `${exportData.mods.length}` : "...",         items: exportData?.mods ?? [] },
+          { key: "shaders",       label: "SHADERS",        meta: exportData ? `${exportData.shaders.length}` : "...",      items: exportData?.shaders ?? [] },
+          { key: "resourcePacks", label: "RESOURCE PACKS", meta: exportData ? `${exportData.resourcePacks.length}` : "...", items: exportData?.resourcePacks ?? [] },
+        ];
+        const toggle = (key: ExportKey) =>
+          setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+        return (
+          <div className="confirm-overlay" onClick={() => { setExportInstanceId(null); setListPreview(null); }}>
+            <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
+              <span className="confirm-label">EXPORT BUILD</span>
+              <p className="confirm-title">{inst?.name ?? ""}</p>
+              <div className="eximp-options">
+                {rows.map(({ key, label, meta, items }) => (
+                  <div
+                    key={key}
+                    className="eximp-option"
+                    onClick={() => toggle(key)}
+                    onMouseEnter={(e) => {
+                      if (items && items.length > 0) {
+                        altHoverRef.current = { items, label, el: e.currentTarget };
+                        if (e.altKey) setListPreview({ items, label, rect: e.currentTarget.getBoundingClientRect() });
+                      }
+                    }}
+                    onMouseLeave={() => { altHoverRef.current = null; setListPreview(null); }}
+                  >
+                    <OptionToggle enabled={exportOptions[key]} onToggle={() => toggle(key)} />
+                    <span className="eximp-option-label">{label}</span>
+                    <span className="eximp-option-meta">
+                      {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
+                      {meta}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="eximp-notice">VERSION &amp; LOADER экспортируются всегда. Local-моды/шейдеры не включаются.</p>
+              <div className="confirm-actions" style={{ marginTop: 24 }}>
+                <button className="primary-action" type="button" disabled={!exportData} onClick={handleExportDownload}>
+                  EXPORT
+                </button>
+                <button className="ghost-action" type="button" onClick={() => { setExportInstanceId(null); setListPreview(null); }}>
+                  CANCEL
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Import modal ── */}
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept=".slbuild,.json"
+        style={{ display: "none" }}
+        onChange={handleImportFileSelected}
+      />
+      {importModalOpen && (() => {
+        type ImportKey = keyof typeof importOptions;
+        type ImportRow = { key: ImportKey; label: string; meta?: string; disabled?: boolean; items?: ExportedItem[] };
+        const rows: ImportRow[] = [
+          { key: "name",          label: "BUILD NAME",     meta: importData?.name || undefined },
+          { key: "ram",           label: "RAM SETTINGS",   meta: importData?.ram ? `${importData.ram} GB` : undefined },
+          { key: "mods",          label: "MODS",           meta: importData ? `${importData.mods?.length ?? 0}` : undefined,         disabled: !importData?.mods?.length,         items: importData?.mods ?? [] },
+          { key: "shaders",       label: "SHADERS",        meta: importData ? `${importData.shaders?.length ?? 0}` : undefined,      disabled: !importData?.shaders?.length,      items: importData?.shaders ?? [] },
+          { key: "resourcePacks", label: "RESOURCE PACKS", meta: importData ? `${importData.resourcePacks?.length ?? 0}` : undefined, disabled: !importData?.resourcePacks?.length, items: importData?.resourcePacks ?? [] },
+        ];
+        const toggle = (key: ImportKey) =>
+          setImportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+        const close = () => { setImportModalOpen(false); setImportData(null); setImportError(""); setListPreview(null); };
+        return (
+          <div className="confirm-overlay" onClick={close}>
+            <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
+              <span className="confirm-label">IMPORT BUILD</span>
+              <p className="confirm-title">{importData?.name || "НОВАЯ СБОРКА"}</p>
+              {importData ? (
+                <>
+                  <div className="eximp-options">
+                    {rows.map(({ key, label, meta, disabled, items }) => (
+                      <div key={key}>
+                        <div
+                          className={`eximp-option${disabled ? " disabled" : ""}`}
+                          onClick={() => !disabled && toggle(key)}
+                          onMouseEnter={(e) => {
+                            if (items && items.length > 0) {
+                              altHoverRef.current = { items, label, el: e.currentTarget };
+                              if (e.altKey) setListPreview({ items, label, rect: e.currentTarget.getBoundingClientRect() });
+                            }
+                          }}
+                          onMouseLeave={() => { altHoverRef.current = null; setListPreview(null); }}
+                        >
+                          <OptionToggle
+                            enabled={importOptions[key] && !disabled}
+                            onToggle={() => !disabled && toggle(key)}
+                            disabled={disabled}
+                          />
+                          <span className="eximp-option-label">{label}</span>
+                          <span className="eximp-option-meta">
+                            {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
+                            {meta}
+                          </span>
+                        </div>
+                        {key === "name" && !importOptions.name && (
+                          <div className="eximp-name-input-wrap">
+                            <input
+                              placeholder="Введите название сборки"
+                              value={importCustomName}
+                              onChange={(e) => setImportCustomName(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="eximp-notice">
+                    VERSION &amp; LOADER берутся из файла. Modrinth-моды будут скачаны заново.
+                  </p>
+                  {importError && (
+                    <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
+                      {importError}
+                    </p>
+                  )}
+                  {importWorking && <p className="eximp-working">ИМПОРТ...</p>}
+                  <div className="confirm-actions" style={{ marginTop: 24 }}>
+                    <button
+                      className="primary-action"
+                      type="button"
+                      disabled={importWorking || (!importOptions.name && !importCustomName.trim())}
+                      onClick={handleImportConfirm}
+                    >
+                      {importWorking ? "WORKING..." : "IMPORT"}
+                    </button>
+                    <button className="ghost-action" type="button" onClick={close} disabled={importWorking}>
+                      CANCEL
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="confirm-body" style={{ color: "var(--accent)" }}>{importError || "Ошибка чтения файла."}</p>
+                  <div className="confirm-actions" style={{ marginTop: 8 }}>
+                    <button className="ghost-action" type="button" onClick={close}>CLOSE</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Alt+hover list preview ── */}
+      {listPreview && listPreview.items.length > 0 && (() => {
+        const gap = 10;
+        const previewW = 240;
+        const spaceRight = window.innerWidth - listPreview.rect.right - gap;
+        const left = spaceRight >= previewW
+          ? listPreview.rect.right + gap
+          : listPreview.rect.left - previewW - gap;
+        const top = Math.min(
+          listPreview.rect.top,
+          window.innerHeight - Math.min(listPreview.items.length * 36 + 46, 280) - 8,
+        );
+        return (
+          <div className="eximp-list-preview" style={{ left, top }}>
+            <div className="eximp-list-preview-head">
+              <span>{listPreview.label}</span>
+              <span className="eximp-list-preview-count">{listPreview.items.length}</span>
+            </div>
+            {listPreview.items.map((item, i) => (
+              <div key={i} className="eximp-list-preview-item">
+                <span className="eximp-list-preview-title">{item.title}</span>
+                <span className="eximp-list-preview-src">{item.source}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
