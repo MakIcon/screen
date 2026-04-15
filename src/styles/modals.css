@@ -481,9 +481,9 @@
   background: var(--bg);
   border: 1px solid var(--line-strong);
   box-shadow: var(--surface-shadow-strong);
-  min-width: 210px;
+  min-width: 240px;
   max-width: 320px;
-  max-height: 280px;
+  max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
   animation: eximp-preview-in 0.14s cubic-bezier(0.22, 1, 0.36, 1);
@@ -520,9 +520,8 @@
 .eximp-list-preview-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding: 7px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -530,10 +529,37 @@
   border-bottom: none;
 }
 
+.eximp-list-preview-icon,
+.eximp-list-preview-icon-fallback {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.eximp-list-preview-icon {
+  display: block;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.eximp-list-preview-icon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--muted-strong);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+
 .eximp-list-preview-title {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.3px;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

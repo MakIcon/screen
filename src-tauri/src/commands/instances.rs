@@ -210,6 +210,7 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
                 project_id: Some(e.project_id.clone()),
                 title: e.title.clone(),
                 source: "modrinth".to_string(),
+                icon_url: e.icon_url.clone(),
             })
             .collect()
     };

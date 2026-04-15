@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::Path,
     time::Duration,
 };
@@ -65,6 +65,8 @@ pub struct InstalledModEntry {
     pub version_id: String,
     pub title: String,
     pub author: String,
+    #[serde(default)]
+    pub icon_url: Option<String>,
     pub version_number: String,
     pub game_version: String,
     pub filename: String,
@@ -340,6 +342,50 @@ pub(crate) async fn fetch_manifest_releases(client: &Client) -> Result<Vec<Strin
     Ok(versions)
 }
 
+async fn fetch_project_icon_url(
+    client: &Client,
+    project_id: &str,
+) -> Result<Option<String>, String> {
+    let project_meta: Value =
+        http_json(client, &format!("{MODRINTH_API_BASE}/project/{project_id}")).await?;
+    Ok(project_meta
+        .get("icon_url")
+        .and_then(Value::as_str)
+        .map(|value| value.to_string()))
+}
+
+#[tauri::command]
+pub async fn get_modrinth_project_icons(
+    project_ids: Vec<String>,
+) -> Result<HashMap<String, Option<String>>, String> {
+    let client = build_client()?;
+    let unique_ids = project_ids
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<HashSet<_>>();
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for project_id in unique_ids {
+        let client = client.clone();
+        tasks.spawn(async move {
+            let icon_url = fetch_project_icon_url(&client, &project_id)
+                .await
+                .unwrap_or(None);
+            (project_id, icon_url)
+        });
+    }
+
+    let mut result = HashMap::new();
+    while let Some(joined) = tasks.join_next().await {
+        let (project_id, icon_url) =
+            joined.map_err(|error| format!("project icon task join error: {error}"))?;
+        result.insert(project_id, icon_url);
+    }
+
+    Ok(result)
+}
+
 pub(crate) async fn resolve_project_version(
     client: &Client,
     project_id: &str,
@@ -427,6 +473,10 @@ pub(crate) async fn install_project_to_dir(
             .and_then(|v| v.as_str())
             .unwrap_or("Unknown Project")
             .to_string();
+        let project_icon_url = project_meta
+            .get("icon_url")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string());
 
         let version = resolve_project_version(client, &project_id, &instance.version, loaders).await?;
         let file = choose_primary_file(&version)
@@ -443,6 +493,7 @@ pub(crate) async fn install_project_to_dir(
                 version_id: version.id.clone(),
                 title: project_title,
                 author: String::new(),
+                icon_url: project_icon_url,
                 version_number: version.version_number,
                 game_version: instance.version.clone(),
                 filename: file.filename,

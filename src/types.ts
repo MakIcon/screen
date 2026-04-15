@@ -130,6 +130,7 @@ export type ExportedItem = {
   projectId: string | null;
   title: string;
   source: string;
+  iconUrl?: string | null;
 };
 
 export type InstanceExportData = {

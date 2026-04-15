@@ -56,6 +56,37 @@ function pickPreferredInstance(instances: InstanceItem[]) {
   return instances[instances.length - 1] ?? instances[0] ?? null;
 }
 
+function ExportedItemIcon({
+  src,
+  title,
+  source,
+}: {
+  src?: string | null;
+  title: string;
+  source: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const fallbackLabel =
+    source === "modrinth"
+      ? "M"
+      : source.trim().slice(0, 1).toUpperCase() || title.trim().slice(0, 1).toUpperCase() || "?";
+
+  if (src && !imageFailed) {
+    return (
+      <img
+        className="eximp-list-preview-icon"
+        src={src}
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  return <span className="eximp-list-preview-icon-fallback">{fallbackLabel}</span>;
+}
+
 export default function App() {
   const [phase, setPhase] = useState("init");
   const [isClosing, setIsClosing] = useState(false);
@@ -139,6 +170,8 @@ export default function App() {
   // Alt+hover list preview (shared between export/import)
   const altHoverRef = useRef<{ items: ExportedItem[]; label: string; el: HTMLElement } | null>(null);
   const [listPreview, setListPreview] = useState<{ items: ExportedItem[]; label: string; rect: DOMRect } | null>(null);
+  const [modrinthProjectIcons, setModrinthProjectIcons] = useState<Record<string, string | null>>({});
+  const requestedModrinthProjectIconIdsRef = useRef<Set<string>>(new Set());
 
   // Import modal
   const importFileInputRef = useRef<HTMLInputElement>(null);
@@ -473,6 +506,48 @@ export default function App() {
     };
   }, []);
 
+  const requestModrinthProjectIcons = async (items: ExportedItem[]) => {
+    const projectIds = Array.from(
+      new Set(
+        items
+          .filter((item) => item.source === "modrinth" && !!item.projectId && !item.iconUrl)
+          .map((item) => item.projectId as string)
+          .filter((projectId) => {
+            if (projectId in modrinthProjectIcons) return false;
+            if (requestedModrinthProjectIconIdsRef.current.has(projectId)) return false;
+            return true;
+          }),
+      ),
+    );
+
+    if (projectIds.length === 0) return;
+
+    for (const projectId of projectIds) {
+      requestedModrinthProjectIconIdsRef.current.add(projectId);
+    }
+
+    try {
+      const result = await invoke<Record<string, string | null>>("get_modrinth_project_icons", {
+        projectIds,
+      });
+      setModrinthProjectIcons((prev) => ({ ...prev, ...result }));
+    } catch (error) {
+      console.error("get_modrinth_project_icons failed", error);
+      setModrinthProjectIcons((prev) => {
+        const next = { ...prev };
+        for (const projectId of projectIds) {
+          if (!(projectId in next)) next[projectId] = null;
+        }
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!listPreview) return;
+    void requestModrinthProjectIcons(listPreview.items);
+  }, [listPreview]);
+
   useEffect(() => {
     try {
       const advancedRaw = window.localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY);
@@ -490,6 +565,12 @@ export default function App() {
       console.error(error);
     }
   }, []);
+
+  const getExportedItemIconUrl = (item: ExportedItem) => {
+    if (item.iconUrl) return item.iconUrl;
+    if (item.source !== "modrinth" || !item.projectId) return null;
+    return modrinthProjectIcons[item.projectId] ?? null;
+  };
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -1559,14 +1640,15 @@ const isScrollableElement = (target: EventTarget | null) => {
       {/* ── Alt+hover list preview ── */}
       {listPreview && listPreview.items.length > 0 && (() => {
         const gap = 10;
-        const previewW = 240;
+        const previewW = 280;
+        const previewItemHeight = 46;
         const spaceRight = window.innerWidth - listPreview.rect.right - gap;
         const left = spaceRight >= previewW
           ? listPreview.rect.right + gap
           : listPreview.rect.left - previewW - gap;
         const top = Math.min(
           listPreview.rect.top,
-          window.innerHeight - Math.min(listPreview.items.length * 36 + 46, 280) - 8,
+          window.innerHeight - Math.min(listPreview.items.length * previewItemHeight + 46, 320) - 8,
         );
         return (
           <div className="eximp-list-preview" style={{ left, top }}>
@@ -1575,7 +1657,12 @@ const isScrollableElement = (target: EventTarget | null) => {
               <span className="eximp-list-preview-count">{listPreview.items.length}</span>
             </div>
             {listPreview.items.map((item, i) => (
-              <div key={i} className="eximp-list-preview-item">
+              <div key={`${item.projectId ?? item.title}-${i}`} className="eximp-list-preview-item">
+                <ExportedItemIcon
+                  src={getExportedItemIconUrl(item)}
+                  title={item.title}
+                  source={item.source}
+                />
                 <span className="eximp-list-preview-title">{item.title}</span>
                 <span className="eximp-list-preview-src">{item.source}</span>
               </div>

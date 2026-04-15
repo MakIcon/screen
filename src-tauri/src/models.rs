@@ -280,6 +280,8 @@ pub struct ExportedItem {
     pub project_id: Option<String>,
     pub title: String,
     pub source: String,
+    #[serde(default)]
+    pub icon_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
