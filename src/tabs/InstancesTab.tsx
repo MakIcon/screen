@@ -15,7 +15,7 @@ import {
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
 import { LOADER_OPTIONS } from "../constants/tabs";
-import { clampRamToSystem } from "../utils/ram";
+import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import { formatLastPlayed, formatPlaytime } from "../utils/playtime";
 import type {
   DropdownKey,
@@ -176,6 +176,8 @@ export function InstancesTab({
 }: InstancesTabProps) {
   const sortedInstances = [...instances].reverse();
   const showCreator = createMode || instances.length === 0 || !selectedInstance;
+  const minecraftRamMax = getMinecraftRamMax(systemRamGb);
+  const ramSliderTicks = getRamSliderTicks(systemRamGb);
 
   return (
     <section className="launcher-panel">
@@ -393,11 +395,11 @@ export function InstancesTab({
                       <ElementSlider
                         showHeader={false}
                         min={1}
-                        max={systemRamGb}
+                        max={minecraftRamMax}
                         step={1}
                         value={createRamGb}
                         tickMode="custom"
-                        customTicks={Array.from(new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])).sort((a, b) => a - b)}
+                        customTicks={ramSliderTicks}
                         onChange={(value) => setCreateRamGb(clampRamToSystem(value, systemRamGb))}
                       />
                     </div>
@@ -503,11 +505,11 @@ export function InstancesTab({
                       <ElementSlider
                         showHeader={false}
                         min={1}
-                        max={systemRamGb}
+                        max={minecraftRamMax}
                         step={1}
                         value={instanceRamDraft}
                         tickMode="custom"
-                        customTicks={Array.from(new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])).sort((a, b) => a - b)}
+                        customTicks={ramSliderTicks}
                         onChange={(value) => {
                           const nextValue = clampRamToSystem(value, systemRamGb);
                           setInstanceRamDraft(nextValue);

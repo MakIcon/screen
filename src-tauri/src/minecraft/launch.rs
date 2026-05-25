@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::PathBuf, process::Command};
+use std::{collections::HashMap, path::PathBuf, process::{Command, Stdio}};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 use reqwest::Client;
 use tauri::AppHandle;
@@ -14,7 +17,7 @@ use crate::{
 use super::{
     assets::download_logging_config,
     effective_version_id_for_instance,
-    java::{effective_ram_gb, is_modern_mc, resolve_java_bin},
+    java::{effective_ram_gb, is_modern_mc, optimized_minecraft_jvm_args, resolve_java_bin},
     version::{
         collect_argument_list, evaluate_rules, library_path_from_download, replace_tokens,
         resolve_library_artifact_download, resolve_version_meta,
@@ -26,6 +29,8 @@ pub fn normalized_ram(ram: u32) -> u32 {
 }
 
 const LWJGL_STACK_SIZE_KB: u32 = 1024;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub async fn download_libraries(app: &AppHandle, resolved: &VersionMeta) -> Result<Vec<PathBuf>, String> {
     let mut classpath_entries = Vec::new();
@@ -57,6 +62,7 @@ pub async fn build_launch_command(
     instance: &InstanceItem,
     nickname: &str,
     ms_account: Option<&MicrosoftAccount>,
+    optimized_java_args_enabled: bool,
 ) -> Result<(String, Vec<String>), String> {
     let client = Client::new();
     let resolved_version_id = effective_version_id_for_instance(instance)?;
@@ -139,14 +145,21 @@ pub async fn build_launch_command(
     tokens.insert("access_token", "0".to_string());
 
     let java_bin = resolve_java_bin(&instance.version);
-    let ram_gb = effective_ram_gb(&java_bin, instance.ram);
+    let ram_gb = effective_ram_gb(&java_bin, normalized_ram(instance.ram));
 
     let mut args = vec![
         format!("-Xmx{}G", ram_gb),
-        "-Xms512M".to_string(),
+        if optimized_java_args_enabled {
+            format!("-Xms{}G", ram_gb)
+        } else {
+            "-Xms512M".to_string()
+        },
         format!("-Dorg.lwjgl.system.stackSize={LWJGL_STACK_SIZE_KB}"),
         "-Djava.net.preferIPv4Stack=true".to_string(),
     ];
+    if optimized_java_args_enabled {
+        args.extend(optimized_minecraft_jvm_args(ram_gb));
+    }
 
     // For offline accounts block the real auth endpoints; MS accounts use real ones
     if ms_account.is_none() {
@@ -233,11 +246,18 @@ pub async fn spawn_minecraft_and_persist(
     java_bin: String,
     args: Vec<String>,
 ) -> Result<u32, String> {
-    let child = Command::new(&java_bin)
+    let mut command = Command::new(&java_bin);
+    command
         .args(&args)
         .current_dir(&instance.game_dir)
-        .spawn()
-        .map_err(|e| format!("launch error: {e}"))?;
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let child = command.spawn().map_err(|e| format!("launch error: {e}"))?;
 
     let mut items = read_instances().await?;
     if let Some(index) = items.iter().position(|i| i.id == instance.id) {

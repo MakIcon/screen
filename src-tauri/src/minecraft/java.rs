@@ -168,3 +168,39 @@ pub fn effective_ram_gb(java_bin: &str, requested_ram: u32) -> u32 {
 pub fn is_modern_mc(version: &str) -> bool {
     matches!(parse_mc_version(version), Some((1, minor, _)) if minor >= 17)
 }
+
+fn g1_heap_region_size_mb(ram_gb: u32) -> u32 {
+    match ram_gb {
+        0..=4 => 4,
+        5..=12 => 8,
+        _ => 16,
+    }
+}
+
+pub fn optimized_minecraft_jvm_args(ram_gb: u32) -> Vec<String> {
+    let region_size = g1_heap_region_size_mb(ram_gb);
+
+    vec![
+        "-XX:+UseG1GC".to_string(),
+        "-XX:+ParallelRefProcEnabled".to_string(),
+        "-XX:MaxGCPauseMillis=200".to_string(),
+        "-XX:+UnlockExperimentalVMOptions".to_string(),
+        "-XX:+DisableExplicitGC".to_string(),
+        "-XX:+AlwaysPreTouch".to_string(),
+        "-XX:+UseStringDeduplication".to_string(),
+        "-XX:G1NewSizePercent=30".to_string(),
+        "-XX:G1MaxNewSizePercent=40".to_string(),
+        format!("-XX:G1HeapRegionSize={region_size}M"),
+        "-XX:G1ReservePercent=20".to_string(),
+        "-XX:G1HeapWastePercent=5".to_string(),
+        "-XX:G1MixedGCCountTarget=4".to_string(),
+        "-XX:InitiatingHeapOccupancyPercent=15".to_string(),
+        "-XX:G1MixedGCLiveThresholdPercent=90".to_string(),
+        "-XX:G1RSetUpdatingPauseTimePercent=5".to_string(),
+        "-XX:SurvivorRatio=32".to_string(),
+        "-XX:+PerfDisableSharedMem".to_string(),
+        "-XX:MaxTenuringThreshold=1".to_string(),
+        "-Dsun.rmi.dgc.server.gcInterval=2147483646".to_string(),
+        "-Dsun.rmi.dgc.client.gcInterval=2147483646".to_string(),
+    ]
+}

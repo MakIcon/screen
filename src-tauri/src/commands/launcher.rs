@@ -9,7 +9,7 @@ use crate::{
         update_instance_status,
     },
     models::ActionResult,
-    paths::{read_instances, write_instances},
+    paths::{read_instances, read_settings, write_instances},
 };
 
 #[tauri::command]
@@ -65,7 +65,15 @@ pub async fn launch_instance(
 
     update_instance_status(&instance.id, "UPDATING").await?;
     install_instance_files(&app, &instance).await?;
-    let (java_bin, args) = build_launch_command(&app, &instance, &nickname, ms_account.as_ref()).await?;
+    let settings = read_settings().await?;
+    let (java_bin, args) = build_launch_command(
+        &app,
+        &instance,
+        &nickname,
+        ms_account.as_ref(),
+        settings.optimized_java_args,
+    )
+    .await?;
     let pid = spawn_minecraft_and_persist(&instance, java_bin, args).await?;
 
     Ok(ActionResult {

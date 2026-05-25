@@ -786,6 +786,16 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  const saveOptimizedJavaArgs = async (enabled: boolean) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_optimized_java_args", { enabled });
+      setLauncherSettings(updated);
+    } catch (error) {
+      console.error(error);
+      setActionError(String(error));
+    }
+  };
+
   const saveSelectedInstance = async (patch: Partial<InstanceItem>) => {
     if (!selectedInstance) return;
 
@@ -1286,6 +1296,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             settingsRamDraft={settingsRamDraft}
             setSettingsRamDraft={setSettingsRamDraft}
             saveSettingsRam={saveSettingsRam}
+            optimizedJavaArgs={launcherSettings?.optimizedJavaArgs ?? true}
+            saveOptimizedJavaArgs={saveOptimizedJavaArgs}
             wheelTabSwitching={wheelTabSwitching}
             setWheelTabSwitching={setWheelTabSwitching}
             showSnapshots={showSnapshots}

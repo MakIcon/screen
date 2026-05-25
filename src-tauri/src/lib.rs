@@ -46,6 +46,7 @@ pub fn run() {
             commands::modrinth::uninstall_modrinth_shader,
             commands::settings::get_launcher_settings,
             commands::settings::set_default_ram_gb,
+            commands::settings::set_optimized_java_args,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

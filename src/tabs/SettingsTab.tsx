@@ -1,6 +1,6 @@
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
-import { clampRamToSystem } from "../utils/ram";
+import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
 
 const SunIcon = () => (
@@ -34,6 +34,8 @@ interface SettingsTabProps {
   settingsRamDraft: number;
   setSettingsRamDraft: (v: number) => void;
   saveSettingsRam: () => Promise<void>;
+  optimizedJavaArgs: boolean;
+  saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
   wheelTabSwitching: boolean;
   setWheelTabSwitching: (fn: (prev: boolean) => boolean) => void;
   showSnapshots: boolean;
@@ -54,6 +56,8 @@ export function SettingsTab({
   settingsRamDraft,
   setSettingsRamDraft,
   saveSettingsRam,
+  optimizedJavaArgs,
+  saveOptimizedJavaArgs,
   wheelTabSwitching,
   setWheelTabSwitching,
   showSnapshots,
@@ -68,6 +72,9 @@ export function SettingsTab({
   theme,
   setTheme,
 }: SettingsTabProps) {
+  const minecraftRamMax = getMinecraftRamMax(systemRamGb);
+  const ramSliderTicks = getRamSliderTicks(systemRamGb);
+
   return (
     <section className="launcher-panel">
       <div className="panel-grid simple-two-col-fixed">
@@ -84,13 +91,11 @@ export function SettingsTab({
               <ElementSlider
                 showHeader={false}
                 min={1}
-                max={systemRamGb}
+                max={minecraftRamMax}
                 step={1}
                 value={settingsRamDraft}
                 tickMode="custom"
-                customTicks={Array.from(
-                  new Set([1, Math.max(1, Math.floor(systemRamGb / 3)), Math.max(1, Math.floor((systemRamGb / 3) * 2)), systemRamGb])
-                ).sort((a, b) => a - b)}
+                customTicks={ramSliderTicks}
                 onChange={(value) => {
                   setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
                 }}
@@ -130,6 +135,13 @@ export function SettingsTab({
           </div>
 
           <div className="settings-toggle-block">
+            <ElementToggle
+              title="OPTIMIZED JAVA ARGUMENTS"
+              note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
+              enabled={optimizedJavaArgs}
+              onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
+            />
+
             <ElementToggle
               title="WHEEL TAB SWITCHING"
               note="Переключение вкладок движением колеса мыши."
@@ -193,6 +205,14 @@ export function SettingsTab({
             <div className="stat-row">
               <span>DEFAULT BUILD RAM</span>
               <strong>{settingsRamDraft} GB</strong>
+            </div>
+            <div className="stat-row">
+              <span>GAME RAM LIMIT</span>
+              <strong>{minecraftRamMax} GB</strong>
+            </div>
+            <div className="stat-row">
+              <span>JAVA ARGUMENTS</span>
+              <strong>{optimizedJavaArgs ? "OPTIMIZED" : "CLASSIC"}</strong>
             </div>
             <div className="stat-row">
               <span>SNAPSHOTS</span>

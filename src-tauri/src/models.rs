@@ -255,6 +255,8 @@ pub struct AssetObject {
 #[serde(rename_all = "camelCase")]
 pub struct LauncherSettings {
     pub default_ram_gb: u32,
+    #[serde(default = "default_optimized_java_args")]
+    pub optimized_java_args: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,8 +272,15 @@ pub struct MicrosoftAccount {
 
 impl Default for LauncherSettings {
     fn default() -> Self {
-        Self { default_ram_gb: 4 }
+        Self {
+            default_ram_gb: 4,
+            optimized_java_args: default_optimized_java_args(),
+        }
     }
+}
+
+fn default_optimized_java_args() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

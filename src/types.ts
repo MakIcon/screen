@@ -115,6 +115,7 @@ export type InstallProgressPayload = {
 
 export type LauncherSettings = {
   defaultRamGb: number;
+  optimizedJavaArgs: boolean;
 };
 
 export type MicrosoftAccount = {

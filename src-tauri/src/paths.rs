@@ -113,6 +113,7 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
     if !path.exists() {
         let settings = LauncherSettings {
             default_ram_gb: 4_u32.min(detect_system_memory_gb()),
+            optimized_java_args: true,
         };
 
         let raw = serde_json::to_string_pretty(&settings)
