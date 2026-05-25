@@ -88,7 +88,7 @@ pub struct InstalledModView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub(crate) struct ModrinthVersion {
     #[serde(default)]
     pub(crate) id: String,
@@ -111,7 +111,7 @@ pub(crate) struct ModrinthVersion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub(crate) struct ModrinthDependency {
     pub(crate) version_id: Option<String>,
     pub(crate) project_id: Option<String>,

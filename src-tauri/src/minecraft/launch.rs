@@ -25,6 +25,8 @@ pub fn normalized_ram(ram: u32) -> u32 {
     clamp_ram_to_system(ram)
 }
 
+const LWJGL_STACK_SIZE_KB: u32 = 1024;
+
 pub async fn download_libraries(app: &AppHandle, resolved: &VersionMeta) -> Result<Vec<PathBuf>, String> {
     let mut classpath_entries = Vec::new();
     let mut tasks = Vec::new();
@@ -142,6 +144,7 @@ pub async fn build_launch_command(
     let mut args = vec![
         format!("-Xmx{}G", ram_gb),
         "-Xms512M".to_string(),
+        format!("-Dorg.lwjgl.system.stackSize={LWJGL_STACK_SIZE_KB}"),
         "-Djava.net.preferIPv4Stack=true".to_string(),
     ];
 
