@@ -1,0 +1,48 @@
+.cni-root {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+
+.cni-root:focus-within {
+  border-color: var(--ink);
+  background: var(--bg);
+}
+
+.cni-root--disabled {
+  opacity: 0.55;
+}
+
+.cni-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  padding: 0 11px;
+}
+
+.cni-root--with-arrows .cni-input {
+  padding-right: 6px;
+}
+
+.cni-input::placeholder {
+  color: var(--muted-soft);
+}
+
+.cni-input:disabled {
+  cursor: default;
+}

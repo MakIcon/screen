@@ -6,12 +6,12 @@ import type {
   SetStateAction,
 } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
+import { CustomNumberInput } from "../inputs/CustomNumberInput";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
 import {
   getDefaultJavaArgsText,
   getRamFromJavaArgsText,
-  normalizeWindowDimension,
 } from "../../utils/javaArgs";
 import type { BuildRuntimeSettingsDraft } from "../../types";
 
@@ -177,18 +177,17 @@ export function BuildRuntimeSettingsEditor({
               <div className="brs-window-grid">
                 <label className="brs-field">
                   <span>WIDTH</span>
-                  <input
-                    type="number"
+                  <CustomNumberInput
                     min={320}
                     max={7680}
+                    step={1}
                     value={draft.windowWidth}
-                    onChange={(event) =>
+                    showArrows
+                    ariaLabel="Window width"
+                    onChange={(value) =>
                       onDraftChange((prev) => ({
                         ...prev,
-                        windowWidth: normalizeWindowDimension(
-                          Number(event.target.value),
-                          prev.windowWidth,
-                        ),
+                        windowWidth: value,
                       }))
                     }
                   />
@@ -196,20 +195,17 @@ export function BuildRuntimeSettingsEditor({
 
                 <label className="brs-field">
                   <span>HEIGHT</span>
-                  <input
-                    type="number"
+                  <CustomNumberInput
                     min={240}
                     max={4320}
+                    step={1}
                     value={draft.windowHeight}
-                    onChange={(event) =>
+                    showArrows
+                    ariaLabel="Window height"
+                    onChange={(value) =>
                       onDraftChange((prev) => ({
                         ...prev,
-                        windowHeight: normalizeWindowDimension(
-                          Number(event.target.value),
-                          prev.windowHeight,
-                          240,
-                          4320,
-                        ),
+                        windowHeight: value,
                       }))
                     }
                   />
