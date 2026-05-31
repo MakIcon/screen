@@ -150,6 +150,7 @@ export function InstancesTab({
 }: InstancesTabProps) {
   const sortedInstances = [...instances].reverse();
   const showCreator = createMode || instances.length === 0 || !selectedInstance;
+  const buildInfoBottomSpace = 8;
 
   return (
     <section className="launcher-panel">
@@ -419,17 +420,28 @@ export function InstancesTab({
                   }}
                 />
 
-                <InfoPanel label="MC VERSION" value={selectedInstance?.version} placeholder="SELECT VERSION" />
+                <InfoPanel
+                  label="MC VERSION"
+                  value={selectedInstance?.version}
+                  placeholder="SELECT VERSION"
+                  bottomSpace={buildInfoBottomSpace}
+                />
 
-                <InfoPanel label="LOADER" value={selectedInstance?.loader} placeholder="SELECT LOADER" />
+                <InfoPanel
+                  label="LOADER"
+                  value={selectedInstance?.loader}
+                  placeholder="SELECT LOADER"
+                  bottomSpace={buildInfoBottomSpace}
+                />
 
-                <InfoPanel label="SOURCE" value="OFFICIAL" />
+                <InfoPanel label="SOURCE" value="OFFICIAL" bottomSpace={buildInfoBottomSpace} />
 
                 <InfoPanel
                   className="info-panel--right-column"
                   label="TIME IN BUILD"
                   value={formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}
                   placeholder="0 hrs on record"
+                  bottomSpace={buildInfoBottomSpace}
                 />
               </div>
 
