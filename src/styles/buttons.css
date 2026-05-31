@@ -104,18 +104,28 @@
   opacity: 1;
 }
 
+.instance-actions.instance-actions-build {
+  align-items: flex-end;
+}
+
 .instance-side-actions {
-  width: 42px;
-  min-width: 42px;
-  height: 42px;
-  position: relative;
+  width: 94px;
+  min-width: 94px;
+  height: 94px;
+  display: grid;
+  grid-template-columns: repeat(2, 42px);
+  grid-template-rows: repeat(2, 42px);
+  gap: 10px;
   flex-shrink: 0;
 }
 
 .instance-side-actions .settings-icon-action {
-  position: absolute;
-  top: -50px;
-  left: 0;
+  position: static;
+}
+
+.instance-side-actions .trash-action {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 button:disabled {

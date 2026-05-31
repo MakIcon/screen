@@ -1,0 +1,33 @@
+.info-panel {
+  width: 100%;
+  min-width: 0;
+  min-height: 108px;
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+}
+
+.info-panel-label {
+  display: block;
+  margin-bottom: 18px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.info-panel-value {
+  display: block;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.info-panel--right-column {
+  grid-column: 2;
+}

@@ -28,7 +28,6 @@ import type {
   MicrosoftAccount,
   MinecraftManifest,
   TabKey,
-  UpdateInstancePayload,
 } from "./types";
 import { MicrosoftAccountsModal } from "./components/modals/MicrosoftAccountsModal";
 import { formatLastPlayed } from "./utils/playtime";
@@ -107,9 +106,6 @@ export default function App() {
   const [launcherSettings, setLauncherSettings] = useState<LauncherSettings | null>(null);
   const [createRamGb, setCreateRamGb] = useState(4);
   const [settingsRamDraft, setSettingsRamDraft] = useState(4);
-  const [instanceRamDraft, setInstanceRamDraft] = useState(4);
-  const [instanceRamEditorOpen, setInstanceRamEditorOpen] = useState(false);
-  const [createRamEditorOpen, setCreateRamEditorOpen] = useState(false);
 
   const [createMode, setCreateMode] = useState(false);
   const [createBuildName, setCreateBuildName] = useState("");
@@ -604,12 +600,7 @@ export default function App() {
 
         if (instanceResponse.length > 0) {
           const preferredInstance = pickPreferredInstance(instanceResponse) || instanceResponse[0];
-          const initialRam = clampRamToSystem(preferredInstance.ram, systemRamResponse);
           setSelectedInstanceId(preferredInstance.id);
-          setInstanceRamDraft(initialRam);
-        } else {
-          const fallbackRam = clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse);
-          setInstanceRamDraft(fallbackRam);
         }
 
         setCreateRamGb(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
@@ -701,10 +692,6 @@ export default function App() {
     const preferredInstance = pickPreferredInstance(fresh) || fresh[0];
     const target = (preferredId && fresh.find((i) => i.id === preferredId)?.id) || preferredInstance.id;
     setSelectedInstanceId(target);
-
-    const targetItem = fresh.find((i) => i.id === target) || preferredInstance;
-    const targetRam = clampRamToSystem(targetItem.ram, systemRamGb);
-    setInstanceRamDraft(targetRam);
   };
 
   const handleClose = async () => {
@@ -790,47 +777,6 @@ const isScrollableElement = (target: EventTarget | null) => {
     try {
       const updated = await invoke<LauncherSettings>("set_optimized_java_args", { enabled });
       setLauncherSettings(updated);
-    } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-    }
-  };
-
-  const saveSelectedInstance = async (patch: Partial<InstanceItem>) => {
-    if (!selectedInstance) return;
-
-    const updated: InstanceItem = {
-      ...selectedInstance,
-      ...patch,
-      ram: clampRamToSystem(patch.ram ?? selectedInstance.ram, systemRamGb),
-    };
-
-    setInstances((prev) =>
-      prev.map((item) => (item.id === selectedInstance.id ? updated : item))
-    );
-    setInstanceRamDraft(updated.ram);
-
-    await invoke<InstanceItem>("update_instance", {
-      payload: {
-        id: updated.id,
-        name: updated.name,
-        version: updated.version,
-        loader: updated.loader as LoaderType,
-        fabricLoaderVersion: updated.fabricLoaderVersion ?? null,
-        ram: updated.ram,
-      } satisfies UpdateInstancePayload,
-    });
-
-    await refreshInstances(updated.id);
-  };
-
-  const commitSelectedInstanceRam = async () => {
-    if (!selectedInstance) return;
-
-    const value = clampRamToSystem(instanceRamDraft, systemRamGb);
-
-    try {
-      await saveSelectedInstance({ ram: value });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
@@ -1170,17 +1116,6 @@ const isScrollableElement = (target: EventTarget | null) => {
             setCreateFabricLoaderVersion={setCreateFabricLoaderVersion}
             createError={createError}
             setCreateError={setCreateError}
-            createRamGb={createRamGb}
-            setCreateRamGb={setCreateRamGb}
-            createRamEditorOpen={createRamEditorOpen}
-            setCreateRamEditorOpen={setCreateRamEditorOpen}
-            instanceRamDraft={instanceRamDraft}
-            setInstanceRamDraft={setInstanceRamDraft}
-            instanceRamEditorOpen={instanceRamEditorOpen}
-            setInstanceRamEditorOpen={setInstanceRamEditorOpen}
-            commitSelectedInstanceRam={commitSelectedInstanceRam}
-            systemRamGb={systemRamGb}
-            launcherSettings={launcherSettings}
             minecraftVersions={minecraftVersions}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}

@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
-import { ElementSlider } from "../components/inputs/ElementSlider";
 import {
   SettingsGearIcon,
   getBuildCardAppearanceStyle,
@@ -15,13 +14,11 @@ import {
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
 import { LOADER_OPTIONS } from "../constants/tabs";
-import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import { formatLastPlayed, formatPlaytime } from "../utils/playtime";
 import type {
   DropdownKey,
   InstanceItem,
   InstallProgressPayload,
-  LauncherSettings,
   LoaderType,
 } from "../types";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
@@ -50,21 +47,8 @@ interface InstancesTabProps {
   setCreateFabricLoaderVersion: (v: string) => void;
   createError: string;
   setCreateError: (v: string) => void;
-  createRamGb: number;
-  setCreateRamGb: (v: number) => void;
-  createRamEditorOpen: boolean;
-  setCreateRamEditorOpen: (v: boolean) => void;
-
-  // Edit RAM
-  instanceRamDraft: number;
-  setInstanceRamDraft: (v: number) => void;
-  instanceRamEditorOpen: boolean;
-  setInstanceRamEditorOpen: (v: boolean) => void;
-  commitSelectedInstanceRam: () => Promise<void>;
 
   // System
-  systemRamGb: number;
-  launcherSettings: LauncherSettings | null;
   minecraftVersions: string[];
 
   // UI state
@@ -134,17 +118,6 @@ export function InstancesTab({
   setCreateFabricLoaderVersion,
   createError,
   setCreateError,
-  createRamGb,
-  setCreateRamGb,
-  createRamEditorOpen,
-  setCreateRamEditorOpen,
-  instanceRamDraft,
-  setInstanceRamDraft,
-  instanceRamEditorOpen,
-  setInstanceRamEditorOpen,
-  commitSelectedInstanceRam,
-  systemRamGb,
-  launcherSettings,
   minecraftVersions,
   openDropdown,
   setOpenDropdown,
@@ -176,8 +149,6 @@ export function InstancesTab({
 }: InstancesTabProps) {
   const sortedInstances = [...instances].reverse();
   const showCreator = createMode || instances.length === 0 || !selectedInstance;
-  const minecraftRamMax = getMinecraftRamMax(systemRamGb);
-  const ramSliderTicks = getRamSliderTicks(systemRamGb);
 
   return (
     <section className="launcher-panel">
@@ -203,7 +174,6 @@ export function InstancesTab({
                 onClick={() => {
                   setCreateMode(true);
                   setCreateError("");
-                  setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
                 }}
               >
                 CREATE BUILD
@@ -282,7 +252,6 @@ export function InstancesTab({
                     onClick={() => {
                       setSelectedInstanceId(instance.id);
                       setCreateMode(false);
-                      setInstanceRamEditorOpen(false);
                     }}
                     type="button"
                   >
@@ -381,32 +350,8 @@ export function InstancesTab({
                 </div>
               </div>
 
-              <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
-                <div className="detail-block">
-                  <span className="detail-title">INITIAL RAM</span>
-                  <strong>{createRamGb} GB</strong>
-                  <div style={{ marginTop: 14 }}>
-                    <button className="ghost-action" type="button" onClick={() => setCreateRamEditorOpen(!createRamEditorOpen)}>
-                      {createRamEditorOpen ? "HIDE RAM" : "EDIT RAM"}
-                    </button>
-                  </div>
-                  {createRamEditorOpen && (
-                    <div className="inline-ram-slider-wrap">
-                      <ElementSlider
-                        showHeader={false}
-                        min={1}
-                        max={minecraftRamMax}
-                        step={1}
-                        value={createRamGb}
-                        tickMode="custom"
-                        customTicks={ramSliderTicks}
-                        onChange={(value) => setCreateRamGb(clampRamToSystem(value, systemRamGb))}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {createLoader === "Fabric" ? (
+              {createLoader === "Fabric" ? (
+                <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
                   <div className="detail-block create-loader-detail-block">
                     <span className="detail-title">FABRIC LOADER VERSION</span>
                     <InlineDropdown
@@ -427,8 +372,8 @@ export function InstancesTab({
                       }}
                     />
                   </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
 
               {createError && (
                 <p className="panel-text" style={{ color: "var(--accent)" }}>{createError}</p>
@@ -467,9 +412,7 @@ export function InstancesTab({
                   onSelect={(value) => {
                     const found = instances.find((i) => i.name === value);
                     if (found) {
-                      const nextRam = clampRamToSystem(found.ram, systemRamGb);
                       setSelectedInstanceId(found.id);
-                      setInstanceRamDraft(nextRam);
                     }
                     setOpenDropdown(null);
                   }}
@@ -477,51 +420,22 @@ export function InstancesTab({
 
                 <div className="detail-block">
                   <span className="detail-title">MC VERSION</span>
-                  <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>{selectedInstance?.version}</strong>
+                  <strong className="detail-meta-value">{selectedInstance?.version}</strong>
                 </div>
 
                 <div className="detail-block">
                   <span className="detail-title">LOADER</span>
-                  <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>{selectedInstance?.loader}</strong>
+                  <strong className="detail-meta-value">{selectedInstance?.loader}</strong>
                 </div>
 
                 <div className="detail-block">
                   <span className="detail-title">SOURCE</span>
-                  <strong style={{ fontSize: "15px", display: "block", paddingTop: "18px" }}>OFFICIAL</strong>
+                  <strong className="detail-meta-value">OFFICIAL</strong>
                 </div>
-              </div>
 
-              <div className="detail-grid" style={{ marginTop: 24 }}>
-                <div className="detail-block">
-                  <span className="detail-title">RAM ALLOCATED</span>
-                  <strong>{instanceRamDraft} GB</strong>
-                  <div style={{ marginTop: 14 }}>
-                    <button className="ghost-action" type="button" onClick={() => setInstanceRamEditorOpen(!instanceRamEditorOpen)}>
-                      {instanceRamEditorOpen ? "HIDE RAM" : "EDIT RAM"}
-                    </button>
-                  </div>
-                  {instanceRamEditorOpen && (
-                    <div className="inline-ram-slider-wrap">
-                      <ElementSlider
-                        showHeader={false}
-                        min={1}
-                        max={minecraftRamMax}
-                        step={1}
-                        value={instanceRamDraft}
-                        tickMode="custom"
-                        customTicks={ramSliderTicks}
-                        onChange={(value) => {
-                          const nextValue = clampRamToSystem(value, systemRamGb);
-                          setInstanceRamDraft(nextValue);
-                        }}
-                        onCommit={() => void commitSelectedInstanceRam()}
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="detail-block">
+                <div className="detail-block time-in-build-detail">
                   <span className="detail-title">TIME IN BUILD</span>
-                  <strong>{formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}</strong>
+                  <strong className="detail-meta-value">{formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}</strong>
                 </div>
               </div>
 
@@ -544,7 +458,7 @@ export function InstancesTab({
                 </div>
               )}
 
-              <div className="instance-actions">
+              <div className="instance-actions instance-actions-build">
                 {selectedInstance && isRunning(selectedInstance.id) ? (
                   <button className="primary-action kill-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
                     ✕ KILL GAME

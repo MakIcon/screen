@@ -95,6 +95,11 @@
 
 .detail-grid-create {
   align-items: start;
+  gap: 20px 40px;
+}
+
+.detail-grid-create .create-loader-detail-block {
+  grid-column: 2;
 }
 
 .create-loader-detail-block .inline-dropdown-trigger {
