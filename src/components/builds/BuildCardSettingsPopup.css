@@ -116,12 +116,21 @@
 
 .brs-panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   min-height: 48px;
   padding: 14px 18px 12px;
   border-bottom: 1px solid var(--line-strong);
+}
+
+.brs-panel-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
 }
 
 .brs-panel-kicker {
@@ -138,6 +147,102 @@
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+.brs-args-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.brs-icon-action {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.brs-icon-action:hover {
+  border-color: rgba(194, 65, 12, 0.35);
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.brs-args-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.brs-search-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.brs-search-field:focus-within {
+  border-color: var(--ink);
+  background: var(--bg-elevated);
+}
+
+.brs-search-field span {
+  flex-shrink: 0;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 32px;
+  text-transform: uppercase;
+}
+
+.brs-search-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.brs-search-field input::placeholder {
+  color: var(--muted-soft);
+}
+
+.brs-search-count,
+.brs-args-status {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.brs-args-status {
+  grid-column: 1 / -1;
+  color: var(--accent);
 }
 
 .brs-args-editor {

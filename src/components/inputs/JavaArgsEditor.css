@@ -13,33 +13,18 @@
   min-height: 0;
 }
 
-.jae-lines {
+.jae-editor {
+  display: grid;
+  grid-template-columns: var(--jae-gutter-width) minmax(0, 1fr);
   min-width: 0;
   min-height: 100%;
   padding: 10px 14px 10px 0;
 }
 
-.jae-row {
-  display: grid;
-  grid-template-columns: var(--jae-gutter-width) minmax(0, 1fr);
+.jae-gutter {
+  grid-column: 1;
   min-width: 0;
-  min-height: var(--jae-row-height);
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  transition: background 0.14s, box-shadow 0.14s;
-}
-
-.jae-row:first-child {
-  border-top: 1px solid var(--line);
-}
-
-.jae-row:hover {
-  background: rgba(26, 26, 26, 0.025);
-}
-
-.jae-row:focus-within {
-  background: var(--bg-hover);
-  box-shadow: inset 3px 0 0 var(--accent);
+  min-height: var(--jae-content-height);
 }
 
 .jae-line-number {
@@ -47,8 +32,10 @@
   align-items: center;
   justify-content: flex-end;
   min-width: 0;
+  height: var(--jae-row-height);
   padding: 0 13px 0 8px;
   border-right: 1px solid rgba(194, 65, 12, 0.24);
+  border-bottom: 1px solid var(--line);
   color: var(--muted-soft);
   font-family: "Cascadia Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
@@ -58,13 +45,105 @@
   user-select: none;
 }
 
-.jae-input {
+.jae-line-number:first-child {
+  border-top: 1px solid var(--line);
+}
+
+.jae-line-number--active {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.jae-line-number--search-match {
+  color: var(--ink);
+  background: rgba(194, 65, 12, 0.1);
+}
+
+.jae-text-cell {
+  position: relative;
+  grid-column: 2;
+  min-width: 0;
+  min-height: var(--jae-content-height);
+  border-top: 1px solid var(--line);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--jae-row-height) - 1px),
+      var(--line) calc(var(--jae-row-height) - 1px),
+      var(--line) var(--jae-row-height)
+    );
+}
+
+.jae-search-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  min-width: 0;
+  min-height: var(--jae-content-height);
+  pointer-events: none;
+}
+
+.jae-search-line {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: var(--jae-row-height);
+  background: rgba(194, 65, 12, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(194, 65, 12, 0.16);
+}
+
+.jae-placeholder-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  min-width: 0;
+  min-height: var(--jae-content-height);
+  pointer-events: none;
+}
+
+.jae-active-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 100%;
+  height: var(--jae-row-height);
+  background: var(--bg-hover);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset 0 -1px 0 var(--line);
+  pointer-events: none;
+}
+
+.jae-placeholder-line {
+  display: block;
+  height: var(--jae-row-height);
+  padding: 0 16px;
+  color: var(--muted-soft);
+  font-family: "Cascadia Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: var(--jae-row-height);
+  opacity: 0.54;
+  user-select: none;
+}
+
+.jae-textarea {
+  position: relative;
+  z-index: 2;
+  display: block;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: var(--jae-row-height);
+  height: var(--jae-content-height);
+  min-height: var(--jae-content-height);
   padding: 0 16px;
   border: none;
   outline: none;
+  resize: none;
+  overflow: hidden;
   background: transparent;
   color: var(--ink);
   caret-color: var(--ink);
@@ -73,21 +152,11 @@
   font-weight: 700;
   letter-spacing: 0;
   line-height: var(--jae-row-height);
+  white-space: pre;
 }
 
-.jae-input::selection {
+.jae-textarea::selection {
   background: rgba(194, 65, 12, 0.18);
-}
-
-.jae-input::placeholder {
-  color: var(--muted-soft);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
-.jae-row--empty:not(:focus-within) .jae-input::placeholder {
-  opacity: 0.54;
 }
 
 @media (max-width: 620px) {
@@ -95,12 +164,16 @@
     --jae-gutter-width: 46px;
   }
 
-  .jae-lines {
+  .jae-editor {
     padding-right: 10px;
   }
 
-  .jae-input {
+  .jae-textarea {
     padding: 0 12px;
     font-size: 12px;
+  }
+
+  .jae-placeholder-line {
+    padding: 0 12px;
   }
 }

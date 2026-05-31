@@ -75,11 +75,11 @@ export function parseJavaMemoryArgGb(value: string): number | null {
 }
 
 export function getRamFromJavaArgsText(javaArgs: string): number | null {
-  const lines = javaArgs.replace(/\r\n/g, "\n").split("\n");
-  const xms = [...lines].reverse().find((line) => line.trim().startsWith("-Xms"));
+  const args = javaArgs.replace(/\r\n/g, "\n").split(/\s+/).filter(Boolean);
+  const xms = [...args].reverse().find((arg) => arg.trim().startsWith("-Xms"));
   if (xms) return parseJavaMemoryArgGb(xms);
 
-  const xmx = [...lines].reverse().find((line) => line.trim().startsWith("-Xmx"));
+  const xmx = [...args].reverse().find((arg) => arg.trim().startsWith("-Xmx"));
   if (xmx) return parseJavaMemoryArgGb(xmx);
 
   return null;
