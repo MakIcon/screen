@@ -9,7 +9,7 @@ use crate::{
     commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
     minecraft::{is_fabric_loader, normalized_ram},
     models::{
-        CreateInstancePayload, ExportedItem, InstanceExportData, ImportInstancePayload,
+        CreateInstancePayload, ExportedItem, ImportInstancePayload, InstanceExportData,
         InstanceItem, UpdateInstancePayload,
     },
     paths::{
@@ -17,6 +17,24 @@ use crate::{
         unique_instance_dir, write_instances,
     },
 };
+
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.map(|text| text.replace("\r\n", "\n"))
+}
+
+fn normalize_optional_path(value: Option<String>) -> Option<String> {
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+fn normalize_window_width(value: Option<u32>) -> Option<u32> {
+    value.map(|dimension| dimension.clamp(320, 7680))
+}
+
+fn normalize_window_height(value: Option<u32>) -> Option<u32> {
+    value.map(|dimension| dimension.clamp(240, 4320))
+}
 
 #[tauri::command]
 pub async fn delete_instance(instance_id: String) -> Result<(), String> {
@@ -57,7 +75,10 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         return Err("Build name is empty".into());
     }
 
-    if items.iter().any(|i| i.name.eq_ignore_ascii_case(&clean_name)) {
+    if items
+        .iter()
+        .any(|i| i.name.eq_ignore_ascii_case(&clean_name))
+    {
         return Err("Build with this name already exists".into());
     }
 
@@ -91,6 +112,11 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         fabric_loader_version,
         status: "EMPTY".to_string(),
         ram: normalized_ram(payload.ram),
+        java_args: normalize_optional_text(payload.java_args),
+        java_path: normalize_optional_path(payload.java_path),
+        window_width: normalize_window_width(payload.window_width),
+        window_height: normalize_window_height(payload.window_height),
+        fullscreen: payload.fullscreen,
         last_played: "NEVER".to_string(),
         playtime_secs: 0,
         created_at: now_string(),
@@ -167,10 +193,18 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         fabric_loader_version,
         status: old_item.status,
         ram: normalized_ram(payload.ram),
+        java_args: normalize_optional_text(payload.java_args),
+        java_path: normalize_optional_path(payload.java_path),
+        window_width: normalize_window_width(payload.window_width),
+        window_height: normalize_window_height(payload.window_height),
+        fullscreen: payload.fullscreen,
         last_played: old_item.last_played,
         playtime_secs: old_item.playtime_secs,
         created_at: old_item.created_at,
-        game_dir: final_instance_dir.join("minecraft").to_string_lossy().to_string(),
+        game_dir: final_instance_dir
+            .join("minecraft")
+            .to_string_lossy()
+            .to_string(),
     };
 
     items[index] = updated_item.clone();
@@ -215,10 +249,8 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
             .collect()
     };
 
-    let mods = read_modrinth_state(
-        game_dir.join("mods").join(".screenlauncher-modrinth.json"),
-    )
-    .await;
+    let mods =
+        read_modrinth_state(game_dir.join("mods").join(".screenlauncher-modrinth.json")).await;
 
     let shaders = read_modrinth_state(
         game_dir
@@ -241,6 +273,11 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
         loader: instance.loader,
         fabric_loader_version: instance.fabric_loader_version,
         ram: instance.ram,
+        java_args: instance.java_args,
+        java_path: instance.java_path,
+        window_width: instance.window_width,
+        window_height: instance.window_height,
+        fullscreen: instance.fullscreen,
         mods,
         shaders,
         resource_packs,
@@ -256,7 +293,10 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
         return Err("Build name is empty".into());
     }
 
-    if items.iter().any(|i| i.name.eq_ignore_ascii_case(&clean_name)) {
+    if items
+        .iter()
+        .any(|i| i.name.eq_ignore_ascii_case(&clean_name))
+    {
         return Err("Build with this name already exists".into());
     }
 
@@ -288,6 +328,11 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
         fabric_loader_version,
         status: "EMPTY".to_string(),
         ram: normalized_ram(payload.ram),
+        java_args: normalize_optional_text(payload.java_args),
+        java_path: normalize_optional_path(payload.java_path),
+        window_width: normalize_window_width(payload.window_width),
+        window_height: normalize_window_height(payload.window_height),
+        fullscreen: payload.fullscreen,
         last_played: "NEVER".to_string(),
         playtime_secs: 0,
         created_at: now_string(),
@@ -342,7 +387,12 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
                 if shader.source == "modrinth" {
                     if let Some(ref pid) = shader.project_id {
                         let _ = install_project_to_dir(
-                            &client, &item, pid, &shaders_dir, &[], &mut state,
+                            &client,
+                            &item,
+                            pid,
+                            &shaders_dir,
+                            &[],
+                            &mut state,
                         )
                         .await;
                     }
@@ -367,7 +417,12 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
                 if pack.source == "modrinth" {
                     if let Some(ref pid) = pack.project_id {
                         let _ = install_project_to_dir(
-                            &client, &item, pid, &packs_dir, &[], &mut state,
+                            &client,
+                            &item,
+                            pid,
+                            &packs_dir,
+                            &[],
+                            &mut state,
                         )
                         .await;
                     }

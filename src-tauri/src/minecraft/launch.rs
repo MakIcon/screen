@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, process::{Command, Stdio}};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -32,7 +36,10 @@ const LWJGL_STACK_SIZE_KB: u32 = 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub async fn download_libraries(app: &AppHandle, resolved: &VersionMeta) -> Result<Vec<PathBuf>, String> {
+pub async fn download_libraries(
+    app: &AppHandle,
+    resolved: &VersionMeta,
+) -> Result<Vec<PathBuf>, String> {
     let mut classpath_entries = Vec::new();
     let mut tasks = Vec::new();
 
@@ -44,7 +51,11 @@ pub async fn download_libraries(app: &AppHandle, resolved: &VersionMeta) -> Resu
             let path = library_path_from_download(&artifact)?;
             classpath_entries.push(path.clone());
             if !path.exists() {
-                tasks.push((artifact.url.clone(), path, format!("Library {}", library.name)));
+                tasks.push((
+                    artifact.url.clone(),
+                    path,
+                    format!("Library {}", library.name),
+                ));
             }
         }
     }
@@ -55,6 +66,82 @@ pub async fn download_libraries(app: &AppHandle, resolved: &VersionMeta) -> Resu
 
 fn split_legacy_arguments(s: &str) -> Vec<String> {
     s.split_whitespace().map(|x| x.to_string()).collect()
+}
+
+fn split_custom_arguments(s: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escape = false;
+
+    for ch in s.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escape = true;
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if ch == active_quote {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            continue;
+        }
+
+        if ch.is_whitespace() {
+            if !current.is_empty() {
+                args.push(current.clone());
+                current.clear();
+            }
+            continue;
+        }
+
+        current.push(ch);
+    }
+
+    if escape {
+        current.push('\\');
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    args
+}
+
+fn is_memory_argument(arg: &str) -> bool {
+    arg.starts_with("-Xmx") || arg.starts_with("-Xms")
+}
+
+fn instance_java_args(instance: &InstanceItem) -> Option<Vec<String>> {
+    instance.java_args.as_ref().map(|text| {
+        split_custom_arguments(text)
+            .into_iter()
+            .filter(|arg| !is_memory_argument(arg))
+            .collect::<Vec<_>>()
+    })
+}
+
+fn uses_optimized_heap(
+    custom_args: Option<&Vec<String>>,
+    optimized_java_args_enabled: bool,
+) -> bool {
+    custom_args
+        .map(|args| args.iter().any(|arg| arg == "-XX:+UseG1GC"))
+        .unwrap_or(optimized_java_args_enabled)
 }
 
 pub async fn build_launch_command(
@@ -120,7 +207,10 @@ pub async fn build_launch_command(
     tokens.insert("auth_session", auth_access_token);
     tokens.insert("user_type", user_type);
     tokens.insert("version_type", "release".to_string());
-    tokens.insert("natives_directory", natives_dir.to_string_lossy().to_string());
+    tokens.insert(
+        "natives_directory",
+        natives_dir.to_string_lossy().to_string(),
+    );
     tokens.insert("launcher_name", "ScreenLauncher".to_string());
     tokens.insert("launcher_version", "0.1.0".to_string());
     tokens.insert("classpath", classpath);
@@ -129,8 +219,22 @@ pub async fn build_launch_command(
         "library_directory",
         libraries_root()?.to_string_lossy().to_string(),
     );
-    tokens.insert("resolution_width", "1280".to_string());
-    tokens.insert("resolution_height", "720".to_string());
+    tokens.insert(
+        "resolution_width",
+        instance
+            .window_width
+            .unwrap_or(1280)
+            .clamp(320, 7680)
+            .to_string(),
+    );
+    tokens.insert(
+        "resolution_height",
+        instance
+            .window_height
+            .unwrap_or(720)
+            .clamp(240, 4320)
+            .to_string(),
+    );
     tokens.insert(
         "path",
         logging_path
@@ -144,12 +248,21 @@ pub async fn build_launch_command(
     tokens.insert("client_id", "".to_string());
     tokens.insert("access_token", "0".to_string());
 
-    let java_bin = resolve_java_bin(&instance.version);
+    let java_bin = instance
+        .java_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| resolve_java_bin(&instance.version));
     let ram_gb = effective_ram_gb(&java_bin, normalized_ram(instance.ram));
+    let custom_java_args = instance_java_args(instance);
+    let optimized_heap =
+        uses_optimized_heap(custom_java_args.as_ref(), optimized_java_args_enabled);
 
     let mut args = vec![
         format!("-Xmx{}G", ram_gb),
-        if optimized_java_args_enabled {
+        if optimized_heap {
             format!("-Xms{}G", ram_gb)
         } else {
             "-Xms512M".to_string()
@@ -157,7 +270,9 @@ pub async fn build_launch_command(
         format!("-Dorg.lwjgl.system.stackSize={LWJGL_STACK_SIZE_KB}"),
         "-Djava.net.preferIPv4Stack=true".to_string(),
     ];
-    if optimized_java_args_enabled {
+    if let Some(custom_java_args) = custom_java_args {
+        args.extend(custom_java_args);
+    } else if optimized_java_args_enabled {
         args.extend(optimized_minecraft_jvm_args(ram_gb));
     }
 
@@ -237,6 +352,9 @@ pub async fn build_launch_command(
         }
     }
     args.extend(filtered_game_args);
+    if instance.fullscreen && !args.iter().any(|arg| arg == "--fullscreen") {
+        args.push("--fullscreen".to_string());
+    }
 
     Ok((java_bin, args))
 }

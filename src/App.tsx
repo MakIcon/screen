@@ -17,6 +17,7 @@ import {
 import { BuildStatsModal } from "./components/builds/BuildStatsModal";
 import type {
   ActionResult,
+  BuildRuntimeSettingsDraft,
   CreateInstancePayload,
   DropdownKey,
   ExportedItem,
@@ -28,6 +29,7 @@ import type {
   MicrosoftAccount,
   MinecraftManifest,
   TabKey,
+  UpdateInstancePayload,
 } from "./types";
 import { MicrosoftAccountsModal } from "./components/modals/MicrosoftAccountsModal";
 import { formatLastPlayed } from "./utils/playtime";
@@ -45,6 +47,13 @@ import { usePackActions } from "./hooks/usePackActions";
 import { useShaderActions } from "./hooks/useShaderActions";
 import { useTheme } from "./hooks/useTheme";
 import { OptionToggle } from "./components/inputs/OptionToggle";
+import {
+  DEFAULT_WINDOW_HEIGHT,
+  DEFAULT_WINDOW_WIDTH,
+  getDefaultJavaArgsText,
+  getDefaultRuntimeSettingsDraft,
+  normalizeRuntimeSettingsDraft,
+} from "./utils/javaArgs";
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
@@ -106,6 +115,14 @@ export default function App() {
   const [launcherSettings, setLauncherSettings] = useState<LauncherSettings | null>(null);
   const [createRamGb, setCreateRamGb] = useState(4);
   const [settingsRamDraft, setSettingsRamDraft] = useState(4);
+  const [createRuntimeSettings, setCreateRuntimeSettings] = useState<Omit<BuildRuntimeSettingsDraft, "ram">>({
+    javaArgs: "",
+    javaPath: "",
+    windowWidth: DEFAULT_WINDOW_WIDTH,
+    windowHeight: DEFAULT_WINDOW_HEIGHT,
+    fullscreen: false,
+  });
+  const [createRuntimeSettingsTouched, setCreateRuntimeSettingsTouched] = useState(false);
 
   const [createMode, setCreateMode] = useState(false);
   const [createBuildName, setCreateBuildName] = useState("");
@@ -160,7 +177,14 @@ export default function App() {
   const [exportInstanceId, setExportInstanceId] = useState<string | null>(null);
   const [exportData, setExportData] = useState<InstanceExportData | null>(null);
   const [exportOptions, setExportOptions] = useState({
-    name: true, ram: true, mods: true, shaders: true, resourcePacks: true,
+    name: true,
+    ram: true,
+    javaArgs: true,
+    javaPath: true,
+    window: true,
+    mods: true,
+    shaders: true,
+    resourcePacks: true,
   });
 
   // Alt+hover list preview (shared between export/import)
@@ -174,7 +198,14 @@ export default function App() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importData, setImportData] = useState<InstanceExportData | null>(null);
   const [importOptions, setImportOptions] = useState({
-    name: true, ram: true, mods: true, shaders: true, resourcePacks: true,
+    name: true,
+    ram: true,
+    javaArgs: true,
+    javaPath: true,
+    window: true,
+    mods: true,
+    shaders: true,
+    resourcePacks: true,
   });
   const [importCustomName, setImportCustomName] = useState("");
   const [importWorking, setImportWorking] = useState(false);
@@ -187,6 +218,9 @@ export default function App() {
   const [buildSettingsTargetId, setBuildSettingsTargetId] = useState<string | null>(null);
   const [buildCardSettingsOpen, setBuildCardSettingsOpen] = useState(false);
   const [buildCardSettingsDraft, setBuildCardSettingsDraft] = useState<BuildCardAppearance>({ ...DEFAULT_BUILD_CARD_APPEARANCE });
+  const [buildRuntimeSettingsDraft, setBuildRuntimeSettingsDraft] = useState<BuildRuntimeSettingsDraft>(
+    () => getDefaultRuntimeSettingsDraft(4, 8, true),
+  );
   const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(null);
 
 
@@ -205,6 +239,53 @@ export default function App() {
   const getBuildCardAppearance = (targetId: string | null | undefined) => {
     if (!targetId) return { ...DEFAULT_BUILD_CARD_APPEARANCE };
     return normalizeBuildCardAppearance(buildCardAppearances[targetId]);
+  };
+
+  const optimizedJavaArgsEnabled = launcherSettings?.optimizedJavaArgs ?? true;
+
+  const getInstanceRuntimeSettingsDraft = (
+    instance: InstanceItem,
+  ): BuildRuntimeSettingsDraft => {
+    const ram = clampRamToSystem(instance.ram, systemRamGb);
+
+    return normalizeRuntimeSettingsDraft(
+      {
+        ram,
+        javaArgs:
+          typeof instance.javaArgs === "string"
+            ? instance.javaArgs
+            : getDefaultJavaArgsText(ram, optimizedJavaArgsEnabled),
+        javaPath: instance.javaPath ?? "",
+        windowWidth: instance.windowWidth ?? DEFAULT_WINDOW_WIDTH,
+        windowHeight: instance.windowHeight ?? DEFAULT_WINDOW_HEIGHT,
+        fullscreen: instance.fullscreen ?? false,
+      },
+      systemRamGb,
+    );
+  };
+
+  const getCreateRuntimeSettingsDraft = (): BuildRuntimeSettingsDraft => {
+    const ram = clampRamToSystem(createRamGb, systemRamGb);
+
+    if (createRuntimeSettingsTouched) {
+      return normalizeRuntimeSettingsDraft(
+        {
+          ram,
+          ...createRuntimeSettings,
+        },
+        systemRamGb,
+      );
+    }
+
+    return getDefaultRuntimeSettingsDraft(ram, systemRamGb, optimizedJavaArgsEnabled);
+  };
+
+  const getResetRuntimeSettingsDraft = (): BuildRuntimeSettingsDraft => {
+    const defaultRam = clampRamToSystem(
+      launcherSettings?.defaultRamGb ?? createRamGb,
+      systemRamGb,
+    );
+    return getDefaultRuntimeSettingsDraft(defaultRam, systemRamGb, optimizedJavaArgsEnabled);
   };
 
   const pickBuildCardPreviewSourceElement = (targetId: string | null | undefined) => {
@@ -235,9 +316,16 @@ export default function App() {
   const openBuildCardSettings = (targetId?: string | null) => {
     const resolvedTargetId =
       targetId === undefined ? (selectedInstance?.id ?? null) : targetId;
+    const targetInstance =
+      resolvedTargetId
+        ? instances.find((instance) => instance.id === resolvedTargetId) || null
+        : null;
     setBuildSettingsTargetId(resolvedTargetId);
     setBuildCardSettingsDraft(
       getBuildCardAppearance(resolvedTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY)
+    );
+    setBuildRuntimeSettingsDraft(
+      targetInstance ? getInstanceRuntimeSettingsDraft(targetInstance) : getCreateRuntimeSettingsDraft()
     );
     setBuildCardSettingsOpen(true);
     setBuildCardPreviewSize(
@@ -249,18 +337,67 @@ export default function App() {
     setBuildCardSettingsOpen(false);
     setBuildSettingsTargetId(null);
     setBuildCardSettingsDraft({ ...DEFAULT_BUILD_CARD_APPEARANCE });
+    setBuildRuntimeSettingsDraft(getDefaultRuntimeSettingsDraft(4, systemRamGb, optimizedJavaArgsEnabled));
     setBuildCardPreviewSize(null);
   };
 
-  const saveBuildCardSettings = () => {
+  const saveBuildCardSettings = async () => {
     const storageKey = buildSettingsTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY;
     const next = {
       ...buildCardAppearances,
       [storageKey]: normalizeBuildCardAppearance(buildCardSettingsDraft),
     };
 
-    persistBuildCardAppearances(next);
-    closeBuildCardSettings();
+    try {
+      const normalizedRuntime = normalizeRuntimeSettingsDraft(
+        buildRuntimeSettingsDraft,
+        systemRamGb,
+      );
+
+      if (buildSettingsTargetId) {
+        const target = instances.find((instance) => instance.id === buildSettingsTargetId);
+        if (!target) {
+          throw new Error("Instance not found");
+        }
+
+        const updated = await invoke<InstanceItem>("update_instance", {
+          payload: {
+            id: target.id,
+            name: target.name,
+            version: target.version,
+            loader: target.loader,
+            fabricLoaderVersion: target.fabricLoaderVersion ?? null,
+            ram: normalizedRuntime.ram,
+            javaArgs: normalizedRuntime.javaArgs,
+            javaPath: normalizedRuntime.javaPath || null,
+            windowWidth: normalizedRuntime.windowWidth,
+            windowHeight: normalizedRuntime.windowHeight,
+            fullscreen: normalizedRuntime.fullscreen,
+          } satisfies UpdateInstancePayload,
+        });
+
+        setInstances((prev) =>
+          prev.map((instance) => (instance.id === updated.id ? updated : instance)),
+        );
+        setSelectedInstanceId(updated.id);
+      } else {
+        setCreateRamGb(normalizedRuntime.ram);
+        setCreateRuntimeSettings({
+          javaArgs: normalizedRuntime.javaArgs,
+          javaPath: normalizedRuntime.javaPath,
+          windowWidth: normalizedRuntime.windowWidth,
+          windowHeight: normalizedRuntime.windowHeight,
+          fullscreen: normalizedRuntime.fullscreen,
+        });
+        setCreateRuntimeSettingsTouched(true);
+      }
+
+      persistBuildCardAppearances(next);
+      closeBuildCardSettings();
+    } catch (error) {
+      console.error(error);
+      setActionError(String(error));
+    }
   };
 
   const clearBuildCardSettings = () => {
@@ -269,6 +406,10 @@ export default function App() {
     delete next[storageKey];
     persistBuildCardAppearances(next);
     setBuildCardSettingsDraft({ ...DEFAULT_BUILD_CARD_APPEARANCE });
+  };
+
+  const resetBuildRuntimeSettings = () => {
+    setBuildRuntimeSettingsDraft(getResetRuntimeSettingsDraft());
   };
 
   const handleBuildCardImagePicked = (file: File | null) => {
@@ -377,11 +518,16 @@ export default function App() {
   );
 
   const buildCardPreviewTarget: PlaceholderTarget =
-    buildSettingsTargetInstance ?? {
+    buildSettingsTargetInstance
+      ? {
+          ...buildSettingsTargetInstance,
+          ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : buildSettingsTargetInstance.ram,
+        }
+      : {
       name: createPreviewName,
       version: createPreviewVersion,
       loader: createPreviewLoader,
-      ram: createPreviewRam,
+      ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : createPreviewRam,
       playtimeSecs: 0,
       lastPlayed: "0",
       status: "",
@@ -566,6 +712,33 @@ export default function App() {
     if (item.iconUrl) return item.iconUrl;
     if (item.source !== "modrinth" || !item.projectId) return null;
     return modrinthProjectIcons[item.projectId] ?? null;
+  };
+
+  const hasJavaArgsData = (data: Pick<InstanceExportData, "javaArgs"> | null | undefined) =>
+    Boolean(data?.javaArgs);
+
+  const hasJavaPathData = (data: Pick<InstanceExportData, "javaPath"> | null | undefined) =>
+    Boolean(data?.javaPath);
+
+  const hasWindowSettingsData = (data: Pick<
+    InstanceExportData,
+    "windowWidth" | "windowHeight" | "fullscreen"
+  > | null | undefined) =>
+    Boolean(data && (data.windowWidth || data.windowHeight || data.fullscreen));
+
+  const formatJavaArgsMeta = (data: Pick<InstanceExportData, "javaArgs"> | null | undefined) => {
+    if (!data?.javaArgs) return undefined;
+    const count = data.javaArgs.split(/\r?\n/).filter((line) => line.trim()).length;
+    return `${count} ARG${count === 1 ? "" : "S"}`;
+  };
+
+  const formatWindowSettingsMeta = (data: Pick<
+    InstanceExportData,
+    "windowWidth" | "windowHeight" | "fullscreen"
+  > | null | undefined) => {
+    if (!data || !hasWindowSettingsData(data)) return undefined;
+    const size = `${data.windowWidth ?? DEFAULT_WINDOW_WIDTH}x${data.windowHeight ?? DEFAULT_WINDOW_HEIGHT}`;
+    return data.fullscreen ? `${size} / FULLSCREEN` : size;
   };
 
   useEffect(() => {
@@ -806,6 +979,19 @@ const isScrollableElement = (target: EventTarget | null) => {
 
       setWorking(true);
       setBusyMessage("Creating build...");
+      const createRuntime = createRuntimeSettingsTouched
+        ? normalizeRuntimeSettingsDraft(
+            {
+              ram: createRamGb,
+              ...createRuntimeSettings,
+            },
+            systemRamGb,
+          )
+        : getDefaultRuntimeSettingsDraft(
+            createRamGb,
+            systemRamGb,
+            optimizedJavaArgsEnabled,
+          );
 
       const created = await invoke<InstanceItem>("create_instance", {
         payload: {
@@ -813,7 +999,12 @@ const isScrollableElement = (target: EventTarget | null) => {
           version: createVersion,
           loader: createLoader,
           fabricLoaderVersion: createLoader === "Fabric" ? createFabricLoaderVersion : null,
-          ram: clampRamToSystem(createRamGb, systemRamGb),
+          ram: createRuntime.ram,
+          javaArgs: createRuntimeSettingsTouched ? createRuntime.javaArgs : null,
+          javaPath: createRuntimeSettingsTouched && createRuntime.javaPath ? createRuntime.javaPath : null,
+          windowWidth: createRuntimeSettingsTouched ? createRuntime.windowWidth : null,
+          windowHeight: createRuntimeSettingsTouched ? createRuntime.windowHeight : null,
+          fullscreen: createRuntimeSettingsTouched ? createRuntime.fullscreen : false,
         } satisfies CreateInstancePayload,
       });
 
@@ -831,6 +1022,14 @@ const isScrollableElement = (target: EventTarget | null) => {
       setCreateLoader("Vanilla");
       setCreateFabricLoaderVersion("");
       setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
+      setCreateRuntimeSettings({
+        javaArgs: "",
+        javaPath: "",
+        windowWidth: DEFAULT_WINDOW_WIDTH,
+        windowHeight: DEFAULT_WINDOW_HEIGHT,
+        fullscreen: false,
+      });
+      setCreateRuntimeSettingsTouched(false);
       setBusyMessage("Build created");
     } catch (error) {
       console.error(error);
@@ -984,6 +1183,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       setExportOptions({
         name: true,
         ram: true,
+        javaArgs: hasJavaArgsData(data),
+        javaPath: hasJavaPathData(data),
+        window: hasWindowSettingsData(data),
         mods: data.mods.length > 0,
         shaders: data.shaders.length > 0,
         resourcePacks: data.resourcePacks.length > 0,
@@ -1002,6 +1204,11 @@ const isScrollableElement = (target: EventTarget | null) => {
       loader: exportData.loader,
       fabricLoaderVersion: exportData.fabricLoaderVersion ?? null,
       ram: exportOptions.ram ? exportData.ram : 0,
+      javaArgs: exportOptions.javaArgs ? (exportData.javaArgs ?? null) : null,
+      javaPath: exportOptions.javaPath ? (exportData.javaPath ?? null) : null,
+      windowWidth: exportOptions.window ? (exportData.windowWidth ?? null) : null,
+      windowHeight: exportOptions.window ? (exportData.windowHeight ?? null) : null,
+      fullscreen: exportOptions.window ? (exportData.fullscreen ?? false) : false,
       mods: exportOptions.mods ? exportData.mods : [] as ExportedItem[],
       shaders: exportOptions.shaders ? exportData.shaders : [] as ExportedItem[],
       resourcePacks: exportOptions.resourcePacks ? exportData.resourcePacks : [] as ExportedItem[],
@@ -1036,6 +1243,9 @@ const isScrollableElement = (target: EventTarget | null) => {
         setImportOptions({
           name: !!data.name,
           ram: !!data.ram,
+          javaArgs: hasJavaArgsData(data),
+          javaPath: hasJavaPathData(data),
+          window: hasWindowSettingsData(data),
           mods: (data.mods?.length ?? 0) > 0,
           shaders: (data.shaders?.length ?? 0) > 0,
           resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
@@ -1064,6 +1274,11 @@ const isScrollableElement = (target: EventTarget | null) => {
           loader: importData.loader,
           fabricLoaderVersion: importData.fabricLoaderVersion ?? null,
           ram: importOptions.ram ? importData.ram : (launcherSettings?.defaultRamGb ?? 4),
+          javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+          javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+          windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+          windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+          fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
           mods: importOptions.mods ? (importData.mods ?? []) : [],
           shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
           resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
@@ -1368,10 +1583,12 @@ const isScrollableElement = (target: EventTarget | null) => {
       {buildCardSettingsOpen && (
         <BuildCardSettingsPopup
           isCreateMode={!buildSettingsTargetId}
+          systemRamGb={systemRamGb}
+          optimizedJavaArgs={optimizedJavaArgsEnabled}
           buildName={buildSettingsTargetInstance?.name || createPreviewName}
           buildVersion={buildSettingsTargetInstance?.version || createPreviewVersion}
           buildLoader={buildSettingsTargetInstance?.loader || createPreviewLoader}
-          buildRamGb={buildSettingsTargetInstance?.ram || createPreviewRam}
+          buildRamGb={buildRuntimeSettingsDraft.ram}
           lastPlayedLabel={
             buildSettingsTargetInstance
               ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0")
@@ -1384,8 +1601,11 @@ const isScrollableElement = (target: EventTarget | null) => {
           previewCardSize={buildCardPreviewSize}
           draft={buildCardSettingsDraft}
           onDraftChange={setBuildCardSettingsDraft}
+          runtimeDraft={buildRuntimeSettingsDraft}
+          onRuntimeDraftChange={setBuildRuntimeSettingsDraft}
           onUploadImage={handleBuildCardImagePicked}
           onResetAll={clearBuildCardSettings}
+          onResetRuntime={resetBuildRuntimeSettings}
           onClose={closeBuildCardSettings}
           onSave={saveBuildCardSettings}
         />
@@ -1434,6 +1654,9 @@ const isScrollableElement = (target: EventTarget | null) => {
         const rows: ExportRow[] = [
           { key: "name",          label: "BUILD NAME",     meta: exportData?.name },
           { key: "ram",           label: "RAM SETTINGS",   meta: exportData ? `${exportData.ram} GB` : undefined },
+          { key: "javaArgs",      label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(exportData) },
+          { key: "javaPath",      label: "JAVA PATH",      meta: exportData?.javaPath || undefined },
+          { key: "window",        label: "WINDOW SIZE",    meta: formatWindowSettingsMeta(exportData) },
           { key: "mods",          label: "MODS",           meta: exportData ? `${exportData.mods.length}` : "...",         items: exportData?.mods ?? [] },
           { key: "shaders",       label: "SHADERS",        meta: exportData ? `${exportData.shaders.length}` : "...",      items: exportData?.shaders ?? [] },
           { key: "resourcePacks", label: "RESOURCE PACKS", meta: exportData ? `${exportData.resourcePacks.length}` : "...", items: exportData?.resourcePacks ?? [] },
@@ -1496,6 +1719,9 @@ const isScrollableElement = (target: EventTarget | null) => {
         const rows: ImportRow[] = [
           { key: "name",          label: "BUILD NAME",     meta: importData?.name || undefined },
           { key: "ram",           label: "RAM SETTINGS",   meta: importData?.ram ? `${importData.ram} GB` : undefined },
+          { key: "javaArgs",      label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(importData), disabled: !hasJavaArgsData(importData) },
+          { key: "javaPath",      label: "JAVA PATH",      meta: importData?.javaPath || undefined, disabled: !hasJavaPathData(importData) },
+          { key: "window",        label: "WINDOW SIZE",    meta: formatWindowSettingsMeta(importData), disabled: !hasWindowSettingsData(importData) },
           { key: "mods",          label: "MODS",           meta: importData ? `${importData.mods?.length ?? 0}` : undefined,         disabled: !importData?.mods?.length,         items: importData?.mods ?? [] },
           { key: "shaders",       label: "SHADERS",        meta: importData ? `${importData.shaders?.length ?? 0}` : undefined,      disabled: !importData?.shaders?.length,      items: importData?.shaders ?? [] },
           { key: "resourcePacks", label: "RESOURCE PACKS", meta: importData ? `${importData.resourcePacks?.length ?? 0}` : undefined, disabled: !importData?.resourcePacks?.length, items: importData?.resourcePacks ?? [] },

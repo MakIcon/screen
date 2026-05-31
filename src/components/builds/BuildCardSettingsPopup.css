@@ -18,3 +18,376 @@
   line-height: normal;
   letter-spacing: normal;
 }
+
+.bcs-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.bcs-header {
+  flex-shrink: 0;
+}
+
+.bcs-heading {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.bcs-tabs {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+}
+
+.bcs-tab {
+  min-width: 82px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.bcs-tab:last-child {
+  border-right: none;
+}
+
+.bcs-tab:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+
+.bcs-tab--active {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+.bcs-tab--active:hover {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+.bcs-tab-panel {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.brs-editor {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.brs-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.25fr) minmax(280px, 0.75fr);
+  gap: 0 24px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.brs-args-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+}
+
+.brs-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.brs-panel-kicker {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.brs-panel-head strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.brs-args-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.brs-args-scroll .csa-content {
+  display: flex;
+  min-height: 0;
+}
+
+.brs-args-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  margin-left: 28px;
+  padding: 13px 18px 13px 28px;
+  border-left: 1px solid rgba(194, 65, 12, 0.24);
+  outline: none;
+  color: var(--ink);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 40px,
+      var(--line) 40px,
+      var(--line) 41px
+    );
+  font-family: "Cascadia Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 41px;
+  letter-spacing: 0;
+  white-space: pre;
+  caret-color: var(--ink);
+  user-select: text;
+}
+
+.brs-args-editor::selection {
+  background: rgba(194, 65, 12, 0.18);
+}
+
+.brs-args-editor:focus {
+  background: var(--bg-hover);
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 40px,
+      var(--line) 40px,
+      var(--line) 41px
+    );
+}
+
+.brs-controls-scroll {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.brs-controls-scroll .csa-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-right: 18px;
+}
+
+.brs-controls {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.brs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.brs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.brs-section-head span,
+.brs-field span,
+.brs-toggle-row > span:first-child {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.brs-section-head strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.brs-slider .es-root {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.brs-slider .es-body {
+  padding: 8px 0 0;
+}
+
+.brs-slider .es-body--bare {
+  padding-top: 8px;
+}
+
+.brs-slider .es-track-wrap {
+  height: 16px;
+}
+
+.brs-slider .es-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+.brs-slider .es-thumb-inner {
+  width: 12px;
+  height: 12px;
+}
+
+.brs-slider .es-ticks {
+  margin-top: 6px;
+  height: 24px;
+}
+
+.brs-slider .es-tick-label {
+  font-size: 9px;
+}
+
+.brs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brs-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  outline: none;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.brs-field input {
+  min-height: 38px;
+  padding: 9px 11px;
+  font-family: "Inter", sans-serif;
+}
+
+.brs-field input:focus {
+  border-color: var(--ink);
+  background: var(--bg);
+}
+
+.brs-field input::placeholder {
+  color: var(--muted-soft);
+}
+
+.brs-window-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.brs-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.brs-toggle-row .toggle-switch {
+  pointer-events: none;
+}
+
+@media (max-width: 860px) {
+  .build-card-settings-dialog.ep-popup--modal {
+    height: min(820px, calc(100vh - 32px));
+  }
+
+  .brs-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    overflow: visible;
+  }
+
+  .brs-args-panel {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 620px) {
+  .build-card-settings-dialog.ep-popup--modal {
+    width: min(100vw - 24px, 980px);
+  }
+
+  .build-card-settings-dialog .ep-body {
+    padding: 20px;
+  }
+
+  .bcs-header {
+    align-items: stretch;
+  }
+
+  .bcs-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .bcs-tabs {
+    width: 100%;
+  }
+
+  .bcs-tab {
+    flex: 1;
+  }
+
+  .brs-window-grid {
+    grid-template-columns: 1fr;
+  }
+}

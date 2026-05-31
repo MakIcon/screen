@@ -55,6 +55,16 @@ pub struct InstanceItem {
     pub fabric_loader_version: Option<String>,
     pub status: String,
     pub ram: u32,
+    #[serde(default)]
+    pub java_args: Option<String>,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    #[serde(default)]
+    pub window_height: Option<u32>,
+    #[serde(default)]
+    pub fullscreen: bool,
     pub last_played: String,
     #[serde(default)]
     pub playtime_secs: u64,
@@ -71,6 +81,16 @@ pub struct CreateInstancePayload {
     #[serde(default)]
     pub fabric_loader_version: Option<String>,
     pub ram: u32,
+    #[serde(default)]
+    pub java_args: Option<String>,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    #[serde(default)]
+    pub window_height: Option<u32>,
+    #[serde(default)]
+    pub fullscreen: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +103,16 @@ pub struct UpdateInstancePayload {
     #[serde(default)]
     pub fabric_loader_version: Option<String>,
     pub ram: u32,
+    #[serde(default)]
+    pub java_args: Option<String>,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    #[serde(default)]
+    pub window_height: Option<u32>,
+    #[serde(default)]
+    pub fullscreen: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -201,7 +231,10 @@ pub struct VersionArguments {
 #[serde(untagged)]
 pub enum ArgumentItem {
     String(String),
-    Ruled { rules: Vec<Rule>, value: ArgumentValue },
+    Ruled {
+        rules: Vec<Rule>,
+        value: ArgumentValue,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,6 +337,16 @@ pub struct InstanceExportData {
     pub fabric_loader_version: Option<String>,
     pub ram: u32,
     #[serde(default)]
+    pub java_args: Option<String>,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    #[serde(default)]
+    pub window_height: Option<u32>,
+    #[serde(default)]
+    pub fullscreen: bool,
+    #[serde(default)]
     pub mods: Vec<ExportedItem>,
     #[serde(default)]
     pub shaders: Vec<ExportedItem>,
@@ -320,6 +363,16 @@ pub struct ImportInstancePayload {
     #[serde(default)]
     pub fabric_loader_version: Option<String>,
     pub ram: u32,
+    #[serde(default)]
+    pub java_args: Option<String>,
+    #[serde(default)]
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<u32>,
+    #[serde(default)]
+    pub window_height: Option<u32>,
+    #[serde(default)]
+    pub fullscreen: bool,
     #[serde(default)]
     pub mods: Vec<ExportedItem>,
     #[serde(default)]

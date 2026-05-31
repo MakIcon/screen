@@ -30,7 +30,8 @@ type Props = {
   onUploadImage: (file: File | null) => void;
   onResetAll: () => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
+  showHeader?: boolean;
 };
 
 export function BuildCardEditor({
@@ -48,6 +49,7 @@ export function BuildCardEditor({
   onResetAll,
   onClose,
   onSave,
+  showHeader = true,
 }: Props) {
   const [layoutOpen, setLayoutOpen] = useState(true);
 
@@ -69,32 +71,34 @@ export function BuildCardEditor({
 
   return (
     <div className="bce-editor">
-      <div className="bce-header">
-        <span className="bce-header-title">CARD APPEARANCE</span>
-        <div className="bce-header-actions">
-          <button className="bce-hdr-btn" type="button" onClick={onResetAll}>
-            RESET
-          </button>
-          <button className="bce-hdr-btn bce-hdr-btn--save" type="button" onClick={onSave}>
-            SAVE
-          </button>
-          <button className="bce-hdr-close" type="button" onClick={onClose} aria-label="Close">
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 11 11"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <line x1="1" y1="1" x2="10" y2="10" />
-              <line x1="10" y1="1" x2="1" y2="10" />
-            </svg>
-          </button>
+      {showHeader && (
+        <div className="bce-header">
+          <span className="bce-header-title">CARD APPEARANCE</span>
+          <div className="bce-header-actions">
+            <button className="bce-hdr-btn" type="button" onClick={onResetAll}>
+              RESET
+            </button>
+            <button className="bce-hdr-btn bce-hdr-btn--save" type="button" onClick={() => void onSave()}>
+              SAVE
+            </button>
+            <button className="bce-hdr-close" type="button" onClick={onClose} aria-label="Close">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 11 11"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <line x1="1" y1="1" x2="10" y2="10" />
+                <line x1="10" y1="1" x2="1" y2="10" />
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="bce-layout" style={layoutStyle}>
         <div className="bce-preview-col">

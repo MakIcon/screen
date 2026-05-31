@@ -1,6 +1,9 @@
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
+import { useState } from "react";
 import { ElementPopup } from "../popup/ElementPopup";
 import { BuildCardEditor } from "./BuildCardEditor";
+import { BuildRuntimeSettingsEditor } from "./BuildRuntimeSettingsEditor";
+import type { BuildRuntimeSettingsDraft } from "../../types";
 import "./BuildCardSettingsPopup.css";
 
 export type BuildCardImageFit = "cover" | "stretch";
@@ -547,6 +550,8 @@ export function SettingsGearIcon() {
 
 type Props = {
   isCreateMode: boolean;
+  systemRamGb: number;
+  optimizedJavaArgs: boolean;
   buildName: string;
   buildVersion: string;
   buildLoader: string;
@@ -557,20 +562,99 @@ type Props = {
   previewCardSize: BuildCardPreviewSize | null;
   draft: BuildCardAppearance;
   onDraftChange: Dispatch<SetStateAction<BuildCardAppearance>>;
+  runtimeDraft: BuildRuntimeSettingsDraft;
+  onRuntimeDraftChange: Dispatch<SetStateAction<BuildRuntimeSettingsDraft>>;
   onUploadImage: (file: File | null) => void;
   onResetAll: () => void;
+  onResetRuntime: () => void;
   onClose: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 };
 
 export function BuildCardSettingsPopup(props: Props) {
+  const [activeTab, setActiveTab] = useState<"runtime" | "card">("runtime");
+  const isRuntimeTab = activeTab === "runtime";
+
   return (
     <ElementPopup
       open
       onClose={props.onClose}
       className="build-card-settings-dialog"
     >
-      <BuildCardEditor {...props} />
+      <div className="bcs-shell">
+        <div className="bce-header bcs-header">
+          <div className="bcs-heading">
+            <span className="bce-header-title">
+              {props.isCreateMode ? "NEW BUILD SETTINGS" : "BUILD SETTINGS"}
+            </span>
+            <div className="bcs-tabs" role="tablist" aria-label="Build settings sections">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isRuntimeTab}
+                className={`bcs-tab ${isRuntimeTab ? "bcs-tab--active" : ""}`}
+                onClick={() => setActiveTab("runtime")}
+              >
+                BUILD
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!isRuntimeTab}
+                className={`bcs-tab ${!isRuntimeTab ? "bcs-tab--active" : ""}`}
+                onClick={() => setActiveTab("card")}
+              >
+                CARD
+              </button>
+            </div>
+          </div>
+
+          <div className="bce-header-actions">
+            <button
+              className="bce-hdr-btn"
+              type="button"
+              onClick={isRuntimeTab ? props.onResetRuntime : props.onResetAll}
+            >
+              RESET
+            </button>
+            <button
+              className="bce-hdr-btn bce-hdr-btn--save"
+              type="button"
+              onClick={() => void props.onSave()}
+            >
+              SAVE
+            </button>
+            <button className="bce-hdr-close" type="button" onClick={props.onClose} aria-label="Close">
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 11 11"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <line x1="1" y1="1" x2="10" y2="10" />
+                <line x1="10" y1="1" x2="1" y2="10" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="bcs-tab-panel">
+          {isRuntimeTab ? (
+            <BuildRuntimeSettingsEditor
+              systemRamGb={props.systemRamGb}
+              optimizedJavaArgs={props.optimizedJavaArgs}
+              draft={props.runtimeDraft}
+              onDraftChange={props.onRuntimeDraftChange}
+            />
+          ) : (
+            <BuildCardEditor {...props} showHeader={false} />
+          )}
+        </div>
+      </div>
     </ElementPopup>
   );
 }

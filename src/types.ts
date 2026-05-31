@@ -17,6 +17,11 @@ export type InstanceItem = {
   status: "READY" | "EMPTY" | "UPDATING" | "RUNNING" | string;
   pid?: number | null;
   ram: number;
+  javaArgs?: string | null;
+  javaPath?: string | null;
+  windowWidth?: number | null;
+  windowHeight?: number | null;
+  fullscreen?: boolean;
   lastPlayed: string;
   playtimeSecs: number;
   createdAt: string;
@@ -88,15 +93,25 @@ export type CreateInstancePayload = {
   loader: LoaderType;
   fabricLoaderVersion?: string | null;
   ram: number;
+  javaArgs?: string | null;
+  javaPath?: string | null;
+  windowWidth?: number | null;
+  windowHeight?: number | null;
+  fullscreen?: boolean;
 };
 
 export type UpdateInstancePayload = {
   id: string;
   name: string;
   version: string;
-  loader: LoaderType;
+  loader: LoaderType | string;
   fabricLoaderVersion?: string | null;
   ram: number;
+  javaArgs?: string | null;
+  javaPath?: string | null;
+  windowWidth?: number | null;
+  windowHeight?: number | null;
+  fullscreen?: boolean;
 };
 
 export type ActionResult = {
@@ -141,6 +156,11 @@ export type InstanceExportData = {
   loader: string;
   fabricLoaderVersion?: string | null;
   ram: number;
+  javaArgs?: string | null;
+  javaPath?: string | null;
+  windowWidth?: number | null;
+  windowHeight?: number | null;
+  fullscreen?: boolean;
   mods: ExportedItem[];
   shaders: ExportedItem[];
   resourcePacks: ExportedItem[];
@@ -152,9 +172,23 @@ export type ImportInstancePayload = {
   loader: string;
   fabricLoaderVersion?: string | null;
   ram: number;
+  javaArgs?: string | null;
+  javaPath?: string | null;
+  windowWidth?: number | null;
+  windowHeight?: number | null;
+  fullscreen?: boolean;
   mods: ExportedItem[];
   shaders: ExportedItem[];
   resourcePacks: ExportedItem[];
+};
+
+export type BuildRuntimeSettingsDraft = {
+  ram: number;
+  javaArgs: string;
+  javaPath: string;
+  windowWidth: number;
+  windowHeight: number;
+  fullscreen: boolean;
 };
 
 export type DropdownKey =
