@@ -13,6 +13,7 @@ import {
   type BuildCardPreviewSize,
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
+import { InfoPanel } from "../components/display/InfoPanel";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import { formatLastPlayed, formatPlaytime } from "../utils/playtime";
 import type {
@@ -418,25 +419,18 @@ export function InstancesTab({
                   }}
                 />
 
-                <div className="detail-block">
-                  <span className="detail-title">MC VERSION</span>
-                  <strong className="detail-meta-value">{selectedInstance?.version}</strong>
-                </div>
+                <InfoPanel label="MC VERSION" value={selectedInstance?.version} placeholder="SELECT VERSION" />
 
-                <div className="detail-block">
-                  <span className="detail-title">LOADER</span>
-                  <strong className="detail-meta-value">{selectedInstance?.loader}</strong>
-                </div>
+                <InfoPanel label="LOADER" value={selectedInstance?.loader} placeholder="SELECT LOADER" />
 
-                <div className="detail-block">
-                  <span className="detail-title">SOURCE</span>
-                  <strong className="detail-meta-value">OFFICIAL</strong>
-                </div>
+                <InfoPanel label="SOURCE" value="OFFICIAL" />
 
-                <div className="detail-block time-in-build-detail">
-                  <span className="detail-title">TIME IN BUILD</span>
-                  <strong className="detail-meta-value">{formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}</strong>
-                </div>
+                <InfoPanel
+                  className="info-panel--right-column"
+                  label="TIME IN BUILD"
+                  value={formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}
+                  placeholder="0 hrs on record"
+                />
               </div>
 
               {(busyMessage || actionError) && (
@@ -473,7 +467,7 @@ export function InstancesTab({
                 <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
                 <div className="instance-side-actions">
                   <button
-                    className="ghost-action icon-square-action"
+                    className="ghost-action icon-square-action export-action"
                     type="button"
                     title="Экспортировать сборку"
                     onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}

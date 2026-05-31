@@ -565,18 +565,6 @@
   line-height: 1.15;
 }
 
-.detail-block .detail-meta-value {
-  display: block;
-  padding-top: 18px;
-  font-size: 15px;
-  line-height: 1;
-  letter-spacing: 1px;
-}
-
-.time-in-build-detail {
-  grid-column: 2;
-}
-
 .detail-value {
   display: block;
   margin: 0;

@@ -109,18 +109,26 @@
 }
 
 .instance-side-actions {
-  width: 94px;
-  min-width: 94px;
-  height: 94px;
+  width: 96px;
+  min-width: 96px;
+  height: 96px;
+  margin-left: -54px;
   display: grid;
   grid-template-columns: repeat(2, 42px);
   grid-template-rows: repeat(2, 42px);
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .instance-side-actions .settings-icon-action {
+  grid-column: 1;
+  grid-row: 1;
   position: static;
+}
+
+.instance-side-actions .export-action {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .instance-side-actions .trash-action {
