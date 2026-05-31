@@ -1,12 +1,7 @@
-import { useEffect, useRef } from "react";
-import type {
-  Dispatch,
-  FormEvent,
-  KeyboardEvent,
-  SetStateAction,
-} from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomNumberInput } from "../inputs/CustomNumberInput";
+import { JavaArgsEditor } from "../inputs/JavaArgsEditor";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
 import {
@@ -21,68 +16,6 @@ type Props = {
   draft: BuildRuntimeSettingsDraft;
   onDraftChange: Dispatch<SetStateAction<BuildRuntimeSettingsDraft>>;
 };
-
-type JavaArgsLineEditorProps = {
-  value: string;
-  onChange: (value: string) => void;
-};
-
-function toLines(value: string) {
-  const lines = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  return lines.length > 0 ? lines : [""];
-}
-
-function JavaArgsLineEditor({ value, onChange }: JavaArgsLineEditorProps) {
-  const editorRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor || document.activeElement === editor) return;
-
-    const nextText = toLines(value).join("\n");
-    if (editor.textContent !== nextText) {
-      editor.textContent = nextText;
-    }
-  }, [value]);
-
-  const selectAll = () => {
-    const editor = editorRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection) return;
-
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  };
-
-  const handleInput = (event: FormEvent<HTMLDivElement>) => {
-    onChange((event.currentTarget.textContent ?? "").replace(/\r/g, ""));
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
-      event.preventDefault();
-      selectAll();
-    }
-  };
-
-  return (
-    <CustomScrollArea className="brs-args-scroll" style={{ minHeight: 0 }}>
-      <div
-        ref={editorRef}
-        className="brs-args-editor"
-        contentEditable="plaintext-only"
-        suppressContentEditableWarning
-        spellCheck={false}
-        role="textbox"
-        aria-label="Java arguments"
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-      />
-    </CustomScrollArea>
-  );
-}
 
 export function BuildRuntimeSettingsEditor({
   systemRamGb,
@@ -131,7 +64,11 @@ export function BuildRuntimeSettingsEditor({
             <span className="brs-panel-kicker">JVM</span>
             <strong>JAVA ARGUMENTS</strong>
           </div>
-          <JavaArgsLineEditor value={draft.javaArgs} onChange={updateJavaArgs} />
+          <JavaArgsEditor
+            className="brs-args-editor"
+            value={draft.javaArgs}
+            onChange={updateJavaArgs}
+          />
         </div>
 
         <CustomScrollArea className="brs-controls-scroll" style={{ minHeight: 0 }}>
