@@ -10,17 +10,16 @@ import {
 } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomNumberInput } from "../inputs/CustomNumberInput";
-import { JavaArgsEditor } from "../inputs/JavaArgsEditor";
+import {
+  JavaArgsEditor,
+  type JavaArgsTextEditRequest,
+} from "../inputs/JavaArgsEditor";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
-import {
-  getDefaultJavaArgsText,
-  getRamFromJavaArgsText,
-} from "../../utils/javaArgs";
+import { getDefaultJavaArgsText } from "../../utils/javaArgs";
 import {
   getTextSearchMatches,
   replaceAllTextSearchMatches,
-  replaceTextSearchMatch,
 } from "../../utils/textSearch";
 import type { BuildRuntimeSettingsDraft } from "../../types";
 
@@ -69,8 +68,11 @@ export function BuildRuntimeSettingsEditor({
   const [argsReplaceValue, setArgsReplaceValue] = useState("");
   const [activeSearchMatchIndex, setActiveSearchMatchIndex] = useState(0);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [textEditRequest, setTextEditRequest] =
+    useState<JavaArgsTextEditRequest | null>(null);
   const [argsImportError, setArgsImportError] = useState("");
   const importArgsInputRef = useRef<HTMLInputElement>(null);
+  const textEditRequestId = useRef(0);
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
   const argsSearchMatches = useMemo(
@@ -112,17 +114,19 @@ export function BuildRuntimeSettingsEditor({
   };
 
   const updateJavaArgs = (value: string) => {
-    onDraftChange((prev) => {
-      const ramFromArgs = getRamFromJavaArgsText(value);
+    onDraftChange((prev) => ({
+      ...prev,
+      javaArgs: value,
+    }));
+  };
 
-      return {
-        ...prev,
-        javaArgs: value,
-        ram:
-          ramFromArgs !== null
-            ? clampRamToSystem(ramFromArgs, systemRamGb)
-            : prev.ram,
-      };
+  const requestTextEdit = (start: number, end: number, replacement: string) => {
+    textEditRequestId.current += 1;
+    setTextEditRequest({
+      id: textEditRequestId.current,
+      start,
+      end,
+      replacement,
     });
   };
 
@@ -142,18 +146,21 @@ export function BuildRuntimeSettingsEditor({
   const replaceCurrentSearchMatch = () => {
     if (!activeSearchMatch) return;
 
-    updateJavaArgs(
-      replaceTextSearchMatch(draft.javaArgs, activeSearchMatch, argsReplaceValue),
-    );
-    setSearchFocusToken((prev) => prev + 1);
+    requestTextEdit(activeSearchMatch.start, activeSearchMatch.end, argsReplaceValue);
   };
 
   const replaceAllSearchMatches = () => {
     if (argsSearchMatches.length === 0) return;
 
-    updateJavaArgs(
-      replaceAllTextSearchMatches(draft.javaArgs, argsSearchQuery, argsReplaceValue),
+    const normalizedArgs = normalizeNewlines(draft.javaArgs);
+    const nextArgs = replaceAllTextSearchMatches(
+      normalizedArgs,
+      argsSearchQuery,
+      argsReplaceValue,
     );
+    if (nextArgs === normalizedArgs) return;
+
+    requestTextEdit(0, normalizedArgs.length, nextArgs);
     setActiveSearchMatchIndex(0);
   };
 
@@ -264,7 +271,7 @@ export function BuildRuntimeSettingsEditor({
                 <span>SEARCH</span>
                 <input
                   value={argsSearchQuery}
-                  placeholder="-Xms, G1, gc"
+                  placeholder="G1, gc, heap"
                   onChange={(event) => setArgsSearchQuery(event.target.value)}
                   onKeyDown={handleSearchKeyDown}
                 />
@@ -339,6 +346,7 @@ export function BuildRuntimeSettingsEditor({
             searchQuery={argsSearchQuery}
             activeSearchMatchIndex={activeSearchIndex}
             searchFocusToken={searchFocusToken}
+            textEditRequest={textEditRequest}
           />
         </div>
 

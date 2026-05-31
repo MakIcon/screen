@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type ChangeEvent,
+  type KeyboardEvent,
 } from "react";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { getTextSearchMatches } from "../../utils/textSearch";
@@ -18,9 +19,24 @@ type JavaArgsEditorProps = {
   searchQuery?: string;
   activeSearchMatchIndex?: number;
   searchFocusToken?: number;
+  textEditRequest?: JavaArgsTextEditRequest | null;
 };
 
 const ROW_HEIGHT = 42;
+
+export type JavaArgsTextEditRequest = {
+  id: number;
+  start: number;
+  end: number;
+  replacement: string;
+};
+
+type ProgrammaticUndoEntry = {
+  before: string;
+  after: string;
+  selectionStart: number;
+  selectionEnd: number;
+};
 
 function normalizeNewlines(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -42,9 +58,12 @@ export function JavaArgsEditor({
   searchQuery = "",
   activeSearchMatchIndex = -1,
   searchFocusToken = 0,
+  textEditRequest = null,
 }: JavaArgsEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const handledSearchFocusToken = useRef(0);
+  const handledTextEditRequestId = useRef(0);
+  const programmaticUndoStack = useRef<ProgrammaticUndoEntry[]>([]);
   const normalizedValue = useMemo(() => normalizeNewlines(value), [value]);
   const lines = useMemo(() => toLines(value), [value]);
   const lineCount = Math.max(lines.length, 1);
@@ -108,6 +127,64 @@ export function JavaArgsEditor({
   };
 
   useEffect(() => {
+    if (!textEditRequest || textEditRequest.id <= handledTextEditRequestId.current) {
+      return;
+    }
+
+    handledTextEditRequestId.current = textEditRequest.id;
+
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const source = normalizeNewlines(textarea.value);
+    const start = clamp(textEditRequest.start, 0, source.length);
+    const end = clamp(textEditRequest.end, start, source.length);
+    const replacement = normalizeNewlines(textEditRequest.replacement);
+    const nextValue = `${source.slice(0, start)}${replacement}${source.slice(end)}`;
+    const nextCaret = start + replacement.length;
+
+    if (nextValue === source) {
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(start, end);
+      updateActiveLine(textarea);
+      return;
+    }
+
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(start, end);
+
+    let appliedWithNativeUndo = false;
+    try {
+      appliedWithNativeUndo = document.execCommand("insertText", false, replacement);
+    } catch {
+      appliedWithNativeUndo = false;
+    }
+
+    if (appliedWithNativeUndo && normalizeNewlines(textarea.value) === nextValue) {
+      onChange(nextValue);
+      updateActiveLine(textarea);
+      return;
+    }
+
+    textarea.value = source;
+    textarea.setSelectionRange(start, end);
+    textarea.setRangeText(replacement, start, end, "end");
+    textarea.setSelectionRange(nextCaret, nextCaret);
+    programmaticUndoStack.current.push({
+      before: source,
+      after: nextValue,
+      selectionStart: start,
+      selectionEnd: end,
+    });
+    if (programmaticUndoStack.current.length > 30) {
+      programmaticUndoStack.current.shift();
+    }
+
+    onChange(nextValue);
+    updateActiveLine(textarea);
+  }, [onChange, textEditRequest]);
+
+  useEffect(() => {
     if (
       !hasSearchQuery ||
       !activeSearchMatch ||
@@ -129,6 +206,29 @@ export function JavaArgsEditor({
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     onChange(normalizeNewlines(event.currentTarget.value));
     updateActiveLine(event.currentTarget);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    const wantsUndo =
+      (event.ctrlKey || event.metaKey) &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "z";
+
+    if (!wantsUndo) return;
+
+    const textarea = event.currentTarget;
+    const currentValue = normalizeNewlines(textarea.value);
+    const lastUndo =
+      programmaticUndoStack.current[programmaticUndoStack.current.length - 1];
+
+    if (!lastUndo || currentValue !== lastUndo.after) return;
+
+    event.preventDefault();
+    programmaticUndoStack.current.pop();
+    textarea.value = lastUndo.before;
+    textarea.setSelectionRange(lastUndo.selectionStart, lastUndo.selectionEnd);
+    onChange(lastUndo.before);
+    updateActiveLine(textarea);
   };
 
   return (
@@ -208,6 +308,7 @@ export function JavaArgsEditor({
             autoCorrect="off"
             aria-label={ariaLabel}
             onChange={handleChange}
+            onKeyDown={handleKeyDown}
             onPointerDown={(event) =>
               updateActiveLineFromPointer(event.currentTarget, event.clientY)
             }

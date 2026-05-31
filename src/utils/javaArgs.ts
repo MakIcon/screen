@@ -60,31 +60,6 @@ export function getDefaultRuntimeSettingsDraft(
   };
 }
 
-export function parseJavaMemoryArgGb(value: string): number | null {
-  const match = value.trim().match(/^-Xm[sx](\d+)([gGmMkK]?)$/);
-  if (!match) return null;
-
-  const rawAmount = Number(match[1]);
-  if (!Number.isFinite(rawAmount) || rawAmount <= 0) return null;
-
-  const unit = match[2]?.toLowerCase() || "b";
-  if (unit === "g") return rawAmount;
-  if (unit === "m") return Math.max(1, Math.ceil(rawAmount / 1024));
-  if (unit === "k") return Math.max(1, Math.ceil(rawAmount / 1024 / 1024));
-  return Math.max(1, Math.ceil(rawAmount / 1024 / 1024 / 1024));
-}
-
-export function getRamFromJavaArgsText(javaArgs: string): number | null {
-  const args = javaArgs.replace(/\r\n/g, "\n").split(/\s+/).filter(Boolean);
-  const xms = [...args].reverse().find((arg) => arg.trim().startsWith("-Xms"));
-  if (xms) return parseJavaMemoryArgGb(xms);
-
-  const xmx = [...args].reverse().find((arg) => arg.trim().startsWith("-Xmx"));
-  if (xmx) return parseJavaMemoryArgGb(xmx);
-
-  return null;
-}
-
 export function normalizeWindowDimension(
   value: number,
   fallback: number,
@@ -100,10 +75,9 @@ export function normalizeRuntimeSettingsDraft(
   systemRamGb: number,
 ): BuildRuntimeSettingsDraft {
   const javaArgs = draft.javaArgs.replace(/\r\n/g, "\n");
-  const ramFromArgs = getRamFromJavaArgsText(javaArgs);
 
   return {
-    ram: clampRamToSystem(ramFromArgs ?? draft.ram, systemRamGb),
+    ram: clampRamToSystem(draft.ram, systemRamGb),
     javaArgs,
     javaPath: draft.javaPath.trim(),
     windowWidth: normalizeWindowDimension(draft.windowWidth, DEFAULT_WINDOW_WIDTH, 320, 7680),
