@@ -59,6 +59,11 @@
   background: rgba(194, 65, 12, 0.1);
 }
 
+.jae-line-number--search-current {
+  color: var(--bg);
+  background: var(--accent);
+}
+
 .jae-text-cell {
   position: relative;
   grid-column: 2;
@@ -91,6 +96,13 @@
   height: var(--jae-row-height);
   background: rgba(194, 65, 12, 0.1);
   box-shadow: inset 0 0 0 1px rgba(194, 65, 12, 0.16);
+}
+
+.jae-search-line--current {
+  background: rgba(194, 65, 12, 0.18);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset 0 0 0 1px rgba(194, 65, 12, 0.26);
 }
 
 .jae-placeholder-lines {

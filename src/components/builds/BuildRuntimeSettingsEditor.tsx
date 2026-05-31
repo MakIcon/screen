@@ -1,9 +1,11 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type Dispatch,
+  type KeyboardEvent,
   type SetStateAction,
 } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
@@ -15,6 +17,11 @@ import {
   getDefaultJavaArgsText,
   getRamFromJavaArgsText,
 } from "../../utils/javaArgs";
+import {
+  getTextSearchMatches,
+  replaceAllTextSearchMatches,
+  replaceTextSearchMatch,
+} from "../../utils/textSearch";
 import type { BuildRuntimeSettingsDraft } from "../../types";
 
 const JAVA_ARGS_EXPORT_KIND = "screen.java-args";
@@ -29,15 +36,6 @@ type JavaArgsExportData = {
 
 function normalizeNewlines(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-function countSearchMatches(value: string, query: string) {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return null;
-
-  return normalizeNewlines(value)
-    .split("\n")
-    .filter((line) => line.toLowerCase().includes(needle)).length;
 }
 
 function readImportedJavaArgs(raw: string) {
@@ -68,14 +66,35 @@ export function BuildRuntimeSettingsEditor({
   onDraftChange,
 }: Props) {
   const [argsSearchQuery, setArgsSearchQuery] = useState("");
+  const [argsReplaceValue, setArgsReplaceValue] = useState("");
+  const [activeSearchMatchIndex, setActiveSearchMatchIndex] = useState(0);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [argsImportError, setArgsImportError] = useState("");
   const importArgsInputRef = useRef<HTMLInputElement>(null);
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
-  const argsSearchMatchCount = useMemo(
-    () => countSearchMatches(draft.javaArgs, argsSearchQuery),
+  const argsSearchMatches = useMemo(
+    () => getTextSearchMatches(draft.javaArgs, argsSearchQuery),
     [argsSearchQuery, draft.javaArgs],
   );
+  const activeSearchIndex =
+    argsSearchMatches.length > 0
+      ? Math.min(activeSearchMatchIndex, argsSearchMatches.length - 1)
+      : -1;
+  const activeSearchMatch =
+    activeSearchIndex >= 0 ? argsSearchMatches[activeSearchIndex] : null;
+
+  useEffect(() => {
+    setActiveSearchMatchIndex(0);
+  }, [argsSearchQuery]);
+
+  useEffect(() => {
+    setActiveSearchMatchIndex((prev) =>
+      argsSearchMatches.length > 0
+        ? Math.min(prev, argsSearchMatches.length - 1)
+        : 0,
+    );
+  }, [argsSearchMatches.length]);
 
   const updateRam = (value: number) => {
     onDraftChange((prev) => {
@@ -105,6 +124,56 @@ export function BuildRuntimeSettingsEditor({
             : prev.ram,
       };
     });
+  };
+
+  const moveSearchMatch = (direction: -1 | 1) => {
+    if (argsSearchMatches.length === 0) return;
+
+    setActiveSearchMatchIndex((prev) => {
+      const normalizedPrev = Math.min(prev, argsSearchMatches.length - 1);
+      return (
+        (normalizedPrev + direction + argsSearchMatches.length) %
+        argsSearchMatches.length
+      );
+    });
+    setSearchFocusToken((prev) => prev + 1);
+  };
+
+  const replaceCurrentSearchMatch = () => {
+    if (!activeSearchMatch) return;
+
+    updateJavaArgs(
+      replaceTextSearchMatch(draft.javaArgs, activeSearchMatch, argsReplaceValue),
+    );
+    setSearchFocusToken((prev) => prev + 1);
+  };
+
+  const replaceAllSearchMatches = () => {
+    if (argsSearchMatches.length === 0) return;
+
+    updateJavaArgs(
+      replaceAllTextSearchMatches(draft.javaArgs, argsSearchQuery, argsReplaceValue),
+    );
+    setActiveSearchMatchIndex(0);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+    moveSearchMatch(event.shiftKey ? -1 : 1);
+  };
+
+  const handleReplaceKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+    if (event.shiftKey) {
+      replaceAllSearchMatches();
+      return;
+    }
+
+    replaceCurrentSearchMatch();
   };
 
   const exportJavaArgs = () => {
@@ -190,21 +259,75 @@ export function BuildRuntimeSettingsEditor({
             </div>
           </div>
           <div className="brs-args-toolbar">
-            <label className="brs-search-field">
-              <span>SEARCH</span>
-              <input
-                value={argsSearchQuery}
-                placeholder="-Xms, G1, gc"
-                onChange={(event) => setArgsSearchQuery(event.target.value)}
-              />
-            </label>
-            {argsSearchMatchCount !== null && (
-              <span className="brs-search-count">
-                {argsSearchMatchCount > 0
-                  ? `${argsSearchMatchCount} FOUND`
-                  : "NO MATCH"}
-              </span>
-            )}
+            <div className="brs-find-row">
+              <label className="brs-search-field">
+                <span>SEARCH</span>
+                <input
+                  value={argsSearchQuery}
+                  placeholder="-Xms, G1, gc"
+                  onChange={(event) => setArgsSearchQuery(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                />
+              </label>
+              <div className="brs-find-controls">
+                {argsSearchQuery.trim() && (
+                  <span className="brs-search-count">
+                    {argsSearchMatches.length > 0
+                      ? `${activeSearchIndex + 1}/${argsSearchMatches.length}`
+                      : "NO MATCH"}
+                  </span>
+                )}
+                <button
+                  className="brs-icon-action brs-find-action"
+                  type="button"
+                  title="Previous match"
+                  disabled={argsSearchMatches.length === 0}
+                  onClick={() => moveSearchMatch(-1)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <path d="M7 4L3.75 7.25M7 4l3.25 3.25M7 4v6.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  className="brs-icon-action brs-find-action"
+                  type="button"
+                  title="Next match"
+                  disabled={argsSearchMatches.length === 0}
+                  onClick={() => moveSearchMatch(1)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <path d="M7 10L3.75 6.75M7 10l3.25-3.25M7 10V3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="brs-replace-row">
+              <label className="brs-search-field">
+                <span>REPLACE</span>
+                <input
+                  value={argsReplaceValue}
+                  placeholder="new value"
+                  onChange={(event) => setArgsReplaceValue(event.target.value)}
+                  onKeyDown={handleReplaceKeyDown}
+                />
+              </label>
+              <button
+                className="brs-compact-action"
+                type="button"
+                disabled={argsSearchMatches.length === 0}
+                onClick={replaceCurrentSearchMatch}
+              >
+                REPLACE
+              </button>
+              <button
+                className="brs-compact-action"
+                type="button"
+                disabled={argsSearchMatches.length === 0}
+                onClick={replaceAllSearchMatches}
+              >
+                ALL
+              </button>
+            </div>
             {argsImportError && (
               <span className="brs-args-status">{argsImportError}</span>
             )}
@@ -214,6 +337,8 @@ export function BuildRuntimeSettingsEditor({
             value={draft.javaArgs}
             onChange={updateJavaArgs}
             searchQuery={argsSearchQuery}
+            activeSearchMatchIndex={activeSearchIndex}
+            searchFocusToken={searchFocusToken}
           />
         </div>
 

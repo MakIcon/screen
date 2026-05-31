@@ -7,6 +7,7 @@ import {
   type ChangeEvent,
 } from "react";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
+import { getTextSearchMatches } from "../../utils/textSearch";
 import "./JavaArgsEditor.css";
 
 type JavaArgsEditorProps = {
@@ -15,6 +16,8 @@ type JavaArgsEditorProps = {
   className?: string;
   ariaLabel?: string;
   searchQuery?: string;
+  activeSearchMatchIndex?: number;
+  searchFocusToken?: number;
 };
 
 const ROW_HEIGHT = 42;
@@ -37,8 +40,11 @@ export function JavaArgsEditor({
   className = "",
   ariaLabel = "Java arguments",
   searchQuery = "",
+  activeSearchMatchIndex = -1,
+  searchFocusToken = 0,
 }: JavaArgsEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const handledSearchFocusToken = useRef(0);
   const normalizedValue = useMemo(() => normalizeNewlines(value), [value]);
   const lines = useMemo(() => toLines(value), [value]);
   const lineCount = Math.max(lines.length, 1);
@@ -46,32 +52,37 @@ export function JavaArgsEditor({
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const visibleActiveLine =
     activeLine === null ? null : Math.min(activeLine, lineCount - 1);
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-  const searchMatchIndexes = useMemo(() => {
-    if (!normalizedSearch) return [] as number[];
-
-    return lines.reduce<number[]>((acc, line, index) => {
-      if (line.toLowerCase().includes(normalizedSearch)) acc.push(index);
-      return acc;
-    }, []);
-  }, [lines, normalizedSearch]);
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const searchMatches = useMemo(
+    () => getTextSearchMatches(normalizedValue, searchQuery),
+    [normalizedValue, searchQuery],
+  );
+  const searchMatchIndexes = useMemo(
+    () => searchMatches.map((match) => match.line),
+    [searchMatches],
+  );
   const searchMatchSet = useMemo(
     () => new Set(searchMatchIndexes),
     [searchMatchIndexes],
   );
-  const firstSearchMatch = searchMatchIndexes[0] ?? null;
+  const visibleSearchMatchIndex =
+    activeSearchMatchIndex >= 0 && searchMatches.length > 0
+      ? clamp(activeSearchMatchIndex, 0, searchMatches.length - 1)
+      : 0;
+  const activeSearchMatch = searchMatches[visibleSearchMatchIndex] ?? null;
+  const activeSearchLine = activeSearchMatch?.line ?? null;
 
   useEffect(() => {
-    if (!normalizedSearch || firstSearchMatch === null) return;
+    if (!hasSearchQuery || !activeSearchMatch) return;
 
     const scrollRoot = textareaRef.current?.closest(".csa-content");
     if (!(scrollRoot instanceof HTMLElement)) return;
 
-    const nextTop = Math.max(0, firstSearchMatch * ROW_HEIGHT - ROW_HEIGHT);
+    const nextTop = Math.max(0, activeSearchMatch.line * ROW_HEIGHT - ROW_HEIGHT);
     if (Math.abs(scrollRoot.scrollTop - nextTop) <= ROW_HEIGHT) return;
 
     scrollRoot.scrollTo({ top: nextTop, behavior: "smooth" });
-  }, [firstSearchMatch, normalizedSearch]);
+  }, [activeSearchMatch, hasSearchQuery]);
 
   const updateActiveLine = (textarea: HTMLTextAreaElement) => {
     const caret = textarea.selectionStart ?? 0;
@@ -96,6 +107,25 @@ export function JavaArgsEditor({
     requestAnimationFrame(() => updateActiveLine(textarea));
   };
 
+  useEffect(() => {
+    if (
+      !hasSearchQuery ||
+      !activeSearchMatch ||
+      searchFocusToken <= handledSearchFocusToken.current
+    ) {
+      return;
+    }
+
+    handledSearchFocusToken.current = searchFocusToken;
+
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(activeSearchMatch.start, activeSearchMatch.end);
+    updateActiveLine(textarea);
+  }, [activeSearchMatch, hasSearchQuery, searchFocusToken]);
+
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     onChange(normalizeNewlines(event.currentTarget.value));
     updateActiveLine(event.currentTarget);
@@ -118,6 +148,7 @@ export function JavaArgsEditor({
                 "jae-line-number",
                 visibleActiveLine === index ? "jae-line-number--active" : "",
                 searchMatchSet.has(index) ? "jae-line-number--search-match" : "",
+                activeSearchLine === index ? "jae-line-number--search-current" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -128,13 +159,16 @@ export function JavaArgsEditor({
         </div>
 
         <div className="jae-text-cell">
-          {searchMatchIndexes.length > 0 && (
+          {searchMatches.length > 0 && (
             <div className="jae-search-lines" aria-hidden="true">
-              {searchMatchIndexes.map((index) => (
+              {searchMatches.map((match, index) => (
                 <span
                   key={index}
-                  className="jae-search-line"
-                  style={{ transform: `translateY(${index * ROW_HEIGHT}px)` }}
+                  className={[
+                    "jae-search-line",
+                    index === visibleSearchMatchIndex ? "jae-search-line--current" : "",
+                  ].filter(Boolean).join(" ")}
+                  style={{ transform: `translateY(${match.line * ROW_HEIGHT}px)` }}
                 />
               ))}
             </div>
