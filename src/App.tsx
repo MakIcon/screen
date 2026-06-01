@@ -25,6 +25,7 @@ import type {
   InstanceExportData,
   InstanceItem,
   InstallProgressPayload,
+  LauncherPluginsSettings,
   LauncherSettings,
   LoaderType,
   MicrosoftAccount,
@@ -163,6 +164,11 @@ export default function App() {
     const launchTs = launchTimestampsRef.current.get(id);
     launchTimestampsRef.current.delete(id);
     removeRunning(id);
+    try {
+      await invoke("stop_discord_rpc_for_instance", { instanceId: id });
+    } catch (err) {
+      console.error("stop_discord_rpc_for_instance failed", err);
+    }
     if (launchTs !== undefined) {
       const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - launchTs);
       try {
@@ -958,6 +964,22 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  const saveLauncherPlugins = async (plugins: LauncherPluginsSettings) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_launcher_plugins", { plugins });
+      setLauncherSettings(updated);
+
+      if (!updated.plugins.discordRpc.enabled) {
+        void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
+          console.error("stop_discord_rpc_for_instance failed", error);
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      setActionError(String(error));
+    }
+  };
+
   const handleCreateBuild = async () => {
     try {
       setCreateError("");
@@ -1102,7 +1124,15 @@ const isScrollableElement = (target: EventTarget | null) => {
       });
 
       await refreshInstances(target.id);
-      if (result.pid) addRunning(target.id, result.pid);
+      if (result.pid) {
+        addRunning(target.id, result.pid);
+        void invoke("start_discord_rpc_for_instance", {
+          instanceId: target.id,
+          accountType,
+        }).catch((error) => {
+          console.error("start_discord_rpc_for_instance failed", error);
+        });
+      }
 
       setInstallProgress({
         phase: "done",
@@ -1465,6 +1495,8 @@ const isScrollableElement = (target: EventTarget | null) => {
                 return next;
               });
             }}
+            pluginsSettings={launcherSettings?.plugins}
+            savePluginsSettings={saveLauncherPlugins}
             resolve={resolve}
             manifestLoading={manifestLoading}
             manifest={manifest}

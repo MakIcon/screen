@@ -145,6 +145,19 @@ export type InstallProgressPayload = {
 export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
+  plugins: LauncherPluginsSettings;
+};
+
+export type LauncherPluginsSettings = {
+  discordRpc: DiscordRpcPluginSettings;
+};
+
+export type DiscordRpcPluginSettings = {
+  enabled: boolean;
+  applicationId: string;
+  detailsTemplate: string;
+  stateTemplate: string;
+  showElapsedTime: boolean;
 };
 
 export type MicrosoftAccount = {

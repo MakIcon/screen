@@ -1,6 +1,6 @@
 use crate::{
     minecraft::normalized_ram,
-    models::LauncherSettings,
+    models::{LauncherPluginsSettings, LauncherSettings},
     paths::{read_settings, write_settings},
 };
 
@@ -21,6 +21,16 @@ pub async fn set_default_ram_gb(ram: u32) -> Result<LauncherSettings, String> {
 pub async fn set_optimized_java_args(enabled: bool) -> Result<LauncherSettings, String> {
     let mut settings = read_settings().await?;
     settings.optimized_java_args = enabled;
+    write_settings(&settings).await?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub async fn set_launcher_plugins(
+    plugins: LauncherPluginsSettings,
+) -> Result<LauncherSettings, String> {
+    let mut settings = read_settings().await?;
+    settings.plugins = plugins;
     write_settings(&settings).await?;
     Ok(settings)
 }

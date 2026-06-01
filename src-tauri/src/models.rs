@@ -308,6 +308,30 @@ pub struct LauncherSettings {
     pub default_ram_gb: u32,
     #[serde(default = "default_optimized_java_args")]
     pub optimized_java_args: bool,
+    #[serde(default)]
+    pub plugins: LauncherPluginsSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherPluginsSettings {
+    #[serde(default)]
+    pub discord_rpc: DiscordRpcPluginSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordRpcPluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub application_id: String,
+    #[serde(default = "default_discord_rpc_details_template")]
+    pub details_template: String,
+    #[serde(default = "default_discord_rpc_state_template")]
+    pub state_template: String,
+    #[serde(default = "default_discord_rpc_show_elapsed_time")]
+    pub show_elapsed_time: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,11 +350,44 @@ impl Default for LauncherSettings {
         Self {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
+            plugins: LauncherPluginsSettings::default(),
+        }
+    }
+}
+
+impl Default for LauncherPluginsSettings {
+    fn default() -> Self {
+        Self {
+            discord_rpc: DiscordRpcPluginSettings::default(),
+        }
+    }
+}
+
+impl Default for DiscordRpcPluginSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            application_id: String::new(),
+            details_template: default_discord_rpc_details_template(),
+            state_template: default_discord_rpc_state_template(),
+            show_elapsed_time: default_discord_rpc_show_elapsed_time(),
         }
     }
 }
 
 fn default_optimized_java_args() -> bool {
+    true
+}
+
+fn default_discord_rpc_details_template() -> String {
+    "Playing %build_name%".to_string()
+}
+
+fn default_discord_rpc_state_template() -> String {
+    "%build_version% / %build_loader%".to_string()
+}
+
+fn default_discord_rpc_show_elapsed_time() -> bool {
     true
 }
 

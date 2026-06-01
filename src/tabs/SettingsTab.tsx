@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
+import { LauncherPluginsModal } from "../components/plugins/LauncherPluginsModal";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
+import type { LauncherPluginsSettings } from "../types";
 
 const SunIcon = () => (
   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -44,6 +47,8 @@ interface SettingsTabProps {
   setShowPreReleases: (fn: (prev: boolean) => boolean) => void;
   advancedSettingsEnabled: boolean;
   onToggleAdvanced: () => void;
+  pluginsSettings?: LauncherPluginsSettings | null;
+  savePluginsSettings: (plugins: LauncherPluginsSettings) => Promise<void>;
   resolve: (template: string) => string;
   manifestLoading: boolean;
   manifest: object | null;
@@ -66,6 +71,8 @@ export function SettingsTab({
   setShowPreReleases,
   advancedSettingsEnabled,
   onToggleAdvanced,
+  pluginsSettings,
+  savePluginsSettings,
   resolve,
   manifestLoading,
   manifest,
@@ -74,6 +81,7 @@ export function SettingsTab({
 }: SettingsTabProps) {
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
+  const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
 
   return (
     <section className="launcher-panel">
@@ -231,8 +239,29 @@ export function SettingsTab({
               <strong>{manifestLoading ? "LOADING" : manifest ? "READY" : "ERROR"}</strong>
             </div>
           </div>
+
+          {advancedSettingsEnabled && (
+            <div className="runtime-advanced-zone">
+              <button
+                className="runtime-extension-button"
+                type="button"
+                onClick={() => setPluginsModalOpen(true)}
+              >
+                <span>EXTENSIONS</span>
+                <strong>MANAGE</strong>
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {pluginsModalOpen && (
+        <LauncherPluginsModal
+          settings={pluginsSettings}
+          onClose={() => setPluginsModalOpen(false)}
+          onSave={savePluginsSettings}
+        />
+      )}
     </section>
   );
 }
