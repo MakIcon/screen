@@ -744,7 +744,6 @@
 .screenshots-list .csa-content {
   display: flex;
   flex-direction: column;
-  padding-right: 12px;
 }
 
 .screenshot-row {
@@ -759,7 +758,7 @@
   align-items: flex-start;
   justify-content: center;
   gap: 5px;
-  padding: 12px 14px;
+  padding: 12px 24px 12px 14px;
   text-align: left;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
