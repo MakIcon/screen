@@ -42,7 +42,10 @@ async fn download_client_jar(
     Ok(path)
 }
 
-pub async fn install_instance_files(app: &AppHandle, instance: &InstanceItem) -> Result<(), String> {
+pub async fn install_instance_files(
+    app: &AppHandle,
+    instance: &InstanceItem,
+) -> Result<(), String> {
     ensure_layout().await?;
     let client = Client::new();
 

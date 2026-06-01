@@ -12,9 +12,14 @@ use crate::{
 
 use super::{downloader::download_to_path, manifest::fetch_manifest_network};
 
-async fn load_or_fetch_version_json(client: &Client, version_id: &str) -> Result<VersionMeta, String> {
+async fn load_or_fetch_version_json(
+    client: &Client,
+    version_id: &str,
+) -> Result<VersionMeta, String> {
     ensure_layout().await?;
-    let json_path = versions_root()?.join(version_id).join(format!("{version_id}.json"));
+    let json_path = versions_root()?
+        .join(version_id)
+        .join(format!("{version_id}.json"));
 
     if !json_path.exists() {
         let manifest: MinecraftManifest = fetch_manifest_network(client).await?;
@@ -76,8 +81,8 @@ fn dedup_libraries(libraries: Vec<Library>) -> Vec<Library> {
     // Reverse iteration means child (Fabric) version wins over parent (vanilla).
     for lib in libraries.into_iter().rev() {
         let parts: Vec<&str> = lib.name.split(':').collect();
-        let group      = parts.first().copied().unwrap_or("");
-        let artifact   = parts.get(1).copied().unwrap_or("");
+        let group = parts.first().copied().unwrap_or("");
+        let artifact = parts.get(1).copied().unwrap_or("");
         let classifier = parts.get(3).copied().unwrap_or("");
         let key = format!("{group}:{artifact}:{classifier}");
         if seen.insert(key) {
@@ -108,7 +113,10 @@ fn merge_meta(parent: VersionMeta, child: VersionMeta) -> VersionMeta {
     }
 }
 
-pub async fn resolve_version_meta(client: &Client, version_id: &str) -> Result<VersionMeta, String> {
+pub async fn resolve_version_meta(
+    client: &Client,
+    version_id: &str,
+) -> Result<VersionMeta, String> {
     let mut chain = Vec::new();
     let mut current = load_or_fetch_version_json(client, version_id).await?;
 
@@ -148,7 +156,9 @@ fn current_arch_string() -> &'static str {
 }
 
 pub fn evaluate_rules(rules: &Option<Vec<crate::models::Rule>>) -> bool {
-    let Some(rules) = rules else { return true; };
+    let Some(rules) = rules else {
+        return true;
+    };
     let mut allowed = false;
 
     for rule in rules {
@@ -190,7 +200,10 @@ pub fn replace_tokens(input: &str, tokens: &HashMap<&str, String>) -> String {
     out
 }
 
-pub fn collect_argument_list(items: &[ArgumentItem], tokens: &HashMap<&str, String>) -> Vec<String> {
+pub fn collect_argument_list(
+    items: &[ArgumentItem],
+    tokens: &HashMap<&str, String>,
+) -> Vec<String> {
     let mut out = Vec::new();
     for item in items {
         match item {
@@ -212,7 +225,6 @@ pub fn collect_argument_list(items: &[ArgumentItem], tokens: &HashMap<&str, Stri
     }
     out
 }
-
 
 fn parse_library_name(name: &str) -> Option<(String, String, String, Option<String>, String)> {
     let (coords, ext) = match name.rsplit_once('@') {
@@ -246,9 +258,14 @@ fn library_base_url(library: &Library) -> String {
         .to_string()
 }
 
-fn build_library_download(library: &Library, classifier_override: Option<&str>) -> Option<DownloadInfo> {
+fn build_library_download(
+    library: &Library,
+    classifier_override: Option<&str>,
+) -> Option<DownloadInfo> {
     let (group, artifact, version, parsed_classifier, ext) = parse_library_name(&library.name)?;
-    let classifier = classifier_override.map(|v| v.to_string()).or(parsed_classifier);
+    let classifier = classifier_override
+        .map(|v| v.to_string())
+        .or(parsed_classifier);
 
     let filename = match &classifier {
         Some(classifier) => format!("{artifact}-{version}-{classifier}.{ext}"),
@@ -287,7 +304,10 @@ pub fn resolve_library_artifact_download(library: &Library) -> Option<DownloadIn
     build_library_download(library, None)
 }
 
-pub fn resolve_library_classifier_download(library: &Library, classifier: &str) -> Option<DownloadInfo> {
+pub fn resolve_library_classifier_download(
+    library: &Library,
+    classifier: &str,
+) -> Option<DownloadInfo> {
     if let Some(download) = library
         .downloads
         .as_ref()

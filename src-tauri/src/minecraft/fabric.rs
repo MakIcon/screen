@@ -33,7 +33,10 @@ pub fn effective_version_id_for_instance(instance: &InstanceItem) -> Result<Stri
             .fabric_loader_version
             .as_ref()
             .ok_or_else(|| "Fabric loader version missing for instance".to_string())?;
-        Ok(synthetic_fabric_version_id(&instance.version, loader_version))
+        Ok(synthetic_fabric_version_id(
+            &instance.version,
+            loader_version,
+        ))
     } else {
         Ok(instance.version.clone())
     }
@@ -92,9 +95,7 @@ pub async fn ensure_fabric_version_json(
         .await
         .map_err(|e| format!("create fabric version dir error: {e}"))?;
 
-    let url = format!(
-        "{FABRIC_META_BASE_URL}/loader/{game_version}/{loader_version}/profile/json"
-    );
+    let url = format!("{FABRIC_META_BASE_URL}/loader/{game_version}/{loader_version}/profile/json");
 
     let response = client
         .get(url)

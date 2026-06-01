@@ -186,7 +186,10 @@ pub(crate) async fn download_file(client: &Client, url: &str, path: &Path) -> Re
         .map_err(|e| format!("download request error: {e}"))?;
 
     if !response.status().is_success() {
-        return Err(format!("download http error {} for {url}", response.status()));
+        return Err(format!(
+            "download http error {} for {url}",
+            response.status()
+        ));
     }
 
     let bytes = response
@@ -268,7 +271,10 @@ pub(crate) fn parse_project_hit(hit: &Value) -> ModrinthProject {
         versions: as_string_vec(hit.get("versions").or_else(|| hit.get("game_versions"))),
         downloads: hit.get("downloads").and_then(Value::as_u64).unwrap_or(0),
         follows,
-        icon_url: hit.get("icon_url").and_then(Value::as_str).map(|s| s.to_string()),
+        icon_url: hit
+            .get("icon_url")
+            .and_then(Value::as_str)
+            .map(|s| s.to_string()),
         installed: false,
     }
 }
@@ -313,8 +319,14 @@ pub(crate) async fn fetch_modrinth_search(
     })?;
 
     let total_hits = json.get("total_hits").and_then(Value::as_u64).unwrap_or(0) as usize;
-    let offset = json.get("offset").and_then(Value::as_u64).unwrap_or(offset as u64) as usize;
-    let limit = json.get("limit").and_then(Value::as_u64).unwrap_or(limit as u64) as usize;
+    let offset = json
+        .get("offset")
+        .and_then(Value::as_u64)
+        .unwrap_or(offset as u64) as usize;
+    let limit = json
+        .get("limit")
+        .and_then(Value::as_u64)
+        .unwrap_or(limit as u64) as usize;
     let hits = json
         .get("hits")
         .and_then(Value::as_array)
@@ -424,8 +436,9 @@ pub(crate) async fn resolve_project_version(
             .append_pair("include_changelog", "false");
     }
 
-    let featured: Vec<ModrinthVersion> =
-        http_json(client, featured_url.as_str()).await.unwrap_or_default();
+    let featured: Vec<ModrinthVersion> = http_json(client, featured_url.as_str())
+        .await
+        .unwrap_or_default();
     if let Some(version) = featured.into_iter().next() {
         return Ok(version);
     }
@@ -478,7 +491,8 @@ pub(crate) async fn install_project_to_dir(
             .and_then(Value::as_str)
             .map(|value| value.to_string());
 
-        let version = resolve_project_version(client, &project_id, &instance.version, loaders).await?;
+        let version =
+            resolve_project_version(client, &project_id, &instance.version, loaders).await?;
         let file = choose_primary_file(&version)
             .ok_or_else(|| format!("No files for project {}", project_id))?
             .clone();

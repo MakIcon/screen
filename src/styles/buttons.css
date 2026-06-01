@@ -104,17 +104,27 @@
   opacity: 1;
 }
 
+.screenshots-action {
+  color: var(--muted);
+}
+
+.screenshots-action:hover {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.35);
+  opacity: 1;
+}
+
 .instance-actions.instance-actions-build {
   align-items: flex-end;
 }
 
 .instance-side-actions {
-  width: 96px;
-  min-width: 96px;
+  width: 150px;
+  min-width: 150px;
   height: 96px;
-  margin-left: -54px;
+  margin-left: -108px;
   display: grid;
-  grid-template-columns: repeat(2, 42px);
+  grid-template-columns: repeat(3, 42px);
   grid-template-rows: repeat(2, 42px);
   gap: 12px;
   flex-shrink: 0;
@@ -127,13 +137,18 @@
 }
 
 .instance-side-actions .export-action {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
 }
 
 .instance-side-actions .trash-action {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 2;
+}
+
+.instance-side-actions .screenshots-action {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 button:disabled {

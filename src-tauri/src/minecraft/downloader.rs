@@ -1,4 +1,7 @@
-use std::{path::{Path, PathBuf}, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use reqwest::Client;
 use tauri::AppHandle;
@@ -24,7 +27,10 @@ pub async fn download_to_path(client: &Client, url: &str, path: &Path) -> Result
         .map_err(|e| format!("download request error: {e}"))?;
 
     if !response.status().is_success() {
-        return Err(format!("download http error {} for {url}", response.status()));
+        return Err(format!(
+            "download http error {} for {url}",
+            response.status()
+        ));
     }
 
     let bytes = response

@@ -130,8 +130,8 @@ pub async fn read_accounts() -> Result<Vec<MicrosoftAccount>, String> {
 
 pub async fn write_accounts(accounts: &[MicrosoftAccount]) -> Result<(), String> {
     let path = accounts_path()?;
-    let raw = serde_json::to_string_pretty(accounts)
-        .map_err(|e| format!("serialize accounts: {e}"))?;
+    let raw =
+        serde_json::to_string_pretty(accounts).map_err(|e| format!("serialize accounts: {e}"))?;
     tokio::fs::write(path, raw)
         .await
         .map_err(|e| format!("write accounts: {e}"))
@@ -139,7 +139,11 @@ pub async fn write_accounts(accounts: &[MicrosoftAccount]) -> Result<(), String>
 
 // ── Auth steps ────────────────────────────────────────────────────────────────
 
-async fn post_form(client: &Client, url: &str, pairs: &[(&str, &str)]) -> Result<reqwest::Response, String> {
+async fn post_form(
+    client: &Client,
+    url: &str,
+    pairs: &[(&str, &str)],
+) -> Result<reqwest::Response, String> {
     let body = encode_form(pairs);
     client
         .post(url)
@@ -151,32 +155,46 @@ async fn post_form(client: &Client, url: &str, pairs: &[(&str, &str)]) -> Result
 }
 
 async fn exchange_code(client: &Client, code: &str) -> Result<MsTokenResponse, String> {
-    let resp = post_form(client, MS_TOKEN_URL, &[
-        ("client_id", MS_CLIENT_ID),
-        ("code", code),
-        ("grant_type", "authorization_code"),
-        ("redirect_uri", MS_REDIRECT_URI),
-    ]).await?;
+    let resp = post_form(
+        client,
+        MS_TOKEN_URL,
+        &[
+            ("client_id", MS_CLIENT_ID),
+            ("code", code),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", MS_REDIRECT_URI),
+        ],
+    )
+    .await?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("MS token error {status}: {body}"));
     }
-    resp.json::<MsTokenResponse>().await.map_err(|e| format!("MS token parse: {e}"))
+    resp.json::<MsTokenResponse>()
+        .await
+        .map_err(|e| format!("MS token parse: {e}"))
 }
 
 async fn refresh_ms_token(client: &Client, refresh_token: &str) -> Result<MsTokenResponse, String> {
-    let resp = post_form(client, MS_TOKEN_URL, &[
-        ("client_id", MS_CLIENT_ID),
-        ("refresh_token", refresh_token),
-        ("grant_type", "refresh_token"),
-    ]).await?;
+    let resp = post_form(
+        client,
+        MS_TOKEN_URL,
+        &[
+            ("client_id", MS_CLIENT_ID),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ],
+    )
+    .await?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("MS refresh error {status}: {body}"));
     }
-    resp.json::<MsTokenResponse>().await.map_err(|e| format!("MS refresh parse: {e}"))
+    resp.json::<MsTokenResponse>()
+        .await
+        .map_err(|e| format!("MS refresh parse: {e}"))
 }
 
 async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String, String), String> {
@@ -201,8 +219,17 @@ async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("XBL error {status}: {body}"));
     }
-    let data = resp.json::<XblResponse>().await.map_err(|e| format!("XBL parse: {e}"))?;
-    let uhs = data.display_claims.xui.into_iter().next().ok_or("XBL: no user hash")?.uhs;
+    let data = resp
+        .json::<XblResponse>()
+        .await
+        .map_err(|e| format!("XBL parse: {e}"))?;
+    let uhs = data
+        .display_claims
+        .xui
+        .into_iter()
+        .next()
+        .ok_or("XBL: no user hash")?
+        .uhs;
     Ok((data.token, uhs))
 }
 
@@ -237,11 +264,18 @@ async fn get_xsts_token(client: &Client, xbl_token: &str) -> Result<String, Stri
         }
         return Err(format!("XSTS error {status}: {body}"));
     }
-    let data = resp.json::<XstsResponse>().await.map_err(|e| format!("XSTS parse: {e}"))?;
+    let data = resp
+        .json::<XstsResponse>()
+        .await
+        .map_err(|e| format!("XSTS parse: {e}"))?;
     Ok(data.token)
 }
 
-async fn get_minecraft_token(client: &Client, uhs: &str, xsts_token: &str) -> Result<(String, u64), String> {
+async fn get_minecraft_token(
+    client: &Client,
+    uhs: &str,
+    xsts_token: &str,
+) -> Result<(String, u64), String> {
     let req = McLoginRequest {
         identity_token: format!("XBL3.0 x={uhs};{xsts_token}"),
     };
@@ -263,7 +297,10 @@ async fn get_minecraft_token(client: &Client, uhs: &str, xsts_token: &str) -> Re
     Ok((data.access_token, data.expires_in.unwrap_or(86400)))
 }
 
-async fn get_minecraft_profile(client: &Client, mc_token: &str) -> Result<McProfileResponse, String> {
+async fn get_minecraft_profile(
+    client: &Client,
+    mc_token: &str,
+) -> Result<McProfileResponse, String> {
     let resp = client
         .get("https://api.minecraftservices.com/minecraft/profile")
         .header("Authorization", format!("Bearer {mc_token}"))
@@ -330,7 +367,9 @@ async fn do_auth_chain(
 // ── Token refresh ─────────────────────────────────────────────────────────────
 
 /// If the stored account's Minecraft token is close to expiry, refresh and save.
-pub async fn refresh_account_if_expired(account: &MicrosoftAccount) -> Result<MicrosoftAccount, String> {
+pub async fn refresh_account_if_expired(
+    account: &MicrosoftAccount,
+) -> Result<MicrosoftAccount, String> {
     let buffer = 300_u64; // 5 minutes
     if account.expires_at > now_secs() + buffer {
         return Ok(account.clone());
@@ -338,7 +377,9 @@ pub async fn refresh_account_if_expired(account: &MicrosoftAccount) -> Result<Mi
 
     let client = Client::new();
     let ms = refresh_ms_token(&client, &account.refresh_token).await?;
-    let new_refresh = ms.refresh_token.unwrap_or_else(|| account.refresh_token.clone());
+    let new_refresh = ms
+        .refresh_token
+        .unwrap_or_else(|| account.refresh_token.clone());
     let ms_expires = ms.expires_in.unwrap_or(3600);
 
     let mut updated = do_auth_chain(&ms.access_token, new_refresh, ms_expires).await?;
@@ -409,8 +450,12 @@ pub async fn start_microsoft_auth(app: AppHandle) -> Result<MicrosoftAccount, St
             if let Ok(mut guard) = shared.lock() {
                 if let Some(tx) = guard.take() {
                     match code {
-                        Some(c) => { let _ = tx.send(Ok(c)); }
-                        None => { let _ = tx.send(Err("No auth code in redirect URL".into())); }
+                        Some(c) => {
+                            let _ = tx.send(Ok(c));
+                        }
+                        None => {
+                            let _ = tx.send(Err("No auth code in redirect URL".into()));
+                        }
                     }
                 }
             }
@@ -435,7 +480,9 @@ pub async fn start_microsoft_auth(app: AppHandle) -> Result<MicrosoftAccount, St
     let _ = window.set_focus();
 
     // Wait for code (blocks until user logs in or closes the window)
-    let code = rx.await.map_err(|_| "Auth window closed unexpectedly".to_string())??;
+    let code = rx
+        .await
+        .map_err(|_| "Auth window closed unexpectedly".to_string())??;
 
     // Close the window
     if let Some(win) = app.get_webview_window("ms-login") {

@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::{
-    build_client, fetch_modrinth_search, install_project_to_dir,
-    InstalledModEntry, InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
+    build_client, fetch_modrinth_search, install_project_to_dir, InstalledModEntry,
+    InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODRINTH_RESOURCEPACK_STATE_FILE: &str = ".screenlauncher-modrinth-resourcepacks.json";
@@ -45,8 +45,7 @@ async fn read_modrinth_resourcepack_state(
         .await
         .map_err(|e| format!("read Modrinth resourcepack state error: {e}"))?;
 
-    serde_json::from_str(&raw)
-        .map_err(|e| format!("parse Modrinth resourcepack state error: {e}"))
+    serde_json::from_str(&raw).map_err(|e| format!("parse Modrinth resourcepack state error: {e}"))
 }
 
 async fn write_modrinth_resourcepack_state(
@@ -211,7 +210,10 @@ pub async fn list_installed_resourcepacks(
             continue;
         }
 
-        let Some(filename) = path.file_name().map(|name| name.to_string_lossy().to_string()) else {
+        let Some(filename) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+        else {
             continue;
         };
 

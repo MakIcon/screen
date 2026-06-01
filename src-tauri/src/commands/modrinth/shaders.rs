@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::{
-    build_client, fetch_modrinth_search, install_project_to_dir,
-    InstalledModEntry, InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
+    build_client, fetch_modrinth_search, install_project_to_dir, InstalledModEntry,
+    InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODRINTH_SHADERPACK_STATE_FILE: &str = ".screenlauncher-modrinth-shaderpacks.json";
@@ -45,8 +45,7 @@ async fn read_modrinth_shaderpack_state(
         .await
         .map_err(|e| format!("read Modrinth shaderpack state error: {e}"))?;
 
-    serde_json::from_str(&raw)
-        .map_err(|e| format!("parse Modrinth shaderpack state error: {e}"))
+    serde_json::from_str(&raw).map_err(|e| format!("parse Modrinth shaderpack state error: {e}"))
 }
 
 async fn write_modrinth_shaderpack_state(
@@ -86,16 +85,8 @@ pub async fn search_modrinth_shaders(
     let client = build_client()?;
     let limit = limit.clamp(1, SEARCH_PAGE_SIZE_MAX);
 
-    let mut response = fetch_modrinth_search(
-        &client,
-        &query,
-        &game_version,
-        "shader",
-        &[],
-        offset,
-        limit,
-    )
-    .await?;
+    let mut response =
+        fetch_modrinth_search(&client, &query, &game_version, "shader", &[], offset, limit).await?;
 
     if let Some(instance_id) = instance_id {
         let items = read_instances().await?;
@@ -183,9 +174,7 @@ pub async fn uninstall_modrinth_shader(
 }
 
 #[tauri::command]
-pub async fn list_installed_shaders(
-    instance_id: String,
-) -> Result<Vec<InstalledModView>, String> {
+pub async fn list_installed_shaders(instance_id: String) -> Result<Vec<InstalledModView>, String> {
     let items = read_instances().await?;
     let instance = items
         .into_iter()
@@ -211,7 +200,10 @@ pub async fn list_installed_shaders(
             continue;
         }
 
-        let Some(filename) = path.file_name().map(|name| name.to_string_lossy().to_string()) else {
+        let Some(filename) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+        else {
             continue;
         };
 

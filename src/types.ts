@@ -120,6 +120,20 @@ export type ActionResult = {
   pid?: number | null;
 };
 
+export type ScreenshotItem = {
+  fileName: string;
+  path: string;
+  modifiedAt: number;
+  sizeBytes: number;
+  mime: string;
+};
+
+export type ScreenshotImage = {
+  fileName: string;
+  dataUrl: string;
+  mime: string;
+};
+
 export type InstallProgressPayload = {
   phase: string;
   current: number;

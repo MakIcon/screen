@@ -1,4 +1,8 @@
-use std::{fs::File, io, path::{Path, PathBuf}};
+use std::{
+    fs::File,
+    io,
+    path::{Path, PathBuf},
+};
 
 use tauri::AppHandle;
 use tokio::fs;
@@ -34,7 +38,11 @@ fn should_skip_native_entry(name: &str, excludes: &[String]) -> bool {
     excludes.iter().any(|prefix| name.starts_with(prefix))
 }
 
-pub async fn extract_natives(app: &AppHandle, resolved: &VersionMeta, natives_dir: &Path) -> Result<(), String> {
+pub async fn extract_natives(
+    app: &AppHandle,
+    resolved: &VersionMeta,
+    natives_dir: &Path,
+) -> Result<(), String> {
     let _ = clear_directory(natives_dir);
     let mut tasks = Vec::new();
     let mut native_archives: Vec<(PathBuf, Vec<String>)> = Vec::new();
@@ -46,7 +54,8 @@ pub async fn extract_natives(app: &AppHandle, resolved: &VersionMeta, natives_di
         let Some(classifier) = classifier_for_windows(library) else {
             continue;
         };
-        let Some(classifier_download) = resolve_library_classifier_download(library, &classifier) else {
+        let Some(classifier_download) = resolve_library_classifier_download(library, &classifier)
+        else {
             continue;
         };
 
@@ -67,14 +76,21 @@ pub async fn extract_natives(app: &AppHandle, resolved: &VersionMeta, natives_di
     }
 
     download_many(app, "natives-download", tasks).await?;
-    let reporter = ProgressReporter::new(app.clone(), "natives-extract".to_string(), native_archives.len().max(1));
+    let reporter = ProgressReporter::new(
+        app.clone(),
+        "natives-extract".to_string(),
+        native_archives.len().max(1),
+    );
 
     for (archive_path, excludes) in native_archives {
-        let file = File::open(&archive_path).map_err(|e| format!("open natives archive error: {e}"))?;
+        let file =
+            File::open(&archive_path).map_err(|e| format!("open natives archive error: {e}"))?;
         let mut zip = ZipArchive::new(file).map_err(|e| format!("zip open error: {e}"))?;
 
         for i in 0..zip.len() {
-            let mut entry = zip.by_index(i).map_err(|e| format!("zip entry error: {e}"))?;
+            let mut entry = zip
+                .by_index(i)
+                .map_err(|e| format!("zip entry error: {e}"))?;
             let enclosed = match entry.enclosed_name() {
                 Some(p) => p.to_owned(),
                 None => continue,
@@ -102,29 +118,41 @@ pub async fn extract_natives(app: &AppHandle, resolved: &VersionMeta, natives_di
         }
         reporter.step(format!(
             "Processed {}",
-            archive_path.file_name().unwrap_or_default().to_string_lossy()
+            archive_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
         ));
     }
     Ok(())
 }
 
-pub async fn download_asset_index(app: &AppHandle, resolved: &VersionMeta) -> Result<(AssetIndexInfo, AssetIndexJson), String> {
+pub async fn download_asset_index(
+    app: &AppHandle,
+    resolved: &VersionMeta,
+) -> Result<(AssetIndexInfo, AssetIndexJson), String> {
     let index = resolved
         .asset_index
         .clone()
         .ok_or_else(|| "asset index missing".to_string())?;
-    let path = assets_root()?.join("indexes").join(format!("{}.json", index.id));
+    let path = assets_root()?
+        .join("indexes")
+        .join(format!("{}.json", index.id));
     let tasks = if path.exists() {
         Vec::new()
     } else {
-        vec![(index.url.clone(), path.clone(), format!("Asset index {}", index.id))]
+        vec![(
+            index.url.clone(),
+            path.clone(),
+            format!("Asset index {}", index.id),
+        )]
     };
     download_many(app, "asset-index", tasks).await?;
     let raw = fs::read_to_string(&path)
         .await
         .map_err(|e| format!("read asset index error: {e}"))?;
-    let json: AssetIndexJson = serde_json::from_str(&raw)
-        .map_err(|e| format!("parse asset index error: {e}"))?;
+    let json: AssetIndexJson =
+        serde_json::from_str(&raw).map_err(|e| format!("parse asset index error: {e}"))?;
     Ok((index, json))
 }
 
@@ -147,14 +175,21 @@ pub async fn download_assets(
         }
         let prefix = &object.hash[0..2];
         let object_path = assets.join("objects").join(prefix).join(&object.hash);
-        let url = format!("https://resources.download.minecraft.net/{prefix}/{}", object.hash);
+        let url = format!(
+            "https://resources.download.minecraft.net/{prefix}/{}",
+            object.hash
+        );
         if !object_path.exists() {
             tasks.push((url, object_path.clone(), format!("Asset {logical_path}")));
         }
     }
 
     download_many(app, "assets", tasks).await?;
-    let reporter = ProgressReporter::new(app.clone(), "assets-copy".to_string(), asset_index.objects.len().max(1));
+    let reporter = ProgressReporter::new(
+        app.clone(),
+        "assets-copy".to_string(),
+        asset_index.objects.len().max(1),
+    );
     if asset_index.objects.is_empty() {
         reporter.step("No assets to copy");
         return Ok(());
@@ -197,7 +232,10 @@ pub async fn download_assets(
     Ok(())
 }
 
-pub async fn download_logging_config(app: &AppHandle, resolved: &VersionMeta) -> Result<Option<PathBuf>, String> {
+pub async fn download_logging_config(
+    app: &AppHandle,
+    resolved: &VersionMeta,
+) -> Result<Option<PathBuf>, String> {
     let Some(logging) = resolved.logging.as_ref() else {
         return Ok(None);
     };
@@ -211,7 +249,11 @@ pub async fn download_logging_config(app: &AppHandle, resolved: &VersionMeta) ->
     let filename = file
         .path
         .as_ref()
-        .and_then(|p| Path::new(p).file_name().map(|x| x.to_string_lossy().to_string()))
+        .and_then(|p| {
+            Path::new(p)
+                .file_name()
+                .map(|x| x.to_string_lossy().to_string())
+        })
         .unwrap_or_else(|| "client-logging.xml".to_string());
     let path = launcher_root()?.join("log_configs").join(filename);
     let tasks = if path.exists() {

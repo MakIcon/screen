@@ -146,9 +146,7 @@ pub fn resolve_java_bin(mc_version: &str) -> String {
         return bin;
     }
 
-    println!(
-        "[WARN] No Java {major} found for MC {mc_version}, using 'javaw.exe' from PATH"
-    );
+    println!("[WARN] No Java {major} found for MC {mc_version}, using 'javaw.exe' from PATH");
     "javaw.exe".to_string()
 }
 

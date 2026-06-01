@@ -95,6 +95,7 @@ interface InstancesTabProps {
   handleImportBuild: () => void;
   handleOpenFolder: () => Promise<void>;
   setStatsInstanceId: (id: string | null) => void;
+  setScreenshotsInstanceId: (id: string | null) => void;
   openBuildCardSettings: (targetId?: string | null) => void;
 }
 
@@ -146,6 +147,7 @@ export function InstancesTab({
   handleImportBuild,
   handleOpenFolder,
   setStatsInstanceId,
+  setScreenshotsInstanceId,
   openBuildCardSettings,
 }: InstancesTabProps) {
   const sortedInstances = [...instances].reverse();
@@ -498,6 +500,17 @@ export function InstancesTab({
                       <SettingsGearIcon />
                     </button>
                   )}
+                  <button
+                    className="ghost-action icon-square-action screenshots-action"
+                    type="button"
+                    title="Screenshots"
+                    onClick={() => selectedInstance && setScreenshotsInstanceId(selectedInstance.id)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M4.7 3.2l.7-1.1h3.2l.7 1.1h2.2a1 1 0 011 1v6.4a1 1 0 01-1 1h-9a1 1 0 01-1-1V4.2a1 1 0 011-1h2.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+                      <circle cx="7" cy="7.3" r="2.1" stroke="currentColor" strokeWidth="1.2"/>
+                    </svg>
+                  </button>
                   <button
                     className="ghost-action icon-square-action trash-action"
                     type="button"

@@ -205,13 +205,19 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
             continue;
         }
 
-        let Some(filename) = path.file_name().map(|name| name.to_string_lossy().to_string()) else {
+        let Some(filename) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+        else {
             continue;
         };
         if filename == MODRINTH_STATE_FILE {
             continue;
         }
-        if !filename.ends_with(".jar") && !filename.ends_with(".zip") && !filename.ends_with(".disabled") {
+        if !filename.ends_with(".jar")
+            && !filename.ends_with(".zip")
+            && !filename.ends_with(".disabled")
+        {
             continue;
         }
 

@@ -15,6 +15,7 @@ import {
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
 import { BuildStatsModal } from "./components/builds/BuildStatsModal";
+import { BuildScreenshotsModal } from "./components/builds/BuildScreenshotsModal";
 import type {
   ActionResult,
   BuildRuntimeSettingsDraft,
@@ -147,6 +148,7 @@ export default function App() {
 
   const [installProgress, setInstallProgress] = useState<InstallProgressPayload | null>(null);
   const [statsInstanceId, setStatsInstanceId] = useState<string | null>(null);
+  const [screenshotsInstanceId, setScreenshotsInstanceId] = useState<string | null>(null);
 
   const [runningInstances, setRunningInstances] = useState<Map<string, number>>(new Map());
   // helpers
@@ -1362,6 +1364,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             handleImportBuild={handleImportBuild}
             handleOpenFolder={handleOpenFolder}
             setStatsInstanceId={setStatsInstanceId}
+            setScreenshotsInstanceId={setScreenshotsInstanceId}
             openBuildCardSettings={openBuildCardSettings}
           />
         );
@@ -1615,6 +1618,13 @@ const isScrollableElement = (target: EventTarget | null) => {
         const si = instances.find((i) => i.id === statsInstanceId);
         return si ? (
           <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+        ) : null;
+      })()}
+
+      {screenshotsInstanceId && (() => {
+        const si = instances.find((i) => i.id === screenshotsInstanceId);
+        return si ? (
+          <BuildScreenshotsModal instance={si} onClose={() => setScreenshotsInstanceId(null)} />
         ) : null;
       })()}
 

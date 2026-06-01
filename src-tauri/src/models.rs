@@ -123,6 +123,24 @@ pub struct ActionResult {
     pub pid: Option<u32>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotItem {
+    pub file_name: String,
+    pub path: String,
+    pub modified_at: u64,
+    pub size_bytes: u64,
+    pub mime: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotImage {
+    pub file_name: String,
+    pub data_url: String,
+    pub mime: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionMeta {
