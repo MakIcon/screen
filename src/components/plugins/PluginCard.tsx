@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 import type { LauncherPluginsSettings } from "../../types";
 import type { PluginDefinition, PluginId } from "./pluginRegistry";
+import { PluginIcon } from "./PluginIcon";
 
 type PluginCardProps = {
   definition: PluginDefinition;
@@ -19,6 +20,8 @@ export function PluginCard({
 }: PluginCardProps) {
   const enabled = definition.getEnabled(plugins);
   const status = definition.getStatus(plugins);
+  const statusTone =
+    status === "ON" ? "on" : status === "OFF" ? "off" : "warning";
 
   const selectPlugin = () => {
     onSelect(definition.id);
@@ -45,30 +48,36 @@ export function PluginCard({
         onClick={selectPlugin}
         onKeyDown={onCardKeyDown}
       >
-        <div className="plugin-card-mark" aria-hidden="true">
-          {definition.mark}
-        </div>
+        <PluginIcon definition={definition} className="plugin-card-mark" />
 
         <div className="plugin-card-copy">
           <div className="plugin-card-topline">
             <span>{definition.tag}</span>
-            <strong>{status}</strong>
           </div>
           <h3>{definition.title}</h3>
           <p>{definition.description}</p>
         </div>
 
-        <button
-          className={`plugin-card-toggle ${enabled ? "plugin-card-toggle--enabled" : ""}`}
-          type="button"
-          aria-label={`${enabled ? "Disable" : "Enable"} ${definition.title}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onPluginsChange(definition.setEnabled(plugins, !enabled));
-          }}
-        >
-          {enabled ? "-" : "+"}
-        </button>
+        <div className="plugin-card-actions">
+          <strong className={`plugin-status plugin-status--${statusTone}`}>
+            {status}
+          </strong>
+
+          <button
+            className={`plugin-card-toggle ${enabled ? "plugin-card-toggle--enabled" : ""}`}
+            type="button"
+            aria-label={`${enabled ? "Disable" : "Enable"} ${definition.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPluginsChange(definition.setEnabled(plugins, !enabled));
+            }}
+          >
+            <span className="plugin-toggle-glyph" aria-hidden="true">
+              <span />
+              {!enabled && <span />}
+            </span>
+          </button>
+        </div>
       </div>
     </article>
   );

@@ -2,6 +2,11 @@ import { useState } from "react";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
 import { LauncherPluginsModal } from "../components/plugins/LauncherPluginsModal";
+import { PluginIcon } from "../components/plugins/PluginIcon";
+import {
+  PLUGIN_DEFINITIONS,
+  normalizeLauncherPluginsSettings,
+} from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
 import type { LauncherPluginsSettings } from "../types";
@@ -82,6 +87,10 @@ export function SettingsTab({
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
+  const normalizedPlugins = normalizeLauncherPluginsSettings(pluginsSettings);
+  const activePluginDefinitions = PLUGIN_DEFINITIONS.filter((definition) =>
+    definition.getEnabled(normalizedPlugins),
+  );
 
   return (
     <section className="launcher-panel">
@@ -249,6 +258,17 @@ export function SettingsTab({
               >
                 <span>EXTENSIONS</span>
                 <strong>MANAGE</strong>
+                {activePluginDefinitions.length > 0 && (
+                  <span className="runtime-extension-icons" aria-hidden="true">
+                    {activePluginDefinitions.slice(0, 4).map((definition) => (
+                      <PluginIcon
+                        key={definition.id}
+                        definition={definition}
+                        className="runtime-extension-icon"
+                      />
+                    ))}
+                  </span>
+                )}
               </button>
             </div>
           )}

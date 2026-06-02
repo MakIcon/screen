@@ -155,9 +155,21 @@ export type LauncherPluginsSettings = {
 export type DiscordRpcPluginSettings = {
   enabled: boolean;
   applicationId: string;
+  displayMode: "launcher" | "minecraft" | "combined";
+  activityNameTemplate: string;
   detailsTemplate: string;
   stateTemplate: string;
+  launcherDetailsTemplate: string;
+  launcherStateTemplate: string;
+  combinedDetailsTemplate: string;
+  combinedStateTemplate: string;
   showElapsedTime: boolean;
+  largeImageKey: string;
+  largeImageTextTemplate: string;
+  smallImageKey: string;
+  smallImageTextTemplate: string;
+  buttonLabel: string;
+  buttonUrl: string;
 };
 
 export type MicrosoftAccount = {

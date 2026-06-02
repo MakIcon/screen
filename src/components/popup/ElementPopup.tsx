@@ -54,7 +54,11 @@ export function ElementPopup({
         <>
             {/* backdrop — only in modal mode */}
             {open && isModal && (
-                <div className="ep-backdrop" onClick={onClose} />
+                <div
+                    className="ep-backdrop"
+                    onClick={onClose}
+                    onWheel={(e) => e.stopPropagation()}
+                />
             )}
 
             <div
@@ -66,6 +70,9 @@ export function ElementPopup({
                     isModal ? "ep-popup--modal" : "",
                     className ?? "",
                 ].join(" ")}
+                onWheel={(e) => {
+                    if (isModal) e.stopPropagation();
+                }}
                 role="dialog"
                 aria-modal="true"
                 aria-hidden={!open}

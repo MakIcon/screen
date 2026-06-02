@@ -1,8 +1,27 @@
 pub mod commands;
-pub mod discord_rpc;
+pub mod discord_rpc {
+    #[derive(Default)]
+    pub struct DiscordRpcState;
+
+    #[tauri::command]
+    pub fn start_discord_rpc_for_launcher() -> Result<(), String> {
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub fn start_discord_rpc_for_instance() -> Result<(), String> {
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub fn stop_discord_rpc_for_instance() -> Result<(), String> {
+        Ok(())
+    }
+}
 pub mod minecraft;
 pub mod models;
 pub mod paths;
+pub mod plugins;
 pub mod progress;
 pub mod window_fx;
 
@@ -53,6 +72,7 @@ pub fn run() {
             commands::settings::set_default_ram_gb,
             commands::settings::set_optimized_java_args,
             commands::settings::set_launcher_plugins,
+            discord_rpc::start_discord_rpc_for_launcher,
             discord_rpc::start_discord_rpc_for_instance,
             discord_rpc::stop_discord_rpc_for_instance,
         ])

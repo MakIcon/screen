@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type WheelEvent } from "react";
 import type { LauncherPluginsSettings } from "../../types";
+import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { ElementPopup } from "../popup/ElementPopup";
 import { PluginCard } from "./PluginCard";
+import { PluginIcon } from "./PluginIcon";
 import {
   PLUGIN_DEFINITIONS,
   normalizeLauncherPluginsSettings,
@@ -29,6 +31,9 @@ export function LauncherPluginsModal({
   const selectedDefinition =
     PLUGIN_DEFINITIONS.find((definition) => definition.id === selectedPluginId) ??
     PLUGIN_DEFINITIONS[0];
+  const selectedStatus = selectedDefinition.getStatus(draft);
+  const selectedStatusTone =
+    selectedStatus === "ON" ? "on" : selectedStatus === "OFF" ? "off" : "warning";
   const enabledCount = PLUGIN_DEFINITIONS.filter((definition) =>
     definition.getEnabled(draft),
   ).length;
@@ -43,13 +48,17 @@ export function LauncherPluginsModal({
     void onSave(next);
   };
 
+  const stopWheelNavigation = (event: WheelEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
   return (
     <ElementPopup
       open
       onClose={onClose}
       className="launcher-plugins-dialog"
     >
-      <div className="plugins-shell">
+      <div className="plugins-shell" onWheel={stopWheelNavigation}>
         <div className="plugins-header">
           <div>
             <span className="plugins-label">ADVANCED</span>
@@ -106,14 +115,19 @@ export function LauncherPluginsModal({
 
           <section className="plugin-detail" aria-live="polite">
             <div className="plugin-detail-hero">
-              <div className="plugin-detail-mark" aria-hidden="true">
-                {selectedDefinition.mark}
-              </div>
+              <PluginIcon
+                definition={selectedDefinition}
+                className="plugin-detail-mark"
+              />
 
               <div className="plugin-detail-copy">
                 <div className="plugin-detail-topline">
                   <span>{selectedDefinition.tag}</span>
-                  <strong>{selectedDefinition.getStatus(draft)}</strong>
+                  <strong
+                    className={`plugin-status plugin-status--${selectedStatusTone}`}
+                  >
+                    {selectedStatus}
+                  </strong>
                 </div>
                 <h3>{selectedDefinition.title}</h3>
                 <p>{selectedDefinition.description}</p>
@@ -146,13 +160,16 @@ export function LauncherPluginsModal({
               <span>LAUNCH HOOK</span>
             </div>
 
-            <div className="plugin-detail-settings">
+            <CustomScrollArea
+              className="plugin-detail-settings"
+              onWheel={stopWheelNavigation}
+            >
               <div className="plugin-detail-section-title">
                 <span>SETTINGS</span>
                 <strong>APPLIED ON CHANGE</strong>
               </div>
               {selectedDefinition.renderSettings(draft, commitPlugins)}
-            </div>
+            </CustomScrollArea>
           </section>
         </div>
       </div>

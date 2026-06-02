@@ -160,6 +160,46 @@ export default function App() {
   };
   const removeRunning = (id: string) =>
     setRunningInstances((prev) => { const m = new Map(prev); m.delete(id); return m; });
+  const applyDiscordRpcPresence = (
+    settings = launcherSettings,
+    activeRunning = runningInstances,
+  ) => {
+    const discordRpc = settings?.plugins.discordRpc;
+    if (!discordRpc?.enabled || !discordRpc.applicationId.trim()) {
+      void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
+        console.error("stop_discord_rpc_for_instance failed", error);
+      });
+      return;
+    }
+
+    const rpcTargetId =
+      (selectedInstanceId && activeRunning.has(selectedInstanceId)
+        ? selectedInstanceId
+        : Array.from(activeRunning.keys())[0]) ?? null;
+
+    if (rpcTargetId && discordRpc.displayMode !== "launcher") {
+      void invoke("start_discord_rpc_for_instance", {
+        instanceId: rpcTargetId,
+        accountType,
+      }).catch((error) => {
+        console.error("start_discord_rpc_for_instance failed", error);
+      });
+      return;
+    }
+
+    if (discordRpc.displayMode !== "minecraft") {
+      void invoke("start_discord_rpc_for_launcher", {
+        accountType,
+      }).catch((error) => {
+        console.error("start_discord_rpc_for_launcher failed", error);
+      });
+      return;
+    }
+
+    void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
+      console.error("stop_discord_rpc_for_instance failed", error);
+    });
+  };
   const handleInstanceStopped = async (id: string) => {
     const launchTs = launchTimestampsRef.current.get(id);
     launchTimestampsRef.current.delete(id);
@@ -849,6 +889,11 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [runningInstances]);
 
+  useEffect(() => {
+    if (!launcherSettings) return;
+    applyDiscordRpcPresence(launcherSettings, runningInstances);
+  }, [launcherSettings, runningInstances, selectedInstanceId, accountType]);
+
   const tearPath = useMemo(() => {
     let points = "50% 0%";
     const segments = 25;
@@ -877,6 +922,9 @@ export default function App() {
 
   const handleClose = async () => {
     setIsClosing(true);
+    void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
+      console.error("stop_discord_rpc_for_instance failed", error);
+    });
     window.setTimeout(() => {
       void win.close();
     }, 400);
@@ -968,12 +1016,6 @@ const isScrollableElement = (target: EventTarget | null) => {
     try {
       const updated = await invoke<LauncherSettings>("set_launcher_plugins", { plugins });
       setLauncherSettings(updated);
-
-      if (!updated.plugins.discordRpc.enabled) {
-        void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
-          console.error("stop_discord_rpc_for_instance failed", error);
-        });
-      }
     } catch (error) {
       console.error(error);
       setActionError(String(error));
@@ -1126,12 +1168,6 @@ const isScrollableElement = (target: EventTarget | null) => {
       await refreshInstances(target.id);
       if (result.pid) {
         addRunning(target.id, result.pid);
-        void invoke("start_discord_rpc_for_instance", {
-          instanceId: target.id,
-          accountType,
-        }).catch((error) => {
-          console.error("start_discord_rpc_for_instance failed", error);
-        });
       }
 
       setInstallProgress({

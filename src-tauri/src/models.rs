@@ -326,12 +326,36 @@ pub struct DiscordRpcPluginSettings {
     pub enabled: bool,
     #[serde(default)]
     pub application_id: String,
+    #[serde(default = "default_discord_rpc_display_mode")]
+    pub display_mode: String,
+    #[serde(default)]
+    pub activity_name_template: String,
     #[serde(default = "default_discord_rpc_details_template")]
     pub details_template: String,
     #[serde(default = "default_discord_rpc_state_template")]
     pub state_template: String,
+    #[serde(default = "default_discord_rpc_launcher_details_template")]
+    pub launcher_details_template: String,
+    #[serde(default = "default_discord_rpc_launcher_state_template")]
+    pub launcher_state_template: String,
+    #[serde(default = "default_discord_rpc_combined_details_template")]
+    pub combined_details_template: String,
+    #[serde(default = "default_discord_rpc_combined_state_template")]
+    pub combined_state_template: String,
     #[serde(default = "default_discord_rpc_show_elapsed_time")]
     pub show_elapsed_time: bool,
+    #[serde(default)]
+    pub large_image_key: String,
+    #[serde(default = "default_discord_rpc_large_image_text_template")]
+    pub large_image_text_template: String,
+    #[serde(default)]
+    pub small_image_key: String,
+    #[serde(default = "default_discord_rpc_small_image_text_template")]
+    pub small_image_text_template: String,
+    #[serde(default)]
+    pub button_label: String,
+    #[serde(default)]
+    pub button_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,9 +392,21 @@ impl Default for DiscordRpcPluginSettings {
         Self {
             enabled: false,
             application_id: String::new(),
+            display_mode: default_discord_rpc_display_mode(),
+            activity_name_template: String::new(),
             details_template: default_discord_rpc_details_template(),
             state_template: default_discord_rpc_state_template(),
+            launcher_details_template: default_discord_rpc_launcher_details_template(),
+            launcher_state_template: default_discord_rpc_launcher_state_template(),
+            combined_details_template: default_discord_rpc_combined_details_template(),
+            combined_state_template: default_discord_rpc_combined_state_template(),
             show_elapsed_time: default_discord_rpc_show_elapsed_time(),
+            large_image_key: String::new(),
+            large_image_text_template: default_discord_rpc_large_image_text_template(),
+            small_image_key: String::new(),
+            small_image_text_template: default_discord_rpc_small_image_text_template(),
+            button_label: String::new(),
+            button_url: String::new(),
         }
     }
 }
@@ -384,11 +420,39 @@ fn default_discord_rpc_details_template() -> String {
 }
 
 fn default_discord_rpc_state_template() -> String {
-    "%build_version% / %build_loader%".to_string()
+    "%build_version% / %build_loader% via ScreenLauncher".to_string()
+}
+
+fn default_discord_rpc_display_mode() -> String {
+    "minecraft".to_string()
+}
+
+fn default_discord_rpc_launcher_details_template() -> String {
+    "In ScreenLauncher".to_string()
+}
+
+fn default_discord_rpc_launcher_state_template() -> String {
+    "Managing %total_builds% builds".to_string()
+}
+
+fn default_discord_rpc_combined_details_template() -> String {
+    "Playing %build_name%".to_string()
+}
+
+fn default_discord_rpc_combined_state_template() -> String {
+    "%build_version% / %build_loader% via ScreenLauncher".to_string()
 }
 
 fn default_discord_rpc_show_elapsed_time() -> bool {
     true
+}
+
+fn default_discord_rpc_large_image_text_template() -> String {
+    "ScreenLauncher".to_string()
+}
+
+fn default_discord_rpc_small_image_text_template() -> String {
+    "Minecraft %build_version%".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
