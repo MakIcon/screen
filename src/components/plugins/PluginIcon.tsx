@@ -1,4 +1,4 @@
-import type { PluginDefinition } from "./pluginRegistry";
+import type { PluginDefinition } from "./pluginTypes";
 
 type PluginIconProps = {
   definition: PluginDefinition;

@@ -504,117 +504,6 @@
   object-fit: contain;
 }
 
-.plugin-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 18px;
-}
-
-.plugin-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.plugin-field--full,
-.plugin-settings-subhead,
-.plugin-check-row {
-  grid-column: 1 / -1;
-}
-
-.plugin-settings-subhead {
-  margin-top: 2px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-}
-
-.plugin-field span,
-.plugin-check-row span {
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-}
-
-.plugin-field input {
-  width: 100%;
-  height: 42px;
-  border: 1px solid var(--line);
-  background: var(--bg-field);
-  color: var(--ink);
-  outline: none;
-  padding: 0 14px;
-  font-size: 12px;
-  letter-spacing: 0.03em;
-}
-
-.plugin-field input:focus {
-  border-color: var(--line-strong);
-  background: var(--bg-card-strong);
-}
-
-.plugin-field input::placeholder {
-  color: var(--muted-soft);
-}
-
-.plugin-segmented-control {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--line);
-  background: var(--bg-field);
-}
-
-.plugin-segmented-control button {
-  min-height: 40px;
-  border: none;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  transition: background 0.14s, color 0.14s;
-}
-
-.plugin-segmented-control button:last-child {
-  border-right: none;
-}
-
-.plugin-segmented-control button:hover {
-  background: var(--bg-hover);
-  color: var(--ink);
-}
-
-.plugin-segmented-control button.active {
-  background: var(--ink);
-  color: var(--bg);
-  cursor: default;
-}
-
-.plugin-check-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  width: max-content;
-  margin-top: 4px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.plugin-check-row input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
 .runtime-advanced-zone {
   position: relative;
   z-index: 1;
@@ -740,8 +629,7 @@
 }
 
 @media (max-width: 620px) {
-  .plugin-detail-meta,
-  .plugin-settings-grid {
+  .plugin-detail-meta {
     grid-template-columns: 1fr;
   }
 

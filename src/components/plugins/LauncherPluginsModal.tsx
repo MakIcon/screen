@@ -7,8 +7,8 @@ import { PluginIcon } from "./PluginIcon";
 import {
   PLUGIN_DEFINITIONS,
   normalizeLauncherPluginsSettings,
-  type PluginId,
 } from "./pluginRegistry";
+import type { PluginId } from "./pluginTypes";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {

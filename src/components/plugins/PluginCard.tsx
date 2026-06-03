@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type { LauncherPluginsSettings } from "../../types";
-import type { PluginDefinition, PluginId } from "./pluginRegistry";
+import type { PluginDefinition, PluginId } from "./pluginTypes";
 import { PluginIcon } from "./PluginIcon";
 
 type PluginCardProps = {
