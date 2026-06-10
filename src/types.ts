@@ -150,6 +150,7 @@ export type LauncherSettings = {
 
 export type LauncherPluginsSettings = {
   discordRpc: DiscordRpcPluginSettings;
+  mineflayerBot: MineflayerBotPluginSettings;
 };
 
 export type DiscordRpcPluginSettings = {
@@ -170,6 +171,29 @@ export type DiscordRpcPluginSettings = {
   smallImageTextTemplate: string;
   buttonLabel: string;
   buttonUrl: string;
+};
+
+export type MineflayerBotPluginSettings = {
+  enabled: boolean;
+  host: string;
+  port: number;
+  version: string;
+  commandPrefix: string;
+  botAccountMode: "offline" | "microsoft";
+  botNickname: string;
+  botMicrosoftAccountId?: string | null;
+  followDistance: number;
+};
+
+export type MineflayerBotStatus = {
+  running: boolean;
+  state: string;
+  pid?: number | null;
+  ownerName?: string | null;
+  botUsername?: string | null;
+  server?: string | null;
+  lastError?: string | null;
+  logs: string[];
 };
 
 export type MicrosoftAccount = {

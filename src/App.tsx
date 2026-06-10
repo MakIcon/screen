@@ -1533,6 +1533,10 @@ const isScrollableElement = (target: EventTarget | null) => {
             }}
             pluginsSettings={launcherSettings?.plugins}
             savePluginsSettings={saveLauncherPlugins}
+            launcherNickname={nickname}
+            launcherAccountType={accountType}
+            launcherMsAccountId={activeMsAccountId}
+            microsoftAccounts={msAccounts}
             resolve={resolve}
             manifestLoading={manifestLoading}
             manifest={manifest}

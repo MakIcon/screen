@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
-import type { LauncherPluginsSettings } from "../../types";
+import type { LauncherPluginsSettings, MicrosoftAccount } from "../../types";
 
 export type PluginId = keyof LauncherPluginsSettings;
+
+export type PluginRenderContext = {
+  launcherNickname: string;
+  launcherAccountType: string;
+  launcherMsAccountId: string | null;
+  microsoftAccounts: MicrosoftAccount[];
+};
 
 export type PluginDefinition = {
   id: PluginId;
@@ -22,5 +29,6 @@ export type PluginDefinition = {
   renderSettings: (
     plugins: LauncherPluginsSettings,
     onChange: (plugins: LauncherPluginsSettings) => void,
+    context: PluginRenderContext,
   ) => ReactNode;
 };

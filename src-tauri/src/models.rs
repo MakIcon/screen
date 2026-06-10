@@ -317,6 +317,8 @@ pub struct LauncherSettings {
 pub struct LauncherPluginsSettings {
     #[serde(default)]
     pub discord_rpc: DiscordRpcPluginSettings,
+    #[serde(default)]
+    pub mineflayer_bot: MineflayerBotPluginSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -360,6 +362,42 @@ pub struct DiscordRpcPluginSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MineflayerBotPluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default = "default_mineflayer_bot_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default = "default_mineflayer_bot_command_prefix")]
+    pub command_prefix: String,
+    #[serde(default = "default_mineflayer_bot_account_mode")]
+    pub bot_account_mode: String,
+    #[serde(default = "default_mineflayer_bot_nickname")]
+    pub bot_nickname: String,
+    #[serde(default)]
+    pub bot_microsoft_account_id: Option<String>,
+    #[serde(default = "default_mineflayer_bot_follow_distance")]
+    pub follow_distance: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineflayerBotStatus {
+    pub running: bool,
+    pub state: String,
+    pub pid: Option<u32>,
+    pub owner_name: Option<String>,
+    pub bot_username: Option<String>,
+    pub server: Option<String>,
+    pub last_error: Option<String>,
+    pub logs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MicrosoftAccount {
     pub id: String,
     pub uuid: String,
@@ -383,6 +421,7 @@ impl Default for LauncherPluginsSettings {
     fn default() -> Self {
         Self {
             discord_rpc: DiscordRpcPluginSettings::default(),
+            mineflayer_bot: MineflayerBotPluginSettings::default(),
         }
     }
 }
@@ -407,6 +446,22 @@ impl Default for DiscordRpcPluginSettings {
             small_image_text_template: default_discord_rpc_small_image_text_template(),
             button_label: String::new(),
             button_url: String::new(),
+        }
+    }
+}
+
+impl Default for MineflayerBotPluginSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: String::new(),
+            port: default_mineflayer_bot_port(),
+            version: String::new(),
+            command_prefix: default_mineflayer_bot_command_prefix(),
+            bot_account_mode: default_mineflayer_bot_account_mode(),
+            bot_nickname: default_mineflayer_bot_nickname(),
+            bot_microsoft_account_id: None,
+            follow_distance: default_mineflayer_bot_follow_distance(),
         }
     }
 }
@@ -453,6 +508,26 @@ fn default_discord_rpc_large_image_text_template() -> String {
 
 fn default_discord_rpc_small_image_text_template() -> String {
     "Minecraft %build_version%".to_string()
+}
+
+fn default_mineflayer_bot_port() -> u16 {
+    25565
+}
+
+fn default_mineflayer_bot_command_prefix() -> String {
+    "!".to_string()
+}
+
+fn default_mineflayer_bot_account_mode() -> String {
+    "offline".to_string()
+}
+
+fn default_mineflayer_bot_nickname() -> String {
+    "SCREEN_BOT".to_string()
+}
+
+fn default_mineflayer_bot_follow_distance() -> u32 {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

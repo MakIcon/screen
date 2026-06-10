@@ -1,23 +1,4 @@
 pub mod commands;
-pub mod discord_rpc {
-    #[derive(Default)]
-    pub struct DiscordRpcState;
-
-    #[tauri::command]
-    pub fn start_discord_rpc_for_launcher() -> Result<(), String> {
-        Ok(())
-    }
-
-    #[tauri::command]
-    pub fn start_discord_rpc_for_instance() -> Result<(), String> {
-        Ok(())
-    }
-
-    #[tauri::command]
-    pub fn stop_discord_rpc_for_instance() -> Result<(), String> {
-        Ok(())
-    }
-}
 pub mod minecraft;
 pub mod models;
 pub mod paths;
@@ -28,7 +9,8 @@ pub mod window_fx;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(discord_rpc::DiscordRpcState::default())
+        .manage(plugins::discord_rpc::DiscordRpcState::default())
+        .manage(plugins::mineflayer_bot::MineflayerBotState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -72,9 +54,12 @@ pub fn run() {
             commands::settings::set_default_ram_gb,
             commands::settings::set_optimized_java_args,
             commands::settings::set_launcher_plugins,
-            discord_rpc::start_discord_rpc_for_launcher,
-            discord_rpc::start_discord_rpc_for_instance,
-            discord_rpc::stop_discord_rpc_for_instance,
+            plugins::discord_rpc::start_discord_rpc_for_launcher_command,
+            plugins::discord_rpc::start_discord_rpc_for_instance_command,
+            plugins::discord_rpc::stop_discord_rpc_for_instance_command,
+            plugins::mineflayer_bot::start_mineflayer_bot,
+            plugins::mineflayer_bot::stop_mineflayer_bot,
+            plugins::mineflayer_bot::get_mineflayer_bot_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,226 @@
+.mineflayer-bot-settings {
+  display: grid;
+  gap: 20px;
+}
+
+.mineflayer-bot-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 14px;
+}
+
+.mineflayer-bot-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mineflayer-bot-field--wide,
+.mineflayer-bot-field--full {
+  grid-column: 1 / -1;
+}
+
+.mineflayer-bot-field span,
+.mineflayer-bot-subhead {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.mineflayer-bot-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--ink);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.mineflayer-bot-field input:focus {
+  border-color: rgba(194, 65, 12, 0.42);
+  background: var(--bg-panel);
+}
+
+.mineflayer-bot-subhead {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mineflayer-bot-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.mineflayer-bot-mode button,
+.mineflayer-bot-controls button,
+.mineflayer-bot-account-list button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  transition: background 0.14s, color 0.14s;
+}
+
+.mineflayer-bot-mode button {
+  min-height: 40px;
+  border-right: 1px solid var(--line);
+}
+
+.mineflayer-bot-mode button:last-child {
+  border-right: none;
+}
+
+.mineflayer-bot-mode button:hover,
+.mineflayer-bot-mode button.active,
+.mineflayer-bot-controls button:hover:not(:disabled),
+.mineflayer-bot-account-list button:hover,
+.mineflayer-bot-account-list button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.mineflayer-bot-account-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.mineflayer-bot-account-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  padding: 0 12px;
+  text-align: left;
+}
+
+.mineflayer-bot-account-list img {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  image-rendering: pixelated;
+}
+
+.mineflayer-bot-empty,
+.mineflayer-bot-warning,
+.mineflayer-bot-error {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--muted);
+  padding: 0 12px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.mineflayer-bot-warning,
+.mineflayer-bot-error {
+  border-color: rgba(194, 65, 12, 0.34);
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.mineflayer-bot-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mineflayer-bot-controls button {
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+}
+
+.mineflayer-bot-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.mineflayer-bot-status {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.mineflayer-bot-status div {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border-right: 1px solid var(--line);
+  padding: 0 10px;
+}
+
+.mineflayer-bot-status div:last-child {
+  border-right: none;
+}
+
+.mineflayer-bot-status span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.mineflayer-bot-status strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mineflayer-bot-log {
+  display: grid;
+  gap: 6px;
+  min-height: 104px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  padding: 12px;
+}
+
+.mineflayer-bot-log span {
+  color: var(--text-alt);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .mineflayer-bot-grid,
+  .mineflayer-bot-controls,
+  .mineflayer-bot-status {
+    grid-template-columns: 1fr;
+  }
+
+  .mineflayer-bot-status div {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .mineflayer-bot-status div:last-child {
+    border-bottom: none;
+  }
+}

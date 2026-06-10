@@ -1,5 +1,5 @@
 import { useEffect, useState, type WheelEvent } from "react";
-import type { LauncherPluginsSettings } from "../../types";
+import type { LauncherPluginsSettings, MicrosoftAccount } from "../../types";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { ElementPopup } from "../popup/ElementPopup";
 import { PluginCard } from "./PluginCard";
@@ -13,12 +13,20 @@ import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
   settings?: LauncherPluginsSettings | null;
+  launcherNickname: string;
+  launcherAccountType: string;
+  launcherMsAccountId: string | null;
+  microsoftAccounts: MicrosoftAccount[];
   onClose: () => void;
   onSave: (plugins: LauncherPluginsSettings) => void | Promise<void>;
 };
 
 export function LauncherPluginsModal({
   settings,
+  launcherNickname,
+  launcherAccountType,
+  launcherMsAccountId,
+  microsoftAccounts,
   onClose,
   onSave,
 }: LauncherPluginsModalProps) {
@@ -37,6 +45,12 @@ export function LauncherPluginsModal({
   const enabledCount = PLUGIN_DEFINITIONS.filter((definition) =>
     definition.getEnabled(draft),
   ).length;
+  const pluginContext = {
+    launcherNickname,
+    launcherAccountType,
+    launcherMsAccountId,
+    microsoftAccounts,
+  };
 
   useEffect(() => {
     setDraft(normalizeLauncherPluginsSettings(settings));
@@ -156,7 +170,7 @@ export function LauncherPluginsModal({
 
             <div className="plugin-detail-meta">
               <span>LOCAL CONFIG</span>
-              <span>LIVE RPC</span>
+              <span>LIVE PROCESS</span>
               <span>LAUNCH HOOK</span>
             </div>
 
@@ -168,7 +182,11 @@ export function LauncherPluginsModal({
                 <span>SETTINGS</span>
                 <strong>APPLIED ON CHANGE</strong>
               </div>
-              {selectedDefinition.renderSettings(draft, commitPlugins)}
+              {selectedDefinition.renderSettings(
+                draft,
+                commitPlugins,
+                pluginContext,
+              )}
             </CustomScrollArea>
           </section>
         </div>

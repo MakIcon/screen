@@ -9,7 +9,7 @@ import {
 } from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
-import type { LauncherPluginsSettings } from "../types";
+import type { LauncherPluginsSettings, MicrosoftAccount } from "../types";
 
 const SunIcon = () => (
   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -54,6 +54,10 @@ interface SettingsTabProps {
   onToggleAdvanced: () => void;
   pluginsSettings?: LauncherPluginsSettings | null;
   savePluginsSettings: (plugins: LauncherPluginsSettings) => Promise<void>;
+  launcherNickname: string;
+  launcherAccountType: string;
+  launcherMsAccountId: string | null;
+  microsoftAccounts: MicrosoftAccount[];
   resolve: (template: string) => string;
   manifestLoading: boolean;
   manifest: object | null;
@@ -78,6 +82,10 @@ export function SettingsTab({
   onToggleAdvanced,
   pluginsSettings,
   savePluginsSettings,
+  launcherNickname,
+  launcherAccountType,
+  launcherMsAccountId,
+  microsoftAccounts,
   resolve,
   manifestLoading,
   manifest,
@@ -278,6 +286,10 @@ export function SettingsTab({
       {pluginsModalOpen && (
         <LauncherPluginsModal
           settings={pluginsSettings}
+          launcherNickname={launcherNickname}
+          launcherAccountType={launcherAccountType}
+          launcherMsAccountId={launcherMsAccountId}
+          microsoftAccounts={microsoftAccounts}
           onClose={() => setPluginsModalOpen(false)}
           onSave={savePluginsSettings}
         />
