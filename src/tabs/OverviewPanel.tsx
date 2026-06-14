@@ -62,22 +62,24 @@ export function OverviewPanel({
           {/* Microsoft account display */}
           {accountType === "MICROSOFT" && (
             <div className="mockup-block mockup-ms-account">
-              <span className="mockup-label">LOGGED IN AS</span>
+              <span className="mockup-label">LOGGED IN</span>
               {activeMs ? (
-                <button className="mockup-ms-row" onClick={onOpenMsModal} title="Manage accounts">
-                  <div className="mockup-ms-avatar">
-                    <img
-                      src={`https://mc-heads.net/avatar/${activeMs.uuid}/24`}
-                      alt={activeMs.username}
-                      width={24}
-                      height={24}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  </div>
-                  <strong className="mockup-ms-name">{activeMs.username}</strong>
-                </button>
+                <HoverRevealValue value={activeMs.username}>
+                  <button className="mockup-ms-row" onClick={onOpenMsModal}>
+                    <div className="mockup-ms-avatar">
+                      <img
+                        src={`https://mc-heads.net/avatar/${activeMs.uuid}/24`}
+                        alt={activeMs.username}
+                        width={24}
+                        height={24}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </div>
+                    <strong className="mockup-ms-name">{activeMs.username}</strong>
+                  </button>
+                </HoverRevealValue>
               ) : (
                 <button className="mockup-ms-row mockup-ms-row--empty" onClick={onOpenMsModal}>
                   <span className="mockup-ms-none">No account — click to add</span>

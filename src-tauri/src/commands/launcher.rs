@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Output},
     time::UNIX_EPOCH,
 };
 
@@ -61,6 +61,30 @@ fn base64_encode(bytes: &[u8]) -> String {
     }
 
     out
+}
+
+fn task_output_text(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    [stdout, stderr]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_pid_alive(pid: u32) -> bool {
+    let output = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .output();
+    match output {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.contains(&format!("\"{pid}\""))
+        }
+        Err(_) => false,
+    }
 }
 
 async fn instance_game_dir(instance_id: &str) -> Result<PathBuf, String> {
@@ -156,10 +180,19 @@ pub async fn launch_instance(
 
 #[tauri::command]
 pub async fn kill_instance(pid: u32) -> Result<ActionResult, String> {
-    Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
-        .spawn()
+    let output = Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .output()
         .map_err(|e| format!("taskkill error: {e}"))?;
+
+    if !output.status.success() && is_pid_alive(pid) {
+        let details = task_output_text(&output);
+        return Err(if details.is_empty() {
+            "taskkill failed and the process is still running".to_string()
+        } else {
+            format!("taskkill failed: {details}")
+        });
+    }
 
     Ok(ActionResult {
         ok: true,
@@ -170,18 +203,7 @@ pub async fn kill_instance(pid: u32) -> Result<ActionResult, String> {
 
 #[tauri::command]
 pub fn is_process_alive(pid: u32) -> bool {
-    // tasklist /FI "PID eq <pid>" /NH — если процесс жив, вернёт строку с его именем
-    let output = Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-        .output();
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            // Если процесс жив — в выводе будет строка с pid в кавычках
-            stdout.contains(&format!("\"{pid}\""))
-        }
-        Err(_) => false,
-    }
+    is_pid_alive(pid)
 }
 
 #[tauri::command]

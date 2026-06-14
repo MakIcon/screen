@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
@@ -20,6 +20,7 @@ fn encode_form(pairs: &[(&str, &str)]) -> String {
 
 const MS_CLIENT_ID: &str = "00000000402b5328";
 const MS_REDIRECT_URI: &str = "https://login.live.com/oauth20_desktop.srf";
+const MS_SCOPE: &str = "service::user.auth.xboxlive.com::MBI_SSL";
 const MS_AUTH_URL: &str = "https://login.live.com/oauth20_authorize.srf";
 const MS_TOKEN_URL: &str = "https://login.live.com/oauth20_token.srf";
 
@@ -115,6 +116,43 @@ struct McProfileResponse {
     name: String,
 }
 
+#[derive(Debug)]
+enum XblAuthError {
+    Request(String),
+    Http { status: StatusCode, body: String },
+    Parse(String),
+    MissingUserHash,
+}
+
+impl XblAuthError {
+    fn is_unauthorized(&self) -> bool {
+        matches!(
+            self,
+            Self::Http {
+                status: StatusCode::UNAUTHORIZED,
+                ..
+            }
+        )
+    }
+
+    fn into_message(self) -> String {
+        match self {
+            Self::Request(err) => format!("XBL request: {err}"),
+            Self::Http { status, body } => {
+                if status == StatusCode::UNAUTHORIZED {
+                    format!(
+                        "XBL error {status}: Microsoft token was rejected by Xbox Live. Try signing in again, and make sure the account has an Xbox profile. Details: {body}"
+                    )
+                } else {
+                    format!("XBL error {status}: {body}")
+                }
+            }
+            Self::Parse(err) => format!("XBL parse: {err}"),
+            Self::MissingUserHash => "XBL: no user hash".to_string(),
+        }
+    }
+}
+
 // ── Storage ───────────────────────────────────────────────────────────────────
 
 pub async fn read_accounts() -> Result<Vec<MicrosoftAccount>, String> {
@@ -163,6 +201,7 @@ async fn exchange_code(client: &Client, code: &str) -> Result<MsTokenResponse, S
             ("code", code),
             ("grant_type", "authorization_code"),
             ("redirect_uri", MS_REDIRECT_URI),
+            ("scope", MS_SCOPE),
         ],
     )
     .await?;
@@ -184,6 +223,7 @@ async fn refresh_ms_token(client: &Client, refresh_token: &str) -> Result<MsToke
             ("client_id", MS_CLIENT_ID),
             ("refresh_token", refresh_token),
             ("grant_type", "refresh_token"),
+            ("scope", MS_SCOPE),
         ],
     )
     .await?;
@@ -197,12 +237,15 @@ async fn refresh_ms_token(client: &Client, refresh_token: &str) -> Result<MsToke
         .map_err(|e| format!("MS refresh parse: {e}"))
 }
 
-async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String, String), String> {
+async fn request_xbl_token(
+    client: &Client,
+    rps_ticket: &str,
+) -> Result<(String, String), XblAuthError> {
     let req = XblRequest {
         properties: XblProperties {
             auth_method: "RPS".into(),
             site_name: "user.auth.xboxlive.com".into(),
-            rps_ticket: format!("d={ms_access_token}"),
+            rps_ticket: rps_ticket.to_string(),
         },
         relying_party: "http://auth.xboxlive.com".into(),
         token_type: "JWT".into(),
@@ -213,24 +256,56 @@ async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String
         .json(&req)
         .send()
         .await
-        .map_err(|e| format!("XBL request: {e}"))?;
+        .map_err(|e| XblAuthError::Request(e.to_string()))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("XBL error {status}: {body}"));
+        return Err(XblAuthError::Http { status, body });
     }
     let data = resp
         .json::<XblResponse>()
         .await
-        .map_err(|e| format!("XBL parse: {e}"))?;
+        .map_err(|e| XblAuthError::Parse(e.to_string()))?;
     let uhs = data
         .display_claims
         .xui
         .into_iter()
         .next()
-        .ok_or("XBL: no user hash")?
+        .ok_or(XblAuthError::MissingUserHash)?
         .uhs;
     Ok((data.token, uhs))
+}
+
+fn with_rps_preamble(ms_access_token: &str, preamble: &str) -> String {
+    if ms_access_token.starts_with("t=") || ms_access_token.starts_with("d=") {
+        ms_access_token.to_string()
+    } else {
+        format!("{preamble}={ms_access_token}")
+    }
+}
+
+async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String, String), String> {
+    // The MBI_SSL Live token is an RPS ticket and Xbox Live expects the t= preamble.
+    // Keep d= as a fallback for Azure OAuth tokens used by other Minecraft auth flows.
+    let rps_tickets = [
+        with_rps_preamble(ms_access_token, "t"),
+        with_rps_preamble(ms_access_token, "d"),
+    ];
+
+    let mut last_error = None;
+    for (idx, rps_ticket) in rps_tickets.iter().enumerate() {
+        match request_xbl_token(client, rps_ticket).await {
+            Ok(token) => return Ok(token),
+            Err(err) if err.is_unauthorized() && idx + 1 < rps_tickets.len() => {
+                last_error = Some(err);
+            }
+            Err(err) => return Err(err.into_message()),
+        }
+    }
+
+    Err(last_error
+        .map(XblAuthError::into_message)
+        .unwrap_or_else(|| "XBL error: token exchange failed".to_string()))
 }
 
 async fn get_xsts_token(client: &Client, xbl_token: &str) -> Result<String, String> {
@@ -339,6 +414,17 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
+fn build_auth_url() -> String {
+    let query = encode_form(&[
+        ("client_id", MS_CLIENT_ID),
+        ("response_type", "code"),
+        ("scope", MS_SCOPE),
+        ("redirect_uri", MS_REDIRECT_URI),
+        ("prompt", "select_account"),
+    ]);
+    format!("{MS_AUTH_URL}?{query}")
+}
+
 /// Full auth chain from Microsoft access token → saved MicrosoftAccount.
 async fn do_auth_chain(
     ms_access_token: &str,
@@ -419,13 +505,7 @@ pub async fn start_microsoft_auth(app: AppHandle) -> Result<MicrosoftAccount, St
         return Err("Auth window already open — complete sign-in in the open window".into());
     }
 
-    let auth_url = format!(
-        "{}?client_id={}&response_type=code\
-         &scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL\
-         &redirect_uri=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf\
-         &prompt=select_account",
-        MS_AUTH_URL, MS_CLIENT_ID
-    );
+    let auth_url = build_auth_url();
 
     let (tx, rx) = oneshot::channel::<Result<String, String>>();
     let shared = Arc::new(Mutex::new(Some(tx)));

@@ -59,10 +59,26 @@ import {
 
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
+const SELECTED_INSTANCE_STORAGE_KEY = "screenlauncher-selected-instance-id";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
 
-function pickPreferredInstance(instances: InstanceItem[]) {
+function instanceLastPlayedTimestamp(instance: InstanceItem) {
+  const parsed = Number.parseInt(instance.lastPlayed ?? "0", 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function pickPreferredInstance(instances: InstanceItem[], preferredId?: string | null) {
   if (instances.length === 0) return null;
+  if (preferredId) {
+    const preferred = instances.find((instance) => instance.id === preferredId);
+    if (preferred) return preferred;
+  }
+
+  const played = [...instances]
+    .filter((instance) => instanceLastPlayedTimestamp(instance) > 0)
+    .sort((a, b) => instanceLastPlayedTimestamp(b) - instanceLastPlayedTimestamp(a));
+
+  if (played[0]) return played[0];
   return instances[instances.length - 1] ?? instances[0] ?? null;
 }
 
@@ -478,6 +494,14 @@ export default function App() {
 
   useWindowPhase(win as unknown as WebviewWindow, setPhase);
 
+  useEffect(() => {
+    if (selectedInstanceId) {
+      window.localStorage.setItem(SELECTED_INSTANCE_STORAGE_KEY, selectedInstanceId);
+    } else {
+      window.localStorage.removeItem(SELECTED_INSTANCE_STORAGE_KEY);
+    }
+  }, [selectedInstanceId]);
+
   const selectedInstance = useMemo(
     () => instances.find((x) => x.id === selectedInstanceId) || null,
     [instances, selectedInstanceId]
@@ -820,7 +844,9 @@ export default function App() {
         setCreateVersion(preferredVersion);
 
         if (instanceResponse.length > 0) {
-          const preferredInstance = pickPreferredInstance(instanceResponse) || instanceResponse[0];
+          const storedInstanceId = window.localStorage.getItem(SELECTED_INSTANCE_STORAGE_KEY);
+          const preferredInstance =
+            pickPreferredInstance(instanceResponse, storedInstanceId) || instanceResponse[0];
           setSelectedInstanceId(preferredInstance.id);
         }
 
@@ -915,7 +941,8 @@ export default function App() {
       return;
     }
 
-    const preferredInstance = pickPreferredInstance(fresh) || fresh[0];
+    const storedInstanceId = window.localStorage.getItem(SELECTED_INSTANCE_STORAGE_KEY);
+    const preferredInstance = pickPreferredInstance(fresh, storedInstanceId) || fresh[0];
     const target = (preferredId && fresh.find((i) => i.id === preferredId)?.id) || preferredInstance.id;
     setSelectedInstanceId(target);
   };
@@ -1147,6 +1174,8 @@ const isScrollableElement = (target: EventTarget | null) => {
     const target = instanceToLaunch ?? selectedInstance;
     if (!target) return;
 
+    setSelectedInstanceId(target.id);
+
     try {
       setWorking(true);
       setActionError("");
@@ -1193,12 +1222,31 @@ const isScrollableElement = (target: EventTarget | null) => {
   const handleKillGame = async (instanceId: string) => {
     const pid = runningInstances.get(instanceId);
     if (pid === undefined) return;
+
+    setActionError("");
+    setBusyMessage("Stopping Minecraft...");
+
     try {
       await invoke("kill_instance", { pid });
     } catch (error) {
       console.error(error);
+      const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => true);
+      if (stillAlive) {
+        setActionError(String(error));
+        setBusyMessage("");
+        return;
+      }
     }
+
+    const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => false);
+    if (stillAlive) {
+      setActionError("Minecraft is still running. Try Kill Game again.");
+      setBusyMessage("");
+      return;
+    }
+
     void handleInstanceStopped(instanceId);
+    setBusyMessage("");
   };
 
   const handleDeleteInstance = async (instanceId: string) => {
