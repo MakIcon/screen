@@ -125,6 +125,37 @@ pub struct ActionResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LaunchLogSnapshot {
+    pub instance_id: String,
+    pub instance_name: String,
+    pub log_path: Option<String>,
+    pub minecraft_log_path: Option<String>,
+    pub crash_report_path: Option<String>,
+    pub log_tail: String,
+    pub crash_report_tail: Option<String>,
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftExitPayload {
+    pub instance_id: String,
+    pub instance_name: String,
+    pub pid: u32,
+    pub exit_code: Option<i32>,
+    pub runtime_secs: u64,
+    pub crashed: bool,
+    pub reason: String,
+    pub log_path: Option<String>,
+    pub minecraft_log_path: Option<String>,
+    pub crash_report_path: Option<String>,
+    pub log_tail: String,
+    pub crash_report_tail: Option<String>,
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScreenshotItem {
     pub file_name: String,
     pub path: String,

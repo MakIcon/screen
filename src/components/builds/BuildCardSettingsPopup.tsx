@@ -565,6 +565,7 @@ type Props = {
   runtimeDraft: BuildRuntimeSettingsDraft;
   onRuntimeDraftChange: Dispatch<SetStateAction<BuildRuntimeSettingsDraft>>;
   onUploadImage: (file: File | null) => void;
+  onOpenLogs?: () => void;
   onResetAll: () => void;
   onResetRuntime: () => void;
   onClose: () => void;
@@ -649,6 +650,7 @@ export function BuildCardSettingsPopup(props: Props) {
               optimizedJavaArgs={props.optimizedJavaArgs}
               draft={props.runtimeDraft}
               onDraftChange={props.onRuntimeDraftChange}
+              onOpenLogs={props.onOpenLogs}
             />
           ) : (
             <BuildCardEditor {...props} showHeader={false} />

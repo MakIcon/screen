@@ -10,10 +10,10 @@ use tokio::fs;
 use crate::{
     commands::auth::{read_accounts, refresh_account_if_expired},
     minecraft::{
-        build_launch_command, install_instance_files, spawn_minecraft_and_persist,
-        update_instance_status,
+        build_launch_command, install_instance_files, read_latest_launch_log,
+        spawn_minecraft_and_persist, update_instance_status,
     },
-    models::{ActionResult, ScreenshotImage, ScreenshotItem},
+    models::{ActionResult, LaunchLogSnapshot, ScreenshotImage, ScreenshotItem},
     paths::{read_instances, read_settings, write_instances},
 };
 
@@ -169,13 +169,25 @@ pub async fn launch_instance(
         settings.optimized_java_args,
     )
     .await?;
-    let pid = spawn_minecraft_and_persist(&instance, java_bin, args).await?;
+    let pid = spawn_minecraft_and_persist(app, &instance, java_bin, args).await?;
 
     Ok(ActionResult {
         ok: true,
         message: "Minecraft launched".to_string(),
         pid: Some(pid),
     })
+}
+
+#[tauri::command]
+pub async fn read_instance_launch_log(instance_id: String) -> Result<LaunchLogSnapshot, String> {
+    let items = read_instances().await?;
+    let instance = items
+        .iter()
+        .find(|i| i.id == instance_id)
+        .cloned()
+        .ok_or_else(|| "Instance not found".to_string())?;
+
+    Ok(read_latest_launch_log(&instance))
 }
 
 #[tauri::command]

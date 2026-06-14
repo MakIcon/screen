@@ -56,6 +56,7 @@ type Props = {
   optimizedJavaArgs: boolean;
   draft: BuildRuntimeSettingsDraft;
   onDraftChange: Dispatch<SetStateAction<BuildRuntimeSettingsDraft>>;
+  onOpenLogs?: () => void;
 };
 
 export function BuildRuntimeSettingsEditor({
@@ -63,6 +64,7 @@ export function BuildRuntimeSettingsEditor({
   optimizedJavaArgs,
   draft,
   onDraftChange,
+  onOpenLogs,
 }: Props) {
   const [argsSearchQuery, setArgsSearchQuery] = useState("");
   const [argsReplaceValue, setArgsReplaceValue] = useState("");
@@ -352,6 +354,22 @@ export function BuildRuntimeSettingsEditor({
 
         <CustomScrollArea className="brs-controls-scroll" style={{ minHeight: 0 }}>
           <div className="brs-controls">
+            {onOpenLogs && (
+              <section className="brs-section brs-logs-section">
+                <div className="brs-section-head">
+                  <span>LOGS</span>
+                  <strong>MINECRAFT</strong>
+                </div>
+                <button
+                  className="brs-wide-action"
+                  type="button"
+                  onClick={onOpenLogs}
+                >
+                  OPEN LOG WINDOW
+                </button>
+              </section>
+            )}
+
             <section className="brs-section">
               <div className="brs-section-head">
                 <span>MEMORY</span>

@@ -1,17 +1,23 @@
 use std::{
     collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
     path::PathBuf,
     process::{Command, Stdio},
+    thread,
+    time::{Instant, SystemTime},
 };
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 use reqwest::Client;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 use crate::{
-    models::{InstanceItem, MicrosoftAccount, VersionMeta},
+    models::{
+        InstanceItem, LaunchLogSnapshot, MicrosoftAccount, MinecraftExitPayload, VersionMeta,
+    },
     paths::{
         assets_root, clamp_ram_to_system, libraries_root, offline_uuid, read_instances,
         versions_root, write_instances,
@@ -33,6 +39,9 @@ pub fn normalized_ram(ram: u32) -> u32 {
 }
 
 const LWJGL_STACK_SIZE_KB: u32 = 1024;
+const MINECRAFT_EXIT_EVENT: &str = "minecraft-process-exited";
+const LAUNCH_LOG_TAIL_LIMIT: usize = 64 * 1024;
+const EARLY_EXIT_SECS: u64 = 30;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -142,6 +151,175 @@ fn uses_optimized_heap(
     custom_args
         .map(|args| args.iter().any(|arg| arg == "-XX:+UseG1GC"))
         .unwrap_or(optimized_java_args_enabled)
+}
+
+fn launch_log_dir(instance: &InstanceItem) -> PathBuf {
+    PathBuf::from(&instance.game_dir).join("logs")
+}
+
+fn launch_log_path(instance: &InstanceItem) -> PathBuf {
+    launch_log_dir(instance).join(format!("screenlauncher-{}.log", crate::paths::now_string()))
+}
+
+fn read_text_tail(path: &PathBuf, limit: usize) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| format!("read log error: {e}"))?;
+    let start = bytes.len().saturating_sub(limit);
+    let prefix = if start > 0 {
+        format!("[... trimmed {} bytes ...]\n", start)
+    } else {
+        String::new()
+    };
+
+    Ok(format!(
+        "{}{}",
+        prefix,
+        String::from_utf8_lossy(&bytes[start..])
+    ))
+}
+
+fn newest_file_in_dir(
+    dir: PathBuf,
+    accept: impl Fn(&std::path::Path) -> bool,
+    modified_after: Option<SystemTime>,
+) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && accept(path))
+        .filter_map(|path| {
+            let modified = fs::metadata(&path).ok()?.modified().ok()?;
+            if let Some(after) = modified_after {
+                if modified < after {
+                    return None;
+                }
+            }
+            Some((modified, path))
+        })
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, path)| path)
+}
+
+fn latest_screenlauncher_log_path(instance: &InstanceItem) -> Option<PathBuf> {
+    newest_file_in_dir(
+        launch_log_dir(instance),
+        |path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with("screenlauncher-") && name.ends_with(".log"))
+                .unwrap_or(false)
+        },
+        None,
+    )
+}
+
+fn minecraft_latest_log_path(instance: &InstanceItem) -> Option<PathBuf> {
+    let path = PathBuf::from(&instance.game_dir)
+        .join("logs")
+        .join("latest.log");
+    path.exists().then_some(path)
+}
+
+fn latest_crash_report_path(
+    instance: &InstanceItem,
+    modified_after: Option<SystemTime>,
+) -> Option<PathBuf> {
+    newest_file_in_dir(
+        PathBuf::from(&instance.game_dir).join("crash-reports"),
+        |path| path.extension().and_then(|ext| ext.to_str()) == Some("txt"),
+        modified_after,
+    )
+}
+
+fn build_combined_log_tail(
+    launch_log_path: Option<&PathBuf>,
+    minecraft_log_path: Option<&PathBuf>,
+) -> String {
+    let mut sections = Vec::new();
+
+    if let Some(path) = launch_log_path {
+        let text = read_text_tail(path, LAUNCH_LOG_TAIL_LIMIT / 2)
+            .unwrap_or_else(|e| format!("Unable to read ScreenLauncher log: {e}"));
+        sections.push(format!("== ScreenLauncher JVM output ==\n{text}"));
+    }
+
+    if let Some(path) = minecraft_log_path {
+        let text = read_text_tail(path, LAUNCH_LOG_TAIL_LIMIT / 2)
+            .unwrap_or_else(|e| format!("Unable to read Minecraft latest.log: {e}"));
+        sections.push(format!("== Minecraft latest.log ==\n{text}"));
+    }
+
+    if sections.is_empty() {
+        "No launch log has been created yet.".to_string()
+    } else {
+        sections.join("\n\n")
+    }
+}
+
+fn diagnose_launch_hint(log_tail: &str, crash_report_tail: Option<&str>) -> Option<String> {
+    let combined = format!(
+        "{}\n{}",
+        log_tail.to_ascii_lowercase(),
+        crash_report_tail.unwrap_or_default().to_ascii_lowercase()
+    );
+
+    if combined.contains("beryl.mixins")
+        && combined.contains("@mixin target")
+        && combined.contains("was not found")
+        && combined.contains("vulkanmod")
+    {
+        return Some(
+            "Beryl loaded, but its mixins target VulkanMod classes that are missing in the installed VulkanMod build. Use a Beryl version that matches this VulkanMod version, or install the VulkanMod version Beryl was built for."
+                .to_string(),
+        );
+    }
+
+    if combined.contains("beryl") && combined.contains("vulkan") {
+        return Some(
+            "Beryl is mentioned together with Vulkan in the crash log. For this Vulkan build, remove Beryl or switch to a non-Vulkan shader path, then launch again."
+                .to_string(),
+        );
+    }
+
+    if combined.contains("mixin") && combined.contains("failed") {
+        return Some(
+            "The log points at a failed Mixin transform. This is usually a mod version conflict or a missing dependency."
+                .to_string(),
+        );
+    }
+
+    if combined.contains("unsupportedclassversionerror") {
+        return Some(
+            "Java rejected one of the classes. Check that this build uses the Java version required by the Minecraft/mod loader version."
+                .to_string(),
+        );
+    }
+
+    None
+}
+
+pub fn read_latest_launch_log(instance: &InstanceItem) -> LaunchLogSnapshot {
+    let log_path = latest_screenlauncher_log_path(instance);
+    let minecraft_log_path = minecraft_latest_log_path(instance);
+    let crash_report_path = latest_crash_report_path(instance, None);
+    let log_tail = build_combined_log_tail(log_path.as_ref(), minecraft_log_path.as_ref());
+    let crash_report_tail = crash_report_path.as_ref().map(|path| {
+        read_text_tail(path, LAUNCH_LOG_TAIL_LIMIT / 2)
+            .unwrap_or_else(|e| format!("Unable to read crash report: {e}"))
+    });
+    let hint = diagnose_launch_hint(&log_tail, crash_report_tail.as_deref());
+
+    LaunchLogSnapshot {
+        instance_id: instance.id.clone(),
+        instance_name: instance.name.clone(),
+        log_path: log_path.map(|path| path.to_string_lossy().to_string()),
+        minecraft_log_path: minecraft_log_path.map(|path| path.to_string_lossy().to_string()),
+        crash_report_path: crash_report_path.map(|path| path.to_string_lossy().to_string()),
+        log_tail,
+        crash_report_tail,
+        hint,
+    }
 }
 
 pub async fn build_launch_command(
@@ -360,22 +538,126 @@ pub async fn build_launch_command(
 }
 
 pub async fn spawn_minecraft_and_persist(
+    app: AppHandle,
     instance: &InstanceItem,
     java_bin: String,
     args: Vec<String>,
 ) -> Result<u32, String> {
+    let log_dir = launch_log_dir(instance);
+    fs::create_dir_all(&log_dir).map_err(|e| format!("create launch log dir error: {e}"))?;
+
+    let log_path = launch_log_path(instance);
+    let mut header_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .map_err(|e| format!("create launch log error: {e}"))?;
+
+    writeln!(header_file, "ScreenLauncher launch log")
+        .and_then(|_| writeln!(header_file, "Instance: {} ({})", instance.name, instance.id))
+        .and_then(|_| writeln!(header_file, "Game dir: {}", instance.game_dir))
+        .and_then(|_| writeln!(header_file, "Java: {java_bin}"))
+        .and_then(|_| writeln!(header_file, "Args: {}", args.join(" ")))
+        .and_then(|_| writeln!(header_file, "\n== Process output =="))
+        .map_err(|e| format!("write launch log header error: {e}"))?;
+    drop(header_file);
+
+    let stdout_log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("open stdout launch log error: {e}"))?;
+    let stderr_log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("open stderr launch log error: {e}"))?;
+
     let mut command = Command::new(&java_bin);
     command
         .args(&args)
         .current_dir(&instance.game_dir)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::from(stdout_log))
+        .stderr(Stdio::from(stderr_log));
 
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let child = command.spawn().map_err(|e| format!("launch error: {e}"))?;
+    let mut child = command.spawn().map_err(|e| format!("launch error: {e}"))?;
+    let pid = child.id();
+    let started_at = Instant::now();
+    let started_system_at = SystemTime::now();
+    let watcher_instance = instance.clone();
+    let watcher_log_path = log_path.clone();
+
+    thread::spawn(move || {
+        let status_result = child.wait();
+        let runtime_secs = started_at.elapsed().as_secs();
+        let (exit_code, crashed, reason) = match status_result {
+            Ok(status) => {
+                let exit_code = status.code();
+                let crashed = !status.success() || runtime_secs < EARLY_EXIT_SECS;
+                let reason = if status.success() && runtime_secs >= EARLY_EXIT_SECS {
+                    "Minecraft closed normally.".to_string()
+                } else if status.success() {
+                    "Minecraft closed almost immediately after launch.".to_string()
+                } else if let Some(code) = exit_code {
+                    format!("Minecraft exited with code {code}.")
+                } else {
+                    "Minecraft was terminated by the system.".to_string()
+                };
+                (exit_code, crashed, reason)
+            }
+            Err(error) => (
+                None,
+                true,
+                format!("ScreenLauncher could not read Minecraft exit status: {error}"),
+            ),
+        };
+
+        if let Ok(mut footer_file) = OpenOptions::new().append(true).open(&watcher_log_path) {
+            let _ = writeln!(
+                footer_file,
+                "\n== Process finished ==\nPID: {pid}\nRuntime: {runtime_secs}s\nExit code: {}\nReason: {reason}",
+                exit_code
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+        }
+
+        let minecraft_log_path = minecraft_latest_log_path(&watcher_instance);
+        let crash_report_path =
+            latest_crash_report_path(&watcher_instance, Some(started_system_at));
+        let log_tail =
+            build_combined_log_tail(Some(&watcher_log_path), minecraft_log_path.as_ref());
+        let crash_report_tail = crash_report_path.as_ref().map(|path| {
+            read_text_tail(path, LAUNCH_LOG_TAIL_LIMIT / 2)
+                .unwrap_or_else(|e| format!("Unable to read crash report: {e}"))
+        });
+        let hint = diagnose_launch_hint(&log_tail, crash_report_tail.as_deref());
+
+        let _ = app.emit(
+            MINECRAFT_EXIT_EVENT,
+            MinecraftExitPayload {
+                instance_id: watcher_instance.id,
+                instance_name: watcher_instance.name,
+                pid,
+                exit_code,
+                runtime_secs,
+                crashed,
+                reason,
+                log_path: Some(watcher_log_path.to_string_lossy().to_string()),
+                minecraft_log_path: minecraft_log_path
+                    .map(|path| path.to_string_lossy().to_string()),
+                crash_report_path: crash_report_path.map(|path| path.to_string_lossy().to_string()),
+                log_tail,
+                crash_report_tail,
+                hint,
+            },
+        );
+    });
 
     let mut items = read_instances().await?;
     if let Some(index) = items.iter().position(|i| i.id == instance.id) {
@@ -384,5 +666,5 @@ pub async fn spawn_minecraft_and_persist(
         write_instances(&items).await?;
     }
 
-    Ok(child.id())
+    Ok(pid)
 }

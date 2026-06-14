@@ -120,6 +120,25 @@ export type ActionResult = {
   pid?: number | null;
 };
 
+export type LaunchLogSnapshot = {
+  instanceId: string;
+  instanceName: string;
+  logPath?: string | null;
+  minecraftLogPath?: string | null;
+  crashReportPath?: string | null;
+  logTail: string;
+  crashReportTail?: string | null;
+  hint?: string | null;
+};
+
+export type MinecraftExitPayload = LaunchLogSnapshot & {
+  pid: number;
+  exitCode?: number | null;
+  runtimeSecs: number;
+  crashed: boolean;
+  reason: string;
+};
+
 export type ScreenshotItem = {
   fileName: string;
   path: string;

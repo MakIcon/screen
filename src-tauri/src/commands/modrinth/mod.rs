@@ -436,15 +436,15 @@ pub(crate) async fn resolve_project_version(
             .append_pair("include_changelog", "false");
     }
 
-    let featured: Vec<ModrinthVersion> = http_json(client, featured_url.as_str())
-        .await
-        .unwrap_or_default();
-    if let Some(version) = featured.into_iter().next() {
+    let listed: Vec<ModrinthVersion> = http_json(client, listed_url.as_str()).await?;
+    if let Some(version) = listed.into_iter().next() {
         return Ok(version);
     }
 
-    let listed: Vec<ModrinthVersion> = http_json(client, listed_url.as_str()).await?;
-    listed.into_iter().next().ok_or_else(|| {
+    let featured: Vec<ModrinthVersion> = http_json(client, featured_url.as_str())
+        .await
+        .unwrap_or_default();
+    featured.into_iter().next().ok_or_else(|| {
         if loaders.is_empty() {
             format!("No version found for project {project_id} and Minecraft {game_version}")
         } else {

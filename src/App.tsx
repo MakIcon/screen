@@ -16,6 +16,7 @@ import {
 } from "./components/builds/BuildCardSettingsPopup";
 import { BuildStatsModal } from "./components/builds/BuildStatsModal";
 import { BuildScreenshotsModal } from "./components/builds/BuildScreenshotsModal";
+import { BuildLogsModal } from "./components/builds/BuildLogsModal";
 import type {
   ActionResult,
   BuildRuntimeSettingsDraft,
@@ -27,8 +28,10 @@ import type {
   InstallProgressPayload,
   LauncherPluginsSettings,
   LauncherSettings,
+  LaunchLogSnapshot,
   LoaderType,
   MicrosoftAccount,
+  MinecraftExitPayload,
   MinecraftManifest,
   TabKey,
   UpdateInstancePayload,
@@ -61,6 +64,8 @@ const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled"
 const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
 const SELECTED_INSTANCE_STORAGE_KEY = "screenlauncher-selected-instance-id";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
+const LOG_WINDOW_STORAGE_PREFIX = "screenlauncher-log-window";
+const LOG_WINDOW_REFRESH_EVENT = "launch-log-window-refresh";
 
 function instanceLastPlayedTimestamp(instance: InstanceItem) {
   const parsed = Number.parseInt(instance.lastPlayed ?? "0", 10);
@@ -113,7 +118,160 @@ function ExportedItemIcon({
   return <span className="eximp-list-preview-icon-fallback">{fallbackLabel}</span>;
 }
 
+function readLogWindowRoute() {
+  const params = new URLSearchParams(window.location.search);
+  const instanceId = params.get("logWindow");
+  const payloadKey = params.get("payloadKey");
+
+  if (!instanceId || !payloadKey) return null;
+  return { instanceId, payloadKey };
+}
+
+function makeLogWindowLabel(instanceId: string) {
+  const safeId = instanceId.replace(/[^a-zA-Z0-9-/:_]/g, "_");
+  return `build-log-${safeId}`;
+}
+
+function makeLogPayloadKey(instanceId: string) {
+  const safeId = instanceId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${LOG_WINDOW_STORAGE_PREFIX}-${safeId}-${Date.now()}`;
+}
+
+function makeLogWindowUrl(instanceId: string, payloadKey: string) {
+  return `/?logWindow=${encodeURIComponent(instanceId)}&payloadKey=${encodeURIComponent(payloadKey)}`;
+}
+
+function makeLogWindowInstance(instanceId: string, instanceName: string): InstanceItem {
+  return {
+    id: instanceId,
+    name: instanceName || "Build logs",
+    version: "",
+    loader: "",
+    status: "READY",
+    ram: 0,
+    javaArgs: null,
+    javaPath: null,
+    windowWidth: null,
+    windowHeight: null,
+    fullscreen: false,
+    lastPlayed: "0",
+    playtimeSecs: 0,
+    createdAt: "0",
+    gameDir: "",
+  };
+}
+
+type StoredLogWindowPayload = {
+  instanceId: string;
+  initialLog?: LaunchLogSnapshot | MinecraftExitPayload | null;
+};
+
+function readStoredLogPayload(payloadKey: string): StoredLogWindowPayload | null {
+  const raw = window.localStorage.getItem(payloadKey);
+  if (!raw) return null;
+  window.localStorage.removeItem(payloadKey);
+
+  try {
+    return JSON.parse(raw) as StoredLogWindowPayload;
+  } catch {
+    return null;
+  }
+}
+
+function BuildLogsWindowApp({
+  instanceId,
+  payloadKey,
+}: {
+  instanceId: string;
+  payloadKey: string;
+}) {
+  useTheme();
+  const [instance, setInstance] = useState<InstanceItem | null>(null);
+  const [initialLog, setInitialLog] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(null);
+
+  useEffect(() => {
+    const windowHandle = getCurrentWindow();
+    let alive = true;
+
+    const loadPayload = async (nextPayloadKey: string) => {
+      const stored = readStoredLogPayload(nextPayloadKey);
+      const resolvedInstanceId = stored?.instanceId || instanceId;
+
+      if (stored?.initialLog) {
+        if (!alive) return;
+        setInitialLog(stored.initialLog);
+        setInstance(makeLogWindowInstance(
+          stored.initialLog.instanceId,
+          stored.initialLog.instanceName,
+        ));
+        return;
+      }
+
+      try {
+        const latest = await invoke<LaunchLogSnapshot>("read_instance_launch_log", {
+          instanceId: resolvedInstanceId,
+        });
+        if (!alive) return;
+        setInitialLog(latest);
+        setInstance(makeLogWindowInstance(latest.instanceId, latest.instanceName));
+      } catch (err) {
+        if (!alive) return;
+        setInitialLog({
+          instanceId: resolvedInstanceId,
+          instanceName: "Build logs",
+          logPath: null,
+          minecraftLogPath: null,
+          crashReportPath: null,
+          logTail: String(err),
+          crashReportTail: null,
+          hint: null,
+        });
+        setInstance(makeLogWindowInstance(resolvedInstanceId, "Build logs"));
+      }
+    };
+
+    void loadPayload(payloadKey);
+    const unlisten = windowHandle.listen<{ payloadKey: string }>(
+      LOG_WINDOW_REFRESH_EVENT,
+      (event) => {
+        void loadPayload(event.payload.payloadKey);
+      },
+    );
+
+    return () => {
+      alive = false;
+      void unlisten.then((dispose) => dispose());
+    };
+  }, [instanceId, payloadKey]);
+
+  if (!instance) {
+    return (
+      <div className="build-logs-window-root">
+        <div className="build-logs-modal build-logs-modal--standalone">
+          <div className="build-logs-empty">LOADING LOGS...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <BuildLogsModal
+      instance={instance}
+      initialLog={initialLog}
+      standalone
+      onClose={() => {
+        void getCurrentWindow().close();
+      }}
+    />
+  );
+}
+
 export default function App() {
+  const logWindowRoute = readLogWindowRoute();
+  if (logWindowRoute) {
+    return <BuildLogsWindowApp {...logWindowRoute} />;
+  }
+
   const [phase, setPhase] = useState("init");
   const [isClosing, setIsClosing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -234,6 +392,57 @@ export default function App() {
     }
   };
 
+  const openBuildLogs = async (
+    id: string,
+    initialSnapshot: LaunchLogSnapshot | MinecraftExitPayload | null = null,
+  ) => {
+    try {
+      const payloadKey = makeLogPayloadKey(id);
+      window.localStorage.setItem(
+        payloadKey,
+        JSON.stringify({ instanceId: id, initialLog: initialSnapshot } satisfies StoredLogWindowPayload),
+      );
+
+      const label = makeLogWindowLabel(id);
+      const existing = await WebviewWindow.getByLabel(label);
+
+      if (existing) {
+        await existing.emit(LOG_WINDOW_REFRESH_EVENT, { payloadKey });
+        await existing.setFocus();
+        return;
+      }
+
+      const instanceName =
+        initialSnapshot?.instanceName ||
+        instances.find((instance) => instance.id === id)?.name ||
+        "Build logs";
+
+      const logWindow = new WebviewWindow(label, {
+        url: makeLogWindowUrl(id, payloadKey),
+        title: `${instanceName} logs`,
+        width: 1040,
+        height: 740,
+        minWidth: 720,
+        minHeight: 480,
+        center: true,
+        focus: true,
+        resizable: true,
+        decorations: false,
+      });
+
+      void logWindow.once("tauri://created", () => {
+        void logWindow.setFocus();
+      });
+      void logWindow.once("tauri://error", (event) => {
+        console.error("log window create failed", event.payload);
+        setActionError(`Log window failed: ${String(event.payload)}`);
+      });
+    } catch (error) {
+      console.error("open build logs failed", error);
+      setActionError(`Log window failed: ${String(error)}`);
+    }
+  };
+
   const [confirmPendingId, setConfirmPendingId] = useState<string | null>(null);
   const [confirmPendingName, setConfirmPendingName] = useState("");
 
@@ -293,6 +502,7 @@ export default function App() {
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const launchTimestampsRef = useRef<Map<string, number>>(new Map());
+  const intentionalStopsRef = useRef<Set<string>>(new Set());
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
 
   const persistBuildCardAppearances = (next: Record<string, BuildCardAppearance>) => {
@@ -691,6 +901,27 @@ export default function App() {
 
     return () => {
       void unlistenProgress.then((f) => f());
+    };
+  }, [win]);
+
+  useEffect(() => {
+    const unlistenExit = win.listen<MinecraftExitPayload>("minecraft-process-exited", (event) => {
+      const payload = event.payload;
+      const stopKey = `${payload.instanceId}:${payload.pid}`;
+      const stoppedByUser =
+        intentionalStopsRef.current.delete(stopKey) ||
+        intentionalStopsRef.current.delete(payload.instanceId);
+
+      void handleInstanceStopped(payload.instanceId);
+
+      if (payload.crashed && !stoppedByUser) {
+        setActionError(payload.hint || payload.reason);
+        void openBuildLogs(payload.instanceId, payload);
+      }
+    });
+
+    return () => {
+      void unlistenExit.then((f) => f());
     };
   }, [win]);
 
@@ -1209,7 +1440,23 @@ const isScrollableElement = (target: EventTarget | null) => {
       setBusyMessage("Minecraft launched");
     } catch (error) {
       console.error(error);
-      setActionError(String(error));
+      const message = String(error);
+      setActionError(message);
+      void openBuildLogs(target.id, {
+        instanceId: target.id,
+        instanceName: target.name,
+        pid: 0,
+        exitCode: null,
+        runtimeSecs: 0,
+        crashed: true,
+        reason: "Minecraft did not start.",
+        logPath: null,
+        minecraftLogPath: null,
+        crashReportPath: null,
+        logTail: message,
+        crashReportTail: null,
+        hint: null,
+      });
     } finally {
       setWorking(false);
       window.setTimeout(() => {
@@ -1227,11 +1474,13 @@ const isScrollableElement = (target: EventTarget | null) => {
     setBusyMessage("Stopping Minecraft...");
 
     try {
+      intentionalStopsRef.current.add(`${instanceId}:${pid}`);
       await invoke("kill_instance", { pid });
     } catch (error) {
       console.error(error);
       const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => true);
       if (stillAlive) {
+        intentionalStopsRef.current.delete(`${instanceId}:${pid}`);
         setActionError(String(error));
         setBusyMessage("");
         return;
@@ -1727,6 +1976,13 @@ const isScrollableElement = (target: EventTarget | null) => {
           runtimeDraft={buildRuntimeSettingsDraft}
           onRuntimeDraftChange={setBuildRuntimeSettingsDraft}
           onUploadImage={handleBuildCardImagePicked}
+          onOpenLogs={
+            buildSettingsTargetId
+              ? () => {
+                  void openBuildLogs(buildSettingsTargetId);
+                }
+              : undefined
+          }
           onResetAll={clearBuildCardSettings}
           onResetRuntime={resetBuildRuntimeSettings}
           onClose={closeBuildCardSettings}

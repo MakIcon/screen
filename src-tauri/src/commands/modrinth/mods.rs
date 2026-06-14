@@ -65,7 +65,27 @@ async fn merge_and_write_modrinth_state(
     additions: &HashMap<String, InstalledModEntry>,
 ) -> Result<(), String> {
     let mut latest = read_modrinth_state(instance).await.unwrap_or_default();
+    let mods_dir = mods_dir_for_instance(instance);
+
     for (filename, entry) in additions {
+        let stale_filenames = latest
+            .iter()
+            .filter(|(existing_filename, existing_entry)| {
+                existing_entry.project_id == entry.project_id && *existing_filename != filename
+            })
+            .map(|(existing_filename, _)| existing_filename.clone())
+            .collect::<Vec<_>>();
+
+        for stale_filename in stale_filenames {
+            let stale_path = mods_dir.join(&stale_filename);
+            if stale_path.exists() {
+                fs::remove_file(&stale_path)
+                    .await
+                    .map_err(|e| format!("remove old mod file error: {e}"))?;
+            }
+            latest.remove(&stale_filename);
+        }
+
         latest.insert(filename.clone(), entry.clone());
     }
     write_modrinth_state(instance, &latest).await
