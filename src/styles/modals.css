@@ -438,7 +438,7 @@
 
 .ms-modal-manager {
   width: min(1040px, calc(100vw - 42px));
-  height: min(720px, calc(100vh - 42px));
+  height: min(820px, calc(100vh - 42px));
   max-width: calc(100vw - 42px);
   max-height: calc(100vh - 42px);
 }
@@ -590,6 +590,7 @@
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
 }
 
 .ms-preview-empty,
@@ -649,6 +650,17 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.ms-editor-panel::-webkit-scrollbar {
+  width: 3px;
+}
+
+.ms-editor-panel::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
 }
 
 .ms-editor-section {
@@ -662,7 +674,7 @@
 }
 
 .ms-editor-section-fill {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -721,6 +733,62 @@
   color: var(--accent);
 }
 
+.ms-viewer-section {
+  gap: 12px;
+  padding: 12px;
+}
+
+.ms-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.ms-motion-grid button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 7px 4px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ms-motion-grid button:last-child {
+  border-right: none;
+}
+
+.ms-motion-grid button:hover,
+.ms-motion-grid button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.ms-viewer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ms-toggle-action {
+  min-height: 34px;
+  padding: 8px 8px;
+  font-size: 9px;
+  text-align: center;
+  white-space: normal;
+}
+
+.ms-toggle-action.active {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.35);
+  background: rgba(194, 65, 12, 0.06);
+}
+
 .ms-action-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -729,15 +797,15 @@
 
 .ms-action-pair button {
   width: 100%;
-  min-height: 42px;
-  padding: 12px 10px;
+  min-height: 38px;
+  padding: 10px 10px;
   font-size: 10px;
   text-align: center;
   white-space: normal;
 }
 
 .ms-compact-primary {
-  padding: 12px 14px;
+  padding: 11px 14px;
   font-size: 10px;
 }
 
@@ -759,20 +827,21 @@
 }
 
 .ms-cape-list {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 56px;
+  max-height: 150px;
   overflow-y: auto;
   border: 1px solid var(--line);
 }
 
 .ms-cape-row {
   width: 100%;
-  min-height: 54px;
+  min-height: 66px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: none;
   border-bottom: 1px solid var(--line);
   background: transparent;
@@ -818,8 +887,8 @@
 }
 
 .ms-cape-thumb {
-  width: 28px;
-  height: 36px;
+  width: 44px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -828,12 +897,27 @@
   overflow: hidden;
 }
 
-.ms-cape-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top center;
+.ms-cape-thumb-cape {
+  gap: 2px;
+  padding: 3px;
+}
+
+.ms-cape-face {
+  width: 17px;
+  height: 30px;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  background-repeat: no-repeat;
+  background-size: 640% 200%;
+  box-shadow: inset -4px 0 0 rgba(0, 0, 0, 0.08);
   image-rendering: pixelated;
+}
+
+.ms-cape-face-front {
+  background-position: 1.8519% 6.25%;
+}
+
+.ms-cape-face-back {
+  background-position: 22.2222% 6.25%;
 }
 
 .ms-cape-thumb-empty::before {
@@ -895,6 +979,14 @@
 
   .ms-preview-canvas-shell {
     min-height: 320px;
+  }
+
+  .ms-motion-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ms-motion-grid button:nth-child(3) {
+    border-right: none;
   }
 }
 

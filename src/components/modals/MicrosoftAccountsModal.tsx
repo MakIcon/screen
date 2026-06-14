@@ -9,6 +9,7 @@ import type {
 } from "../../types";
 
 type SkinVariant = "CLASSIC" | "SLIM";
+type PreviewMotion = "STILL" | "IDLE" | "WALK" | "RUN" | "WAVE";
 type ProfileAction = "skin" | "skin-reset" | "cape" | "cape-hide" | null;
 
 type SkinDraft = {
@@ -16,6 +17,10 @@ type SkinDraft = {
   bytes: number[];
   dataUrl: string;
 };
+
+const PREVIEW_ZOOM = 0.82;
+const PREVIEW_MIN_DISTANCE = 26;
+const PREVIEW_MAX_DISTANCE = 96;
 
 interface Props {
   accounts: MicrosoftAccount[];
@@ -64,14 +69,52 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function makePreviewAnimation(mode: PreviewMotion) {
+  if (mode === "STILL") return null;
+
+  const animation =
+    mode === "WALK"
+      ? new skinview3d.WalkingAnimation()
+      : mode === "RUN"
+        ? new skinview3d.RunningAnimation()
+        : mode === "WAVE"
+          ? new skinview3d.WaveAnimation("right")
+          : new skinview3d.IdleAnimation();
+
+  animation.speed = mode === "RUN" ? 0.82 : mode === "WALK" ? 0.7 : mode === "WAVE" ? 0.9 : 0.6;
+  return animation;
+}
+
+function resetPreviewCamera(viewer: skinview3d.SkinViewer) {
+  viewer.camera.position.set(0, 0, 1);
+  viewer.camera.rotation.set(0, 0, 0);
+  viewer.zoom = PREVIEW_ZOOM;
+  viewer.controls.target.set(0, 0, 0);
+  viewer.controls.minDistance = PREVIEW_MIN_DISTANCE;
+  viewer.controls.maxDistance = PREVIEW_MAX_DISTANCE;
+  viewer.controls.update();
+  viewer.controls.saveState();
+  viewer.render();
+}
+
 function MinecraftSkinPreview({
   skinUrl,
   capeUrl,
   variant,
+  autoRotate,
+  secondLayerVisible,
+  motion,
+  zoomEnabled,
+  resetKey,
 }: {
   skinUrl: string | null;
   capeUrl: string | null;
   variant: SkinVariant;
+  autoRotate: boolean;
+  secondLayerVisible: boolean;
+  motion: PreviewMotion;
+  zoomEnabled: boolean;
+  resetKey: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<skinview3d.SkinViewer | null>(null);
@@ -89,19 +132,21 @@ function MinecraftSkinPreview({
       width: Math.max(260, Math.round(rect.width || 320)),
       height: Math.max(300, Math.round(rect.height || 360)),
       fov: 52,
-      zoom: 0.82,
+      zoom: PREVIEW_ZOOM,
       enableControls: true,
     });
 
-    const idle = new skinview3d.IdleAnimation();
-    idle.speed = 0.6;
-    viewer.animation = idle;
-    viewer.autoRotate = true;
+    viewer.autoRotate = autoRotate;
     viewer.autoRotateSpeed = 0.7;
     viewer.globalLight.intensity = 2.35;
     viewer.cameraLight.intensity = 0.65;
     viewer.controls.enablePan = false;
-    viewer.controls.enableZoom = false;
+    viewer.controls.enableZoom = zoomEnabled;
+    viewer.controls.zoomSpeed = 0.85;
+    viewer.controls.minDistance = PREVIEW_MIN_DISTANCE;
+    viewer.controls.maxDistance = PREVIEW_MAX_DISTANCE;
+    viewer.playerObject.skin.setOuterLayerVisible(secondLayerVisible);
+    resetPreviewCamera(viewer);
 
     viewerRef.current = viewer;
     setViewerReady(true);
@@ -128,6 +173,43 @@ function MinecraftSkinPreview({
     const viewer = viewerRef.current;
     if (!viewer || !viewerReady) return;
 
+    viewer.autoRotate = autoRotate;
+  }, [autoRotate, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
+    viewer.playerObject.skin.setOuterLayerVisible(secondLayerVisible);
+    viewer.render();
+  }, [secondLayerVisible, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
+    viewer.controls.enableZoom = zoomEnabled;
+  }, [zoomEnabled, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
+    viewer.animation = makePreviewAnimation(motion);
+  }, [motion, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady || resetKey === 0) return;
+
+    viewer.playerObject.rotation.set(0, 0, 0);
+    resetPreviewCamera(viewer);
+  }, [resetKey, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
     setViewerError("");
     if (!skinUrl) {
       viewer.loadSkin(null);
@@ -136,9 +218,13 @@ function MinecraftSkinPreview({
 
     const result = viewer.loadSkin(skinUrl, { model: toViewerModel(variant) });
     if (result instanceof Promise) {
-      void result.catch((error) => setViewerError(String(error)));
+      void result
+        .then(() => {
+          viewer.playerObject.skin.setOuterLayerVisible(secondLayerVisible);
+        })
+        .catch((error) => setViewerError(String(error)));
     }
-  }, [skinUrl, variant, viewerReady]);
+  }, [skinUrl, variant, secondLayerVisible, viewerReady]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -162,6 +248,20 @@ function MinecraftSkinPreview({
       {!skinUrl && <div className="ms-preview-empty">NO SKIN DATA</div>}
       {viewerError && <div className="ms-preview-error">{viewerError}</div>}
     </div>
+  );
+}
+
+function MinecraftCapeThumb({ url }: { url: string | null }) {
+  if (!url) {
+    return <span className="ms-cape-thumb ms-cape-thumb-empty" />;
+  }
+
+  const capeStyle = { backgroundImage: `url(${JSON.stringify(url)})` };
+  return (
+    <span className="ms-cape-thumb ms-cape-thumb-cape">
+      <span className="ms-cape-face ms-cape-face-front" style={capeStyle} />
+      <span className="ms-cape-face ms-cape-face-back" style={capeStyle} />
+    </span>
   );
 }
 
@@ -189,6 +289,11 @@ export function MicrosoftAccountsModal({
   const [previewSkinUrl, setPreviewSkinUrl] = useState<string | null>(null);
   const [previewCapeId, setPreviewCapeId] = useState<string | null>(null);
   const [previewCapeUrl, setPreviewCapeUrl] = useState<string | null>(null);
+  const [previewAutoRotate, setPreviewAutoRotate] = useState(true);
+  const [previewSecondLayer, setPreviewSecondLayer] = useState(true);
+  const [previewMotion, setPreviewMotion] = useState<PreviewMotion>("IDLE");
+  const [previewZoomEnabled, setPreviewZoomEnabled] = useState(true);
+  const [previewResetKey, setPreviewResetKey] = useState(0);
 
   const activeSkin = useMemo(() => getActiveSkin(profile), [profile]);
   const activeCape = useMemo(() => getActiveCape(profile), [profile]);
@@ -503,14 +608,73 @@ export function MicrosoftAccountsModal({
                         skinUrl={previewSkinUrl}
                         capeUrl={previewCapeUrl}
                         variant={skinVariant}
+                        autoRotate={previewAutoRotate}
+                        secondLayerVisible={previewSecondLayer}
+                        motion={previewMotion}
+                        zoomEnabled={previewZoomEnabled}
+                        resetKey={previewResetKey}
                       />
                       <div className="ms-preview-meta">
-                        <span>{skinDraft ? "LOCAL PREVIEW" : activeSkin?.variant ?? "DEFAULT"}</span>
+                        <span>
+                          {skinDraft ? "LOCAL PREVIEW" : activeSkin?.variant ?? "DEFAULT"} /{" "}
+                          {previewSecondLayer ? "LAYER 2" : "BASE"}
+                        </span>
                         <strong>{previewCapeUrl ? getCapeLabel(profile?.capes.find((cape) => cape.id === previewCapeId) ?? activeCape) : "NO CAPE"}</strong>
                       </div>
                     </div>
 
                     <div className="ms-editor-panel">
+                      <section className="ms-editor-section ms-viewer-section">
+                        <div className="ms-editor-head">
+                          <span>VIEWER</span>
+                          <strong>{previewAutoRotate ? "ROTATING" : "PAUSED"}</strong>
+                        </div>
+
+                        <div className="ms-motion-grid" role="tablist" aria-label="Preview animation">
+                          {(["STILL", "IDLE", "WALK", "RUN", "WAVE"] as PreviewMotion[]).map((motion) => (
+                            <button
+                              key={motion}
+                              className={previewMotion === motion ? "active" : ""}
+                              type="button"
+                              onClick={() => setPreviewMotion(motion)}
+                            >
+                              {motion}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="ms-viewer-controls">
+                          <button
+                            className={`ghost-action ms-toggle-action${previewAutoRotate ? " active" : ""}`}
+                            type="button"
+                            onClick={() => setPreviewAutoRotate((value) => !value)}
+                          >
+                            {previewAutoRotate ? "PAUSE ROTATE" : "AUTO ROTATE"}
+                          </button>
+                          <button
+                            className={`ghost-action ms-toggle-action${previewSecondLayer ? " active" : ""}`}
+                            type="button"
+                            onClick={() => setPreviewSecondLayer((value) => !value)}
+                          >
+                            {previewSecondLayer ? "HIDE LAYER 2" : "SHOW LAYER 2"}
+                          </button>
+                          <button
+                            className={`ghost-action ms-toggle-action${previewZoomEnabled ? " active" : ""}`}
+                            type="button"
+                            onClick={() => setPreviewZoomEnabled((value) => !value)}
+                          >
+                            {previewZoomEnabled ? "ZOOM OFF" : "ZOOM ON"}
+                          </button>
+                          <button
+                            className="ghost-action ms-toggle-action"
+                            type="button"
+                            onClick={() => setPreviewResetKey((value) => value + 1)}
+                          >
+                            RESET VIEW
+                          </button>
+                        </div>
+                      </section>
+
                       <section className="ms-editor-section">
                         <div className="ms-editor-head">
                           <span>SKIN</span>
@@ -574,7 +738,7 @@ export function MicrosoftAccountsModal({
                               setPreviewCapeUrl(null);
                             }}
                           >
-                            <span className="ms-cape-thumb ms-cape-thumb-empty" />
+                            <MinecraftCapeThumb url={null} />
                             <span>NO CAPE</span>
                             {activeCapeId === null && <strong>ACTIVE</strong>}
                           </button>
@@ -595,9 +759,7 @@ export function MicrosoftAccountsModal({
                                   setPreviewCapeUrl(cape.url ?? null);
                                 }}
                               >
-                                <span className="ms-cape-thumb">
-                                  {cape.url && <img src={cape.url} alt="" loading="lazy" />}
-                                </span>
+                                <MinecraftCapeThumb url={cape.url ?? null} />
                                 <span>{getCapeLabel(cape)}</span>
                                 {isActive && <strong>ACTIVE</strong>}
                               </button>
