@@ -252,6 +252,6 @@ pub async fn list_installed_resourcepacks(
         }
     }
 
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|item| item.title.to_lowercase());
     Ok(out)
 }

@@ -1,13 +1,168 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { MicrosoftAccount } from "../../types";
+import * as skinview3d from "skinview3d";
+import type {
+  MinecraftCape,
+  MinecraftProfile,
+  MinecraftSkin,
+  MicrosoftAccount,
+} from "../../types";
+
+type SkinVariant = "CLASSIC" | "SLIM";
+type ProfileAction = "skin" | "skin-reset" | "cape" | "cape-hide" | null;
+
+type SkinDraft = {
+  fileName: string;
+  bytes: number[];
+  dataUrl: string;
+};
 
 interface Props {
   accounts: MicrosoftAccount[];
   activeAccountId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onAccountsChange: (accounts: MicrosoftAccount[]) => void;
   onClose: () => void;
+}
+
+function isActiveState(state?: string | null) {
+  return state?.toUpperCase() === "ACTIVE";
+}
+
+function getActiveSkin(profile: MinecraftProfile | null) {
+  return profile?.skins.find((skin) => isActiveState(skin.state)) ?? profile?.skins[0] ?? null;
+}
+
+function getActiveCape(profile: MinecraftProfile | null) {
+  return profile?.capes.find((cape) => isActiveState(cape.state)) ?? null;
+}
+
+function getSkinVariant(skin: MinecraftSkin | null): SkinVariant {
+  return skin?.variant?.toUpperCase() === "SLIM" ? "SLIM" : "CLASSIC";
+}
+
+function getCapeLabel(cape: MinecraftCape | null) {
+  return cape?.alias || cape?.id || "NO CAPE";
+}
+
+function toViewerModel(variant: SkinVariant) {
+  return (variant === "SLIM" ? "slim" : "default") as "slim" | "default";
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Unable to read skin preview"));
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read skin file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function MinecraftSkinPreview({
+  skinUrl,
+  capeUrl,
+  variant,
+}: {
+  skinUrl: string | null;
+  capeUrl: string | null;
+  variant: SkinVariant;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewerRef = useRef<skinview3d.SkinViewer | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
+  const [viewerError, setViewerError] = useState("");
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const parent = canvas?.parentElement;
+    if (!canvas || !parent) return undefined;
+
+    const rect = parent.getBoundingClientRect();
+    const viewer = new skinview3d.SkinViewer({
+      canvas,
+      width: Math.max(260, Math.round(rect.width || 320)),
+      height: Math.max(300, Math.round(rect.height || 360)),
+      fov: 52,
+      zoom: 0.82,
+      enableControls: true,
+    });
+
+    const idle = new skinview3d.IdleAnimation();
+    idle.speed = 0.6;
+    viewer.animation = idle;
+    viewer.autoRotate = true;
+    viewer.autoRotateSpeed = 0.7;
+    viewer.globalLight.intensity = 2.35;
+    viewer.cameraLight.intensity = 0.65;
+    viewer.controls.enablePan = false;
+    viewer.controls.enableZoom = false;
+
+    viewerRef.current = viewer;
+    setViewerReady(true);
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      viewer.setSize(
+        Math.max(240, Math.round(entry.contentRect.width)),
+        Math.max(280, Math.round(entry.contentRect.height)),
+      );
+    });
+
+    resizeObserver.observe(parent);
+
+    return () => {
+      resizeObserver.disconnect();
+      viewer.dispose();
+      viewerRef.current = null;
+      setViewerReady(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
+    setViewerError("");
+    if (!skinUrl) {
+      viewer.loadSkin(null);
+      return;
+    }
+
+    const result = viewer.loadSkin(skinUrl, { model: toViewerModel(variant) });
+    if (result instanceof Promise) {
+      void result.catch((error) => setViewerError(String(error)));
+    }
+  }, [skinUrl, variant, viewerReady]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewerReady) return;
+
+    setViewerError("");
+    if (!capeUrl) {
+      viewer.loadCape(null);
+      return;
+    }
+
+    const result = viewer.loadCape(capeUrl, { backEquipment: "cape" });
+    if (result instanceof Promise) {
+      void result.catch((error) => setViewerError(String(error)));
+    }
+  }, [capeUrl, viewerReady]);
+
+  return (
+    <div className="ms-preview-canvas-shell">
+      <canvas ref={canvasRef} className="ms-preview-canvas" />
+      {!skinUrl && <div className="ms-preview-empty">NO SKIN DATA</div>}
+      {viewerError && <div className="ms-preview-error">{viewerError}</div>}
+    </div>
+  );
 }
 
 export function MicrosoftAccountsModal({
@@ -17,8 +172,72 @@ export function MicrosoftAccountsModal({
   onAccountsChange,
   onClose,
 }: Props) {
+  const skinFileInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === activeAccountId) ?? accounts[0] ?? null,
+    [accounts, activeAccountId],
+  );
+
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [profile, setProfile] = useState<MinecraftProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileAction, setProfileAction] = useState<ProfileAction>(null);
+  const [skinVariant, setSkinVariant] = useState<SkinVariant>("CLASSIC");
+  const [skinDraft, setSkinDraft] = useState<SkinDraft | null>(null);
+  const [previewSkinUrl, setPreviewSkinUrl] = useState<string | null>(null);
+  const [previewCapeId, setPreviewCapeId] = useState<string | null>(null);
+  const [previewCapeUrl, setPreviewCapeUrl] = useState<string | null>(null);
+
+  const activeSkin = useMemo(() => getActiveSkin(profile), [profile]);
+  const activeCape = useMemo(() => getActiveCape(profile), [profile]);
+  const activeCapeId = activeCape?.id ?? null;
+  const capeDirty = previewCapeId !== activeCapeId;
+
+  const syncPreviewFromProfile = (nextProfile: MinecraftProfile | null) => {
+    const nextSkin = getActiveSkin(nextProfile);
+    const nextCape = getActiveCape(nextProfile);
+
+    setProfile(nextProfile);
+    setSkinDraft(null);
+    setSkinVariant(getSkinVariant(nextSkin));
+    setPreviewSkinUrl(nextSkin?.url ?? null);
+    setPreviewCapeId(nextCape?.id ?? null);
+    setPreviewCapeUrl(nextCape?.url ?? null);
+  };
+
+  useEffect(() => {
+    if (!selectedAccount) {
+      syncPreviewFromProfile(null);
+      setProfileLoading(false);
+      setProfileError("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setProfileLoading(true);
+    setProfileError("");
+    setSkinDraft(null);
+
+    invoke<MinecraftProfile>("get_minecraft_profile", { accountId: selectedAccount.id })
+      .then((nextProfile) => {
+        if (!cancelled) syncPreviewFromProfile(nextProfile);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          syncPreviewFromProfile(null);
+          setProfileError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccount?.id]);
 
   const handleAdd = async () => {
     setAuthLoading(true);
@@ -42,120 +261,390 @@ export function MicrosoftAccountsModal({
       const updated = accounts.filter((a) => a.id !== id);
       onAccountsChange(updated);
       if (activeAccountId === id) {
-        onSelect(updated[0]?.id ?? "");
+        onSelect(updated[0]?.id ?? null);
       }
     } catch (e) {
       setAuthError(String(e));
     }
   };
 
+  const handlePickSkin = async (file: File | null) => {
+    if (!file) return;
+    setProfileError("");
+
+    try {
+      if (!file.name.toLowerCase().endsWith(".png")) {
+        throw new Error("Skin file must be a PNG");
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error("Skin file is too large");
+      }
+
+      const [arrayBuffer, dataUrl] = await Promise.all([
+        file.arrayBuffer(),
+        readFileAsDataUrl(file),
+      ]);
+      const bytes = Array.from(new Uint8Array(arrayBuffer));
+      const draft = { fileName: file.name, bytes, dataUrl };
+      setSkinDraft(draft);
+      setPreviewSkinUrl(draft.dataUrl);
+    } catch (error) {
+      setProfileError(String(error));
+    }
+  };
+
+  const handleApplySkin = async () => {
+    if (!selectedAccount || !skinDraft) return;
+
+    setProfileAction("skin");
+    setProfileError("");
+    try {
+      const nextProfile = await invoke<MinecraftProfile>("upload_minecraft_skin", {
+        accountId: selectedAccount.id,
+        variant: skinVariant,
+        fileName: skinDraft.fileName,
+        data: skinDraft.bytes,
+      });
+      syncPreviewFromProfile(nextProfile);
+    } catch (error) {
+      setProfileError(String(error));
+    } finally {
+      setProfileAction(null);
+    }
+  };
+
+  const handleResetSkin = async () => {
+    if (!selectedAccount) return;
+
+    setProfileAction("skin-reset");
+    setProfileError("");
+    try {
+      const nextProfile = await invoke<MinecraftProfile>("reset_minecraft_skin", {
+        accountId: selectedAccount.id,
+      });
+      syncPreviewFromProfile(nextProfile);
+    } catch (error) {
+      setProfileError(String(error));
+    } finally {
+      setProfileAction(null);
+    }
+  };
+
+  const handleApplyCape = async () => {
+    if (!selectedAccount) return;
+
+    setProfileAction("cape");
+    setProfileError("");
+    try {
+      const nextProfile = previewCapeId
+        ? await invoke<MinecraftProfile>("set_minecraft_cape", {
+            accountId: selectedAccount.id,
+            capeId: previewCapeId,
+          })
+        : await invoke<MinecraftProfile>("hide_minecraft_cape", {
+            accountId: selectedAccount.id,
+          });
+      syncPreviewFromProfile(nextProfile);
+    } catch (error) {
+      setProfileError(String(error));
+    } finally {
+      setProfileAction(null);
+    }
+  };
+
+  const handleHideCape = async () => {
+    if (!selectedAccount) return;
+
+    setProfileAction("cape-hide");
+    setProfileError("");
+    try {
+      const nextProfile = await invoke<MinecraftProfile>("hide_minecraft_cape", {
+        accountId: selectedAccount.id,
+      });
+      syncPreviewFromProfile(nextProfile);
+    } catch (error) {
+      setProfileError(String(error));
+    } finally {
+      setProfileAction(null);
+    }
+  };
+
   return (
     <div className="confirm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="ms-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+      <div className="ms-modal ms-modal-manager" onClick={(e) => e.stopPropagation()}>
         <div className="ms-modal-head">
-          <span className="ms-modal-tag">ACCOUNTS</span>
-          <span className="ms-modal-title">Microsoft Accounts</span>
-          <button className="ms-modal-close" onClick={onClose} title="Close">
+          <span className="ms-modal-tag">ACCOUNT</span>
+          <span className="ms-modal-title">Microsoft Profile Manager</span>
+          <button className="ms-modal-close" onClick={onClose} title="Close" type="button">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
         </div>
 
-        {/* Account list */}
-        <div className="ms-modal-body">
-          {accounts.length === 0 && !authLoading && (
-            <div className="ms-modal-empty">
-              <span>No Microsoft accounts added yet.</span>
-              <span className="ms-modal-empty-sub">
-                Click below to sign in with your Microsoft account.
-              </span>
-            </div>
-          )}
+        <div className="ms-manager-body">
+          <aside className="ms-account-pane">
+            <div className="ms-manager-kicker">ACCOUNTS</div>
 
-          {accounts.map((acc) => {
-            const isActive = acc.id === activeAccountId;
-            return (
-              <button
-                key={acc.id}
-                className={`ms-account-row${isActive ? " active" : ""}`}
-                onClick={() => onSelect(acc.id)}
-              >
-                <div className="ms-account-avatar">
-                  <img
-                    src={`https://mc-heads.net/avatar/${acc.uuid}/32`}
-                    alt={acc.username}
-                    width={32}
-                    height={32}
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                    }}
-                  />
+            <div className="ms-account-list">
+              {accounts.length === 0 && !authLoading && (
+                <div className="ms-modal-empty ms-modal-empty-compact">
+                  <span>No Microsoft accounts added yet.</span>
+                  <span className="ms-modal-empty-sub">Sign in to load Minecraft profile data.</span>
                 </div>
-                <div className="ms-account-info">
-                  <span className="ms-account-name">{acc.username}</span>
-                  <span className="ms-account-uuid">{acc.uuid}</span>
-                </div>
-                <div className="ms-account-actions">
-                  {isActive && (
-                    <span className="ms-account-badge">ACTIVE</span>
-                  )}
-                  <button
-                    className="ms-account-remove"
-                    title="Remove account"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(acc.id);
+              )}
+
+              {accounts.map((acc) => {
+                const isActive = acc.id === selectedAccount?.id;
+                return (
+                  <div
+                    key={acc.id}
+                    className={`ms-account-row${isActive ? " active" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelect(acc.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") onSelect(acc.id);
                     }}
                   >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path
-                        d="M1.5 3H10.5M4.5 3V2H7.5V3M2.5 3L3 10H9L9.5 3"
-                        stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"
+                    <div className="ms-account-avatar">
+                      <img
+                        src={`https://mc-heads.net/avatar/${acc.uuid}/32`}
+                        alt={acc.username}
+                        width={32}
+                        height={32}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
                       />
-                    </svg>
-                  </button>
+                    </div>
+                    <div className="ms-account-info">
+                      <span className="ms-account-name">{acc.username}</span>
+                      <span className="ms-account-uuid">{acc.uuid}</span>
+                    </div>
+                    <div className="ms-account-actions">
+                      {isActive && <span className="ms-account-badge">ACTIVE</span>}
+                      <button
+                        className="ms-account-remove"
+                        title="Remove account"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleRemove(acc.id);
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M1.5 3H10.5M4.5 3V2H7.5V3M2.5 3L3 10H9L9.5 3"
+                            stroke="currentColor"
+                            strokeWidth="1.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {authLoading && (
+                <div className="ms-auth-loading">
+                  <div className="ms-auth-spinner" />
+                  <span>Waiting for sign-in...</span>
+                  <span className="ms-auth-loading-sub">Complete login in the Microsoft window</span>
                 </div>
-              </button>
-            );
-          })}
-
-          {authLoading && (
-            <div className="ms-auth-loading">
-              <div className="ms-auth-spinner" />
-              <span>Waiting for sign-in…</span>
-              <span className="ms-auth-loading-sub">Complete login in the Microsoft window</span>
+              )}
             </div>
-          )}
 
-          {authError && (
-            <div className="ms-auth-error">{authError}</div>
-          )}
-        </div>
+            {authError && <div className="ms-auth-error">{authError}</div>}
 
-        {/* Footer */}
-        <div className="ms-modal-footer">
-          <button
-            className="ms-add-btn"
-            onClick={handleAdd}
-            disabled={authLoading}
-          >
-            {authLoading ? (
-              <>
-                <div className="ms-add-spinner" />
-                Signing in…
-              </>
+            <button className="ms-add-btn" onClick={handleAdd} disabled={authLoading} type="button">
+              {authLoading ? (
+                <>
+                  <div className="ms-add-spinner" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 1V11M1 6H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                  ADD MICROSOFT ACCOUNT
+                </>
+              )}
+            </button>
+          </aside>
+
+          <section className="ms-profile-pane">
+            {!selectedAccount ? (
+              <div className="ms-profile-empty">
+                <span>NO ACCOUNT SELECTED</span>
+              </div>
             ) : (
               <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path d="M6 1V11M1 6H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                ADD MICROSOFT ACCOUNT
+                <div className="ms-profile-head">
+                  <div>
+                    <span className="ms-profile-tag">MINECRAFT PROFILE</span>
+                    <strong>{profile?.name ?? selectedAccount.username}</strong>
+                  </div>
+                  <span className="ms-profile-uuid">{selectedAccount.uuid}</span>
+                </div>
+
+                {profileLoading ? (
+                  <div className="ms-profile-loading">
+                    <div className="ms-auth-spinner" />
+                    <span>LOADING PROFILE...</span>
+                  </div>
+                ) : (
+                  <div className="ms-profile-grid">
+                    <div className="ms-preview-panel">
+                      <MinecraftSkinPreview
+                        skinUrl={previewSkinUrl}
+                        capeUrl={previewCapeUrl}
+                        variant={skinVariant}
+                      />
+                      <div className="ms-preview-meta">
+                        <span>{skinDraft ? "LOCAL PREVIEW" : activeSkin?.variant ?? "DEFAULT"}</span>
+                        <strong>{previewCapeUrl ? getCapeLabel(profile?.capes.find((cape) => cape.id === previewCapeId) ?? activeCape) : "NO CAPE"}</strong>
+                      </div>
+                    </div>
+
+                    <div className="ms-editor-panel">
+                      <section className="ms-editor-section">
+                        <div className="ms-editor-head">
+                          <span>SKIN</span>
+                          <strong>{skinDraft?.fileName ?? activeSkin?.alias ?? activeSkin?.variant ?? "DEFAULT"}</strong>
+                        </div>
+
+                        <div className="ms-segmented" role="tablist" aria-label="Skin model">
+                          {(["CLASSIC", "SLIM"] as SkinVariant[]).map((variant) => (
+                            <button
+                              key={variant}
+                              className={skinVariant === variant ? "active" : ""}
+                              type="button"
+                              onClick={() => setSkinVariant(variant)}
+                            >
+                              {variant}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="ms-action-pair">
+                          <button
+                            className="ghost-action"
+                            type="button"
+                            onClick={() => skinFileInputRef.current?.click()}
+                            disabled={profileAction !== null}
+                          >
+                            PICK SKIN
+                          </button>
+                          <button
+                            className="primary-action ms-compact-primary"
+                            type="button"
+                            onClick={handleApplySkin}
+                            disabled={!skinDraft || profileAction !== null}
+                          >
+                            {profileAction === "skin" ? "APPLYING..." : "APPLY SKIN"}
+                          </button>
+                        </div>
+
+                        <button
+                          className="ms-inline-danger"
+                          type="button"
+                          onClick={handleResetSkin}
+                          disabled={profileAction !== null}
+                        >
+                          {profileAction === "skin-reset" ? "RESETTING..." : "RESET SKIN"}
+                        </button>
+                      </section>
+
+                      <section className="ms-editor-section ms-editor-section-fill">
+                        <div className="ms-editor-head">
+                          <span>CAPES</span>
+                          <strong>{profile?.capes.length ?? 0}</strong>
+                        </div>
+
+                        <div className="ms-cape-list">
+                          <button
+                            className={`ms-cape-row${previewCapeId === null ? " active" : ""}`}
+                            type="button"
+                            onClick={() => {
+                              setPreviewCapeId(null);
+                              setPreviewCapeUrl(null);
+                            }}
+                          >
+                            <span className="ms-cape-thumb ms-cape-thumb-empty" />
+                            <span>NO CAPE</span>
+                            {activeCapeId === null && <strong>ACTIVE</strong>}
+                          </button>
+
+                          {profile?.capes.map((cape) => {
+                            const capeId = cape.id ?? "";
+                            const isPreviewed = capeId !== "" && capeId === previewCapeId;
+                            const isActive = capeId !== "" && capeId === activeCapeId;
+
+                            return (
+                              <button
+                                key={capeId || cape.url || cape.alias}
+                                className={`ms-cape-row${isPreviewed ? " active" : ""}`}
+                                type="button"
+                                disabled={!capeId || !cape.url}
+                                onClick={() => {
+                                  setPreviewCapeId(capeId);
+                                  setPreviewCapeUrl(cape.url ?? null);
+                                }}
+                              >
+                                <span className="ms-cape-thumb">
+                                  {cape.url && <img src={cape.url} alt="" loading="lazy" />}
+                                </span>
+                                <span>{getCapeLabel(cape)}</span>
+                                {isActive && <strong>ACTIVE</strong>}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="ms-action-pair ms-cape-actions">
+                          <button
+                            className="primary-action ms-compact-primary"
+                            type="button"
+                            onClick={handleApplyCape}
+                            disabled={!capeDirty || profileAction !== null}
+                          >
+                            {profileAction === "cape" ? "SAVING..." : "APPLY CAPE"}
+                          </button>
+                          <button
+                            className="ghost-action"
+                            type="button"
+                            onClick={handleHideCape}
+                            disabled={!activeCapeId || profileAction !== null}
+                          >
+                            {profileAction === "cape-hide" ? "HIDING..." : "HIDE CAPE"}
+                          </button>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                )}
+
+                {profileError && <div className="ms-auth-error ms-profile-error">{profileError}</div>}
               </>
             )}
-          </button>
+          </section>
         </div>
+
+        <input
+          ref={skinFileInputRef}
+          className="ms-hidden-file-input"
+          type="file"
+          accept="image/png,.png"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0] ?? null;
+            event.currentTarget.value = "";
+            void handlePickSkin(file);
+          }}
+        />
       </div>
     </div>
   );

@@ -205,6 +205,28 @@ export type MicrosoftAccount = {
   expiresAt: number;
 };
 
+export type MinecraftSkin = {
+  id?: string | null;
+  state?: string | null;
+  url?: string | null;
+  variant?: "CLASSIC" | "SLIM" | string | null;
+  alias?: string | null;
+};
+
+export type MinecraftCape = {
+  id?: string | null;
+  state?: string | null;
+  url?: string | null;
+  alias?: string | null;
+};
+
+export type MinecraftProfile = {
+  id: string;
+  name: string;
+  skins: MinecraftSkin[];
+  capes: MinecraftCape[];
+};
+
 export type ExportedItem = {
   projectId: string | null;
   title: string;

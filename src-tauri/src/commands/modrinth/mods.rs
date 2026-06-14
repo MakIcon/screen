@@ -251,6 +251,6 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
         }
     }
 
-    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    out.sort_by_key(|item| item.title.to_lowercase());
     Ok(out)
 }

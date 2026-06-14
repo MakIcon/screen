@@ -34,7 +34,7 @@ fn screenshot_mime_for_path(path: &Path) -> Option<&'static str> {
 fn base64_encode(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-    let mut out = String::with_capacity(((bytes.len() + 2) / 3) * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut index = 0;
 
     while index < bytes.len() {
@@ -298,7 +298,7 @@ pub async fn list_instance_screenshots(instance_id: String) -> Result<Vec<Screen
         });
     }
 
-    screenshots.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    screenshots.sort_by_key(|screenshot| std::cmp::Reverse(screenshot.modified_at));
     Ok(screenshots)
 }
 

@@ -1,14 +1,17 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use reqwest::{Client, StatusCode};
+use reqwest::{multipart, Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
 use url::form_urlencoded;
 
-use crate::{models::MicrosoftAccount, paths::accounts_path};
+use crate::{
+    models::{MicrosoftAccount, MinecraftProfile},
+    paths::accounts_path,
+};
 
 fn encode_form(pairs: &[(&str, &str)]) -> String {
     let mut ser = form_urlencoded::Serializer::new(String::new());
@@ -23,6 +26,7 @@ const MS_REDIRECT_URI: &str = "https://login.live.com/oauth20_desktop.srf";
 const MS_SCOPE: &str = "service::user.auth.xboxlive.com::MBI_SSL";
 const MS_AUTH_URL: &str = "https://login.live.com/oauth20_authorize.srf";
 const MS_TOKEN_URL: &str = "https://login.live.com/oauth20_token.srf";
+const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 
 // ── Serialization helpers ─────────────────────────────────────────────────────
 
@@ -114,6 +118,12 @@ struct McLoginResponse {
 struct McProfileResponse {
     id: String,
     name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CapeSelectionRequest {
+    cape_id: String,
 }
 
 #[derive(Debug)]
@@ -372,7 +382,7 @@ async fn get_minecraft_token(
     Ok((data.access_token, data.expires_in.unwrap_or(86400)))
 }
 
-async fn get_minecraft_profile(
+async fn get_minecraft_profile_from_token(
     client: &Client,
     mc_token: &str,
 ) -> Result<McProfileResponse, String> {
@@ -435,7 +445,7 @@ async fn do_auth_chain(
     let (xbl_token, uhs) = get_xbl_token(&client, ms_access_token).await?;
     let xsts_token = get_xsts_token(&client, &xbl_token).await?;
     let (mc_token, mc_expires_in) = get_minecraft_token(&client, &uhs, &xsts_token).await?;
-    let profile = get_minecraft_profile(&client, &mc_token).await?;
+    let profile = get_minecraft_profile_from_token(&client, &mc_token).await?;
 
     let uuid = format_uuid(&profile.id);
     let expires_at = now_secs() + mc_expires_in.min(ms_expires_in);
@@ -483,6 +493,95 @@ pub async fn refresh_account_if_expired(
     Ok(updated)
 }
 
+async fn refreshed_account_by_id(account_id: &str) -> Result<MicrosoftAccount, String> {
+    let accounts = read_accounts().await?;
+    let account = accounts
+        .into_iter()
+        .find(|account| account.id == account_id)
+        .ok_or_else(|| "Microsoft account not found".to_string())?;
+
+    refresh_account_if_expired(&account).await
+}
+
+async fn fetch_minecraft_profile(
+    client: &Client,
+    account: &MicrosoftAccount,
+) -> Result<MinecraftProfile, String> {
+    let resp = client
+        .get(MC_PROFILE_URL)
+        .bearer_auth(&account.access_token)
+        .send()
+        .await
+        .map_err(|e| format!("MC profile request: {e}"))?;
+
+    parse_minecraft_profile_response(resp, "MC profile").await
+}
+
+async fn parse_minecraft_profile_response(
+    resp: Response,
+    context: &str,
+) -> Result<MinecraftProfile, String> {
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!("{context} error {status}: {body}"));
+    }
+
+    serde_json::from_str::<MinecraftProfile>(&body)
+        .map_err(|e| format!("{context} parse: {e}; body: {body}"))
+}
+
+async fn profile_from_mutation_response(
+    client: &Client,
+    account: &MicrosoftAccount,
+    resp: Response,
+    context: &str,
+) -> Result<MinecraftProfile, String> {
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!("{context} error {status}: {body}"));
+    }
+
+    if body.trim().is_empty() {
+        return fetch_minecraft_profile(client, account).await;
+    }
+
+    serde_json::from_str::<MinecraftProfile>(&body)
+        .map_err(|e| format!("{context} parse: {e}; body: {body}"))
+}
+
+fn normalize_skin_variant(variant: &str) -> Result<&'static str, String> {
+    match variant.trim().to_ascii_uppercase().as_str() {
+        "CLASSIC" | "DEFAULT" => Ok("classic"),
+        "SLIM" => Ok("slim"),
+        _ => Err("Skin variant must be CLASSIC or SLIM".to_string()),
+    }
+}
+
+fn ensure_png_skin_file(file_name: &str, data: &[u8]) -> Result<(), String> {
+    if data.is_empty() {
+        return Err("Skin file is empty".to_string());
+    }
+
+    if data.len() > 2 * 1024 * 1024 {
+        return Err("Skin file is too large".to_string());
+    }
+
+    if !file_name.to_ascii_lowercase().ends_with(".png") {
+        return Err("Skin file must be a PNG".to_string());
+    }
+
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if data.len() < PNG_SIGNATURE.len() || &data[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return Err("Skin file is not a valid PNG".to_string());
+    }
+
+    Ok(())
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -495,6 +594,90 @@ pub async fn remove_microsoft_account(id: String) -> Result<(), String> {
     let mut accounts = read_accounts().await?;
     accounts.retain(|a| a.id != id);
     write_accounts(&accounts).await
+}
+
+#[tauri::command]
+pub async fn get_minecraft_profile(account_id: String) -> Result<MinecraftProfile, String> {
+    let account = refreshed_account_by_id(&account_id).await?;
+    let client = Client::new();
+    fetch_minecraft_profile(&client, &account).await
+}
+
+#[tauri::command]
+pub async fn upload_minecraft_skin(
+    account_id: String,
+    variant: String,
+    file_name: String,
+    data: Vec<u8>,
+) -> Result<MinecraftProfile, String> {
+    ensure_png_skin_file(&file_name, &data)?;
+
+    let account = refreshed_account_by_id(&account_id).await?;
+    let client = Client::new();
+    let normalized_variant = normalize_skin_variant(&variant)?;
+    let part = multipart::Part::bytes(data)
+        .file_name(file_name)
+        .mime_str("image/png")
+        .map_err(|e| format!("Skin mime error: {e}"))?;
+    let form = multipart::Form::new()
+        .text("variant", normalized_variant.to_string())
+        .part("file", part);
+
+    let resp = client
+        .post(format!("{MC_PROFILE_URL}/skins"))
+        .bearer_auth(&account.access_token)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Upload skin request: {e}"))?;
+
+    profile_from_mutation_response(&client, &account, resp, "Upload skin").await
+}
+
+#[tauri::command]
+pub async fn reset_minecraft_skin(account_id: String) -> Result<MinecraftProfile, String> {
+    let account = refreshed_account_by_id(&account_id).await?;
+    let client = Client::new();
+    let resp = client
+        .delete(format!("{MC_PROFILE_URL}/skins/active"))
+        .bearer_auth(&account.access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Reset skin request: {e}"))?;
+
+    profile_from_mutation_response(&client, &account, resp, "Reset skin").await
+}
+
+#[tauri::command]
+pub async fn set_minecraft_cape(
+    account_id: String,
+    cape_id: String,
+) -> Result<MinecraftProfile, String> {
+    let account = refreshed_account_by_id(&account_id).await?;
+    let client = Client::new();
+    let resp = client
+        .put(format!("{MC_PROFILE_URL}/capes/active"))
+        .bearer_auth(&account.access_token)
+        .json(&CapeSelectionRequest { cape_id })
+        .send()
+        .await
+        .map_err(|e| format!("Set cape request: {e}"))?;
+
+    profile_from_mutation_response(&client, &account, resp, "Set cape").await
+}
+
+#[tauri::command]
+pub async fn hide_minecraft_cape(account_id: String) -> Result<MinecraftProfile, String> {
+    let account = refreshed_account_by_id(&account_id).await?;
+    let client = Client::new();
+    let resp = client
+        .delete(format!("{MC_PROFILE_URL}/capes/active"))
+        .bearer_auth(&account.access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Hide cape request: {e}"))?;
+
+    profile_from_mutation_response(&client, &account, resp, "Hide cape").await
 }
 
 #[tauri::command]

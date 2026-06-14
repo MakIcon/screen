@@ -312,7 +312,7 @@ pub struct LauncherSettings {
     pub plugins: LauncherPluginsSettings,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LauncherPluginsSettings {
     #[serde(default)]
@@ -407,21 +407,51 @@ pub struct MicrosoftAccount {
     pub expires_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftProfile {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub skins: Vec<MinecraftSkin>,
+    #[serde(default)]
+    pub capes: Vec<MinecraftCape>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftSkin {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub variant: Option<String>,
+    #[serde(default)]
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MinecraftCape {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub alias: Option<String>,
+}
+
 impl Default for LauncherSettings {
     fn default() -> Self {
         Self {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
             plugins: LauncherPluginsSettings::default(),
-        }
-    }
-}
-
-impl Default for LauncherPluginsSettings {
-    fn default() -> Self {
-        Self {
-            discord_rpc: DiscordRpcPluginSettings::default(),
-            mineflayer_bot: MineflayerBotPluginSettings::default(),
         }
     }
 }
