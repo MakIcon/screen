@@ -170,6 +170,7 @@ export type LauncherSettings = {
 export type LauncherPluginsSettings = {
   discordRpc: DiscordRpcPluginSettings;
   mineflayerBot: MineflayerBotPluginSettings;
+  blueMap: BlueMapPluginSettings;
 };
 
 export type DiscordRpcPluginSettings = {
@@ -204,6 +205,16 @@ export type MineflayerBotPluginSettings = {
   followDistance: number;
 };
 
+export type BlueMapPluginSettings = {
+  enabled: boolean;
+  mapUrl: string;
+  cliJarPath: string;
+  workingDir: string;
+  javaPath: string;
+  renderOnStart: boolean;
+  updateOnStart: boolean;
+};
+
 export type MineflayerBotStatus = {
   running: boolean;
   state: string;
@@ -211,6 +222,18 @@ export type MineflayerBotStatus = {
   ownerName?: string | null;
   botUsername?: string | null;
   server?: string | null;
+  lastError?: string | null;
+  logs: string[];
+};
+
+export type BlueMapStatus = {
+  running: boolean;
+  state: string;
+  pid?: number | null;
+  url: string;
+  cliJarPath?: string | null;
+  workingDir?: string | null;
+  worldPath?: string | null;
   lastError?: string | null;
   logs: string[];
 };

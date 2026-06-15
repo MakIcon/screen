@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import steveFaceIcon from "../../../assets/plugins/steve-face.svg";
 import type {
   LauncherPluginsSettings,
   MineflayerBotPluginSettings,
@@ -362,6 +363,10 @@ export const MINEFLAYER_BOT_PLUGIN_DEFINITION: PluginDefinition = {
   title: "MINEFLAYER BOT",
   tag: "BOT",
   mark: "BOT",
+  icon: {
+    src: steveFaceIcon,
+    alt: "Steve face",
+  },
   description: "Runs a trusted Minecraft bot that listens to owner-only commands.",
   getEnabled: (plugins) => plugins.mineflayerBot.enabled,
   getStatus: (plugins) => {

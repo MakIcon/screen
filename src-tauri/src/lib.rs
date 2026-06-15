@@ -9,6 +9,7 @@ pub mod window_fx;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(plugins::blue_map::BlueMapState::default())
         .manage(plugins::discord_rpc::DiscordRpcState::default())
         .manage(plugins::mineflayer_bot::MineflayerBotState::default())
         .plugin(tauri_plugin_shell::init())
@@ -66,6 +67,12 @@ pub fn run() {
             plugins::mineflayer_bot::start_mineflayer_bot,
             plugins::mineflayer_bot::stop_mineflayer_bot,
             plugins::mineflayer_bot::get_mineflayer_bot_status,
+            plugins::blue_map::prepare_bluemap,
+            plugins::blue_map::start_bluemap,
+            plugins::blue_map::stop_bluemap,
+            plugins::blue_map::get_bluemap_status,
+            plugins::blue_map::open_bluemap_browser,
+            plugins::blue_map::open_bluemap_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

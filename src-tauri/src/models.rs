@@ -350,6 +350,8 @@ pub struct LauncherPluginsSettings {
     pub discord_rpc: DiscordRpcPluginSettings,
     #[serde(default)]
     pub mineflayer_bot: MineflayerBotPluginSettings,
+    #[serde(default)]
+    pub blue_map: BlueMapPluginSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,6 +416,25 @@ pub struct MineflayerBotPluginSettings {
     pub follow_distance: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueMapPluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_bluemap_map_url")]
+    pub map_url: String,
+    #[serde(default)]
+    pub cli_jar_path: String,
+    #[serde(default)]
+    pub working_dir: String,
+    #[serde(default = "default_bluemap_java_path")]
+    pub java_path: String,
+    #[serde(default = "default_bluemap_render_on_start")]
+    pub render_on_start: bool,
+    #[serde(default = "default_bluemap_update_on_start")]
+    pub update_on_start: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MineflayerBotStatus {
@@ -423,6 +444,20 @@ pub struct MineflayerBotStatus {
     pub owner_name: Option<String>,
     pub bot_username: Option<String>,
     pub server: Option<String>,
+    pub last_error: Option<String>,
+    pub logs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueMapStatus {
+    pub running: bool,
+    pub state: String,
+    pub pid: Option<u32>,
+    pub url: String,
+    pub cli_jar_path: Option<String>,
+    pub working_dir: Option<String>,
+    pub world_path: Option<String>,
     pub last_error: Option<String>,
     pub logs: Vec<String>,
 }
@@ -487,6 +522,16 @@ impl Default for LauncherSettings {
     }
 }
 
+impl LauncherSettings {
+    pub fn blue_map_plugin(&self) -> &BlueMapPluginSettings {
+        &self.plugins.blue_map
+    }
+
+    pub fn blue_map_plugin_mut(&mut self) -> &mut BlueMapPluginSettings {
+        &mut self.plugins.blue_map
+    }
+}
+
 impl Default for DiscordRpcPluginSettings {
     fn default() -> Self {
         Self {
@@ -523,6 +568,20 @@ impl Default for MineflayerBotPluginSettings {
             bot_nickname: default_mineflayer_bot_nickname(),
             bot_microsoft_account_id: None,
             follow_distance: default_mineflayer_bot_follow_distance(),
+        }
+    }
+}
+
+impl Default for BlueMapPluginSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            map_url: default_bluemap_map_url(),
+            cli_jar_path: String::new(),
+            working_dir: String::new(),
+            java_path: default_bluemap_java_path(),
+            render_on_start: default_bluemap_render_on_start(),
+            update_on_start: default_bluemap_update_on_start(),
         }
     }
 }
@@ -589,6 +648,22 @@ fn default_mineflayer_bot_nickname() -> String {
 
 fn default_mineflayer_bot_follow_distance() -> u32 {
     3
+}
+
+fn default_bluemap_map_url() -> String {
+    "http://127.0.0.1:8100/".to_string()
+}
+
+fn default_bluemap_java_path() -> String {
+    "java".to_string()
+}
+
+fn default_bluemap_render_on_start() -> bool {
+    true
+}
+
+fn default_bluemap_update_on_start() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
