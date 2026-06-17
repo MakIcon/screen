@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Screen OBS Telemetry</title>
+  <style>
+    @font-face {
+      font-family: "Monocraft";
+      src: url("/font/monocraft.ttf") format("truetype");
+      font-display: block;
+    }
+
+    :root {
+      color-scheme: dark;
+      font-family: "Monocraft", "Minecraft Seven v2", "Minecraft", "Mojangles", "Minecraftia", monospace;
+      --ink: #ffffff;
+      --muted: #c9d0dc;
+      --xp: #80ff20;
+      --panel: rgba(0, 0, 0, 0);
+      --debug-panel: rgba(0, 0, 0, 0.66);
+      --sprite: 32px;
+      --icon: 64px;
+      --solo-icon: 92px;
+      --slot-gap: 10px;
+      --bar-height: 8px;
+      --pct-font: 22px;
+      --hud-font: 24px;
+      --xp-width: 637px;
+      --xp-height: 18px;
+      --pct-width: 52px;
+      --slot-column-gap: 8px;
+      --slot-row-gap: 5px;
+      --shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      width: 100vw;
+      height: 100vh;
+      min-width: 1px;
+      min-height: 100vh;
+      background: transparent;
+      color: var(--ink);
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      font-family: "Monocraft", "Minecraft Seven v2", "Minecraft", "Mojangles", "Minecraftia", monospace;
+      font-smooth: never;
+      -webkit-font-smoothing: none;
+      text-rendering: geometricPrecision;
+    }
+
+    body.bg { --panel: var(--debug-panel); }
+    body.view-settings { overflow: auto; }
+
+    .hud {
+      width: fit-content;
+      max-width: 100vw;
+      display: grid;
+      gap: 8px;
+      padding: 4px;
+      background: transparent;
+    }
+
+    .panel {
+      display: none;
+      width: fit-content;
+      max-width: 100vw;
+      background: var(--panel);
+      color: var(--ink);
+      text-shadow: var(--shadow);
+    }
+
+    body.view-overlay .panel[data-panel="health"],
+    body.view-overlay .panel[data-panel="food"],
+    body.view-overlay .panel[data-panel="xp"],
+    body.view-overlay .panel[data-panel="armor"],
+    body.view-overlay .panel[data-panel="coords"],
+    body.view-overlay .panel[data-panel="dimension"],
+    body.view-overlay .panel[data-panel="items"] { display: block; }
+
+    body.single.view-health .panel[data-panel="health"],
+    body.single.view-food .panel[data-panel="food"],
+    body.single.view-xp .panel[data-panel="xp"],
+    body.single.view-armor .panel[data-panel="armor"],
+    body.single.view-helmet .panel[data-panel="helmet"],
+    body.single.view-chestplate .panel[data-panel="chestplate"],
+    body.single.view-leggings .panel[data-panel="leggings"],
+    body.single.view-boots .panel[data-panel="boots"],
+    body.single.view-coords .panel[data-panel="coords"],
+    body.single.view-items .panel[data-panel="items"],
+    body.single.view-mainhand .panel[data-panel="mainhand"],
+    body.single.view-offhand .panel[data-panel="offhand"],
+    body.single.view-dimension .panel[data-panel="dimension"],
+    body.single.view-settings .panel[data-panel="settings"] { display: block; }
+
+    body.view-settings .hud {
+      width: min(920px, 100vw);
+      padding: 16px;
+      gap: 10px;
+    }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      height: var(--sprite);
+      padding: 0;
+    }
+
+    .sprite {
+      width: var(--sprite);
+      height: var(--sprite);
+      image-rendering: pixelated;
+      object-fit: contain;
+      filter: drop-shadow(2px 2px 0 #000);
+    }
+
+    .xp-wrap {
+      position: relative;
+      width: var(--xp-width);
+      height: calc(var(--xp-height) + 28px);
+      margin-top: 4px;
+    }
+
+    .xp-bg,
+    .xp-fill {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: var(--xp-height);
+      image-rendering: pixelated;
+      background-repeat: no-repeat;
+      background-position: left bottom;
+      background-size: var(--xp-width) var(--xp-height);
+    }
+
+    .xp-bg {
+      width: var(--xp-width);
+    }
+
+    .xp-fill {
+      width: 0%;
+      overflow: hidden;
+    }
+
+    .xp-fill::before {
+      content: "";
+      display: block;
+      width: var(--xp-width);
+      height: var(--xp-height);
+      image-rendering: pixelated;
+      background: inherit;
+      background-size: var(--xp-width) var(--xp-height);
+    }
+
+    .xp-level {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      min-width: 32px;
+      color: var(--xp);
+      font-family: "Monocraft", "Minecraft Seven v2", "Minecraft", "Mojangles", "Minecraftia", monospace;
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1;
+      text-align: center;
+      text-shadow: 2px 2px 0 #1f3d13, -2px 0 0 #000, 0 -2px 0 #000, 2px 0 0 #000, 0 2px 0 #000;
+      transform: translateX(-50%);
+    }
+
+    .gear-grid,
+    .items-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: var(--slot-gap);
+    }
+
+    .gear-slot {
+      width: max-content;
+      display: grid;
+      grid-template-columns: var(--icon) auto;
+      grid-template-rows: var(--icon) var(--bar-height);
+      column-gap: 8px;
+      row-gap: 5px;
+      column-gap: var(--slot-column-gap);
+      row-gap: var(--slot-row-gap);
+      align-items: end;
+      padding: 0;
+    }
+
+    .single-slot .gear-slot {
+      grid-template-columns: var(--solo-icon) auto;
+      grid-template-rows: var(--solo-icon) var(--bar-height);
+      column-gap: var(--slot-column-gap);
+      row-gap: var(--slot-row-gap);
+    }
+
+    .item-icon {
+      width: var(--icon);
+      height: var(--icon);
+      grid-column: 1;
+      grid-row: 1;
+      align-self: center;
+      justify-self: center;
+      image-rendering: pixelated;
+      object-fit: contain;
+      filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.95));
+    }
+
+    .single-slot .item-icon {
+      width: var(--solo-icon);
+      height: var(--solo-icon);
+    }
+
+    .item-icon.tint-foliage {
+      filter: sepia(1) saturate(3.3) hue-rotate(36deg) brightness(1.12) drop-shadow(2px 2px 0 rgba(0,0,0,0.95));
+    }
+
+    .item-icon.missing {
+      opacity: 0.18;
+    }
+
+    .item-pct {
+      min-width: var(--pct-width);
+      grid-column: 2;
+      grid-row: 2;
+      align-self: center;
+      color: var(--ink);
+      font-family: "Monocraft", "Minecraft Seven v2", "Minecraft", "Mojangles", "Minecraftia", monospace;
+      font-size: var(--pct-font);
+      font-weight: 900;
+      line-height: 1;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .durability {
+      width: var(--icon);
+      height: var(--bar-height);
+      grid-column: 1;
+      grid-row: 2;
+      overflow: hidden;
+      background: rgba(0,0,0,0.7);
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.2);
+    }
+
+    .single-slot .durability {
+      width: var(--solo-icon);
+    }
+
+    .durability span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #d92626 0%, #ffd94a 45%, #36f05d 100%);
+    }
+
+    .gear-slot.no-durability .durability,
+    .gear-slot.no-durability .item-pct {
+      visibility: hidden;
+    }
+
+    .coords,
+    .dimension {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: "Monocraft", "Minecraft Seven v2", "Minecraft", "Mojangles", "Minecraftia", monospace;
+      font-size: var(--hud-font);
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .coords span {
+      color: var(--muted);
+      font-size: calc(var(--hud-font) * 0.72);
+      font-weight: 900;
+    }
+
+    .coords .axis-x { color: #ff5555; }
+    .coords .axis-y { color: #55ff55; }
+    .coords .axis-z { color: #5599ff; }
+
+    .dimension-cube {
+      width: 28px;
+      height: 28px;
+      image-rendering: pixelated;
+      background: #65b447;
+      box-shadow: inset 0 -8px rgba(0,0,0,0.28), inset -8px 0 rgba(255,255,255,0.12), 2px 2px 0 #000;
+    }
+
+    .dimension.nether .dimension-cube { background: #b43131; }
+    .dimension.end .dimension-cube { background: #7665c8; }
+
+    .settings {
+      width: min(920px, 100vw);
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      background: rgba(0,0,0,0.72);
+      text-shadow: none;
+    }
+
+    .settings h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .settings p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .settings-card {
+      min-width: 0;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: var(--ink);
+      cursor: pointer;
+      padding: 10px;
+      text-align: left;
+    }
+
+    .settings-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    .settings-card strong {
+      display: block;
+      margin-top: 5px;
+      overflow: hidden;
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main class="hud">
+    <section class="panel" data-panel="health"><div class="stat-row" id="healthRow"></div></section>
+    <section class="panel" data-panel="food"><div class="stat-row" id="foodRow"></div></section>
+    <section class="panel" data-panel="xp">
+      <div class="xp-wrap">
+        <div id="xpLevel" class="xp-level">0</div>
+        <div id="xpBg" class="xp-bg"></div>
+        <div id="xpFill" class="xp-fill"></div>
+      </div>
+    </section>
+    <section class="panel" data-panel="armor">
+      <div class="stat-row" id="armorRow"></div>
+      <div class="gear-grid" id="armorSet"></div>
+    </section>
+    <section class="panel single-slot" data-panel="helmet" id="helmetPanel"></section>
+    <section class="panel single-slot" data-panel="chestplate" id="chestplatePanel"></section>
+    <section class="panel single-slot" data-panel="leggings" id="leggingsPanel"></section>
+    <section class="panel single-slot" data-panel="boots" id="bootsPanel"></section>
+    <section class="panel" data-panel="coords"><div class="coords" id="coordsLine"></div></section>
+    <section class="panel" data-panel="dimension"><div class="dimension" id="dimensionLine"><span class="dimension-cube"></span><strong>--</strong></div></section>
+    <section class="panel" data-panel="items"><div class="items-grid"><div id="mainhandFull"></div><div id="offhandFull"></div></div></section>
+    <section class="panel single-slot" data-panel="mainhand" id="mainhandPanel"></section>
+    <section class="panel single-slot" data-panel="offhand" id="offhandPanel"></section>
+    <section class="panel" data-panel="settings">
+      <div class="settings">
+        <h1>OBS Telemetry Sources</h1>
+        <p>Click a tile to copy the URL. The overlay auto-fits the browser source; add ?scale=8 to force a size, or ?bg=1 for a dark preview background.</p>
+        <div class="settings-grid" id="settingsGrid"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    const view = location.pathname.replace("/", "") || "overlay";
+    document.body.classList.add(`view-${view}`);
+    if (view !== "overlay") document.body.classList.add("single", `view-${view}`);
+    if (params.get("bg") === "1") document.body.classList.add("bg");
+
+    const VIEWS = ["overlay", "settings", "health", "food", "xp", "armor", "helmet", "chestplate", "leggings", "boots", "coords", "dimension", "items", "mainhand", "offhand"];
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const fmt = (value, digits = 0) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "--";
+    const lastSrc = new WeakMap();
+
+    function autoBaseSize() {
+      if (view === "health" || view === "food") return [90, 9];
+      if (view === "xp") return [182, 17];
+      if (view === "armor") return [120, 42];
+      if (["helmet", "chestplate", "leggings", "boots", "mainhand", "offhand"].includes(view)) return [52, 34];
+      if (view === "coords") return [82, 12];
+      if (view === "dimension") return [86, 14];
+      if (view === "items") return [110, 34];
+      if (view === "settings") return [920, 620];
+      return [205, 128];
+    }
+
+    function resolveScale() {
+      const raw = Number(params.get("scale"));
+      if (Number.isFinite(raw) && raw > 0) return clamp(Math.round(raw), 1, 24);
+
+      const [baseWidth, baseHeight] = autoBaseSize();
+      const safeWidth = Math.max(1, window.innerWidth - 8);
+      const safeHeight = Math.max(1, window.innerHeight - 8);
+      const fit = Math.floor(Math.min(safeWidth / baseWidth, safeHeight / baseHeight));
+      return clamp(fit, view === "settings" ? 1 : 2, view === "settings" ? 1 : 24);
+    }
+
+    function applyScale() {
+      const scale = resolveScale();
+      const root = document.documentElement.style;
+      root.setProperty("--sprite", `${Math.round(9 * scale)}px`);
+      root.setProperty("--icon", `${Math.round(18 * scale)}px`);
+      root.setProperty("--solo-icon", `${Math.round(28 * scale)}px`);
+      root.setProperty("--bar-height", `${Math.max(6, Math.round(2.2 * scale))}px`);
+      root.setProperty("--pct-font", `${Math.round(6.4 * scale)}px`);
+      root.setProperty("--hud-font", `${Math.round(7.2 * scale)}px`);
+      root.setProperty("--xp-width", `${Math.round(182 * scale)}px`);
+      root.setProperty("--xp-height", `${Math.max(12, Math.round(5 * scale))}px`);
+      root.setProperty("--slot-gap", `${Math.round(3 * scale)}px`);
+      root.setProperty("--pct-width", `${Math.round(14 * scale)}px`);
+      root.setProperty("--slot-column-gap", `${Math.round(2 * scale)}px`);
+      root.setProperty("--slot-row-gap", `${Math.max(4, Math.round(1.5 * scale))}px`);
+    }
+
+    function texture(version, path) {
+      return `/texture/${encodeURIComponent(version || "1.21.1")}/${path}`;
+    }
+
+    function iconUrl(version, item) {
+      const key = (item?.itemId || "").replace(/^minecraft:/, "");
+      return key && key !== "air" ? `/icon/${encodeURIComponent(version || "1.21.1")}/${encodeURIComponent(key)}` : "";
+    }
+
+    function setImg(img, src) {
+      if (lastSrc.get(img) === src) return;
+      lastSrc.set(img, src);
+      img.src = src;
+    }
+
+    function createSprite() {
+      const img = document.createElement("img");
+      img.className = "sprite";
+      img.alt = "";
+      return img;
+    }
+
+    function ensureSpriteRow(target) {
+      while (target.children.length < 10) target.appendChild(createSprite());
+      while (target.children.length > 10) target.lastChild.remove();
+    }
+
+    function renderSprites(target, version, count, fullPath, halfPath, emptyPath) {
+      ensureSpriteRow(target);
+      const units = Math.max(0, Math.ceil(count));
+      Array.from(target.children).forEach((img, index) => {
+        const remaining = units - index * 2;
+        const path = remaining >= 2 ? fullPath : remaining > 0 ? halfPath : emptyPath;
+        setImg(img, texture(version, path));
+      });
+    }
+
+    function isTintedItem(item) {
+      const id = (item?.itemId || "").replace(/^minecraft:/, "");
+      return /(^|_)(leaves|grass|fern|foliage|vine|vines)$/.test(id)
+        || id.includes("grass_block")
+        || id.includes("oak_leaves")
+        || id.includes("spruce_leaves")
+        || id.includes("birch_leaves")
+        || id.includes("jungle_leaves")
+        || id.includes("acacia_leaves")
+        || id.includes("dark_oak_leaves")
+        || id.includes("mangrove_leaves")
+        || id.includes("cherry_leaves")
+        || id.includes("azalea_leaves");
+    }
+
+    function makeSlot() {
+      const slot = document.createElement("div");
+      slot.className = "gear-slot no-durability";
+
+      const img = document.createElement("img");
+      img.className = "item-icon missing";
+      img.alt = "";
+      img.draggable = false;
+      img.onerror = () => {
+        img.removeAttribute("src");
+        img.classList.add("missing");
+      };
+
+      const pct = document.createElement("div");
+      pct.className = "item-pct";
+
+      const bar = document.createElement("div");
+      bar.className = "durability";
+      const fill = document.createElement("span");
+      bar.appendChild(fill);
+
+      slot.append(img, pct, bar);
+      slot._icon = img;
+      slot._pct = pct;
+      slot._fill = fill;
+      return slot;
+    }
+
+    function updateSlot(slot, item, version) {
+      const img = slot._icon;
+      const pct = slot._pct;
+      const fill = slot._fill;
+      const src = iconUrl(version, item);
+      const hasItem = Boolean(src);
+      const hasDurability = Boolean(item?.maxDamage);
+
+      slot.classList.toggle("no-durability", !hasDurability);
+      img.classList.toggle("missing", !hasItem);
+      img.classList.toggle("tint-foliage", isTintedItem(item));
+
+      if (hasItem) {
+        setImg(img, src);
+      } else {
+        img.removeAttribute("src");
+        lastSrc.delete(img);
+      }
+
+      if (hasDurability) {
+        const durability = clamp(item.durabilityPercent, 0, 100);
+        fill.style.width = `${durability}%`;
+        pct.textContent = `${fmt(durability, 0)}%`;
+      } else {
+        fill.style.width = "0%";
+        pct.textContent = "";
+      }
+    }
+
+    function ensureSlots(target, count) {
+      while (target.children.length < count) target.appendChild(makeSlot());
+      while (target.children.length > count) target.lastChild.remove();
+    }
+
+    function renderSlotList(target, items, version) {
+      ensureSlots(target, items.length);
+      items.forEach((item, index) => updateSlot(target.children[index], item, version));
+    }
+
+    function setItemPanel(id, item, version) {
+      const target = $(id);
+      ensureSlots(target, 1);
+      updateSlot(target.children[0], item, version);
+    }
+
+    function dimensionInfo(raw) {
+      if (raw === "minecraft:the_nether") return ["nether", "Nether"];
+      if (raw === "minecraft:the_end") return ["end", "The End"];
+      if (raw === "minecraft:overworld") return ["overworld", "Overworld"];
+      return ["overworld", raw || "--"];
+    }
+
+    function renderSettings() {
+      const origin = `${location.protocol}//${location.host}`;
+      const grid = $("settingsGrid");
+      if (grid.children.length === VIEWS.length) return;
+      grid.replaceChildren();
+      for (const viewName of VIEWS) {
+        const button = document.createElement("button");
+        button.className = "settings-card";
+        const url = `${origin}/${viewName === "overlay" ? "overlay" : viewName}`;
+        button.onclick = () => navigator.clipboard?.writeText(url);
+        button.innerHTML = `<span>${viewName.toUpperCase()}</span><strong>${url}</strong>`;
+        grid.appendChild(button);
+      }
+    }
+
+    function update(status) {
+      renderSettings();
+      const payload = status.lastPayload;
+      const stale = status.lastUpdateAgeMs == null || status.lastUpdateAgeMs > 5000;
+      if (!payload || stale) return;
+
+      const version = payload.minecraftVersion || "1.21.1";
+      renderSprites($("healthRow"), version, clamp(Math.ceil(payload.health || 0), 0, 20), "gui/sprites/hud/heart/full", "gui/sprites/hud/heart/half", "gui/sprites/hud/heart/container");
+      renderSprites($("foodRow"), version, clamp(Math.ceil(payload.food || 0), 0, 20), "gui/sprites/hud/food_full", "gui/sprites/hud/food_half", "gui/sprites/hud/food_empty");
+      renderSprites($("armorRow"), version, clamp(Math.ceil(payload.armor || 0), 0, 20), "gui/sprites/hud/armor_full", "gui/sprites/hud/armor_half", "gui/sprites/hud/armor_empty");
+
+      $("xpBg").style.backgroundImage = `url("${texture(version, "gui/sprites/hud/experience_bar_background")}")`;
+      $("xpFill").style.backgroundImage = `url("${texture(version, "gui/sprites/hud/experience_bar_progress")}")`;
+      $("xpFill").style.width = `${clamp((payload.experienceProgress || 0) * 100, 0, 100)}%`;
+      $("xpLevel").textContent = payload.experienceLevel || 0;
+
+      const block = payload.blockPosition || {};
+      $("coordsLine").innerHTML = `<span class="axis-x">x:</span> ${block.x ?? "--"} <span class="axis-y">y:</span> ${block.y ?? "--"} <span class="axis-z">z:</span> ${block.z ?? "--"}`;
+
+      const [dimensionClass, dimensionLabel] = dimensionInfo(payload.dimension);
+      const dimensionLine = $("dimensionLine");
+      dimensionLine.className = `dimension ${dimensionClass}`;
+      dimensionLine.querySelector("strong").textContent = dimensionLabel;
+
+      const armorBySlot = Object.fromEntries((payload.armorItems || []).map((item) => [item.slot, item]));
+      const armorItems = [armorBySlot.head, armorBySlot.chest, armorBySlot.legs, armorBySlot.feet];
+      renderSlotList($("armorSet"), armorItems, version);
+      setItemPanel("helmetPanel", armorBySlot.head, version);
+      setItemPanel("chestplatePanel", armorBySlot.chest, version);
+      setItemPanel("leggingsPanel", armorBySlot.legs, version);
+      setItemPanel("bootsPanel", armorBySlot.feet, version);
+      setItemPanel("mainhandPanel", payload.heldItem, version);
+      setItemPanel("offhandPanel", payload.offhandItem, version);
+      renderSlotList($("mainhandFull"), [payload.heldItem], version);
+      renderSlotList($("offhandFull"), [payload.offhandItem], version);
+    }
+
+    async function poll() {
+      try {
+        const response = await fetch("/state.json", { cache: "no-store" });
+        update(await response.json());
+      } catch {
+        renderSettings();
+      }
+    }
+
+    applyScale();
+    window.addEventListener("resize", applyScale);
+    document.fonts?.ready?.then(applyScale);
+    renderSettings();
+    poll();
+    setInterval(poll, 350);
+  </script>
+</body>
+</html>

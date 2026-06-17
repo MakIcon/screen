@@ -352,6 +352,8 @@ pub struct LauncherPluginsSettings {
     pub mineflayer_bot: MineflayerBotPluginSettings,
     #[serde(default)]
     pub blue_map: BlueMapPluginSettings,
+    #[serde(default)]
+    pub obs_telemetry: ObsTelemetryPluginSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -435,6 +437,15 @@ pub struct BlueMapPluginSettings {
     pub update_on_start: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryPluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_obs_telemetry_port")]
+    pub port: u16,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MineflayerBotStatus {
@@ -458,6 +469,108 @@ pub struct BlueMapStatus {
     pub cli_jar_path: Option<String>,
     pub working_dir: Option<String>,
     pub world_path: Option<String>,
+    pub last_error: Option<String>,
+    pub logs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryPosition {
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default)]
+    pub z: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryBlockPosition {
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+    #[serde(default)]
+    pub z: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryItem {
+    #[serde(default)]
+    pub slot: Option<String>,
+    #[serde(default)]
+    pub item_id: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default)]
+    pub damage: u32,
+    #[serde(default)]
+    pub max_damage: u32,
+    #[serde(default)]
+    pub durability: u32,
+    #[serde(default)]
+    pub durability_percent: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryPayload {
+    #[serde(default)]
+    pub minecraft_version: String,
+    #[serde(default)]
+    pub player_name: String,
+    #[serde(default)]
+    pub dimension: String,
+    #[serde(default)]
+    pub health: f32,
+    #[serde(default)]
+    pub max_health: f32,
+    #[serde(default)]
+    pub armor: u32,
+    #[serde(default)]
+    pub food: u32,
+    #[serde(default)]
+    pub saturation: f32,
+    #[serde(default)]
+    pub experience_level: u32,
+    #[serde(default)]
+    pub experience_progress: f32,
+    #[serde(default)]
+    pub total_experience: u32,
+    #[serde(default)]
+    pub yaw: f32,
+    #[serde(default)]
+    pub pitch: f32,
+    #[serde(default)]
+    pub position: ObsTelemetryPosition,
+    #[serde(default)]
+    pub block_position: ObsTelemetryBlockPosition,
+    #[serde(default)]
+    pub held_item: Option<ObsTelemetryItem>,
+    #[serde(default)]
+    pub offhand_item: Option<ObsTelemetryItem>,
+    #[serde(default)]
+    pub armor_items: Vec<ObsTelemetryItem>,
+    #[serde(default)]
+    pub sent_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObsTelemetryStatus {
+    pub running: bool,
+    pub state: String,
+    pub port: u16,
+    pub overlay_url: String,
+    pub overlay_urls: HashMap<String, String>,
+    pub json_url: String,
+    pub last_player_name: Option<String>,
+    pub last_update_age_ms: Option<u64>,
+    pub last_payload: Option<ObsTelemetryPayload>,
     pub last_error: Option<String>,
     pub logs: Vec<String>,
 }
@@ -586,6 +699,15 @@ impl Default for BlueMapPluginSettings {
     }
 }
 
+impl Default for ObsTelemetryPluginSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_obs_telemetry_port(),
+        }
+    }
+}
+
 fn default_optimized_java_args() -> bool {
     true
 }
@@ -664,6 +786,10 @@ fn default_bluemap_render_on_start() -> bool {
 
 fn default_bluemap_update_on_start() -> bool {
     true
+}
+
+fn default_obs_telemetry_port() -> u16 {
+    18991
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

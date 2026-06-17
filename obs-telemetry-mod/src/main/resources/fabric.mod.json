@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "obs-telemetry",
+	"version": "${version}",
+	"name": "OBS Telemetry",
+	"description": "Posts local client player telemetry to ScreenLauncher for OBS overlays.",
+	"authors": [
+		"makicon"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/obs-telemetry/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.makicon.screen.obs.client.OBSTelemetryClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=21"
+	}
+}

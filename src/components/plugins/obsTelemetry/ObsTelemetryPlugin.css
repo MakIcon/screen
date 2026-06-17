@@ -1,0 +1,220 @@
+.obs-telemetry-settings {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px 18px;
+}
+
+.obs-telemetry-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obs-telemetry-field--wide,
+.obs-telemetry-links,
+.obs-telemetry-subhead,
+.obs-telemetry-controls,
+.obs-telemetry-status,
+.obs-telemetry-readout,
+.obs-telemetry-error,
+.obs-telemetry-log {
+  grid-column: 1 / -1;
+}
+
+.obs-telemetry-field span,
+.obs-telemetry-subhead {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.obs-telemetry-field input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--ink);
+  outline: none;
+  padding: 0 14px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.obs-telemetry-field input:focus {
+  border-color: var(--line-strong);
+  background: var(--bg-card-strong);
+}
+
+.obs-telemetry-field input[readonly] {
+  color: var(--text-alt);
+}
+
+.obs-telemetry-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.obs-telemetry-links button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.obs-telemetry-links button:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+}
+
+.obs-telemetry-links span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.obs-telemetry-links strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-alt);
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-telemetry-subhead {
+  margin-top: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--accent);
+}
+
+.obs-telemetry-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.obs-telemetry-controls button {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.obs-telemetry-controls button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.obs-telemetry-controls button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.obs-telemetry-status,
+.obs-telemetry-readout {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.obs-telemetry-status div,
+.obs-telemetry-readout div {
+  min-width: 0;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.obs-telemetry-status div:last-child,
+.obs-telemetry-readout div:last-child {
+  border-right: none;
+}
+
+.obs-telemetry-status span,
+.obs-telemetry-readout span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.obs-telemetry-status strong,
+.obs-telemetry-readout strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obs-telemetry-error {
+  border: 1px solid rgba(194, 65, 12, 0.32);
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+  padding: 12px 14px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.obs-telemetry-log {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  padding: 12px 14px;
+  color: var(--text-alt);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.obs-telemetry-log span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .obs-telemetry-settings,
+  .obs-telemetry-links,
+  .obs-telemetry-controls,
+  .obs-telemetry-status,
+  .obs-telemetry-readout {
+    grid-template-columns: 1fr;
+  }
+
+  .obs-telemetry-status div,
+  .obs-telemetry-readout div {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .obs-telemetry-status div:last-child,
+  .obs-telemetry-readout div:last-child {
+    border-bottom: none;
+  }
+}

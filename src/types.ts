@@ -171,6 +171,7 @@ export type LauncherPluginsSettings = {
   discordRpc: DiscordRpcPluginSettings;
   mineflayerBot: MineflayerBotPluginSettings;
   blueMap: BlueMapPluginSettings;
+  obsTelemetry: ObsTelemetryPluginSettings;
 };
 
 export type DiscordRpcPluginSettings = {
@@ -215,6 +216,11 @@ export type BlueMapPluginSettings = {
   updateOnStart: boolean;
 };
 
+export type ObsTelemetryPluginSettings = {
+  enabled: boolean;
+  port: number;
+};
+
 export type MineflayerBotStatus = {
   running: boolean;
   state: string;
@@ -234,6 +240,65 @@ export type BlueMapStatus = {
   cliJarPath?: string | null;
   workingDir?: string | null;
   worldPath?: string | null;
+  lastError?: string | null;
+  logs: string[];
+};
+
+export type ObsTelemetryPosition = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type ObsTelemetryBlockPosition = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type ObsTelemetryItem = {
+  slot?: string | null;
+  itemId: string;
+  displayName: string;
+  count: number;
+  damage: number;
+  maxDamage: number;
+  durability: number;
+  durabilityPercent: number;
+};
+
+export type ObsTelemetryPayload = {
+  minecraftVersion: string;
+  playerName: string;
+  dimension: string;
+  health: number;
+  maxHealth: number;
+  armor: number;
+  food: number;
+  saturation: number;
+  experienceLevel: number;
+  experienceProgress: number;
+  totalExperience: number;
+  yaw: number;
+  pitch: number;
+  position: ObsTelemetryPosition;
+  blockPosition: ObsTelemetryBlockPosition;
+  heldItem?: ObsTelemetryItem | null;
+  offhandItem?: ObsTelemetryItem | null;
+  armorItems: ObsTelemetryItem[];
+  sentAtMs?: number | null;
+};
+
+export type ObsTelemetryStatus = {
+  running: boolean;
+  state: string;
+  port: number;
+  overlayUrl: string;
+  overlayUrls: Record<string, string>;
+  jsonUrl: string;
+  lastPlayerName?: string | null;
+  lastUpdateAgeMs?: number | null;
+  lastPayload?: ObsTelemetryPayload | null;
   lastError?: string | null;
   logs: string[];
 };

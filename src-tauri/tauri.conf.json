@@ -28,7 +28,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "resources/mineflayer-bot-worker.cjs"
+      "resources/mineflayer-bot-worker.cjs",
+      "resources/obs-telemetry/*"
     ],
     "icon": [
       "icons/32x32.png",

@@ -4,7 +4,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use tokio::fs;
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     },
     models::{ActionResult, LaunchLogSnapshot, ScreenshotImage, ScreenshotItem},
     paths::{read_instances, read_settings, write_instances},
+    plugins::obs_telemetry::{prepare_obs_telemetry_for_launch, ObsTelemetryState},
 };
 
 fn screenshot_mime_for_path(path: &Path) -> Option<&'static str> {
@@ -135,6 +136,7 @@ pub async fn install_instance(app: AppHandle, instance_id: String) -> Result<Act
 #[tauri::command]
 pub async fn launch_instance(
     app: AppHandle,
+    obs_telemetry_state: State<'_, ObsTelemetryState>,
     instance_id: String,
     nickname: String,
     ms_account_id: Option<String>,
@@ -161,12 +163,20 @@ pub async fn launch_instance(
     update_instance_status(&instance.id, "UPDATING").await?;
     install_instance_files(&app, &instance).await?;
     let settings = read_settings().await?;
+    let obs_jvm_args = prepare_obs_telemetry_for_launch(
+        &app,
+        &obs_telemetry_state,
+        &settings.plugins.obs_telemetry,
+        &instance,
+    )
+    .await?;
     let (java_bin, args) = build_launch_command(
         &app,
         &instance,
         &nickname,
         ms_account.as_ref(),
         settings.optimized_java_args,
+        &obs_jvm_args,
     )
     .await?;
     let pid = spawn_minecraft_and_persist(app, &instance, java_bin, args).await?;

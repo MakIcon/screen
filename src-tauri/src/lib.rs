@@ -12,6 +12,7 @@ pub fn run() {
         .manage(plugins::blue_map::BlueMapState::default())
         .manage(plugins::discord_rpc::DiscordRpcState::default())
         .manage(plugins::mineflayer_bot::MineflayerBotState::default())
+        .manage(plugins::obs_telemetry::ObsTelemetryState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -73,6 +74,10 @@ pub fn run() {
             plugins::blue_map::get_bluemap_status,
             plugins::blue_map::open_bluemap_browser,
             plugins::blue_map::open_bluemap_window,
+            plugins::obs_telemetry::start_obs_telemetry,
+            plugins::obs_telemetry::stop_obs_telemetry,
+            plugins::obs_telemetry::get_obs_telemetry_status,
+            plugins::obs_telemetry::open_obs_telemetry_overlay,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -328,6 +328,7 @@ pub async fn build_launch_command(
     nickname: &str,
     ms_account: Option<&MicrosoftAccount>,
     optimized_java_args_enabled: bool,
+    extra_jvm_args: &[String],
 ) -> Result<(String, Vec<String>), String> {
     let client = Client::new();
     let resolved_version_id = effective_version_id_for_instance(instance)?;
@@ -453,6 +454,7 @@ pub async fn build_launch_command(
     } else if optimized_java_args_enabled {
         args.extend(optimized_minecraft_jvm_args(ram_gb));
     }
+    args.extend(extra_jvm_args.iter().cloned());
 
     // For offline accounts block the real auth endpoints; MS accounts use real ones
     if ms_account.is_none() {
