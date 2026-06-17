@@ -294,6 +294,12 @@ export function MicrosoftAccountsModal({
   const [previewMotion, setPreviewMotion] = useState<PreviewMotion>("IDLE");
   const [previewZoomEnabled, setPreviewZoomEnabled] = useState(true);
   const [previewResetKey, setPreviewResetKey] = useState(0);
+  const [avatarVersions, setAvatarVersions] = useState<Record<string, number>>({});
+
+  const bumpAvatar = (uuid: string | undefined | null) => {
+    if (!uuid) return;
+    setAvatarVersions((prev) => ({ ...prev, [uuid]: (prev[uuid] ?? 0) + 1 }));
+  };
 
   const activeSkin = useMemo(() => getActiveSkin(profile), [profile]);
   const activeCape = useMemo(() => getActiveCape(profile), [profile]);
@@ -411,6 +417,7 @@ export function MicrosoftAccountsModal({
         data: skinDraft.bytes,
       });
       syncPreviewFromProfile(nextProfile);
+      bumpAvatar(selectedAccount.uuid);
     } catch (error) {
       setProfileError(String(error));
     } finally {
@@ -428,6 +435,7 @@ export function MicrosoftAccountsModal({
         accountId: selectedAccount.id,
       });
       syncPreviewFromProfile(nextProfile);
+      bumpAvatar(selectedAccount.uuid);
     } catch (error) {
       setProfileError(String(error));
     } finally {
@@ -514,7 +522,8 @@ export function MicrosoftAccountsModal({
                   >
                     <div className="ms-account-avatar">
                       <img
-                        src={`https://mc-heads.net/avatar/${acc.uuid}/32`}
+                        key={avatarVersions[acc.uuid] ?? 0}
+                        src={`https://mc-heads.net/avatar/${acc.uuid}/32?cb=${avatarVersions[acc.uuid] ?? 0}`}
                         alt={acc.username}
                         width={32}
                         height={32}

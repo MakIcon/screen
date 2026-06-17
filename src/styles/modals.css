@@ -245,6 +245,68 @@
 .stats-tab-body::-webkit-scrollbar { width: 3px; }
 .stats-tab-body::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
+/* ── Mod constellation ── */
+
+.constellation-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.constellation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+
+.constellation-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.constellation-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.constellation-legend-note {
+  color: var(--muted-soft);
+  letter-spacing: 0.5px;
+  text-transform: none;
+  font-weight: 600;
+  /* pull the leading "—" closer so it sits evenly between "РЕС. ПАК" and "линии" */
+  margin-left: -12px;
+}
+
+.constellation-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0a090d;
+  touch-action: none;
+}
+
+.constellation-canvas-wrap canvas {
+  display: block;
+}
+
+.constellation-hint {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--muted-soft);
+  text-align: center;
+}
+
 /* ── Microsoft Accounts Modal ── */
 
 .ms-modal {

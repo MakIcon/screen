@@ -264,6 +264,15 @@ fn diagnose_launch_hint(log_tail: &str, crash_report_tail: Option<&str>) -> Opti
         crash_report_tail.unwrap_or_default().to_ascii_lowercase()
     );
 
+    if combined.contains("modsettingsentry")
+        || (combined.contains("noclassdeffounderror") && combined.contains("net/vulkanmod"))
+    {
+        return Some(
+            "Beryl needs a newer VulkanMod than the one installed. The net.vulkanmod.config.gui.ModSettingsEntry class was added in VulkanMod 0.6.4, so update VulkanMod to 0.6.4 or newer (for 1.21.1 use 0.6.7+1.21.1), then launch again."
+                .to_string(),
+        );
+    }
+
     if combined.contains("beryl.mixins")
         && combined.contains("@mixin target")
         && combined.contains("was not found")

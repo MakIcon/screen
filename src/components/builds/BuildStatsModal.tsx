@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InstanceItem, InstalledModView } from "../../types";
+import { BuildConstellation } from "./BuildConstellation";
 
 type StatsTab = "timeline" | "heatmap" | "constellation";
 type TLDir = "v" | "h";
@@ -550,10 +551,15 @@ export function BuildStatsModal({ instance, onClose }: Props) {
           {tab === "timeline"      && timelineContent}
           {tab === "heatmap"       && <HeatmapTab instance={instance} />}
           {tab === "constellation" && (
-            <div className="stats-coming-soon">
-              <span className="stats-coming-label">СОЗВЕЗДИЕ МОДОВ</span>
-              <p className="stats-coming-text">Здесь будет граф зависимостей установленных модов</p>
-            </div>
+            <BuildConstellation
+              instanceId={instance.id}
+              loader={instance.loader}
+              version={instance.version}
+              mods={mods}
+              packs={packs}
+              shaders={shaders}
+              loading={loading}
+            />
           )}
         </div>
       </div>

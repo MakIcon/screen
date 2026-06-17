@@ -46,6 +46,7 @@ pub fn run() {
             commands::system::get_system_memory_gb,
             commands::modrinth::get_modrinth_fabric_versions,
             commands::modrinth::get_modrinth_project_icons,
+            commands::modrinth::get_modrinth_project_authors,
             commands::modrinth::search_modrinth_mods,
             commands::modrinth::install_modrinth_project,
             commands::modrinth::list_installed_mods,

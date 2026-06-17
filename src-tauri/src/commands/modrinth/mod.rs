@@ -398,6 +398,60 @@ pub async fn get_modrinth_project_icons(
     Ok(result)
 }
 
+async fn fetch_project_author(
+    client: &Client,
+    project_id: &str,
+) -> Result<Option<String>, String> {
+    let members: Value =
+        http_json(client, &format!("{MODRINTH_API_BASE}/project/{project_id}/members")).await?;
+    let arr = members.as_array().cloned().unwrap_or_default();
+    // Prefer the Owner; fall back to the first listed member.
+    let owner = arr
+        .iter()
+        .find(|m| {
+            m.get("role")
+                .and_then(Value::as_str)
+                .map(|r| r.eq_ignore_ascii_case("owner"))
+                .unwrap_or(false)
+        })
+        .or_else(|| arr.first());
+    Ok(owner
+        .and_then(|m| m.get("user"))
+        .and_then(|u| u.get("username"))
+        .and_then(Value::as_str)
+        .map(|s| s.to_string()))
+}
+
+#[tauri::command]
+pub async fn get_modrinth_project_authors(
+    project_ids: Vec<String>,
+) -> Result<HashMap<String, Option<String>>, String> {
+    let client = build_client()?;
+    let unique_ids = project_ids
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<HashSet<_>>();
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for project_id in unique_ids {
+        let client = client.clone();
+        tasks.spawn(async move {
+            let author = fetch_project_author(&client, &project_id).await.unwrap_or(None);
+            (project_id, author)
+        });
+    }
+
+    let mut result = HashMap::new();
+    while let Some(joined) = tasks.join_next().await {
+        let (project_id, author) =
+            joined.map_err(|error| format!("project author task join error: {error}"))?;
+        result.insert(project_id, author);
+    }
+
+    Ok(result)
+}
+
 pub(crate) async fn resolve_project_version(
     client: &Client,
     project_id: &str,
