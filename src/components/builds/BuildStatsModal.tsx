@@ -1,7 +1,17 @@
 import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { InstanceItem, InstalledModView } from "../../types";
+import type { InstanceItem, InstalledModView, PlaytimeSession } from "../../types";
 import { BuildConstellation } from "./BuildConstellation";
+
+/** Short Russian playtime label, e.g. "2 ч 15 мин", "45 мин", "30 сек". */
+function fmtDuration(secs: number): string {
+  if (secs <= 0) return "0 мин";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+  if (m > 0) return `${m} мин`;
+  return `${secs} сек`;
+}
 
 type StatsTab = "timeline" | "heatmap" | "constellation";
 type TLDir = "v" | "h";
@@ -13,6 +23,7 @@ interface TLEvent {
   title: string;
   detail: string[];
   iconUrl?: string | null;
+  author?: string | null;
 }
 
 interface Props {
@@ -70,13 +81,15 @@ function IconHorizontal() {
 }
 
 // ─── Playtime Spectrum ──────────────────────────────────────────────────────
+type CellState = "pre" | "created" | "active" | "idle" | "lastPlayed" | "future";
+
 interface DayCell {
   date: Date;
   weekIdx: number;   // column
   dayOfWeek: number; // 0 = Monday … 6 = Sunday
-  isLastPlayed: boolean;
-  isCreated: boolean;
-  isFuture: boolean;
+  state: CellState;
+  intensity: number; // 0..1 — warmth within the active band
+  playSecs: number;  // real recorded playtime for this day (0 if none)
   label: string;
 }
 
@@ -84,6 +97,7 @@ const DAY_LABELS = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
 
 function HeatmapTab({ instance }: { instance: InstanceItem }) {
   const [tip, setTip] = useState<{ x: number; y: number; text: string; sub: string } | null>(null);
+  const [sessions, setSessions] = useState<PlaytimeSession[]>([]);
 
   const createdTs    = parseInt(instance.createdAt,  10);
   const lastPlayedTs = parseInt(instance.lastPlayed,  10);
@@ -96,27 +110,62 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
     ? Math.max(1, Math.floor(daysSinceCreation / 7))
     : null;
 
-  // One cell per day, from creation Monday → today + 52 weeks
+  useEffect(() => {
+    let alive = true;
+    invoke<PlaytimeSession[]>("get_playtime_sessions", { instanceId: instance.id })
+      .then((res) => { if (alive) setSessions(res ?? []); })
+      .catch(() => { if (alive) setSessions([]); });
+    return () => { alive = false; };
+  }, [instance.id]);
+
+  // Bucket recorded sessions into local-day totals (key = Date.toDateString()).
+  const dayPlay = useMemo<Map<string, number>>(() => {
+    const map = new Map<string, number>();
+    for (const s of sessions) {
+      if (!s || s.ts <= 0 || s.secs <= 0) continue;
+      const key = new Date(s.ts * 1000).toDateString();
+      map.set(key, (map.get(key) ?? 0) + s.secs);
+    }
+    return map;
+  }, [sessions]);
+
+  const maxDaySecs = useMemo(() => {
+    let m = 0;
+    for (const v of dayPlay.values()) if (v > m) m = v;
+    return m;
+  }, [dayPlay]);
+
+  // One cell per day, from creation Monday → end of current week (no empty
+  // year-long tail). Cell warmth is driven by real recorded playtime when we
+  // have it, falling back to the active-band ramp for legacy builds.
   const days = useMemo<DayCell[]>(() => {
     const now = new Date(); now.setHours(23, 59, 59, 0);
 
     const createdDate = !isNaN(createdTs) && createdTs > 0
       ? new Date(createdTs * 1000) : new Date();
+    createdDate.setHours(0, 0, 0, 0);
 
     // Align start to Monday of creation week
     const start = new Date(createdDate);
-    start.setHours(0, 0, 0, 0);
     const dow0 = start.getDay();
     start.setDate(start.getDate() - (dow0 === 0 ? 6 : dow0 - 1));
 
-    // End = today + 52 weeks
+    // End = Sunday of the current week (keeps the grid compact & rectangular)
     const end = new Date(now);
-    end.setDate(end.getDate() + 52 * 7);
+    const dowE = end.getDay();
+    end.setDate(end.getDate() + (dowE === 0 ? 0 : 7 - dowE));
+    end.setHours(23, 59, 59, 0);
 
     const lpDate = !isNaN(lastPlayedTs) && lastPlayedTs > 0
       ? new Date(lastPlayedTs * 1000) : null;
+    if (lpDate) lpDate.setHours(0, 0, 0, 0);
     const lpStr      = lpDate ? lpDate.toDateString() : "";
     const createdStr = createdDate.toDateString();
+
+    const createdT = createdDate.getTime();
+    const lpT      = lpDate ? lpDate.getTime() : createdT;
+    const span     = Math.max(1, lpT - createdT);
+    const haveDayData = maxDaySecs > 0;
 
     const result: DayCell[] = [];
     const cur = new Date(start);
@@ -126,14 +175,35 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
       const weekIdx   = Math.floor(idx / 7);
       const dayOfWeek = idx % 7; // 0 = Mon (start is always Monday)
       const curStr    = cur.toDateString();
+      const curT      = new Date(cur).setHours(0, 0, 0, 0);
+      const playSecs  = dayPlay.get(curStr) ?? 0;
+
+      let state: CellState;
+      let intensity = 0;
+      if (curStr === createdStr)        state = "created";
+      else if (lpDate && curStr === lpStr) state = "lastPlayed";
+      else if (curT < createdT)         state = "pre";
+      else if (cur > now)               state = "future";
+      else if (playSecs > 0)            state = "active";
+      else if (haveDayData)             state = "idle"; // have data → this day had none
+      else if (lpDate && curT > lpT)    state = "idle";
+      else {
+        state = "active";
+        intensity = (curT - createdT) / span; // legacy ramp (no per-day data)
+      }
+
+      if (haveDayData && playSecs > 0) {
+        // Real heatmap: warmth proportional to that day's playtime
+        intensity = playSecs / maxDaySecs;
+      }
 
       result.push({
-        date:         new Date(cur),
+        date:    new Date(cur),
         weekIdx,
         dayOfWeek,
-        isLastPlayed: curStr === lpStr,
-        isCreated:    curStr === createdStr,
-        isFuture:     cur > now,
+        state,
+        intensity,
+        playSecs,
         label: cur.toLocaleDateString("ru-RU", {
           weekday: "long", day: "numeric", month: "long", year: "numeric",
         }),
@@ -143,30 +213,51 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
       idx++;
     }
     return result;
-  }, [instance]);
+  }, [instance, dayPlay, maxDaySecs]);
 
   const numWeeks = days.length > 0 ? days[days.length - 1].weekIdx + 1 : 0;
   const hasData  = lastPlayedTs > 0 && totalHrs > 0;
 
-  // Layout constants (viewBox units)
-  const PAD_L   = 22;   // room for day labels
-  const PAD_R   = 6;
-  const PAD_T   = 6;
+  // Layout constants (viewBox units) — square rounded cells, GitHub-style
+  const PAD_L   = 26;   // room for day labels
+  const PAD_R   = 8;
+  const PAD_T   = 10;
   const PAD_B   = 22;
-  const ROW_H   = 13;
-  const ROW_GAP = 3;
-  const SLOT    = 11;   // week column width
-  const BAR_W   = 6;
-  const HALF    = (ROW_H - 2) / 2; // 5.5 — half-height of a full bar
+  const CELL    = 11;
+  const GAP     = 3;
+  const SLOT    = CELL + GAP;
 
   const SVG_W = PAD_L + numWeeks * SLOT + PAD_R;
-  const SVG_H = PAD_T + 7 * ROW_H + 6 * ROW_GAP + PAD_B;
+  const SVG_H = PAD_T + 7 * SLOT - GAP + PAD_B;
 
-  function rowCY(dow: number): number {
-    return PAD_T + dow * (ROW_H + ROW_GAP) + ROW_H / 2;
+  function cellX(w: number): number { return PAD_L + w * SLOT; }
+  function cellY(dow: number): number { return PAD_T + dow * SLOT; }
+
+  // Warm fill for active cells (accent, intensity-ramped opacity)
+  function activeFill(intensity: number): string {
+    const op = 0.16 + intensity * 0.5; // 0.16 … 0.66
+    return `rgba(194,65,12,${op.toFixed(3)})`;
   }
 
-  // Month label per first week of each month
+  function cellTip(cell: DayCell): string {
+    // Real recorded playtime always takes priority in the tooltip.
+    if (cell.playSecs > 0) {
+      const played = `сыграно ${fmtDuration(cell.playSecs)}`;
+      if (cell.state === "created")    return `сборка создана · ${played}`;
+      if (cell.state === "lastPlayed") return `последний сеанс · ${played}`;
+      return played;
+    }
+    switch (cell.state) {
+      case "created":    return "сборка создана";
+      case "lastPlayed": return hasData ? `последний сеанс · ${totalHrs.toFixed(1)} ч всего` : "последний сеанс";
+      case "active":     return "нет записи о времени";
+      case "idle":       return "не играли";
+      case "future":     return "будущее";
+      default:           return "";
+    }
+  }
+
+  // Month label per first week each month appears
   const monthLabels: { x: number; text: string }[] = [];
   let prevMonth = -1;
   for (let w = 0; w < numWeeks; w++) {
@@ -175,7 +266,7 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
       const m = monday.date.getMonth();
       if (m !== prevMonth) {
         monthLabels.push({
-          x:    PAD_L + w * SLOT,
+          x:    cellX(w),
           text: monday.date.toLocaleDateString("ru-RU", { month: "short" }).replace(".", ""),
         });
         prevMonth = m;
@@ -183,7 +274,8 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
     }
   }
 
-  const lpCell = days.find(d => d.isLastPlayed);
+  const lpCell = days.find(d => d.state === "lastPlayed");
+  const createdCell = days.find(d => d.state === "created");
   const lastPlayedDate = !isNaN(lastPlayedTs) && lastPlayedTs > 0
     ? new Date(lastPlayedTs * 1000) : null;
 
@@ -194,154 +286,118 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
       <svg
         className="spectrum-svg"
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMinYMin meet"
         style={{ height: SVG_H }}
       >
         <defs>
-          <linearGradient id="sp-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#c2410c" stopOpacity="0.1"/>
-            <stop offset="35%"  stopColor="#c2410c" stopOpacity="0.9"/>
-            <stop offset="50%"  stopColor="#c2410c" stopOpacity="1"/>
-            <stop offset="65%"  stopColor="#c2410c" stopOpacity="0.9"/>
-            <stop offset="100%" stopColor="#c2410c" stopOpacity="0.1"/>
-          </linearGradient>
-          <linearGradient id="sp-zero" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#1a1a1a" stopOpacity="0"/>
-            <stop offset="50%"  stopColor="#1a1a1a" stopOpacity="0.09"/>
-            <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0"/>
-          </linearGradient>
-          <linearGradient id="sp-future" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#1a1a1a" stopOpacity="0"/>
-            <stop offset="50%"  stopColor="#1a1a1a" stopOpacity="0.03"/>
-            <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0"/>
-          </linearGradient>
-          <filter id="sp-glow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
+          <filter id="sp-glow" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur"/>
             <feMerge>
               <feMergeNode in="blur"/>
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
-          <linearGradient id="sp-scan-grad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stopColor="#c2410c" stopOpacity="0"/>
-            <stop offset="50%"  stopColor="#c2410c" stopOpacity="0.4"/>
-            <stop offset="100%" stopColor="#c2410c" stopOpacity="0"/>
-          </linearGradient>
         </defs>
 
-        {/* Day-of-week labels */}
+        {/* Day-of-week labels (Mon / Wed / Fri only — cleaner) */}
         {DAY_LABELS.map((lbl, d) => (
-          <text
-            key={`dl-${d}`}
-            x={PAD_L - 4}
-            y={rowCY(d) + 3.5}
-            fontSize="7.5"
-            fontWeight="600"
-            fontFamily="Inter, sans-serif"
-            fill="rgba(122,122,122,0.6)"
-            textAnchor="end"
-          >{lbl}</text>
-        ))}
-
-        {/* Horizontal separators between rows */}
-        {[1,2,3,4,5,6].map(d => (
-          <line
-            key={`sep-${d}`}
-            x1={PAD_L - 16}
-            y1={PAD_T + d * (ROW_H + ROW_GAP) - ROW_GAP / 2}
-            x2={PAD_L + numWeeks * SLOT}
-            y2={PAD_T + d * (ROW_H + ROW_GAP) - ROW_GAP / 2}
-            stroke="rgba(26,26,26,0.06)"
-            strokeWidth="1"
-          />
+          d % 2 === 0 ? (
+            <text
+              key={`dl-${d}`}
+              x={PAD_L - 6}
+              y={cellY(d) + CELL / 2 + 2.6}
+              fontSize="7"
+              fontWeight="600"
+              fontFamily="Inter, sans-serif"
+              fill="rgba(122,122,122,0.55)"
+              textAnchor="end"
+            >{lbl}</text>
+          ) : null
         ))}
 
         {/* Day cells */}
         {days.map((cell, i) => {
-          const x  = PAD_L + cell.weekIdx * SLOT;
-          const cy = rowCY(cell.dayOfWeek);
+          const x = cellX(cell.weekIdx);
+          const y = cellY(cell.dayOfWeek);
 
-          // Creation day → colored stripe
-          if (cell.isCreated && !cell.isLastPlayed) {
-            const rowTop = PAD_T + cell.dayOfWeek * (ROW_H + ROW_GAP);
-            return (
-              <g
-                key={i}
-                onMouseEnter={(e) => setTip({ x: e.clientX + 12, y: e.clientY - 8, text: cell.label, sub: "создана" })}
-                onMouseMove={(e) => setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null)}
-                onMouseLeave={() => setTip(null)}
-                style={{ cursor: "default" }}
-              >
-                <rect x={x} y={rowTop + 1} width={BAR_W} height={ROW_H - 2} rx="1" fill="#c2410c" opacity="0.1" />
-                <rect x={x + (BAR_W - 1.5) / 2} y={rowTop + 1} width={1.5} height={ROW_H - 2} fill="#c2410c" opacity="0.55" />
-              </g>
-            );
+          let fill = "rgba(26,26,26,0.045)"; // empty / pre / future baseline
+          let stroke = "none";
+          if (cell.state === "future")     fill = "rgba(26,26,26,0.02)";
+          else if (cell.state === "idle")  fill = "rgba(26,26,26,0.06)";
+          else if (cell.state === "active") fill = activeFill(cell.intensity);
+          else if (cell.state === "created") {
+            fill = "rgba(194,65,12,0.10)";
+            stroke = "rgba(194,65,12,0.55)";
+          } else if (cell.state === "lastPlayed") {
+            fill = "#c2410c";
           }
 
-          const hh   = cell.isLastPlayed ? HALF : 1.5;
-          const fill = cell.isLastPlayed
-            ? "url(#sp-grad)"
-            : cell.isFuture ? "url(#sp-future)" : "url(#sp-zero)";
+          const interactive = cell.state !== "pre" && cell.state !== "future";
 
           return (
             <rect
               key={i}
               x={x}
-              y={cy - hh}
-              width={BAR_W}
-              height={hh * 2}
-              rx="1"
+              y={y}
+              width={CELL}
+              height={CELL}
+              rx="2.5"
               fill={fill}
-              filter={cell.isLastPlayed ? "url(#sp-glow)" : undefined}
+              stroke={stroke}
+              strokeWidth={stroke === "none" ? 0 : 1}
+              filter={cell.state === "lastPlayed" ? "url(#sp-glow)" : undefined}
               style={{ cursor: "default" }}
-              onMouseEnter={(e) => {
-                const sub = cell.isLastPlayed
-                  ? `${totalHrs.toFixed(1)} ч наиграно`
-                  : cell.isFuture ? "будущее" : "нет данных";
-                setTip({ x: e.clientX + 12, y: e.clientY - 8, text: cell.label, sub });
-              }}
-              onMouseMove={(e) => setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null)}
-              onMouseLeave={() => setTip(null)}
+              onMouseEnter={interactive ? (e) =>
+                setTip({ x: e.clientX + 12, y: e.clientY - 8, text: cell.label, sub: cellTip(cell) }) : undefined}
+              onMouseMove={interactive ? (e) =>
+                setTip(t => t ? { ...t, x: e.clientX + 12, y: e.clientY - 8 } : null) : undefined}
+              onMouseLeave={interactive ? () => setTip(null) : undefined}
             />
           );
         })}
 
-        {/* Glow + peak dot on last-played day */}
+        {/* Pulsing halo on the last-played cell */}
         {hasData && lpCell && (() => {
-          const cx = PAD_L + lpCell.weekIdx * SLOT + BAR_W / 2;
-          const cy = rowCY(lpCell.dayOfWeek) - HALF;
+          const cx = cellX(lpCell.weekIdx) + CELL / 2;
+          const cy = cellY(lpCell.dayOfWeek) + CELL / 2;
           return (
-            <g>
-              <circle cx={cx} cy={cy} r="6"   fill="#c2410c" opacity="0.18" className="spectrum-halo"/>
-              <circle cx={cx} cy={cy} r="2.5" fill="#c2410c"/>
-              <circle cx={cx} cy={cy} r="1.2" fill="#fff" opacity="0.8"/>
+            <g pointerEvents="none">
+              <circle cx={cx} cy={cy} r="7" fill="#c2410c" opacity="0.16" className="spectrum-halo"/>
             </g>
           );
         })()}
-
-        {/* Flatline scan when no playtime — runs through Thursday row */}
-        {!hasData && (
-          <rect
-            x={0} y={rowCY(3) - 1} width={SVG_W * 0.35} height={2}
-            fill="url(#sp-scan-grad)"
-            className="spectrum-scan"
-          />
-        )}
 
         {/* Month labels */}
         {monthLabels.map((ml, i) => (
           <text
             key={i}
             x={ml.x}
-            y={SVG_H - 5}
-            fontSize="8"
+            y={SVG_H - 6}
+            fontSize="7.5"
             fontWeight="700"
             fontFamily="Inter, sans-serif"
-            fill="rgba(122,122,122,0.75)"
+            fill="rgba(122,122,122,0.7)"
             textAnchor="start"
           >{ml.text}</text>
         ))}
       </svg>
+
+      {/* Legend */}
+      <div className="spectrum-legend">
+        {createdCell && (
+          <span className="spectrum-legend-item">
+            <i className="spectrum-legend-swatch is-created" /> создана
+          </span>
+        )}
+        <span className="spectrum-legend-item">
+          <i className="spectrum-legend-swatch is-active" /> активность
+        </span>
+        {hasData && (
+          <span className="spectrum-legend-item">
+            <i className="spectrum-legend-swatch is-last" /> последний сеанс
+          </span>
+        )}
+      </div>
 
       {tip && (
         <div className="spectrum-tip" style={{ left: tip.x, top: tip.y }}>
@@ -440,7 +496,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
       if (ts <= 0) return;
       const author = realAuthor(item);
       list.push({
-        kind, ts, title: item.title, iconUrl: cover(item),
+        kind, ts, title: item.title, iconUrl: cover(item), author,
         detail: [author ? `Автор: ${author}` : "", item.versionNumber ? `Версия: ${item.versionNumber}` : ""].filter(Boolean),
       });
     };
@@ -515,14 +571,16 @@ export function BuildStatsModal({ instance, onClose }: Props) {
               style={{ left: `${left}%` }}
             >
               <span className="tl-h-date">{fmtDate(evt.ts)}</span>
-              <div className="tl-h-square" />
+              {evt.iconUrl ? (
+                <img className="tl-h-square tl-h-square--icon" src={evt.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="tl-h-square" />
+              )}
               <span className="tl-h-short">{KIND_SHORT[evt.kind]}</span>
               <div className={`tl-h-hover-info${flip ? " tl-h-hover-info--flip" : ""}`}>
-                {evt.iconUrl && (
-                  <img className="tl-icon" src={evt.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
-                )}
                 <span className={`tl-tag tl-tag--${evt.kind}`}>{KIND_TAG[evt.kind]}</span>
                 <span className="tl-h-title">{evt.title}</span>
+                {evt.author && <span className="tl-h-author">{evt.author}</span>}
               </div>
             </div>
           );

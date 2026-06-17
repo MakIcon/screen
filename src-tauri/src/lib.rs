@@ -38,6 +38,7 @@ pub fn run() {
             commands::launcher::kill_instance,
             commands::launcher::is_process_alive,
             commands::launcher::record_playtime,
+            commands::launcher::get_playtime_sessions,
             commands::launcher::read_instance_launch_log,
             commands::launcher::open_instance_folder,
             commands::launcher::list_instance_screenshots,

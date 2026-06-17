@@ -13,7 +13,10 @@ use crate::{
         build_launch_command, install_instance_files, read_latest_launch_log,
         spawn_minecraft_and_persist, update_instance_status,
     },
-    models::{ActionResult, LaunchLogSnapshot, ScreenshotImage, ScreenshotItem},
+    models::{
+        ActionResult, LaunchLogSnapshot, PlaytimeLog, PlaytimeSession, ScreenshotImage,
+        ScreenshotItem,
+    },
     paths::{read_instances, read_settings, write_instances},
     plugins::obs_telemetry::{prepare_obs_telemetry_for_launch, ObsTelemetryState},
 };
@@ -235,7 +238,41 @@ pub async fn record_playtime(instance_id: String, elapsed_secs: u64) -> Result<(
         items[index].playtime_secs = items[index].playtime_secs.saturating_add(elapsed_secs);
         write_instances(&items).await?;
     }
+    if elapsed_secs > 0 {
+        append_playtime_session(&instance_id, elapsed_secs).await?;
+    }
     Ok(())
+}
+
+async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result<(), String> {
+    let path = crate::paths::playtime_log_path(instance_id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+    }
+
+    let mut log: PlaytimeLog = match fs::read(&path).await {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => PlaytimeLog::default(),
+    };
+
+    let ts = crate::paths::now_string().parse::<u64>().unwrap_or(0);
+    log.sessions.push(PlaytimeSession { ts, secs: elapsed_secs });
+
+    let json = serde_json::to_vec_pretty(&log).map_err(|e| e.to_string())?;
+    fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_playtime_sessions(instance_id: String) -> Result<Vec<PlaytimeSession>, String> {
+    let path = crate::paths::playtime_log_path(&instance_id)?;
+    match fs::read(&path).await {
+        Ok(bytes) => {
+            let log: PlaytimeLog = serde_json::from_slice(&bytes).unwrap_or_default();
+            Ok(log.sessions)
+        }
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 #[tauri::command]

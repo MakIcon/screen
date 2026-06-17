@@ -74,6 +74,21 @@ pub struct InstanceItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlaytimeSession {
+    /// Unix timestamp (seconds) when the session ended.
+    pub ts: u64,
+    /// Duration of the session in seconds.
+    pub secs: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PlaytimeLog {
+    #[serde(default)]
+    pub sessions: Vec<PlaytimeSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateInstancePayload {
     pub name: String,
     pub version: String,

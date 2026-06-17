@@ -28,6 +28,11 @@ export type InstanceItem = {
   gameDir: string;
 };
 
+export type PlaytimeSession = {
+  ts: number;   // unix seconds when the session ended
+  secs: number; // duration in seconds
+};
+
 export type CatalogItem = {
   id: string;
   title: string;
