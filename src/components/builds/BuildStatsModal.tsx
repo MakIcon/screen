@@ -12,6 +12,7 @@ interface TLEvent {
   ts: number;
   title: string;
   detail: string[];
+  iconUrl?: string | null;
 }
 
 interface Props {
@@ -385,6 +386,8 @@ export function BuildStatsModal({ instance, onClose }: Props) {
   const [packs, setPacks]     = useState<InstalledModView[]>([]);
   const [shaders, setShaders] = useState<InstalledModView[]>([]);
   const [loading, setLoading] = useState(true);
+  const [icons, setIcons]     = useState<Record<string, string | null>>({});
+  const [authors, setAuthors] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     let alive = true;
@@ -397,6 +400,15 @@ export function BuildStatsModal({ instance, onClose }: Props) {
       if (!alive) return;
       setMods(m); setPacks(p); setShaders(s);
       setLoading(false);
+
+      const ids = Array.from(new Set(
+        [...m, ...p, ...s].map((i) => i.projectId).filter((v): v is string => !!v),
+      ));
+      if (ids.length === 0) return;
+      invoke<Record<string, string | null>>("get_modrinth_project_icons", { projectIds: ids })
+        .then((res) => { if (alive) setIcons(res); }).catch(() => { /* no covers */ });
+      invoke<Record<string, string | null>>("get_modrinth_project_authors", { projectIds: ids })
+        .then((res) => { if (alive) setAuthors(res); }).catch(() => { /* keep stored */ });
     });
     return () => { alive = false; };
   }, [instance.id]);
@@ -416,27 +428,26 @@ export function BuildStatsModal({ instance, onClose }: Props) {
       });
     }
 
-    for (const m of mods) {
-      const ts = parseInt(m.installedAt ?? "0", 10);
-      if (ts > 0) list.push({
-        kind: "mod", ts, title: m.title,
-        detail: [m.author ? `Автор: ${m.author}` : "", m.versionNumber ? `Версия: ${m.versionNumber}` : ""].filter(Boolean),
+    const realAuthor = (item: InstalledModView): string => {
+      const fetched = item.projectId ? authors[item.projectId] : null;
+      return (fetched && fetched.trim()) ? fetched : item.author;
+    };
+    const cover = (item: InstalledModView): string | null =>
+      (item.projectId ? icons[item.projectId] : null) ?? null;
+
+    const pushItem = (item: InstalledModView, kind: EventKind) => {
+      const ts = parseInt(item.installedAt ?? "0", 10);
+      if (ts <= 0) return;
+      const author = realAuthor(item);
+      list.push({
+        kind, ts, title: item.title, iconUrl: cover(item),
+        detail: [author ? `Автор: ${author}` : "", item.versionNumber ? `Версия: ${item.versionNumber}` : ""].filter(Boolean),
       });
-    }
-    for (const p of packs) {
-      const ts = parseInt(p.installedAt ?? "0", 10);
-      if (ts > 0) list.push({
-        kind: "pack", ts, title: p.title,
-        detail: [p.author ? `Автор: ${p.author}` : "", p.versionNumber ? `Версия: ${p.versionNumber}` : ""].filter(Boolean),
-      });
-    }
-    for (const s of shaders) {
-      const ts = parseInt(s.installedAt ?? "0", 10);
-      if (ts > 0) list.push({
-        kind: "shader", ts, title: s.title,
-        detail: [s.author ? `Автор: ${s.author}` : "", s.versionNumber ? `Версия: ${s.versionNumber}` : ""].filter(Boolean),
-      });
-    }
+    };
+
+    for (const m of mods) pushItem(m, "mod");
+    for (const p of packs) pushItem(p, "pack");
+    for (const s of shaders) pushItem(s, "shader");
 
     const lpTs = parseInt(instance.lastPlayed, 10);
     if (!isNaN(lpTs) && lpTs > 0) {
@@ -448,7 +459,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
     }
 
     return list.sort((a, b) => a.ts - b.ts);
-  }, [instance, mods, packs, shaders]);
+  }, [instance, mods, packs, shaders, icons, authors]);
 
   const n = events.length;
   function getLeft(i: number): number {
@@ -474,6 +485,9 @@ export function BuildStatsModal({ instance, onClose }: Props) {
             </div>
             <div className="tl-body">
               <div className="tl-header">
+                {evt.iconUrl && (
+                  <img className="tl-icon" src={evt.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                )}
                 <span className={`tl-tag tl-tag--${evt.kind}`}>{KIND_TAG[evt.kind]}</span>
                 <span className="tl-title">{evt.title}</span>
                 <span className="tl-date">{fmtDate(evt.ts)}</span>
@@ -504,6 +518,9 @@ export function BuildStatsModal({ instance, onClose }: Props) {
               <div className="tl-h-square" />
               <span className="tl-h-short">{KIND_SHORT[evt.kind]}</span>
               <div className={`tl-h-hover-info${flip ? " tl-h-hover-info--flip" : ""}`}>
+                {evt.iconUrl && (
+                  <img className="tl-icon" src={evt.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                )}
                 <span className={`tl-tag tl-tag--${evt.kind}`}>{KIND_TAG[evt.kind]}</span>
                 <span className="tl-h-title">{evt.title}</span>
               </div>

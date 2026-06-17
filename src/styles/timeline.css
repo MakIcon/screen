@@ -106,6 +106,16 @@
 .tl-tag--pack     { color: var(--muted);    background: rgba(26, 26, 26, 0.05); }
 .tl-tag--shader   { color: var(--warning);  background: rgba(139, 123, 86, 0.1); }
 
+.tl-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-hover-strong);
+  border: 1px solid var(--line);
+}
+
 .tl-title {
   flex: 1;
   font-size: 13px;
@@ -246,7 +256,7 @@
 }
 
 .tl-h-mark:hover .tl-h-hover-info {
-  max-height: 60px;
+  max-height: 100px;
   opacity: 1;
 }
 
