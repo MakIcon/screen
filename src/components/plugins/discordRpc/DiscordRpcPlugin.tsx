@@ -1,9 +1,9 @@
+import { useEffect, useState } from "react";
 import discordIcon from "../../../assets/plugins/discord.svg";
 import type {
   DiscordRpcPluginSettings,
   LauncherPluginsSettings,
 } from "../../../types";
-import { ElementCheckbox } from "../../inputs/ElementCheckbox";
 import type { PluginDefinition } from "../pluginTypes";
 import "./DiscordRpcPlugin.css";
 
@@ -125,6 +125,18 @@ export function normalizeDiscordRpcSettings(
   };
 }
 
+function usePreviewClock(active: boolean) {
+  const [secs, setSecs] = useState(70);
+  useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => setSecs((value) => value + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+  const mm = Math.floor(secs / 60);
+  const ss = (secs % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 function DiscordRpcSettingsEditor({
   settings,
   onChange,
@@ -135,10 +147,10 @@ function DiscordRpcSettingsEditor({
   const update = (patch: Partial<DiscordRpcPluginSettings>) => {
     onChange({ ...settings, ...patch });
   };
+
   const modeTemplates =
     settings.displayMode === "launcher"
       ? {
-          title: "LAUNCHER PRESENCE",
           detailsKey: "launcherDetailsTemplate" as const,
           stateKey: "launcherStateTemplate" as const,
           detailsPlaceholder: "In ScreenLauncher",
@@ -146,7 +158,6 @@ function DiscordRpcSettingsEditor({
         }
       : settings.displayMode === "combined"
         ? {
-            title: "GAME PRESENCE",
             detailsKey: "combinedDetailsTemplate" as const,
             stateKey: "combinedStateTemplate" as const,
             detailsPlaceholder: "Playing %build_name%",
@@ -154,7 +165,6 @@ function DiscordRpcSettingsEditor({
               "%build_version% / %build_loader% via ScreenLauncher",
           }
         : {
-            title: "GAME PRESENCE",
             detailsKey: "detailsTemplate" as const,
             stateKey: "stateTemplate" as const,
             detailsPlaceholder: "Playing %build_name%",
@@ -162,136 +172,133 @@ function DiscordRpcSettingsEditor({
               "%build_version% / %build_loader% via ScreenLauncher",
           };
 
-  return (
-    <div className="discord-rpc-settings">
-      <label className="discord-rpc-field discord-rpc-field--full">
-        <span>APPLICATION ID</span>
-        <input
-          value={settings.applicationId}
-          placeholder="Discord application id"
-          onChange={(event) => update({ applicationId: event.target.value })}
-        />
-      </label>
+  const clock = usePreviewClock(true);
+  const hasButton = settings.buttonLabel.trim().length > 0;
 
-      <div className="discord-rpc-field discord-rpc-field--full">
-        <span>DISPLAY MODE</span>
-        <div className="discord-rpc-segmented-control" role="group">
-          {DISCORD_RPC_DISPLAY_MODES.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              className={settings.displayMode === mode.id ? "active" : ""}
-              onClick={() => update({ displayMode: mode.id })}
-            >
-              {mode.label}
-            </button>
-          ))}
+  return (
+    <div className="discord-rpc-editor">
+      <div className="drpc-config">
+        <label className="drpc-config-field drpc-config-field--app">
+          <span>APPLICATION ID</span>
+          <input
+            value={settings.applicationId}
+            placeholder="Discord application id"
+            onChange={(event) => update({ applicationId: event.target.value })}
+          />
+        </label>
+
+        <div className="drpc-config-field drpc-config-field--grow">
+          <span>DISPLAY MODE</span>
+          <div className="discord-rpc-segmented-control" role="group">
+            {DISCORD_RPC_DISPLAY_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className={settings.displayMode === mode.id ? "active" : ""}
+                onClick={() => update({ displayMode: mode.id })}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <label className="discord-rpc-field discord-rpc-field--full">
-        <span>ACTIVITY NAME</span>
-        <input
-          value={settings.activityNameTemplate}
-          placeholder="Auto by mode"
-          onChange={(event) =>
-            update({ activityNameTemplate: event.target.value })
-          }
-        />
-      </label>
+      <div className="drpc-preview-head">
+        <span>LIVE PREVIEW</span>
+        <small>How it shows on your Discord profile — edit any field right here</small>
+      </div>
 
-      <div className="discord-rpc-subhead">{modeTemplates.title}</div>
+      <div className="drpc-card">
+        <div className="drpc-card-title">PLAYING A GAME</div>
 
-      <label className="discord-rpc-field">
-        <span>DETAILS TEMPLATE</span>
-        <input
-          value={settings[modeTemplates.detailsKey]}
-          placeholder={modeTemplates.detailsPlaceholder}
-          onChange={(event) =>
-            update({ [modeTemplates.detailsKey]: event.target.value })
-          }
-        />
-      </label>
+        <div className="drpc-card-row">
+          <div className="drpc-assets">
+            <div
+              className={`drpc-large${settings.largeImageKey.trim() ? " is-set" : ""}`}
+              title="Large image — asset key from the Developer Portal"
+            >
+              <input
+                value={settings.largeImageKey}
+                placeholder="image"
+                onChange={(event) =>
+                  update({ largeImageKey: event.target.value })
+                }
+              />
+            </div>
+            <div
+              className={`drpc-small${settings.smallImageKey.trim() ? " is-set" : ""}`}
+              title="Small image — asset key (corner badge)"
+            >
+              <input
+                value={settings.smallImageKey}
+                placeholder="+"
+                onChange={(event) =>
+                  update({ smallImageKey: event.target.value })
+                }
+              />
+            </div>
+          </div>
 
-      <label className="discord-rpc-field">
-        <span>STATE TEMPLATE</span>
-        <input
-          value={settings[modeTemplates.stateKey]}
-          placeholder={modeTemplates.statePlaceholder}
-          onChange={(event) =>
-            update({ [modeTemplates.stateKey]: event.target.value })
-          }
-        />
-      </label>
+          <div className="drpc-lines">
+            <input
+              className="drpc-line drpc-line--name"
+              value={settings.activityNameTemplate}
+              placeholder="ScreenLauncher"
+              onChange={(event) =>
+                update({ activityNameTemplate: event.target.value })
+              }
+            />
+            <input
+              className="drpc-line drpc-line--details"
+              value={settings[modeTemplates.detailsKey]}
+              placeholder={modeTemplates.detailsPlaceholder}
+              onChange={(event) =>
+                update({ [modeTemplates.detailsKey]: event.target.value })
+              }
+            />
+            <input
+              className="drpc-line drpc-line--state"
+              value={settings[modeTemplates.stateKey]}
+              placeholder={modeTemplates.statePlaceholder}
+              onChange={(event) =>
+                update({ [modeTemplates.stateKey]: event.target.value })
+              }
+            />
+            <span className="drpc-timer is-on">
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2" y="6" width="20" height="14" rx="2" fill="currentColor" />
+                <path d="M7 6V4h10v2" stroke="currentColor" strokeWidth="2" fill="none" />
+              </svg>
+              {`${clock} elapsed`}
+            </span>
+          </div>
+        </div>
 
-      <div className="discord-rpc-subhead">ASSETS</div>
+        <div className={`drpc-card-button${hasButton ? " is-set" : ""}`}>
+          <input
+            className="drpc-btn-label"
+            value={settings.buttonLabel}
+            placeholder="+ Add a button (optional)"
+            onChange={(event) => update({ buttonLabel: event.target.value })}
+          />
+          {hasButton && (
+            <input
+              className="drpc-btn-url"
+              value={settings.buttonUrl}
+              placeholder="https://link-the-button-opens"
+              onChange={(event) => update({ buttonUrl: event.target.value })}
+            />
+          )}
+        </div>
+      </div>
 
-      <label className="discord-rpc-field">
-        <span>LARGE IMAGE KEY</span>
-        <input
-          value={settings.largeImageKey}
-          placeholder="discord app asset key"
-          onChange={(event) => update({ largeImageKey: event.target.value })}
-        />
-      </label>
-
-      <label className="discord-rpc-field">
-        <span>LARGE IMAGE TEXT</span>
-        <input
-          value={settings.largeImageTextTemplate}
-          placeholder="ScreenLauncher"
-          onChange={(event) =>
-            update({ largeImageTextTemplate: event.target.value })
-          }
-        />
-      </label>
-
-      <label className="discord-rpc-field">
-        <span>SMALL IMAGE KEY</span>
-        <input
-          value={settings.smallImageKey}
-          placeholder="discord app asset key"
-          onChange={(event) => update({ smallImageKey: event.target.value })}
-        />
-      </label>
-
-      <label className="discord-rpc-field">
-        <span>SMALL IMAGE TEXT</span>
-        <input
-          value={settings.smallImageTextTemplate}
-          placeholder="Minecraft %build_version%"
-          onChange={(event) =>
-            update({ smallImageTextTemplate: event.target.value })
-          }
-        />
-      </label>
-
-      <div className="discord-rpc-subhead">BUTTON</div>
-
-      <label className="discord-rpc-field">
-        <span>BUTTON LABEL</span>
-        <input
-          value={settings.buttonLabel}
-          placeholder="Open launcher"
-          onChange={(event) => update({ buttonLabel: event.target.value })}
-        />
-      </label>
-
-      <label className="discord-rpc-field">
-        <span>BUTTON URL</span>
-        <input
-          value={settings.buttonUrl}
-          placeholder="https://example.com"
-          onChange={(event) => update({ buttonUrl: event.target.value })}
-        />
-      </label>
-
-      <ElementCheckbox
-        className="discord-rpc-checkbox"
-        label="SHOW ELAPSED TIME"
-        checked={settings.showElapsedTime}
-        onChange={(showElapsedTime) => update({ showElapsedTime })}
-      />
+      <p className="drpc-hint">
+        Placeholders: <code>%build_name%</code> <code>%build_version%</code>{" "}
+        <code>%build_loader%</code> <code>%total_builds%</code>. Image fields take
+        the <em>asset name</em> you uploaded under Rich Presence → Art Assets in
+        the Discord Developer Portal.
+      </p>
     </div>
   );
 }

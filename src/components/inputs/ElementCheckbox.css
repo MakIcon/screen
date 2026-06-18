@@ -43,8 +43,8 @@
 }
 
 .element-checkbox-mark {
-  width: 8px;
-  height: 5px;
+  width: 5px;
+  height: 9px;
   border-right: 2px solid var(--bg);
   border-bottom: 2px solid var(--bg);
   opacity: 0;

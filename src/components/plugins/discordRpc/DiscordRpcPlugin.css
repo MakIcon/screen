@@ -1,40 +1,42 @@
-.discord-rpc-settings {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.discord-rpc-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- config row: app id + display mode ---- */
+
+.drpc-config {
+  display: flex;
+  flex-wrap: wrap;
   gap: 14px 18px;
 }
 
-.discord-rpc-field {
+.drpc-config-field {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
+  min-width: 180px;
 }
 
-.discord-rpc-field--full,
-.discord-rpc-subhead,
-.discord-rpc-checkbox {
-  grid-column: 1 / -1;
+.drpc-config-field--grow {
+  flex: 1 1 200px;
+  min-width: 200px;
 }
 
-.discord-rpc-subhead {
-  margin-top: 2px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
+.drpc-config-field--app {
+  flex: 0 0 180px;
+  min-width: 160px;
 }
 
-.discord-rpc-field span {
+.drpc-config-field > span {
   color: var(--muted);
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.14em;
 }
 
-.discord-rpc-field input {
+.drpc-config-field > input {
   width: 100%;
   height: 42px;
   border: 1px solid var(--line);
@@ -46,12 +48,12 @@
   letter-spacing: 0.03em;
 }
 
-.discord-rpc-field input:focus {
+.drpc-config-field > input:focus {
   border-color: var(--line-strong);
   background: var(--bg-card-strong);
 }
 
-.discord-rpc-field input::placeholder {
+.drpc-config-field > input::placeholder {
   color: var(--muted-soft);
 }
 
@@ -91,12 +93,300 @@
   cursor: default;
 }
 
-.discord-rpc-checkbox {
-  margin-top: 4px;
+/* ---- preview heading ---- */
+
+.drpc-preview-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
 }
 
-@media (max-width: 620px) {
-  .discord-rpc-settings {
-    grid-template-columns: 1fr;
+.drpc-preview-head span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.drpc-preview-head small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* ---- the Discord-style card (fixed Discord palette, theme-independent) ---- */
+
+.drpc-card {
+  --d-bg: #232428;
+  --d-text: #f2f3f5;
+  --d-sub: #c4c9ce;
+  --d-faint: #8a8f98;
+  --d-field: rgba(255, 255, 255, 0.06);
+  --d-green: #23a55a;
+
+  background: var(--d-bg);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+
+.drpc-card-title {
+  color: var(--d-faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.drpc-card-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* images */
+
+.drpc-assets {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.drpc-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  background: var(--d-field);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.drpc-large.is-set {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, #5865f2 0%, #3b3f8f 100%);
+}
+
+.drpc-small {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #1a1b1e;
+  border: 3px solid var(--d-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.drpc-small.is-set {
+  background: linear-gradient(135deg, #43b581 0%, #2d7d57 100%);
+}
+
+.drpc-large input,
+.drpc-small input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--d-text);
+  text-align: center;
+  outline: none;
+  font-family: inherit;
+  padding: 2px;
+}
+
+.drpc-large input {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.drpc-small input {
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.drpc-large input::placeholder,
+.drpc-small input::placeholder {
+  color: var(--d-faint);
+  font-weight: 600;
+}
+
+/* text lines */
+
+.drpc-lines {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.drpc-line {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--d-sub);
+  outline: none;
+  font-family: inherit;
+  padding: 3px 6px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.drpc-line:hover {
+  background: var(--d-field);
+}
+
+.drpc-line:focus {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(88, 101, 242, 0.7);
+}
+
+.drpc-line::placeholder {
+  color: var(--d-faint);
+}
+
+.drpc-line--name {
+  color: var(--d-text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.drpc-line--details,
+.drpc-line--state {
+  font-size: 13px;
+}
+
+.drpc-timer {
+  align-self: flex-start;
+  margin-top: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--d-faint);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+
+.drpc-timer.is-on {
+  color: var(--d-green);
+}
+
+.drpc-timer svg {
+  flex: 0 0 auto;
+}
+
+/* button */
+
+.drpc-card-button {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drpc-btn-label {
+  width: 100%;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--d-field);
+  color: var(--d-text);
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 0 10px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.drpc-card-button.is-set .drpc-btn-label {
+  background: #4e5058;
+}
+
+.drpc-btn-label:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.drpc-btn-label:focus {
+  border-color: rgba(88, 101, 242, 0.7);
+}
+
+.drpc-btn-label::placeholder {
+  color: var(--d-faint);
+  font-weight: 600;
+}
+
+.drpc-btn-url {
+  width: 100%;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--d-sub);
+  outline: none;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 0 10px;
+}
+
+.drpc-btn-url:focus {
+  border-color: rgba(88, 101, 242, 0.7);
+}
+
+.drpc-btn-url::placeholder {
+  color: var(--d-faint);
+}
+
+/* hint */
+
+.drpc-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+}
+
+.drpc-hint code {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--bg-field);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .drpc-card-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .drpc-assets {
+    align-self: center;
   }
 }

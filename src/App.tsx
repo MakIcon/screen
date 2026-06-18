@@ -1274,6 +1274,10 @@ const isScrollableElement = (target: EventTarget | null) => {
     try {
       const updated = await invoke<LauncherSettings>("set_launcher_plugins", { plugins });
       setLauncherSettings(updated);
+      // Drive Discord RPC immediately on every plugin change (enable/disable/edit),
+      // so toggling the plugin reliably starts or stops the presence without
+      // waiting for the settings effect to fire on the next render tick.
+      applyDiscordRpcPresence(updated, runningInstances);
     } catch (error) {
       console.error(error);
       setActionError(String(error));
