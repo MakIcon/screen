@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use tokio::fs;
 
 use crate::{
+    minecraft::LoaderKind,
     models::{ActionResult, InstanceItem},
     paths::read_instances,
 };
 
 use super::{
-    build_client, fetch_manifest_releases, fetch_modrinth_search, install_project_to_dir,
-    InstalledModEntry, InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
+    build_client, fetch_modrinth_search, install_project_to_dir, InstalledModEntry,
+    InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODRINTH_STATE_FILE: &str = ".screenlauncher-modrinth.json";
@@ -92,45 +93,39 @@ async fn merge_and_write_modrinth_state(
 }
 
 #[tauri::command]
-pub async fn get_modrinth_fabric_versions() -> Result<Vec<String>, String> {
-    let client = build_client()?;
-    fetch_manifest_releases(&client).await
-}
-
-#[tauri::command]
 pub async fn search_modrinth_mods(
-    instance_id: Option<String>,
+    instance_id: String,
     query: String,
-    game_version: String,
     offset: usize,
     limit: usize,
 ) -> Result<ModrinthSearchResponse, String> {
     let client = build_client()?;
+    let items = read_instances().await?;
+    let instance = items
+        .into_iter()
+        .find(|item| item.id == instance_id)
+        .ok_or_else(|| "Instance not found".to_string())?;
+    let loader = LoaderKind::parse(&instance.loader)?
+        .modrinth_id()
+        .ok_or_else(|| "Vanilla builds do not support mods".to_string())?;
     let limit = limit.clamp(1, SEARCH_PAGE_SIZE_MAX);
     let mut response = fetch_modrinth_search(
         &client,
         &query,
-        &game_version,
+        &instance.version,
         "mod",
-        &["fabric"],
+        &[loader],
         offset,
         limit,
     )
     .await?;
-
-    if let Some(instance_id) = instance_id {
-        let items = read_instances().await?;
-        if let Some(instance) = items.into_iter().find(|item| item.id == instance_id) {
-            let state = read_modrinth_state(&instance).await?;
-            let installed_project_ids = state
-                .values()
-                .map(|entry| entry.project_id.clone())
-                .collect::<HashSet<_>>();
-
-            for hit in &mut response.hits {
-                hit.installed = installed_project_ids.contains(&hit.project_id);
-            }
-        }
+    let state = read_modrinth_state(&instance).await?;
+    let installed_project_ids = state
+        .values()
+        .map(|entry| entry.project_id.clone())
+        .collect::<HashSet<_>>();
+    for hit in &mut response.hits {
+        hit.installed = installed_project_ids.contains(&hit.project_id);
     }
 
     Ok(response)
@@ -147,6 +142,9 @@ pub async fn install_modrinth_project(
         .into_iter()
         .find(|i| i.id == instance_id)
         .ok_or("Instance not found")?;
+    let loader = LoaderKind::parse(&instance.loader)?
+        .modrinth_id()
+        .ok_or_else(|| "Vanilla builds do not support mods".to_string())?;
 
     let target_dir = ensure_mods_dir(&instance).await?;
     let mut install_batch = HashMap::new();
@@ -156,7 +154,7 @@ pub async fn install_modrinth_project(
         &instance,
         &project_id,
         &target_dir,
-        &["fabric"],
+        &[loader],
         &mut install_batch,
     )
     .await?;

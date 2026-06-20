@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import discordIcon from "../../../assets/plugins/discord.svg";
 import type {
   DiscordRpcPluginSettings,
@@ -125,18 +124,6 @@ export function normalizeDiscordRpcSettings(
   };
 }
 
-function usePreviewClock(active: boolean) {
-  const [secs, setSecs] = useState(70);
-  useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => setSecs((value) => value + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [active]);
-  const mm = Math.floor(secs / 60);
-  const ss = (secs % 60).toString().padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
 function DiscordRpcSettingsEditor({
   settings,
   onChange,
@@ -172,7 +159,6 @@ function DiscordRpcSettingsEditor({
               "%build_version% / %build_loader% via ScreenLauncher",
           };
 
-  const clock = usePreviewClock(true);
   const hasButton = settings.buttonLabel.trim().length > 0;
 
   return (
@@ -270,7 +256,7 @@ function DiscordRpcSettingsEditor({
                 <rect x="2" y="6" width="20" height="14" rx="2" fill="currentColor" />
                 <path d="M7 6V4h10v2" stroke="currentColor" strokeWidth="2" fill="none" />
               </svg>
-              {`${clock} elapsed`}
+              0:00 elapsed
             </span>
           </div>
         </div>

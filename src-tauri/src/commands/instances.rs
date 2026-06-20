@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::{
     commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
-    minecraft::{is_fabric_loader, normalized_ram},
+    minecraft::{normalized_loader_and_version, normalized_ram},
     models::{
         CreateInstancePayload, ExportedItem, ImportInstancePayload, InstanceExportData,
         InstanceItem, UpdateInstancePayload,
@@ -82,15 +82,8 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         return Err("Build with this name already exists".into());
     }
 
-    let clean_loader = payload.loader.trim().to_string();
-    let fabric_loader_version = if is_fabric_loader(&clean_loader) {
-        let Some(loader_version) = payload.fabric_loader_version.clone() else {
-            return Err("Fabric loader version is required".into());
-        };
-        Some(loader_version)
-    } else {
-        None
-    };
+    let (loader_kind, loader_version) =
+        normalized_loader_and_version(&payload.loader, payload.loader_version.clone())?;
 
     let id = format!("inst-{}", Uuid::new_v4());
     let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
@@ -104,12 +97,8 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         id: id.clone(),
         name: clean_name.to_uppercase(),
         version: payload.version.clone(),
-        loader: if is_fabric_loader(&clean_loader) {
-            "Fabric".to_string()
-        } else {
-            "Vanilla".to_string()
-        },
-        fabric_loader_version,
+        loader: loader_kind.canonical_name().to_string(),
+        loader_version,
         status: "EMPTY".to_string(),
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
@@ -146,15 +135,8 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         return Err("Instance not found".into());
     };
 
-    let clean_loader = payload.loader.trim().to_string();
-    let fabric_loader_version = if is_fabric_loader(&clean_loader) {
-        let Some(loader_version) = payload.fabric_loader_version.clone() else {
-            return Err("Fabric loader version is required".into());
-        };
-        Some(loader_version)
-    } else {
-        None
-    };
+    let (loader_kind, loader_version) =
+        normalized_loader_and_version(&payload.loader, payload.loader_version.clone())?;
 
     let old_item = items[index].clone();
     let old_instance_dir = PathBuf::from(&old_item.game_dir)
@@ -185,12 +167,8 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         id: old_item.id.clone(),
         name: clean_name.to_uppercase(),
         version: payload.version.clone(),
-        loader: if is_fabric_loader(&clean_loader) {
-            "Fabric".to_string()
-        } else {
-            "Vanilla".to_string()
-        },
-        fabric_loader_version,
+        loader: loader_kind.canonical_name().to_string(),
+        loader_version,
         status: old_item.status,
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
@@ -289,11 +267,11 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
     )
     .await;
     Ok(InstanceExportData {
-        schema_version: 1,
+        schema_version: 2,
         name: instance.name,
         version: instance.version,
         loader: instance.loader,
-        fabric_loader_version: instance.fabric_loader_version,
+        loader_version: instance.loader_version,
         ram: instance.ram,
         java_args: instance.java_args,
         java_path: instance.java_path,
@@ -322,13 +300,8 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
         return Err("Build with this name already exists".into());
     }
 
-    let clean_loader = payload.loader.trim().to_string();
-    let is_fabric = is_fabric_loader(&clean_loader);
-    let fabric_loader_version = if is_fabric {
-        payload.fabric_loader_version.clone()
-    } else {
-        None
-    };
+    let (loader_kind, loader_version) =
+        normalized_loader_and_version(&payload.loader, payload.loader_version.clone())?;
 
     let id = format!("inst-{}", uuid::Uuid::new_v4());
     let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
@@ -342,12 +315,8 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
         id: id.clone(),
         name: clean_name.to_uppercase(),
         version: payload.version.clone(),
-        loader: if is_fabric {
-            "Fabric".to_string()
-        } else {
-            "Vanilla".to_string()
-        },
-        fabric_loader_version,
+        loader: loader_kind.canonical_name().to_string(),
+        loader_version,
         status: "EMPTY".to_string(),
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
@@ -372,7 +341,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
     items.push(item.clone());
     write_instances(&items).await?;
 
-    let loaders: Vec<&str> = if is_fabric { vec!["fabric"] } else { vec![] };
+    let loaders: Vec<&str> = loader_kind.modrinth_id().into_iter().collect();
 
     // Install mods
     if !payload.mods.is_empty() {

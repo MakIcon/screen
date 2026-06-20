@@ -40,6 +40,7 @@ export function PluginCard({
         enabled ? "plugin-card--enabled" : "",
         active ? "plugin-card--active" : "",
       ].join(" ")}
+      aria-current={active ? "true" : undefined}
     >
       <div
         className="plugin-card-main"
@@ -66,6 +67,7 @@ export function PluginCard({
           <button
             className={`plugin-card-toggle ${enabled ? "plugin-card-toggle--enabled" : ""}`}
             type="button"
+            aria-pressed={enabled}
             aria-label={`${enabled ? "Disable" : "Enable"} ${definition.title}`}
             onClick={(event) => {
               event.stopPropagation();

@@ -42,10 +42,10 @@ interface InstancesTabProps {
   setCreateVersion: (v: string) => void;
   createLoader: LoaderType;
   setCreateLoader: (v: LoaderType) => void;
-  fabricLoaderVersions: string[];
-  fabricLoaderVersionsLoading: boolean;
-  createFabricLoaderVersion: string;
-  setCreateFabricLoaderVersion: (v: string) => void;
+  loaderVersions: string[];
+  loaderVersionsLoading: boolean;
+  createLoaderVersion: string;
+  setCreateLoaderVersion: (v: string) => void;
   createError: string;
   setCreateError: (v: string) => void;
 
@@ -114,10 +114,10 @@ export function InstancesTab({
   setCreateVersion,
   createLoader,
   setCreateLoader,
-  fabricLoaderVersions,
-  fabricLoaderVersionsLoading,
-  createFabricLoaderVersion,
-  setCreateFabricLoaderVersion,
+  loaderVersions,
+  loaderVersionsLoading,
+  createLoaderVersion,
+  setCreateLoaderVersion,
   createError,
   setCreateError,
   minecraftVersions,
@@ -345,33 +345,31 @@ export function InstancesTab({
                     onSelect={(value) => {
                       const nextLoader = value as LoaderType;
                       setCreateLoader(nextLoader);
-                      if (nextLoader !== "Fabric") {
-                        setCreateFabricLoaderVersion("");
-                      }
+                      setCreateLoaderVersion("");
                       setOpenDropdown(null);
                     }}
                   />
                 </div>
               </div>
 
-              {createLoader === "Fabric" ? (
+              {createLoader !== "Vanilla" ? (
                 <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
                   <div className="detail-block create-loader-detail-block">
-                    <span className="detail-title">FABRIC LOADER VERSION</span>
+                    <span className="detail-title">{createLoader.toUpperCase()} LOADER VERSION</span>
                     <InlineDropdown
                       label=""
                       value={
-                        fabricLoaderVersionsLoading
+                        loaderVersionsLoading
                           ? "LOADING..."
-                          : createFabricLoaderVersion || "SELECT FABRIC VERSION"
+                          : createLoaderVersion || "SELECT " + createLoader.toUpperCase() + " VERSION"
                       }
-                      options={fabricLoaderVersions}
-                      isOpen={openDropdown === "create-fabric-loader"}
+                      options={loaderVersions}
+                      isOpen={openDropdown === "create-loader-version"}
                       onToggle={() =>
-                        setOpenDropdown(openDropdown === "create-fabric-loader" ? null : "create-fabric-loader")
+                        setOpenDropdown(openDropdown === "create-loader-version" ? null : "create-loader-version")
                       }
                       onSelect={(value) => {
-                        setCreateFabricLoaderVersion(value);
+                        setCreateLoaderVersion(value);
                         setOpenDropdown(null);
                       }}
                     />
@@ -431,7 +429,9 @@ export function InstancesTab({
 
                 <InfoPanel
                   label="LOADER"
-                  value={selectedInstance?.loader}
+                  value={selectedInstance?.loaderVersion
+                    ? selectedInstance.loader + " " + selectedInstance.loaderVersion
+                    : selectedInstance?.loader}
                   placeholder="SELECT LOADER"
                   bottomSpace={buildInfoBottomSpace}
                 />

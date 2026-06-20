@@ -18,6 +18,8 @@ export type PlaceholderContext = {
 const FRIENDLY_PLACEHOLDER_VALUES: Record<string, string> = {
   empty: "Empty",
   fabric: "Fabric",
+  quilt: "Quilt",
+  neoforge: "NeoForge",
   microsoft: "Microsoft",
   offline: "Offline",
   ready: "Ready",

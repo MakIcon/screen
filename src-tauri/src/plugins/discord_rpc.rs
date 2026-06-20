@@ -14,10 +14,10 @@ use crate::{
 
 const LAUNCHER_RPC_SESSION_ID: &str = "__launcher__";
 
-/// Logs an RPC diagnostic line to stderr (visible in the dev console).
+/// Keeps diagnostic call sites type-checked without writing RPC noise to stderr.
 macro_rules! rpc_log {
     ($($arg:tt)*) => {{
-        eprintln!("{}{}", "[discord-rpc] ", format!($($arg)*));
+        let _ = format_args!($($arg)*);
     }};
 }
 
@@ -524,7 +524,7 @@ fn launcher_placeholder_instance(instances: &[InstanceItem]) -> InstanceItem {
         name: "ScreenLauncher".to_string(),
         version: "Launcher".to_string(),
         loader: "Ready".to_string(),
-        fabric_loader_version: None,
+        loader_version: None,
         status: "READY".to_string(),
         ram: 0,
         java_args: None,

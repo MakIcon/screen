@@ -21,10 +21,8 @@ interface ModsTabProps {
   installedModsLoading: boolean;
 
   // Target
-  fabricInstances: InstanceItem[];
+  moddedInstances: InstanceItem[];
   selectedModTarget: InstanceItem | null;
-  selectedModrinthVersion: string;
-  setSelectedModrinthVersion: (v: string) => void;
   setSelectedInstanceId: (id: string) => void;
 
   // Dropdown
@@ -57,7 +55,7 @@ export function ModsTab({
   modSearch, setModSearch,
   modrinthItems, modrinthTotalHits, modrinthLoading, modrinthLoadingMore, modrinthError, modrinthInstallBusyId,
   installedMods, installedModsLoading,
-  fabricInstances, selectedModTarget, selectedModrinthVersion, setSelectedModrinthVersion,
+  moddedInstances, selectedModTarget,
   setSelectedInstanceId,
   openDropdown, setOpenDropdown,
   resolveForTarget,
@@ -72,7 +70,7 @@ export function ModsTab({
             <label className="field compact-field search-field">
               <span>MODRINTH SEARCH</span>
               <input
-                placeholder="Search Fabric mods..."
+                placeholder="Search compatible mods..."
                 value={modSearch}
                 onChange={(e) => setModSearch(e.target.value)}
               />
@@ -95,8 +93,8 @@ export function ModsTab({
 
           {!selectedModTarget ? (
             <div className="empty-state-box">
-              <strong>NO FABRIC BUILDS</strong>
-              <p>Создай Fabric-сборку во вкладке BUILDS, чтобы устанавливать моды с Modrinth.</p>
+              <strong>NO MODDED BUILDS</strong>
+              <p>Создай Fabric, Quilt или NeoForge-сборку во вкладке BUILDS.</p>
             </div>
           ) : (
             <CustomScrollArea
@@ -117,12 +115,12 @@ export function ModsTab({
               ) : modrinthItems.length === 0 ? (
                 <div className="empty-state-box">
                   <strong>NOTHING FOUND</strong>
-                  <p>Попробуй другой запрос или другую Fabric-версию.</p>
+                  <p>Попробуй другой запрос или другую сборку.</p>
                 </div>
               ) : (
                 <>
                   {modrinthItems.map((item) => {
-                    const category = item.displayCategories?.[0] || item.categories?.[0] || "Fabric";
+                    const category = item.displayCategories?.[0] || item.categories?.[0] || selectedModTarget.loader;
                     const installing = modrinthInstallBusyId === item.projectId;
                     return (
                       <div className="mod-card modrinth-card" key={item.projectId}>
@@ -193,17 +191,14 @@ export function ModsTab({
 
           <div style={{ marginBottom: 24 }}>
             <InlineDropdown
-              label="FABRIC BUILD"
-              value={selectedModTarget?.name || "SELECT FABRIC BUILD"}
-              options={fabricInstances.map((i) => i.name)}
+              label="MODDED BUILD"
+              value={selectedModTarget?.name || "SELECT MODDED BUILD"}
+              options={moddedInstances.map((i) => i.name)}
               isOpen={openDropdown === "target-mods"}
               onToggle={() => setOpenDropdown(openDropdown === "target-mods" ? null : "target-mods")}
               onSelect={(value) => {
-                const found = fabricInstances.find((i) => i.name === value);
-                if (found) {
-                  setSelectedInstanceId(found.id);
-                  setSelectedModrinthVersion(found.version);
-                }
+                const found = moddedInstances.find((i) => i.name === value);
+                if (found) setSelectedInstanceId(found.id);
                 setOpenDropdown(null);
               }}
             />
@@ -215,7 +210,7 @@ export function ModsTab({
               <span className="detail-value">
                 {resolveForTarget(
                   "%build_version%",
-                  selectedModTarget ?? { version: selectedModrinthVersion, loader: "Fabric" },
+                  selectedModTarget,
                 )}
               </span>
             </div>
@@ -224,7 +219,7 @@ export function ModsTab({
               <span className="detail-value">
                 {resolveForTarget(
                   "%build_loader%",
-                  selectedModTarget ?? { version: selectedModrinthVersion, loader: "Fabric" },
+                  selectedModTarget,
                 )}
               </span>
             </div>

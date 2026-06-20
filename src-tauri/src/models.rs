@@ -51,8 +51,8 @@ pub struct InstanceItem {
     pub name: String,
     pub version: String,
     pub loader: String,
-    #[serde(default)]
-    pub fabric_loader_version: Option<String>,
+    #[serde(default, alias = "fabricLoaderVersion")]
+    pub loader_version: Option<String>,
     pub status: String,
     pub ram: u32,
     #[serde(default)]
@@ -93,8 +93,8 @@ pub struct CreateInstancePayload {
     pub name: String,
     pub version: String,
     pub loader: String,
-    #[serde(default)]
-    pub fabric_loader_version: Option<String>,
+    #[serde(default, alias = "fabricLoaderVersion")]
+    pub loader_version: Option<String>,
     pub ram: u32,
     #[serde(default)]
     pub java_args: Option<String>,
@@ -115,8 +115,8 @@ pub struct UpdateInstancePayload {
     pub name: String,
     pub version: String,
     pub loader: String,
-    #[serde(default)]
-    pub fabric_loader_version: Option<String>,
+    #[serde(default, alias = "fabricLoaderVersion")]
+    pub loader_version: Option<String>,
     pub ram: u32,
     #[serde(default)]
     pub java_args: Option<String>,
@@ -824,8 +824,8 @@ pub struct InstanceExportData {
     pub name: String,
     pub version: String,
     pub loader: String,
-    #[serde(default)]
-    pub fabric_loader_version: Option<String>,
+    #[serde(default, alias = "fabricLoaderVersion")]
+    pub loader_version: Option<String>,
     pub ram: u32,
     #[serde(default)]
     pub java_args: Option<String>,
@@ -851,8 +851,8 @@ pub struct ImportInstancePayload {
     pub name: String,
     pub version: String,
     pub loader: String,
-    #[serde(default)]
-    pub fabric_loader_version: Option<String>,
+    #[serde(default, alias = "fabricLoaderVersion")]
+    pub loader_version: Option<String>,
     pub ram: u32,
     #[serde(default)]
     pub java_args: Option<String>,
@@ -870,4 +870,27 @@ pub struct ImportInstancePayload {
     pub shaders: Vec<ExportedItem>,
     #[serde(default)]
     pub resource_packs: Vec<ExportedItem>,
+}
+
+#[cfg(test)]
+mod loader_schema_tests {
+    use super::InstanceExportData;
+
+    #[test]
+    fn reads_legacy_fabric_loader_version_and_writes_loader_version() {
+        let legacy = serde_json::json!({
+            "schemaVersion": 1,
+            "name": "Legacy Fabric",
+            "version": "1.21.1",
+            "loader": "Fabric",
+            "fabricLoaderVersion": "0.16.14",
+            "ram": 4
+        });
+        let parsed: InstanceExportData = serde_json::from_value(legacy).unwrap();
+        assert_eq!(parsed.loader_version.as_deref(), Some("0.16.14"));
+
+        let serialized = serde_json::to_value(parsed).unwrap();
+        assert_eq!(serialized["loaderVersion"], "0.16.14");
+        assert!(serialized.get("fabricLoaderVersion").is_none());
+    }
 }

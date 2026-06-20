@@ -4,7 +4,7 @@ use reqwest::Client;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    minecraft::{ensure_fabric_version_json, is_fabric_loader},
+    minecraft::ensure_loader_profile,
     models::{InstallProgressPayload, InstanceItem},
     paths::{ensure_layout, read_instances, write_instances},
 };
@@ -60,15 +60,7 @@ pub async fn install_instance_files(
         },
     );
 
-    let version_id_to_resolve = if is_fabric_loader(&instance.loader) {
-        let loader_version = instance
-            .fabric_loader_version
-            .as_deref()
-            .ok_or_else(|| "Fabric loader version missing for instance".to_string())?;
-        ensure_fabric_version_json(&client, &instance.version, loader_version).await?
-    } else {
-        instance.version.clone()
-    };
+    let version_id_to_resolve = ensure_loader_profile(&client, instance).await?;
 
     let resolved = resolve_version_meta(&client, &version_id_to_resolve).await?;
     let game_dir = PathBuf::from(&instance.game_dir);

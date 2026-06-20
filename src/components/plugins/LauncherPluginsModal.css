@@ -156,28 +156,32 @@
 }
 
 .plugin-card {
+  position: relative;
   border: 1px solid var(--line);
   background: var(--bg-panel);
-  transition: border-color 0.16s, background 0.16s, transform 0.16s;
+  overflow: hidden;
+  transition: border-color 0.16s, background 0.16s, transform 0.16s, box-shadow 0.16s;
 }
 
 .plugin-card--enabled {
-  border-color: rgba(194, 65, 12, 0.26);
-  background: var(--bg-selected);
+  border-color: rgba(47, 111, 69, 0.32);
+  background: rgba(47, 111, 69, 0.045);
 }
 
 .plugin-card--active {
-  border-color: var(--line-strong);
-  background: var(--bg-panel-strong);
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+  box-shadow: inset 4px 0 0 var(--accent);
+  transform: translateX(2px);
 }
 
 .plugin-card--active.plugin-card--enabled {
-  border-color: rgba(194, 65, 12, 0.42);
+  border-color: var(--accent);
 }
 
 .plugin-card-main {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 58px;
+  grid-template-columns: 48px minmax(0, 1fr) 78px;
   gap: 14px;
   align-items: center;
   min-height: 92px;
@@ -212,6 +216,8 @@
 .plugin-card-topline {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
   margin-bottom: 7px;
   color: var(--muted);
   font-size: 8px;

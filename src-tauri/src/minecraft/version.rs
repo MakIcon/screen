@@ -78,7 +78,7 @@ fn dedup_libraries(libraries: Vec<Library>) -> Vec<Library> {
     let mut seen = std::collections::HashSet::new();
     let mut result: Vec<Library> = Vec::new();
     // Key = group:artifact:classifier (ignores version only).
-    // Reverse iteration means child (Fabric) version wins over parent (vanilla).
+    // Reverse iteration means the child loader profile wins over vanilla.
     for lib in libraries.into_iter().rev() {
         let parts: Vec<&str> = lib.name.split(':').collect();
         let group = parts.first().copied().unwrap_or("");

@@ -305,9 +305,9 @@ export default function App() {
   const [createBuildName, setCreateBuildName] = useState("");
   const [createVersion, setCreateVersion] = useState("");
   const [createLoader, setCreateLoader] = useState<LoaderType>("Vanilla");
-  const [fabricLoaderVersions, setFabricLoaderVersions] = useState<string[]>([]);
-  const [fabricLoaderVersionsLoading, setFabricLoaderVersionsLoading] = useState(false);
-  const [createFabricLoaderVersion, setCreateFabricLoaderVersion] = useState("");
+  const [loaderVersions, setLoaderVersions] = useState<string[]>([]);
+  const [loaderVersionsLoading, setLoaderVersionsLoading] = useState(false);
+  const [createLoaderVersion, setCreateLoaderVersion] = useState("");
   const [createError, setCreateError] = useState("");
 
   const [busyMessage, setBusyMessage] = useState("");
@@ -644,7 +644,7 @@ export default function App() {
             name: target.name,
             version: target.version,
             loader: target.loader,
-            fabricLoaderVersion: target.fabricLoaderVersion ?? null,
+            loaderVersion: target.loaderVersion ?? null,
             ram: normalizedRuntime.ram,
             javaArgs: normalizedRuntime.javaArgs,
             javaPath: normalizedRuntime.javaPath || null,
@@ -798,8 +798,8 @@ export default function App() {
     buildCardSettingsDraft,
   ]);
 
-  const fabricInstances = useMemo(
-    () => instances.filter((item) => item.loader.toLowerCase() === "fabric"),
+  const moddedInstances = useMemo(
+    () => instances.filter((item) => item.loader.toLowerCase() !== "vanilla"),
     [instances]
   );
 
@@ -837,8 +837,8 @@ export default function App() {
     }));
 
   const selectedModTarget = useMemo(
-    () => fabricInstances.find((item) => item.id === selectedInstanceId) || fabricInstances[0] || null,
-    [fabricInstances, selectedInstanceId]
+    () => moddedInstances.find((item) => item.id === selectedInstanceId) || moddedInstances[0] || null,
+    [moddedInstances, selectedInstanceId]
   );
 
   const selectedShaderTarget = useMemo(
@@ -848,7 +848,6 @@ export default function App() {
 
   const {
     modSearch, setModSearch,
-    selectedModrinthVersion, setSelectedModrinthVersion,
     modrinthItems, modrinthTotalHits, modrinthLoading, modrinthLoadingMore, modrinthError,
     modrinthInstallBusyId,
     installedMods, installedModsLoading,
@@ -1103,35 +1102,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const syncFabricLoaders = async () => {
-      if (createLoader !== "Fabric" || !createVersion) {
-        setFabricLoaderVersions([]);
-        setCreateFabricLoaderVersion("");
+    const syncLoaderVersions = async () => {
+      if (createLoader === "Vanilla" || !createVersion) {
+        setLoaderVersions([]);
+        setCreateLoaderVersion("");
         return;
       }
 
       try {
-        setFabricLoaderVersionsLoading(true);
-        const versions = await invoke<string[]>("get_fabric_loader_versions", {
+        setLoaderVersionsLoading(true);
+        setCreateError("");
+        const versions = await invoke<string[]>("get_loader_versions", {
+          loader: createLoader,
           mcVersion: createVersion,
         });
 
-        setFabricLoaderVersions(versions);
-        setCreateFabricLoaderVersion((current) => {
+        setLoaderVersions(versions);
+        if (versions.length === 0) {
+          setCreateError("No compatible " + createLoader + " versions for Minecraft " + createVersion);
+        }
+        setCreateLoaderVersion((current) => {
           if (current && versions.includes(current)) return current;
           return versions[0] || "";
         });
       } catch (error) {
         console.error(error);
-        setFabricLoaderVersions([]);
-        setCreateFabricLoaderVersion("");
+        setLoaderVersions([]);
+        setCreateLoaderVersion("");
         setCreateError(String(error));
       } finally {
-        setFabricLoaderVersionsLoading(false);
+        setLoaderVersionsLoading(false);
       }
     };
 
-    void syncFabricLoaders();
+    void syncLoaderVersions();
   }, [createLoader, createVersion]);
 
   // Polling: каждые 3 сек проверяем живы ли запущенные процессы
@@ -1304,8 +1308,8 @@ const isScrollableElement = (target: EventTarget | null) => {
         return;
       }
 
-      if (createLoader === "Fabric" && !createFabricLoaderVersion) {
-        setCreateError("Выберите версию Fabric Loader");
+      if (createLoader !== "Vanilla" && !createLoaderVersion) {
+        setCreateError("Выберите версию " + createLoader + " Loader");
         return;
       }
 
@@ -1330,7 +1334,7 @@ const isScrollableElement = (target: EventTarget | null) => {
           name: cleanName,
           version: createVersion,
           loader: createLoader,
-          fabricLoaderVersion: createLoader === "Fabric" ? createFabricLoaderVersion : null,
+          loaderVersion: createLoader !== "Vanilla" ? createLoaderVersion : null,
           ram: createRuntime.ram,
           javaArgs: createRuntimeSettingsTouched ? createRuntime.javaArgs : null,
           javaPath: createRuntimeSettingsTouched && createRuntime.javaPath ? createRuntime.javaPath : null,
@@ -1352,7 +1356,7 @@ const isScrollableElement = (target: EventTarget | null) => {
       setCreateMode(false);
       setCreateBuildName("");
       setCreateLoader("Vanilla");
-      setCreateFabricLoaderVersion("");
+      setCreateLoaderVersion("");
       setCreateRamGb(clampRamToSystem(launcherSettings?.defaultRamGb ?? 4, systemRamGb));
       setCreateRuntimeSettings({
         javaArgs: "",
@@ -1580,11 +1584,11 @@ const isScrollableElement = (target: EventTarget | null) => {
   const handleExportDownload = () => {
     if (!exportData || !exportInstanceId) return;
     const out = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: exportOptions.name ? exportData.name : "",
       version: exportData.version,
       loader: exportData.loader,
-      fabricLoaderVersion: exportData.fabricLoaderVersion ?? null,
+      loaderVersion: exportData.loaderVersion ?? null,
       ram: exportOptions.ram ? exportData.ram : 0,
       javaArgs: exportOptions.javaArgs ? (exportData.javaArgs ?? null) : null,
       javaPath: exportOptions.javaPath ? (exportData.javaPath ?? null) : null,
@@ -1722,7 +1726,7 @@ const isScrollableElement = (target: EventTarget | null) => {
               name,
               version: importData.version,
               loader: importData.loader,
-              fabricLoaderVersion: importData.fabricLoaderVersion ?? null,
+              loaderVersion: importData.loaderVersion ?? null,
               ram,
               javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
               javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
@@ -1775,10 +1779,10 @@ const isScrollableElement = (target: EventTarget | null) => {
             setCreateVersion={setCreateVersion}
             createLoader={createLoader}
             setCreateLoader={setCreateLoader}
-            fabricLoaderVersions={fabricLoaderVersions}
-            fabricLoaderVersionsLoading={fabricLoaderVersionsLoading}
-            createFabricLoaderVersion={createFabricLoaderVersion}
-            setCreateFabricLoaderVersion={setCreateFabricLoaderVersion}
+            loaderVersions={loaderVersions}
+            loaderVersionsLoading={loaderVersionsLoading}
+            createLoaderVersion={createLoaderVersion}
+            setCreateLoaderVersion={setCreateLoaderVersion}
             createError={createError}
             setCreateError={setCreateError}
             minecraftVersions={minecraftVersions}
@@ -1829,10 +1833,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             modrinthInstallBusyId={modrinthInstallBusyId}
             installedMods={installedMods}
             installedModsLoading={installedModsLoading}
-            fabricInstances={fabricInstances}
+            moddedInstances={moddedInstances}
             selectedModTarget={selectedModTarget}
-            selectedModrinthVersion={selectedModrinthVersion}
-            setSelectedModrinthVersion={setSelectedModrinthVersion}
             setSelectedInstanceId={setSelectedInstanceId}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}

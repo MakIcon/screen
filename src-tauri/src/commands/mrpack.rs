@@ -19,6 +19,7 @@ use crate::{
             MODRINTH_API_BASE,
         },
     },
+    minecraft::LoaderKind,
     models::{ExportedItem, ImportInstancePayload, InstanceExportData, InstanceItem},
     paths::{now_string, read_instances},
 };
@@ -181,18 +182,49 @@ fn bytes_match_hashes(bytes: &[u8], hashes: &HashMap<String, String>) -> bool {
 fn loader_from_dependencies(
     dependencies: &BTreeMap<String, String>,
 ) -> Result<(String, Option<String>), String> {
-    if dependencies.contains_key("forge")
-        || dependencies.contains_key("neoforge")
-        || dependencies.contains_key("quilt-loader")
-    {
-        return Err("This mrpack uses Forge, NeoForge, or Quilt. ScreenLauncher currently supports Vanilla and Fabric packs.".to_string());
+    if dependencies.contains_key("forge") {
+        return Err("Forge packs are not supported".to_string());
     }
+    let declared = [
+        ("fabric-loader", LoaderKind::Fabric),
+        ("quilt-loader", LoaderKind::Quilt),
+        ("neoforge", LoaderKind::NeoForge),
+    ]
+    .into_iter()
+    .filter_map(|(key, loader)| dependencies.get(key).map(|version| (loader, version)))
+    .collect::<Vec<_>>();
+    if declared.len() > 1 {
+        return Err("mrpack declares multiple mod loaders".to_string());
+    }
+    Ok(declared
+        .first()
+        .map(|(loader, version)| {
+            (
+                loader.canonical_name().to_string(),
+                Some((*version).clone()),
+            )
+        })
+        .unwrap_or_else(|| ("Vanilla".to_string(), None)))
+}
 
-    if let Some(version) = dependencies.get("fabric-loader") {
-        Ok(("Fabric".to_string(), Some(version.clone())))
-    } else {
-        Ok(("Vanilla".to_string(), None))
+fn loader_dependency(
+    loader: &str,
+    loader_version: Option<&str>,
+) -> Result<Option<(String, String)>, String> {
+    let kind = LoaderKind::parse(loader)?;
+    if !kind.requires_version() {
+        return Ok(None);
     }
+    let version = loader_version
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{} loader version is missing", kind.canonical_name()))?;
+    let key = match kind {
+        LoaderKind::Fabric => "fabric-loader",
+        LoaderKind::Quilt => "quilt-loader",
+        LoaderKind::NeoForge => "neoforge",
+        LoaderKind::Vanilla => unreachable!(),
+    };
+    Ok(Some((key.to_string(), version.to_string())))
 }
 
 fn validate_index(index: &MrpackIndex) -> Result<(), String> {
@@ -288,7 +320,7 @@ fn item_from_path(path: &str) -> ExportedItem {
 }
 
 fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
-    let (loader, fabric_loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
+    let (loader, loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
     let version = bundle
         .index
         .dependencies
@@ -320,11 +352,11 @@ fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
 
     let meta = bundle.screen_meta;
     Ok(InstanceExportData {
-        schema_version: 1,
+        schema_version: 2,
         name: bundle.index.name,
         version,
         loader,
-        fabric_loader_version,
+        loader_version,
         ram: meta.as_ref().map(|value| value.ram).unwrap_or(0),
         java_args: meta.as_ref().and_then(|value| value.java_args.clone()),
         java_path: meta.as_ref().and_then(|value| value.java_path.clone()),
@@ -346,6 +378,12 @@ pub async fn read_slbuild_file(path: String) -> Result<InstanceExportData, Strin
         serde_json::from_str(&raw).map_err(|e| format!("parse .slbuild error: {e}"))?;
     if data.version.trim().is_empty() || data.loader.trim().is_empty() {
         return Err("Invalid .slbuild: version or loader is missing".to_string());
+    }
+    if data.schema_version == 0 || data.schema_version > 2 {
+        return Err(format!(
+            "Unsupported .slbuild schema version: {}",
+            data.schema_version
+        ));
     }
     Ok(data)
 }
@@ -551,12 +589,10 @@ pub async fn export_instance_mrpack(
 
     let mut dependencies = BTreeMap::new();
     dependencies.insert("minecraft".to_string(), instance.version.clone());
-    if instance.loader.eq_ignore_ascii_case("fabric") {
-        let loader_version = instance
-            .fabric_loader_version
-            .clone()
-            .ok_or_else(|| "Fabric loader version is missing for this build".to_string())?;
-        dependencies.insert("fabric-loader".to_string(), loader_version);
+    if let Some((dependency, version)) =
+        loader_dependency(&instance.loader, instance.loader_version.as_deref())?
+    {
+        dependencies.insert(dependency, version);
     }
 
     let pack_name = if options.include_name && !instance.name.trim().is_empty() {
@@ -777,7 +813,7 @@ pub async fn import_mrpack(
     .await
     .map_err(|e| format!("mrpack read task failed: {e}"))??;
 
-    let (loader, fabric_loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
+    let (loader, loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
     let minecraft_version = bundle
         .index
         .dependencies
@@ -789,7 +825,7 @@ pub async fn import_mrpack(
         name: options.name.clone(),
         version: minecraft_version,
         loader,
-        fabric_loader_version,
+        loader_version,
         ram: options.ram,
         java_args: options.java_args.clone(),
         java_path: options.java_path.clone(),
@@ -915,6 +951,48 @@ mod tests {
         assert!(safe_relative_path("mods/../../escape.jar").is_err());
         assert!(safe_relative_path("C:/escape.jar").is_err());
         assert!(safe_relative_path("mods/example.jar").is_ok());
+    }
+
+    #[test]
+    fn recognizes_supported_pack_loaders_and_rejects_ambiguous_packs() {
+        let quilt = BTreeMap::from([("quilt-loader".to_string(), "0.29.2".to_string())]);
+        assert_eq!(
+            loader_from_dependencies(&quilt).unwrap(),
+            ("Quilt".to_string(), Some("0.29.2".to_string()))
+        );
+
+        let neoforge = BTreeMap::from([("neoforge".to_string(), "21.1.200".to_string())]);
+        assert_eq!(
+            loader_from_dependencies(&neoforge).unwrap(),
+            ("NeoForge".to_string(), Some("21.1.200".to_string()))
+        );
+
+        let forge = BTreeMap::from([("forge".to_string(), "47.3.0".to_string())]);
+        assert!(loader_from_dependencies(&forge).is_err());
+
+        let mixed = BTreeMap::from([
+            ("fabric-loader".to_string(), "0.16.14".to_string()),
+            ("quilt-loader".to_string(), "0.29.2".to_string()),
+        ]);
+        assert!(loader_from_dependencies(&mixed).is_err());
+    }
+
+    #[test]
+    fn exports_loader_dependencies_with_modrinth_keys() {
+        assert_eq!(loader_dependency("Vanilla", None).unwrap(), None);
+        assert_eq!(
+            loader_dependency("Fabric", Some("0.16.14")).unwrap(),
+            Some(("fabric-loader".to_string(), "0.16.14".to_string()))
+        );
+        assert_eq!(
+            loader_dependency("Quilt", Some("0.29.2")).unwrap(),
+            Some(("quilt-loader".to_string(), "0.29.2".to_string()))
+        );
+        assert_eq!(
+            loader_dependency("NeoForge", Some("21.1.200")).unwrap(),
+            Some(("neoforge".to_string(), "21.1.200".to_string()))
+        );
+        assert!(loader_dependency("NeoForge", None).is_err());
     }
 
     #[test]

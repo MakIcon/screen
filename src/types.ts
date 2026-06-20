@@ -6,14 +6,14 @@ export type TabKey =
   | "shaders"
   | "settings";
 
-export type LoaderType = "Vanilla" | "Fabric";
+export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "NeoForge";
 
 export type InstanceItem = {
   id: string;
   name: string;
   version: string;
   loader: LoaderType | string;
-  fabricLoaderVersion?: string | null;
+  loaderVersion?: string | null;
   status: "READY" | "EMPTY" | "UPDATING" | "RUNNING" | string;
   pid?: number | null;
   ram: number;
@@ -96,7 +96,7 @@ export type CreateInstancePayload = {
   name: string;
   version: string;
   loader: LoaderType;
-  fabricLoaderVersion?: string | null;
+  loaderVersion?: string | null;
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
@@ -110,7 +110,7 @@ export type UpdateInstancePayload = {
   name: string;
   version: string;
   loader: LoaderType | string;
-  fabricLoaderVersion?: string | null;
+  loaderVersion?: string | null;
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
@@ -351,7 +351,7 @@ export type InstanceExportData = {
   name: string;
   version: string;
   loader: string;
-  fabricLoaderVersion?: string | null;
+  loaderVersion?: string | null;
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
@@ -367,7 +367,7 @@ export type ImportInstancePayload = {
   name: string;
   version: string;
   loader: string;
-  fabricLoaderVersion?: string | null;
+  loaderVersion?: string | null;
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
@@ -402,7 +402,7 @@ export type DropdownKey =
   | "account"
   | "create-version"
   | "create-loader"
-  | "create-fabric-loader"
+  | "create-loader-version"
   | "target-mods"
   | "target-packs"
   | "target-shaders";

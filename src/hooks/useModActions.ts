@@ -17,8 +17,6 @@ export function useModActions({
   setBusyMessage,
 }: UseModActionsParams) {
   const [modSearch, setModSearch] = useState("");
-  const [modrinthVersionOptions, setModrinthVersionOptions] = useState<string[]>([]);
-  const [selectedModrinthVersion, setSelectedModrinthVersion] = useState("");
   const [modrinthItems, setModrinthItems] = useState<ModrinthProject[]>([]);
   const [modrinthTotalHits, setModrinthTotalHits] = useState(0);
   const [modrinthLoading, setModrinthLoading] = useState(false);
@@ -27,26 +25,6 @@ export function useModActions({
   const [modrinthInstallBusyId, setModrinthInstallBusyId] = useState<string | null>(null);
   const [installedMods, setInstalledMods] = useState<InstalledModView[]>([]);
   const [installedModsLoading, setInstalledModsLoading] = useState(false);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const versions = await invoke<string[]>("get_modrinth_fabric_versions");
-        setModrinthVersionOptions(versions);
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    void load();
-  }, []);
-
-  useEffect(() => {
-    if (selectedModTarget?.version) {
-      setSelectedModrinthVersion(selectedModTarget.version);
-      return;
-    }
-    setSelectedModrinthVersion((current) => current || modrinthVersionOptions[0] || "");
-  }, [selectedModTarget?.version, modrinthVersionOptions]);
 
   useEffect(() => {
     const load = async () => {
@@ -68,16 +46,21 @@ export function useModActions({
   }, [selectedModTarget?.id, modrinthInstallBusyId]);
 
   useEffect(() => {
-    if (activeTab !== "mods" || !selectedModrinthVersion) return;
+    if (activeTab !== "mods" || !selectedModTarget) {
+      if (!selectedModTarget) {
+        setModrinthItems([]);
+        setModrinthTotalHits(0);
+      }
+      return;
+    }
 
     const load = async () => {
       try {
         setModrinthLoading(true);
         setModrinthError("");
         const result = await invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-          instanceId: selectedModTarget?.id ?? null,
+          instanceId: selectedModTarget.id,
           query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion,
           offset: 0,
           limit: 24,
         });
@@ -95,18 +78,17 @@ export function useModActions({
 
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [activeTab, modSearch, selectedModTarget?.id, selectedModrinthVersion]);
+  }, [activeTab, modSearch, selectedModTarget?.id]);
 
   const handleLoadMoreMods = async () => {
-    if (!selectedModrinthVersion || modrinthLoadingMore || modrinthLoading) return;
+    if (!selectedModTarget || modrinthLoadingMore || modrinthLoading) return;
     if (modrinthItems.length >= modrinthTotalHits) return;
 
     try {
       setModrinthLoadingMore(true);
       const result = await invoke<ModrinthSearchResponse>("search_modrinth_mods", {
-        instanceId: selectedModTarget?.id ?? null,
+        instanceId: selectedModTarget.id,
         query: modSearch.trim(),
-        gameVersion: selectedModrinthVersion,
         offset: modrinthItems.length,
         limit: 24,
       });
@@ -136,7 +118,6 @@ export function useModActions({
         invoke<ModrinthSearchResponse>("search_modrinth_mods", {
           instanceId: selectedModTarget.id,
           query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion || selectedModTarget.version,
           offset: 0,
           limit: Math.max(modrinthItems.length, 24),
         }),
@@ -174,7 +155,6 @@ export function useModActions({
         invoke<ModrinthSearchResponse>("search_modrinth_mods", {
           instanceId: selectedModTarget.id,
           query: modSearch.trim(),
-          gameVersion: selectedModrinthVersion,
           offset: 0,
           limit: Math.max(modrinthItems.length, 24),
         }),
@@ -193,8 +173,6 @@ export function useModActions({
 
   return {
     modSearch, setModSearch,
-    modrinthVersionOptions,
-    selectedModrinthVersion, setSelectedModrinthVersion,
     modrinthItems, modrinthTotalHits, modrinthLoading, modrinthLoadingMore, modrinthError,
     modrinthInstallBusyId,
     installedMods, installedModsLoading,

@@ -40,6 +40,7 @@ pub fn required_java_major(mc_version: &str) -> u32 {
         Some((1, 20, 0..=4)) => 17,
         Some((1, 20, _)) => 21,
         Some((1, minor, _)) if minor >= 21 => 21,
+        Some((major, _, _)) if major >= 26 => 25,
         _ => 8,
     }
 }
@@ -57,6 +58,7 @@ fn dir_matches_java_major(name: &str, major: u32) -> bool {
         16 => name.contains("16"),
         17 => name.contains("17"),
         21 => name.contains("21"),
+        25 => name.contains("25"),
         _ => false,
     }
 }
@@ -126,6 +128,7 @@ pub fn resolve_java_bin(mc_version: &str) -> String {
         16 => "JAVA16_HOME",
         17 => "JAVA17_HOME",
         21 => "JAVA21_HOME",
+        25 => "JAVA25_HOME",
         _ => "JAVA_HOME",
     };
 
@@ -164,7 +167,10 @@ pub fn effective_ram_gb(java_bin: &str, requested_ram: u32) -> u32 {
 }
 
 pub fn is_modern_mc(version: &str) -> bool {
-    matches!(parse_mc_version(version), Some((1, minor, _)) if minor >= 17)
+    matches!(
+        parse_mc_version(version),
+        Some((1, minor, _)) if minor >= 17
+    ) || matches!(parse_mc_version(version), Some((major, _, _)) if major >= 26)
 }
 
 fn g1_heap_region_size_mb(ram_gb: u32) -> u32 {
@@ -201,4 +207,16 @@ pub fn optimized_minecraft_jvm_args(ram_gb: u32) -> Vec<String> {
         "-Dsun.rmi.dgc.server.gcInterval=2147483646".to_string(),
         "-Dsun.rmi.dgc.client.gcInterval=2147483646".to_string(),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_java_25_calendar_versions() {
+        assert_eq!(required_java_major("26.1"), 25);
+        assert_eq!(required_java_major("26.1.2"), 25);
+        assert!(is_modern_mc("26.1"));
+    }
 }

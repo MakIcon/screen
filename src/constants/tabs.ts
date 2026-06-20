@@ -27,5 +27,5 @@ export const TAB_TITLE: Record<TabKey, string> = {
   settings: "SETTINGS",
 };
 
-export const LOADER_OPTIONS: LoaderType[] = ["Vanilla", "Fabric"];
+export const LOADER_OPTIONS: LoaderType[] = ["Vanilla", "Fabric", "Quilt", "NeoForge"];
 export const SOURCE_OPTIONS = ["OFFICIAL"];

@@ -477,7 +477,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
       const loaderLabel =
         instance.loader === "Vanilla"
           ? "Vanilla"
-          : `${instance.loader}${instance.fabricLoaderVersion ? ` ${instance.fabricLoaderVersion}` : ""}`;
+          : `${instance.loader}${instance.loaderVersion ? ` ${instance.loaderVersion}` : ""}`;
       list.push({
         kind: "created", ts: createdTs, title: instance.name,
         detail: [`${instance.version} · ${loaderLabel}`, `RAM: ${instance.ram} GB`],

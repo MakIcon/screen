@@ -81,7 +81,7 @@ export function LauncherPluginsModal({
 
           <div className="plugins-summary" aria-label="Plugin summary">
             <span>{PLUGIN_DEFINITIONS.length} TOTAL</span>
-            <strong>{enabledCount} ACTIVE</strong>
+            <strong>{enabledCount} ENABLED</strong>
           </div>
 
           <button

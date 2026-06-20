@@ -14,7 +14,7 @@ use tokio::fs as async_fs;
 use uuid::Uuid;
 
 use crate::{
-    minecraft::is_fabric_loader,
+    minecraft::LoaderKind,
     models::{
         ActionResult, InstanceItem, ObsTelemetryPayload, ObsTelemetryPluginSettings,
         ObsTelemetryStatus,
@@ -866,7 +866,7 @@ pub async fn prepare_obs_telemetry_for_launch(
         return Ok(Vec::new());
     }
 
-    if !is_fabric_loader(&instance.loader) {
+    if LoaderKind::parse(&instance.loader)? != LoaderKind::Fabric {
         return Err("OBS Telemetry requires a Fabric instance".to_string());
     }
 

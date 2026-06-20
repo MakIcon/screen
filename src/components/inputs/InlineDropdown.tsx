@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./InlineDropdown.css";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
@@ -21,6 +22,13 @@ interface InlineDropdownProps {
   instanceInfos?: InstanceInfo[];
 }
 
+interface MenuLayout {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
 function getInstanceBadge(info: InstanceInfo, irisMap: Map<string, boolean>) {
   const loader = info.loader.toLowerCase();
 
@@ -34,6 +42,14 @@ function getInstanceBadge(info: InstanceInfo, irisMap: Map<string, boolean>) {
     ) : (
       <span className="pack-badge pack-badge-no-iris">NO IRIS</span>
     );
+  }
+
+  if (loader === "quilt") {
+    return <span className="pack-badge pack-loader-quilt">QUILT</span>;
+  }
+
+  if (loader === "neoforge") {
+    return <span className="pack-badge pack-loader-neoforge">NEOFORGE</span>;
   }
 
   return null;
@@ -50,6 +66,7 @@ export function InlineDropdown({
 }: InlineDropdownProps) {
   const [irisMap, setIrisMap] = useState<Map<string, boolean>>(new Map());
   const [menuDirection, setMenuDirection] = useState<"down" | "up">("down");
+  const [menuLayout, setMenuLayout] = useState<MenuLayout | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,30 +109,44 @@ export function InlineDropdown({
   useLayoutEffect(() => {
     if (!isOpen) return;
 
-    const updateMenuDirection = () => {
+    const updateMenuLayout = () => {
       const root = rootRef.current;
       if (!root) return;
 
       const rect = root.getBoundingClientRect();
       const estimatedMenuHeight = Math.min(Math.max(options.length, 1) * 49 + 2, 240);
       const gap = 2;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
+      const viewportPadding = 8;
+      const spaceBelow = window.innerHeight - viewportPadding - rect.bottom;
+      const spaceAbove = rect.top - viewportPadding;
 
       const shouldOpenUp =
         spaceBelow < estimatedMenuHeight + gap &&
         spaceAbove > spaceBelow;
 
-      setMenuDirection(shouldOpenUp ? "up" : "down");
+      const direction = shouldOpenUp ? "up" : "down";
+      const availableHeight = Math.max(0, (shouldOpenUp ? spaceAbove : spaceBelow) - gap);
+      const maxHeight = Math.min(estimatedMenuHeight, availableHeight);
+      const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+      const left = Math.min(
+        Math.max(rect.left, viewportPadding),
+        window.innerWidth - viewportPadding - width,
+      );
+      const top = shouldOpenUp
+        ? Math.max(viewportPadding, rect.top - gap - maxHeight)
+        : rect.bottom + gap;
+
+      setMenuDirection(direction);
+      setMenuLayout({ top, left, width, maxHeight });
     };
 
-    updateMenuDirection();
-    window.addEventListener("resize", updateMenuDirection);
-    window.addEventListener("scroll", updateMenuDirection, true);
+    updateMenuLayout();
+    window.addEventListener("resize", updateMenuLayout);
+    window.addEventListener("scroll", updateMenuLayout, true);
 
     return () => {
-      window.removeEventListener("resize", updateMenuDirection);
-      window.removeEventListener("scroll", updateMenuDirection, true);
+      window.removeEventListener("resize", updateMenuLayout);
+      window.removeEventListener("scroll", updateMenuLayout, true);
     };
   }, [isOpen, options.length]);
   return (
@@ -149,13 +180,18 @@ export function InlineDropdown({
         </span>
       </button>
 
-      {isOpen && (
+      {isOpen && menuLayout && createPortal(
         <div
-          className={`inline-dropdown-menu ${menuDirection === "up" ? "inline-dropdown-menu-up" : ""}`}
+          className={`inline-dropdown-menu inline-dropdown-menu-portal ${menuDirection === "up" ? "inline-dropdown-menu-up" : ""}`}
+          style={{
+            top: menuLayout.top,
+            left: menuLayout.left,
+            width: menuLayout.width,
+          }}
         >
           <CustomScrollArea
             onWheel={(e) => e.stopPropagation()}
-            style={{ maxHeight: 240 }}
+            style={{ maxHeight: menuLayout.maxHeight }}
           >
             <div className="csa-content inline-dropdown-menu-content">
               {options.map((opt) => {
@@ -181,7 +217,8 @@ export function InlineDropdown({
               })}
             </div>
           </CustomScrollArea>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

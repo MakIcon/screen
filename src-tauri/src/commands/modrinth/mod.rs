@@ -9,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::fs;
 
-use crate::{
-    models::{InstanceItem, MinecraftManifest},
-    paths::MANIFEST_URL,
-};
+use crate::models::InstanceItem;
 
 pub mod mods;
 pub mod resourcepacks;
@@ -345,19 +342,6 @@ pub(crate) async fn fetch_modrinth_search(
     })
 }
 
-pub(crate) async fn fetch_manifest_releases(client: &Client) -> Result<Vec<String>, String> {
-    let manifest: MinecraftManifest = http_json(client, MANIFEST_URL).await?;
-    let mut versions = manifest
-        .versions
-        .into_iter()
-        .filter(|v| v.r#type == "release")
-        .map(|v| v.id)
-        .collect::<Vec<_>>();
-    versions.sort();
-    versions.reverse();
-    Ok(versions)
-}
-
 async fn fetch_project_icon_url(
     client: &Client,
     project_id: &str,
@@ -402,12 +386,12 @@ pub async fn get_modrinth_project_icons(
     Ok(result)
 }
 
-async fn fetch_project_author(
-    client: &Client,
-    project_id: &str,
-) -> Result<Option<String>, String> {
-    let members: Value =
-        http_json(client, &format!("{MODRINTH_API_BASE}/project/{project_id}/members")).await?;
+async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Option<String>, String> {
+    let members: Value = http_json(
+        client,
+        &format!("{MODRINTH_API_BASE}/project/{project_id}/members"),
+    )
+    .await?;
     let arr = members.as_array().cloned().unwrap_or_default();
     // Prefer the Owner; fall back to the first listed member.
     let owner = arr
@@ -441,7 +425,9 @@ pub async fn get_modrinth_project_authors(
     for project_id in unique_ids {
         let client = client.clone();
         tasks.spawn(async move {
-            let author = fetch_project_author(&client, &project_id).await.unwrap_or(None);
+            let author = fetch_project_author(&client, &project_id)
+                .await
+                .unwrap_or(None);
             (project_id, author)
         });
     }
