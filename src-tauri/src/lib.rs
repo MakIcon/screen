@@ -13,6 +13,7 @@ pub fn run() {
         .manage(plugins::discord_rpc::DiscordRpcState::default())
         .manage(plugins::mineflayer_bot::MineflayerBotState::default())
         .manage(plugins::obs_telemetry::ObsTelemetryState::default())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +34,10 @@ pub fn run() {
             commands::instances::delete_instance,
             commands::instances::get_instance_export_data,
             commands::instances::import_instance,
+            commands::mrpack::read_slbuild_file,
+            commands::mrpack::inspect_mrpack,
+            commands::mrpack::export_instance_mrpack,
+            commands::mrpack::import_mrpack,
             commands::launcher::install_instance,
             commands::launcher::launch_instance,
             commands::launcher::kill_instance,

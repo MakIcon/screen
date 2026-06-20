@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
@@ -459,6 +460,8 @@ export default function App() {
     shaders: true,
     resourcePacks: true,
   });
+  const [exportWorking, setExportWorking] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   // Alt+hover list preview (shared between export/import)
   const altHoverRef = useRef<{ items: ExportedItem[]; label: string; el: HTMLElement } | null>(null);
@@ -467,7 +470,6 @@ export default function App() {
   const requestedModrinthProjectIconIdsRef = useRef<Set<string>>(new Set());
 
   // Import modal
-  const importFileInputRef = useRef<HTMLInputElement>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importData, setImportData] = useState<InstanceExportData | null>(null);
   const [importOptions, setImportOptions] = useState({
@@ -483,6 +485,8 @@ export default function App() {
   const [importCustomName, setImportCustomName] = useState("");
   const [importWorking, setImportWorking] = useState(false);
   const [importError, setImportError] = useState("");
+  const [importSourcePath, setImportSourcePath] = useState("");
+  const [importSourceFormat, setImportSourceFormat] = useState<"slbuild" | "mrpack">("slbuild");
 
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
 
@@ -1546,6 +1550,7 @@ const isScrollableElement = (target: EventTarget | null) => {
   const handleExportInstance = async (instanceId: string) => {
     setExportInstanceId(instanceId);
     setExportData(null);
+    setExportError("");
     try {
       const data = await invoke<InstanceExportData>("get_instance_export_data", { instanceId });
       setExportData(data);
@@ -1561,8 +1566,16 @@ const isScrollableElement = (target: EventTarget | null) => {
       });
     } catch (err) {
       console.error(err);
+      setExportError(String(err));
     }
   };
+
+  const exportSlug = (name: string) =>
+    (name || "build")
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+      .replace(/^-+|-+$/g, "") || "build";
 
   const handleExportDownload = () => {
     if (!exportData || !exportInstanceId) return;
@@ -1578,16 +1591,16 @@ const isScrollableElement = (target: EventTarget | null) => {
       windowWidth: exportOptions.window ? (exportData.windowWidth ?? null) : null,
       windowHeight: exportOptions.window ? (exportData.windowHeight ?? null) : null,
       fullscreen: exportOptions.window ? (exportData.fullscreen ?? false) : false,
-      mods: exportOptions.mods ? exportData.mods : [] as ExportedItem[],
-      shaders: exportOptions.shaders ? exportData.shaders : [] as ExportedItem[],
-      resourcePacks: exportOptions.resourcePacks ? exportData.resourcePacks : [] as ExportedItem[],
+      mods: exportOptions.mods ? exportData.mods.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
+      shaders: exportOptions.shaders ? exportData.shaders.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
+      resourcePacks: exportOptions.resourcePacks ? exportData.resourcePacks.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
     };
     const json = JSON.stringify(out, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(exportOptions.name && exportData.name ? exportData.name : "build").toLowerCase().replace(/\s+/g, "-")}.slbuild`;
+    a.download = `${exportSlug(exportOptions.name ? exportData.name : "build")}.slbuild`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1595,39 +1608,88 @@ const isScrollableElement = (target: EventTarget | null) => {
     setExportInstanceId(null);
   };
 
-  // ── Import ──
-  const handleImportBuild = () => {
-    importFileInputRef.current?.click();
+  const handleExportMrpack = async () => {
+    if (!exportData || !exportInstanceId || exportWorking) return;
+    setExportError("");
+    try {
+      const selectedPath = await saveDialog({
+        title: "Export Modrinth pack",
+        defaultPath: `${exportSlug(exportOptions.name ? exportData.name : "build")}.mrpack`,
+        filters: [{ name: "Modrinth pack", extensions: ["mrpack"] }],
+      });
+      if (!selectedPath) return;
+      const outputPath = selectedPath.toLowerCase().endsWith(".mrpack")
+        ? selectedPath
+        : `${selectedPath}.mrpack`;
+      setExportWorking(true);
+      await invoke<string>("export_instance_mrpack", {
+        instanceId: exportInstanceId,
+        outputPath,
+        options: {
+          includeName: exportOptions.name,
+          includeRam: exportOptions.ram,
+          includeJavaArgs: exportOptions.javaArgs,
+          includeJavaPath: exportOptions.javaPath,
+          includeWindow: exportOptions.window,
+          includeMods: exportOptions.mods,
+          includeShaders: exportOptions.shaders,
+          includeResourcePacks: exportOptions.resourcePacks,
+        },
+      });
+      setExportInstanceId(null);
+    } catch (err) {
+      setExportError(String(err));
+    } finally {
+      setExportWorking(false);
+    }
   };
 
-  const handleImportFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target?.result as string) as InstanceExportData;
-        setImportData(data);
-        setImportCustomName(data.name || "");
-        setImportOptions({
-          name: !!data.name,
-          ram: !!data.ram,
-          javaArgs: hasJavaArgsData(data),
-          javaPath: hasJavaPathData(data),
-          window: hasWindowSettingsData(data),
-          mods: (data.mods?.length ?? 0) > 0,
-          shaders: (data.shaders?.length ?? 0) > 0,
-          resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
-        });
-        setImportError("");
-        setImportModalOpen(true);
-      } catch {
-        setImportError("Не удалось прочитать файл. Убедитесь, что это корректный .slbuild файл.");
-        setImportModalOpen(true);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+  const prepareImport = (
+    data: InstanceExportData,
+    path: string,
+    format: "slbuild" | "mrpack",
+  ) => {
+    setImportData(data);
+    setImportSourcePath(path);
+    setImportSourceFormat(format);
+    setImportCustomName(data.name || "");
+    setImportOptions({
+      name: !!data.name,
+      ram: !!data.ram,
+      javaArgs: hasJavaArgsData(data),
+      javaPath: hasJavaPathData(data),
+      window: hasWindowSettingsData(data),
+      mods: (data.mods?.length ?? 0) > 0,
+      shaders: (data.shaders?.length ?? 0) > 0,
+      resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
+    });
+    setImportError("");
+    setImportModalOpen(true);
+  };
+
+  const handleImportBuild = async () => {
+    try {
+      const selectedPath = await openDialog({
+        title: "Import build",
+        multiple: false,
+        directory: false,
+        filters: [
+          { name: "Launcher builds", extensions: ["slbuild", "mrpack", "json"] },
+        ],
+      });
+      if (!selectedPath || Array.isArray(selectedPath)) return;
+      const isMrpack = selectedPath.toLowerCase().endsWith(".mrpack");
+      const data = await invoke<InstanceExportData>(
+        isMrpack ? "inspect_mrpack" : "read_slbuild_file",
+        { path: selectedPath },
+      );
+      prepareImport(data, selectedPath, isMrpack ? "mrpack" : "slbuild");
+    } catch (err) {
+      setImportData(null);
+      setImportSourcePath("");
+      setImportError(String(err));
+      setImportModalOpen(true);
+    }
   };
 
   const handleImportConfirm = async () => {
@@ -1635,34 +1697,53 @@ const isScrollableElement = (target: EventTarget | null) => {
     setImportWorking(true);
     setImportError("");
     const name = importOptions.name ? importData.name : importCustomName;
+    const ram = importOptions.ram && importData.ram
+      ? importData.ram
+      : (launcherSettings?.defaultRamGb ?? 4);
     try {
-      const newInstance = await invoke<InstanceItem>("import_instance", {
-        payload: {
-          name,
-          version: importData.version,
-          loader: importData.loader,
-          fabricLoaderVersion: importData.fabricLoaderVersion ?? null,
-          ram: importOptions.ram ? importData.ram : (launcherSettings?.defaultRamGb ?? 4),
-          javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
-          javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
-          windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
-          windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
-          fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
-          mods: importOptions.mods ? (importData.mods ?? []) : [],
-          shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
-          resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
-        },
-      });
+      const newInstance = importSourceFormat === "mrpack"
+        ? await invoke<InstanceItem>("import_mrpack", {
+            path: importSourcePath,
+            options: {
+              name,
+              ram,
+              javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+              javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+              windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+              windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+              fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+              includeMods: importOptions.mods,
+              includeShaders: importOptions.shaders,
+              includeResourcePacks: importOptions.resourcePacks,
+            },
+          })
+        : await invoke<InstanceItem>("import_instance", {
+            payload: {
+              name,
+              version: importData.version,
+              loader: importData.loader,
+              fabricLoaderVersion: importData.fabricLoaderVersion ?? null,
+              ram,
+              javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+              javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+              windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+              windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+              fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+              mods: importOptions.mods ? (importData.mods ?? []) : [],
+              shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
+              resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
+            },
+          });
       await refreshInstances(newInstance.id);
       setImportModalOpen(false);
       setImportData(null);
+      setImportSourcePath("");
     } catch (err) {
       setImportError(String(err));
     } finally {
       setImportWorking(false);
     }
   };
-
   const renderMainContent = () => {
     switch (activeTab) {
       case "overview":
@@ -2054,7 +2135,7 @@ const isScrollableElement = (target: EventTarget | null) => {
         const toggle = (key: ExportKey) =>
           setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
         return (
-          <div className="confirm-overlay" onClick={() => { setExportInstanceId(null); setListPreview(null); }}>
+          <div className="confirm-overlay" onClick={() => { if (!exportWorking) { setExportInstanceId(null); setListPreview(null); } }}>
             <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
               <span className="confirm-label">EXPORT BUILD</span>
               <p className="confirm-title">{inst?.name ?? ""}</p>
@@ -2081,12 +2162,39 @@ const isScrollableElement = (target: EventTarget | null) => {
                   </div>
                 ))}
               </div>
-              <p className="eximp-notice">VERSION &amp; LOADER экспортируются всегда. Local-моды/шейдеры не включаются.</p>
+              <p className="eximp-notice">
+                .SLBUILD stores the project list. .MRPACK also includes local mods, configs,
+                and other user files through OVERRIDES.
+              </p>
+              {exportError && (
+                <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
+                  {exportError}
+                </p>
+              )}
+              {exportWorking && <p className="eximp-working">CREATING .MRPACK...</p>}
               <div className="confirm-actions" style={{ marginTop: 24 }}>
-                <button className="primary-action" type="button" disabled={!exportData} onClick={handleExportDownload}>
-                  EXPORT
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={!exportData || exportWorking}
+                  onClick={handleExportDownload}
+                >
+                  .SLBUILD
                 </button>
-                <button className="ghost-action" type="button" onClick={() => { setExportInstanceId(null); setListPreview(null); }}>
+                <button
+                  className="ghost-action"
+                  type="button"
+                  disabled={!exportData || exportWorking}
+                  onClick={() => void handleExportMrpack()}
+                >
+                  .MRPACK
+                </button>
+                <button
+                  className="ghost-action"
+                  type="button"
+                  disabled={exportWorking}
+                  onClick={() => { setExportInstanceId(null); setListPreview(null); }}
+                >
                   CANCEL
                 </button>
               </div>
@@ -2096,13 +2204,6 @@ const isScrollableElement = (target: EventTarget | null) => {
       })()}
 
       {/* ── Import modal ── */}
-      <input
-        ref={importFileInputRef}
-        type="file"
-        accept=".slbuild,.json"
-        style={{ display: "none" }}
-        onChange={handleImportFileSelected}
-      />
       {importModalOpen && (() => {
         type ImportKey = keyof typeof importOptions;
         type ImportRow = { key: ImportKey; label: string; meta?: string; disabled?: boolean; items?: ExportedItem[] };
@@ -2118,7 +2219,7 @@ const isScrollableElement = (target: EventTarget | null) => {
         ];
         const toggle = (key: ImportKey) =>
           setImportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
-        const close = () => { setImportModalOpen(false); setImportData(null); setImportError(""); setListPreview(null); };
+        const close = () => { if (importWorking) return; setImportModalOpen(false); setImportData(null); setImportSourcePath(""); setImportError(""); setListPreview(null); };
         return (
           <div className="confirm-overlay" onClick={close}>
             <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
@@ -2165,7 +2266,9 @@ const isScrollableElement = (target: EventTarget | null) => {
                     ))}
                   </div>
                   <p className="eximp-notice">
-                    VERSION &amp; LOADER берутся из файла. Modrinth-моды будут скачаны заново.
+                    {importSourceFormat === "mrpack"
+                      ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
+                      : "Version and loader come from the file. Modrinth projects will be downloaded again."}
                   </p>
                   {importError && (
                     <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>

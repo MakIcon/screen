@@ -129,6 +129,10 @@ pub(crate) struct ModrinthVersionFile {
     pub(crate) filename: String,
     #[serde(default)]
     pub(crate) primary: bool,
+    #[serde(default)]
+    pub(crate) hashes: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) size: Option<u64>,
 }
 
 pub(crate) fn build_client() -> Result<Client, String> {

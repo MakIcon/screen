@@ -231,41 +231,63 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
 
     let game_dir = PathBuf::from(&instance.game_dir);
 
-    let read_modrinth_state = |path: PathBuf| async move {
-        if !path.exists() {
-            return Vec::<ExportedItem>::new();
-        }
-        let raw = fs::read_to_string(&path).await.unwrap_or_default();
-        let state: HashMap<String, InstalledModEntry> =
-            serde_json::from_str(&raw).unwrap_or_default();
-        state
+    let read_export_items = |directory: PathBuf, state_file: &'static str| async move {
+        let state_path = directory.join(state_file);
+        let state: HashMap<String, InstalledModEntry> = if state_path.exists() {
+            let raw = fs::read_to_string(&state_path).await.unwrap_or_default();
+            serde_json::from_str(&raw).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
+        let mut result = state
             .values()
-            .map(|e| ExportedItem {
-                project_id: Some(e.project_id.clone()),
-                title: e.title.clone(),
+            .map(|entry| ExportedItem {
+                project_id: Some(entry.project_id.clone()),
+                title: entry.title.clone(),
                 source: "modrinth".to_string(),
-                icon_url: e.icon_url.clone(),
+                icon_url: entry.icon_url.clone(),
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        if let Ok(mut entries) = fs::read_dir(&directory).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let Ok(file_type) = entry.file_type().await else {
+                    continue;
+                };
+                if !file_type.is_file() {
+                    continue;
+                }
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if filename == state_file || state.contains_key(&filename) {
+                    continue;
+                }
+                result.push(ExportedItem {
+                    project_id: None,
+                    title: filename,
+                    source: "local".to_string(),
+                    icon_url: None,
+                });
+            }
+        }
+
+        result.sort_by_key(|item| item.title.to_lowercase());
+        result
     };
 
-    let mods =
-        read_modrinth_state(game_dir.join("mods").join(".screenlauncher-modrinth.json")).await;
+    let mods = read_export_items(game_dir.join("mods"), ".screenlauncher-modrinth.json").await;
 
-    let shaders = read_modrinth_state(
-        game_dir
-            .join("shaderpacks")
-            .join(".screenlauncher-modrinth-shaderpacks.json"),
+    let shaders = read_export_items(
+        game_dir.join("shaderpacks"),
+        ".screenlauncher-modrinth-shaderpacks.json",
     )
     .await;
 
-    let resource_packs = read_modrinth_state(
-        game_dir
-            .join("resourcepacks")
-            .join(".screenlauncher-modrinth-resourcepacks.json"),
+    let resource_packs = read_export_items(
+        game_dir.join("resourcepacks"),
+        ".screenlauncher-modrinth-resourcepacks.json",
     )
     .await;
-
     Ok(InstanceExportData {
         schema_version: 1,
         name: instance.name,
