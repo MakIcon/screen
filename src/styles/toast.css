@@ -1,0 +1,117 @@
+/* ── Toast notifications ──
+   Slide-in messages anchored to the top-center of the launcher. Three kinds:
+   info (success/neutral), warning, error — colour-coded by the accent strip. */
+
+.toast-stack {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  width: min(500px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px 15px 15px 17px;
+  background: color-mix(in srgb, var(--bg-panel, #14110e) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink, #e8e6e1) 14%, transparent);
+  border-left: 3px solid var(--accent, #f26522);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  color: var(--ink);
+  pointer-events: auto;
+  overflow: hidden;
+  animation: toast-slide-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast--info {
+  border-left-color: var(--success, #4ade80);
+}
+.toast--info .toast-icon {
+  color: var(--success, #4ade80);
+}
+
+.toast--warning {
+  border-left-color: var(--warning, #c9a96e);
+}
+.toast--warning .toast-icon {
+  color: var(--warning, #c9a96e);
+}
+
+.toast--error {
+  border-left-color: var(--danger, #ff453a);
+}
+.toast--error .toast-icon {
+  color: var(--danger, #ff453a);
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.toast-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.toast-message {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  word-break: break-word;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: -2px -2px 0 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.toast-close:hover {
+  color: var(--ink);
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

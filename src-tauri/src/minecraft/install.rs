@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
-use reqwest::Client;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    minecraft::ensure_loader_profile,
+    minecraft::{ensure_loader_profile, mirrors},
     models::{InstallProgressPayload, InstanceItem},
     paths::{ensure_layout, read_instances, write_instances},
 };
@@ -47,7 +46,7 @@ pub async fn install_instance_files(
     instance: &InstanceItem,
 ) -> Result<(), String> {
     ensure_layout().await?;
-    let client = Client::new();
+    let client = mirrors::build_client()?;
 
     let _ = app.emit(
         "install-progress",

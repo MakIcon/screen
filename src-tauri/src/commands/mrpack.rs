@@ -182,12 +182,10 @@ fn bytes_match_hashes(bytes: &[u8], hashes: &HashMap<String, String>) -> bool {
 fn loader_from_dependencies(
     dependencies: &BTreeMap<String, String>,
 ) -> Result<(String, Option<String>), String> {
-    if dependencies.contains_key("forge") {
-        return Err("Forge packs are not supported".to_string());
-    }
     let declared = [
         ("fabric-loader", LoaderKind::Fabric),
         ("quilt-loader", LoaderKind::Quilt),
+        ("forge", LoaderKind::Forge),
         ("neoforge", LoaderKind::NeoForge),
     ]
     .into_iter()
@@ -221,6 +219,7 @@ fn loader_dependency(
     let key = match kind {
         LoaderKind::Fabric => "fabric-loader",
         LoaderKind::Quilt => "quilt-loader",
+        LoaderKind::Forge => "forge",
         LoaderKind::NeoForge => "neoforge",
         LoaderKind::Vanilla => unreachable!(),
     };
@@ -968,7 +967,10 @@ mod tests {
         );
 
         let forge = BTreeMap::from([("forge".to_string(), "47.3.0".to_string())]);
-        assert!(loader_from_dependencies(&forge).is_err());
+        assert_eq!(
+            loader_from_dependencies(&forge).unwrap(),
+            ("Forge".to_string(), Some("47.3.0".to_string()))
+        );
 
         let mixed = BTreeMap::from([
             ("fabric-loader".to_string(), "0.16.14".to_string()),

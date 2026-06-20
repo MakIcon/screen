@@ -1,0 +1,52 @@
+.proxy-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.proxy-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.proxy-field span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.proxy-field input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--ink);
+  outline: none;
+  padding: 0 14px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  font-family: inherit;
+}
+
+.proxy-field input:focus {
+  border-color: var(--line-strong);
+  background: var(--bg-card-strong);
+}
+
+.proxy-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-alt);
+}
+
+.proxy-hint code {
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  border-radius: 3px;
+}

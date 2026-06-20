@@ -59,6 +59,8 @@ interface InstancesTabProps {
   busyMessage: string;
   actionError: string;
   installProgress: InstallProgressPayload | null;
+  dragOverInstanceId: string | null;
+  dragContentActive: boolean;
   advancedSettingsEnabled: boolean;
 
   // Build card appearance
@@ -127,6 +129,8 @@ export function InstancesTab({
   busyMessage,
   actionError,
   installProgress,
+  dragOverInstanceId,
+  dragContentActive,
   advancedSettingsEnabled,
   getBuildCardAppearance,
   buildCardPreviewTarget,
@@ -240,6 +244,7 @@ export function InstancesTab({
                   instance,
                   { buildState: isRunning(instance.id) ? "RUNNING" : "" },
                 );
+                const isDropTarget = dragContentActive && dragOverInstanceId === instance.id;
 
                 return (
                   <button
@@ -251,7 +256,7 @@ export function InstancesTab({
                         instanceCardRefs.current.delete(instance.id);
                       }
                     }}
-                    className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""}`}
+                    className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""} ${isDropTarget ? "drag-target" : ""}`}
                     style={cardStyle}
                     onClick={() => {
                       setSelectedInstanceId(instance.id);
@@ -259,6 +264,9 @@ export function InstancesTab({
                     }}
                     type="button"
                   >
+                    {isDropTarget && (
+                      <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>
+                    )}
                     <div className="instance-card-top">
                       <span className="instance-name">{instance.name}</span>
                       {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
@@ -307,7 +315,8 @@ export function InstancesTab({
         </div>
 
         {/* ── Details / Creator panel ── */}
-        <div className="panel-card instance-details-card">
+        <div className="instance-details-column">
+          <div className="panel-card instance-details-card">
           {showCreator ? (
             <>
               <span className="panel-label">CREATE NEW BUILD</span>
@@ -447,25 +456,6 @@ export function InstancesTab({
                 />
               </div>
 
-              {(busyMessage || actionError) && (
-                <div className="status-box">
-                  {busyMessage && <p className="panel-text">{busyMessage}</p>}
-                  {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
-                </div>
-              )}
-
-              {installProgress && (
-                <div className="download-progress-box">
-                  <div className="download-progress-head">
-                    <span>{installProgress.phase.toUpperCase()}</span>
-                    <strong>{Math.round(installProgress.percent)}%</strong>
-                  </div>
-                  <div className="download-progress-track">
-                    <div className="download-progress-fill" style={{ width: `${installProgress.percent}%` }} />
-                  </div>
-                </div>
-              )}
-
               <div className="instance-actions instance-actions-build">
                 {selectedInstance && isRunning(selectedInstance.id) ? (
                   <button className="primary-action kill-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
@@ -524,6 +514,29 @@ export function InstancesTab({
                 </div>
               </div>
             </>
+          )}
+          </div>
+
+          {(busyMessage || actionError || installProgress) && (
+            <div className="build-status-stack">
+              {(busyMessage || actionError) && (
+                <div className="status-box">
+                  {busyMessage && <p className="panel-text">{busyMessage}</p>}
+                  {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
+                </div>
+              )}
+              {installProgress && (
+                <div className="download-progress-box">
+                  <div className="download-progress-head">
+                    <span>{installProgress.phase.toUpperCase()}</span>
+                    <strong>{Math.round(installProgress.percent)}%</strong>
+                  </div>
+                  <div className="download-progress-track">
+                    <div className="download-progress-fill" style={{ width: `${installProgress.percent}%` }} />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

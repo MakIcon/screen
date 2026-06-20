@@ -7,7 +7,26 @@ use reqwest::Client;
 use tauri::AppHandle;
 use tokio::{fs, sync::Semaphore};
 
-use crate::{paths::DOWNLOAD_CONCURRENCY, progress::ProgressReporter};
+use crate::{minecraft::mirrors, paths::DOWNLOAD_CONCURRENCY, progress::ProgressReporter};
+
+async fn fetch_bytes(client: &Client, url: &str) -> Result<Vec<u8>, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("download request error: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "download http error {} for {url}",
+            response.status()
+        ));
+    }
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|e| format!("read download bytes error: {e}"))
+}
 
 pub async fn download_to_path(client: &Client, url: &str, path: &Path) -> Result<(), String> {
     if path.exists() {
@@ -20,27 +39,19 @@ pub async fn download_to_path(client: &Client, url: &str, path: &Path) -> Result
             .map_err(|e| format!("create parent dir error: {e}"))?;
     }
 
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("download request error: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "download http error {} for {url}",
-            response.status()
-        ));
+    // Try the official host plus any mirror, in the order the user configured.
+    let mut last_error = None;
+    for candidate in mirrors::candidates(url) {
+        match fetch_bytes(client, &candidate).await {
+            Ok(bytes) => {
+                return fs::write(path, bytes)
+                    .await
+                    .map_err(|e| format!("write file error: {e}"));
+            }
+            Err(error) => last_error = Some(error),
+        }
     }
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("read download bytes error: {e}"))?;
-
-    fs::write(path, bytes)
-        .await
-        .map_err(|e| format!("write file error: {e}"))
+    Err(last_error.unwrap_or_else(|| format!("download failed for {url}")))
 }
 
 pub async fn download_many(
@@ -58,7 +69,7 @@ pub async fn download_many(
     reporter.emit("Starting downloads");
 
     let semaphore = Arc::new(Semaphore::new(DOWNLOAD_CONCURRENCY));
-    let client = Arc::new(Client::new());
+    let client = Arc::new(mirrors::build_client()?);
     let mut handles = Vec::new();
 
     for (url, path, detail) in tasks {

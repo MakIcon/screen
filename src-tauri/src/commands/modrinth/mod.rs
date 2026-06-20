@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
-    time::Duration,
 };
 
 use reqwest::Client;
@@ -133,11 +132,8 @@ pub(crate) struct ModrinthVersionFile {
 }
 
 pub(crate) fn build_client() -> Result<Client, String> {
-    Client::builder()
-        .user_agent("ScreenLauncher/0.1.0")
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("http client error: {e}"))
+    // Shared client so Modrinth traffic honours the user's proxy too.
+    crate::minecraft::mirrors::build_client()
 }
 
 pub(crate) async fn http_text(client: &Client, url: &str) -> Result<String, String> {
@@ -568,10 +564,28 @@ pub(crate) async fn install_project_to_dir(
         installed_project_ids.insert(project_id);
 
         for dep in version.dependencies {
-            if dep.dependency_type == "required" {
-                if let Some(dep_id) = dep.project_id {
-                    project_queue.push(dep_id);
-                }
+            if dep.dependency_type != "required" {
+                continue;
+            }
+            // Most dependencies carry a project_id. Some only pin a version_id
+            // (e.g. "needs exactly this build"); resolve those to their project
+            // so they don't get silently skipped.
+            let dep_project_id = match dep.project_id {
+                Some(id) if !id.is_empty() => Some(id),
+                _ => match &dep.version_id {
+                    Some(version_id) if !version_id.is_empty() => http_json::<ModrinthVersion>(
+                        client,
+                        &format!("{MODRINTH_API_BASE}/version/{version_id}"),
+                    )
+                    .await
+                    .ok()
+                    .map(|resolved| resolved.project_id)
+                    .filter(|id| !id.is_empty()),
+                    _ => None,
+                },
+            };
+            if let Some(dep_id) = dep_project_id {
+                project_queue.push(dep_id);
             }
         }
     }

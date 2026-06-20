@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InstalledModView, ModrinthProject, ModrinthSearchResponse, TabKey } from "../types";
 import type { InstanceItem } from "../types";
+import type { PushToast } from "./useToasts";
 
 interface UseModActionsParams {
   activeTab: TabKey;
   selectedModTarget: InstanceItem | null;
   setActionError: (msg: string) => void;
   setBusyMessage: (msg: string) => void;
+  pushToast: PushToast;
 }
 
 export function useModActions({
@@ -15,6 +17,7 @@ export function useModActions({
   selectedModTarget,
   setActionError,
   setBusyMessage,
+  pushToast,
 }: UseModActionsParams) {
   const [modSearch, setModSearch] = useState("");
   const [modrinthItems, setModrinthItems] = useState<ModrinthProject[]>([]);
@@ -108,6 +111,8 @@ export function useModActions({
   const handleInstallMod = async (projectId: string) => {
     if (!selectedModTarget) return;
 
+    const modName = modrinthItems.find((m) => m.projectId === projectId)?.title ?? projectId;
+
     try {
       setModrinthInstallBusyId(projectId);
       setActionError("");
@@ -128,9 +133,11 @@ export function useModActions({
       setModrinthTotalHits(modsResult.totalHits);
       setInstalledMods(installedResult);
       setBusyMessage("Mod install finished");
+      pushToast("info", `${modName} → ${selectedModTarget.name}`, { title: "Mod installed" });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Mod install failed" });
     } finally {
       setModrinthInstallBusyId(null);
       window.setTimeout(() => setBusyMessage(""), 800);
@@ -163,8 +170,10 @@ export function useModActions({
 
       setModrinthItems(modsResult.hits);
       setInstalledMods(installedResult);
+      pushToast("info", `${modEntry.title} удалён из ${selectedModTarget.name}`, { title: "Mod removed" });
     } catch (error) {
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Uninstall failed" });
     } finally {
       setModrinthInstallBusyId(null);
       setBusyMessage("");

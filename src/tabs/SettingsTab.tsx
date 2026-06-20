@@ -9,7 +9,17 @@ import {
 } from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import type { Theme } from "../hooks/useTheme";
-import type { LauncherPluginsSettings, MicrosoftAccount } from "../types";
+import type {
+  LauncherPluginsSettings,
+  MicrosoftAccount,
+  MirrorMode,
+} from "../types";
+
+const MIRROR_OPTIONS: { value: MirrorMode; label: string }[] = [
+  { value: "official", label: "OFFICIAL" },
+  { value: "auto", label: "AUTO" },
+  { value: "mirror", label: "MIRROR" },
+];
 
 const SunIcon = () => (
   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
@@ -44,6 +54,8 @@ interface SettingsTabProps {
   saveSettingsRam: () => Promise<void>;
   optimizedJavaArgs: boolean;
   saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
+  mirrorMode: MirrorMode;
+  saveNetworkSettings: (mirror: string) => Promise<void>;
   wheelTabSwitching: boolean;
   setWheelTabSwitching: (fn: (prev: boolean) => boolean) => void;
   showSnapshots: boolean;
@@ -58,9 +70,6 @@ interface SettingsTabProps {
   launcherAccountType: string;
   launcherMsAccountId: string | null;
   microsoftAccounts: MicrosoftAccount[];
-  resolve: (template: string) => string;
-  manifestLoading: boolean;
-  manifest: object | null;
   theme: Theme;
   setTheme: (t: Theme) => void;
 }
@@ -72,6 +81,8 @@ export function SettingsTab({
   saveSettingsRam,
   optimizedJavaArgs,
   saveOptimizedJavaArgs,
+  mirrorMode,
+  saveNetworkSettings,
   wheelTabSwitching,
   setWheelTabSwitching,
   showSnapshots,
@@ -86,15 +97,18 @@ export function SettingsTab({
   launcherAccountType,
   launcherMsAccountId,
   microsoftAccounts,
-  resolve,
-  manifestLoading,
-  manifest,
   theme,
   setTheme,
 }: SettingsTabProps) {
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
+
+  const commitMirrorMode = (mode: MirrorMode) => {
+    if (mode === mirrorMode) return;
+    void saveNetworkSettings(mode).catch(() => {});
+  };
+
   const normalizedPlugins = normalizeLauncherPluginsSettings(pluginsSettings);
   const activePluginDefinitions = PLUGIN_DEFINITIONS.filter((definition) =>
     definition.getEnabled(normalizedPlugins),
@@ -102,7 +116,7 @@ export function SettingsTab({
 
   return (
     <section className="launcher-panel">
-      <div className="panel-grid simple-two-col-fixed">
+      <div className="panel-grid simple-two-col-fixed settings-panel-grid">
         <div className="panel-card">
           <span className="panel-label">LAUNCHER SETTINGS</span>
 
@@ -159,7 +173,28 @@ export function SettingsTab({
             </div>
           </div>
 
-          <div className="settings-toggle-block">
+          <div className="theme-switch-row">
+            <span className="theme-switch-label">DOWNLOAD SOURCE</span>
+            <div className="theme-switch">
+              {MIRROR_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  className={`theme-switch-btn${mirrorMode === option.value ? " active" : ""}`}
+                  type="button"
+                  onClick={() => commitMirrorMode(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+        <div className="panel-card">
+          <span className="panel-label">PREFERENCES</span>
+
+          <div className="settings-toggle-block settings-toggle-block--bare">
             <ElementToggle
               title="OPTIMIZED JAVA ARGUMENTS"
               note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
@@ -194,67 +229,6 @@ export function SettingsTab({
               enabled={advancedSettingsEnabled}
               onToggle={onToggleAdvanced}
             />
-          </div>
-
-          <div className="form-grid single-form-grid">
-            <label className="field">
-              <span>JAVA PATH</span>
-              <input value="JAVA_HOME or PATH" readOnly />
-            </label>
-          </div>
-        </div>
-
-        <div className="panel-card">
-          <span className="panel-label">RUNTIME</span>
-          <div className="stat-list">
-            <div className="stat-row">
-              <span>WINDOW ENGINE</span>
-              <strong>TAURI</strong>
-            </div>
-            <div className="stat-row">
-              <span>CORE</span>
-              <strong>RUST</strong>
-            </div>
-            <div className="stat-row">
-              <span>FRONTEND</span>
-              <strong>REACT</strong>
-            </div>
-            <div className="stat-row">
-              <span>ACCOUNT</span>
-              <strong>{resolve("%account_type%")}</strong>
-            </div>
-            <div className="stat-row">
-              <span>SYSTEM RAM</span>
-              <strong>{resolve("%system_ram_max%")}</strong>
-            </div>
-            <div className="stat-row">
-              <span>DEFAULT BUILD RAM</span>
-              <strong>{settingsRamDraft} GB</strong>
-            </div>
-            <div className="stat-row">
-              <span>GAME RAM LIMIT</span>
-              <strong>{minecraftRamMax} GB</strong>
-            </div>
-            <div className="stat-row">
-              <span>JAVA ARGUMENTS</span>
-              <strong>{optimizedJavaArgs ? "OPTIMIZED" : "CLASSIC"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>SNAPSHOTS</span>
-              <strong>{showSnapshots ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>PRE-RELEASES</span>
-              <strong>{showPreReleases ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>ADVANCED SETTINGS</span>
-              <strong>{advancedSettingsEnabled ? "ON" : "OFF"}</strong>
-            </div>
-            <div className="stat-row">
-              <span>MANIFEST</span>
-              <strong>{manifestLoading ? "LOADING" : manifest ? "READY" : "ERROR"}</strong>
-            </div>
           </div>
 
           {advancedSettingsEnabled && (

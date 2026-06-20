@@ -19,6 +19,11 @@ import {
   OBS_TELEMETRY_PLUGIN_DEFINITION,
   normalizeObsTelemetrySettings,
 } from "./obsTelemetry/ObsTelemetryPlugin";
+import {
+  DEFAULT_PROXY_SETTINGS,
+  PROXY_PLUGIN_DEFINITION,
+  normalizeProxySettings,
+} from "./proxy/ProxyPlugin";
 import type { PluginDefinition } from "./pluginTypes";
 
 export type { PluginDefinition, PluginId } from "./pluginTypes";
@@ -27,10 +32,12 @@ export {
   DEFAULT_BLUE_MAP_SETTINGS,
   DEFAULT_MINEFLAYER_BOT_SETTINGS,
   DEFAULT_OBS_TELEMETRY_SETTINGS,
+  DEFAULT_PROXY_SETTINGS,
   normalizeBlueMapSettings,
   normalizeDiscordRpcSettings,
   normalizeMineflayerBotSettings,
   normalizeObsTelemetrySettings,
+  normalizeProxySettings,
 };
 
 export const DEFAULT_LAUNCHER_PLUGINS_SETTINGS: LauncherPluginsSettings = {
@@ -38,6 +45,7 @@ export const DEFAULT_LAUNCHER_PLUGINS_SETTINGS: LauncherPluginsSettings = {
   mineflayerBot: { ...DEFAULT_MINEFLAYER_BOT_SETTINGS },
   blueMap: { ...DEFAULT_BLUE_MAP_SETTINGS },
   obsTelemetry: { ...DEFAULT_OBS_TELEMETRY_SETTINGS },
+  proxy: { ...DEFAULT_PROXY_SETTINGS },
 };
 
 export function normalizeLauncherPluginsSettings(
@@ -53,6 +61,7 @@ export function normalizeLauncherPluginsSettings(
     mineflayerBot: normalizeMineflayerBotSettings(draft.mineflayerBot),
     blueMap: normalizeBlueMapSettings(draft.blueMap),
     obsTelemetry: normalizeObsTelemetrySettings(draft.obsTelemetry),
+    proxy: normalizeProxySettings(draft.proxy),
   };
 }
 
@@ -61,4 +70,5 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   MINEFLAYER_BOT_PLUGIN_DEFINITION,
   BLUE_MAP_PLUGIN_DEFINITION,
   OBS_TELEMETRY_PLUGIN_DEFINITION,
+  PROXY_PLUGIN_DEFINITION,
 ];

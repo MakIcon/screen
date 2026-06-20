@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import "./App.css";
@@ -38,6 +39,8 @@ import type {
   UpdateInstancePayload,
 } from "./types";
 import { MicrosoftAccountsModal } from "./components/modals/MicrosoftAccountsModal";
+import { ToastStack } from "./components/notifications/ToastStack";
+import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
 import { resolvePlaceholders } from "./utils/placeholders";
 import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from "./hooks/usePlaceholders";
@@ -279,7 +282,7 @@ export default function App() {
   const [tabAnimating, setTabAnimating] = useState(false);
 
   const [manifest, setManifest] = useState<MinecraftManifest | null>(null);
-  const [manifestLoading, setManifestLoading] = useState(true);
+  const [, setManifestLoading] = useState(true);
 
   const [instances, setInstances] = useState<InstanceItem[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
@@ -312,6 +315,10 @@ export default function App() {
 
   const [busyMessage, setBusyMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  // Drag-and-drop overlay state: "build" → whole-launcher drop hint,
+  // "content" → per-card hint on the build under the cursor.
+  const [dragKind, setDragKind] = useState<null | "build" | "content">(null);
+  const [dragOverInstanceId, setDragOverInstanceId] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
   const [nickname, setNickname] = useState("PLAYER");
@@ -502,10 +509,12 @@ export default function App() {
 
 
   const { theme, setTheme } = useTheme();
+  const { toasts, pushToast, dismissToast } = useToasts();
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const launchTimestampsRef = useRef<Map<string, number>>(new Map());
+  const dragEventRef = useRef<(payload: any) => void>(() => {});
   const intentionalStopsRef = useRef<Set<string>>(new Set());
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
 
@@ -852,7 +861,7 @@ export default function App() {
     modrinthInstallBusyId,
     installedMods, installedModsLoading,
     handleLoadMoreMods, handleInstallMod, handleUninstallMod,
-  } = useModActions({ activeTab, selectedModTarget, setActionError, setBusyMessage });
+  } = useModActions({ activeTab, selectedModTarget, setActionError, setBusyMessage, pushToast });
 
   const {
     packSearch, setPackSearch,
@@ -860,7 +869,7 @@ export default function App() {
     packInstallBusyId,
     installedPacks, installedPacksLoading,
     handleLoadMorePacks, handleInstallPack, handleUninstallPack,
-  } = usePackActions({ activeTab, selectedInstance, setActionError, setBusyMessage });
+  } = usePackActions({ activeTab, selectedInstance, setActionError, setBusyMessage, pushToast });
 
   const {
     shaderSearch, setShaderSearch,
@@ -868,7 +877,7 @@ export default function App() {
     shaderInstallBusyId,
     installedShaders, installedShadersLoading,
     handleLoadMoreShaders, handleInstallShader, handleUninstallShader,
-  } = useShaderActions({ activeTab, selectedShaderTarget, setActionError, setBusyMessage });
+  } = useShaderActions({ activeTab, selectedShaderTarget, setActionError, setBusyMessage, pushToast });
 
   const availableManifestVersions = useMemo(() => {
     if (!manifest) return [];
@@ -919,6 +928,9 @@ export default function App() {
 
       if (payload.crashed && !stoppedByUser) {
         setActionError(payload.hint || payload.reason);
+        pushToast("error", payload.hint || payload.reason, {
+          title: `${payload.instanceName || "Build"} crashed`,
+        });
         void openBuildLogs(payload.instanceId, payload);
       }
     });
@@ -1265,6 +1277,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't save RAM" });
     }
   };
 
@@ -1275,6 +1288,21 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't save setting" });
+    }
+  };
+
+  const saveNetworkSettings = async (mirror: string) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_network_settings", {
+        mirror,
+      });
+      setLauncherSettings(updated);
+    } catch (error) {
+      console.error(error);
+      setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't save network" });
+      throw error;
     }
   };
 
@@ -1289,6 +1317,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't save plugins" });
     }
   };
 
@@ -1367,9 +1396,11 @@ const isScrollableElement = (target: EventTarget | null) => {
       });
       setCreateRuntimeSettingsTouched(false);
       setBusyMessage("Build created");
+      pushToast("info", `Сборка ${cleanName} создана`, { title: "Build created" });
     } catch (error) {
       console.error(error);
       setCreateError(String(error));
+      pushToast("error", String(error), { title: "Create failed" });
     } finally {
       setWorking(false);
     }
@@ -1401,9 +1432,11 @@ const isScrollableElement = (target: EventTarget | null) => {
         detail: "Install complete",
       });
       setBusyMessage("Install finished");
+      pushToast("info", `Файлы ${selectedInstance.name} установлены`, { title: "Install complete" });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Install failed" });
     } finally {
       setWorking(false);
       window.setTimeout(() => {
@@ -1450,10 +1483,12 @@ const isScrollableElement = (target: EventTarget | null) => {
         detail: "Launch complete",
       });
       setBusyMessage("Minecraft launched");
+      pushToast("info", `${target.name} запущена`, { title: "Minecraft launched" });
     } catch (error) {
       console.error(error);
       const message = String(error);
       setActionError(message);
+      pushToast("error", message, { title: `${target.name} failed to start` });
       void openBuildLogs(target.id, {
         instanceId: target.id,
         instanceName: target.name,
@@ -1494,6 +1529,7 @@ const isScrollableElement = (target: EventTarget | null) => {
       if (stillAlive) {
         intentionalStopsRef.current.delete(`${instanceId}:${pid}`);
         setActionError(String(error));
+        pushToast("error", String(error), { title: "Stop failed" });
         setBusyMessage("");
         return;
       }
@@ -1502,6 +1538,9 @@ const isScrollableElement = (target: EventTarget | null) => {
     const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => false);
     if (stillAlive) {
       setActionError("Minecraft is still running. Try Kill Game again.");
+      pushToast("warning", "Minecraft всё ещё работает. Попробуй ещё раз.", {
+        title: "Still running",
+      });
       setBusyMessage("");
       return;
     }
@@ -1519,6 +1558,7 @@ const isScrollableElement = (target: EventTarget | null) => {
   const handleDeleteConfirmed = async () => {
     if (!confirmPendingId) return;
     const id = confirmPendingId;
+    const deletedName = confirmPendingName;
     setConfirmPendingId(null);
     setConfirmPendingName("");
     try {
@@ -1531,10 +1571,12 @@ const isScrollableElement = (target: EventTarget | null) => {
         persistBuildCardAppearances(nextAppearances);
       }
 
+      pushToast("info", `Сборка ${deletedName} удалена`.trim(), { title: "Build deleted" });
       await refreshInstances();
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Delete failed" });
     }
   };
 
@@ -1547,6 +1589,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't open folder" });
     }
   };
 
@@ -1610,6 +1653,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setExportInstanceId(null);
+    pushToast("info", `${exportData.name} экспортирована (.slbuild)`, { title: "Build exported" });
   };
 
   const handleExportMrpack = async () => {
@@ -1641,8 +1685,10 @@ const isScrollableElement = (target: EventTarget | null) => {
         },
       });
       setExportInstanceId(null);
+      pushToast("info", `${exportData.name} экспортирована (.mrpack)`, { title: "Build exported" });
     } catch (err) {
       setExportError(String(err));
+      pushToast("error", String(err), { title: "Export failed" });
     } finally {
       setExportWorking(false);
     }
@@ -1696,6 +1742,123 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  // ── Drag & drop install (option A): content files land on a build card;
+  // build files (.mrpack/.slbuild) just open the import flow. ──
+  const importBuildFromPath = async (path: string) => {
+    try {
+      const isMrpack = path.toLowerCase().endsWith(".mrpack");
+      const data = await invoke<InstanceExportData>(
+        isMrpack ? "inspect_mrpack" : "read_slbuild_file",
+        { path },
+      );
+      prepareImport(data, path, isMrpack ? "mrpack" : "slbuild");
+    } catch (err) {
+      setImportData(null);
+      setImportSourcePath("");
+      setImportError(String(err));
+      setImportModalOpen(true);
+    }
+  };
+
+  const findInstanceAtPoint = (physX: number, physY: number): string | null => {
+    const dpr = window.devicePixelRatio || 1;
+    const x = physX / dpr;
+    const y = physY / dpr;
+    for (const [id, node] of instanceCardRefs.current) {
+      const rect = node.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return id;
+      }
+    }
+    return null;
+  };
+
+  const classifyDragPaths = (paths: string[]): null | "build" | "content" => {
+    if (paths.some((p) => /\.(mrpack|slbuild)$/i.test(p))) return "build";
+    if (paths.some((p) => /\.(jar|zip)$/i.test(p))) return "content";
+    return null;
+  };
+
+  const handleDroppedPaths = async (paths: string[], physX: number, physY: number) => {
+    const buildFiles = paths.filter((p) => /\.(mrpack|slbuild)$/i.test(p));
+    if (buildFiles.length > 0) {
+      await importBuildFromPath(buildFiles[0]);
+      return;
+    }
+    const contentFiles = paths.filter((p) => /\.(jar|zip)$/i.test(p));
+    if (contentFiles.length === 0) {
+      pushToast(
+        "warning",
+        "Перетащи .jar/.zip на сборку или .mrpack/.slbuild для импорта",
+        { title: "Nothing to install" },
+      );
+      return;
+    }
+    // Prefer the card under the cursor; otherwise fall back to the currently
+    // selected build so a drop anywhere in the window still lands somewhere.
+    const targetId = findInstanceAtPoint(physX, physY) ?? selectedInstanceId ?? null;
+    if (!targetId) {
+      pushToast("warning", "Сначала выбери сборку, в которую установить файлы", {
+        title: "No build selected",
+      });
+      return;
+    }
+    try {
+      const result = await invoke<ActionResult>("install_dropped_content", {
+        instanceId: targetId,
+        paths: contentFiles,
+      });
+      pushToast(result.ok ? "info" : "warning", result.message);
+      if (selectedInstanceId === targetId) {
+        await refreshInstances(targetId);
+      }
+    } catch (err) {
+      pushToast("error", String(err), { title: "Install failed" });
+    }
+  };
+
+  // Reassigned every render so the one-time listener always sees fresh state.
+  dragEventRef.current = (payload: any) => {
+    if (payload.type === "enter") {
+      const kind = classifyDragPaths(payload.paths ?? []);
+      setDragKind(kind);
+      setDragOverInstanceId(
+        kind === "content"
+          ? findInstanceAtPoint(payload.position.x, payload.position.y)
+          : null,
+      );
+    } else if (payload.type === "over") {
+      if (dragKind === "content") {
+        setDragOverInstanceId(findInstanceAtPoint(payload.position.x, payload.position.y));
+      }
+    } else if (payload.type === "drop") {
+      setDragKind(null);
+      setDragOverInstanceId(null);
+      void handleDroppedPaths(payload.paths, payload.position.x, payload.position.y);
+    } else if (payload.type === "leave") {
+      setDragKind(null);
+      setDragOverInstanceId(null);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => dragEventRef.current(event.payload))
+      .then((un) => {
+        if (active) {
+          unlisten = un;
+        } else {
+          un();
+        }
+      });
+    return () => {
+      active = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   const handleImportConfirm = async () => {
     if (!importData) return;
     setImportWorking(true);
@@ -1742,8 +1905,10 @@ const isScrollableElement = (target: EventTarget | null) => {
       setImportModalOpen(false);
       setImportData(null);
       setImportSourcePath("");
+      pushToast("info", `Сборка ${newInstance.name} импортирована`, { title: "Build imported" });
     } catch (err) {
       setImportError(String(err));
+      pushToast("error", String(err), { title: "Import failed" });
     } finally {
       setImportWorking(false);
     }
@@ -1792,6 +1957,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             busyMessage={busyMessage}
             actionError={actionError}
             installProgress={installProgress}
+            dragOverInstanceId={dragOverInstanceId}
+            dragContentActive={dragKind === "content"}
             advancedSettingsEnabled={advancedSettingsEnabled}
             getBuildCardAppearance={getBuildCardAppearance}
             buildCardSettingsOpen={buildCardSettingsOpen}
@@ -1901,6 +2068,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             saveSettingsRam={saveSettingsRam}
             optimizedJavaArgs={launcherSettings?.optimizedJavaArgs ?? true}
             saveOptimizedJavaArgs={saveOptimizedJavaArgs}
+            mirrorMode={launcherSettings?.network?.mirror ?? "auto"}
+            saveNetworkSettings={saveNetworkSettings}
             wheelTabSwitching={wheelTabSwitching}
             setWheelTabSwitching={setWheelTabSwitching}
             showSnapshots={showSnapshots}
@@ -1921,9 +2090,6 @@ const isScrollableElement = (target: EventTarget | null) => {
             launcherAccountType={accountType}
             launcherMsAccountId={activeMsAccountId}
             microsoftAccounts={msAccounts}
-            resolve={resolve}
-            manifestLoading={manifestLoading}
-            manifest={manifest}
             theme={theme}
             setTheme={setTheme}
           />
@@ -2020,6 +2186,46 @@ const isScrollableElement = (target: EventTarget | null) => {
 
   return (
     <div className={`gallery-root ${phase} ${isClosing ? "tearing" : ""}`}>
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      {dragKind === "build" && (
+        <div className="global-drop-overlay">
+          <div className="global-drop-overlay-inner">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <strong>ОТПУСТИ — ИМПОРТ СБОРКИ</strong>
+            <span>.mrpack / .slbuild</span>
+          </div>
+        </div>
+      )}
+      {dragKind === "content" && !dragOverInstanceId && (() => {
+        const fallbackName = instances.find((i) => i.id === selectedInstanceId)?.name;
+        return (
+          <div className="global-drop-overlay">
+            <div className="global-drop-overlay-inner">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <strong>
+                {fallbackName ? `ОТПУСТИ — В СБОРКУ ${fallbackName.toUpperCase()}` : "ВЫБЕРИ СБОРКУ"}
+              </strong>
+              <span>{fallbackName ? ".jar / .zip" : "сначала выбери сборку"}</span>
+            </div>
+          </div>
+        );
+      })()}
       {!isClosing ? (
         mainUI
       ) : (

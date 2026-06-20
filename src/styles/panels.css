@@ -264,6 +264,7 @@
 }
 
 .instance-card {
+  position: relative;
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
@@ -283,6 +284,87 @@
 .instance-card.selected {
   border-color: rgba(194, 65, 12, 0.35);
   background: var(--bg-selected);
+}
+
+/* Highlight the build card a dragged file is hovering over. */
+.instance-card.drag-target {
+  border-color: var(--accent, #c2410c);
+  box-shadow: 0 0 0 1px var(--accent, #c2410c) inset;
+}
+
+/* Translucent "drop here" plate shown on the hovered build card. */
+.card-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent, #c2410c) 16%, transparent);
+  border: 1px dashed var(--accent, #c2410c);
+  backdrop-filter: blur(7px);
+  pointer-events: none;
+}
+
+/* Right column wraps the build card + status plates so the card itself never
+   reflows when progress/messages appear — they stack below it instead. */
+.instance-details-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  align-self: start;
+}
+
+.build-status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Whole-launcher drop hint shown while dragging a build file (.mrpack/.slbuild). */
+.global-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-panel, #14110e) 62%, transparent);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.global-drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 38px 56px;
+  border: 2px dashed var(--accent, #c2410c);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent, #c2410c) 10%, transparent);
+}
+
+.global-drop-overlay-inner svg {
+  color: var(--accent, #c2410c);
+}
+
+.global-drop-overlay-inner strong {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.global-drop-overlay-inner span {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--muted);
 }
 
 .instance-card-top {

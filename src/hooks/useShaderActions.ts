@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InstalledModView, ModrinthProject, ModrinthSearchResponse, TabKey } from "../types";
 import type { InstanceItem } from "../types";
+import type { PushToast } from "./useToasts";
 
 interface UseShaderActionsParams {
   activeTab: TabKey;
   selectedShaderTarget: InstanceItem | null;
   setActionError: (msg: string) => void;
   setBusyMessage: (msg: string) => void;
+  pushToast: PushToast;
 }
 
 export function useShaderActions({
@@ -15,6 +17,7 @@ export function useShaderActions({
   selectedShaderTarget,
   setActionError,
   setBusyMessage,
+  pushToast,
 }: UseShaderActionsParams) {
   const [shaderSearch, setShaderSearch] = useState("");
   const [shaderItems, setShaderItems] = useState<ModrinthProject[]>([]);
@@ -104,6 +107,8 @@ export function useShaderActions({
   const handleInstallShader = async (projectId: string) => {
     if (!selectedShaderTarget) return;
 
+    const shaderName = shaderItems.find((s) => s.projectId === projectId)?.title ?? projectId;
+
     try {
       setShaderInstallBusyId(projectId);
       setActionError("");
@@ -130,9 +135,13 @@ export function useShaderActions({
       setShaderTotalHits(shadersResult.totalHits);
       setInstalledShaders(installedResult);
       setBusyMessage("Shader install finished");
+      pushToast("info", `${shaderName} → ${selectedShaderTarget.name}`, {
+        title: "Shader installed",
+      });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Shader install failed" });
     } finally {
       setShaderInstallBusyId(null);
       window.setTimeout(() => setBusyMessage(""), 800);
@@ -169,9 +178,11 @@ export function useShaderActions({
       setShaderItems(shadersResult.hits);
       setShaderTotalHits(shadersResult.totalHits);
       setInstalledShaders(installedResult);
+      pushToast("info", `${shaderEntry.title} удалён из ${selectedShaderTarget.name}`, { title: "Shader removed" });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Uninstall failed" });
     } finally {
       setShaderInstallBusyId(null);
       setBusyMessage("");

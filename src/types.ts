@@ -6,7 +6,7 @@ export type TabKey =
   | "shaders"
   | "settings";
 
-export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "NeoForge";
+export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "Forge" | "NeoForge";
 
 export type InstanceItem = {
   id: string;
@@ -166,9 +166,16 @@ export type InstallProgressPayload = {
   detail: string;
 };
 
+export type MirrorMode = "official" | "auto" | "mirror";
+
+export type NetworkSettings = {
+  mirror: MirrorMode;
+};
+
 export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
+  network: NetworkSettings;
   plugins: LauncherPluginsSettings;
 };
 
@@ -177,6 +184,12 @@ export type LauncherPluginsSettings = {
   mineflayerBot: MineflayerBotPluginSettings;
   blueMap: BlueMapPluginSettings;
   obsTelemetry: ObsTelemetryPluginSettings;
+  proxy: ProxyPluginSettings;
+};
+
+export type ProxyPluginSettings = {
+  enabled: boolean;
+  url: string;
 };
 
 export type DiscordRpcPluginSettings = {

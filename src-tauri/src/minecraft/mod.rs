@@ -5,6 +5,7 @@ mod java;
 mod launch;
 mod loaders;
 mod manifest;
+pub mod mirrors;
 mod version;
 
 pub use install::{install_instance_files, update_instance_status};

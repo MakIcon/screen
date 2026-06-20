@@ -117,6 +117,7 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
         let settings = LauncherSettings {
             default_ram_gb: 4_u32.min(detect_system_memory_gb()),
             optimized_java_args: true,
+            network: Default::default(),
             plugins: Default::default(),
         };
 
@@ -127,6 +128,7 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
             .await
             .map_err(|e| format!("write settings error: {e}"))?;
 
+        sync_network_config(&settings);
         return Ok(settings);
     }
 
@@ -134,7 +136,18 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
         .await
         .map_err(|e| format!("read settings error: {e}"))?;
 
-    serde_json::from_str(&raw).map_err(|e| format!("parse settings error: {e}"))
+    let settings: LauncherSettings =
+        serde_json::from_str(&raw).map_err(|e| format!("parse settings error: {e}"))?;
+    sync_network_config(&settings);
+    Ok(settings)
+}
+
+/// Push the persisted network preferences into the process-wide mirror config so
+/// every downloader picks up the user's mirror/proxy choice.
+fn sync_network_config(settings: &LauncherSettings) {
+    let proxy = &settings.plugins.proxy;
+    let proxy_url = if proxy.enabled { proxy.url.as_str() } else { "" };
+    crate::minecraft::mirrors::apply_from(&settings.network.mirror, proxy_url);
 }
 
 pub async fn write_settings(settings: &LauncherSettings) -> Result<(), String> {
@@ -144,7 +157,9 @@ pub async fn write_settings(settings: &LauncherSettings) -> Result<(), String> {
 
     fs::write(settings_path()?, raw)
         .await
-        .map_err(|e| format!("write settings error: {e}"))
+        .map_err(|e| format!("write settings error: {e}"))?;
+    sync_network_config(settings);
+    Ok(())
 }
 
 pub async fn read_instances() -> Result<Vec<InstanceItem>, String> {

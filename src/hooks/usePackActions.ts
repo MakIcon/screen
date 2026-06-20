@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { InstalledModView, ModrinthProject, ModrinthSearchResponse, TabKey } from "../types";
 import type { InstanceItem } from "../types";
+import type { PushToast } from "./useToasts";
 
 interface UsePackActionsParams {
   activeTab: TabKey;
   selectedInstance: InstanceItem | null;
   setActionError: (msg: string) => void;
   setBusyMessage: (msg: string) => void;
+  pushToast: PushToast;
 }
 
 export function usePackActions({
@@ -15,6 +17,7 @@ export function usePackActions({
   selectedInstance,
   setActionError,
   setBusyMessage,
+  pushToast,
 }: UsePackActionsParams) {
   const [packSearch, setPackSearch] = useState("");
   const [packItems, setPackItems] = useState<ModrinthProject[]>([]);
@@ -104,6 +107,8 @@ export function usePackActions({
   const handleInstallPack = async (projectId: string) => {
     if (!selectedInstance) return;
 
+    const packName = packItems.find((p) => p.projectId === projectId)?.title ?? projectId;
+
     try {
       setPackInstallBusyId(projectId);
       setActionError("");
@@ -130,9 +135,13 @@ export function usePackActions({
       setPackTotalHits(packsResult.totalHits);
       setInstalledPacks(installedResult);
       setBusyMessage("Resource pack install finished");
+      pushToast("info", `${packName} → ${selectedInstance.name}`, {
+        title: "Resource pack installed",
+      });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Resource pack failed" });
     } finally {
       setPackInstallBusyId(null);
       window.setTimeout(() => setBusyMessage(""), 800);
@@ -169,9 +178,11 @@ export function usePackActions({
       setPackItems(packsResult.hits);
       setPackTotalHits(packsResult.totalHits);
       setInstalledPacks(installedResult);
+      pushToast("info", `${packEntry.title} удалён из ${selectedInstance.name}`, { title: "Resource pack removed" });
     } catch (error) {
       console.error(error);
       setActionError(String(error));
+      pushToast("error", String(error), { title: "Uninstall failed" });
     } finally {
       setPackInstallBusyId(null);
       setBusyMessage("");

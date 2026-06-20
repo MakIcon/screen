@@ -355,7 +355,26 @@ pub struct LauncherSettings {
     #[serde(default = "default_optimized_java_args")]
     pub optimized_java_args: bool,
     #[serde(default)]
+    pub network: NetworkSettings,
+    #[serde(default)]
     pub plugins: LauncherPluginsSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkSettings {
+    /// Download source: "official", "auto" (official first, mirror fallback) or
+    /// "mirror" (BMCLAPI first). See `minecraft::mirrors::MirrorMode`.
+    #[serde(default = "default_mirror_mode")]
+    pub mirror: String,
+}
+
+impl Default for NetworkSettings {
+    fn default() -> Self {
+        Self {
+            mirror: default_mirror_mode(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -369,6 +388,8 @@ pub struct LauncherPluginsSettings {
     pub blue_map: BlueMapPluginSettings,
     #[serde(default)]
     pub obs_telemetry: ObsTelemetryPluginSettings,
+    #[serde(default)]
+    pub proxy: ProxyPluginSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -459,6 +480,21 @@ pub struct ObsTelemetryPluginSettings {
     pub enabled: bool,
     #[serde(default = "default_obs_telemetry_port")]
     pub port: u16,
+}
+
+/// Routes every launcher HTTP request through a user proxy. Lives here as a
+/// plugin so it sits next to the other optional integrations in the UI, but the
+/// value is fed straight into the shared network client (see
+/// `minecraft::mirrors`). Needed mainly to reach hosts BMCLAPI can't mirror
+/// (e.g. QuiltMC) from blocked regions.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyPluginSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// e.g. `http://127.0.0.1:8080` or `socks5://127.0.0.1:1080`.
+    #[serde(default)]
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -645,6 +681,7 @@ impl Default for LauncherSettings {
         Self {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
+            network: NetworkSettings::default(),
             plugins: LauncherPluginsSettings::default(),
         }
     }
@@ -725,6 +762,10 @@ impl Default for ObsTelemetryPluginSettings {
 
 fn default_optimized_java_args() -> bool {
     true
+}
+
+fn default_mirror_mode() -> String {
+    "auto".to_string()
 }
 
 fn default_discord_rpc_details_template() -> String {

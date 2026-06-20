@@ -1,14 +1,12 @@
-use reqwest::Client;
-
 use crate::{
-    minecraft::{fetch_loader_versions, fetch_manifest_network},
+    minecraft::{fetch_loader_versions, fetch_manifest_network, mirrors},
     models::MinecraftManifest,
     paths::detect_system_memory_gb,
 };
 
 #[tauri::command]
 pub async fn get_minecraft_manifest() -> Result<MinecraftManifest, String> {
-    let client = Client::new();
+    let client = mirrors::build_client()?;
     fetch_manifest_network(&client).await
 }
 
@@ -17,7 +15,7 @@ pub async fn get_loader_versions(
     loader: String,
     mc_version: String,
 ) -> Result<Vec<String>, String> {
-    let client = Client::new();
+    let client = mirrors::build_client()?;
     fetch_loader_versions(&client, &loader, &mc_version).await
 }
 
