@@ -471,8 +471,19 @@ export default function App() {
   const [exportError, setExportError] = useState("");
 
   // Alt+hover list preview (shared between export/import)
-  const altHoverRef = useRef<{ items: ExportedItem[]; label: string; el: HTMLElement } | null>(null);
-  const [listPreview, setListPreview] = useState<{ items: ExportedItem[]; label: string; rect: DOMRect } | null>(null);
+  const altHoverRef = useRef<{
+    items: ExportedItem[];
+    label: string;
+    el: HTMLElement;
+    ownerId: string;
+  } | null>(null);
+  const altSourceHoveredRef = useRef(false);
+  const [listPreview, setListPreview] = useState<{
+    items: ExportedItem[];
+    label: string;
+    rect: DOMRect;
+    ownerId: string;
+  } | null>(null);
   const [modrinthProjectIcons, setModrinthProjectIcons] = useState<Record<string, string | null>>({});
   const requestedModrinthProjectIconIdsRef = useRef<Set<string>>(new Set());
 
@@ -947,17 +958,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Alt" && altHoverRef.current) {
-        const { items, label, el } = altHoverRef.current;
-        if (items.length > 0) {
-          setListPreview({ items, label, rect: el.getBoundingClientRect() });
-        }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Alt" || !altSourceHoveredRef.current || !altHoverRef.current) return;
+
+      const { items, label, el, ownerId } = altHoverRef.current;
+      if (items.length > 0) {
+        setListPreview({ items, label, rect: el.getBoundingClientRect(), ownerId });
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Alt") setListPreview(null);
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Alt") return;
+      setListPreview(null);
+      if (!altSourceHoveredRef.current) altHoverRef.current = null;
     };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => {
@@ -2352,14 +2366,31 @@ const isScrollableElement = (target: EventTarget | null) => {
                   <div
                     key={key}
                     className="eximp-option"
+                    data-list-preview-owner={`export-${key}`}
                     onClick={() => toggle(key)}
                     onMouseEnter={(e) => {
                       if (items && items.length > 0) {
-                        altHoverRef.current = { items, label, el: e.currentTarget };
-                        if (e.altKey) setListPreview({ items, label, rect: e.currentTarget.getBoundingClientRect() });
+                        const ownerId = `export-${key}`;
+                        altSourceHoveredRef.current = true;
+                        altHoverRef.current = { items, label, el: e.currentTarget, ownerId };
+                        if (e.altKey) {
+                          setListPreview({
+                            items,
+                            label,
+                            rect: e.currentTarget.getBoundingClientRect(),
+                            ownerId,
+                          });
+                        }
                       }
                     }}
-                    onMouseLeave={() => { altHoverRef.current = null; setListPreview(null); }}
+                    onMouseLeave={(e) => {
+                      altSourceHoveredRef.current = false;
+                      const next = e.relatedTarget;
+                      if (!(next instanceof Element) || !next.closest(`[data-list-preview-owner="export-${key}"]`)) {
+                        altHoverRef.current = null;
+                        setListPreview(null);
+                      }
+                    }}
                   >
                     <OptionToggle enabled={exportOptions[key]} onToggle={() => toggle(key)} />
                     <span className="eximp-option-label">{label}</span>
@@ -2440,14 +2471,31 @@ const isScrollableElement = (target: EventTarget | null) => {
                       <div key={key}>
                         <div
                           className={`eximp-option${disabled ? " disabled" : ""}`}
+                          data-list-preview-owner={`import-${key}`}
                           onClick={() => !disabled && toggle(key)}
                           onMouseEnter={(e) => {
                             if (items && items.length > 0) {
-                              altHoverRef.current = { items, label, el: e.currentTarget };
-                              if (e.altKey) setListPreview({ items, label, rect: e.currentTarget.getBoundingClientRect() });
+                              const ownerId = `import-${key}`;
+                              altSourceHoveredRef.current = true;
+                              altHoverRef.current = { items, label, el: e.currentTarget, ownerId };
+                              if (e.altKey) {
+                                setListPreview({
+                                  items,
+                                  label,
+                                  rect: e.currentTarget.getBoundingClientRect(),
+                                  ownerId,
+                                });
+                              }
                             }
                           }}
-                          onMouseLeave={() => { altHoverRef.current = null; setListPreview(null); }}
+                          onMouseLeave={(e) => {
+                            altSourceHoveredRef.current = false;
+                            const next = e.relatedTarget;
+                            if (!(next instanceof Element) || !next.closest(`[data-list-preview-owner="import-${key}"]`)) {
+                              altHoverRef.current = null;
+                              setListPreview(null);
+                            }
+                          }}
                         >
                           <OptionToggle
                             enabled={importOptions[key] && !disabled}
@@ -2511,37 +2559,72 @@ const isScrollableElement = (target: EventTarget | null) => {
         );
       })()}
 
-      {/* ── Alt+hover list preview ── */}
+      {/* ── Hover list preview with an interactive bridge ── */}
       {listPreview && listPreview.items.length > 0 && (() => {
         const gap = 10;
+        const bridgeOverlap = 2;
         const previewW = 280;
         const previewItemHeight = 46;
+        const previewH = Math.min(listPreview.items.length * previewItemHeight + 46, 320);
         const spaceRight = window.innerWidth - listPreview.rect.right - gap;
-        const left = spaceRight >= previewW
+        const opensRight = spaceRight >= previewW;
+        const left = opensRight
           ? listPreview.rect.right + gap
           : listPreview.rect.left - previewW - gap;
-        const top = Math.min(
-          listPreview.rect.top,
-          window.innerHeight - Math.min(listPreview.items.length * previewItemHeight + 46, 320) - 8,
+        const top = Math.max(
+          8,
+          Math.min(listPreview.rect.top, window.innerHeight - previewH - 8),
         );
+        const bridgeTop = Math.min(listPreview.rect.top, top);
+        const bridgeBottom = Math.max(listPreview.rect.bottom, top + previewH);
+        const bridgeLeft = opensRight
+          ? listPreview.rect.right - bridgeOverlap
+          : left + previewW - bridgeOverlap;
+        const keepPreviewOpen = (target: EventTarget | null) =>
+          target instanceof Element
+          && target.closest(`[data-list-preview-owner="${listPreview.ownerId}"]`) !== null;
+        const handlePreviewMouseLeave = (event: React.MouseEvent<HTMLElement>) => {
+          if (keepPreviewOpen(event.relatedTarget)) return;
+          altHoverRef.current = null;
+          setListPreview(null);
+        };
+
         return (
-          <div className="eximp-list-preview" style={{ left, top }}>
-            <div className="eximp-list-preview-head">
-              <span>{listPreview.label}</span>
-              <span className="eximp-list-preview-count">{listPreview.items.length}</span>
-            </div>
-            {listPreview.items.map((item, i) => (
-              <div key={`${item.projectId ?? item.title}-${i}`} className="eximp-list-preview-item">
-                <ExportedItemIcon
-                  src={getExportedItemIconUrl(item)}
-                  title={item.title}
-                  source={item.source}
-                />
-                <span className="eximp-list-preview-title">{item.title}</span>
-                <span className="eximp-list-preview-src">{item.source}</span>
+          <>
+            <div
+              className="eximp-list-preview-bridge"
+              data-list-preview-owner={listPreview.ownerId}
+              style={{
+                left: bridgeLeft,
+                top: bridgeTop,
+                width: gap + bridgeOverlap * 2,
+                height: bridgeBottom - bridgeTop,
+              }}
+              onMouseLeave={handlePreviewMouseLeave}
+            />
+            <div
+              className="eximp-list-preview"
+              data-list-preview-owner={listPreview.ownerId}
+              style={{ left, top, width: previewW }}
+              onMouseLeave={handlePreviewMouseLeave}
+            >
+              <div className="eximp-list-preview-head">
+                <span>{listPreview.label}</span>
+                <span className="eximp-list-preview-count">{listPreview.items.length}</span>
               </div>
-            ))}
-          </div>
+              {listPreview.items.map((item, i) => (
+                <div key={`${item.projectId ?? item.title}-${i}`} className="eximp-list-preview-item">
+                  <ExportedItemIcon
+                    src={getExportedItemIconUrl(item)}
+                    title={item.title}
+                    source={item.source}
+                  />
+                  <span className="eximp-list-preview-title">{item.title}</span>
+                  <span className="eximp-list-preview-src">{item.source}</span>
+                </div>
+              ))}
+            </div>
+          </>
         );
       })()}
     </div>

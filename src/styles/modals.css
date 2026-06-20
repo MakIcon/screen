@@ -1091,9 +1091,15 @@
 
 /* ── Export/Import item list preview (Alt+hover) ── */
 
-.eximp-list-preview {
+.eximp-list-preview-bridge {
   position: fixed;
   z-index: 300;
+  pointer-events: auto;
+}
+
+.eximp-list-preview {
+  position: fixed;
+  z-index: 301;
   background: var(--bg);
   border: 1px solid var(--line-strong);
   box-shadow: var(--surface-shadow-strong);
@@ -1102,16 +1108,17 @@
   max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
-  animation: eximp-preview-in 0.14s cubic-bezier(0.22, 1, 0.36, 1);
-  pointer-events: none;
+  animation: eximp-preview-in 0.1s ease-out;
+  pointer-events: auto;
+  overscroll-behavior: contain;
 }
 
 .eximp-list-preview::-webkit-scrollbar { width: 2px; }
 .eximp-list-preview::-webkit-scrollbar-thumb { background: var(--line-strong); }
 
 @keyframes eximp-preview-in {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .eximp-list-preview-head {
@@ -1207,6 +1214,7 @@
   align-items: center;
   gap: 4px;
 }
+
 
 .eximp-alt-hint {
   font-size: 8px;
