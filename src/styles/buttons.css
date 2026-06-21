@@ -131,6 +131,29 @@
   min-width: 0;
 }
 
+/* Keep the main action a fixed size when swapping PLAY BUILD ↔ ✕ KILL GAME.
+   Instead of guessing a min-width, an invisible sizer always reserves the width
+   of the longest label (✕ KILL GAME), so the button never resizes — regardless
+   of how wide the ✕ glyph renders. */
+.instance-actions-build > .primary-action {
+  flex: 0 0 auto;
+}
+
+.build-play-action .bpa-stack {
+  display: grid;
+  place-items: center;
+}
+
+.build-play-action .bpa-stack > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.build-play-action .bpa-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Only the trash icon sits on the button line; the other three icons are
    absolutely positioned 54px above it (gear / camera / upload), so the icon
    block no longer forces the row taller and PLAY BUILD can stay centered. */

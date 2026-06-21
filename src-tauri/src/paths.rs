@@ -47,6 +47,10 @@ pub fn libraries_root() -> Result<PathBuf, String> {
 pub fn assets_root() -> Result<PathBuf, String> {
     Ok(shared_root()?.join("assets"))
 }
+/// Where auto-downloaded Java runtimes are stored, one subfolder per major.
+pub fn java_runtimes_root() -> Result<PathBuf, String> {
+    Ok(launcher_root()?.join("java"))
+}
 pub fn accounts_path() -> Result<PathBuf, String> {
     Ok(launcher_root()?.join("accounts.json"))
 }
@@ -116,9 +120,7 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
     if !path.exists() {
         let settings = LauncherSettings {
             default_ram_gb: 4_u32.min(detect_system_memory_gb()),
-            optimized_java_args: true,
-            network: Default::default(),
-            plugins: Default::default(),
+            ..LauncherSettings::default()
         };
 
         let raw = serde_json::to_string_pretty(&settings)

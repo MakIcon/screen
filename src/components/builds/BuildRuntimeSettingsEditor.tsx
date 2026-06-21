@@ -21,7 +21,8 @@ import {
   getTextSearchMatches,
   replaceAllTextSearchMatches,
 } from "../../utils/textSearch";
-import type { BuildRuntimeSettingsDraft } from "../../types";
+import { invoke } from "@tauri-apps/api/core";
+import type { BuildRuntimeSettingsDraft, JavaInstallation } from "../../types";
 
 const JAVA_ARGS_EXPORT_KIND = "screen.java-args";
 
@@ -73,6 +74,10 @@ export function BuildRuntimeSettingsEditor({
   const [textEditRequest, setTextEditRequest] =
     useState<JavaArgsTextEditRequest | null>(null);
   const [argsImportError, setArgsImportError] = useState("");
+  const [javaList, setJavaList] = useState<JavaInstallation[]>([]);
+  const [javaScanning, setJavaScanning] = useState(false);
+  const [javaScanError, setJavaScanError] = useState("");
+  const [javaScanned, setJavaScanned] = useState(false);
   const importArgsInputRef = useRef<HTMLInputElement>(null);
   const textEditRequestId = useRef(0);
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
@@ -120,6 +125,27 @@ export function BuildRuntimeSettingsEditor({
       ...prev,
       javaArgs: value,
     }));
+  };
+
+  const setJavaPath = (value: string) => {
+    onDraftChange((prev) => ({ ...prev, javaPath: value }));
+  };
+
+  const scanJavaInstallations = async () => {
+    if (javaScanning) return;
+
+    try {
+      setJavaScanning(true);
+      setJavaScanError("");
+      const result = await invoke<JavaInstallation[]>("scan_java_installations");
+      setJavaList(result);
+      setJavaScanned(true);
+    } catch (error) {
+      console.error(error);
+      setJavaScanError(String(error));
+    } finally {
+      setJavaScanning(false);
+    }
   };
 
   const requestTextEdit = (start: number, end: number, replacement: string) => {
@@ -390,16 +416,67 @@ export function BuildRuntimeSettingsEditor({
             </section>
 
             <section className="brs-section">
-              <label className="brs-field">
+              <div className="brs-section-head">
                 <span>JAVA PATH</span>
+                <div className="brs-java-actions">
+                  {draft.javaPath.trim() && (
+                    <button
+                      className="brs-compact-action"
+                      type="button"
+                      title="Use the launcher-managed Java"
+                      onClick={() => setJavaPath("")}
+                    >
+                      AUTO
+                    </button>
+                  )}
+                  <button
+                    className="brs-compact-action"
+                    type="button"
+                    disabled={javaScanning}
+                    onClick={() => void scanJavaInstallations()}
+                  >
+                    {javaScanning ? "SCANNING..." : "AUTO-SCAN"}
+                  </button>
+                </div>
+              </div>
+
+              <label className="brs-field">
                 <input
                   value={draft.javaPath}
-                  placeholder="AUTO"
-                  onChange={(event) =>
-                    onDraftChange((prev) => ({ ...prev, javaPath: event.target.value }))
-                  }
+                  placeholder="AUTO (managed runtime) — or type a javaw.exe path"
+                  onChange={(event) => setJavaPath(event.target.value)}
                 />
               </label>
+
+              {javaScanError && <span className="brs-args-status">{javaScanError}</span>}
+              {javaScanned && javaList.length === 0 && !javaScanError && (
+                <span className="brs-args-status">NO JAVA FOUND</span>
+              )}
+
+              {javaList.length > 0 && (
+                <div className="brs-java-list">
+                  {javaList.map((java) => {
+                    const active =
+                      draft.javaPath.trim().toLowerCase() === java.path.toLowerCase();
+                    return (
+                      <button
+                        key={java.path}
+                        type="button"
+                        className={`brs-java-item ${active ? "brs-java-item--active" : ""}`}
+                        onClick={() => setJavaPath(java.path)}
+                      >
+                        <span className="brs-java-item-head">
+                          <strong>
+                            {java.vendor} · {java.version}
+                          </strong>
+                          {java.major > 0 && <em>JAVA {java.major}</em>}
+                        </span>
+                        <span className="brs-java-item-path">{java.path}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className="brs-section">

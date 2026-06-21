@@ -54,6 +54,8 @@ interface SettingsTabProps {
   saveSettingsRam: () => Promise<void>;
   optimizedJavaArgs: boolean;
   saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
+  autoDownloadJava: boolean;
+  saveAutoDownloadJava: (enabled: boolean) => Promise<void>;
   mirrorMode: MirrorMode;
   saveNetworkSettings: (mirror: string) => Promise<void>;
   wheelTabSwitching: boolean;
@@ -81,6 +83,8 @@ export function SettingsTab({
   saveSettingsRam,
   optimizedJavaArgs,
   saveOptimizedJavaArgs,
+  autoDownloadJava,
+  saveAutoDownloadJava,
   mirrorMode,
   saveNetworkSettings,
   wheelTabSwitching,
@@ -200,6 +204,13 @@ export function SettingsTab({
               note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
               enabled={optimizedJavaArgs}
               onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
+            />
+
+            <ElementToggle
+              title="AUTO-DOWNLOAD JAVA"
+              note="Если нужная Java не найдена, лаунчер сам скачает её (Adoptium) под версию сборки. Выключи, чтобы использовать только системную Java."
+              enabled={autoDownloadJava}
+              onToggle={() => void saveAutoDownloadJava(!autoDownloadJava)}
             />
 
             <ElementToggle

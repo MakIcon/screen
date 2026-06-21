@@ -187,13 +187,81 @@ pub async fn uninstall_modrinth_mod(
             .map_err(|e| format!("remove file error: {e}"))?;
     }
 
+    // The metadata is keyed by the original filename, so drop any `.disabled`
+    // suffix before removing the entry for a currently-disabled mod.
+    let base_filename = filename
+        .strip_suffix(".disabled")
+        .unwrap_or(&filename)
+        .to_string();
     let mut latest_state = read_modrinth_state(&instance).await.unwrap_or_default();
-    latest_state.remove(&filename);
+    latest_state.remove(&base_filename);
     write_modrinth_state(&instance, &latest_state).await?;
 
     Ok(ActionResult {
         ok: true,
         message: "Deleted".into(),
+        pid: None,
+    })
+}
+
+/// Enable or disable a mod by renaming its file, the way Prism/MultiMC do it:
+/// disabling appends a `.disabled` suffix so Minecraft skips the jar, enabling
+/// strips it back off. The metadata state is untouched (it is keyed by the
+/// original filename), so a toggled-off mod keeps its Modrinth attribution.
+#[tauri::command]
+pub async fn set_mod_enabled(
+    instance_id: String,
+    filename: String,
+    enabled: bool,
+) -> Result<ActionResult, String> {
+    let items = read_instances().await?;
+    let instance = items
+        .into_iter()
+        .find(|i| i.id == instance_id)
+        .ok_or("Instance not found")?;
+
+    let mods_dir = mods_dir_for_instance(&instance);
+    let current_path = mods_dir.join(&filename);
+    if !current_path.exists() {
+        return Err(format!("Mod file not found: {filename}"));
+    }
+
+    let currently_enabled = !filename.ends_with(".disabled");
+    if currently_enabled == enabled {
+        // Already in the requested state — nothing to do.
+        return Ok(ActionResult {
+            ok: true,
+            message: "No change".into(),
+            pid: None,
+        });
+    }
+
+    let target_filename = if enabled {
+        filename
+            .strip_suffix(".disabled")
+            .unwrap_or(&filename)
+            .to_string()
+    } else {
+        format!("{filename}.disabled")
+    };
+    let target_path = mods_dir.join(&target_filename);
+    if target_path.exists() {
+        return Err(format!(
+            "Cannot toggle mod, target already exists: {target_filename}"
+        ));
+    }
+
+    fs::rename(&current_path, &target_path)
+        .await
+        .map_err(|e| format!("toggle mod error: {e}"))?;
+
+    Ok(ActionResult {
+        ok: true,
+        message: if enabled {
+            "Enabled".into()
+        } else {
+            "Disabled".into()
+        },
         pid: None,
     })
 }
@@ -239,7 +307,15 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
             continue;
         }
 
-        if let Some(meta) = state.get(&filename) {
+        // A `.disabled` suffix means the mod is toggled off. The metadata state is
+        // still keyed by the original filename, so strip the suffix when looking it up.
+        let enabled = !filename.ends_with(".disabled");
+        let base_filename = filename
+            .strip_suffix(".disabled")
+            .unwrap_or(&filename)
+            .to_string();
+
+        if let Some(meta) = state.get(&base_filename) {
             out.push(InstalledModView {
                 project_id: Some(meta.project_id.clone()),
                 title: meta.title.clone(),
@@ -252,11 +328,13 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
                 filename,
                 source: "modrinth".to_string(),
                 installed_at: Some(meta.installed_at.clone()),
+                enabled,
+                icon_url: meta.icon_url.clone(),
             });
         } else {
             out.push(InstalledModView {
                 project_id: None,
-                title: filename
+                title: base_filename
                     .trim_end_matches(".jar")
                     .trim_end_matches(".zip")
                     .to_string(),
@@ -265,6 +343,8 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
                 filename,
                 source: "local".to_string(),
                 installed_at: None,
+                enabled,
+                icon_url: None,
             });
         }
     }

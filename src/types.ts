@@ -72,6 +72,15 @@ export type InstalledModView = {
   filename: string;
   source: string;
   installedAt?: string | null;
+  enabled: boolean;
+  iconUrl?: string | null;
+};
+
+export type JavaInstallation = {
+  path: string;
+  version: string;
+  vendor: string;
+  major: number;
 };
 
 export type MinecraftManifestVersion = {
@@ -175,6 +184,7 @@ export type NetworkSettings = {
 export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
+  autoDownloadJava: boolean;
   network: NetworkSettings;
   plugins: LauncherPluginsSettings;
 };

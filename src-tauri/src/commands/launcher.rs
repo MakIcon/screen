@@ -121,7 +121,13 @@ pub async fn install_instance(app: AppHandle, instance_id: String) -> Result<Act
         .ok_or_else(|| "Instance not found".to_string())?;
 
     update_instance_status(&instance.id, "UPDATING").await?;
-    let result = install_instance_files(&app, &instance).await;
+    let result = async {
+        install_instance_files(&app, &instance).await?;
+        let settings = read_settings().await?;
+        crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java)
+            .await
+    }
+    .await;
 
     if result.is_ok() {
         update_instance_status(&instance.id, "READY").await?;
@@ -166,6 +172,7 @@ pub async fn launch_instance(
     update_instance_status(&instance.id, "UPDATING").await?;
     install_instance_files(&app, &instance).await?;
     let settings = read_settings().await?;
+    crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java).await?;
     let obs_jvm_args = prepare_obs_telemetry_for_launch(
         &app,
         &obs_telemetry_state,

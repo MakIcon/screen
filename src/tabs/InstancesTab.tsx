@@ -458,12 +458,18 @@ export function InstancesTab({
 
               <div className="instance-actions instance-actions-build">
                 {selectedInstance && isRunning(selectedInstance.id) ? (
-                  <button className="primary-action kill-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
-                    ✕ KILL GAME
+                  <button className="primary-action kill-action build-play-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
+                    <span className="bpa-stack">
+                      <span className="bpa-label">✕ KILL GAME</span>
+                      <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                    </span>
                   </button>
                 ) : (
-                  <button className="primary-action" type="button" onClick={() => handleLaunchSelected()} disabled={working}>
-                    {working ? "WORKING..." : "PLAY BUILD"}
+                  <button className="primary-action build-play-action" type="button" onClick={() => handleLaunchSelected()} disabled={working}>
+                    <span className="bpa-stack">
+                      <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
+                      <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                    </span>
                   </button>
                 )}
                 <button className="ghost-action" type="button" onClick={handleInstallSelected} disabled={working}>INSTALL</button>

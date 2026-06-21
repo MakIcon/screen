@@ -354,6 +354,9 @@ pub struct LauncherSettings {
     pub default_ram_gb: u32,
     #[serde(default = "default_optimized_java_args")]
     pub optimized_java_args: bool,
+    /// Download a matching Java runtime automatically when none is found locally.
+    #[serde(default = "default_auto_download_java")]
+    pub auto_download_java: bool,
     #[serde(default)]
     pub network: NetworkSettings,
     #[serde(default)]
@@ -681,6 +684,7 @@ impl Default for LauncherSettings {
         Self {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
+            auto_download_java: default_auto_download_java(),
             network: NetworkSettings::default(),
             plugins: LauncherPluginsSettings::default(),
         }
@@ -761,6 +765,10 @@ impl Default for ObsTelemetryPluginSettings {
 }
 
 fn default_optimized_java_args() -> bool {
+    true
+}
+
+fn default_auto_download_java() -> bool {
     true
 }
 

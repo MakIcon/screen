@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ElementPopup } from "../popup/ElementPopup";
 import { BuildCardEditor } from "./BuildCardEditor";
 import { BuildRuntimeSettingsEditor } from "./BuildRuntimeSettingsEditor";
+import { BuildModsEditor } from "./BuildModsEditor";
 import type { BuildRuntimeSettingsDraft } from "../../types";
 import "./BuildCardSettingsPopup.css";
 
@@ -550,6 +551,7 @@ export function SettingsGearIcon() {
 
 type Props = {
   isCreateMode: boolean;
+  instanceId: string | null;
   systemRamGb: number;
   optimizedJavaArgs: boolean;
   buildName: string;
@@ -573,8 +575,9 @@ type Props = {
 };
 
 export function BuildCardSettingsPopup(props: Props) {
-  const [activeTab, setActiveTab] = useState<"runtime" | "card">("runtime");
+  const [activeTab, setActiveTab] = useState<"runtime" | "card" | "mods">("runtime");
   const isRuntimeTab = activeTab === "runtime";
+  const isModsTab = activeTab === "mods";
 
   return (
     <ElementPopup
@@ -601,8 +604,17 @@ export function BuildCardSettingsPopup(props: Props) {
               <button
                 type="button"
                 role="tab"
-                aria-selected={!isRuntimeTab}
-                className={`bcs-tab ${!isRuntimeTab ? "bcs-tab--active" : ""}`}
+                aria-selected={isModsTab}
+                className={`bcs-tab ${isModsTab ? "bcs-tab--active" : ""}`}
+                onClick={() => setActiveTab("mods")}
+              >
+                MODS
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "card"}
+                className={`bcs-tab ${activeTab === "card" ? "bcs-tab--active" : ""}`}
                 onClick={() => setActiveTab("card")}
               >
                 CARD
@@ -611,20 +623,24 @@ export function BuildCardSettingsPopup(props: Props) {
           </div>
 
           <div className="bce-header-actions">
-            <button
-              className="bce-hdr-btn"
-              type="button"
-              onClick={isRuntimeTab ? props.onResetRuntime : props.onResetAll}
-            >
-              RESET
-            </button>
-            <button
-              className="bce-hdr-btn bce-hdr-btn--save"
-              type="button"
-              onClick={() => void props.onSave()}
-            >
-              SAVE
-            </button>
+            {!isModsTab && (
+              <>
+                <button
+                  className="bce-hdr-btn"
+                  type="button"
+                  onClick={isRuntimeTab ? props.onResetRuntime : props.onResetAll}
+                >
+                  RESET
+                </button>
+                <button
+                  className="bce-hdr-btn bce-hdr-btn--save"
+                  type="button"
+                  onClick={() => void props.onSave()}
+                >
+                  SAVE
+                </button>
+              </>
+            )}
             <button className="bce-hdr-close" type="button" onClick={props.onClose} aria-label="Close">
               <svg
                 width="11"
@@ -652,6 +668,8 @@ export function BuildCardSettingsPopup(props: Props) {
               onDraftChange={props.onRuntimeDraftChange}
               onOpenLogs={props.onOpenLogs}
             />
+          ) : isModsTab ? (
+            <BuildModsEditor instanceId={props.instanceId} loader={props.buildLoader} />
           ) : (
             <BuildCardEditor {...props} showHeader={false} />
           )}

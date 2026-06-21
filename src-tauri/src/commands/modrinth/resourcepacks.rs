@@ -238,6 +238,8 @@ pub async fn list_installed_resourcepacks(
                 filename: meta.filename.clone(),
                 source: "modrinth".to_string(),
                 installed_at: Some(meta.installed_at.clone()),
+                enabled: true,
+                icon_url: meta.icon_url.clone(),
             });
         } else {
             out.push(InstalledModView {
@@ -248,6 +250,8 @@ pub async fn list_installed_resourcepacks(
                 filename,
                 source: "local".to_string(),
                 installed_at: None,
+                enabled: true,
+                icon_url: None,
             });
         }
     }

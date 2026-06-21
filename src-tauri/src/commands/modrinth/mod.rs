@@ -81,6 +81,11 @@ pub struct InstalledModView {
     pub filename: String,
     pub source: String,
     pub installed_at: Option<String>,
+    /// `false` when the on-disk file carries a `.disabled` suffix (Prism-style).
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub icon_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

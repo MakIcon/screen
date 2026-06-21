@@ -41,7 +41,6 @@ pub fn normalized_ram(ram: u32) -> u32 {
 const LWJGL_STACK_SIZE_KB: u32 = 1024;
 const MINECRAFT_EXIT_EVENT: &str = "minecraft-process-exited";
 const LAUNCH_LOG_TAIL_LIMIT: usize = 64 * 1024;
-const EARLY_EXIT_SECS: u64 = 30;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -606,14 +605,23 @@ pub async fn spawn_minecraft_and_persist(
     thread::spawn(move || {
         let status_result = child.wait();
         let runtime_secs = started_at.elapsed().as_secs();
+
+        // A clean exit (code 0) is a normal shutdown no matter how short the
+        // session was — quitting after a few seconds is not a crash. Treat it as
+        // a crash only on a non-zero exit code or when a crash report was written.
+        let minecraft_log_path = minecraft_latest_log_path(&watcher_instance);
+        let crash_report_path =
+            latest_crash_report_path(&watcher_instance, Some(started_system_at));
+        let has_crash_report = crash_report_path.is_some();
+
         let (exit_code, crashed, reason) = match status_result {
             Ok(status) => {
                 let exit_code = status.code();
-                let crashed = !status.success() || runtime_secs < EARLY_EXIT_SECS;
-                let reason = if status.success() && runtime_secs >= EARLY_EXIT_SECS {
-                    "Minecraft closed normally.".to_string()
+                let crashed = !status.success() || has_crash_report;
+                let reason = if has_crash_report {
+                    "Minecraft crashed — see the crash report.".to_string()
                 } else if status.success() {
-                    "Minecraft closed almost immediately after launch.".to_string()
+                    "Minecraft closed normally.".to_string()
                 } else if let Some(code) = exit_code {
                     format!("Minecraft exited with code {code}.")
                 } else {
@@ -638,9 +646,6 @@ pub async fn spawn_minecraft_and_persist(
             );
         }
 
-        let minecraft_log_path = minecraft_latest_log_path(&watcher_instance);
-        let crash_report_path =
-            latest_crash_report_path(&watcher_instance, Some(started_system_at));
         let log_tail =
             build_combined_log_tail(Some(&watcher_log_path), minecraft_log_path.as_ref());
         let crash_report_tail = crash_report_path.as_ref().map(|path| {

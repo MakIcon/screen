@@ -1306,6 +1306,17 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  const saveAutoDownloadJava = async (enabled: boolean) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_auto_download_java", { enabled });
+      setLauncherSettings(updated);
+    } catch (error) {
+      console.error(error);
+      setActionError(String(error));
+      pushToast("error", String(error), { title: "Couldn't save setting" });
+    }
+  };
+
   const saveNetworkSettings = async (mirror: string) => {
     try {
       const updated = await invoke<LauncherSettings>("set_network_settings", {
@@ -2082,6 +2093,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             saveSettingsRam={saveSettingsRam}
             optimizedJavaArgs={launcherSettings?.optimizedJavaArgs ?? true}
             saveOptimizedJavaArgs={saveOptimizedJavaArgs}
+            autoDownloadJava={launcherSettings?.autoDownloadJava ?? true}
+            saveAutoDownloadJava={saveAutoDownloadJava}
             mirrorMode={launcherSettings?.network?.mirror ?? "auto"}
             saveNetworkSettings={saveNetworkSettings}
             wheelTabSwitching={wheelTabSwitching}
@@ -2262,6 +2275,7 @@ const isScrollableElement = (target: EventTarget | null) => {
       {buildCardSettingsOpen && (
         <BuildCardSettingsPopup
           isCreateMode={!buildSettingsTargetId}
+          instanceId={buildSettingsTargetId ?? null}
           systemRamGb={systemRamGb}
           optimizedJavaArgs={optimizedJavaArgsEnabled}
           buildName={buildSettingsTargetInstance?.name || createPreviewName}

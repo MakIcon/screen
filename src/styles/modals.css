@@ -1628,8 +1628,8 @@
 }
 
 .build-logs-meta {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 1px;
   margin: 18px 42px 0;
   border: 1px solid var(--line);
@@ -1638,7 +1638,8 @@
 }
 
 .build-logs-meta-item {
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: 130px;
   background: var(--bg-card);
   padding: 12px 14px;
 }
@@ -1664,9 +1665,48 @@
 
 .build-logs-tabs {
   display: flex;
+  align-items: stretch;
   gap: 26px;
   margin: 18px 42px 0;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.build-logs-copy {
+  margin-left: auto;
+  align-self: center;
+  margin-bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  padding: 6px 12px;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.build-logs-copy:hover:not(:disabled) {
+  border-color: rgba(194, 65, 12, 0.4);
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.build-logs-copy:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.build-logs-copy.copied {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #16a34a;
+}
+
+.build-logs-copy svg {
   flex-shrink: 0;
 }
 

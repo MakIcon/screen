@@ -51,6 +51,7 @@ export function BuildLogsModal({
   );
   const [loading, setLoading] = useState(!initialLog);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const exitPayload = isExitPayload(snapshot) ? snapshot : null;
   const hasCrashReport = Boolean(snapshot?.crashReportTail);
@@ -95,6 +96,19 @@ export function BuildLogsModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const copyActiveLog = async () => {
+    if (loading || !bodyText) return;
+    try {
+      setError("");
+      await navigator.clipboard.writeText(bodyText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error(err);
+      setError(String(err));
+    }
+  };
 
   const openBuildFolder = async () => {
     try {
@@ -270,6 +284,30 @@ export function BuildLogsModal({
             disabled={!hasCrashReport}
           >
             CRASH REPORT
+          </button>
+          <button
+            className={`build-logs-copy${copied ? " copied" : ""}`}
+            type="button"
+            onClick={copyActiveLog}
+            disabled={loading || !bodyText}
+            title={`Скопировать ${activeTab === "crash" ? "CRASH REPORT" : "JVM OUTPUT"}`}
+          >
+            {copied ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2.5 6.5l2.5 2.5 4.5-5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                COPIED
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
+                  <path d="M2.5 7.5V2.5h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                COPY
+              </>
+            )}
           </button>
         </div>
 

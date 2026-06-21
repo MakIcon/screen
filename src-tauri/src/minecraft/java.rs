@@ -1,4 +1,17 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+
+/// A Java runtime discovered on the system, offered to the user for per-build override.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JavaInstallation {
+    pub path: String,
+    pub version: String,
+    pub vendor: String,
+    pub major: u32,
+}
 
 fn parse_mc_version(version: &str) -> Option<(u32, u32, u32)> {
     let clean = version.split('-').next().unwrap_or(version);
@@ -98,8 +111,8 @@ fn scan_java_root(root: &str, major: u32) -> Option<String> {
     found.into_iter().next()
 }
 
-fn find_java_on_system(major: u32) -> Option<String> {
-    let roots: &[&str] = &[
+fn java_search_roots() -> &'static [&'static str] {
+    &[
         r"C:\Program Files\Java",
         r"C:\Program Files\Eclipse Adoptium",
         r"C:\Program Files\Eclipse Foundation",
@@ -110,9 +123,11 @@ fn find_java_on_system(major: u32) -> Option<String> {
         r"C:\Program Files\IBM Semeru Runtime Open Edition",
         r"C:\Program Files\SapMachine",
         r"C:\Program Files (x86)\Java",
-    ];
+    ]
+}
 
-    for root in roots {
+fn find_java_on_system(major: u32) -> Option<String> {
+    for root in java_search_roots() {
         if let Some(bin) = scan_java_root(root, major) {
             return Some(bin);
         }
@@ -120,9 +135,142 @@ fn find_java_on_system(major: u32) -> Option<String> {
     None
 }
 
-pub fn resolve_java_bin(mc_version: &str) -> String {
-    let major = required_java_major(mc_version);
+/// Read `version` and `vendor` from a Java home's `release` file, when present.
+fn read_java_release(home: &Path) -> (Option<String>, Option<String>) {
+    let Ok(content) = std::fs::read_to_string(home.join("release")) else {
+        return (None, None);
+    };
 
+    let mut version = None;
+    let mut vendor = None;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("JAVA_VERSION=") {
+            version = Some(rest.trim().trim_matches('"').to_string());
+        } else if let Some(rest) = line.strip_prefix("IMPLEMENTOR=") {
+            vendor = Some(rest.trim().trim_matches('"').to_string());
+        }
+    }
+    (version, vendor)
+}
+
+fn major_from_version(version: &str) -> u32 {
+    let v = version.trim();
+    // Legacy "1.8.0_xxx" encodes the major after the leading "1.".
+    if let Some(rest) = v.strip_prefix("1.") {
+        return rest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    }
+    v.split(|c: char| c == '.' || c == '_' || c == '-')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+fn push_java_installation(
+    bin: PathBuf,
+    home: &Path,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<JavaInstallation>,
+) {
+    if !bin.exists() {
+        return;
+    }
+    let path = bin.to_string_lossy().to_string();
+    if !seen.insert(path.to_ascii_lowercase()) {
+        return;
+    }
+
+    let (version, vendor) = read_java_release(home);
+    let version = version.unwrap_or_else(|| {
+        home.file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Unknown".to_string())
+    });
+    let major = major_from_version(&version);
+    let vendor = vendor.unwrap_or_else(|| "Unknown".to_string());
+
+    out.push(JavaInstallation {
+        path,
+        version,
+        vendor,
+        major,
+    });
+}
+
+/// Discover every Java runtime under the well-known install roots and `JAVA*_HOME`
+/// env vars, so the user can pick a specific one for a build.
+pub fn scan_java_installations() -> Vec<JavaInstallation> {
+    let mut out: Vec<JavaInstallation> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let env_vars = [
+        "JAVA_HOME",
+        "JAVA8_HOME",
+        "JAVA16_HOME",
+        "JAVA17_HOME",
+        "JAVA21_HOME",
+        "JAVA25_HOME",
+    ];
+    for var in env_vars {
+        if let Ok(home) = std::env::var(var) {
+            let home_path = PathBuf::from(&home);
+            push_java_installation(
+                home_path.join("bin").join("javaw.exe"),
+                &home_path,
+                &mut seen,
+                &mut out,
+            );
+        }
+    }
+
+    for root in java_search_roots() {
+        let root_path = Path::new(root);
+        let Ok(entries) = std::fs::read_dir(root_path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let base = entry.path();
+            if !base.is_dir() {
+                continue;
+            }
+            push_java_installation(
+                base.join("bin").join("javaw.exe"),
+                &base,
+                &mut seen,
+                &mut out,
+            );
+            let jre = base.join("jre");
+            push_java_installation(jre.join("bin").join("javaw.exe"), &jre, &mut seen, &mut out);
+        }
+    }
+
+    // Newest major first, then by path for stable ordering.
+    out.sort_by(|a, b| b.major.cmp(&a.major).then_with(|| a.path.cmp(&b.path)));
+    out
+}
+
+/// javaw.exe of an auto-downloaded runtime for `major`, if one is present.
+/// The Adoptium archive extracts to a single top-level folder, so check both the
+/// runtime root and one level down.
+pub fn managed_java_bin(major: u32) -> Option<String> {
+    let dir = crate::paths::java_runtimes_root().ok()?.join(major.to_string());
+
+    let direct = dir.join("bin").join("javaw.exe");
+    if direct.exists() {
+        return Some(direct.to_string_lossy().into_owned());
+    }
+
+    for entry in std::fs::read_dir(&dir).ok()?.flatten() {
+        let candidate = entry.path().join("bin").join("javaw.exe");
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+/// Find a Java of the given major version: an explicit `JAVA<major>_HOME`, then a
+/// system install, then an auto-downloaded managed runtime. `None` if none exist.
+pub fn locate_java(major: u32) -> Option<String> {
     let env_var = match major {
         8 => "JAVA8_HOME",
         16 => "JAVA16_HOME",
@@ -132,11 +280,15 @@ pub fn resolve_java_bin(mc_version: &str) -> String {
         _ => "JAVA_HOME",
     };
 
-    if let Some(bin) = java_bin_from_env(env_var) {
-        return bin;
-    }
+    java_bin_from_env(env_var)
+        .or_else(|| find_java_on_system(major))
+        .or_else(|| managed_java_bin(major))
+}
 
-    if let Some(bin) = find_java_on_system(major) {
+pub fn resolve_java_bin(mc_version: &str) -> String {
+    let major = required_java_major(mc_version);
+
+    if let Some(bin) = locate_java(major) {
         return bin;
     }
 

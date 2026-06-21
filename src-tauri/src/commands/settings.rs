@@ -26,6 +26,14 @@ pub async fn set_optimized_java_args(enabled: bool) -> Result<LauncherSettings, 
 }
 
 #[tauri::command]
+pub async fn set_auto_download_java(enabled: bool) -> Result<LauncherSettings, String> {
+    let mut settings = read_settings().await?;
+    settings.auto_download_java = enabled;
+    write_settings(&settings).await?;
+    Ok(settings)
+}
+
+#[tauri::command]
 pub async fn set_launcher_plugins(
     plugins: LauncherPluginsSettings,
 ) -> Result<LauncherSettings, String> {

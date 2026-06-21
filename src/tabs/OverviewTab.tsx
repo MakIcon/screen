@@ -94,20 +94,26 @@ export function OverviewTab({
           <div className="action-row">
             {isRunning(selectedInstance.id) ? (
               <button
-                className="primary-action play-last-button kill-action"
+                className="primary-action play-last-button kill-action build-play-action"
                 type="button"
                 onClick={() => handleKillGame(selectedInstance.id)}
               >
-                ✕ KILL GAME
+                <span className="bpa-stack">
+                  <span className="bpa-label">✕ KILL GAME</span>
+                  <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                </span>
               </button>
             ) : (
               <button
-                className="primary-action play-last-button"
+                className="primary-action play-last-button build-play-action"
                 type="button"
                 onClick={() => handleLaunchSelected()}
                 disabled={working}
               >
-                {working ? "WORKING..." : "PLAY LAST"}
+                <span className="bpa-stack">
+                  <span className="bpa-label">{working ? "WORKING..." : "PLAY LAST"}</span>
+                  <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                </span>
               </button>
             )}
           </div>
