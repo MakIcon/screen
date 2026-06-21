@@ -157,9 +157,13 @@ fn major_from_version(version: &str) -> u32 {
     let v = version.trim();
     // Legacy "1.8.0_xxx" encodes the major after the leading "1.".
     if let Some(rest) = v.strip_prefix("1.") {
-        return rest.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        return rest
+            .split('.')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
     }
-    v.split(|c: char| c == '.' || c == '_' || c == '-')
+    v.split(['.', '_', '-'])
         .next()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
@@ -252,7 +256,9 @@ pub fn scan_java_installations() -> Vec<JavaInstallation> {
 /// The Adoptium archive extracts to a single top-level folder, so check both the
 /// runtime root and one level down.
 pub fn managed_java_bin(major: u32) -> Option<String> {
-    let dir = crate::paths::java_runtimes_root().ok()?.join(major.to_string());
+    let dir = crate::paths::java_runtimes_root()
+        .ok()?
+        .join(major.to_string());
 
     let direct = dir.join("bin").join("javaw.exe");
     if direct.exists() {

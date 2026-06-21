@@ -22,8 +22,7 @@ use super::{
     LoaderKind,
 };
 
-const NEOFORGE_MAVEN_BASE_URL: &str =
-    "https://maven.neoforged.net/releases/net/neoforged/neoforge";
+const NEOFORGE_MAVEN_BASE_URL: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 const FORGE_MAVEN_BASE_URL: &str = "https://maven.minecraftforge.net/net/minecraftforge/forge";
 
 /// NeoForge versions for `1.20.2` look like `20.2.x`; modern calendar versions
@@ -71,8 +70,11 @@ async fn fetch_neoforge_versions(
 /// only those for the requested Minecraft version and return the `<forge>` part.
 async fn fetch_forge_versions(client: &Client, game_version: &str) -> Result<Vec<String>, String> {
     let prefix = format!("{game_version}-");
-    let versions =
-        fetch_maven_versions(client, &format!("{FORGE_MAVEN_BASE_URL}/maven-metadata.xml")).await?;
+    let versions = fetch_maven_versions(
+        client,
+        &format!("{FORGE_MAVEN_BASE_URL}/maven-metadata.xml"),
+    )
+    .await?;
     Ok(sorted_unique_versions(versions.into_iter().filter_map(
         |version| version.strip_prefix(&prefix).map(str::to_string),
     )))

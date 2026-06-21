@@ -19,29 +19,22 @@ use crate::{models::ActionResult, paths::read_instances};
 fn classify_zip(path: &Path) -> Result<&'static str, String> {
     let file = File::open(path).map_err(|e| format!("open zip error: {e}"))?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("invalid zip archive: {e}"))?;
-    let mut has_shaders = false;
-    let mut has_pack_meta = false;
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
             .map_err(|e| format!("read zip entry error: {e}"))?;
-        let name = entry.name().replace('\\', "/");
-        if name.starts_with("shaders/") {
-            has_shaders = true;
-        }
-        if name == "pack.mcmeta" {
-            has_pack_meta = true;
+        if entry
+            .name()
+            .replace(char::from(92), "/")
+            .starts_with("shaders/")
+        {
+            return Ok("shaderpacks");
         }
     }
-    // Shaderpacks ship a `shaders/` folder; resource packs ship `pack.mcmeta`.
-    // Anything else falls back to resourcepacks, the most common loose drop.
-    Ok(if has_shaders {
-        "shaderpacks"
-    } else if has_pack_meta {
-        "resourcepacks"
-    } else {
-        "resourcepacks"
-    })
+
+    // Resource packs ship `pack.mcmeta`; unknown zip files use the same folder
+    // because it is the safest and most common loose-drop destination.
+    Ok("resourcepacks")
 }
 
 /// Target sub-folder for a dropped file, or `None` if the extension is not a

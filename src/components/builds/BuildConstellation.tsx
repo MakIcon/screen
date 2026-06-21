@@ -936,6 +936,7 @@ export function BuildConstellation({ instanceId, version, mods, packs, shaders, 
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("dblclick", onDbl);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild the canvas scene on graph/loading change; instanceId is captured at setup
   }, [graph, loading]);
 
   if (loading) return <p className="stats-empty">Загрузка...</p>;

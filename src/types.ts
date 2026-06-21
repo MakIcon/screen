@@ -417,11 +417,7 @@ export type DropdownKey =
   | "mc"
   | "loader"
   | "source"
-  | "mods-build"
-  | "mods-mc"
-  | "mods-loader"
-  | "mods-source"
-  | "mod-version"
+
   | "account"
   | "create-version"
   | "create-loader"

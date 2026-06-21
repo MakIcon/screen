@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import type { InstalledModView } from "../../types";
+import { toErrorMessage } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 import "./BuildModsEditor.css";
 
 type Props = {
@@ -52,7 +54,7 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
         if (!cancelled) setMods(result);
       } catch (e) {
         if (!cancelled) {
-          setError(String(e));
+          setError(toErrorMessage(e));
           setMods([]);
         }
       } finally {
@@ -76,8 +78,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
       const result = await invoke<InstalledModView[]>("list_installed_mods", { instanceId });
       setMods(result);
     } catch (e) {
-      console.error(e);
-      setError(String(e));
+      logger.error(e);
+      setError(toErrorMessage(e));
     } finally {
       setToggleBusy(null);
     }

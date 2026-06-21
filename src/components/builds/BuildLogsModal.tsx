@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
+import { toErrorMessage } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 import type {
   ActionResult,
   InstanceItem,
@@ -70,8 +72,8 @@ export function BuildLogsModal({
       setSnapshot(latest);
       setActiveTab((current) => (current === "crash" && !latest.crashReportTail ? "main" : current));
     } catch (err) {
-      console.error(err);
-      setError(String(err));
+      logger.error(err);
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -105,8 +107,8 @@ export function BuildLogsModal({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch (err) {
-      console.error(err);
-      setError(String(err));
+      logger.error(err);
+      setError(toErrorMessage(err));
     }
   };
 
@@ -117,8 +119,8 @@ export function BuildLogsModal({
         instanceId: instance.id,
       });
     } catch (err) {
-      console.error(err);
-      setError(String(err));
+      logger.error(err);
+      setError(toErrorMessage(err));
     }
   };
 

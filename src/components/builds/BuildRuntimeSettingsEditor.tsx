@@ -17,6 +17,8 @@ import {
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
 import { getDefaultJavaArgsText } from "../../utils/javaArgs";
+import { toErrorMessage } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 import {
   getTextSearchMatches,
   replaceAllTextSearchMatches,
@@ -141,8 +143,8 @@ export function BuildRuntimeSettingsEditor({
       setJavaList(result);
       setJavaScanned(true);
     } catch (error) {
-      console.error(error);
-      setJavaScanError(String(error));
+      logger.error(error);
+      setJavaScanError(toErrorMessage(error));
     } finally {
       setJavaScanning(false);
     }

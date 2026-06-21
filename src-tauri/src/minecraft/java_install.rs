@@ -65,8 +65,7 @@ fn safe_join(base: &Path, relative: &str) -> Option<PathBuf> {
 fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<(), String> {
     // Start from a clean directory so a half-finished prior attempt can't linger.
     if target_dir.exists() {
-        std::fs::remove_dir_all(target_dir)
-            .map_err(|e| format!("clear java dir error: {e}"))?;
+        std::fs::remove_dir_all(target_dir).map_err(|e| format!("clear java dir error: {e}"))?;
     }
     std::fs::create_dir_all(target_dir).map_err(|e| format!("create java dir error: {e}"))?;
 
@@ -91,10 +90,9 @@ fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<(), String> {
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("create java dir error: {e}"))?;
         }
-        let mut out = std::fs::File::create(&out_path)
-            .map_err(|e| format!("write java file error: {e}"))?;
-        std::io::copy(&mut entry, &mut out)
-            .map_err(|e| format!("extract java file error: {e}"))?;
+        let mut out =
+            std::fs::File::create(&out_path).map_err(|e| format!("write java file error: {e}"))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| format!("extract java file error: {e}"))?;
     }
 
     Ok(())

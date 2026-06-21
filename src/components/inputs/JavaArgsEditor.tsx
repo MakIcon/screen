@@ -153,7 +153,7 @@ export function JavaArgsEditor({
     textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(start, end);
 
-    let appliedWithNativeUndo = false;
+    let appliedWithNativeUndo: boolean;
     try {
       appliedWithNativeUndo = document.execCommand("insertText", false, replacement);
     } catch {
@@ -182,6 +182,7 @@ export function JavaArgsEditor({
 
     onChange(nextValue);
     updateActiveLine(textarea);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run on a new edit request; updateActiveLine is stable enough here
   }, [onChange, textEditRequest]);
 
   useEffect(() => {
@@ -201,6 +202,7 @@ export function JavaArgsEditor({
     textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(activeSearchMatch.start, activeSearchMatch.end);
     updateActiveLine(textarea);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focus on a new search token; updateActiveLine is stable enough here
   }, [activeSearchMatch, hasSearchQuery, searchFocusToken]);
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {

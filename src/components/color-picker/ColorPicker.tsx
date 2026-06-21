@@ -38,9 +38,10 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
   }, [value]);
 
   /* draw canvas whenever hue changes */
+  const hue = hsv[0];
   useLayoutEffect(() => {
-    if (canvasRef.current) drawSVCanvas(canvasRef.current, hsv[0]);
-  }, [hsv[0]]);
+    if (canvasRef.current) drawSVCanvas(canvasRef.current, hue);
+  }, [hue]);
 
   /* update cursor position directly (no re-render) */
   const updateCursor = useCallback((s: number, v: number) => {
@@ -125,7 +126,7 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
   const pickEye = async () => {
     if (!("EyeDropper" in window)) return;
     try {
-      // @ts-expect-error
+      // @ts-expect-error EyeDropper is not yet part of the TS DOM typings
       const dropper = new window.EyeDropper();
       const result  = await dropper.open();
       const hex     = result.sRGBHex.toLowerCase();

@@ -7,6 +7,7 @@ import type {
   MineflayerBotStatus,
 } from "../../../types";
 import type { PluginDefinition, PluginRenderContext } from "../pluginTypes";
+import { toErrorMessage } from "../../../utils/errors";
 import "./MineflayerBotPlugin.css";
 
 type BotAccountMode = MineflayerBotPluginSettings["botAccountMode"];
@@ -127,7 +128,7 @@ function MineflayerBotSettingsEditor({
       setStatus(next);
       setActionError("");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     }
   };
 
@@ -149,7 +150,7 @@ function MineflayerBotSettingsEditor({
       });
       setStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -162,7 +163,7 @@ function MineflayerBotSettingsEditor({
       const next = await invoke<MineflayerBotStatus>("stop_mineflayer_bot");
       setStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }

@@ -1,8 +1,8 @@
 [package]
 name = "screen"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "ScreenLauncher desktop application"
+authors = ["makar"]
 edition = "2021"
 
 [lib]

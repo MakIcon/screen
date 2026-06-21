@@ -10,6 +10,7 @@ use tokio::fs;
 
 use crate::models::InstanceItem;
 
+mod file_content;
 pub mod mods;
 pub mod resourcepacks;
 pub mod shaders;
@@ -20,6 +21,9 @@ pub use shaders::*;
 
 pub(crate) const MODRINTH_API_BASE: &str = "https://api.modrinth.com/v2";
 pub(crate) const SEARCH_PAGE_SIZE_MAX: usize = 100;
+/// Cap on simultaneous per-project metadata requests, so an instance with many
+/// installed projects doesn't fire one Modrinth request each all at once.
+const MAX_CONCURRENT_METADATA_REQUESTS: usize = 8;
 pub(crate) const MODRINTH_SEARCH_INDEX: &str = "relevance";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -86,6 +90,42 @@ pub struct InstalledModView {
     pub enabled: bool,
     #[serde(default)]
     pub icon_url: Option<String>,
+}
+
+impl InstalledModView {
+    /// View of a Modrinth-tracked file, built from its stored metadata entry.
+    pub(crate) fn from_metadata(filename: String, enabled: bool, meta: &InstalledModEntry) -> Self {
+        Self {
+            project_id: Some(meta.project_id.clone()),
+            title: meta.title.clone(),
+            author: if meta.author.trim().is_empty() {
+                "MODRINTH".to_string()
+            } else {
+                meta.author.clone()
+            },
+            version_number: Some(meta.version_number.clone()),
+            filename,
+            source: "modrinth".to_string(),
+            installed_at: Some(meta.installed_at.clone()),
+            enabled,
+            icon_url: meta.icon_url.clone(),
+        }
+    }
+
+    /// View of an untracked file the user dropped into the folder by hand.
+    pub(crate) fn local(filename: String, enabled: bool, title: String, author: &str) -> Self {
+        Self {
+            project_id: None,
+            title,
+            author: author.to_string(),
+            version_number: None,
+            filename,
+            source: "local".to_string(),
+            installed_at: None,
+            enabled,
+            icon_url: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -366,10 +406,15 @@ pub async fn get_modrinth_project_icons(
         .filter(|value| !value.is_empty())
         .collect::<HashSet<_>>();
 
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+        MAX_CONCURRENT_METADATA_REQUESTS,
+    ));
     let mut tasks = tokio::task::JoinSet::new();
     for project_id in unique_ids {
         let client = client.clone();
+        let semaphore = semaphore.clone();
         tasks.spawn(async move {
+            let _permit = semaphore.acquire_owned().await;
             let icon_url = fetch_project_icon_url(&client, &project_id)
                 .await
                 .unwrap_or(None);
@@ -422,10 +467,15 @@ pub async fn get_modrinth_project_authors(
         .filter(|value| !value.is_empty())
         .collect::<HashSet<_>>();
 
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+        MAX_CONCURRENT_METADATA_REQUESTS,
+    ));
     let mut tasks = tokio::task::JoinSet::new();
     for project_id in unique_ids {
         let client = client.clone();
+        let semaphore = semaphore.clone();
         tasks.spawn(async move {
+            let _permit = semaphore.acquire_owned().await;
             let author = fetch_project_author(&client, &project_id)
                 .await
                 .unwrap_or(None);

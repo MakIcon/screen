@@ -8,6 +8,7 @@ import type {
   ObsTelemetryStatus,
 } from "../../../types";
 import type { PluginDefinition } from "../pluginTypes";
+import { toErrorMessage } from "../../../utils/errors";
 import "./ObsTelemetryPlugin.css";
 
 const DEFAULT_OBS_PORT = 18991;
@@ -120,7 +121,7 @@ function ObsTelemetrySettingsEditor({
       setStatus(next);
       setActionError("");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     }
   };
 
@@ -138,7 +139,7 @@ function ObsTelemetrySettingsEditor({
       const next = await invoke<ObsTelemetryStatus>("start_obs_telemetry");
       setStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -152,7 +153,7 @@ function ObsTelemetrySettingsEditor({
       const next = await invoke<ObsTelemetryStatus>("stop_obs_telemetry");
       setStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -164,7 +165,7 @@ function ObsTelemetrySettingsEditor({
       setActionError("");
       await invoke("open_obs_telemetry_overlay");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -176,7 +177,7 @@ function ObsTelemetrySettingsEditor({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     }
   };
 

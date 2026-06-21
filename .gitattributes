@@ -1,0 +1,15 @@
+# Normalize line endings so Windows checkouts stop rewriting LF↔CRLF on commit.
+* text=auto eol=lf
+
+# Windows-only scripts stay CRLF.
+*.ps1 text eol=crlf
+
+# Binary assets — never normalize or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.cjs text eol=lf

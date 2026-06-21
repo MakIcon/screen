@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,7 +6,13 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import "./App.css";
 import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
+import { useRunningInstances } from "./hooks/useRunningInstances";
+import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
+import { useLocalStorageBoolean } from "./hooks/useLocalStorage";
+import { useAccounts } from "./hooks/useAccounts";
+import { logger } from "./utils/logger";
 import { clampRamToSystem } from "./utils/ram";
+import { toErrorMessage } from "./utils/errors";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BuildCardSettingsPopup,
@@ -16,9 +22,24 @@ import {
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
-import { BuildStatsModal } from "./components/builds/BuildStatsModal";
-import { BuildScreenshotsModal } from "./components/builds/BuildScreenshotsModal";
-import { BuildLogsModal } from "./components/builds/BuildLogsModal";
+// Stats (with its heavy canvas constellation) and screenshots are on-demand
+// modals — keep them out of the main bundle until the user opens one.
+const BuildStatsModal = lazy(() =>
+  import("./components/builds/BuildStatsModal").then((module) => ({
+    default: module.BuildStatsModal,
+  })),
+);
+const BuildScreenshotsModal = lazy(() =>
+  import("./components/builds/BuildScreenshotsModal").then((module) => ({
+    default: module.BuildScreenshotsModal,
+  })),
+);
+import {
+  createBuildLogsWindowPayload,
+  getBuildLogsWindowLabel,
+  getBuildLogsWindowUrl,
+  LOG_WINDOW_REFRESH_EVENT,
+} from "./components/builds/BuildLogsWindowApp";
 import type {
   ActionResult,
   BuildRuntimeSettingsDraft,
@@ -38,7 +59,6 @@ import type {
   TabKey,
   UpdateInstancePayload,
 } from "./types";
-import { MicrosoftAccountsModal } from "./components/modals/MicrosoftAccountsModal";
 import { ToastStack } from "./components/notifications/ToastStack";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
@@ -47,13 +67,9 @@ import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from
 import { OverviewTab } from "./tabs/OverviewTab";
 import { OverviewPanel } from "./tabs/OverviewPanel";
 import { InstancesTab } from "./tabs/InstancesTab";
-import { ModsTab } from "./tabs/ModsTab";
-import { ResourcePacksTab } from "./tabs/ResourcePacksTab";
-import { ShadersTab } from "./tabs/ShadersTab";
+import { ModrinthContentTab } from "./tabs/ModrinthContentTab";
 import { SettingsTab } from "./tabs/SettingsTab";
-import { useModActions } from "./hooks/useModActions";
-import { usePackActions } from "./hooks/usePackActions";
-import { useShaderActions } from "./hooks/useShaderActions";
+import { useModrinthContent } from "./hooks/useModrinthContent";
 import { useTheme } from "./hooks/useTheme";
 import { OptionToggle } from "./components/inputs/OptionToggle";
 import {
@@ -64,12 +80,14 @@ import {
   normalizeRuntimeSettingsDraft,
 } from "./utils/javaArgs";
 
+const MicrosoftAccountsModal = lazy(() =>
+  import("./components/modals/MicrosoftAccountsModal").then((module) => ({
+    default: module.MicrosoftAccountsModal,
+  })),
+);
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
-const BUILD_CARD_BACKGROUNDS_STORAGE_KEY = "screenlauncher-build-card-backgrounds";
 const SELECTED_INSTANCE_STORAGE_KEY = "screenlauncher-selected-instance-id";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
-const LOG_WINDOW_STORAGE_PREFIX = "screenlauncher-log-window";
-const LOG_WINDOW_REFRESH_EVENT = "launch-log-window-refresh";
 
 function instanceLastPlayedTimestamp(instance: InstanceItem) {
   const parsed = Number.parseInt(instance.lastPlayed ?? "0", 10);
@@ -122,167 +140,13 @@ function ExportedItemIcon({
   return <span className="eximp-list-preview-icon-fallback">{fallbackLabel}</span>;
 }
 
-function readLogWindowRoute() {
-  const params = new URLSearchParams(window.location.search);
-  const instanceId = params.get("logWindow");
-  const payloadKey = params.get("payloadKey");
-
-  if (!instanceId || !payloadKey) return null;
-  return { instanceId, payloadKey };
-}
-
-function makeLogWindowLabel(instanceId: string) {
-  const safeId = instanceId.replace(/[^a-zA-Z0-9-/:_]/g, "_");
-  return `build-log-${safeId}`;
-}
-
-function makeLogPayloadKey(instanceId: string) {
-  const safeId = instanceId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `${LOG_WINDOW_STORAGE_PREFIX}-${safeId}-${Date.now()}`;
-}
-
-function makeLogWindowUrl(instanceId: string, payloadKey: string) {
-  return `/?logWindow=${encodeURIComponent(instanceId)}&payloadKey=${encodeURIComponent(payloadKey)}`;
-}
-
-function makeLogWindowInstance(instanceId: string, instanceName: string): InstanceItem {
-  return {
-    id: instanceId,
-    name: instanceName || "Build logs",
-    version: "",
-    loader: "",
-    status: "READY",
-    ram: 0,
-    javaArgs: null,
-    javaPath: null,
-    windowWidth: null,
-    windowHeight: null,
-    fullscreen: false,
-    lastPlayed: "0",
-    playtimeSecs: 0,
-    createdAt: "0",
-    gameDir: "",
-  };
-}
-
-type StoredLogWindowPayload = {
-  instanceId: string;
-  initialLog?: LaunchLogSnapshot | MinecraftExitPayload | null;
-};
-
-function readStoredLogPayload(payloadKey: string): StoredLogWindowPayload | null {
-  const raw = window.localStorage.getItem(payloadKey);
-  if (!raw) return null;
-  window.localStorage.removeItem(payloadKey);
-
-  try {
-    return JSON.parse(raw) as StoredLogWindowPayload;
-  } catch {
-    return null;
-  }
-}
-
-function BuildLogsWindowApp({
-  instanceId,
-  payloadKey,
-}: {
-  instanceId: string;
-  payloadKey: string;
-}) {
-  useTheme();
-  const [instance, setInstance] = useState<InstanceItem | null>(null);
-  const [initialLog, setInitialLog] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(null);
-
-  useEffect(() => {
-    const windowHandle = getCurrentWindow();
-    let alive = true;
-
-    const loadPayload = async (nextPayloadKey: string) => {
-      const stored = readStoredLogPayload(nextPayloadKey);
-      const resolvedInstanceId = stored?.instanceId || instanceId;
-
-      if (stored?.initialLog) {
-        if (!alive) return;
-        setInitialLog(stored.initialLog);
-        setInstance(makeLogWindowInstance(
-          stored.initialLog.instanceId,
-          stored.initialLog.instanceName,
-        ));
-        return;
-      }
-
-      try {
-        const latest = await invoke<LaunchLogSnapshot>("read_instance_launch_log", {
-          instanceId: resolvedInstanceId,
-        });
-        if (!alive) return;
-        setInitialLog(latest);
-        setInstance(makeLogWindowInstance(latest.instanceId, latest.instanceName));
-      } catch (err) {
-        if (!alive) return;
-        setInitialLog({
-          instanceId: resolvedInstanceId,
-          instanceName: "Build logs",
-          logPath: null,
-          minecraftLogPath: null,
-          crashReportPath: null,
-          logTail: String(err),
-          crashReportTail: null,
-          hint: null,
-        });
-        setInstance(makeLogWindowInstance(resolvedInstanceId, "Build logs"));
-      }
-    };
-
-    void loadPayload(payloadKey);
-    const unlisten = windowHandle.listen<{ payloadKey: string }>(
-      LOG_WINDOW_REFRESH_EVENT,
-      (event) => {
-        void loadPayload(event.payload.payloadKey);
-      },
-    );
-
-    return () => {
-      alive = false;
-      void unlisten.then((dispose) => dispose());
-    };
-  }, [instanceId, payloadKey]);
-
-  if (!instance) {
-    return (
-      <div className="build-logs-window-root">
-        <div className="build-logs-modal build-logs-modal--standalone">
-          <div className="build-logs-empty">LOADING LOGS...</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <BuildLogsModal
-      instance={instance}
-      initialLog={initialLog}
-      standalone
-      onClose={() => {
-        void getCurrentWindow().close();
-      }}
-    />
-  );
-}
-
 export default function App() {
-  const logWindowRoute = readLogWindowRoute();
-  if (logWindowRoute) {
-    return <BuildLogsWindowApp {...logWindowRoute} />;
-  }
-
   const [phase, setPhase] = useState("init");
   const [isClosing, setIsClosing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [tabAnimating, setTabAnimating] = useState(false);
 
   const [manifest, setManifest] = useState<MinecraftManifest | null>(null);
-  const [, setManifestLoading] = useState(true);
 
   const [instances, setInstances] = useState<InstanceItem[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
@@ -321,11 +185,18 @@ export default function App() {
   const [dragOverInstanceId, setDragOverInstanceId] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
-  const [nickname, setNickname] = useState("PLAYER");
-  const [accountType, setAccountType] = useState("OFFLINE");
-  const [msAccounts, setMsAccounts] = useState<MicrosoftAccount[]>([]);
-  const [activeMsAccountId, setActiveMsAccountId] = useState<string | null>(null);
-  const [showMsModal, setShowMsModal] = useState(false);
+  const {
+    nickname,
+    setNickname,
+    accountType,
+    setAccountType,
+    msAccounts,
+    setMsAccounts,
+    activeMsAccountId,
+    setActiveMsAccountId,
+    showMsModal,
+    setShowMsModal,
+  } = useAccounts();
 
   // mod / pack / shader state lives in their hooks — wired up after selectedModTarget/selectedShaderTarget are derived
 
@@ -333,15 +204,16 @@ export default function App() {
   const [statsInstanceId, setStatsInstanceId] = useState<string | null>(null);
   const [screenshotsInstanceId, setScreenshotsInstanceId] = useState<string | null>(null);
 
-  const [runningInstances, setRunningInstances] = useState<Map<string, number>>(new Map());
-  // helpers
-  const isRunning = (id: string) => runningInstances.has(id);
-  const addRunning = (id: string, pid: number) => {
-    launchTimestampsRef.current.set(id, Math.floor(Date.now() / 1000));
-    setRunningInstances((prev) => new Map(prev).set(id, pid));
-  };
-  const removeRunning = (id: string) =>
-    setRunningInstances((prev) => { const m = new Map(prev); m.delete(id); return m; });
+  const {
+    runningInstances,
+    isRunning,
+    addRunning,
+    removeRunning,
+    takeLaunchTimestamp,
+    markIntentionalStop,
+    clearIntentionalStop,
+    consumeIntentionalStop,
+  } = useRunningInstances();
   const applyDiscordRpcPresence = (
     settings = launcherSettings,
     activeRunning = runningInstances,
@@ -349,7 +221,7 @@ export default function App() {
     const discordRpc = settings?.plugins.discordRpc;
     if (!discordRpc?.enabled || !discordRpc.applicationId.trim()) {
       void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
-        console.error("stop_discord_rpc_for_instance failed", error);
+        logger.error("stop_discord_rpc_for_instance failed", error);
       });
       return;
     }
@@ -364,7 +236,7 @@ export default function App() {
         instanceId: rpcTargetId,
         accountType,
       }).catch((error) => {
-        console.error("start_discord_rpc_for_instance failed", error);
+        logger.error("start_discord_rpc_for_instance failed", error);
       });
       return;
     }
@@ -373,30 +245,29 @@ export default function App() {
       void invoke("start_discord_rpc_for_launcher", {
         accountType,
       }).catch((error) => {
-        console.error("start_discord_rpc_for_launcher failed", error);
+        logger.error("start_discord_rpc_for_launcher failed", error);
       });
       return;
     }
 
     void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
-      console.error("stop_discord_rpc_for_instance failed", error);
+      logger.error("stop_discord_rpc_for_instance failed", error);
     });
   };
   const handleInstanceStopped = async (id: string) => {
-    const launchTs = launchTimestampsRef.current.get(id);
-    launchTimestampsRef.current.delete(id);
+    const launchTs = takeLaunchTimestamp(id);
     removeRunning(id);
     try {
       await invoke("stop_discord_rpc_for_instance", { instanceId: id });
     } catch (err) {
-      console.error("stop_discord_rpc_for_instance failed", err);
+      logger.error("stop_discord_rpc_for_instance failed", err);
     }
     if (launchTs !== undefined) {
       const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - launchTs);
       try {
         await invoke("record_playtime", { instanceId: id, elapsedSecs: elapsed });
         await refreshInstances(id);
-      } catch (err) { console.error("record_playtime failed", err); }
+      } catch (err) { logger.error("record_playtime failed", err); }
     }
   };
 
@@ -405,13 +276,10 @@ export default function App() {
     initialSnapshot: LaunchLogSnapshot | MinecraftExitPayload | null = null,
   ) => {
     try {
-      const payloadKey = makeLogPayloadKey(id);
-      window.localStorage.setItem(
-        payloadKey,
-        JSON.stringify({ instanceId: id, initialLog: initialSnapshot } satisfies StoredLogWindowPayload),
-      );
+      const payloadKey = createBuildLogsWindowPayload(id, initialSnapshot);
 
-      const label = makeLogWindowLabel(id);
+
+      const label = getBuildLogsWindowLabel(id);
       const existing = await WebviewWindow.getByLabel(label);
 
       if (existing) {
@@ -426,7 +294,7 @@ export default function App() {
         "Build logs";
 
       const logWindow = new WebviewWindow(label, {
-        url: makeLogWindowUrl(id, payloadKey),
+        url: getBuildLogsWindowUrl(id, payloadKey),
         title: `${instanceName} logs`,
         width: 1040,
         height: 740,
@@ -442,12 +310,12 @@ export default function App() {
         void logWindow.setFocus();
       });
       void logWindow.once("tauri://error", (event) => {
-        console.error("log window create failed", event.payload);
+        logger.error("log window create failed", event.payload);
         setActionError(`Log window failed: ${String(event.payload)}`);
       });
     } catch (error) {
-      console.error("open build logs failed", error);
-      setActionError(`Log window failed: ${String(error)}`);
+      logger.error("open build logs failed", error);
+      setActionError(`Log window failed: ${toErrorMessage(error)}`);
     }
   };
 
@@ -508,8 +376,14 @@ export default function App() {
 
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
 
-  const [advancedSettingsEnabled, setAdvancedSettingsEnabled] = useState(false);
-  const [buildCardAppearances, setBuildCardAppearances] = useState<Record<string, BuildCardAppearance>>({});
+  const [advancedSettingsEnabled, setAdvancedSettingsEnabled] = useLocalStorageBoolean(
+    ADVANCED_SETTINGS_STORAGE_KEY,
+  );
+  const {
+    appearances: buildCardAppearances,
+    persistAppearances: persistBuildCardAppearances,
+    getAppearance: getBuildCardAppearance,
+  } = useBuildCardAppearances();
   const [buildSettingsTargetId, setBuildSettingsTargetId] = useState<string | null>(null);
   const [buildCardSettingsOpen, setBuildCardSettingsOpen] = useState(false);
   const [buildCardSettingsDraft, setBuildCardSettingsDraft] = useState<BuildCardAppearance>({ ...DEFAULT_BUILD_CARD_APPEARANCE });
@@ -524,20 +398,8 @@ export default function App() {
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
-  const launchTimestampsRef = useRef<Map<string, number>>(new Map());
   const dragEventRef = useRef<(payload: any) => void>(() => {});
-  const intentionalStopsRef = useRef<Set<string>>(new Set());
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
-
-  const persistBuildCardAppearances = (next: Record<string, BuildCardAppearance>) => {
-    setBuildCardAppearances(next);
-    window.localStorage.setItem(BUILD_CARD_BACKGROUNDS_STORAGE_KEY, JSON.stringify(next));
-  };
-
-  const getBuildCardAppearance = (targetId: string | null | undefined) => {
-    if (!targetId) return { ...DEFAULT_BUILD_CARD_APPEARANCE };
-    return normalizeBuildCardAppearance(buildCardAppearances[targetId]);
-  };
 
   const optimizedJavaArgsEnabled = launcherSettings?.optimizedJavaArgs ?? true;
 
@@ -693,8 +555,8 @@ export default function App() {
       persistBuildCardAppearances(next);
       closeBuildCardSettings();
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
+      logger.error(error);
+      setActionError(toErrorMessage(error));
     }
   };
 
@@ -806,6 +668,7 @@ export default function App() {
     return () => {
       resizeObserver.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-measures on these triggers; the source-element picker is read fresh inside
   }, [
     buildCardSettingsOpen,
     buildSettingsTargetId,
@@ -861,34 +724,30 @@ export default function App() {
     [moddedInstances, selectedInstanceId]
   );
 
-  const selectedShaderTarget = useMemo(
-    () => instances.find((item) => item.id === selectedInstanceId) || null,
-    [instances, selectedInstanceId]
-  );
-
-  const {
-    modSearch, setModSearch,
-    modrinthItems, modrinthTotalHits, modrinthLoading, modrinthLoadingMore, modrinthError,
-    modrinthInstallBusyId,
-    installedMods, installedModsLoading,
-    handleLoadMoreMods, handleInstallMod, handleUninstallMod,
-  } = useModActions({ activeTab, selectedModTarget, setActionError, setBusyMessage, pushToast });
-
-  const {
-    packSearch, setPackSearch,
-    packItems, packTotalHits, packLoading, packLoadingMore, packError,
-    packInstallBusyId,
-    installedPacks, installedPacksLoading,
-    handleLoadMorePacks, handleInstallPack, handleUninstallPack,
-  } = usePackActions({ activeTab, selectedInstance, setActionError, setBusyMessage, pushToast });
-
-  const {
-    shaderSearch, setShaderSearch,
-    shaderItems, shaderTotalHits, shaderLoading, shaderLoadingMore, shaderError,
-    shaderInstallBusyId,
-    installedShaders, installedShadersLoading,
-    handleLoadMoreShaders, handleInstallShader, handleUninstallShader,
-  } = useShaderActions({ activeTab, selectedShaderTarget, setActionError, setBusyMessage, pushToast });
+  const modsContent = useModrinthContent({
+    kind: "mods",
+    activeTab,
+    target: selectedModTarget,
+    setActionError,
+    setBusyMessage,
+    pushToast,
+  });
+  const resourcePacksContent = useModrinthContent({
+    kind: "resourcepacks",
+    activeTab,
+    target: selectedInstance,
+    setActionError,
+    setBusyMessage,
+    pushToast,
+  });
+  const shadersContent = useModrinthContent({
+    kind: "shaders",
+    activeTab,
+    target: selectedInstance,
+    setActionError,
+    setBusyMessage,
+    pushToast,
+  });
 
   const availableManifestVersions = useMemo(() => {
     if (!manifest) return [];
@@ -931,9 +790,7 @@ export default function App() {
     const unlistenExit = win.listen<MinecraftExitPayload>("minecraft-process-exited", (event) => {
       const payload = event.payload;
       const stopKey = `${payload.instanceId}:${payload.pid}`;
-      const stoppedByUser =
-        intentionalStopsRef.current.delete(stopKey) ||
-        intentionalStopsRef.current.delete(payload.instanceId);
+      const stoppedByUser = consumeIntentionalStop(stopKey, payload.instanceId);
 
       void handleInstanceStopped(payload.instanceId);
 
@@ -949,6 +806,7 @@ export default function App() {
     return () => {
       void unlistenExit.then((f) => f());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe to the exit event once; handlers read latest state via closure
   }, [win]);
 
   useEffect(() => {
@@ -1006,7 +864,7 @@ export default function App() {
       });
       setModrinthProjectIcons((prev) => ({ ...prev, ...result }));
     } catch (error) {
-      console.error("get_modrinth_project_icons failed", error);
+      logger.error("get_modrinth_project_icons failed", error);
       setModrinthProjectIcons((prev) => {
         const next = { ...prev };
         for (const projectId of projectIds) {
@@ -1020,25 +878,8 @@ export default function App() {
   useEffect(() => {
     if (!listPreview) return;
     void requestModrinthProjectIcons(listPreview.items);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch only when the hovered preview changes
   }, [listPreview]);
-
-  useEffect(() => {
-    try {
-      const advancedRaw = window.localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY);
-      setAdvancedSettingsEnabled(advancedRaw === "true");
-
-      const backgroundsRaw = window.localStorage.getItem(BUILD_CARD_BACKGROUNDS_STORAGE_KEY);
-      if (backgroundsRaw) {
-        const parsed = JSON.parse(backgroundsRaw) as Record<string, unknown>;
-        const normalized = Object.fromEntries(
-          Object.entries(parsed).map(([key, value]) => [key, normalizeBuildCardAppearance(value)]),
-        ) as Record<string, BuildCardAppearance>;
-        setBuildCardAppearances(normalized);
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, []);
 
   const getExportedItemIconUrl = (item: ExportedItem) => {
     if (item.iconUrl) return item.iconUrl;
@@ -1076,7 +917,6 @@ export default function App() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        setManifestLoading(true);
         const [manifestResponse, instanceResponse, systemRamResponse, settingsResponse, msAccountsResponse] =
           await Promise.all([
             invoke<MinecraftManifest>("get_minecraft_manifest"),
@@ -1112,13 +952,12 @@ export default function App() {
 
         setCreateRamGb(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
       } catch (error) {
-        console.error(error);
-      } finally {
-        setManifestLoading(false);
+        logger.error(error);
       }
     };
 
     void bootstrap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time bootstrap on mount
   }, []);
 
   useEffect(() => {
@@ -1152,10 +991,10 @@ export default function App() {
           return versions[0] || "";
         });
       } catch (error) {
-        console.error(error);
+        logger.error(error);
         setLoaderVersions([]);
         setCreateLoaderVersion("");
-        setCreateError(String(error));
+        setCreateError(toErrorMessage(error));
       } finally {
         setLoaderVersionsLoading(false);
       }
@@ -1178,11 +1017,13 @@ export default function App() {
       }
     }, 3000);
     return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-arm the poll when the running set changes; handler read via closure
   }, [runningInstances]);
 
   useEffect(() => {
     if (!launcherSettings) return;
     applyDiscordRpcPresence(launcherSettings, runningInstances);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- these are the real presence triggers; the helper is recreated each render
   }, [launcherSettings, runningInstances, selectedInstanceId, accountType]);
 
   const tearPath = useMemo(() => {
@@ -1215,7 +1056,7 @@ export default function App() {
   const handleClose = async () => {
     setIsClosing(true);
     void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
-      console.error("stop_discord_rpc_for_instance failed", error);
+      logger.error("stop_discord_rpc_for_instance failed", error);
     });
     window.setTimeout(() => {
       void win.close();
@@ -1260,13 +1101,13 @@ export default function App() {
 
 const isScrollableElement = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
-  
+
   // Ищем ближайшего родителя, который может скроллиться
   // Мы добавили сюда .installed-mods-list
   const scrollParent = target.closest(".csa-content, .installed-mods-list, .mod-list");
-  
+
   if (!(scrollParent instanceof HTMLElement)) return false;
-  
+
   // Проверяем, действительно ли контента внутри больше, чем высота контейнера
   return scrollParent.scrollHeight > scrollParent.clientHeight;
 };
@@ -1289,9 +1130,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       setSettingsRamDraft(normalized);
       setCreateRamGb(normalized);
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't save RAM" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save RAM" });
     }
   };
 
@@ -1300,9 +1141,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       const updated = await invoke<LauncherSettings>("set_optimized_java_args", { enabled });
       setLauncherSettings(updated);
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't save setting" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save setting" });
     }
   };
 
@@ -1311,9 +1152,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       const updated = await invoke<LauncherSettings>("set_auto_download_java", { enabled });
       setLauncherSettings(updated);
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't save setting" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save setting" });
     }
   };
 
@@ -1324,9 +1165,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       });
       setLauncherSettings(updated);
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't save network" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save network" });
       throw error;
     }
   };
@@ -1340,9 +1181,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       // waiting for the settings effect to fire on the next render tick.
       applyDiscordRpcPresence(updated, runningInstances);
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't save plugins" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save plugins" });
     }
   };
 
@@ -1423,9 +1264,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       setBusyMessage("Build created");
       pushToast("info", `Сборка ${cleanName} создана`, { title: "Build created" });
     } catch (error) {
-      console.error(error);
-      setCreateError(String(error));
-      pushToast("error", String(error), { title: "Create failed" });
+      logger.error(error);
+      setCreateError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Create failed" });
     } finally {
       setWorking(false);
     }
@@ -1459,9 +1300,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       setBusyMessage("Install finished");
       pushToast("info", `Файлы ${selectedInstance.name} установлены`, { title: "Install complete" });
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Install failed" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Install failed" });
     } finally {
       setWorking(false);
       window.setTimeout(() => {
@@ -1510,8 +1351,8 @@ const isScrollableElement = (target: EventTarget | null) => {
       setBusyMessage("Minecraft launched");
       pushToast("info", `${target.name} запущена`, { title: "Minecraft launched" });
     } catch (error) {
-      console.error(error);
-      const message = String(error);
+      logger.error(error);
+      const message = toErrorMessage(error);
       setActionError(message);
       pushToast("error", message, { title: `${target.name} failed to start` });
       void openBuildLogs(target.id, {
@@ -1546,15 +1387,15 @@ const isScrollableElement = (target: EventTarget | null) => {
     setBusyMessage("Stopping Minecraft...");
 
     try {
-      intentionalStopsRef.current.add(`${instanceId}:${pid}`);
+      markIntentionalStop(`${instanceId}:${pid}`);
       await invoke("kill_instance", { pid });
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => true);
       if (stillAlive) {
-        intentionalStopsRef.current.delete(`${instanceId}:${pid}`);
-        setActionError(String(error));
-        pushToast("error", String(error), { title: "Stop failed" });
+        clearIntentionalStop(`${instanceId}:${pid}`);
+        setActionError(toErrorMessage(error));
+        pushToast("error", toErrorMessage(error), { title: "Stop failed" });
         setBusyMessage("");
         return;
       }
@@ -1599,9 +1440,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       pushToast("info", `Сборка ${deletedName} удалена`.trim(), { title: "Build deleted" });
       await refreshInstances();
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Delete failed" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Delete failed" });
     }
   };
 
@@ -1612,9 +1453,9 @@ const isScrollableElement = (target: EventTarget | null) => {
       setActionError("");
       await invoke<ActionResult>("open_instance_folder", { instanceId: selectedInstance.id });
     } catch (error) {
-      console.error(error);
-      setActionError(String(error));
-      pushToast("error", String(error), { title: "Couldn't open folder" });
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't open folder" });
     }
   };
 
@@ -1637,8 +1478,8 @@ const isScrollableElement = (target: EventTarget | null) => {
         resourcePacks: data.resourcePacks.length > 0,
       });
     } catch (err) {
-      console.error(err);
-      setExportError(String(err));
+      logger.error(err);
+      setExportError(toErrorMessage(err));
     }
   };
 
@@ -1712,8 +1553,8 @@ const isScrollableElement = (target: EventTarget | null) => {
       setExportInstanceId(null);
       pushToast("info", `${exportData.name} экспортирована (.mrpack)`, { title: "Build exported" });
     } catch (err) {
-      setExportError(String(err));
-      pushToast("error", String(err), { title: "Export failed" });
+      setExportError(toErrorMessage(err));
+      pushToast("error", toErrorMessage(err), { title: "Export failed" });
     } finally {
       setExportWorking(false);
     }
@@ -1762,7 +1603,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (err) {
       setImportData(null);
       setImportSourcePath("");
-      setImportError(String(err));
+      setImportError(toErrorMessage(err));
       setImportModalOpen(true);
     }
   };
@@ -1780,7 +1621,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     } catch (err) {
       setImportData(null);
       setImportSourcePath("");
-      setImportError(String(err));
+      setImportError(toErrorMessage(err));
       setImportModalOpen(true);
     }
   };
@@ -1838,7 +1679,7 @@ const isScrollableElement = (target: EventTarget | null) => {
         await refreshInstances(targetId);
       }
     } catch (err) {
-      pushToast("error", String(err), { title: "Install failed" });
+      pushToast("error", toErrorMessage(err), { title: "Install failed" });
     }
   };
 
@@ -1932,8 +1773,8 @@ const isScrollableElement = (target: EventTarget | null) => {
       setImportSourcePath("");
       pushToast("info", `Сборка ${newInstance.name} импортирована`, { title: "Build imported" });
     } catch (err) {
-      setImportError(String(err));
-      pushToast("error", String(err), { title: "Import failed" });
+      setImportError(toErrorMessage(err));
+      pushToast("error", toErrorMessage(err), { title: "Import failed" });
     } finally {
       setImportWorking(false);
     }
@@ -2014,74 +1855,41 @@ const isScrollableElement = (target: EventTarget | null) => {
         );
       case "mods":
         return (
-          <ModsTab
-            modSearch={modSearch}
-            setModSearch={setModSearch}
-            modrinthItems={modrinthItems}
-            modrinthTotalHits={modrinthTotalHits}
-            modrinthLoading={modrinthLoading}
-            modrinthLoadingMore={modrinthLoadingMore}
-            modrinthError={modrinthError}
-            modrinthInstallBusyId={modrinthInstallBusyId}
-            installedMods={installedMods}
-            installedModsLoading={installedModsLoading}
-            moddedInstances={moddedInstances}
-            selectedModTarget={selectedModTarget}
+          <ModrinthContentTab
+            kind="mods"
+            controller={modsContent}
+            targetInstances={moddedInstances}
+            selectedTarget={selectedModTarget}
             setSelectedInstanceId={setSelectedInstanceId}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
-            handleLoadMoreMods={handleLoadMoreMods}
-            handleInstallMod={handleInstallMod}
-            handleUninstallMod={handleUninstallMod}
           />
         );
       case "resourcepacks":
         return (
-          <ResourcePacksTab
-            packSearch={packSearch}
-            setPackSearch={setPackSearch}
-            packItems={packItems}
-            packTotalHits={packTotalHits}
-            packLoading={packLoading}
-            packLoadingMore={packLoadingMore}
-            packError={packError}
-            packInstallBusyId={packInstallBusyId}
-            installedPacks={installedPacks}
-            installedPacksLoading={installedPacksLoading}
-            instances={instances}
-            selectedInstance={selectedInstance}
+          <ModrinthContentTab
+            kind="resourcepacks"
+            controller={resourcePacksContent}
+            targetInstances={instances}
+            selectedTarget={selectedInstance}
             setSelectedInstanceId={setSelectedInstanceId}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
-            handleLoadMorePacks={handleLoadMorePacks}
-            handleInstallPack={handleInstallPack}
-            handleUninstallPack={handleUninstallPack}
           />
         );
       case "shaders":
         return (
-          <ShadersTab
-            shaderSearch={shaderSearch}
-            setShaderSearch={setShaderSearch}
-            shaderItems={shaderItems}
-            shaderTotalHits={shaderTotalHits}
-            shaderLoading={shaderLoading}
-            shaderLoadingMore={shaderLoadingMore}
-            shaderError={shaderError}
-            shaderInstallBusyId={shaderInstallBusyId}
-            installedShaders={installedShaders}
-            installedShadersLoading={installedShadersLoading}
-            instances={instances}
-            selectedShaderTarget={selectedShaderTarget}
+          <ModrinthContentTab
+            kind="shaders"
+            controller={shadersContent}
+            targetInstances={instances}
+            selectedTarget={selectedInstance}
             setSelectedInstanceId={setSelectedInstanceId}
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
-            handleLoadMoreShaders={handleLoadMoreShaders}
-            handleInstallShader={handleInstallShader}
-            handleUninstallShader={handleUninstallShader}
           />
         );
       case "settings":
@@ -2104,13 +1912,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             showPreReleases={showPreReleases}
             setShowPreReleases={setShowPreReleases}
             advancedSettingsEnabled={advancedSettingsEnabled}
-            onToggleAdvanced={() => {
-              setAdvancedSettingsEnabled((prev) => {
-                const next = !prev;
-                window.localStorage.setItem("screenlauncher-advanced-settings-enabled", String(next));
-                return next;
-              });
-            }}
+            onToggleAdvanced={() => setAdvancedSettingsEnabled((prev) => !prev)}
             pluginsSettings={launcherSettings?.plugins}
             savePluginsSettings={saveLauncherPlugins}
             launcherNickname={nickname}
@@ -2187,19 +1989,21 @@ const isScrollableElement = (target: EventTarget | null) => {
           )}
 
           {showMsModal && (
-            <MicrosoftAccountsModal
-              accounts={msAccounts}
-              activeAccountId={activeMsAccountId}
-              onSelect={(id) => setActiveMsAccountId(id || null)}
-              onAccountsChange={(updated) => {
-                setMsAccounts(updated);
-                if (updated.length > 0 && !updated.find((a) => a.id === activeMsAccountId)) {
-                  setActiveMsAccountId(updated[0].id);
-                }
-                if (updated.length === 0) setActiveMsAccountId(null);
-              }}
-              onClose={() => setShowMsModal(false)}
-            />
+            <Suspense fallback={null}>
+              <MicrosoftAccountsModal
+                accounts={msAccounts}
+                activeAccountId={activeMsAccountId}
+                onSelect={(id) => setActiveMsAccountId(id || null)}
+                onAccountsChange={(updated) => {
+                  setMsAccounts(updated);
+                  if (updated.length > 0 && !updated.find((a) => a.id === activeMsAccountId)) {
+                    setActiveMsAccountId(updated[0].id);
+                  }
+                  if (updated.length === 0) setActiveMsAccountId(null);
+                }}
+                onClose={() => setShowMsModal(false)}
+              />
+            </Suspense>
           )}
         </section>
       </main>
@@ -2314,14 +2118,18 @@ const isScrollableElement = (target: EventTarget | null) => {
       {statsInstanceId && (() => {
         const si = instances.find((i) => i.id === statsInstanceId);
         return si ? (
-          <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+          <Suspense fallback={null}>
+            <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+          </Suspense>
         ) : null;
       })()}
 
       {screenshotsInstanceId && (() => {
         const si = instances.find((i) => i.id === screenshotsInstanceId);
         return si ? (
-          <BuildScreenshotsModal instance={si} onClose={() => setScreenshotsInstanceId(null)} />
+          <Suspense fallback={null}>
+            <BuildScreenshotsModal instance={si} onClose={() => setScreenshotsInstanceId(null)} />
+          </Suspense>
         ) : null;
       })()}
 

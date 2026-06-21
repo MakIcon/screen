@@ -1,5 +1,5 @@
 {
-  "productName": "screen",
+  "productName": "ScreenLauncher",
   "version": "0.1.0",
   "identifier": "com.makar.screen",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "screen",
+        "title": "ScreenLauncher",
         "width": 20,
         "height": 4,
         "visible": false,

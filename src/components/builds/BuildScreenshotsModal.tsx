@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
+import { toErrorMessage } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 import type {
   ActionResult,
   InstanceItem,
@@ -60,10 +62,10 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
         return items[0]?.fileName ?? null;
       });
     } catch (err) {
-      console.error(err);
+      logger.error(err);
       setScreenshots([]);
       setSelectedFileName(null);
-      setError(String(err));
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -103,8 +105,8 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
       })
       .catch((err) => {
         if (!alive) return;
-        console.error(err);
-        setError(String(err));
+        logger.error(err);
+        setError(toErrorMessage(err));
       })
       .finally(() => {
         if (alive) setPreviewLoading(false);
@@ -122,8 +124,8 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
         instanceId: instance.id,
       });
     } catch (err) {
-      console.error(err);
-      setError(String(err));
+      logger.error(err);
+      setError(toErrorMessage(err));
     }
   };
 

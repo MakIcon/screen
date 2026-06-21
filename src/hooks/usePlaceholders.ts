@@ -90,7 +90,6 @@ export function usePlaceholders(
     instances,
     accountType,
     buildState,
-    selectedInstance?.id,
     selectedInstance?.name,
     selectedInstance?.version,
     selectedInstance?.loader,

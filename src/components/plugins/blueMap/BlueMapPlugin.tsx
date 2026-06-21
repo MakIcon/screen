@@ -7,6 +7,7 @@ import type {
   LauncherPluginsSettings,
 } from "../../../types";
 import { ElementCheckbox } from "../../inputs/ElementCheckbox";
+import { toErrorMessage } from "../../../utils/errors";
 import type { PluginDefinition } from "../pluginTypes";
 import "./BlueMapPlugin.css";
 
@@ -120,7 +121,7 @@ function BlueMapSettingsEditor({
       setStatus(next);
       setActionError("");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     }
   };
 
@@ -138,7 +139,7 @@ function BlueMapSettingsEditor({
       const next = await invoke<BlueMapStatus>("prepare_bluemap");
       applyStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -152,7 +153,7 @@ function BlueMapSettingsEditor({
       const next = await invoke<BlueMapStatus>("start_bluemap");
       applyStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -166,7 +167,7 @@ function BlueMapSettingsEditor({
       const next = await invoke<BlueMapStatus>("stop_bluemap");
       applyStatus(next);
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -179,7 +180,7 @@ function BlueMapSettingsEditor({
       setActionError("");
       await invoke("open_bluemap_browser");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -192,7 +193,7 @@ function BlueMapSettingsEditor({
       setActionError("");
       await invoke("open_bluemap_window");
     } catch (error) {
-      setActionError(String(error));
+      setActionError(toErrorMessage(error));
     } finally {
       setBusy(false);
     }

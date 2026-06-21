@@ -13,7 +13,13 @@
 @import './styles/mods.css';
 @import './styles/settings.css';
 @import './styles/animations.css';
-@import './styles/modals.css';
+@import './styles/modals/common.css';
+@import './styles/modals/stats.css';
+@import './styles/modals/accounts.css';
+@import './styles/modals/export-import.css';
+@import './styles/modals/screenshots.css';
+@import './styles/modals/logs.css';
+@import './styles/modals/footer.css';
 @import './styles/timeline.css';
 @import './styles/spectrum.css';
 @import './styles/toast.css';

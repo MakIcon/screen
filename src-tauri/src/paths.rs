@@ -55,7 +55,9 @@ pub fn accounts_path() -> Result<PathBuf, String> {
     Ok(launcher_root()?.join("accounts.json"))
 }
 pub fn playtime_log_path(instance_id: &str) -> Result<PathBuf, String> {
-    Ok(launcher_root()?.join("playtime").join(format!("{instance_id}.json")))
+    Ok(launcher_root()?
+        .join("playtime")
+        .join(format!("{instance_id}.json")))
 }
 
 pub fn detect_system_memory_gb() -> u32 {
@@ -148,7 +150,11 @@ pub async fn read_settings() -> Result<LauncherSettings, String> {
 /// every downloader picks up the user's mirror/proxy choice.
 fn sync_network_config(settings: &LauncherSettings) {
     let proxy = &settings.plugins.proxy;
-    let proxy_url = if proxy.enabled { proxy.url.as_str() } else { "" };
+    let proxy_url = if proxy.enabled {
+        proxy.url.as_str()
+    } else {
+        ""
+    };
     crate::minecraft::mirrors::apply_from(&settings.network.mirror, proxy_url);
 }
 

@@ -258,8 +258,8 @@ impl Worker {
     }
 
     fn ensure_connected(&mut self, application_id: &str) -> Result<(), ()> {
-        let already = self.client.is_some()
-            && self.connected_app.as_deref() == Some(application_id);
+        let already =
+            self.client.is_some() && self.connected_app.as_deref() == Some(application_id);
         if already {
             return Ok(());
         }
@@ -472,13 +472,19 @@ fn placeholder_pairs(
 
     vec![
         ("system_ram", format!("{} GB", detect_system_memory_gb())),
-        ("system_ram_max", format!("{} GB", detect_system_memory_gb())),
+        (
+            "system_ram_max",
+            format!("{} GB", detect_system_memory_gb()),
+        ),
         ("build_name", instance.name.clone()),
         ("build_version", instance.version.clone()),
         ("build_loader", to_friendly_value(&instance.loader)),
         ("build_ram", format!("{}GB", instance.ram)),
         ("build_playtime", format_playtime(instance.playtime_secs)),
-        ("build_last_played", to_friendly_value(&instance.last_played)),
+        (
+            "build_last_played",
+            to_friendly_value(&instance.last_played),
+        ),
         ("build_status", to_friendly_value(&instance.status)),
         ("build_state", "Running".to_string()),
         ("account_type", to_friendly_value(account_type)),
@@ -505,7 +511,11 @@ fn resolve_rpc_template(
 
 fn clamp_activity_text(value: String, fallback: &str) -> String {
     let trimmed = value.trim();
-    let text = if trimmed.is_empty() { fallback } else { trimmed };
+    let text = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    };
     text.chars().take(128).collect()
 }
 
@@ -550,7 +560,12 @@ fn build_snapshot(
     session_id: String,
 ) -> PresenceSnapshot {
     let activity_name = clamp_activity_text(
-        resolve_rpc_template(&plugin.activity_name_template, instances, instance, account_type),
+        resolve_rpc_template(
+            &plugin.activity_name_template,
+            instances,
+            instance,
+            account_type,
+        ),
         fallback_activity_name(mode),
     );
 

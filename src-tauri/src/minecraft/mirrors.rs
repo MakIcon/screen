@@ -154,29 +154,54 @@ pub async fn get_with_fallback(client: &Client, url: &str) -> Result<reqwest::Re
         .unwrap_or_else(|| Err(last_error.unwrap_or_else(|| format!("request failed for {url}"))))
 }
 
-/// A reqwest client that honours the configured proxy. Falls back to a direct
-/// client if the proxy string is invalid.
-pub fn build_client() -> Result<Client, String> {
-    let config = current_config();
-    let mut builder = Client::builder()
-        .user_agent("ScreenLauncher/0.1.0")
-        .timeout(Duration::from_secs(60));
+/// Cached HTTP client paired with the proxy string it was built for.
+type CachedClient = (Option<String>, Client);
 
-    if let Some(proxy) = config
+fn client_cache() -> &'static RwLock<Option<CachedClient>> {
+    static CLIENT: OnceLock<RwLock<Option<CachedClient>>> = OnceLock::new();
+    CLIENT.get_or_init(|| RwLock::new(None))
+}
+
+/// A reqwest client that honours the configured proxy. The client (and its
+/// connection pool) is cached and reused for as long as the proxy is unchanged,
+/// so the dozens of small Modrinth requests share keep-alive connections instead
+/// of paying a fresh TLS handshake each time. A new proxy rebuilds it.
+pub fn build_client() -> Result<Client, String> {
+    let proxy = current_config()
         .proxy
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    {
-        match reqwest::Proxy::all(proxy) {
-            Ok(proxy) => builder = builder.proxy(proxy),
-            Err(error) => return Err(format!("invalid proxy '{proxy}': {error}")),
+        .map(str::to_string);
+
+    if let Ok(guard) = client_cache().read() {
+        if let Some((cached_proxy, client)) = guard.as_ref() {
+            if *cached_proxy == proxy {
+                return Ok(client.clone());
+            }
         }
     }
 
-    builder
+    let mut builder = Client::builder()
+        .user_agent("ScreenLauncher/0.1.0")
+        .timeout(Duration::from_secs(60));
+
+    if let Some(proxy_url) = proxy.as_deref() {
+        match reqwest::Proxy::all(proxy_url) {
+            Ok(configured) => builder = builder.proxy(configured),
+            Err(error) => return Err(format!("invalid proxy '{proxy_url}': {error}")),
+        }
+    }
+
+    let client = builder
         .build()
-        .map_err(|error| format!("http client error: {error}"))
+        .map_err(|error| format!("http client error: {error}"))?;
+
+    if let Ok(mut guard) = client_cache().write() {
+        *guard = Some((proxy, client.clone()));
+    }
+
+    Ok(client)
 }
 
 #[cfg(test)]

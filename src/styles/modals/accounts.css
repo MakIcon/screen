@@ -1,0 +1,745 @@
+/* ── Microsoft Accounts Modal ── */
+
+.ms-modal {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  width: 420px;
+  max-width: 96vw;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: var(--surface-shadow-strong);
+  animation: confirm-dialog-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ms-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 32px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ms-modal-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.ms-modal-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.ms-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.ms-modal-close:hover {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--bg-hover);
+}
+
+.ms-modal-body {
+  flex: 1;
+  min-height: 80px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.ms-modal-body::-webkit-scrollbar { width: 3px; }
+.ms-modal-body::-webkit-scrollbar-thumb { background: var(--line-strong); }
+
+.ms-modal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 36px 32px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-strong);
+}
+
+.ms-modal-empty-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Account row */
+
+.ms-account-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 32px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.ms-account-row:hover {
+  background: var(--bg-hover);
+}
+
+.ms-account-row.active {
+  background: var(--bg-selected);
+}
+
+.ms-account-avatar {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+
+.ms-account-avatar img {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+.ms-account-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ms-account-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-account-uuid {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ms-account-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent);
+  padding: 3px 7px;
+  border: 1px solid rgba(194, 65, 12, 0.3);
+  background: rgba(194, 65, 12, 0.06);
+}
+
+.ms-account-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ms-account-remove:hover {
+  color: var(--danger);
+  border-color: rgba(255, 69, 58, 0.3);
+  background: rgba(255, 69, 58, 0.06);
+}
+
+.ms-modal-manager {
+  width: min(1040px, calc(100vw - 42px));
+  height: min(820px, calc(100vh - 42px));
+  max-width: calc(100vw - 42px);
+  max-height: calc(100vh - 42px);
+}
+
+.ms-manager-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.ms-account-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.ms-manager-kicker {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+.ms-account-list {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.ms-account-list::-webkit-scrollbar,
+.ms-cape-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.ms-account-list::-webkit-scrollbar-thumb,
+.ms-cape-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+
+.ms-account-pane .ms-account-row {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ms-account-pane .ms-account-row:last-child {
+  border-bottom: none;
+}
+
+.ms-account-pane .ms-add-btn {
+  margin-top: auto;
+}
+
+.ms-modal-empty-compact {
+  min-height: 160px;
+  padding: 22px 16px;
+}
+
+.ms-profile-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ms-profile-head {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ms-profile-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ms-profile-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+.ms-profile-head strong {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-profile-uuid {
+  max-width: 280px;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ms-profile-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(270px, 0.88fr) minmax(340px, 1.12fr);
+  gap: 18px;
+  padding: 20px 24px;
+}
+
+.ms-preview-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.ms-preview-canvas-shell {
+  position: relative;
+  flex: 1;
+  min-height: 360px;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(26, 26, 26, 0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(26, 26, 26, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(26, 26, 26, 0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(26, 26, 26, 0.035) 75%),
+    var(--bg-elevated);
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-size: 20px 20px;
+}
+
+.ms-preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.ms-preview-empty,
+.ms-preview-error {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-overlay-soft);
+  padding: 10px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--muted-strong);
+  text-align: center;
+  pointer-events: none;
+}
+
+.ms-preview-error {
+  color: var(--danger);
+  border-color: rgba(255, 69, 58, 0.25);
+}
+
+.ms-preview-meta {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.ms-preview-meta span,
+.ms-preview-meta strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-preview-meta span {
+  color: var(--muted);
+}
+
+.ms-preview-meta strong {
+  color: var(--accent);
+}
+
+.ms-editor-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.ms-editor-panel::-webkit-scrollbar {
+  width: 3px;
+}
+
+.ms-editor-panel::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+
+.ms-editor-section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.ms-editor-section-fill {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.ms-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ms-editor-head span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.ms-editor-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--muted-strong);
+}
+
+.ms-segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.ms-segmented button {
+  min-height: 40px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ms-segmented button:last-child {
+  border-right: none;
+}
+
+.ms-segmented button:hover,
+.ms-segmented button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.ms-viewer-section {
+  gap: 12px;
+  padding: 12px;
+}
+
+.ms-motion-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.ms-motion-grid button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 7px 4px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ms-motion-grid button:last-child {
+  border-right: none;
+}
+
+.ms-motion-grid button:hover,
+.ms-motion-grid button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.ms-viewer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ms-toggle-action {
+  min-height: 34px;
+  padding: 8px 8px;
+  font-size: 9px;
+  text-align: center;
+  white-space: normal;
+}
+
+.ms-toggle-action.active {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.35);
+  background: rgba(194, 65, 12, 0.06);
+}
+
+.ms-action-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ms-action-pair button {
+  width: 100%;
+  min-height: 38px;
+  padding: 10px 10px;
+  font-size: 10px;
+  text-align: center;
+  white-space: normal;
+}
+
+.ms-compact-primary {
+  padding: 11px 14px;
+  font-size: 10px;
+}
+
+.ms-inline-danger {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.ms-inline-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.ms-cape-list {
+  flex: 0 0 auto;
+  min-height: 56px;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+}
+
+.ms-cape-row {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ms-cape-row:last-child {
+  border-bottom: none;
+}
+
+.ms-cape-row:hover:not(:disabled),
+.ms-cape-row.active {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+.ms-cape-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ms-cape-row span:nth-child(2),
+.ms-cape-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-cape-row span:nth-child(2) {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.ms-cape-row strong {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--accent);
+}
+
+.ms-cape-thumb {
+  width: 44px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.ms-cape-thumb-cape {
+  gap: 2px;
+  padding: 3px;
+}
+
+.ms-cape-face {
+  width: 17px;
+  height: 30px;
+  border: 1px solid rgba(26, 26, 26, 0.08);
+  background-repeat: no-repeat;
+  background-size: 640% 200%;
+  box-shadow: inset -4px 0 0 rgba(0, 0, 0, 0.08);
+  image-rendering: pixelated;
+}
+
+.ms-cape-face-front {
+  background-position: 1.8519% 6.25%;
+}
+
+.ms-cape-face-back {
+  background-position: 22.2222% 6.25%;
+}
+
+.ms-cape-thumb-empty::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--muted);
+  transform: rotate(45deg);
+  opacity: 0.45;
+}
+
+.ms-cape-actions {
+  flex-shrink: 0;
+}
+
+.ms-profile-empty,
+.ms-profile-loading {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.ms-auth-error.ms-profile-error {
+  margin: 0 24px 20px;
+  flex-shrink: 0;
+}
+
+.ms-hidden-file-input {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .ms-modal-manager {
+    height: min(780px, calc(100vh - 28px));
+    max-width: calc(100vw - 28px);
+  }
+
+  .ms-manager-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 230px) minmax(0, 1fr);
+  }
+
+  .ms-account-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ms-profile-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .ms-preview-canvas-shell {
+    min-height: 320px;
+  }
+
+  .ms-motion-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ms-motion-grid button:nth-child(3) {
+    border-right: none;
+  }
+}
+

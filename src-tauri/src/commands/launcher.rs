@@ -172,7 +172,8 @@ pub async fn launch_instance(
     update_instance_status(&instance.id, "UPDATING").await?;
     install_instance_files(&app, &instance).await?;
     let settings = read_settings().await?;
-    crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java).await?;
+    crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java)
+        .await?;
     let obs_jvm_args = prepare_obs_telemetry_for_launch(
         &app,
         &obs_telemetry_state,
@@ -254,7 +255,9 @@ pub async fn record_playtime(instance_id: String, elapsed_secs: u64) -> Result<(
 async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result<(), String> {
     let path = crate::paths::playtime_log_path(instance_id)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     let mut log: PlaytimeLog = match fs::read(&path).await {
@@ -263,7 +266,10 @@ async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result
     };
 
     let ts = crate::paths::now_string().parse::<u64>().unwrap_or(0);
-    log.sessions.push(PlaytimeSession { ts, secs: elapsed_secs });
+    log.sessions.push(PlaytimeSession {
+        ts,
+        secs: elapsed_secs,
+    });
 
     let json = serde_json::to_vec_pretty(&log).map_err(|e| e.to_string())?;
     fs::write(&path, json).await.map_err(|e| e.to_string())?;

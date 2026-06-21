@@ -213,6 +213,7 @@ function HeatmapTab({ instance }: { instance: InstanceItem }) {
       idx++;
     }
     return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- createdTs/lastPlayedTs derive from instance, already a dependency
   }, [instance, dayPlay, maxDaySecs]);
 
   const numWeeks = days.length > 0 ? days[days.length - 1].weekIdx + 1 : 0;

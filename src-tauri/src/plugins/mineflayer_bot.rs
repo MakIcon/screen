@@ -92,11 +92,7 @@ struct WorkerEvent {
 }
 
 fn push_log(runtime: &mut MineflayerBotRuntime, line: impl Into<String>) {
-    runtime.logs.push(line.into());
-    if runtime.logs.len() > MAX_LOG_LINES {
-        let overflow = runtime.logs.len() - MAX_LOG_LINES;
-        runtime.logs.drain(0..overflow);
-    }
+    super::push_log_line(&mut runtime.logs, MAX_LOG_LINES, line);
 }
 
 fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {

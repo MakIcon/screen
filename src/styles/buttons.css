@@ -63,6 +63,41 @@
   border-color: var(--accent);
 }
 
+/* Catalog action buttons (mods / resource packs / shaders lists) — one shared
+   size and language across all three content types. INSTALL is the filled CTA,
+   REMOVE/DELETE are danger-tinted ghosts; UPDATE/DOWNLOADED reuse
+   `.ghost-action.installed` above so every list reads identically. */
+.catalog-action {
+  padding: 14px 18px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: opacity 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.catalog-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+.catalog-action.install {
+  background: var(--ink);
+  color: var(--bg);
+  border: 1px solid var(--ink);
+}
+
+.catalog-action.install:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.ghost-action.danger {
+  color: var(--accent);
+  border-color: rgba(194, 65, 12, 0.25);
+}
+
 .trash-action {
   width: 42px;
   height: 42px;

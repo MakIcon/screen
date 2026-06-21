@@ -88,7 +88,10 @@ pub fn normalized_loader_and_version(
     let version = loader_version
         .as_deref()
         .ok_or_else(|| format!("{} loader version is required", kind.canonical_name()))?;
-    Ok((kind, Some(common::validate_loader_version(version)?.to_string())))
+    Ok((
+        kind,
+        Some(common::validate_loader_version(version)?.to_string()),
+    ))
 }
 
 /// The on-disk `versions/<id>` profile id for a loader + game version.
@@ -113,7 +116,11 @@ pub fn effective_version_id_for_instance(instance: &InstanceItem) -> Result<Stri
             kind.canonical_name()
         )
     })?;
-    Ok(synthetic_version_id(kind, &instance.version, loader_version))
+    Ok(synthetic_version_id(
+        kind,
+        &instance.version,
+        loader_version,
+    ))
 }
 
 pub async fn fetch_loader_versions(
