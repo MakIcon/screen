@@ -47,6 +47,27 @@ const VoidIcon = () => (
   </svg>
 );
 
+const FlagRuIcon = () => (
+  <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
+    <rect width="16" height="11" rx="1.5" fill="#fff"/>
+    <rect y="3.67" width="16" height="3.66" fill="#0039A6"/>
+    <rect y="7.33" width="16" height="3.67" rx="0 0 1.5 1.5" fill="#D52B1E"/>
+  </svg>
+);
+
+const FlagUsIcon = () => (
+  <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
+    <rect width="16" height="11" rx="1.5" fill="#B22234"/>
+    <rect y="0.846" width="16" height="0.846" fill="#fff"/>
+    <rect y="2.538" width="16" height="0.846" fill="#fff"/>
+    <rect y="4.23" width="16" height="0.846" fill="#fff"/>
+    <rect y="5.923" width="16" height="0.846" fill="#fff"/>
+    <rect y="7.615" width="16" height="0.846" fill="#fff"/>
+    <rect y="9.308" width="16" height="0.846" fill="#fff"/>
+    <rect width="7" height="5.077" rx="1" fill="#3C3B6E"/>
+  </svg>
+);
+
 interface SettingsTabProps {
   systemRamGb: number;
   settingsRamDraft: number;
@@ -190,6 +211,26 @@ export function SettingsTab({
                   {option.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="theme-switch-row">
+            <span className="theme-switch-label">LANGUAGE</span>
+            <div className="theme-switch">
+              <button
+                className="theme-switch-btn active"
+                type="button"
+              >
+                <FlagRuIcon />
+                RU
+              </button>
+              <button
+                className="theme-switch-btn"
+                type="button"
+              >
+                <FlagUsIcon />
+                EN
+              </button>
             </div>
           </div>
 
