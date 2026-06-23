@@ -523,25 +523,12 @@ export function InstancesTab({
           )}
           </div>
 
-          {(busyMessage || actionError || installProgress) && (
+          {((busyMessage && !installProgress) || actionError) && (
             <div className="build-status-stack">
-              {(busyMessage || actionError) && (
-                <div className="status-box">
-                  {busyMessage && <p className="panel-text">{busyMessage}</p>}
-                  {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
-                </div>
-              )}
-              {installProgress && (
-                <div className="download-progress-box">
-                  <div className="download-progress-head">
-                    <span>{installProgress.phase.toUpperCase()}</span>
-                    <strong>{Math.round(installProgress.percent)}%</strong>
-                  </div>
-                  <div className="download-progress-track">
-                    <div className="download-progress-fill" style={{ width: `${installProgress.percent}%` }} />
-                  </div>
-                </div>
-              )}
+              <div className="status-box">
+                {busyMessage && !installProgress && <p className="panel-text">{busyMessage}</p>}
+                {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
+              </div>
             </div>
           )}
         </div>

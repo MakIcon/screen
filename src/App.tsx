@@ -40,6 +40,13 @@ import {
   getBuildLogsWindowUrl,
   LOG_WINDOW_REFRESH_EVENT,
 } from "./components/builds/BuildLogsWindowApp";
+import {
+  getInstallProgressWindowUrl,
+  INSTALL_PROGRESS_WINDOW_EVENT,
+  INSTALL_PROGRESS_WINDOW_LABEL,
+  persistInstallProgressWindowState,
+  type InstallProgressWindowState,
+} from "./components/builds/InstallProgressWindowApp";
 import type {
   ActionResult,
   BuildRuntimeSettingsDraft,
@@ -397,6 +404,11 @@ export default function App() {
   const { toasts, pushToast, dismissToast } = useToasts();
   const win = getCurrentWindow();
   const wheelLockRef = useRef(false);
+  const installProgressWindowOpeningRef = useRef(false);
+  const installProgressWindowStateRef = useRef<InstallProgressWindowState>({
+    busyMessage: "",
+    progress: null,
+  });
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const dragEventRef = useRef<(payload: any) => void>(() => {});
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
@@ -786,6 +798,70 @@ export default function App() {
     };
   }, [win]);
 
+  useEffect(() => {
+    const state: InstallProgressWindowState = {
+      busyMessage,
+      progress: installProgress,
+    };
+    installProgressWindowStateRef.current = state;
+    persistInstallProgressWindowState(state);
+
+    const syncProgressWindow = async () => {
+      try {
+        const existing = await WebviewWindow.getByLabel(INSTALL_PROGRESS_WINDOW_LABEL);
+
+        if (!installProgress) {
+          installProgressWindowOpeningRef.current = false;
+          if (existing) {
+            await existing.emit(INSTALL_PROGRESS_WINDOW_EVENT, state);
+            window.setTimeout(() => {
+              void existing.close();
+            }, 120);
+          }
+          return;
+        }
+
+        if (existing) {
+          await existing.emit(INSTALL_PROGRESS_WINDOW_EVENT, state);
+          return;
+        }
+
+        if (installProgressWindowOpeningRef.current) return;
+        installProgressWindowOpeningRef.current = true;
+
+        const progressWindow = new WebviewWindow(INSTALL_PROGRESS_WINDOW_LABEL, {
+          url: getInstallProgressWindowUrl(),
+          title: "Build task",
+          width: 520,
+          height: 238,
+          minWidth: 420,
+          minHeight: 210,
+          center: true,
+          focus: true,
+          resizable: false,
+          decorations: false,
+        });
+
+        void progressWindow.once("tauri://created", () => {
+          installProgressWindowOpeningRef.current = false;
+          void progressWindow.emit(
+            INSTALL_PROGRESS_WINDOW_EVENT,
+            installProgressWindowStateRef.current,
+          );
+          void progressWindow.setFocus();
+        });
+        void progressWindow.once("tauri://error", (event) => {
+          installProgressWindowOpeningRef.current = false;
+          logger.error("install progress window create failed", event.payload);
+        });
+      } catch (error) {
+        installProgressWindowOpeningRef.current = false;
+        logger.error("install progress window sync failed", error);
+      }
+    };
+
+    void syncProgressWindow();
+  }, [busyMessage, installProgress]);
   useEffect(() => {
     const unlistenExit = win.listen<MinecraftExitPayload>("minecraft-process-exited", (event) => {
       const payload = event.payload;

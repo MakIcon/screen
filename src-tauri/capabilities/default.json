@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Capability for the main window",
-  "windows": ["main", "build-log-*", "bluemap-*"],
+  "windows": ["main", "build-log-*", "bluemap-*", "install-progress"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",

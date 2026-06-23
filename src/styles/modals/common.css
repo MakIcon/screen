@@ -33,6 +33,145 @@
 
 /* ── Download progress ── */
 
+.install-progress-window-root {
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.install-progress-window-shell {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+}
+
+.install-progress-titlebar {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 0 14px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.install-progress-titlebar-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.install-progress-titlebar-title span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.install-progress-titlebar-title strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.install-progress-window-actions {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.install-progress-window-action {
+  width: 42px;
+  height: 38px;
+  border: none;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.install-progress-window-action:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+
+.install-progress-window-action--close:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.install-progress-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg);
+}
+
+.install-progress-message-card {
+  position: relative;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  padding: 14px 16px 14px 20px;
+  background: var(--bg-card-strong);
+  overflow: hidden;
+}
+
+.install-progress-message-card::before {
+  content: "";
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 3px;
+  background: var(--accent);
+}
+
+.install-progress-card-label {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.install-progress-message-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.install-progress-empty {
+  margin: 0;
+  align-self: center;
+  justify-self: center;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
 .download-progress-box {
   margin-top: 18px;
   border: 1px solid var(--line);
@@ -65,6 +204,48 @@
   transition: width 0.18s ease;
 }
 
+.download-progress-box--floating {
+  margin-top: 0;
+  border-color: var(--line-strong);
+  padding: 14px 16px;
+  background: var(--bg-panel-strong);
+}
+
+.download-progress-box--floating .download-progress-head {
+  margin-bottom: 12px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.download-progress-box--floating .download-progress-track {
+  height: 8px;
+  border-color: var(--line-strong);
+  background: var(--bg-elevated);
+}
+
+.download-progress-box--floating .download-progress-fill {
+  background: var(--accent);
+}
+
+.download-progress-box--floating .download-progress-meta {
+  align-items: center;
+  margin-top: 12px;
+}
+
+.download-progress-box--floating .download-progress-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-progress-box--floating .download-progress-meta strong {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
 .download-progress-meta {
   margin-top: 10px;
   display: flex;
