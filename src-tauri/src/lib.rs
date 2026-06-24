@@ -18,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             window_fx::start_gallery_unfold,
+            window_fx::exit_launcher,
             commands::auth::start_microsoft_auth,
             commands::auth::list_microsoft_accounts,
             commands::auth::remove_microsoft_account,

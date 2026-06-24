@@ -1,23 +1,10 @@
-use std::{
-    thread,
-    time::{Duration, Instant},
-};
+use std::{thread, time::Duration};
 
-use tauri::{Emitter, LogicalPosition, LogicalSize, WebviewWindow};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, WebviewWindow};
 
 use crate::models::PhasePayload;
 
-fn ease_in_out_expo(x: f64) -> f64 {
-    if x == 0.0 {
-        0.0
-    } else if x == 1.0 {
-        1.0
-    } else if x < 0.5 {
-        2.0f64.powf(20.0 * x - 10.0) / 2.0
-    } else {
-        (2.0 - 2.0f64.powf(-20.0 * x + 10.0)) / 2.0
-    }
-}
+const UNFOLD_READY_DELAY: Duration = Duration::from_millis(1200);
 
 #[tauri::command]
 pub fn start_gallery_unfold(window: WebviewWindow) -> Result<(), String> {
@@ -35,45 +22,34 @@ pub fn start_gallery_unfold(window: WebviewWindow) -> Result<(), String> {
     let center_y = screen.height / 2.0;
     let win = window.clone();
 
+    // Keep the webview at its final size for the entire opening animation.
+    // Repeated native resizes force WebView2 to reflow and repaint on every
+    // frame, which makes the right edge visibly trail behind the window.
+    window
+        .set_size(LogicalSize::new(final_w, final_h))
+        .map_err(|error| format!("Failed to size window: {error}"))?;
+    window
+        .set_position(LogicalPosition::new(
+            center_x - final_w / 2.0,
+            center_y - final_h / 2.0,
+        ))
+        .map_err(|error| format!("Failed to position window: {error}"))?;
+    window
+        .emit("window-phase", PhasePayload { phase: "unfolding" })
+        .map_err(|error| format!("Failed to start window animation: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("Failed to show window: {error}"))?;
+
     thread::spawn(move || {
-        let start = Instant::now();
-        let duration_h = 500.0;
-        let duration_w = 700.0;
-
-        let _ = win.set_size(LogicalSize::new(4.0, 10.0));
-        let _ = win.set_position(LogicalPosition::new(center_x - 2.0, center_y - 5.0));
-        let _ = win.show();
-
-        loop {
-            let elapsed = start.elapsed().as_millis() as f64;
-
-            if elapsed <= duration_h {
-                let t = ease_in_out_expo(elapsed / duration_h);
-                let h = (final_h * t).max(10.0);
-                let _ = win.set_size(LogicalSize::new(4.0, h));
-                let _ = win.set_position(LogicalPosition::new(center_x - 2.0, center_y - h / 2.0));
-            } else if elapsed <= duration_h + duration_w {
-                let t = ease_in_out_expo((elapsed - duration_h) / duration_w);
-                let w = (final_w * t).max(4.0);
-                let _ = win.set_size(LogicalSize::new(w, final_h));
-                let _ = win.set_position(LogicalPosition::new(
-                    center_x - w / 2.0,
-                    center_y - final_h / 2.0,
-                ));
-                let _ = win.emit("window-phase", PhasePayload { phase: "unfolding" });
-            } else {
-                let _ = win.set_size(LogicalSize::new(final_w, final_h));
-                let _ = win.set_position(LogicalPosition::new(
-                    center_x - final_w / 2.0,
-                    center_y - final_h / 2.0,
-                ));
-                let _ = win.emit("window-phase", PhasePayload { phase: "ready" });
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(10));
-        }
+        thread::sleep(UNFOLD_READY_DELAY);
+        let _ = win.emit("window-phase", PhasePayload { phase: "ready" });
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn exit_launcher(app: AppHandle) {
+    app.exit(0);
 }

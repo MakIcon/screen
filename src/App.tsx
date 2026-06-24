@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
@@ -149,7 +149,7 @@ function ExportedItemIcon({
 
 export default function App() {
   const [phase, setPhase] = useState("init");
-  const [isClosing, setIsClosing] = useState(false);
+  const [closeEffect, setCloseEffect] = useState<"tear" | "shred" | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [tabAnimating, setTabAnimating] = useState(false);
 
@@ -402,7 +402,8 @@ export default function App() {
 
   const { theme, setTheme } = useTheme();
   const { toasts, pushToast, dismissToast } = useToasts();
-  const win = getCurrentWindow();
+  const win = useMemo(() => getCurrentWindow(), []);
+  const closeStartedRef = useRef(false);
   const wheelLockRef = useRef(false);
   const installProgressWindowOpeningRef = useRef(false);
   const installProgressWindowStateRef = useRef<InstallProgressWindowState>({
@@ -1114,6 +1115,56 @@ export default function App() {
     return points;
   }, []);
 
+  const shredPaths = useMemo(() => {
+    const stripCount = 8;
+    const segments = 16;
+    const boundaries = Array.from({ length: stripCount + 1 }, (_, boundaryIndex) =>
+      Array.from({ length: segments + 1 }, (_, pointIndex) => {
+        const y = pointIndex === 0
+          ? 0
+          : pointIndex === segments
+            ? 100
+            : ((pointIndex + (Math.random() * 0.55 - 0.275)) / segments) * 100;
+
+        if (boundaryIndex === 0) return { x: 0, y };
+        if (boundaryIndex === stripCount) return { x: 100, y };
+
+        const baseX = (boundaryIndex / stripCount) * 100;
+        if (pointIndex === 0 || pointIndex === segments) return { x: baseX, y };
+
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        const toothDepth = 0.35 + Math.random() * 0.7;
+        return { x: baseX + direction * toothDepth, y };
+      }),
+    );
+
+    return Array.from({ length: stripCount }, (_, stripIndex) => {
+      const left = boundaries[stripIndex];
+      const right = boundaries[stripIndex + 1];
+      const points: string[] = [];
+
+      for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
+        const point = right[pointIndex];
+        points.push(`${point.x}% ${point.y}%`);
+      }
+      for (let pointIndex = segments; pointIndex >= 0; pointIndex -= 1) {
+        const point = left[pointIndex];
+        points.push(`${point.x}% ${point.y}%`);
+      }
+
+      const goesUp = Math.random() < 0.5;
+      return {
+        clipPath: `polygon(${points.join(", ")})`,
+        delay: Math.round(Math.random() * 70),
+        x: `${(Math.random() * 12 - 6).toFixed(2)}%`,
+        y: `${((goesUp ? -1 : 1) * (48 + Math.random() * 14)).toFixed(2)}%`,
+        rotate: `${(Math.random() * 4.4 - 2.2).toFixed(2)}deg`,
+        kickX: `${(Math.random() * 1.4 - 0.7).toFixed(2)}%`,
+        kickY: `${((goesUp ? -1 : 1) * (1.5 + Math.random() * 1.5)).toFixed(2)}%`,
+      };
+    });
+  }, []);
+
   const refreshInstances = async (preferredId?: string) => {
     const fresh = await invoke<InstanceItem[]>("list_instances");
     setInstances(fresh);
@@ -1129,14 +1180,44 @@ export default function App() {
     setSelectedInstanceId(target);
   };
 
-  const handleClose = async () => {
-    setIsClosing(true);
+  const beginClose = useCallback((effect: "tear" | "shred") => {
+    if (closeStartedRef.current) return;
+
+    closeStartedRef.current = true;
+    setCloseEffect(effect);
     void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
       logger.error("stop_discord_rpc_for_instance failed", error);
     });
     window.setTimeout(() => {
-      void win.close();
-    }, 400);
+      void invoke("exit_launcher").catch((error) => {
+        logger.error("exit_launcher failed", error);
+      });
+    }, effect === "shred" ? 950 : 400);
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+
+    void win.onCloseRequested((event) => {
+      event.preventDefault();
+      beginClose("shred");
+    }).then((dispose) => {
+      if (mounted) {
+        unlisten = dispose;
+      } else {
+        dispose();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [beginClose, win]);
+
+  const handleClose = () => {
+    beginClose("tear");
   };
 
   const handleMaximize = async () => {
@@ -2092,7 +2173,9 @@ const isScrollableElement = (target: EventTarget | null) => {
   );
 
   return (
-    <div className={`gallery-root ${phase} ${isClosing ? "tearing" : ""}`}>
+    <div className={`gallery-root ${phase} ${
+      closeEffect === "tear" ? "tearing" : closeEffect === "shred" ? "shredding" : ""
+    }`}>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       {dragKind === "build" && (
         <div className="global-drop-overlay">
@@ -2133,9 +2216,9 @@ const isScrollableElement = (target: EventTarget | null) => {
           </div>
         );
       })()}
-      {!isClosing ? (
+      {!closeEffect ? (
         mainUI
-      ) : (
+      ) : closeEffect === "tear" ? (
         <>
           <div
             className="tear-half left-half"
@@ -2150,6 +2233,26 @@ const isScrollableElement = (target: EventTarget | null) => {
             <div className="fixed-content">{mainUI}</div>
           </div>
         </>
+      ) : (
+        <div className="shred-stack" aria-hidden="true">
+          {shredPaths.map((strip, index) => (
+            <div
+              key={index}
+              className="shred-strip"
+              style={{
+                clipPath: strip.clipPath,
+                animationDelay: `${strip.delay}ms`,
+                "--shred-x": strip.x,
+                "--shred-y": strip.y,
+                "--shred-rotate": strip.rotate,
+                "--shred-kick-x": strip.kickX,
+                "--shred-kick-y": strip.kickY,
+              } as CSSProperties}
+            >
+              <div className="fixed-content">{mainUI}</div>
+            </div>
+          ))}
+        </div>
       )}
 
       {buildCardSettingsOpen && (

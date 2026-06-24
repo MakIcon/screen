@@ -54,3 +54,57 @@
     opacity: 0;
   }
 }
+
+/* Alt+F4 / system close: tear the interface into 8 vertical paper strips. */
+.gallery-root.shredding {
+  background: transparent !important;
+  border: none !important;
+}
+
+.gallery-root.shredding > :not(.shred-stack) {
+  visibility: hidden;
+}
+
+.shred-stack,
+.shred-strip {
+  position: absolute;
+  inset: 0;
+}
+
+.shred-stack {
+  z-index: 100;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.shred-strip {
+  --shred-x: 0%;
+  --shred-y: -52%;
+  --shred-rotate: -1.5deg;
+  --shred-kick-x: -0.4%;
+  --shred-kick-y: -2%;
+  background: var(--bg);
+  overflow: hidden;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: shred-paper-strip 0.8s cubic-bezier(0.32, 0, 0.2, 1) forwards;
+}
+
+@keyframes shred-paper-strip {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scaleY(1);
+    opacity: 1;
+  }
+  18% {
+    transform: translate(var(--shred-kick-x), 0) rotate(0deg) scaleY(1.015);
+    opacity: 1;
+  }
+  44% {
+    transform: translate(var(--shred-kick-x), var(--shred-kick-y)) rotate(0.25deg) scaleY(0.995);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--shred-x), var(--shred-y)) rotate(var(--shred-rotate)) scaleY(0.96);
+    opacity: 0;
+  }
+}

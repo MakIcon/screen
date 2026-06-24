@@ -10,13 +10,37 @@
   display: flex;
   flex-direction: column;
   opacity: 0;
-  transition: opacity 0.8s ease;
+  clip-path: inset(calc(50% - 5px) calc(50% - 0.5px));
   border: 1px solid var(--line);
+  will-change: clip-path, opacity;
+  backface-visibility: hidden;
 }
 
-.gallery-root.unfolding,
+.gallery-root.unfolding {
+  animation: gallery-unfold 1050ms both;
+}
+
 .gallery-root.ready {
   opacity: 1;
+  clip-path: inset(0);
+  will-change: auto;
+}
+
+@keyframes gallery-unfold {
+  0% {
+    opacity: 1;
+    clip-path: inset(calc(50% - 5px) calc(50% - 0.5px));
+    animation-timing-function: cubic-bezier(0.87, 0, 0.13, 1);
+  }
+  42% {
+    opacity: 1;
+    clip-path: inset(0 calc(50% - 0.5px));
+    animation-timing-function: cubic-bezier(0.87, 0, 0.13, 1);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0);
+  }
 }
 
 .ui-container {
