@@ -5,6 +5,7 @@ interface ElementToggleProps {
   note: string;
   enabled: boolean;
   onToggle: () => void;
+  mascotOffSwitch?: boolean;
 }
 
 export function ElementToggle({
@@ -12,6 +13,7 @@ export function ElementToggle({
   note,
   enabled,
   onToggle,
+  mascotOffSwitch = false,
 }: ElementToggleProps) {
   return (
     <div className="settings-toggle-row">
@@ -24,6 +26,7 @@ export function ElementToggle({
         type="button"
         className={`toggle-switch ${enabled ? "enabled" : ""}`}
         onClick={onToggle}
+        data-mascot-off-switch={mascotOffSwitch ? "true" : undefined}
       >
         <span className="toggle-knob" />
       </button>

@@ -1,0 +1,254 @@
+.launcher-mascot-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 32;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.launcher-mascot-character {
+  width: 64px;
+  height: 64px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  isolation: isolate;
+  will-change: transform;
+  transition: transform 780ms steps(12, end);
+}
+
+.launcher-mascot-character::after {
+  content: "";
+  width: 32px;
+  height: 3px;
+  position: absolute;
+  left: 16px;
+  bottom: 3px;
+  z-index: -1;
+  background: var(--line-strong);
+  transform: skewX(-22deg);
+}
+
+.launcher-mascot-character img {
+  width: 64px;
+  height: 64px;
+  display: block;
+  pointer-events: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  transform-origin: 50% 88%;
+}
+
+.launcher-mascot-character--idle img {
+  animation: launcher-mascot-idle 2.8s steps(2, jump-none) infinite;
+}
+
+.launcher-mascot-character--walking img {
+  animation: launcher-mascot-walk 260ms steps(2, end) infinite;
+}
+
+.launcher-mascot-character--walking::after,
+.launcher-mascot-character--running::after,
+.launcher-mascot-character--carrying::after {
+  animation: launcher-mascot-walk-shadow 260ms steps(2, end) infinite;
+}
+
+.launcher-mascot-character--running,
+.launcher-mascot-character--carrying,
+.launcher-mascot-character--pleading {
+  transition-duration: 420ms;
+  transition-timing-function: steps(9, end);
+}
+
+.launcher-mascot-character--running img,
+.launcher-mascot-character--carrying img {
+  animation: launcher-mascot-run 180ms steps(2, end) infinite;
+}
+
+.launcher-mascot-character--sleeping,
+.launcher-mascot-character--dragging,
+.launcher-mascot-character--carrying,
+.launcher-mascot-character--pleading {
+  pointer-events: auto;
+}
+
+.launcher-mascot-character--sleeping {
+  cursor: grab;
+}
+
+.launcher-mascot-character--sleeping img {
+  animation: launcher-mascot-sleep 1.8s steps(2, end) infinite;
+}
+
+.launcher-mascot-character--dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.launcher-mascot-character--dragging img {
+  filter: drop-shadow(0 6px 0 var(--line));
+  transform: translateY(-4px) rotate(-3deg) scale(1.06);
+}
+
+.launcher-mascot-character--carrying {
+  cursor: pointer;
+}
+
+.launcher-mascot-character--pleading {
+  cursor: not-allowed;
+  transition-duration: 260ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.launcher-mascot-character--pleading img {
+  animation: launcher-mascot-cry 360ms steps(2, end) infinite;
+}
+
+.launcher-mascot-character:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.launcher-mascot-hint,
+.launcher-mascot-plea {
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  z-index: 3;
+  padding: 2px 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font-size: 6px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: launcher-mascot-hint 1.2s steps(2, end) infinite;
+}
+
+.launcher-mascot-plea {
+  top: -15px;
+  color: var(--ink);
+}
+
+.launcher-mascot-loot {
+  min-width: 62px;
+  max-width: 132px;
+  min-height: 24px;
+  position: absolute;
+  left: 48px;
+  top: 23px;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  padding: 4px 8px 4px 14px;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.mascot-button-stolen {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+@keyframes launcher-mascot-idle {
+  0%,
+  78%,
+  100% {
+    transform: translateY(0);
+  }
+  84%,
+  94% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes launcher-mascot-walk {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+
+@keyframes launcher-mascot-run {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg) scaleX(1.04);
+  }
+  50% {
+    transform: translateY(-7px) rotate(5deg) scaleX(0.96);
+  }
+}
+
+@keyframes launcher-mascot-walk-shadow {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleX(1) skewX(-22deg);
+  }
+  50% {
+    opacity: 0.38;
+    transform: scaleX(0.62) skewX(-22deg);
+  }
+}
+
+@keyframes launcher-mascot-sleep {
+  0%,
+  100% {
+    transform: translateY(1px) rotate(2deg);
+  }
+  50% {
+    transform: translateY(2px) rotate(2deg) scaleY(0.97);
+  }
+}
+
+@keyframes launcher-mascot-cry {
+  0%,
+  100% {
+    transform: translateX(-2px) translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(2px) translateY(-2px) rotate(2deg);
+  }
+}
+
+@keyframes launcher-mascot-hint {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher-mascot-character {
+    transition: none;
+  }
+
+  .launcher-mascot-character img,
+  .launcher-mascot-character::after,
+  .launcher-mascot-hint,
+  .launcher-mascot-plea {
+    animation: none;
+  }
+}

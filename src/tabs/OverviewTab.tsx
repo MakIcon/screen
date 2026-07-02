@@ -42,6 +42,8 @@ export function OverviewTab({
                 className="primary-action play-last-button"
                 type="button"
                 onClick={() => setTabAnimated("instances")}
+                data-mascot-stealable
+                data-mascot-label="OPEN BUILDS"
               >
                 OPEN BUILDS
               </button>
@@ -109,6 +111,8 @@ export function OverviewTab({
                 type="button"
                 onClick={() => handleLaunchSelected()}
                 disabled={working}
+                data-mascot-stealable
+                data-mascot-label="PLAY LAST"
               >
                 <span className="bpa-stack">
                   <span className="bpa-label">{working ? "WORKING..." : "PLAY LAST"}</span>

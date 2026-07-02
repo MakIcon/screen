@@ -34,6 +34,14 @@ pub async fn set_auto_download_java(enabled: bool) -> Result<LauncherSettings, S
 }
 
 #[tauri::command]
+pub async fn set_mascot_enabled(enabled: bool) -> Result<LauncherSettings, String> {
+    let mut settings = read_settings().await?;
+    settings.mascot_enabled = enabled;
+    write_settings(&settings).await?;
+    Ok(settings)
+}
+
+#[tauri::command]
 pub async fn set_launcher_plugins(
     plugins: LauncherPluginsSettings,
 ) -> Result<LauncherSettings, String> {

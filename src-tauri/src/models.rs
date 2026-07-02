@@ -357,6 +357,9 @@ pub struct LauncherSettings {
     /// Download a matching Java runtime automatically when none is found locally.
     #[serde(default = "default_auto_download_java")]
     pub auto_download_java: bool,
+    /// Show the interactive mascot in the launcher sidebar.
+    #[serde(default = "default_mascot_enabled")]
+    pub mascot_enabled: bool,
     #[serde(default)]
     pub network: NetworkSettings,
     #[serde(default)]
@@ -685,6 +688,7 @@ impl Default for LauncherSettings {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
             auto_download_java: default_auto_download_java(),
+            mascot_enabled: default_mascot_enabled(),
             network: NetworkSettings::default(),
             plugins: LauncherPluginsSettings::default(),
         }
@@ -769,6 +773,10 @@ fn default_optimized_java_args() -> bool {
 }
 
 fn default_auto_download_java() -> bool {
+    true
+}
+
+fn default_mascot_enabled() -> bool {
     true
 }
 

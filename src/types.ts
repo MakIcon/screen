@@ -185,6 +185,7 @@ export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
   autoDownloadJava: boolean;
+  mascotEnabled: boolean;
   network: NetworkSettings;
   plugins: LauncherPluginsSettings;
 };

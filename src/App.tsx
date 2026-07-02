@@ -79,6 +79,7 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { useModrinthContent } from "./hooks/useModrinthContent";
 import { useTheme } from "./hooks/useTheme";
 import { OptionToggle } from "./components/inputs/OptionToggle";
+import { LauncherMascot } from "./components/mascot/LauncherMascot";
 import {
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
@@ -1315,6 +1316,17 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  const saveMascotEnabled = async (enabled: boolean) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_mascot_enabled", { enabled });
+      setLauncherSettings(updated);
+    } catch (error) {
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save mascot setting" });
+    }
+  };
+
   const saveNetworkSettings = async (mirror: string) => {
     try {
       const updated = await invoke<LauncherSettings>("set_network_settings", {
@@ -2060,6 +2072,8 @@ const isScrollableElement = (target: EventTarget | null) => {
             saveOptimizedJavaArgs={saveOptimizedJavaArgs}
             autoDownloadJava={launcherSettings?.autoDownloadJava ?? true}
             saveAutoDownloadJava={saveAutoDownloadJava}
+            mascotEnabled={launcherSettings?.mascotEnabled ?? true}
+            saveMascotEnabled={saveMascotEnabled}
             mirrorMode={launcherSettings?.network?.mirror ?? "auto"}
             saveNetworkSettings={saveNetworkSettings}
             wheelTabSwitching={wheelTabSwitching}
@@ -2169,6 +2183,11 @@ const isScrollableElement = (target: EventTarget | null) => {
         <div className="footer-left">CORE: RUST_NATIVE / OFFLINE_VANILLA</div>
         <div className="footer-right">CREATE / INSTALL / PLAY ↓</div>
       </footer>
+
+      <LauncherMascot
+        activeIndex={TAB_ORDER.indexOf(activeTab)}
+        enabled={launcherSettings?.mascotEnabled ?? true}
+      />
     </div>
   );
 

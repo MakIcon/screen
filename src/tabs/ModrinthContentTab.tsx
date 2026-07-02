@@ -275,6 +275,8 @@ export function ModrinthContentTab({
                                     type="button"
                                     disabled={busy}
                                     onClick={() => void install(item.projectId)}
+                                    data-mascot-stealable
+                                    data-mascot-label="UPDATE"
                                   >
                                     {busy ? "..." : "UPDATE"}
                                   </button>
@@ -286,6 +288,8 @@ export function ModrinthContentTab({
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void install(item.projectId)}
+                                data-mascot-stealable
+                                data-mascot-label="INSTALL"
                               >
                                 {busy ? "INSTALLING..." : "INSTALL"}
                               </button>

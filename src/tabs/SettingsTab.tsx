@@ -77,6 +77,8 @@ interface SettingsTabProps {
   saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
   autoDownloadJava: boolean;
   saveAutoDownloadJava: (enabled: boolean) => Promise<void>;
+  mascotEnabled: boolean;
+  saveMascotEnabled: (enabled: boolean) => Promise<void>;
   mirrorMode: MirrorMode;
   saveNetworkSettings: (mirror: string) => Promise<void>;
   wheelTabSwitching: boolean;
@@ -106,6 +108,8 @@ export function SettingsTab({
   saveOptimizedJavaArgs,
   autoDownloadJava,
   saveAutoDownloadJava,
+  mascotEnabled,
+  saveMascotEnabled,
   mirrorMode,
   saveNetworkSettings,
   wheelTabSwitching,
@@ -259,6 +263,14 @@ export function SettingsTab({
               note="Переключение вкладок движением колеса мыши."
               enabled={wheelTabSwitching}
               onToggle={() => setWheelTabSwitching((prev) => !prev)}
+            />
+
+            <ElementToggle
+              title="LAUNCHER MASCOT"
+              note="Маскот гуляет по меню, меняет эмоции и иногда засыпает на кнопках."
+              enabled={mascotEnabled}
+              onToggle={() => void saveMascotEnabled(!mascotEnabled)}
+              mascotOffSwitch
             />
 
             <ElementToggle

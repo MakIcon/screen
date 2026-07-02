@@ -391,7 +391,14 @@ export function InstancesTab({
               )}
 
               <div className="instance-actions">
-                <button className="primary-action" type="button" onClick={handleCreateBuild} disabled={working}>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={handleCreateBuild}
+                  disabled={working}
+                  data-mascot-stealable
+                  data-mascot-label="CREATE BUILD"
+                >
                   {working ? "WORKING..." : "CREATE BUILD"}
                 </button>
                 {instances.length > 0 && (
@@ -465,14 +472,30 @@ export function InstancesTab({
                     </span>
                   </button>
                 ) : (
-                  <button className="primary-action build-play-action" type="button" onClick={() => handleLaunchSelected()} disabled={working}>
+                  <button
+                    className="primary-action build-play-action"
+                    type="button"
+                    onClick={() => handleLaunchSelected()}
+                    disabled={working}
+                    data-mascot-stealable
+                    data-mascot-label="PLAY BUILD"
+                  >
                     <span className="bpa-stack">
                       <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
                       <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
                     </span>
                   </button>
                 )}
-                <button className="ghost-action" type="button" onClick={handleInstallSelected} disabled={working}>INSTALL</button>
+                <button
+                  className="ghost-action"
+                  type="button"
+                  onClick={handleInstallSelected}
+                  disabled={working}
+                  data-mascot-stealable
+                  data-mascot-label="INSTALL"
+                >
+                  INSTALL
+                </button>
                 <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
                 <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
                 <div className="instance-side-actions">
