@@ -80,6 +80,7 @@ type MascotPhase =
   | "petting"
   | "carrying"
   | "climbing"
+  | "jumping"
   | "playing"
   | "scrolling"
   | "chaos";
@@ -212,20 +213,52 @@ function setNativeControlValue(element: HTMLInputElement | HTMLTextAreaElement, 
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function nudgeSlider(slider: HTMLElement) {
-  const current = Number(slider.getAttribute("aria-valuenow"));
+function fireSliderKey(slider: HTMLElement, key: string) {
+  slider.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  slider.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+}
+
+function getSliderSpan(slider: HTMLElement) {
   const min = Number(slider.getAttribute("aria-valuemin"));
   const max = Number(slider.getAttribute("aria-valuemax"));
-  const canDecrease = Number.isFinite(current) && Number.isFinite(min) && current > min;
-  const canIncrease = Number.isFinite(current) && Number.isFinite(max) && current < max;
-  const key = canDecrease && (!canIncrease || Math.random() < 0.5) ? "ArrowLeft" : "ArrowRight";
-  const steps = 1 + Math.floor(Math.random() * 5);
+  return Number.isFinite(min) && Number.isFinite(max) && max > min
+    ? Math.min(64, Math.round(max - min))
+    : 20;
+}
 
+// Synchronous, forceful slider tantrum — a burst of back-and-forth yanking that
+// ends by slamming the thumb to a random value. Used inside the rage sequence.
+function nudgeSlider(slider: HTMLElement) {
   slider.focus({ preventScroll: true });
-  for (let index = 0; index < steps; index += 1) {
-    slider.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    slider.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+  const span = getSliderSpan(slider);
+  const bursts = 3 + Math.floor(Math.random() * 4);
+  for (let b = 0; b < bursts; b += 1) {
+    const key = b % 2 === 0 ? "ArrowRight" : "ArrowLeft";
+    const steps = 3 + Math.floor(Math.random() * 6);
+    for (let s = 0; s < steps; s += 1) fireSliderKey(slider, key);
   }
+  for (let s = 0; s < span; s += 1) fireSliderKey(slider, "ArrowLeft");
+  const target = Math.floor(Math.random() * (span + 1));
+  for (let s = 0; s < target; s += 1) fireSliderKey(slider, "ArrowRight");
+}
+
+// Animated, visible slider play — yanks the thumb hard in alternating directions
+// with pauses so the motion reads, then settles on a random value.
+async function playSlider(slider: HTMLElement, isAlive: () => boolean) {
+  slider.focus({ preventScroll: true });
+  const span = getSliderSpan(slider);
+  const bursts = 4 + Math.floor(Math.random() * 4);
+  for (let b = 0; b < bursts; b += 1) {
+    if (!isAlive()) return;
+    const key = b % 2 === 0 ? "ArrowRight" : "ArrowLeft";
+    const steps = 4 + Math.floor(Math.random() * Math.max(4, Math.ceil(span * 0.6)));
+    for (let s = 0; s < steps; s += 1) fireSliderKey(slider, key);
+    await wait(80 + Math.random() * 70);
+  }
+  if (!isAlive()) return;
+  for (let s = 0; s < span; s += 1) fireSliderKey(slider, "ArrowLeft");
+  const target = Math.floor(Math.random() * (span + 1));
+  for (let s = 0; s < target; s += 1) fireSliderKey(slider, "ArrowRight");
 }
 
 function parsePiskelAsset(source: string): PiskelAsset {
@@ -292,11 +325,19 @@ function copyComputedTree(source: HTMLElement, clone: HTMLElement) {
 function mountElementReplica(holder: HTMLElement, carried: CarriedElement) {
   const clone = carried.element.cloneNode(true) as HTMLElement;
   carried.element.classList.remove("mascot-button-carried-source");
+  const sourceRadius = window.getComputedStyle(carried.element).borderRadius;
   try {
     copyComputedTree(carried.element, clone);
   } finally {
     carried.element.classList.add("mascot-button-carried-source");
   }
+  // The launcher surfaces are translucent, so a bare clone lets the page bleed
+  // through it. Back the replica with the opaque app background and clip it to
+  // the source's rounded corners so the carried element reads as solid.
+  holder.style.setProperty("background", "var(--bg)", "important");
+  holder.style.setProperty("border-radius", sourceRadius, "important");
+  holder.style.setProperty("overflow", "hidden", "important");
+  holder.style.setProperty("box-shadow", "var(--surface-shadow-soft)", "important");
   clone.classList.remove("mascot-button-carried-source");
   clone.removeAttribute("id");
   clone.removeAttribute("aria-hidden");
@@ -315,7 +356,13 @@ function mountElementReplica(holder: HTMLElement, carried: CarriedElement) {
   clone.style.setProperty("opacity", "1", "important");
   clone.style.setProperty("pointer-events", "none", "important");
   holder.replaceChildren(clone);
-  return () => holder.replaceChildren();
+  return () => {
+    holder.replaceChildren();
+    holder.style.removeProperty("background");
+    holder.style.removeProperty("border-radius");
+    holder.style.removeProperty("overflow");
+    holder.style.removeProperty("box-shadow");
+  };
 }
 
 function restoreCarriedElement(carried: CarriedElement) {
@@ -344,6 +391,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const modalOpenRef = useRef(false);
   const activeModalRef = useRef<HTMLElement | null>(null);
   const modalClimbTokenRef = useRef(0);
+  const modalBusyRef = useRef(false);
   const activeIndexRef = useRef(activeIndex);
   const nextStealAtRef = useRef(
     Date.now() + MIN_STEAL_DELAY_MS + Math.random() * STEAL_DELAY_VARIANCE_MS,
@@ -519,6 +567,44 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           motionFrameRef.current = window.requestAnimationFrame(step);
         };
 
+        motionFrameRef.current = window.requestAnimationFrame(step);
+      });
+    },
+    [cancelMotion, clampPosition, setPhase, setPosition],
+  );
+
+  // Parabolic leap from the current position to `target`. Horizontal travel is
+  // eased while the height follows a sine arc, so the mascot springs up and over
+  // rather than sliding. Resolves false if interrupted (e.g. grabbed).
+  const leapTo = useCallback(
+    (target: MascotPosition, options?: { height?: number; phase?: MascotPhase }) => {
+      cancelMotion();
+      const start = positionRef.current;
+      const dest = clampPosition(target);
+      const span = distance(start, dest);
+      const duration = clamp(300 + span * 1.15, 340, 820);
+      const apexY = Math.min(start.y, dest.y);
+      const maxHeight = Math.max(24, apexY - 6);
+      const height = Math.min(options?.height ?? clamp(span * 0.5, 70, 170), maxHeight);
+      setPhase(options?.phase ?? "jumping");
+      return new Promise<boolean>((resolve) => {
+        const startTime = performance.now();
+        motionFinishRef.current = resolve;
+        const step = (now: number) => {
+          const t = clamp((now - startTime) / duration, 0, 1);
+          const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          const x = start.x + (dest.x - start.x) * ease;
+          const y = start.y + (dest.y - start.y) * ease - Math.sin(Math.PI * t) * height;
+          setPosition({ x, y });
+          if (t >= 1) {
+            motionFrameRef.current = null;
+            motionFinishRef.current = null;
+            setPosition(dest);
+            resolve(true);
+            return;
+          }
+          motionFrameRef.current = window.requestAnimationFrame(step);
+        };
         motionFrameRef.current = window.requestAnimationFrame(step);
       });
     },
@@ -879,59 +965,6 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
   }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
-  const playWithDropdown = useCallback(async () => {
-    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
-    const root = getRoot();
-    const stage = getActiveStage();
-    if (!root || !stage) return false;
-    const rootRect = root.getBoundingClientRect();
-    const trigger = randomItem(
-      Array.from(
-        stage.querySelectorAll<HTMLButtonElement>(".inline-dropdown-trigger:not(:disabled)"),
-      ).filter((button) => isVisible(button, rootRect)),
-    );
-    if (!trigger) return false;
-
-    activityBusyRef.current = true;
-    const activityToken = activityTokenRef.current;
-    const tabIndex = activeIndexRef.current;
-    try {
-      setEmotion("cool");
-      const arrived = await animatePath(buildContourPath(trigger), RUN_SPEED, "running");
-      if (
-        !arrived ||
-        !trigger.isConnected ||
-        tabIndex !== activeIndexRef.current ||
-        activityToken !== activityTokenRef.current ||
-        !isNearElement(trigger)
-      )
-        return false;
-      setPhase("playing");
-
-      const clickCount = Math.random() > 0.55 ? 4 : 2;
-      for (let clickIndex = 0; clickIndex < clickCount; clickIndex += 1) {
-        if (
-          !trigger.isConnected ||
-          tabIndex !== activeIndexRef.current ||
-          activityToken !== activityTokenRef.current ||
-          !isNearElement(trigger)
-        )
-          return false;
-        trigger.click();
-        setEmotion(clickIndex % 2 === 0 ? "excited" : "happy");
-        await wait(430);
-      }
-      return true;
-    } finally {
-      activityBusyRef.current = false;
-      const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
-        setEmotion("happy");
-        setPhase("idle");
-      }
-    }
-  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
-
   const scrollActiveList = useCallback(async () => {
     if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
     const root = getRoot();
@@ -996,6 +1029,46 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
   }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
+  const teaseSlider = useCallback(async () => {
+    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    const root = getRoot();
+    const stage = getActiveStage();
+    if (!root || !stage) return false;
+    const rootRect = root.getBoundingClientRect();
+    const slider = randomItem(
+      Array.from(stage.querySelectorAll<HTMLElement>("[role='slider']")).filter((element) =>
+        isVisible(element, rootRect),
+      ),
+    );
+    if (!slider) return false;
+
+    activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
+    const tabIndex = activeIndexRef.current;
+    try {
+      setEmotion("excited");
+      const arrived = await animatePath(buildContourPath(slider), RUN_SPEED, "running");
+      const alive = () =>
+        slider.isConnected &&
+        tabIndex === activeIndexRef.current &&
+        activityToken === activityTokenRef.current &&
+        !chaosActiveRef.current &&
+        !dragRef.current;
+      if (!arrived || !alive() || !isNearElement(slider)) return false;
+      setPhase("playing");
+      setEmotion(Math.random() < 0.5 ? "angry" : "cool");
+      await playSlider(slider, alive);
+      return true;
+    } finally {
+      activityBusyRef.current = false;
+      const finishingPhase = phaseRef.current as MascotPhase;
+      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+        setEmotion("happy");
+        setPhase("idle");
+      }
+    }
+  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
+
   const runAutonomousAction = useCallback(async () => {
     if (
       activityBusyRef.current ||
@@ -1008,14 +1081,205 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     )
       return;
 
-    if (Math.random() < 0.52) {
-      const actions = shuffled([playWithDropdown, scrollActiveList, jumpOnRandomButton]);
+    // Calm mode: the mascot only shows off — hops on buttons, scrolls, teases
+    // sliders. It never clicks/toggles controls; that mischief is rage-only.
+    if (Math.random() < 0.6) {
+      const actions = shuffled([scrollActiveList, jumpOnRandomButton, teaseSlider]);
       for (const action of actions) {
         if (await action()) return;
       }
     }
     await roam();
-  }, [jumpOnRandomButton, playWithDropdown, roam, scrollActiveList]);
+  }, [jumpOnRandomButton, roam, scrollActiveList, teaseSlider]);
+
+  // Leap onto an open modal and keep busy on it. In calm mode the mascot only
+  // shows off — teases sliders and poses on the controls — but never clicks or
+  // toggles them; flipping switches, stealing and the rest stay rage-only.
+  const attendModal = useCallback(
+    async (fresh = false) => {
+      const root = getRoot();
+      const modal = activeModalRef.current;
+      if (!root || !modal || modalBusyRef.current) return;
+      if (chaosActiveRef.current || dragRef.current || carriedButtonRef.current) return;
+      const token = modalClimbTokenRef.current;
+      modalBusyRef.current = true;
+      try {
+        const alive = () =>
+          token === modalClimbTokenRef.current &&
+          modal.isConnected &&
+          !chaosActiveRef.current &&
+          !dragRef.current &&
+          !carriedButtonRef.current;
+
+        // Let a freshly-opened modal finish its entrance so geometry is stable
+        // (reading it mid-animation is what made the jump snap/teleport).
+        if (fresh) {
+          await wait(170);
+          if (!alive()) return;
+        }
+
+        const geom = () => {
+          const rootRect = root.getBoundingClientRect();
+          const rect = modal.getBoundingClientRect();
+          return {
+            left: rect.left - rootRect.left,
+            right: rect.right - rootRect.left,
+            top: rect.top - rootRect.top,
+            bottom: rect.bottom - rootRect.top,
+          };
+        };
+
+        const isPerched = () => {
+          const g = geom();
+          const p = positionRef.current;
+          return (
+            p.x + MASCOT_SIZE / 2 >= g.left &&
+            p.x + MASCOT_SIZE / 2 <= g.right &&
+            p.y >= g.top - MASCOT_SIZE - 10 &&
+            p.y <= g.top + 40
+          );
+        };
+
+        // A staging spot just outside the modal (left/right/above), nearest to
+        // where the mascot currently stands, that fits on screen.
+        const pickLaunchSpot = (g: ReturnType<typeof geom>) => {
+          const gap = 24;
+          const railY = clamp(g.top + 40, 6, Math.max(6, root.clientHeight - MASCOT_SIZE - 6));
+          const overX = clamp(
+            positionRef.current.x,
+            g.left,
+            Math.max(g.left, g.right - MASCOT_SIZE),
+          );
+          const spots: MascotPosition[] = [];
+          if (g.left - MASCOT_SIZE - gap >= 6)
+            spots.push({ x: g.left - MASCOT_SIZE - gap, y: railY });
+          if (g.right + gap <= root.clientWidth - MASCOT_SIZE - 6)
+            spots.push({ x: g.right + gap, y: railY });
+          if (g.top - MASCOT_SIZE - gap >= 6)
+            spots.push({ x: overX, y: g.top - MASCOT_SIZE - gap });
+          let best: MascotPosition | null = null;
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (const spot of spots) {
+            const d = distance(positionRef.current, spot);
+            if (d < bestDist) {
+              bestDist = d;
+              best = spot;
+            }
+          }
+          return best;
+        };
+
+        const jumpOn = async () => {
+          // 1) Walk over to a launch spot beside the modal — still on the normal
+          //    layer, behind the modal. (Doing this after going foreground was
+          //    the bug that made him look teleported onto the modal.)
+          const spot = pickLaunchSpot(geom());
+          setEmotion("surprised");
+          if (spot) {
+            await animatePath(
+              [{ x: spot.x, y: positionRef.current.y }, spot],
+              WALK_SPEED * 1.35,
+              "walking",
+            );
+            if (!alive()) return false;
+            await wait(70);
+            if (!alive()) return false;
+          }
+          // 2) Only now climb onto the modal's layer…
+          setModalForeground(true);
+          await wait(90);
+          if (!alive()) return false;
+          // 3) …and leap up onto it, using the now-settled geometry.
+          const g = geom();
+          const landX = clamp(
+            positionRef.current.x,
+            g.left + 20,
+            Math.max(g.left + 20, g.right - MASCOT_SIZE - 20),
+          );
+          const perch = clampPosition({ x: landX, y: g.top - MASCOT_SIZE + 24 });
+          setEmotion("excited");
+          const landed = await leapTo(perch, { phase: "jumping" });
+          if (!alive()) return false;
+          if (!landed) setPosition(perch);
+          setPhase("climbing");
+          setEmotion("cool");
+          return true;
+        };
+
+        const playAction = async () => {
+          const rootRect = root.getBoundingClientRect();
+          const visible = (element: HTMLElement) => isVisible(element, rootRect);
+          const sliders = Array.from(modal.querySelectorAll<HTMLElement>("[role='slider']")).filter(
+            visible,
+          );
+          // Everything else is only a place to show off on — never operated.
+          const poseTargets = Array.from(
+            modal.querySelectorAll<HTMLElement>(
+              ".bcs-tab, .bce-tab, .brs-toggle-row, .toggle-switch, .inline-dropdown-trigger, .cni-input, button:not(:disabled)",
+            ),
+          ).filter(visible);
+
+          // Slider teasing is play, not switching — allowed even when calm.
+          if (sliders.length > 0 && Math.random() < 0.6) {
+            const slider = randomItem(sliders);
+            if (!slider) return;
+            await animatePath(buildContourPath(slider, 1).slice(0, 3), RUN_SPEED, "climbing");
+            if (!alive() || !slider.isConnected || !isNearElement(slider, STEAL_REACH_PX + 30))
+              return;
+            setEmotion(Math.random() < 0.5 ? "cool" : "excited");
+            await playSlider(slider, alive);
+            if (!alive()) return;
+            setEmotion(randomItem(["cool", "happy", "excited"]) ?? "cool");
+            setPhase("climbing");
+            return;
+          }
+
+          const target = randomItem(poseTargets) ?? randomItem(sliders);
+          if (!target) {
+            setEmotion(randomItem(["cool", "happy", "confused", "love"]) ?? "cool");
+            setPhase("climbing");
+            return;
+          }
+          await animatePath(buildContourPath(target, 1).slice(0, 3), RUN_SPEED, "climbing");
+          if (!alive()) return;
+          // Strike a pose on it — no click, no toggle, nothing changes.
+          setEmotion(randomItem(["happy", "excited", "cool", "love"]) ?? "happy");
+          setPhase("playing");
+          await wait(700 + Math.random() * 500);
+          if (!alive()) return;
+          setPhase("climbing");
+        };
+
+        if (fresh || !isPerched()) {
+          // jumpOn goes foreground itself — only after reaching the launch spot.
+          const ok = await jumpOn();
+          if (!ok || !alive()) return;
+        } else {
+          // Already standing on the modal (re-attend) — just make sure we're on
+          // its layer and carry on.
+          setModalForeground(true);
+          setPhase("climbing");
+        }
+        while (alive()) {
+          await playAction();
+          if (!alive()) break;
+          await wait(520 + Math.random() * 900);
+        }
+      } finally {
+        modalBusyRef.current = false;
+      }
+    },
+    [
+      animatePath,
+      buildContourPath,
+      clampPosition,
+      getRoot,
+      isNearElement,
+      leapTo,
+      setPhase,
+      setPosition,
+    ],
+  );
 
   const moveToElement = useCallback(
     async (element: HTMLElement, token: number) => {
@@ -1739,10 +2003,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       emotionTimerRef.current = null;
       if (phaseRef.current === "petting") {
         setEmotion("happy");
-        setPhase(modalOpenRef.current ? "climbing" : "idle");
+        if (modalOpenRef.current) void attendModal();
+        else setPhase("idle");
       }
     }, 1_050);
-  }, [cancelMotion, clearEmotionTimer, scheduleMischiefDecay, setPhase]);
+  }, [attendModal, cancelMotion, clearEmotionTimer, scheduleMischiefDecay, setPhase]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (chaosActiveRef.current) return;
@@ -1791,6 +2056,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         drag.shakeTurns += 1;
       if (Math.abs(dx) > 7) drag.lastDirection = direction;
       if (drag.shakeTurns >= 4) setEmotion("excited");
+      // Shaking the mascot while it clutches a stolen element makes it lose its
+      // grip — the element tumbles out of its hands and returns to its place.
+      if (drag.shakeTurns >= 3 && carriedButtonRef.current) {
+        ejectCarriedButton({ x: direction * 0.6, y: 0.85 });
+        setEmotion("surprised");
+        drag.shakeTurns = 0;
+      }
     }
 
     drag.samples.push({ x: event.clientX, y: event.clientY, time: now });
@@ -1812,9 +2084,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         captureTarget.releasePointerCapture(drag.pointerId);
       }
       if (!drag.moved) {
-        setPhase(
-          carriedButtonRef.current ? "carrying" : modalOpenRef.current ? "climbing" : "idle",
-        );
+        if (!carriedButtonRef.current && modalOpenRef.current) void attendModal();
+        else setPhase(carriedButtonRef.current ? "carrying" : "idle");
         return;
       }
 
@@ -1832,12 +2103,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       if (Math.hypot(velocity.x, velocity.y) > 0.32) launchThrow(velocity);
       else {
         setEmotion(drag.shakeTurns >= 4 ? "excited" : "happy");
-        setPhase(
-          carriedButtonRef.current ? "carrying" : modalOpenRef.current ? "climbing" : "idle",
-        );
+        if (!carriedButtonRef.current && modalOpenRef.current) void attendModal();
+        else setPhase(carriedButtonRef.current ? "carrying" : "idle");
       }
     },
-    [launchThrow, setPhase],
+    [attendModal, launchThrow, setPhase],
   );
 
   const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1906,8 +2176,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       modalClimbTokenRef.current = climbToken;
 
       if (!modal) {
+        modalBusyRef.current = false;
         setModalForeground(false);
-        if (phaseRef.current === "climbing") {
+        if (phaseRef.current === "climbing" || phaseRef.current === "jumping") {
           cancelMotion();
           setEmotion("neutral");
           setPhase(carriedButtonRef.current ? "carrying" : "idle");
@@ -1922,56 +2193,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
       activityTokenRef.current += 1;
       activityBusyRef.current = false;
+      modalBusyRef.current = false;
       cancelMotion();
-      setModalForeground(false);
+      // Foreground is deferred: the mascot first walks to a launch spot on the
+      // normal layer, and only steps onto the modal's layer right before jumping.
       setEmotion("surprised");
-
-      const climb = async () => {
-        await wait(40);
-        if (
-          climbToken !== modalClimbTokenRef.current ||
-          !modal.isConnected ||
-          chaosActiveRef.current
-        )
-          return;
-        const rootRect = root.getBoundingClientRect();
-        const modalRect = modal.getBoundingClientRect();
-        const modalLeft = modalRect.left - rootRect.left;
-        const modalRight = modalRect.right - rootRect.left;
-        const modalTop = modalRect.top - rootRect.top;
-        const perchX = clamp(
-          positionRef.current.x,
-          modalLeft + 18,
-          Math.max(modalLeft + 18, modalRight - MASCOT_SIZE - 18),
-        );
-        const behindEdge = clampPosition({
-          x: perchX,
-          y: modalTop + 12,
-        });
-        const current = positionRef.current;
-        const reachedEdge = await animatePath(
-          [{ x: perchX, y: current.y }, behindEdge],
-          WALK_SPEED * 1.15,
-          "climbing",
-        );
-        if (!reachedEdge || climbToken !== modalClimbTokenRef.current || !modal.isConnected) return;
-
-        setModalForeground(true);
-        setEmotion("cool");
-        await wait(20);
-        const perched = await animatePath(
-          [
-            clampPosition({
-              x: perchX,
-              y: modalTop - MASCOT_SIZE + 18,
-            }),
-          ],
-          WALK_SPEED * 0.78,
-          "climbing",
-        );
-        if (perched && climbToken === modalClimbTokenRef.current) setPhase("climbing");
-      };
-      void climb();
+      void attendModal(true);
     };
 
     const scheduleCheck = () => {
@@ -1993,13 +2220,18 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       activeModalRef.current = null;
       modalOpenRef.current = false;
     };
-  }, [animatePath, cancelMotion, clampPosition, enabled, getRoot, getSceneRoot, setPhase]);
+  }, [attendModal, cancelMotion, enabled, getRoot, getSceneRoot, setPhase]);
 
   useEffect(() => {
     if (!enabled) return;
     const firstRoam = window.setTimeout(() => void runAutonomousAction(), 450);
     const interval = window.setInterval(() => {
-      if (
+      if (modalOpenRef.current) {
+        // Keep the mascot busy on any open modal (also re-boards it after a throw).
+        if (!modalBusyRef.current && !dragRef.current && !chaosActiveRef.current) {
+          void attendModal();
+        }
+      } else if (
         Date.now() >= nextStealAtRef.current &&
         !carriedButtonRef.current &&
         !looseButtonRef.current
@@ -2013,7 +2245,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       window.clearTimeout(firstRoam);
       window.clearInterval(interval);
     };
-  }, [enabled, runAutonomousAction, stealRandomButton]);
+  }, [attendModal, enabled, runAutonomousAction, stealRandomButton]);
 
   useEffect(() => {
     if (!enabled || chaosActiveRef.current || dragRef.current) return;
@@ -2064,6 +2296,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       activityBusyRef.current = false;
       dragRef.current = null;
       setRagePress(null);
+      setModalForeground(false);
       clearChaosDebris();
       if (carriedButtonRef.current) restoreCarriedButton(false);
       if (looseButtonRef.current) clearLooseButton();
@@ -2155,7 +2388,6 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
             : "Маскот. Нажмите, чтобы погладить, или перетащите и бросьте."
         }
         tabIndex={0}
-        title={carriedButton ? "Нажми, чтобы вернуть кнопку" : "Погладь или брось маскота"}
         onClick={handleClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -2192,6 +2424,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           draggable={false}
           aria-hidden="true"
         />
+        <span className="launcher-mascot-tooltip" aria-hidden="true">
+          {carriedButton ? "Нажми, чтобы вернуть кнопку" : "Погладь или брось маскота"}
+        </span>
       </div>
     </div>
   );

@@ -3,7 +3,9 @@
   position: absolute;
   inset: 0;
   z-index: 32;
-  overflow: hidden;
+  /* No clipping: lets the leap arc and the hover tooltip extend past the edges.
+     Debris/thrown/loose positions are already clamped to the root bounds. */
+  overflow: visible;
   pointer-events: none;
 }
 
@@ -140,6 +142,15 @@
   animation: launcher-mascot-button-wobble 820ms ease-in-out infinite alternate;
 }
 
+/* Mid-air leap onto a modal — stretch tall then a springy landing squash. */
+.launcher-mascot-character--jumping {
+  z-index: 6;
+}
+
+.launcher-mascot-character--jumping > .launcher-mascot-body {
+  animation: launcher-mascot-leap 560ms ease-in-out both;
+}
+
 .launcher-mascot-character--dragging {
   z-index: 4;
   cursor: grabbing;
@@ -168,6 +179,57 @@
 .launcher-mascot-character:focus-visible {
   outline: 2px solid var(--mascot-color);
   outline-offset: 3px;
+}
+
+/* Hover hint styled like the launcher's field tooltips (caret + panel). */
+.launcher-mascot-tooltip {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 2px);
+  padding: 7px 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-overlay);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.3;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+  z-index: 999;
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.launcher-mascot-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 9px;
+  height: 9px;
+  border-left: 1px solid var(--line-strong);
+  border-top: 1px solid var(--line-strong);
+  background: var(--bg-overlay);
+  transform: translate(-50%, 5px) rotate(45deg);
+}
+
+.launcher-mascot-character:hover > .launcher-mascot-tooltip,
+.launcher-mascot-character:focus-visible > .launcher-mascot-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Don't distract while it's being flung around or throwing a tantrum. */
+.launcher-mascot-character--dragging > .launcher-mascot-tooltip,
+.launcher-mascot-character--thrown > .launcher-mascot-tooltip,
+.launcher-mascot-character--jumping > .launcher-mascot-tooltip,
+.launcher-mascot-character--chaos > .launcher-mascot-tooltip {
+  opacity: 0 !important;
 }
 
 .launcher-mascot-mischief {
@@ -406,6 +468,24 @@
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes launcher-mascot-leap {
+  0% {
+    transform: translateY(2px) scaleX(1.12) scaleY(0.86);
+  }
+  22% {
+    transform: translateY(-2px) scaleX(0.84) scaleY(1.2);
+  }
+  70% {
+    transform: translateY(0) scaleX(0.9) scaleY(1.12);
+  }
+  85% {
+    transform: translateY(3px) scaleX(1.16) scaleY(0.82);
+  }
+  100% {
+    transform: translateY(0) scaleX(1) scaleY(1);
   }
 }
 
