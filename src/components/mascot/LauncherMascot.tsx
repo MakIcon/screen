@@ -21,6 +21,14 @@ import surprisedSprite from "../../assets/mascot/sprites/surprised.png";
 import leftArmPiskel from "../../assets/mascot/hands/left-arm.piskel?raw";
 import pointHandPiskel from "../../assets/mascot/hands/point-hand.piskel?raw";
 import rightArmPiskel from "../../assets/mascot/hands/right-arm.piskel?raw";
+import smoke1Piskel from "../../assets/mascot/effects/smoke1.piskel?raw";
+import smoke2Piskel from "../../assets/mascot/effects/smoke2.piskel?raw";
+import smoke3Piskel from "../../assets/mascot/effects/smoke3.piskel?raw";
+import smoke4Piskel from "../../assets/mascot/effects/smoke4.piskel?raw";
+import mouth1Piskel from "../../assets/mascot/mouth/mouth1.piskel?raw";
+import mouth2Piskel from "../../assets/mascot/mouth/mouth2.piskel?raw";
+import mouth3Piskel from "../../assets/mascot/mouth/mouth3.piskel?raw";
+import mouth4Piskel from "../../assets/mascot/mouth/mouth4.piskel?raw";
 import "./LauncherMascot.css";
 
 const MASCOT_SIZE = 64;
@@ -83,7 +91,15 @@ type MascotPhase =
   | "jumping"
   | "playing"
   | "scrolling"
-  | "chaos";
+  | "chaos"
+  | "trick"
+  | "eating"
+  | "typing"
+  | "yawn"
+  | "stretch"
+  | "scratch"
+  | "struggle"
+  | "wallslide";
 type MascotPosition = { x: number; y: number };
 type PointerSample = MascotPosition & { time: number };
 type LooseButtonTransform = MascotPosition & { rotation: number };
@@ -281,6 +297,21 @@ const HAND_ASSETS = {
   right: parsePiskelAsset(rightArmPiskel),
 } as const;
 
+// Landing dust (plays feet-down on impact) and the eating mouth (frame 0 = shut,
+// frame 3 = wide open — a stolen button is composited into the open cavity).
+const SMOKE_FRAMES = [smoke1Piskel, smoke2Piskel, smoke3Piskel, smoke4Piskel].map(parsePiskelAsset);
+const MOUTH_FRAMES = [mouth1Piskel, mouth2Piskel, mouth3Piskel, mouth4Piskel].map(parsePiskelAsset);
+const TYPED_SNIPPETS = [
+  "hello world",
+  "sudo rm -rf /",
+  "01001000 01001001",
+  "todo: nothing",
+  ":)))",
+  "why am i here",
+  "print('mrrp')",
+  "npm run vibes",
+];
+
 function PiskelSprite({
   asset,
   className,
@@ -404,6 +435,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const activityTokenRef = useRef(0);
   const replicaRef = useRef<HTMLDivElement | null>(null);
   const looseButtonReplicaRef = useRef<HTMLDivElement | null>(null);
+  const eatReplicaRef = useRef<HTMLDivElement | null>(null);
+  const pendingRageRef = useRef(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const clickTimerRef = useRef<number | null>(null);
+  const smokeTokenRef = useRef(0);
 
   const [position, setPositionState] = useState(positionRef.current);
   const [phase, setPhaseState] = useState<MascotPhase>("idle");
@@ -419,6 +455,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const [chaosActive, setChaosActive] = useState(false);
   const [modalForeground, setModalForeground] = useState(false);
   const [throwProgress, setThrowProgress] = useState(0);
+  const [smoke, setSmoke] = useState<{ x: number; y: number; frame: number } | null>(null);
+  const [mouthFrame, setMouthFrame] = useState<number | null>(null);
+  const [speech, setSpeech] = useState<string | null>(null);
 
   activeIndexRef.current = activeIndex;
 
@@ -430,6 +469,23 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const setPhase = useCallback((next: MascotPhase) => {
     phaseRef.current = next;
     setPhaseState(next);
+  }, []);
+
+  // Puff of landing dust at (x, y) that cycles through the four smoke frames.
+  const spawnSmoke = useCallback((x: number, y: number) => {
+    const token = smokeTokenRef.current + 1;
+    smokeTokenRef.current = token;
+    setSmoke({ x, y, frame: 0 });
+    const advance = (frame: number) => {
+      if (smokeTokenRef.current !== token) return;
+      if (frame >= SMOKE_FRAMES.length) {
+        setSmoke(null);
+        return;
+      }
+      setSmoke({ x, y, frame });
+      window.setTimeout(() => advance(frame + 1), 70);
+    };
+    window.setTimeout(() => advance(1), 70);
   }, []);
 
   const getRoot = useCallback(() => {
@@ -815,6 +871,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     return mountElementReplica(holder, looseButton);
   }, [looseButton]);
 
+  useEffect(() => {
+    const holder = eatReplicaRef.current;
+    if (!holder || !carriedButton || phase !== "eating") return;
+    return mountElementReplica(holder, carriedButton);
+  }, [carriedButton, phase]);
+
   const stealRandomButton = useCallback(async () => {
     if (
       chaosActiveRef.current ||
@@ -1069,6 +1131,141 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
   }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
+  // Takes the stolen element in its paws and stuffs it in its mouth: the mouth
+  // sprite opens (frames 0→3) with the button composited half-in, then closes
+  // (3→0) as it "swallows" — after which the element pops back to its place.
+  const eatCarriedButton = useCallback(async () => {
+    const carried = carriedButtonRef.current;
+    if (!carried || chaosActiveRef.current || dragRef.current || modalOpenRef.current) return false;
+    cancelMotion();
+    clearEmotionTimer();
+    const ok = () => carriedButtonRef.current === carried && phaseRef.current === "eating";
+    setEmotion("excited");
+    setPhase("eating");
+    for (let f = 0; f <= 3; f += 1) {
+      setMouthFrame(f);
+      await wait(95);
+      if (!ok()) {
+        setMouthFrame(null);
+        return false;
+      }
+    }
+    await wait(240);
+    for (let f = 3; f >= 0; f -= 1) {
+      if (!ok()) {
+        setMouthFrame(null);
+        return false;
+      }
+      setMouthFrame(f);
+      await wait(80);
+    }
+    setEmotion("happy");
+    await wait(260);
+    setMouthFrame(null);
+    if (carriedButtonRef.current === carried) restoreCarriedButton(true);
+    setPhase("idle");
+    return true;
+  }, [cancelMotion, clearEmotionTimer, restoreCarriedButton, setPhase]);
+
+  // Little signs of life while idling: a big yawn (reusing the mouth sprites),
+  // a stretch, or a scratch.
+  const microLife = useCallback(async () => {
+    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    const kind = randomItem(["yawn", "stretch", "scratch"] as const) ?? "stretch";
+    activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
+    const alive = () => activityToken === activityTokenRef.current && !dragRef.current;
+    try {
+      if (kind === "yawn") {
+        setEmotion("sleepy");
+        setPhase("yawn");
+        for (let f = 0; f <= 3; f += 1) {
+          if (!alive()) return false;
+          setMouthFrame(f);
+          await wait(120);
+        }
+        await wait(260);
+        for (let f = 3; f >= 0; f -= 1) {
+          if (!alive()) return false;
+          setMouthFrame(f);
+          await wait(95);
+        }
+        setMouthFrame(null);
+      } else {
+        setEmotion(kind === "stretch" ? "cool" : "happy");
+        setPhase(kind);
+        await wait(950);
+      }
+      return alive();
+    } finally {
+      activityBusyRef.current = false;
+      setMouthFrame(null);
+      const finishingPhase = phaseRef.current as MascotPhase;
+      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+        setEmotion("neutral");
+        setPhase("idle");
+      }
+    }
+  }, [setPhase]);
+
+  // Waddles up to a field, a little keyboard appears, and it "types" gibberish
+  // into a speech bubble (same style as the hover hint), then wipes it.
+  const typeNonsense = useCallback(async () => {
+    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    const root = getRoot();
+    const stage = getActiveStage();
+    if (!root || !stage) return false;
+    activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
+    const tabIndex = activeIndexRef.current;
+    const alive = () =>
+      tabIndex === activeIndexRef.current &&
+      activityToken === activityTokenRef.current &&
+      !chaosActiveRef.current &&
+      !dragRef.current;
+    try {
+      const rootRect = root.getBoundingClientRect();
+      const field = randomItem(
+        Array.from(
+          stage.querySelectorAll<HTMLElement>("input, textarea, .cni-input, .jae-textarea"),
+        ).filter((element) => isVisible(element, rootRect)),
+      );
+      setEmotion("cool");
+      if (field) {
+        const arrived = await animatePath(
+          buildContourPath(field).slice(0, 3),
+          RUN_SPEED,
+          "running",
+        );
+        if (!arrived || !alive()) return false;
+      }
+      setPhase("typing");
+      const stillTyping = () => (phaseRef.current as MascotPhase) === "typing";
+      const text = randomItem(TYPED_SNIPPETS) ?? "...";
+      setSpeech("");
+      for (let i = 1; i <= text.length; i += 1) {
+        if (!alive() || !stillTyping()) return false;
+        setSpeech(text.slice(0, i));
+        await wait(65 + Math.random() * 70);
+      }
+      await wait(750);
+      for (let i = text.length - 1; i >= 0; i -= 1) {
+        if (!alive() || !stillTyping()) break;
+        setSpeech(text.slice(0, i));
+        await wait(35);
+      }
+      return true;
+    } finally {
+      activityBusyRef.current = false;
+      setSpeech(null);
+      const finishingPhase = phaseRef.current as MascotPhase;
+      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+        setEmotion("happy");
+        setPhase("idle");
+      }
+    }
+  }, [animatePath, buildContourPath, getActiveStage, getRoot, setPhase]);
+
   const runAutonomousAction = useCallback(async () => {
     if (
       activityBusyRef.current ||
@@ -1082,15 +1279,22 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       return;
 
     // Calm mode: the mascot only shows off — hops on buttons, scrolls, teases
-    // sliders. It never clicks/toggles controls; that mischief is rage-only.
-    if (Math.random() < 0.6) {
-      const actions = shuffled([scrollActiveList, jumpOnRandomButton, teaseSlider]);
+    // sliders, does little idle bits and types nonsense. It never clicks/toggles
+    // controls; that mischief is rage-only.
+    if (Math.random() < 0.68) {
+      const actions = shuffled([
+        scrollActiveList,
+        jumpOnRandomButton,
+        teaseSlider,
+        microLife,
+        typeNonsense,
+      ]);
       for (const action of actions) {
         if (await action()) return;
       }
     }
     await roam();
-  }, [jumpOnRandomButton, roam, scrollActiveList, teaseSlider]);
+  }, [jumpOnRandomButton, microLife, roam, scrollActiveList, teaseSlider, typeNonsense]);
 
   // Leap onto an open modal and keep busy on it. In calm mode the mascot only
   // shows off — teases sliders and poses on the controls — but never clicks or
@@ -1637,6 +1841,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (looseButtonRef.current) clearLooseButton();
     clearChaosDebris();
     clearMischiefDecayTimer();
+    pendingRageRef.current = false;
+    setMouthFrame(null);
+    setSpeech(null);
     activityTokenRef.current += 1;
     activityBusyRef.current = false;
     cancelMotion();
@@ -1807,13 +2014,14 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       ];
       setThrowProgress(throwTimesRef.current.length);
       if (throwTimesRef.current.length >= THROWS_TO_CHAOS) {
-        // Let the final throw visibly leave the hand before the mascot takes over.
-        window.setTimeout(() => void startChaos(), 180);
+        // Don't snap to rage — let this throw splat against a wall and slide
+        // down first (handled by rageThrow), then chaos kicks in.
+        pendingRageRef.current = true;
       } else {
         scheduleMischiefDecay();
       }
     },
-    [clearMischiefDecayTimer, scheduleMischiefDecay, startChaos],
+    [clearMischiefDecayTimer, scheduleMischiefDecay],
   );
 
   const ejectCarriedButton = useCallback(
@@ -1896,20 +2104,103 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     [clearLooseButton, getRoot, resetStealClock],
   );
 
+  // The rage-triggering throw: hurl the mascot at the nearest wall, let it splat
+  // and stick for a beat, slide down the wall, puff dust on landing — then chaos.
+  const rageThrow = useCallback(
+    (velocity: MascotPosition) => {
+      cancelMotion();
+      const bounds = getBounds();
+      if (!bounds) {
+        pendingRageRef.current = false;
+        void startChaos();
+        return;
+      }
+      setEmotion("surprised");
+      setPhase("thrown");
+      const towardRight = positionRef.current.x < (bounds.minX + bounds.maxX) / 2;
+      const speed = Math.max(1.7, Math.abs(velocity.x));
+      let vx = towardRight ? speed : -speed;
+      let vy = clamp(velocity.y, -2.6, 1.0);
+      let previousTime = performance.now();
+      let mode: "fly" | "stick" | "slide" = "fly";
+      let stickUntil = 0;
+
+      const step = (now: number) => {
+        const dt = Math.min(28, now - previousTime);
+        previousTime = now;
+
+        if (mode === "stick") {
+          if (now >= stickUntil) {
+            mode = "slide";
+            vx = 0;
+            vy = 0.1;
+            setEmotion("angry");
+          } else {
+            motionFrameRef.current = window.requestAnimationFrame(step);
+            return;
+          }
+        }
+
+        vy += 0.0055 * dt;
+        if (mode === "fly") vx *= Math.pow(0.999, dt);
+        const next = {
+          x: positionRef.current.x + vx * dt,
+          y: positionRef.current.y + vy * dt,
+        };
+
+        if (mode === "fly" && (next.x <= bounds.minX || next.x >= bounds.maxX)) {
+          next.x = clamp(next.x, bounds.minX, bounds.maxX);
+          next.y = clamp(next.y, bounds.minY, bounds.maxY);
+          setPosition(next);
+          setEmotion("angry");
+          setPhase("wallslide");
+          mode = "stick";
+          stickUntil = now + 360;
+          motionFrameRef.current = window.requestAnimationFrame(step);
+          return;
+        }
+        if (next.y <= bounds.minY) {
+          next.y = bounds.minY;
+          vy = Math.abs(vy) * 0.4;
+        }
+        if (next.y >= bounds.maxY) {
+          next.y = bounds.maxY;
+          next.x = clamp(next.x, bounds.minX, bounds.maxX);
+          setPosition(next);
+          spawnSmoke(next.x, next.y);
+          motionFrameRef.current = null;
+          pendingRageRef.current = false;
+          window.setTimeout(() => void startChaos(), 150);
+          return;
+        }
+        setPosition(next);
+        motionFrameRef.current = window.requestAnimationFrame(step);
+      };
+
+      motionFrameRef.current = window.requestAnimationFrame(step);
+    },
+    [cancelMotion, getBounds, setPhase, setPosition, spawnSmoke, startChaos],
+  );
+
   const launchThrow = useCallback(
     (velocity: MascotPosition) => {
       cancelMotion();
       const bounds = getBounds();
       if (!bounds) return;
       ejectCarriedButton(velocity);
+      registerHardThrow(Math.hypot(velocity.x, velocity.y));
+      if (pendingRageRef.current) {
+        rageThrow(velocity);
+        return;
+      }
       setEmotion("surprised");
       setPhase("thrown");
-      registerHardThrow(Math.hypot(velocity.x, velocity.y));
 
       let vx = clamp(velocity.x, -3.2, 3.2);
       let vy = clamp(velocity.y, -3.2, 3.2);
       let previousTime = performance.now();
       let settledFrames = 0;
+      let puffed = false;
 
       const step = (now: number) => {
         const dt = Math.min(28, now - previousTime);
@@ -1930,6 +2221,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           bounced = true;
         }
         if (next.y <= bounds.minY || next.y >= bounds.maxY) {
+          // Kick up dust the first time it slams into the floor with some speed.
+          if (next.y >= bounds.maxY && !puffed && Math.abs(vy) > 0.55) {
+            puffed = true;
+            spawnSmoke(next.x, bounds.maxY);
+          }
           next.y = clamp(next.y, bounds.minY, bounds.maxY);
           vy *= -0.72;
           bounced = true;
@@ -1957,7 +2253,16 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
       motionFrameRef.current = window.requestAnimationFrame(step);
     },
-    [cancelMotion, ejectCarriedButton, getBounds, registerHardThrow, setPhase, setPosition],
+    [
+      cancelMotion,
+      ejectCarriedButton,
+      getBounds,
+      rageThrow,
+      registerHardThrow,
+      setPhase,
+      setPosition,
+      spawnSmoke,
+    ],
   );
 
   const undoChaos = useCallback(async () => {
@@ -2009,6 +2314,73 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }, 1_050);
   }, [attendModal, cancelMotion, clearEmotionTimer, scheduleMischiefDecay, setPhase]);
 
+  // Double-click trick — a quick flip/spin, then back to normal.
+  const doTrick = useCallback(() => {
+    if (chaosActiveRef.current || dragRef.current || carriedButtonRef.current) return;
+    scheduleMischiefDecay();
+    cancelMotion();
+    clearEmotionTimer();
+    setEmotion(Math.random() < 0.5 ? "excited" : "cool");
+    setPhase("trick");
+    emotionTimerRef.current = window.setTimeout(() => {
+      emotionTimerRef.current = null;
+      if (phaseRef.current === "trick") {
+        setEmotion("happy");
+        if (modalOpenRef.current) void attendModal();
+        else setPhase("idle");
+      }
+    }, 720);
+  }, [attendModal, cancelMotion, clearEmotionTimer, scheduleMischiefDecay, setPhase]);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  // Held down while it's clutching a stolen element → it wriggles angrily, drops
+  // the loot and bolts. Ends the drag cleanly so no phantom "button still held".
+  const breakFree = useCallback(() => {
+    clearLongPress();
+    const drag = dragRef.current;
+    if (drag) {
+      const target = characterRef.current;
+      if (target?.hasPointerCapture(drag.pointerId)) target.releasePointerCapture(drag.pointerId);
+      dragRef.current = null;
+    }
+    ignoreClickRef.current = true;
+    window.setTimeout(() => {
+      ignoreClickRef.current = false;
+    }, 450);
+    if (carriedButtonRef.current) ejectCarriedButton({ x: (Math.random() - 0.5) * 1.3, y: -0.35 });
+    setEmotion("angry");
+    setPhase("struggle");
+    window.setTimeout(() => {
+      if (phaseRef.current !== "struggle") return;
+      const bounds = getBounds();
+      if (!bounds) {
+        setPhase("idle");
+        return;
+      }
+      const dir = positionRef.current.x < (bounds.minX + bounds.maxX) / 2 ? 1 : -1;
+      const escape = {
+        x: clamp(
+          positionRef.current.x + dir * (130 + Math.random() * 130),
+          bounds.minX,
+          bounds.maxX,
+        ),
+        y: clamp(positionRef.current.y - 30 - Math.random() * 70, bounds.minY, bounds.maxY),
+      };
+      void animatePath([escape], RUN_SPEED, "running").then((done) => {
+        if (done && !chaosActiveRef.current && phaseRef.current === "running") {
+          setEmotion("neutral");
+          setPhase("idle");
+        }
+      });
+    }, 460);
+  }, [animatePath, clearLongPress, ejectCarriedButton, getBounds, setPhase]);
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (chaosActiveRef.current) return;
     const root = getRoot();
@@ -2037,6 +2409,21 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     event.currentTarget.setPointerCapture(event.pointerId);
     setEmotion("surprised");
     setPhase("dragging");
+    // Grabbing it while it holds loot and just… holding → it breaks free.
+    clearLongPress();
+    if (carriedButtonRef.current) {
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null;
+        const active = dragRef.current;
+        if (
+          active &&
+          active.pointerId === event.pointerId &&
+          !active.moved &&
+          carriedButtonRef.current
+        )
+          breakFree();
+      }, 720);
+    }
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -2047,7 +2434,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     const rect = root.getBoundingClientRect();
     const now = performance.now();
     const previous = drag.samples[drag.samples.length - 1];
-    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 5) drag.moved = true;
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 5) {
+      drag.moved = true;
+      clearLongPress(); // it's a drag, not a hold — cancel the break-free timer
+    }
 
     if (previous) {
       const dx = event.clientX - previous.x;
@@ -2077,6 +2467,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   const completeDrag = useCallback(
     (pointerId?: number, captureTarget?: HTMLDivElement) => {
+      clearLongPress();
       const drag = dragRef.current;
       if (!drag || (pointerId !== undefined && drag.pointerId !== pointerId)) return;
       dragRef.current = null;
@@ -2107,7 +2498,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         else setPhase(carriedButtonRef.current ? "carrying" : "idle");
       }
     },
-    [attendModal, launchThrow, setPhase],
+    [attendModal, clearLongPress, launchThrow, setPhase],
   );
 
   const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -2123,7 +2514,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       restoreCarriedButton(true);
       return;
     }
-    petMascot();
+    // Second click within the window → trick; otherwise a (deferred) pet.
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      doTrick();
+      return;
+    }
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      petMascot();
+    }, 240);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -2232,6 +2633,14 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           void attendModal();
         }
       } else if (
+        carriedButtonRef.current &&
+        phaseRef.current === "carrying" &&
+        !dragRef.current &&
+        !chaosActiveRef.current
+      ) {
+        // Snack on the loot instead of just parading it around.
+        if (Math.random() < 0.55) void eatCarriedButton();
+      } else if (
         Date.now() >= nextStealAtRef.current &&
         !carriedButtonRef.current &&
         !looseButtonRef.current
@@ -2245,13 +2654,15 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       window.clearTimeout(firstRoam);
       window.clearInterval(interval);
     };
-  }, [attendModal, enabled, runAutonomousAction, stealRandomButton]);
+  }, [attendModal, eatCarriedButton, enabled, runAutonomousAction, stealRandomButton]);
 
   useEffect(() => {
     if (!enabled || chaosActiveRef.current || dragRef.current) return;
     activityTokenRef.current += 1;
     activityBusyRef.current = false;
     cancelMotion();
+    setMouthFrame(null);
+    setSpeech(null);
     if (carriedButtonRef.current) restoreCarriedButton(false);
     if (looseButtonRef.current) clearLooseButton();
     setPhase("idle");
@@ -2290,13 +2701,23 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       chaosTokenRef.current += 1;
       activityTokenRef.current += 1;
       chaosActiveRef.current = false;
+      pendingRageRef.current = false;
       cancelMotion();
       clearEmotionTimer();
       clearMischiefDecayTimer();
+      clearLongPress();
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
       activityBusyRef.current = false;
       dragRef.current = null;
       setRagePress(null);
       setModalForeground(false);
+      setMouthFrame(null);
+      setSpeech(null);
+      smokeTokenRef.current += 1;
+      setSmoke(null);
       clearChaosDebris();
       if (carriedButtonRef.current) restoreCarriedButton(false);
       if (looseButtonRef.current) clearLooseButton();
@@ -2305,6 +2726,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     cancelMotion,
     clearEmotionTimer,
     clearChaosDebris,
+    clearLongPress,
     clearLooseButton,
     clearMischiefDecayTimer,
     enabled,
@@ -2321,10 +2743,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     () => () => {
       chaosTokenRef.current += 1;
       activityTokenRef.current += 1;
+      smokeTokenRef.current += 1;
       cancelMotion();
       clearEmotionTimer();
       clearMischiefDecayTimer();
       clearChaosDebris();
+      if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current);
+      if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
       if (looseButtonFrameRef.current !== null)
         window.cancelAnimationFrame(looseButtonFrameRef.current);
       if (looseButtonReturnTimerRef.current !== null)
@@ -2376,6 +2801,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         />
       )}
 
+      {smoke && (
+        <img
+          className="launcher-mascot-smoke"
+          src={SMOKE_FRAMES[smoke.frame].src}
+          style={{ transform: `translate3d(${smoke.x.toFixed(2)}px, ${smoke.y.toFixed(2)}px, 0)` }}
+          alt=""
+          draggable={false}
+          aria-hidden="true"
+        />
+      )}
+
       <div
         ref={characterRef}
         className={`launcher-mascot-character launcher-mascot-character--${phase}`}
@@ -2400,7 +2836,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
             {"!".repeat(throwProgress)}
           </span>
         )}
-        {carriedButton && (
+        {speech !== null && (
+          <span className="launcher-mascot-speech" aria-hidden="true">
+            <span className="launcher-mascot-speech-text">{speech}</span>
+            <span className="launcher-mascot-speech-caret" />
+          </span>
+        )}
+        {carriedButton && phase !== "eating" && (
           <span
             className="launcher-mascot-cargo"
             style={{ width: carriedButton.width, height: carriedButton.height }}
@@ -2419,11 +2861,37 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         )}
         <img
           className="launcher-mascot-body"
-          src={MASCOT_SPRITES[emotion]}
+          src={mouthFrame !== null ? MOUTH_FRAMES[mouthFrame].src : MASCOT_SPRITES[emotion]}
           alt=""
           draggable={false}
           aria-hidden="true"
         />
+        {carriedButton && phase === "eating" && (
+          <div
+            ref={eatReplicaRef}
+            className="launcher-mascot-eat"
+            style={{
+              width: carriedButton.width,
+              height: carriedButton.height,
+              transform: `translate(-50%, -50%) scale(${(
+                (26 / Math.max(1, carriedButton.width)) *
+                (0.55 + (mouthFrame ?? 0) * 0.15)
+              ).toFixed(3)})`,
+              opacity: (mouthFrame ?? 0) === 0 ? 0 : 1,
+            }}
+            aria-hidden="true"
+          />
+        )}
+        {phase === "typing" && (
+          <span className="launcher-mascot-keyboard" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+        )}
         <span className="launcher-mascot-tooltip" aria-hidden="true">
           {carriedButton ? "Нажми, чтобы вернуть кнопку" : "Погладь или брось маскота"}
         </span>
