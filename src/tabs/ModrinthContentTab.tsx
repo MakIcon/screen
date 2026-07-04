@@ -1,9 +1,6 @@
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
-import type {
-  ModrinthContentController,
-  ModrinthContentKind,
-} from "../hooks/useModrinthContent";
+import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 import type { DropdownKey, InstanceItem } from "../types";
 
@@ -118,6 +115,7 @@ type ModrinthContentTabProps = {
     target: PlaceholderTarget,
     overrides?: { accountType?: string; buildState?: string },
   ) => string;
+  mascotHiddenProjectIds?: string[];
 };
 
 function TrashIcon() {
@@ -147,6 +145,7 @@ export function ModrinthContentTab({
   openDropdown,
   setOpenDropdown,
   resolveForTarget,
+  mascotHiddenProjectIds = [],
 }: ModrinthContentTabProps) {
   const copy = CONTENT_PRESENTATION[kind];
   const {
@@ -164,6 +163,11 @@ export function ModrinthContentTab({
     install,
     uninstall,
   } = controller;
+  const hiddenProjectIds = new Set(mascotHiddenProjectIds);
+  const visibleItems = items.filter((item) => !hiddenProjectIds.has(item.projectId));
+  const visibleInstalledItems = installedItems.filter(
+    (item) => !item.projectId || !hiddenProjectIds.has(item.projectId),
+  );
 
   return (
     <section className="launcher-panel">
@@ -185,7 +189,7 @@ export function ModrinthContentTab({
           <div className="card-topline">
             <span className="panel-label">{copy.catalogLabel}</span>
             <span className="status-code">
-              {items.length} / {totalHits} RESULTS
+              {visibleItems.length} / {totalHits} RESULTS
             </span>
           </div>
 
@@ -211,27 +215,34 @@ export function ModrinthContentTab({
               }}
               style={{ flex: 1, minHeight: 0 }}
             >
-              {loading && items.length === 0 ? (
+              {loading && visibleItems.length === 0 ? (
                 <div className="empty-state-box loading-state-box">
                   <strong>{copy.loadingTitle}</strong>
                   <p>{copy.loadingText}</p>
                 </div>
-              ) : items.length === 0 ? (
+              ) : visibleItems.length === 0 ? (
                 <div className="empty-state-box">
                   <strong>NOTHING FOUND</strong>
                   <p>{copy.emptyText}</p>
                 </div>
               ) : (
                 <>
-                  {items.map((item) => {
+                  {visibleItems.map((item) => {
                     const category =
-                      item.displayCategories?.[0]
-                      || item.categories?.[0]
-                      || copy.fallbackCategory(selectedTarget);
+                      item.displayCategories?.[0] ||
+                      item.categories?.[0] ||
+                      copy.fallbackCategory(selectedTarget);
                     const busy = busyProjectId === item.projectId;
 
                     return (
-                      <div className="mod-card modrinth-card" key={item.projectId}>
+                      <div
+                        className="mod-card modrinth-card"
+                        key={item.projectId}
+                        data-mascot-content-kind={kind}
+                        data-mascot-project-id={item.projectId}
+                        data-mascot-content-title={item.title}
+                        data-mascot-installed={item.installed ? "true" : "false"}
+                      >
                         <div className="mod-card-head">
                           <div className="mod-title-row">
                             <h3>{item.title}</h3>
@@ -358,7 +369,7 @@ export function ModrinthContentTab({
           <div className="installed-mods-block">
             <div className="card-topline installed-mods-head">
               <span className="panel-label">{copy.installedLabel}</span>
-              <span className="status-code">{installedItems.length}</span>
+              <span className="status-code">{visibleInstalledItems.length}</span>
             </div>
 
             <div className="installed-mods-list">
@@ -367,16 +378,22 @@ export function ModrinthContentTab({
                   <span className="catalog-loading-spinner" aria-hidden="true" />
                   {copy.installedLoadingText}
                 </div>
-              ) : installedItems.length === 0 ? (
+              ) : visibleInstalledItems.length === 0 ? (
                 <div className="empty-state-box compact-empty">
                   <strong>EMPTY</strong>
                   <p>{copy.installedEmptyText}</p>
                 </div>
               ) : (
-                installedItems.map((item) => {
+                visibleInstalledItems.map((item) => {
                   const busy = busyProjectId === item.projectId;
                   return (
-                    <div className="installed-mod-swipe" key={item.filename}>
+                    <div
+                      className="installed-mod-swipe"
+                      key={item.filename}
+                      data-mascot-content-kind={kind}
+                      data-mascot-project-id={item.projectId || undefined}
+                      data-mascot-content-title={item.title}
+                    >
                       <div className="installed-mod-delete-slot">
                         <button
                           className="installed-mod-delete-btn"

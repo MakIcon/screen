@@ -27,11 +27,34 @@ const MASCOT_SIZE = 64;
 const ROAM_INTERVAL_MS = 3_800;
 const WALK_SPEED = 205;
 const RUN_SPEED = 355;
+const CHAOS_SPEED = 1_600;
 const THROW_THRESHOLD = 1.15;
 const THROW_HISTORY_MS = 11_000;
 const THROWS_TO_CHAOS = 3;
+const MISCHIEF_DECAY_MS = 8_000;
 const MIN_STEAL_DELAY_MS = 18_000;
 const STEAL_DELAY_VARIANCE_MS = 14_000;
+const STEAL_REACH_PX = 54;
+const MAX_CHAOS_DEBRIS = 14;
+
+const STEALABLE_SELECTOR = [
+  "[data-mascot-stealable]",
+  "button:not(:disabled)",
+  ".mod-card",
+  ".installed-mod-row",
+  ".bme-row",
+  ".instance-card",
+  ".info-panel",
+  ".detail-block",
+  ".inline-dropdown",
+  ".field",
+  ".brs-section",
+  ".settings-toggle-row",
+].join(", ");
+
+export const MASCOT_FAKE_DELETE_EVENT = "launcher-mascot-fake-delete";
+export const MASCOT_FAKE_CONTENT_DELETE_EVENT = "launcher-mascot-fake-content-delete";
+export const MASCOT_FAKE_RESTORE_EVENT = "launcher-mascot-fake-restore";
 
 const MASCOT_SPRITES = {
   angry: angrySprite,
@@ -56,6 +79,7 @@ type MascotPhase =
   | "thrown"
   | "petting"
   | "carrying"
+  | "climbing"
   | "playing"
   | "scrolling"
   | "chaos";
@@ -69,8 +93,8 @@ type PiskelAsset = {
   src: string;
 };
 
-type CarriedButton = {
-  element: HTMLButtonElement;
+type CarriedElement = {
+  element: HTMLElement;
   width: number;
   height: number;
   previousAriaHidden: string | null;
@@ -91,6 +115,12 @@ type DragState = {
 type ChangedToggle = {
   label: string;
   wasEnabled: boolean;
+};
+
+type ChaosDebris = {
+  source: HTMLElement;
+  clone: HTMLElement;
+  previousAriaHidden: string | null;
 };
 
 type ChaosSnapshot = {
@@ -164,8 +194,38 @@ function getToggleLabel(toggle: HTMLButtonElement) {
   );
 }
 
-function isStealableButton(button: HTMLButtonElement) {
-  return !button.matches("[data-mascot-ignore], .mascot-button-carried-source");
+function isStealableElement(element: HTMLElement) {
+  if (element.matches("[data-mascot-ignore], .mascot-button-carried-source")) return false;
+  if (element.closest(".launcher-mascot-layer, .ep-backdrop, .confirm-overlay")) return false;
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return false;
+  return true;
+}
+
+function setNativeControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  setter?.call(element, value);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function nudgeSlider(slider: HTMLElement) {
+  const current = Number(slider.getAttribute("aria-valuenow"));
+  const min = Number(slider.getAttribute("aria-valuemin"));
+  const max = Number(slider.getAttribute("aria-valuemax"));
+  const canDecrease = Number.isFinite(current) && Number.isFinite(min) && current > min;
+  const canIncrease = Number.isFinite(current) && Number.isFinite(max) && current < max;
+  const key = canDecrease && (!canIncrease || Math.random() < 0.5) ? "ArrowLeft" : "ArrowRight";
+  const steps = 1 + Math.floor(Math.random() * 5);
+
+  slider.focus({ preventScroll: true });
+  for (let index = 0; index < steps; index += 1) {
+    slider.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    slider.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+  }
 }
 
 function parsePiskelAsset(source: string): PiskelAsset {
@@ -229,39 +289,40 @@ function copyComputedTree(source: HTMLElement, clone: HTMLElement) {
   });
 }
 
-function mountButtonReplica(holder: HTMLElement, button: CarriedButton) {
-  const clone = button.element.cloneNode(true) as HTMLButtonElement;
-  button.element.classList.remove("mascot-button-carried-source");
+function mountElementReplica(holder: HTMLElement, carried: CarriedElement) {
+  const clone = carried.element.cloneNode(true) as HTMLElement;
+  carried.element.classList.remove("mascot-button-carried-source");
   try {
-    copyComputedTree(button.element, clone);
+    copyComputedTree(carried.element, clone);
   } finally {
-    button.element.classList.add("mascot-button-carried-source");
+    carried.element.classList.add("mascot-button-carried-source");
   }
   clone.classList.remove("mascot-button-carried-source");
   clone.removeAttribute("id");
   clone.removeAttribute("aria-hidden");
   clone.setAttribute("aria-hidden", "true");
   clone.tabIndex = -1;
-  clone.style.setProperty("width", `${button.width}px`, "important");
-  clone.style.setProperty("height", `${button.height}px`, "important");
-  clone.style.setProperty("min-width", `${button.width}px`, "important");
-  clone.style.setProperty("max-width", `${button.width}px`, "important");
+  clone.style.setProperty("width", `${carried.width}px`, "important");
+  clone.style.setProperty("height", `${carried.height}px`, "important");
+  clone.style.setProperty("min-width", `${carried.width}px`, "important");
+  clone.style.setProperty("max-width", `${carried.width}px`, "important");
   clone.style.setProperty("box-sizing", "border-box", "important");
   clone.style.setProperty("position", "relative", "important");
   clone.style.setProperty("inset", "auto", "important");
   clone.style.setProperty("margin", "0", "important");
   clone.style.setProperty("transform", "none", "important");
   clone.style.setProperty("visibility", "visible", "important");
+  clone.style.setProperty("opacity", "1", "important");
   clone.style.setProperty("pointer-events", "none", "important");
   holder.replaceChildren(clone);
   return () => holder.replaceChildren();
 }
 
-function restoreButtonElement(button: CarriedButton) {
-  if (!button.element.isConnected) return;
-  button.element.classList.remove("mascot-button-carried-source");
-  if (button.previousAriaHidden === null) button.element.removeAttribute("aria-hidden");
-  else button.element.setAttribute("aria-hidden", button.previousAriaHidden);
+function restoreCarriedElement(carried: CarriedElement) {
+  if (!carried.element.isConnected) return;
+  carried.element.classList.remove("mascot-button-carried-source");
+  if (carried.previousAriaHidden === null) carried.element.removeAttribute("aria-hidden");
+  else carried.element.setAttribute("aria-hidden", carried.previousAriaHidden);
 }
 
 export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
@@ -273,28 +334,34 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const motionFrameRef = useRef<number | null>(null);
   const motionFinishRef = useRef<((completed: boolean) => void) | null>(null);
   const emotionTimerRef = useRef<number | null>(null);
+  const mischiefDecayTimerRef = useRef<number | null>(null);
   const throwTimesRef = useRef<number[]>([]);
   const ignoreClickRef = useRef(false);
   const chaosTokenRef = useRef(0);
   const chaosActiveRef = useRef(false);
   const chaosSnapshotRef = useRef<ChaosSnapshot | null>(null);
+  const chaosDebrisRef = useRef<ChaosDebris[]>([]);
+  const modalOpenRef = useRef(false);
+  const activeModalRef = useRef<HTMLElement | null>(null);
+  const modalClimbTokenRef = useRef(0);
   const activeIndexRef = useRef(activeIndex);
   const nextStealAtRef = useRef(
     Date.now() + MIN_STEAL_DELAY_MS + Math.random() * STEAL_DELAY_VARIANCE_MS,
   );
-  const carriedButtonRef = useRef<CarriedButton | null>(null);
-  const looseButtonRef = useRef<CarriedButton | null>(null);
+  const carriedButtonRef = useRef<CarriedElement | null>(null);
+  const looseButtonRef = useRef<CarriedElement | null>(null);
   const looseButtonFrameRef = useRef<number | null>(null);
   const looseButtonReturnTimerRef = useRef<number | null>(null);
   const activityBusyRef = useRef(false);
+  const activityTokenRef = useRef(0);
   const replicaRef = useRef<HTMLDivElement | null>(null);
   const looseButtonReplicaRef = useRef<HTMLDivElement | null>(null);
 
   const [position, setPositionState] = useState(positionRef.current);
   const [phase, setPhaseState] = useState<MascotPhase>("idle");
   const [emotion, setEmotion] = useState<MascotEmotion>("neutral");
-  const [carriedButton, setCarriedButton] = useState<CarriedButton | null>(null);
-  const [looseButton, setLooseButton] = useState<CarriedButton | null>(null);
+  const [carriedButton, setCarriedButton] = useState<CarriedElement | null>(null);
+  const [looseButton, setLooseButton] = useState<CarriedElement | null>(null);
   const [looseButtonTransform, setLooseButtonTransform] = useState<LooseButtonTransform>({
     x: 0,
     y: 0,
@@ -302,6 +369,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   });
   const [ragePress, setRagePress] = useState<MascotPosition | null>(null);
   const [chaosActive, setChaosActive] = useState(false);
+  const [modalForeground, setModalForeground] = useState(false);
   const [throwProgress, setThrowProgress] = useState(0);
 
   activeIndexRef.current = activeIndex;
@@ -324,6 +392,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const getActiveStage = useCallback(() => {
     const stage = getRoot()?.querySelector(".main-stage");
     return stage instanceof HTMLElement ? stage : null;
+  }, [getRoot]);
+
+  const getSceneRoot = useCallback(() => {
+    const root = layerRef.current?.closest(".gallery-root");
+    return root instanceof HTMLElement ? root : getRoot();
   }, [getRoot]);
 
   const getBounds = useCallback(() => {
@@ -365,6 +438,39 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       emotionTimerRef.current = null;
     }
   }, []);
+
+  const clearMischiefDecayTimer = useCallback(() => {
+    if (mischiefDecayTimerRef.current !== null) {
+      window.clearTimeout(mischiefDecayTimerRef.current);
+      mischiefDecayTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleMischiefDecay = useCallback(() => {
+    clearMischiefDecayTimer();
+    if (throwTimesRef.current.length === 0) return;
+    mischiefDecayTimerRef.current = window.setTimeout(() => {
+      mischiefDecayTimerRef.current = null;
+      throwTimesRef.current = [];
+      setThrowProgress(0);
+    }, MISCHIEF_DECAY_MS);
+  }, [clearMischiefDecayTimer]);
+
+  const isNearElement = useCallback(
+    (element: HTMLElement, reach = STEAL_REACH_PX) => {
+      const root = getRoot();
+      if (!root || !element.isConnected) return false;
+      const rootRect = root.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
+      if (!isVisible(element, rootRect)) return false;
+      const centerX = rootRect.left + positionRef.current.x + MASCOT_SIZE / 2;
+      const centerY = rootRect.top + positionRef.current.y + MASCOT_SIZE / 2;
+      const dx = Math.max(rect.left - centerX, 0, centerX - rect.right);
+      const dy = Math.max(rect.top - centerY, 0, centerY - rect.bottom);
+      return Math.hypot(dx, dy) <= reach;
+    },
+    [getRoot],
+  );
 
   const animatePath = useCallback(
     (rawPoints: MascotPosition[], speed: number, nextPhase: MascotPhase) => {
@@ -514,16 +620,95 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
     const loose = looseButtonRef.current;
     looseButtonRef.current = null;
-    if (loose) restoreButtonElement(loose);
+    if (loose) restoreCarriedElement(loose);
     setLooseButton(null);
   }, []);
+
+  const clearChaosDebris = useCallback(() => {
+    const debris = chaosDebrisRef.current.splice(0);
+    debris.forEach(({ source, clone, previousAriaHidden }) => {
+      clone.remove();
+      if (!source.isConnected) return;
+      source.classList.remove("mascot-button-carried-source");
+      if (previousAriaHidden === null) source.removeAttribute("aria-hidden");
+      else source.setAttribute("aria-hidden", previousAriaHidden);
+    });
+  }, []);
+
+  const scatterChaosElement = useCallback(
+    (element: HTMLElement) => {
+      const root = getRoot();
+      const layer = layerRef.current;
+      if (
+        !root ||
+        !layer ||
+        !element.isConnected ||
+        chaosDebrisRef.current.length >= MAX_CHAOS_DEBRIS ||
+        chaosDebrisRef.current.some(({ source }) => source === element)
+      )
+        return false;
+
+      const rootRect = root.getBoundingClientRect();
+      if (!isVisible(element, rootRect)) return false;
+      const rect = element.getBoundingClientRect();
+      const carried: CarriedElement = {
+        element,
+        width: rect.width,
+        height: rect.height,
+        previousAriaHidden: element.getAttribute("aria-hidden"),
+      };
+      const clone = document.createElement("div");
+      clone.className = "launcher-mascot-debris";
+      clone.setAttribute("aria-hidden", "true");
+      clone.style.width = `${rect.width}px`;
+      clone.style.height = `${rect.height}px`;
+
+      const scale = 1;
+      const visualWidth = rect.width;
+      const visualHeight = rect.height;
+      const fromX = rect.left - rootRect.left;
+      const fromY = rect.top - rootRect.top;
+      const toX = clamp(
+        12 + Math.random() * Math.max(0, root.clientWidth - visualWidth - 24),
+        4,
+        Math.max(4, root.clientWidth - visualWidth - 4),
+      );
+      const toY = clamp(
+        92 + Math.random() * Math.max(0, root.clientHeight - visualHeight - 120),
+        4,
+        Math.max(4, root.clientHeight - visualHeight - 4),
+      );
+      const rotation = (Math.random() > 0.5 ? 1 : -1) * (12 + Math.random() * 30);
+      clone.style.setProperty("--debris-from-x", `${fromX}px`);
+      clone.style.setProperty("--debris-from-y", `${fromY}px`);
+      clone.style.setProperty("--debris-to-x", `${toX}px`);
+      clone.style.setProperty("--debris-to-y", `${toY}px`);
+      clone.style.setProperty("--debris-mid-x", `${(fromX + toX) / 2}px`);
+      clone.style.setProperty("--debris-mid-y", `${(fromY + toY) / 2 - 42}px`);
+      clone.style.setProperty("--debris-rotation", `${rotation}deg`);
+      clone.style.setProperty("--debris-mid-rotation", `${rotation * 0.72}deg`);
+      clone.style.setProperty("--debris-scale", String(scale));
+      clone.style.transform = `translate3d(${toX}px, ${toY}px, 0) rotate(${rotation}deg) scale(${scale})`;
+
+      mountElementReplica(clone, carried);
+      element.setAttribute("aria-hidden", "true");
+      layer.appendChild(clone);
+      chaosDebrisRef.current.push({
+        source: element,
+        clone,
+        previousAriaHidden: carried.previousAriaHidden,
+      });
+      return true;
+    },
+    [getRoot],
+  );
 
   const restoreCarriedButton = useCallback(
     (celebrate = true) => {
       const carried = carriedButtonRef.current;
       if (!carried) return;
       carriedButtonRef.current = null;
-      restoreButtonElement(carried);
+      restoreCarriedElement(carried);
       setCarriedButton(null);
       resetStealClock();
       setEmotion(celebrate ? "happy" : "neutral");
@@ -535,18 +720,19 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   useEffect(() => {
     const holder = replicaRef.current;
     if (!holder || !carriedButton) return;
-    return mountButtonReplica(holder, carriedButton);
+    return mountElementReplica(holder, carriedButton);
   }, [carriedButton]);
 
   useEffect(() => {
     const holder = looseButtonReplicaRef.current;
     if (!holder || !looseButton) return;
-    return mountButtonReplica(holder, looseButton);
+    return mountElementReplica(holder, looseButton);
   }, [looseButton]);
 
   const stealRandomButton = useCallback(async () => {
     if (
       chaosActiveRef.current ||
+      modalOpenRef.current ||
       dragRef.current ||
       carriedButtonRef.current ||
       looseButtonRef.current ||
@@ -556,11 +742,14 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
     const root = getRoot();
     const stage = getActiveStage();
-    if (!root || !stage) return false;
+    const scene = getSceneRoot();
+    if (!root || !stage || !scene) return false;
+    const stealScope =
+      scene.querySelector<HTMLElement>(".ep-popup--open[aria-hidden='false']") ?? stage;
     const rootRect = root.getBoundingClientRect();
-    const candidates = Array.from(stage.querySelectorAll<HTMLButtonElement>("button")).filter(
-      (button) => isVisible(button, rootRect) && isStealableButton(button),
-    );
+    const candidates = Array.from(
+      stealScope.querySelectorAll<HTMLElement>(STEALABLE_SELECTOR),
+    ).filter((element) => isVisible(element, rootRect) && isStealableElement(element));
     const target = randomItem(candidates);
     if (!target) {
       resetStealClock();
@@ -568,11 +757,23 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     }
 
     setEmotion("cool");
+    const tabIndex = activeIndexRef.current;
     const arrived = await animatePath(buildContourPath(target), RUN_SPEED, "running");
-    if (!arrived || !target.isConnected || chaosActiveRef.current) return false;
+    if (
+      !arrived ||
+      !target.isConnected ||
+      chaosActiveRef.current ||
+      tabIndex !== activeIndexRef.current ||
+      !isNearElement(target)
+    ) {
+      const interruptedPhase = phaseRef.current as MascotPhase;
+      if (!chaosActiveRef.current && interruptedPhase === "running") setPhase("idle");
+      resetStealClock();
+      return false;
+    }
 
     const targetRect = target.getBoundingClientRect();
-    const carried: CarriedButton = {
+    const carried: CarriedElement = {
       element: target,
       width: targetRect.width,
       height: targetRect.height,
@@ -598,9 +799,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       ),
     });
     const current = positionRef.current;
+    const sizeWeight = Math.sqrt(carried.width * carried.height) / MASCOT_SIZE;
+    const carrySpeed = clamp(RUN_SPEED / (0.7 + sizeWeight * 0.42), 82, RUN_SPEED);
     const escaped = await animatePath(
       [{ x: destination.x, y: current.y }, destination],
-      RUN_SPEED,
+      carrySpeed,
       "carrying",
     );
     if (escaped && carriedButtonRef.current) setPhase("carrying");
@@ -612,6 +815,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     clampPosition,
     getActiveStage,
     getRoot,
+    getSceneRoot,
+    isNearElement,
     resetStealClock,
     setPhase,
   ]);
@@ -642,27 +847,28 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     const rootRect = root.getBoundingClientRect();
     const target = randomItem(
       Array.from(stage.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")).filter(
-        (button) => isVisible(button, rootRect) && isStealableButton(button),
+        (button) => isVisible(button, rootRect) && isStealableElement(button),
       ),
     );
     if (!target) return false;
 
     activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
     const tabIndex = activeIndexRef.current;
     try {
       setEmotion("excited");
       const arrived = await animatePath(buildContourPath(target), RUN_SPEED, "running");
-      if (!arrived || !target.isConnected || tabIndex !== activeIndexRef.current) return false;
-      const rect = target.getBoundingClientRect();
-      setPosition(
-        clampPosition({
-          x: rect.left - rootRect.left + rect.width / 2 - MASCOT_SIZE / 2,
-          y: rect.top - rootRect.top - MASCOT_SIZE + 16,
-        }),
-      );
+      if (
+        !arrived ||
+        !target.isConnected ||
+        tabIndex !== activeIndexRef.current ||
+        activityToken !== activityTokenRef.current ||
+        !isNearElement(target)
+      )
+        return false;
       setPhase("playing");
       await wait(1_150);
-      return true;
+      return activityToken === activityTokenRef.current;
     } finally {
       activityBusyRef.current = false;
       const finishingPhase = phaseRef.current as MascotPhase;
@@ -671,15 +877,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [
-    animatePath,
-    buildContourPath,
-    clampPosition,
-    getActiveStage,
-    getRoot,
-    setPhase,
-    setPosition,
-  ]);
+  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
   const playWithDropdown = useCallback(async () => {
     if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
@@ -695,23 +893,30 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (!trigger) return false;
 
     activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
     const tabIndex = activeIndexRef.current;
     try {
       setEmotion("cool");
       const arrived = await animatePath(buildContourPath(trigger), RUN_SPEED, "running");
-      if (!arrived || !trigger.isConnected || tabIndex !== activeIndexRef.current) return false;
-      const rect = trigger.getBoundingClientRect();
-      setPosition(
-        clampPosition({
-          x: rect.left - rootRect.left + rect.width / 2 - MASCOT_SIZE / 2,
-          y: rect.top - rootRect.top - MASCOT_SIZE + 18,
-        }),
-      );
+      if (
+        !arrived ||
+        !trigger.isConnected ||
+        tabIndex !== activeIndexRef.current ||
+        activityToken !== activityTokenRef.current ||
+        !isNearElement(trigger)
+      )
+        return false;
       setPhase("playing");
 
       const clickCount = Math.random() > 0.55 ? 4 : 2;
       for (let clickIndex = 0; clickIndex < clickCount; clickIndex += 1) {
-        if (!trigger.isConnected || tabIndex !== activeIndexRef.current) return false;
+        if (
+          !trigger.isConnected ||
+          tabIndex !== activeIndexRef.current ||
+          activityToken !== activityTokenRef.current ||
+          !isNearElement(trigger)
+        )
+          return false;
         trigger.click();
         setEmotion(clickIndex % 2 === 0 ? "excited" : "happy");
         await wait(430);
@@ -725,15 +930,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [
-    animatePath,
-    buildContourPath,
-    clampPosition,
-    getActiveStage,
-    getRoot,
-    setPhase,
-    setPosition,
-  ]);
+  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
   const scrollActiveList = useCallback(async () => {
     if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
@@ -754,24 +951,31 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (!scrollable) return false;
 
     activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
     const tabIndex = activeIndexRef.current;
     try {
       setEmotion("cool");
       const arrived = await animatePath(buildContourPath(scrollable), WALK_SPEED, "walking");
-      if (!arrived || !scrollable.isConnected || tabIndex !== activeIndexRef.current) return false;
-      const rect = scrollable.getBoundingClientRect();
-      setPosition(
-        clampPosition({
-          x: rect.right - rootRect.left - MASCOT_SIZE + 10,
-          y: rect.top - rootRect.top + rect.height / 2 - MASCOT_SIZE / 2,
-        }),
-      );
+      if (
+        !arrived ||
+        !scrollable.isConnected ||
+        tabIndex !== activeIndexRef.current ||
+        activityToken !== activityTokenRef.current ||
+        !isNearElement(scrollable)
+      )
+        return false;
       setPhase("scrolling");
 
       const maxScrollTop = scrollable.scrollHeight - scrollable.clientHeight;
       let direction = scrollable.scrollTop > maxScrollTop * 0.72 ? -1 : 1;
       for (let step = 0; step < 3; step += 1) {
-        if (!scrollable.isConnected || tabIndex !== activeIndexRef.current) return false;
+        if (
+          !scrollable.isConnected ||
+          tabIndex !== activeIndexRef.current ||
+          activityToken !== activityTokenRef.current ||
+          !isNearElement(scrollable)
+        )
+          return false;
         const nextTop = clamp(
           scrollable.scrollTop + direction * Math.max(80, scrollable.clientHeight * 0.42),
           0,
@@ -790,21 +994,14 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [
-    animatePath,
-    buildContourPath,
-    clampPosition,
-    getActiveStage,
-    getRoot,
-    setPhase,
-    setPosition,
-  ]);
+  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
 
   const runAutonomousAction = useCallback(async () => {
     if (
       activityBusyRef.current ||
       dragRef.current ||
       chaosActiveRef.current ||
+      modalOpenRef.current ||
       carriedButtonRef.current ||
       looseButtonRef.current ||
       phaseRef.current !== "idle"
@@ -824,13 +1021,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     async (element: HTMLElement, token: number) => {
       if (token !== chaosTokenRef.current || !element.isConnected) return false;
       setEmotion(randomItem(["angry", "cool", "excited", "surprised"]) ?? "angry");
-      return animatePath(buildContourPath(element, 1), RUN_SPEED, "chaos");
+      const approachPath = buildContourPath(element, 1).slice(0, 2);
+      const arrived = await animatePath(approachPath, CHAOS_SPEED, "chaos");
+      return (
+        arrived && token === chaosTokenRef.current && element.isConnected && isNearElement(element)
+      );
     },
-    [animatePath, buildContourPath],
+    [animatePath, buildContourPath, isNearElement],
   );
 
   const ragePressButton = useCallback(
-    async (element: HTMLButtonElement, token: number, press: () => void, settleMs = 260) => {
+    async (element: HTMLElement, token: number, press: () => void, settleMs = 180) => {
       if (!(await moveToElement(element, token)) || token !== chaosTokenRef.current) return false;
       const root = getRoot();
       if (!root || !element.isConnected) return false;
@@ -841,17 +1042,326 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         x: clamp(rect.left - rootRect.left - 26, 2, rootRect.width - 34),
         y: clamp(rect.top - rootRect.top + rect.height / 2 - 16, 2, rootRect.height - 34),
       });
-      await wait(150);
-      if (token !== chaosTokenRef.current) {
+      try {
+        await wait(90);
+        if (token !== chaosTokenRef.current) return false;
+        press();
+        await wait(Math.min(settleMs, 420));
+        return token === chaosTokenRef.current;
+      } finally {
         setRagePress(null);
-        return false;
       }
-      press();
-      await wait(settleMs);
-      setRagePress(null);
-      return token === chaosTokenRef.current;
     },
     [getRoot, moveToElement],
+  );
+
+  const ragePressWindowControls = useCallback(
+    async (token: number) => {
+      const root = getRoot();
+      if (!root || token !== chaosTokenRef.current) return false;
+      const controls = Array.from(
+        root.querySelectorAll<HTMLButtonElement>(".nav-controls button:not(:disabled)"),
+      ).filter((button) => isVisible(button, root.getBoundingClientRect()));
+
+      for (const button of controls) {
+        if (token !== chaosTokenRef.current) return false;
+        await ragePressButton(
+          button,
+          token,
+          () => {
+            button.classList.add("mascot-window-button-pressed");
+            window.setTimeout(() => button.classList.remove("mascot-window-button-pressed"), 260);
+          },
+          150,
+        );
+      }
+      return token === chaosTokenRef.current;
+    },
+    [getRoot, ragePressButton],
+  );
+
+  const rageScatterCurrentTab = useCallback(
+    async (token: number) => {
+      const root = getRoot();
+      if (!root || token !== chaosTokenRef.current) return false;
+      const rootRect = root.getBoundingClientRect();
+      const pool = shuffled(
+        Array.from(
+          root.querySelectorAll<HTMLElement>(
+            [
+              ".main-stage .mod-card",
+              ".main-stage .installed-mod-row",
+              ".main-stage .instance-card",
+              ".main-stage .info-panel",
+              ".main-stage .detail-block",
+              ".main-stage .settings-toggle-row",
+              ".main-stage button:not(:disabled)",
+            ].join(", "),
+          ),
+        ).filter(
+          (element) =>
+            isVisible(element, rootRect) &&
+            isStealableElement(element) &&
+            !element.closest(".confirm-overlay, .ep-popup"),
+        ),
+      );
+      const selected: HTMLElement[] = [];
+      const targetCount = Math.random() > 0.7 ? 2 : 1;
+      for (const candidate of pool) {
+        if (
+          selected.some((element) => element.contains(candidate) || candidate.contains(element))
+        ) {
+          continue;
+        }
+        selected.push(candidate);
+        if (selected.length >= targetCount) break;
+      }
+
+      for (const element of selected) {
+        if (token !== chaosTokenRef.current) return false;
+        await ragePressButton(element, token, () => void scatterChaosElement(element), 180);
+      }
+      return token === chaosTokenRef.current;
+    },
+    [getRoot, ragePressButton, scatterChaosElement],
+  );
+
+  const rageRummageCurrentTab = useCallback(
+    async (token: number) => {
+      const root = getRoot();
+      if (!root || token !== chaosTokenRef.current) return false;
+      const rootRect = root.getBoundingClientRect();
+      const candidates = shuffled(
+        Array.from(
+          root.querySelectorAll<HTMLElement>(
+            [
+              ".main-stage .instance-card",
+              ".main-stage .inline-dropdown-trigger",
+              ".main-stage .settings-toggle-row .toggle-switch:not([data-mascot-off-switch])",
+              ".main-stage .theme-switch",
+              ".main-stage [role='slider']",
+            ].join(", "),
+          ),
+        ).filter((element) => isVisible(element, rootRect)),
+      ).slice(0, 1);
+
+      for (const element of candidates) {
+        if (token !== chaosTokenRef.current) return false;
+        await ragePressButton(
+          element,
+          token,
+          () => {
+            if (element.matches("[role='slider']")) nudgeSlider(element);
+            else element.click();
+          },
+          180,
+        );
+      }
+      return token === chaosTokenRef.current;
+    },
+    [getRoot, ragePressButton],
+  );
+
+  const rageChangeBuildSettings = useCallback(
+    async (token: number, tabs: HTMLButtonElement[]) => {
+      const root = getRoot();
+      const scene = getSceneRoot();
+      const buildsTab = tabs.find((tab) => tab.textContent?.trim() === "BUILDS");
+      if (!root || !scene || !buildsTab || token !== chaosTokenRef.current) return true;
+
+      const pressOrFallback = async (element: HTMLElement, press: () => void, settleMs = 180) => {
+        const pressed = await ragePressButton(element, token, press, settleMs);
+        if (pressed || token !== chaosTokenRef.current || !element.isConnected) return pressed;
+        press();
+        await wait(Math.min(settleMs, 420));
+        return token === chaosTokenRef.current;
+      };
+
+      const settingsTab = tabs.find((tab) => tab.textContent?.trim() === "SETTINGS");
+      if (settingsTab && token === chaosTokenRef.current) {
+        await pressOrFallback(settingsTab, () => settingsTab.click(), 360);
+        const advancedToggle = Array.from(
+          root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
+        ).find((toggle) => getToggleLabel(toggle) === "ADVANCED SETTINGS");
+        if (advancedToggle && !advancedToggle.classList.contains("enabled")) {
+          await pressOrFallback(
+            advancedToggle,
+            () => {
+              chaosSnapshotRef.current?.toggles.push({
+                label: "ADVANCED SETTINGS",
+                wasEnabled: false,
+              });
+              advancedToggle.click();
+            },
+            360,
+          );
+        }
+      }
+
+      if (!(await pressOrFallback(buildsTab, () => buildsTab.click(), 420))) return false;
+      const rootRect = root.getBoundingClientRect();
+      const cards = Array.from(
+        root.querySelectorAll<HTMLButtonElement>(".instance-card[data-instance-id]"),
+      ).filter((card) => isVisible(card, rootRect));
+      const card = randomItem(cards);
+      if (!card) return true;
+      if (!(await pressOrFallback(card, () => card.click(), 300))) return false;
+
+      const gear = root.querySelector<HTMLButtonElement>(".settings-icon-action");
+      if (!gear || !(await pressOrFallback(gear, () => gear.click(), 520))) return false;
+      const popup = scene.querySelector<HTMLElement>(".build-card-settings-dialog.ep-popup--open");
+      if (!popup) return true;
+
+      const memorySlider = popup.querySelector<HTMLElement>(".brs-slider [role='slider']");
+      if (memorySlider) {
+        memorySlider.scrollIntoView({ block: "center", behavior: "smooth" });
+        await wait(220);
+        await pressOrFallback(memorySlider, () => nudgeSlider(memorySlider), 220);
+      }
+
+      const textarea = popup.querySelector<HTMLTextAreaElement>(".jae-textarea");
+      if (textarea) {
+        const lines = textarea.value.replace(/\r\n?/g, "\n").split("\n");
+        const additions = [
+          "-Dscreen.mascot.chaos=true",
+          "-XX:+UseStringDeduplication",
+          "-Dfile.encoding=UTF-8",
+        ];
+        let nextValue: string;
+        if (Math.random() < 0.32 && lines.some((line) => line.trim())) {
+          let lastFilled = lines.length - 1;
+          while (lastFilled > 0 && !lines[lastFilled].trim()) lastFilled -= 1;
+          nextValue = lines.filter((_, index) => index !== lastFilled).join("\n");
+        } else {
+          const addition =
+            randomItem(additions.filter((candidate) => !lines.includes(candidate))) ??
+            `-Dscreen.mascot.seed=${Math.floor(Math.random() * 10_000)}`;
+          nextValue = `${textarea.value.trimEnd()}${textarea.value.trim() ? "\n" : ""}${addition}`;
+        }
+        await pressOrFallback(textarea, () => setNativeControlValue(textarea, nextValue), 260);
+      }
+
+      const windowInputs = [
+        ["Window width", String(randomItem([854, 960, 1280, 1600, 1920]) ?? 1280)],
+        ["Window height", String(randomItem([480, 540, 720, 900, 1080]) ?? 720)],
+      ] as const;
+      for (const [label, value] of windowInputs) {
+        const input = popup.querySelector<HTMLInputElement>(`.cni-input[aria-label='${label}']`);
+        if (!input) continue;
+        input.scrollIntoView({ block: "center", behavior: "smooth" });
+        await wait(260);
+        await pressOrFallback(input, () => setNativeControlValue(input, value), 220);
+      }
+
+      const fullscreen = popup.querySelector<HTMLButtonElement>(".brs-toggle-row");
+      if (fullscreen && Math.random() > 0.35) {
+        await pressOrFallback(fullscreen, () => fullscreen.click(), 240);
+      }
+
+      const modsTab = Array.from(popup.querySelectorAll<HTMLButtonElement>(".bcs-tab")).find(
+        (button) => button.textContent?.trim() === "MODS",
+      );
+      if (modsTab && (await pressOrFallback(modsTab, () => modsTab.click(), 620))) {
+        const enabledMod = randomItem(
+          Array.from(
+            popup.querySelectorAll<HTMLButtonElement>(".bme-toggle.enabled:not(:disabled)"),
+          ),
+        );
+        if (enabledMod) {
+          await pressOrFallback(enabledMod, () => enabledMod.click(), 520);
+        }
+      }
+
+      const buildTab = Array.from(popup.querySelectorAll<HTMLButtonElement>(".bcs-tab")).find(
+        (button) => button.textContent?.trim() === "BUILD",
+      );
+      if (buildTab) await pressOrFallback(buildTab, () => buildTab.click(), 280);
+      const save = popup.querySelector<HTMLButtonElement>(".bce-hdr-btn--save");
+      if (save) await pressOrFallback(save, () => save.click(), 720);
+      return token === chaosTokenRef.current;
+    },
+    [getRoot, getSceneRoot, ragePressButton],
+  );
+
+  const rageFakeDeleteBuild = useCallback(
+    async (token: number, tabs: HTMLButtonElement[]) => {
+      const root = getRoot();
+      const scene = getSceneRoot();
+      const buildsTab = tabs.find((tab) => tab.textContent?.trim() === "BUILDS");
+      if (!root || !scene || !buildsTab || token !== chaosTokenRef.current) return true;
+      if (!(await ragePressButton(buildsTab, token, () => buildsTab.click(), 360))) return false;
+
+      const rootRect = root.getBoundingClientRect();
+      const card = randomItem(
+        Array.from(
+          root.querySelectorAll<HTMLButtonElement>(".instance-card[data-instance-id]"),
+        ).filter((candidate) => isVisible(candidate, rootRect)),
+      );
+      if (!card) return true;
+      if (!(await ragePressButton(card, token, () => card.click(), 260))) return false;
+      const trash = root.querySelector<HTMLButtonElement>(".trash-action[data-mascot-instance-id]");
+      if (!trash) return true;
+      const instanceId = trash.dataset.mascotInstanceId;
+      const instanceName = trash.dataset.mascotInstanceName ?? card.textContent?.trim() ?? "BUILD";
+      if (!instanceId) return true;
+      if (
+        !(await ragePressButton(
+          trash,
+          token,
+          () =>
+            window.dispatchEvent(
+              new CustomEvent(MASCOT_FAKE_DELETE_EVENT, {
+                detail: { instanceId, instanceName },
+              }),
+            ),
+          260,
+        ))
+      )
+        return false;
+
+      const confirm = scene.querySelector<HTMLButtonElement>(
+        ".confirm-btn-delete[data-mascot-fake-delete]",
+      );
+      if (confirm && !(await ragePressButton(confirm, token, () => confirm.click(), 520))) {
+        return false;
+      }
+      return token === chaosTokenRef.current;
+    },
+    [getRoot, getSceneRoot, ragePressButton],
+  );
+
+  const rageFakeDeleteContent = useCallback(
+    async (token: number) => {
+      const root = getRoot();
+      if (!root || token !== chaosTokenRef.current) return false;
+      const rootRect = root.getBoundingClientRect();
+      const installedRows = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          ".installed-mod-swipe[data-mascot-project-id], .mod-card[data-mascot-installed='true'][data-mascot-project-id]",
+        ),
+      ).filter((row) => isVisible(row, rootRect));
+      const row = randomItem(installedRows);
+      if (!row) return true;
+      const deleteButton = row.querySelector<HTMLButtonElement>(
+        ".installed-mod-delete-btn, .catalog-action.danger",
+      );
+      const projectId = row.dataset.mascotProjectId;
+      const kind = row.dataset.mascotContentKind;
+      const title = row.dataset.mascotContentTitle ?? "MOD";
+      if (!deleteButton || !projectId || !kind) return true;
+      return ragePressButton(
+        deleteButton,
+        token,
+        () =>
+          window.dispatchEvent(
+            new CustomEvent(MASCOT_FAKE_CONTENT_DELETE_EVENT, {
+              detail: { kind, projectId, title },
+            }),
+          ),
+        420,
+      );
+    },
+    [getRoot, ragePressButton],
   );
 
   const startChaos = useCallback(async () => {
@@ -861,6 +1371,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
     if (carriedButtonRef.current) restoreCarriedButton(false);
     if (looseButtonRef.current) clearLooseButton();
+    clearChaosDebris();
+    clearMischiefDecayTimer();
+    activityTokenRef.current += 1;
+    activityBusyRef.current = false;
     cancelMotion();
     const token = chaosTokenRef.current + 1;
     chaosTokenRef.current = token;
@@ -873,57 +1387,155 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     setPhase("chaos");
 
     const getTabs = () => Array.from(root.querySelectorAll<HTMLButtonElement>(".side-nav button"));
-    const tabs = getTabs();
-    const settingsTab = tabs[tabs.length - 1];
-    const warmupTabs = shuffled(tabs.slice(0, -1)).slice(
-      0,
-      Math.min(3, Math.max(1, tabs.length - 1)),
-    );
+    const attempt = async (action: () => Promise<boolean>) => {
+      try {
+        return await action();
+      } catch {
+        setRagePress(null);
+        return false;
+      }
+    };
 
-    for (const tab of warmupTabs) {
-      if (!(await ragePressButton(tab, token, () => tab.click()))) return;
-    }
+    try {
+      const tabs = getTabs();
+      const settingsTab = tabs[tabs.length - 1];
 
-    if (settingsTab && token === chaosTokenRef.current) {
-      if (!(await ragePressButton(settingsTab, token, () => settingsTab.click(), 420))) return;
-    }
+      if (settingsTab && token === chaosTokenRef.current) {
+        const reached = await attempt(() =>
+          ragePressButton(settingsTab, token, () => settingsTab.click(), 420),
+        );
+        if (!reached && settingsTab.isConnected) {
+          settingsTab.click();
+          await wait(420);
+        }
+      }
 
-    const toggles = Array.from(
-      root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
-    ).filter((toggle) => !toggle.disabled && getToggleLabel(toggle));
-    const selectedToggles = shuffled(toggles).slice(0, Math.min(4, toggles.length));
+      const toggles = Array.from(
+        root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
+      ).filter(
+        (toggle) =>
+          !toggle.disabled &&
+          getToggleLabel(toggle) &&
+          getToggleLabel(toggle) !== "ADVANCED SETTINGS",
+      );
+      const selectedToggles = shuffled(toggles).slice(0, Math.min(4, toggles.length));
 
-    for (const toggle of selectedToggles) {
-      const label = getToggleLabel(toggle);
-      const wasEnabled = toggle.classList.contains("enabled");
-      if (
-        !(await ragePressButton(
-          toggle,
-          token,
-          () => {
-            chaosSnapshotRef.current?.toggles.push({ label, wasEnabled });
-            toggle.click();
-          },
-          300,
-        ))
+      for (const toggle of selectedToggles) {
+        const label = getToggleLabel(toggle);
+        const wasEnabled = toggle.classList.contains("enabled");
+        await attempt(() =>
+          ragePressButton(
+            toggle,
+            token,
+            () => {
+              chaosSnapshotRef.current?.toggles.push({ label, wasEnabled });
+              toggle.click();
+            },
+            300,
+          ),
+        );
+      }
+
+      const advancedToggle = Array.from(
+        root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
+      ).find((toggle) => getToggleLabel(toggle) === "ADVANCED SETTINGS");
+      if (advancedToggle && !advancedToggle.classList.contains("enabled")) {
+        await attempt(() =>
+          ragePressButton(
+            advancedToggle,
+            token,
+            () => {
+              chaosSnapshotRef.current?.toggles.push({
+                label: "ADVANCED SETTINGS",
+                wasEnabled: false,
+              });
+              advancedToggle.click();
+            },
+            360,
+          ),
+        );
+      }
+
+      const settingsSliders = Array.from(
+        root.querySelectorAll<HTMLElement>(".main-stage [role='slider']"),
       )
-        return;
-    }
+        .filter((slider) => isVisible(slider, root.getBoundingClientRect()))
+        .slice(0, 2);
+      for (const slider of settingsSliders) {
+        await attempt(() => ragePressButton(slider, token, () => nudgeSlider(slider), 220));
+      }
 
-    if (token !== chaosTokenRef.current) return;
-    const finalTabs = getTabs().filter((_, index) => index !== activeIndexRef.current);
-    const finalTab = randomItem(finalTabs);
-    if (finalTab && !(await ragePressButton(finalTab, token, () => finalTab.click()))) return;
-    if (token === chaosTokenRef.current) {
-      setRagePress(null);
-      setEmotion("cool");
-      setPhase("idle");
+      await attempt(() => ragePressWindowControls(token));
+
+      const warmupTabs = shuffled(getTabs().slice(0, -1));
+      for (const tab of warmupTabs) {
+        const reached = await attempt(() => ragePressButton(tab, token, () => tab.click()));
+        if (token !== chaosTokenRef.current) return;
+        if (!reached && tab.isConnected) {
+          tab.click();
+          await wait(320);
+        }
+        const tabLabel = tab.textContent?.trim();
+        if (tabLabel === "BUILDS") {
+          await attempt(() => rageChangeBuildSettings(token, getTabs()));
+          await attempt(() => rageFakeDeleteBuild(token, getTabs()));
+        }
+        if (tabLabel === "MODRINTH") {
+          await attempt(() => rageFakeDeleteContent(token));
+        }
+        await attempt(() => rageRummageCurrentTab(token));
+        await attempt(() => rageScatterCurrentTab(token));
+      }
+
+      if (settingsTab && token === chaosTokenRef.current) {
+        const reached = await attempt(() =>
+          ragePressButton(settingsTab, token, () => settingsTab.click(), 360),
+        );
+        if (!reached && settingsTab.isConnected) {
+          settingsTab.click();
+          await wait(320);
+        }
+        await attempt(() => rageRummageCurrentTab(token));
+        await attempt(() => rageScatterCurrentTab(token));
+      }
+
+      if (token !== chaosTokenRef.current) return;
+      const finalTabs = getTabs().filter((_, index) => index !== activeIndexRef.current);
+      const finalTab = randomItem(finalTabs);
+      if (finalTab) {
+        const reached = await attempt(() =>
+          ragePressButton(finalTab, token, () => finalTab.click()),
+        );
+        if (!reached && finalTab.isConnected) finalTab.click();
+      }
+    } finally {
+      if (token === chaosTokenRef.current) {
+        setRagePress(null);
+        setEmotion("cool");
+        setPhase("idle");
+      }
     }
-  }, [cancelMotion, clearLooseButton, getRoot, ragePressButton, restoreCarriedButton, setPhase]);
+  }, [
+    cancelMotion,
+    clearChaosDebris,
+    clearLooseButton,
+    clearMischiefDecayTimer,
+    getRoot,
+    rageChangeBuildSettings,
+    rageFakeDeleteBuild,
+    rageFakeDeleteContent,
+    ragePressButton,
+    ragePressWindowControls,
+    rageRummageCurrentTab,
+    rageScatterCurrentTab,
+    restoreCarriedButton,
+    setPhase,
+  ]);
 
   const registerHardThrow = useCallback(
     (speed: number) => {
       if (speed < THROW_THRESHOLD || chaosActiveRef.current) return;
+      clearMischiefDecayTimer();
       const now = Date.now();
       throwTimesRef.current = [
         ...throwTimesRef.current.filter((time) => now - time < THROW_HISTORY_MS),
@@ -933,9 +1545,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       if (throwTimesRef.current.length >= THROWS_TO_CHAOS) {
         // Let the final throw visibly leave the hand before the mascot takes over.
         window.setTimeout(() => void startChaos(), 180);
+      } else {
+        scheduleMischiefDecay();
       }
     },
-    [startChaos],
+    [clearMischiefDecayTimer, scheduleMischiefDecay, startChaos],
   );
 
   const ejectCarriedButton = useCallback(
@@ -1103,6 +1717,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     });
     await wait(180);
     tabs[snapshot.originalTabIndex]?.click();
+    window.dispatchEvent(new Event(MASCOT_FAKE_RESTORE_EVENT));
+    clearChaosDebris();
 
     chaosSnapshotRef.current = null;
     chaosActiveRef.current = false;
@@ -1110,10 +1726,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     setChaosActive(false);
     setEmotion("shy");
     setPhase("idle");
-  }, [cancelMotion, getRoot, setPhase]);
+  }, [cancelMotion, clearChaosDebris, getRoot, setPhase]);
 
   const petMascot = useCallback(() => {
     if (chaosActiveRef.current || dragRef.current) return;
+    scheduleMischiefDecay();
     cancelMotion();
     clearEmotionTimer();
     setEmotion(Math.random() > 0.35 ? "love" : "happy");
@@ -1122,15 +1739,18 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       emotionTimerRef.current = null;
       if (phaseRef.current === "petting") {
         setEmotion("happy");
-        setPhase("idle");
+        setPhase(modalOpenRef.current ? "climbing" : "idle");
       }
     }, 1_050);
-  }, [cancelMotion, clearEmotionTimer, setPhase]);
+  }, [cancelMotion, clearEmotionTimer, scheduleMischiefDecay, setPhase]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (chaosActiveRef.current) return;
     const root = getRoot();
     if (!root) return;
+    scheduleMischiefDecay();
+    activityTokenRef.current += 1;
+    activityBusyRef.current = false;
     cancelMotion();
     clearEmotionTimer();
     const rect = root.getBoundingClientRect();
@@ -1192,7 +1812,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         captureTarget.releasePointerCapture(drag.pointerId);
       }
       if (!drag.moved) {
-        setPhase(carriedButtonRef.current ? "carrying" : "idle");
+        setPhase(
+          carriedButtonRef.current ? "carrying" : modalOpenRef.current ? "climbing" : "idle",
+        );
         return;
       }
 
@@ -1210,7 +1832,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       if (Math.hypot(velocity.x, velocity.y) > 0.32) launchThrow(velocity);
       else {
         setEmotion(drag.shakeTurns >= 4 ? "excited" : "happy");
-        setPhase(carriedButtonRef.current ? "carrying" : "idle");
+        setPhase(
+          carriedButtonRef.current ? "carrying" : modalOpenRef.current ? "climbing" : "idle",
+        );
       }
     },
     [launchThrow, setPhase],
@@ -1241,6 +1865,138 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   useEffect(() => {
     if (!enabled) return;
+    const scene = getSceneRoot();
+    const root = getRoot();
+    if (!scene || !root) return;
+
+    let checkFrame: number | null = null;
+    const findVisibleModal = () => {
+      const candidates = Array.from(
+        scene.querySelectorAll<HTMLElement>(
+          [
+            ".ep-popup--modal.ep-popup--open[aria-hidden='false']",
+            ".confirm-overlay .confirm-dialog",
+            ".confirm-overlay .stats-modal",
+            ".confirm-overlay .screenshots-modal",
+            ".confirm-overlay .ms-modal",
+          ].join(", "),
+        ),
+      );
+      return candidates.reverse().find((candidate) => {
+        const style = window.getComputedStyle(candidate);
+        const rect = candidate.getBoundingClientRect();
+        return (
+          rect.width > 40 &&
+          rect.height > 30 &&
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          style.opacity !== "0"
+        );
+      });
+    };
+
+    const checkModal = () => {
+      checkFrame = null;
+      const modal = findVisibleModal() ?? null;
+      if (modal === activeModalRef.current) return;
+
+      activeModalRef.current = modal;
+      modalOpenRef.current = modal !== null;
+      const climbToken = modalClimbTokenRef.current + 1;
+      modalClimbTokenRef.current = climbToken;
+
+      if (!modal) {
+        setModalForeground(false);
+        if (phaseRef.current === "climbing") {
+          cancelMotion();
+          setEmotion("neutral");
+          setPhase(carriedButtonRef.current ? "carrying" : "idle");
+        }
+        return;
+      }
+
+      if (chaosActiveRef.current || dragRef.current) {
+        setModalForeground(true);
+        return;
+      }
+
+      activityTokenRef.current += 1;
+      activityBusyRef.current = false;
+      cancelMotion();
+      setModalForeground(false);
+      setEmotion("surprised");
+
+      const climb = async () => {
+        await wait(40);
+        if (
+          climbToken !== modalClimbTokenRef.current ||
+          !modal.isConnected ||
+          chaosActiveRef.current
+        )
+          return;
+        const rootRect = root.getBoundingClientRect();
+        const modalRect = modal.getBoundingClientRect();
+        const modalLeft = modalRect.left - rootRect.left;
+        const modalRight = modalRect.right - rootRect.left;
+        const modalTop = modalRect.top - rootRect.top;
+        const perchX = clamp(
+          positionRef.current.x,
+          modalLeft + 18,
+          Math.max(modalLeft + 18, modalRight - MASCOT_SIZE - 18),
+        );
+        const behindEdge = clampPosition({
+          x: perchX,
+          y: modalTop + 12,
+        });
+        const current = positionRef.current;
+        const reachedEdge = await animatePath(
+          [{ x: perchX, y: current.y }, behindEdge],
+          WALK_SPEED * 1.15,
+          "climbing",
+        );
+        if (!reachedEdge || climbToken !== modalClimbTokenRef.current || !modal.isConnected) return;
+
+        setModalForeground(true);
+        setEmotion("cool");
+        await wait(20);
+        const perched = await animatePath(
+          [
+            clampPosition({
+              x: perchX,
+              y: modalTop - MASCOT_SIZE + 18,
+            }),
+          ],
+          WALK_SPEED * 0.78,
+          "climbing",
+        );
+        if (perched && climbToken === modalClimbTokenRef.current) setPhase("climbing");
+      };
+      void climb();
+    };
+
+    const scheduleCheck = () => {
+      if (checkFrame !== null) window.cancelAnimationFrame(checkFrame);
+      checkFrame = window.requestAnimationFrame(checkModal);
+    };
+    const observer = new MutationObserver(scheduleCheck);
+    observer.observe(scene, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "aria-hidden"],
+    });
+    scheduleCheck();
+    return () => {
+      observer.disconnect();
+      if (checkFrame !== null) window.cancelAnimationFrame(checkFrame);
+      modalClimbTokenRef.current += 1;
+      activeModalRef.current = null;
+      modalOpenRef.current = false;
+    };
+  }, [animatePath, cancelMotion, clampPosition, enabled, getRoot, getSceneRoot, setPhase]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const firstRoam = window.setTimeout(() => void runAutonomousAction(), 450);
     const interval = window.setInterval(() => {
       if (
@@ -1261,6 +2017,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   useEffect(() => {
     if (!enabled || chaosActiveRef.current || dragRef.current) return;
+    activityTokenRef.current += 1;
     activityBusyRef.current = false;
     cancelMotion();
     if (carriedButtonRef.current) restoreCarriedButton(false);
@@ -1299,16 +2056,27 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   useEffect(() => {
     if (!enabled) {
       chaosTokenRef.current += 1;
+      activityTokenRef.current += 1;
       chaosActiveRef.current = false;
       cancelMotion();
       clearEmotionTimer();
+      clearMischiefDecayTimer();
       activityBusyRef.current = false;
       dragRef.current = null;
       setRagePress(null);
+      clearChaosDebris();
       if (carriedButtonRef.current) restoreCarriedButton(false);
       if (looseButtonRef.current) clearLooseButton();
     }
-  }, [cancelMotion, clearEmotionTimer, clearLooseButton, enabled, restoreCarriedButton]);
+  }, [
+    cancelMotion,
+    clearEmotionTimer,
+    clearChaosDebris,
+    clearLooseButton,
+    clearMischiefDecayTimer,
+    enabled,
+    restoreCarriedButton,
+  ]);
 
   useEffect(() => {
     const handleResize = () => setPosition(clampPosition(positionRef.current));
@@ -1319,18 +2087,21 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   useEffect(
     () => () => {
       chaosTokenRef.current += 1;
+      activityTokenRef.current += 1;
       cancelMotion();
       clearEmotionTimer();
+      clearMischiefDecayTimer();
+      clearChaosDebris();
       if (looseButtonFrameRef.current !== null)
         window.cancelAnimationFrame(looseButtonFrameRef.current);
       if (looseButtonReturnTimerRef.current !== null)
         window.clearTimeout(looseButtonReturnTimerRef.current);
       const carried = carriedButtonRef.current;
       const loose = looseButtonRef.current;
-      if (carried) restoreButtonElement(carried);
-      if (loose) restoreButtonElement(loose);
+      if (carried) restoreCarriedElement(carried);
+      if (loose) restoreCarriedElement(loose);
     },
-    [cancelMotion, clearEmotionTimer],
+    [cancelMotion, clearChaosDebris, clearEmotionTimer, clearMischiefDecayTimer],
   );
 
   if (!enabled) return null;
@@ -1340,7 +2111,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   } satisfies CSSProperties;
 
   return (
-    <div ref={layerRef} className="launcher-mascot-layer">
+    <div
+      ref={layerRef}
+      className={`launcher-mascot-layer ${modalForeground ? "launcher-mascot-layer--foreground" : ""}`}
+    >
       {chaosActive && (
         <button className="launcher-mascot-undo" type="button" onClick={() => void undoChaos()}>
           <span aria-hidden="true">↶</span>

@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
@@ -70,16 +79,25 @@ import { ToastStack } from "./components/notifications/ToastStack";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
 import { resolvePlaceholders } from "./utils/placeholders";
-import { buildPlaceholderContext, type PlaceholderTarget, usePlaceholders } from "./hooks/usePlaceholders";
+import {
+  buildPlaceholderContext,
+  type PlaceholderTarget,
+  usePlaceholders,
+} from "./hooks/usePlaceholders";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { OverviewPanel } from "./tabs/OverviewPanel";
 import { InstancesTab } from "./tabs/InstancesTab";
 import { ModrinthContentTab } from "./tabs/ModrinthContentTab";
 import { SettingsTab } from "./tabs/SettingsTab";
-import { useModrinthContent } from "./hooks/useModrinthContent";
+import { useModrinthContent, type ModrinthContentKind } from "./hooks/useModrinthContent";
 import { useTheme } from "./hooks/useTheme";
 import { OptionToggle } from "./components/inputs/OptionToggle";
-import { LauncherMascot } from "./components/mascot/LauncherMascot";
+import {
+  LauncherMascot,
+  MASCOT_FAKE_CONTENT_DELETE_EVENT,
+  MASCOT_FAKE_DELETE_EVENT,
+  MASCOT_FAKE_RESTORE_EVENT,
+} from "./components/mascot/LauncherMascot";
 import {
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
@@ -167,7 +185,9 @@ export default function App() {
   const [launcherSettings, setLauncherSettings] = useState<LauncherSettings | null>(null);
   const [createRamGb, setCreateRamGb] = useState(4);
   const [settingsRamDraft, setSettingsRamDraft] = useState(4);
-  const [createRuntimeSettings, setCreateRuntimeSettings] = useState<Omit<BuildRuntimeSettingsDraft, "ram">>({
+  const [createRuntimeSettings, setCreateRuntimeSettings] = useState<
+    Omit<BuildRuntimeSettingsDraft, "ram">
+  >({
     javaArgs: "",
     javaPath: "",
     windowWidth: DEFAULT_WINDOW_WIDTH,
@@ -275,7 +295,9 @@ export default function App() {
       try {
         await invoke("record_playtime", { instanceId: id, elapsedSecs: elapsed });
         await refreshInstances(id);
-      } catch (err) { logger.error("record_playtime failed", err); }
+      } catch (err) {
+        logger.error("record_playtime failed", err);
+      }
     }
   };
 
@@ -285,7 +307,6 @@ export default function App() {
   ) => {
     try {
       const payloadKey = createBuildLogsWindowPayload(id, initialSnapshot);
-
 
       const label = getBuildLogsWindowLabel(id);
       const existing = await WebviewWindow.getByLabel(label);
@@ -329,6 +350,12 @@ export default function App() {
 
   const [confirmPendingId, setConfirmPendingId] = useState<string | null>(null);
   const [confirmPendingName, setConfirmPendingName] = useState("");
+  const [mascotConfirmPendingId, setMascotConfirmPendingId] = useState<string | null>(null);
+  const [mascotConfirmPendingName, setMascotConfirmPendingName] = useState("");
+  const [mascotHiddenInstanceIds, setMascotHiddenInstanceIds] = useState<string[]>([]);
+  const [mascotHiddenContentIds, setMascotHiddenContentIds] = useState<
+    Record<ModrinthContentKind, string[]>
+  >({ mods: [], resourcepacks: [], shaders: [] });
 
   // Export modal
   const [exportInstanceId, setExportInstanceId] = useState<string | null>(null);
@@ -360,7 +387,9 @@ export default function App() {
     rect: DOMRect;
     ownerId: string;
   } | null>(null);
-  const [modrinthProjectIcons, setModrinthProjectIcons] = useState<Record<string, string | null>>({});
+  const [modrinthProjectIcons, setModrinthProjectIcons] = useState<Record<string, string | null>>(
+    {},
+  );
   const requestedModrinthProjectIconIdsRef = useRef<Set<string>>(new Set());
 
   // Import modal
@@ -394,12 +423,14 @@ export default function App() {
   } = useBuildCardAppearances();
   const [buildSettingsTargetId, setBuildSettingsTargetId] = useState<string | null>(null);
   const [buildCardSettingsOpen, setBuildCardSettingsOpen] = useState(false);
-  const [buildCardSettingsDraft, setBuildCardSettingsDraft] = useState<BuildCardAppearance>({ ...DEFAULT_BUILD_CARD_APPEARANCE });
-  const [buildRuntimeSettingsDraft, setBuildRuntimeSettingsDraft] = useState<BuildRuntimeSettingsDraft>(
-    () => getDefaultRuntimeSettingsDraft(4, 8, true),
+  const [buildCardSettingsDraft, setBuildCardSettingsDraft] = useState<BuildCardAppearance>({
+    ...DEFAULT_BUILD_CARD_APPEARANCE,
+  });
+  const [buildRuntimeSettingsDraft, setBuildRuntimeSettingsDraft] =
+    useState<BuildRuntimeSettingsDraft>(() => getDefaultRuntimeSettingsDraft(4, 8, true));
+  const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(
+    null,
   );
-  const [buildCardPreviewSize, setBuildCardPreviewSize] = useState<BuildCardPreviewSize | null>(null);
-
 
   const { theme, setTheme } = useTheme();
   const { toasts, pushToast, dismissToast } = useToasts();
@@ -417,9 +448,41 @@ export default function App() {
 
   const optimizedJavaArgsEnabled = launcherSettings?.optimizedJavaArgs ?? true;
 
-  const getInstanceRuntimeSettingsDraft = (
-    instance: InstanceItem,
-  ): BuildRuntimeSettingsDraft => {
+  useEffect(() => {
+    const requestFakeDelete = (event: Event) => {
+      const detail = (event as CustomEvent<{ instanceId?: string; instanceName?: string }>).detail;
+      if (!detail?.instanceId) return;
+      setMascotConfirmPendingId(detail.instanceId);
+      setMascotConfirmPendingName(detail.instanceName || detail.instanceId);
+    };
+    const requestFakeContentDelete = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: ModrinthContentKind; projectId?: string }>)
+        .detail;
+      if (!detail?.kind || !detail.projectId) return;
+      setMascotHiddenContentIds((current) => ({
+        ...current,
+        [detail.kind!]: current[detail.kind!].includes(detail.projectId!)
+          ? current[detail.kind!]
+          : [...current[detail.kind!], detail.projectId!],
+      }));
+    };
+    const restoreFakeDeletes = () => {
+      setMascotHiddenInstanceIds([]);
+      setMascotHiddenContentIds({ mods: [], resourcepacks: [], shaders: [] });
+      setMascotConfirmPendingId(null);
+      setMascotConfirmPendingName("");
+    };
+    window.addEventListener(MASCOT_FAKE_DELETE_EVENT, requestFakeDelete);
+    window.addEventListener(MASCOT_FAKE_CONTENT_DELETE_EVENT, requestFakeContentDelete);
+    window.addEventListener(MASCOT_FAKE_RESTORE_EVENT, restoreFakeDeletes);
+    return () => {
+      window.removeEventListener(MASCOT_FAKE_DELETE_EVENT, requestFakeDelete);
+      window.removeEventListener(MASCOT_FAKE_CONTENT_DELETE_EVENT, requestFakeContentDelete);
+      window.removeEventListener(MASCOT_FAKE_RESTORE_EVENT, restoreFakeDeletes);
+    };
+  }, []);
+
+  const getInstanceRuntimeSettingsDraft = (instance: InstanceItem): BuildRuntimeSettingsDraft => {
     const ram = clampRamToSystem(instance.ram, systemRamGb);
 
     return normalizeRuntimeSettingsDraft(
@@ -455,10 +518,7 @@ export default function App() {
   };
 
   const getResetRuntimeSettingsDraft = (): BuildRuntimeSettingsDraft => {
-    const defaultRam = clampRamToSystem(
-      launcherSettings?.defaultRamGb ?? createRamGb,
-      systemRamGb,
-    );
+    const defaultRam = clampRamToSystem(launcherSettings?.defaultRamGb ?? createRamGb, systemRamGb);
     return getDefaultRuntimeSettingsDraft(defaultRam, systemRamGb, optimizedJavaArgsEnabled);
   };
 
@@ -474,9 +534,7 @@ export default function App() {
     return createCardMeasureRef.current;
   };
 
-  const measureBuildCardPreviewElement = (
-    element: Element | null,
-  ): BuildCardPreviewSize | null => {
+  const measureBuildCardPreviewElement = (element: Element | null): BuildCardPreviewSize | null => {
     if (!(element instanceof HTMLElement)) return null;
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
@@ -488,22 +546,22 @@ export default function App() {
   };
 
   const openBuildCardSettings = (targetId?: string | null) => {
-    const resolvedTargetId =
-      targetId === undefined ? (selectedInstance?.id ?? null) : targetId;
-    const targetInstance =
-      resolvedTargetId
-        ? instances.find((instance) => instance.id === resolvedTargetId) || null
-        : null;
+    const resolvedTargetId = targetId === undefined ? (selectedInstance?.id ?? null) : targetId;
+    const targetInstance = resolvedTargetId
+      ? instances.find((instance) => instance.id === resolvedTargetId) || null
+      : null;
     setBuildSettingsTargetId(resolvedTargetId);
     setBuildCardSettingsDraft(
-      getBuildCardAppearance(resolvedTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY)
+      getBuildCardAppearance(resolvedTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY),
     );
     setBuildRuntimeSettingsDraft(
-      targetInstance ? getInstanceRuntimeSettingsDraft(targetInstance) : getCreateRuntimeSettingsDraft()
+      targetInstance
+        ? getInstanceRuntimeSettingsDraft(targetInstance)
+        : getCreateRuntimeSettingsDraft(),
     );
     setBuildCardSettingsOpen(true);
     setBuildCardPreviewSize(
-      measureBuildCardPreviewElement(pickBuildCardPreviewSourceElement(resolvedTargetId))
+      measureBuildCardPreviewElement(pickBuildCardPreviewSourceElement(resolvedTargetId)),
     );
   };
 
@@ -511,7 +569,9 @@ export default function App() {
     setBuildCardSettingsOpen(false);
     setBuildSettingsTargetId(null);
     setBuildCardSettingsDraft({ ...DEFAULT_BUILD_CARD_APPEARANCE });
-    setBuildRuntimeSettingsDraft(getDefaultRuntimeSettingsDraft(4, systemRamGb, optimizedJavaArgsEnabled));
+    setBuildRuntimeSettingsDraft(
+      getDefaultRuntimeSettingsDraft(4, systemRamGb, optimizedJavaArgsEnabled),
+    );
     setBuildCardPreviewSize(null);
   };
 
@@ -601,7 +661,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-
   useWindowPhase(win as unknown as WebviewWindow, setPhase);
 
   useEffect(() => {
@@ -614,15 +673,13 @@ export default function App() {
 
   const selectedInstance = useMemo(
     () => instances.find((x) => x.id === selectedInstanceId) || null,
-    [instances, selectedInstanceId]
+    [instances, selectedInstanceId],
   );
 
-  const buildSettingsTargetInstance =
-    buildSettingsTargetId
-      ? instances.find((instance) => instance.id === buildSettingsTargetId) || null
-      : null;
-  const selectedBuildState =
-    selectedInstance && isRunning(selectedInstance.id) ? "RUNNING" : "";
+  const buildSettingsTargetInstance = buildSettingsTargetId
+    ? instances.find((instance) => instance.id === buildSettingsTargetId) || null
+    : null;
+  const selectedBuildState = selectedInstance && isRunning(selectedInstance.id) ? "RUNNING" : "";
   const resolve = usePlaceholders(
     instances,
     selectedInstance,
@@ -697,24 +754,25 @@ export default function App() {
 
   const moddedInstances = useMemo(
     () => instances.filter((item) => item.loader.toLowerCase() !== "vanilla"),
-    [instances]
+    [instances],
   );
 
-  const buildCardPreviewTarget: PlaceholderTarget =
-    buildSettingsTargetInstance
-      ? {
-          ...buildSettingsTargetInstance,
-          ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : buildSettingsTargetInstance.ram,
-        }
-      : {
-      name: createPreviewName,
-      version: createPreviewVersion,
-      loader: createPreviewLoader,
-      ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : createPreviewRam,
-      playtimeSecs: 0,
-      lastPlayed: "0",
-      status: "",
-    };
+  const buildCardPreviewTarget: PlaceholderTarget = buildSettingsTargetInstance
+    ? {
+        ...buildSettingsTargetInstance,
+        ram: buildCardSettingsOpen
+          ? buildRuntimeSettingsDraft.ram
+          : buildSettingsTargetInstance.ram,
+      }
+    : {
+        name: createPreviewName,
+        version: createPreviewVersion,
+        loader: createPreviewLoader,
+        ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : createPreviewRam,
+        playtimeSecs: 0,
+        lastPlayed: "0",
+        status: "",
+      };
   const buildCardPreviewBadgeText = resolveForTarget(
     getBuildCardBadgeText(buildCardSettingsDraft),
     buildCardPreviewTarget,
@@ -734,8 +792,9 @@ export default function App() {
     }));
 
   const selectedModTarget = useMemo(
-    () => moddedInstances.find((item) => item.id === selectedInstanceId) || moddedInstances[0] || null,
-    [moddedInstances, selectedInstanceId]
+    () =>
+      moddedInstances.find((item) => item.id === selectedInstanceId) || moddedInstances[0] || null,
+    [moddedInstances, selectedInstanceId],
   );
 
   const modsContent = useModrinthContent({
@@ -786,7 +845,7 @@ export default function App() {
 
   const minecraftVersions = useMemo(
     () => availableManifestVersions.map((v) => v.id),
-    [availableManifestVersions]
+    [availableManifestVersions],
   );
 
   useEffect(() => {
@@ -971,11 +1030,12 @@ export default function App() {
   const hasJavaPathData = (data: Pick<InstanceExportData, "javaPath"> | null | undefined) =>
     Boolean(data?.javaPath);
 
-  const hasWindowSettingsData = (data: Pick<
-    InstanceExportData,
-    "windowWidth" | "windowHeight" | "fullscreen"
-  > | null | undefined) =>
-    Boolean(data && (data.windowWidth || data.windowHeight || data.fullscreen));
+  const hasWindowSettingsData = (
+    data:
+      | Pick<InstanceExportData, "windowWidth" | "windowHeight" | "fullscreen">
+      | null
+      | undefined,
+  ) => Boolean(data && (data.windowWidth || data.windowHeight || data.fullscreen));
 
   const formatJavaArgsMeta = (data: Pick<InstanceExportData, "javaArgs"> | null | undefined) => {
     if (!data?.javaArgs) return undefined;
@@ -983,10 +1043,12 @@ export default function App() {
     return `${count} ARG${count === 1 ? "" : "S"}`;
   };
 
-  const formatWindowSettingsMeta = (data: Pick<
-    InstanceExportData,
-    "windowWidth" | "windowHeight" | "fullscreen"
-  > | null | undefined) => {
+  const formatWindowSettingsMeta = (
+    data:
+      | Pick<InstanceExportData, "windowWidth" | "windowHeight" | "fullscreen">
+      | null
+      | undefined,
+  ) => {
     if (!data || !hasWindowSettingsData(data)) return undefined;
     const size = `${data.windowWidth ?? DEFAULT_WINDOW_WIDTH}x${data.windowHeight ?? DEFAULT_WINDOW_HEIGHT}`;
     return data.fullscreen ? `${size} / FULLSCREEN` : size;
@@ -995,14 +1057,19 @@ export default function App() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        const [manifestResponse, instanceResponse, systemRamResponse, settingsResponse, msAccountsResponse] =
-          await Promise.all([
-            invoke<MinecraftManifest>("get_minecraft_manifest"),
-            invoke<InstanceItem[]>("list_instances"),
-            invoke<number>("get_system_memory_gb"),
-            invoke<LauncherSettings>("get_launcher_settings"),
-            invoke<MicrosoftAccount[]>("list_microsoft_accounts"),
-          ]);
+        const [
+          manifestResponse,
+          instanceResponse,
+          systemRamResponse,
+          settingsResponse,
+          msAccountsResponse,
+        ] = await Promise.all([
+          invoke<MinecraftManifest>("get_minecraft_manifest"),
+          invoke<InstanceItem[]>("list_instances"),
+          invoke<number>("get_system_memory_gb"),
+          invoke<LauncherSettings>("get_launcher_settings"),
+          invoke<MicrosoftAccount[]>("list_microsoft_accounts"),
+        ]);
 
         setManifest(manifestResponse);
         setInstances(instanceResponse);
@@ -1062,7 +1129,9 @@ export default function App() {
 
         setLoaderVersions(versions);
         if (versions.length === 0) {
-          setCreateError("No compatible " + createLoader + " versions for Minecraft " + createVersion);
+          setCreateError(
+            "No compatible " + createLoader + " versions for Minecraft " + createVersion,
+          );
         }
         setCreateLoaderVersion((current) => {
           if (current && versions.includes(current)) return current;
@@ -1121,11 +1190,12 @@ export default function App() {
     const segments = 16;
     const boundaries = Array.from({ length: stripCount + 1 }, (_, boundaryIndex) =>
       Array.from({ length: segments + 1 }, (_, pointIndex) => {
-        const y = pointIndex === 0
-          ? 0
-          : pointIndex === segments
-            ? 100
-            : ((pointIndex + (Math.random() * 0.55 - 0.275)) / segments) * 100;
+        const y =
+          pointIndex === 0
+            ? 0
+            : pointIndex === segments
+              ? 100
+              : ((pointIndex + (Math.random() * 0.55 - 0.275)) / segments) * 100;
 
         if (boundaryIndex === 0) return { x: 0, y };
         if (boundaryIndex === stripCount) return { x: 100, y };
@@ -1177,7 +1247,8 @@ export default function App() {
 
     const storedInstanceId = window.localStorage.getItem(SELECTED_INSTANCE_STORAGE_KEY);
     const preferredInstance = pickPreferredInstance(fresh, storedInstanceId) || fresh[0];
-    const target = (preferredId && fresh.find((i) => i.id === preferredId)?.id) || preferredInstance.id;
+    const target =
+      (preferredId && fresh.find((i) => i.id === preferredId)?.id) || preferredInstance.id;
     setSelectedInstanceId(target);
   };
 
@@ -1189,27 +1260,32 @@ export default function App() {
     void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
       logger.error("stop_discord_rpc_for_instance failed", error);
     });
-    window.setTimeout(() => {
-      void invoke("exit_launcher").catch((error) => {
-        logger.error("exit_launcher failed", error);
-      });
-    }, effect === "shred" ? 950 : 400);
+    window.setTimeout(
+      () => {
+        void invoke("exit_launcher").catch((error) => {
+          logger.error("exit_launcher failed", error);
+        });
+      },
+      effect === "shred" ? 950 : 400,
+    );
   }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let mounted = true;
 
-    void win.onCloseRequested((event) => {
-      event.preventDefault();
-      beginClose("shred");
-    }).then((dispose) => {
-      if (mounted) {
-        unlisten = dispose;
-      } else {
-        dispose();
-      }
-    });
+    void win
+      .onCloseRequested((event) => {
+        event.preventDefault();
+        beginClose("shred");
+      })
+      .then((dispose) => {
+        if (mounted) {
+          unlisten = dispose;
+        } else {
+          dispose();
+        }
+      });
 
     return () => {
       mounted = false;
@@ -1257,18 +1333,18 @@ export default function App() {
     }, 520);
   };
 
-const isScrollableElement = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
+  const isScrollableElement = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
 
-  // Ищем ближайшего родителя, который может скроллиться
-  // Мы добавили сюда .installed-mods-list
-  const scrollParent = target.closest(".csa-content, .installed-mods-list, .mod-list");
+    // Ищем ближайшего родителя, который может скроллиться
+    // Мы добавили сюда .installed-mods-list
+    const scrollParent = target.closest(".csa-content, .installed-mods-list, .mod-list");
 
-  if (!(scrollParent instanceof HTMLElement)) return false;
+    if (!(scrollParent instanceof HTMLElement)) return false;
 
-  // Проверяем, действительно ли контента внутри больше, чем высота контейнера
-  return scrollParent.scrollHeight > scrollParent.clientHeight;
-};
+    // Проверяем, действительно ли контента внутри больше, чем высота контейнера
+    return scrollParent.scrollHeight > scrollParent.clientHeight;
+  };
 
   const onWheelTabs = (e: React.WheelEvent) => {
     if (!wheelTabSwitching) return;
@@ -1387,11 +1463,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             },
             systemRamGb,
           )
-        : getDefaultRuntimeSettingsDraft(
-            createRamGb,
-            systemRamGb,
-            optimizedJavaArgsEnabled,
-          );
+        : getDefaultRuntimeSettingsDraft(createRamGb, systemRamGb, optimizedJavaArgsEnabled);
 
       const created = await invoke<InstanceItem>("create_instance", {
         payload: {
@@ -1401,7 +1473,8 @@ const isScrollableElement = (target: EventTarget | null) => {
           loaderVersion: createLoader !== "Vanilla" ? createLoaderVersion : null,
           ram: createRuntime.ram,
           javaArgs: createRuntimeSettingsTouched ? createRuntime.javaArgs : null,
-          javaPath: createRuntimeSettingsTouched && createRuntime.javaPath ? createRuntime.javaPath : null,
+          javaPath:
+            createRuntimeSettingsTouched && createRuntime.javaPath ? createRuntime.javaPath : null,
           windowWidth: createRuntimeSettingsTouched ? createRuntime.windowWidth : null,
           windowHeight: createRuntimeSettingsTouched ? createRuntime.windowHeight : null,
           fullscreen: createRuntimeSettingsTouched ? createRuntime.fullscreen : false,
@@ -1467,7 +1540,9 @@ const isScrollableElement = (target: EventTarget | null) => {
         detail: "Install complete",
       });
       setBusyMessage("Install finished");
-      pushToast("info", `Файлы ${selectedInstance.name} установлены`, { title: "Install complete" });
+      pushToast("info", `Файлы ${selectedInstance.name} установлены`, {
+        title: "Install complete",
+      });
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
@@ -1615,6 +1690,24 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
+  const handleMascotDeleteConfirmed = () => {
+    if (!mascotConfirmPendingId) return;
+    const id = mascotConfirmPendingId;
+    const hiddenName = mascotConfirmPendingName;
+    setMascotHiddenInstanceIds((current) => (current.includes(id) ? current : [...current, id]));
+    setMascotConfirmPendingId(null);
+    setMascotConfirmPendingName("");
+    if (selectedInstanceId === id) {
+      const nextVisible = instances.find(
+        (instance) => instance.id !== id && !mascotHiddenInstanceIds.includes(instance.id),
+      );
+      if (nextVisible) setSelectedInstanceId(nextVisible.id);
+    }
+    pushToast("warning", `Заяц спрятал ${hiddenName} только из списка — файлы не удалены.`, {
+      title: "Mascot chaos",
+    });
+  };
+
   const handleOpenFolder = async () => {
     if (!selectedInstance) return;
 
@@ -1673,9 +1766,15 @@ const isScrollableElement = (target: EventTarget | null) => {
       windowWidth: exportOptions.window ? (exportData.windowWidth ?? null) : null,
       windowHeight: exportOptions.window ? (exportData.windowHeight ?? null) : null,
       fullscreen: exportOptions.window ? (exportData.fullscreen ?? false) : false,
-      mods: exportOptions.mods ? exportData.mods.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
-      shaders: exportOptions.shaders ? exportData.shaders.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
-      resourcePacks: exportOptions.resourcePacks ? exportData.resourcePacks.filter((item) => item.source === "modrinth") : [] as ExportedItem[],
+      mods: exportOptions.mods
+        ? exportData.mods.filter((item) => item.source === "modrinth")
+        : ([] as ExportedItem[]),
+      shaders: exportOptions.shaders
+        ? exportData.shaders.filter((item) => item.source === "modrinth")
+        : ([] as ExportedItem[]),
+      resourcePacks: exportOptions.resourcePacks
+        ? exportData.resourcePacks.filter((item) => item.source === "modrinth")
+        : ([] as ExportedItem[]),
     };
     const json = JSON.stringify(out, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -1729,11 +1828,7 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
   };
 
-  const prepareImport = (
-    data: InstanceExportData,
-    path: string,
-    format: "slbuild" | "mrpack",
-  ) => {
+  const prepareImport = (data: InstanceExportData, path: string, format: "slbuild" | "mrpack") => {
     setImportData(data);
     setImportSourcePath(path);
     setImportSourceFormat(format);
@@ -1758,9 +1853,7 @@ const isScrollableElement = (target: EventTarget | null) => {
         title: "Import build",
         multiple: false,
         directory: false,
-        filters: [
-          { name: "Launcher builds", extensions: ["slbuild", "mrpack", "json"] },
-        ],
+        filters: [{ name: "Launcher builds", extensions: ["slbuild", "mrpack", "json"] }],
       });
       if (!selectedPath || Array.isArray(selectedPath)) return;
       const isMrpack = selectedPath.toLowerCase().endsWith(".mrpack");
@@ -1822,11 +1915,9 @@ const isScrollableElement = (target: EventTarget | null) => {
     }
     const contentFiles = paths.filter((p) => /\.(jar|zip)$/i.test(p));
     if (contentFiles.length === 0) {
-      pushToast(
-        "warning",
-        "Перетащи .jar/.zip на сборку или .mrpack/.slbuild для импорта",
-        { title: "Nothing to install" },
-      );
+      pushToast("warning", "Перетащи .jar/.zip на сборку или .mrpack/.slbuild для импорта", {
+        title: "Nothing to install",
+      });
       return;
     }
     // Prefer the card under the cursor; otherwise fall back to the currently
@@ -1858,9 +1949,7 @@ const isScrollableElement = (target: EventTarget | null) => {
       const kind = classifyDragPaths(payload.paths ?? []);
       setDragKind(kind);
       setDragOverInstanceId(
-        kind === "content"
-          ? findInstanceAtPoint(payload.position.x, payload.position.y)
-          : null,
+        kind === "content" ? findInstanceAtPoint(payload.position.x, payload.position.y) : null,
       );
     } else if (payload.type === "over") {
       if (dragKind === "content") {
@@ -1899,43 +1988,43 @@ const isScrollableElement = (target: EventTarget | null) => {
     setImportWorking(true);
     setImportError("");
     const name = importOptions.name ? importData.name : importCustomName;
-    const ram = importOptions.ram && importData.ram
-      ? importData.ram
-      : (launcherSettings?.defaultRamGb ?? 4);
+    const ram =
+      importOptions.ram && importData.ram ? importData.ram : (launcherSettings?.defaultRamGb ?? 4);
     try {
-      const newInstance = importSourceFormat === "mrpack"
-        ? await invoke<InstanceItem>("import_mrpack", {
-            path: importSourcePath,
-            options: {
-              name,
-              ram,
-              javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
-              javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
-              windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
-              windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
-              fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
-              includeMods: importOptions.mods,
-              includeShaders: importOptions.shaders,
-              includeResourcePacks: importOptions.resourcePacks,
-            },
-          })
-        : await invoke<InstanceItem>("import_instance", {
-            payload: {
-              name,
-              version: importData.version,
-              loader: importData.loader,
-              loaderVersion: importData.loaderVersion ?? null,
-              ram,
-              javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
-              javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
-              windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
-              windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
-              fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
-              mods: importOptions.mods ? (importData.mods ?? []) : [],
-              shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
-              resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
-            },
-          });
+      const newInstance =
+        importSourceFormat === "mrpack"
+          ? await invoke<InstanceItem>("import_mrpack", {
+              path: importSourcePath,
+              options: {
+                name,
+                ram,
+                javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+                javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+                windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+                windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+                fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+                includeMods: importOptions.mods,
+                includeShaders: importOptions.shaders,
+                includeResourcePacks: importOptions.resourcePacks,
+              },
+            })
+          : await invoke<InstanceItem>("import_instance", {
+              payload: {
+                name,
+                version: importData.version,
+                loader: importData.loader,
+                loaderVersion: importData.loaderVersion ?? null,
+                ram,
+                javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+                javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+                windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+                windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+                fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+                mods: importOptions.mods ? (importData.mods ?? []) : [],
+                shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
+                resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
+              },
+            });
       await refreshInstances(newInstance.id);
       setImportModalOpen(false);
       setImportData(null);
@@ -1948,6 +2037,14 @@ const isScrollableElement = (target: EventTarget | null) => {
       setImportWorking(false);
     }
   };
+  const mascotVisibleInstances = instances.filter(
+    (instance) => !mascotHiddenInstanceIds.includes(instance.id),
+  );
+  const mascotVisibleSelectedInstance =
+    mascotVisibleInstances.find((instance) => instance.id === selectedInstanceId) ??
+    mascotVisibleInstances[0] ??
+    null;
+
   const renderMainContent = () => {
     switch (activeTab) {
       case "overview":
@@ -1965,8 +2062,8 @@ const isScrollableElement = (target: EventTarget | null) => {
       case "instances":
         return (
           <InstancesTab
-            instances={instances}
-            selectedInstance={selectedInstance}
+            instances={mascotVisibleInstances}
+            selectedInstance={mascotVisibleSelectedInstance}
             selectedInstanceId={selectedInstanceId}
             setSelectedInstanceId={setSelectedInstanceId}
             instanceCardRefs={instanceCardRefs}
@@ -2033,6 +2130,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
+            mascotHiddenProjectIds={mascotHiddenContentIds.mods}
           />
         );
       case "resourcepacks":
@@ -2046,6 +2144,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
+            mascotHiddenProjectIds={mascotHiddenContentIds.resourcepacks}
           />
         );
       case "shaders":
@@ -2059,6 +2158,7 @@ const isScrollableElement = (target: EventTarget | null) => {
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
+            mascotHiddenProjectIds={mascotHiddenContentIds.shaders}
           />
         );
       case "settings":
@@ -2113,9 +2213,15 @@ const isScrollableElement = (target: EventTarget | null) => {
       >
         <div className="nav-brand">ARCHIVE // MINECRAFT LAUNCHER</div>
         <div className="nav-controls">
-          <button onClick={() => void win.minimize()} type="button">MINIMIZE</button>
-          <button onClick={() => void handleMaximize()} type="button">EXPAND</button>
-          <button onClick={() => void handleClose()} className="close-btn" type="button">CLOSE</button>
+          <button onClick={() => void win.minimize()} type="button">
+            MINIMIZE
+          </button>
+          <button onClick={() => void handleMaximize()} type="button">
+            EXPAND
+          </button>
+          <button onClick={() => void handleClose()} className="close-btn" type="button">
+            CLOSE
+          </button>
         </div>
       </header>
 
@@ -2192,9 +2298,11 @@ const isScrollableElement = (target: EventTarget | null) => {
   );
 
   return (
-    <div className={`gallery-root ${phase} ${
-      closeEffect === "tear" ? "tearing" : closeEffect === "shred" ? "shredding" : ""
-    }`}>
+    <div
+      className={`gallery-root ${phase} ${
+        closeEffect === "tear" ? "tearing" : closeEffect === "shred" ? "shredding" : ""
+      }`}
+    >
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       {dragKind === "build" && (
         <div className="global-drop-overlay">
@@ -2213,28 +2321,32 @@ const isScrollableElement = (target: EventTarget | null) => {
           </div>
         </div>
       )}
-      {dragKind === "content" && !dragOverInstanceId && (() => {
-        const fallbackName = instances.find((i) => i.id === selectedInstanceId)?.name;
-        return (
-          <div className="global-drop-overlay">
-            <div className="global-drop-overlay-inner">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <strong>
-                {fallbackName ? `ОТПУСТИ — В СБОРКУ ${fallbackName.toUpperCase()}` : "ВЫБЕРИ СБОРКУ"}
-              </strong>
-              <span>{fallbackName ? ".jar / .zip" : "сначала выбери сборку"}</span>
+      {dragKind === "content" &&
+        !dragOverInstanceId &&
+        (() => {
+          const fallbackName = instances.find((i) => i.id === selectedInstanceId)?.name;
+          return (
+            <div className="global-drop-overlay">
+              <div className="global-drop-overlay-inner">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <strong>
+                  {fallbackName
+                    ? `ОТПУСТИ — В СБОРКУ ${fallbackName.toUpperCase()}`
+                    : "ВЫБЕРИ СБОРКУ"}
+                </strong>
+                <span>{fallbackName ? ".jar / .zip" : "сначала выбери сборку"}</span>
+              </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
       {!closeEffect ? (
         mainUI
       ) : closeEffect === "tear" ? (
@@ -2258,15 +2370,17 @@ const isScrollableElement = (target: EventTarget | null) => {
             <div
               key={index}
               className="shred-strip"
-              style={{
-                clipPath: strip.clipPath,
-                animationDelay: `${strip.delay}ms`,
-                "--shred-x": strip.x,
-                "--shred-y": strip.y,
-                "--shred-rotate": strip.rotate,
-                "--shred-kick-x": strip.kickX,
-                "--shred-kick-y": strip.kickY,
-              } as CSSProperties}
+              style={
+                {
+                  clipPath: strip.clipPath,
+                  animationDelay: `${strip.delay}ms`,
+                  "--shred-x": strip.x,
+                  "--shred-y": strip.y,
+                  "--shred-rotate": strip.rotate,
+                  "--shred-kick-x": strip.kickX,
+                  "--shred-kick-y": strip.kickY,
+                } as CSSProperties
+              }
             >
               <div className="fixed-content">{mainUI}</div>
             </div>
@@ -2313,32 +2427,38 @@ const isScrollableElement = (target: EventTarget | null) => {
         />
       )}
 
-      {statsInstanceId && (() => {
-        const si = instances.find((i) => i.id === statsInstanceId);
-        return si ? (
-          <Suspense fallback={null}>
-            <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
-          </Suspense>
-        ) : null;
-      })()}
+      {statsInstanceId &&
+        (() => {
+          const si = instances.find((i) => i.id === statsInstanceId);
+          return si ? (
+            <Suspense fallback={null}>
+              <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+            </Suspense>
+          ) : null;
+        })()}
 
-      {screenshotsInstanceId && (() => {
-        const si = instances.find((i) => i.id === screenshotsInstanceId);
-        return si ? (
-          <Suspense fallback={null}>
-            <BuildScreenshotsModal instance={si} onClose={() => setScreenshotsInstanceId(null)} />
-          </Suspense>
-        ) : null;
-      })()}
+      {screenshotsInstanceId &&
+        (() => {
+          const si = instances.find((i) => i.id === screenshotsInstanceId);
+          return si ? (
+            <Suspense fallback={null}>
+              <BuildScreenshotsModal instance={si} onClose={() => setScreenshotsInstanceId(null)} />
+            </Suspense>
+          ) : null;
+        })()}
 
       {confirmPendingId && (
-        <div className="confirm-overlay" onClick={() => { setConfirmPendingId(null); setConfirmPendingName(""); }}>
+        <div
+          className="confirm-overlay"
+          onClick={() => {
+            setConfirmPendingId(null);
+            setConfirmPendingName("");
+          }}
+        >
           <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <span className="confirm-label">DELETE BUILD</span>
             <p className="confirm-title">{confirmPendingName}</p>
-            <p className="confirm-body">
-              Все файлы сборки будут удалены с диска безвозвратно.
-            </p>
+            <p className="confirm-body">Все файлы сборки будут удалены с диска безвозвратно.</p>
             <div className="confirm-actions">
               <button
                 className="primary-action kill-action confirm-btn-delete"
@@ -2350,7 +2470,10 @@ const isScrollableElement = (target: EventTarget | null) => {
               <button
                 className="ghost-action"
                 type="button"
-                onClick={() => { setConfirmPendingId(null); setConfirmPendingName(""); }}
+                onClick={() => {
+                  setConfirmPendingId(null);
+                  setConfirmPendingName("");
+                }}
               >
                 CANCEL
               </button>
@@ -2360,293 +2483,440 @@ const isScrollableElement = (target: EventTarget | null) => {
       )}
 
       {/* ── Export modal ── */}
-      {exportInstanceId && (() => {
-        const inst = instances.find((i) => i.id === exportInstanceId);
-        type ExportKey = keyof typeof exportOptions;
-        type ExportRow = { key: ExportKey; label: string; meta?: string; items?: ExportedItem[] };
-        const rows: ExportRow[] = [
-          { key: "name",          label: "BUILD NAME",     meta: exportData?.name },
-          { key: "ram",           label: "RAM SETTINGS",   meta: exportData ? `${exportData.ram} GB` : undefined },
-          { key: "javaArgs",      label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(exportData) },
-          { key: "javaPath",      label: "JAVA PATH",      meta: exportData?.javaPath || undefined },
-          { key: "window",        label: "WINDOW SIZE",    meta: formatWindowSettingsMeta(exportData) },
-          { key: "mods",          label: "MODS",           meta: exportData ? `${exportData.mods.length}` : "...",         items: exportData?.mods ?? [] },
-          { key: "shaders",       label: "SHADERS",        meta: exportData ? `${exportData.shaders.length}` : "...",      items: exportData?.shaders ?? [] },
-          { key: "resourcePacks", label: "RESOURCE PACKS", meta: exportData ? `${exportData.resourcePacks.length}` : "...", items: exportData?.resourcePacks ?? [] },
-        ];
-        const toggle = (key: ExportKey) =>
-          setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
-        return (
-          <div className="confirm-overlay" onClick={() => { if (!exportWorking) { setExportInstanceId(null); setListPreview(null); } }}>
-            <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
-              <span className="confirm-label">EXPORT BUILD</span>
-              <p className="confirm-title">{inst?.name ?? ""}</p>
-              <div className="eximp-options">
-                {rows.map(({ key, label, meta, items }) => (
-                  <div
-                    key={key}
-                    className="eximp-option"
-                    data-list-preview-owner={`export-${key}`}
-                    onClick={() => toggle(key)}
-                    onMouseEnter={(e) => {
-                      if (items && items.length > 0) {
-                        const ownerId = `export-${key}`;
-                        altSourceHoveredRef.current = true;
-                        altHoverRef.current = { items, label, el: e.currentTarget, ownerId };
-                        if (e.altKey) {
-                          setListPreview({
-                            items,
-                            label,
-                            rect: e.currentTarget.getBoundingClientRect(),
-                            ownerId,
-                          });
+      {mascotConfirmPendingId && (
+        <div
+          className="confirm-overlay"
+          onClick={() => {
+            setMascotConfirmPendingId(null);
+            setMascotConfirmPendingName("");
+          }}
+        >
+          <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
+            <span className="confirm-label">DELETE BUILD</span>
+            <p className="confirm-title">{mascotConfirmPendingName}</p>
+            <p className="confirm-body">Все файлы сборки будут удалены с диска безвозвратно.</p>
+            <div className="confirm-actions">
+              <button
+                className="primary-action kill-action confirm-btn-delete"
+                type="button"
+                data-mascot-fake-delete
+                onClick={handleMascotDeleteConfirmed}
+              >
+                DELETE
+              </button>
+              <button
+                className="ghost-action"
+                type="button"
+                onClick={() => {
+                  setMascotConfirmPendingId(null);
+                  setMascotConfirmPendingName("");
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportInstanceId &&
+        (() => {
+          const inst = instances.find((i) => i.id === exportInstanceId);
+          type ExportKey = keyof typeof exportOptions;
+          type ExportRow = { key: ExportKey; label: string; meta?: string; items?: ExportedItem[] };
+          const rows: ExportRow[] = [
+            { key: "name", label: "BUILD NAME", meta: exportData?.name },
+            {
+              key: "ram",
+              label: "RAM SETTINGS",
+              meta: exportData ? `${exportData.ram} GB` : undefined,
+            },
+            { key: "javaArgs", label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(exportData) },
+            { key: "javaPath", label: "JAVA PATH", meta: exportData?.javaPath || undefined },
+            { key: "window", label: "WINDOW SIZE", meta: formatWindowSettingsMeta(exportData) },
+            {
+              key: "mods",
+              label: "MODS",
+              meta: exportData ? `${exportData.mods.length}` : "...",
+              items: exportData?.mods ?? [],
+            },
+            {
+              key: "shaders",
+              label: "SHADERS",
+              meta: exportData ? `${exportData.shaders.length}` : "...",
+              items: exportData?.shaders ?? [],
+            },
+            {
+              key: "resourcePacks",
+              label: "RESOURCE PACKS",
+              meta: exportData ? `${exportData.resourcePacks.length}` : "...",
+              items: exportData?.resourcePacks ?? [],
+            },
+          ];
+          const toggle = (key: ExportKey) =>
+            setExportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+          return (
+            <div
+              className="confirm-overlay"
+              onClick={() => {
+                if (!exportWorking) {
+                  setExportInstanceId(null);
+                  setListPreview(null);
+                }
+              }}
+            >
+              <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
+                <span className="confirm-label">EXPORT BUILD</span>
+                <p className="confirm-title">{inst?.name ?? ""}</p>
+                <div className="eximp-options">
+                  {rows.map(({ key, label, meta, items }) => (
+                    <div
+                      key={key}
+                      className="eximp-option"
+                      data-list-preview-owner={`export-${key}`}
+                      onClick={() => toggle(key)}
+                      onMouseEnter={(e) => {
+                        if (items && items.length > 0) {
+                          const ownerId = `export-${key}`;
+                          altSourceHoveredRef.current = true;
+                          altHoverRef.current = { items, label, el: e.currentTarget, ownerId };
+                          if (e.altKey) {
+                            setListPreview({
+                              items,
+                              label,
+                              rect: e.currentTarget.getBoundingClientRect(),
+                              ownerId,
+                            });
+                          }
                         }
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      altSourceHoveredRef.current = false;
-                      const next = e.relatedTarget;
-                      if (!(next instanceof Element) || !next.closest(`[data-list-preview-owner="export-${key}"]`)) {
-                        altHoverRef.current = null;
-                        setListPreview(null);
-                      }
+                      }}
+                      onMouseLeave={(e) => {
+                        altSourceHoveredRef.current = false;
+                        const next = e.relatedTarget;
+                        if (
+                          !(next instanceof Element) ||
+                          !next.closest(`[data-list-preview-owner="export-${key}"]`)
+                        ) {
+                          altHoverRef.current = null;
+                          setListPreview(null);
+                        }
+                      }}
+                    >
+                      <OptionToggle enabled={exportOptions[key]} onToggle={() => toggle(key)} />
+                      <span className="eximp-option-label">{label}</span>
+                      <span className="eximp-option-meta">
+                        {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
+                        {meta}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="eximp-notice">
+                  .SLBUILD stores the project list. .MRPACK also includes local mods, configs, and
+                  other user files through OVERRIDES.
+                </p>
+                {exportError && (
+                  <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
+                    {exportError}
+                  </p>
+                )}
+                {exportWorking && <p className="eximp-working">CREATING .MRPACK...</p>}
+                <div className="confirm-actions" style={{ marginTop: 24 }}>
+                  <button
+                    className="primary-action"
+                    type="button"
+                    disabled={!exportData || exportWorking}
+                    onClick={handleExportDownload}
+                  >
+                    .SLBUILD
+                  </button>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    disabled={!exportData || exportWorking}
+                    onClick={() => void handleExportMrpack()}
+                  >
+                    .MRPACK
+                  </button>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    disabled={exportWorking}
+                    onClick={() => {
+                      setExportInstanceId(null);
+                      setListPreview(null);
                     }}
                   >
-                    <OptionToggle enabled={exportOptions[key]} onToggle={() => toggle(key)} />
-                    <span className="eximp-option-label">{label}</span>
-                    <span className="eximp-option-meta">
-                      {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
-                      {meta}
-                    </span>
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* ── Import modal ── */}
+      {importModalOpen &&
+        (() => {
+          type ImportKey = keyof typeof importOptions;
+          type ImportRow = {
+            key: ImportKey;
+            label: string;
+            meta?: string;
+            disabled?: boolean;
+            items?: ExportedItem[];
+          };
+          const rows: ImportRow[] = [
+            { key: "name", label: "BUILD NAME", meta: importData?.name || undefined },
+            {
+              key: "ram",
+              label: "RAM SETTINGS",
+              meta: importData?.ram ? `${importData.ram} GB` : undefined,
+            },
+            {
+              key: "javaArgs",
+              label: "JAVA ARGUMENTS",
+              meta: formatJavaArgsMeta(importData),
+              disabled: !hasJavaArgsData(importData),
+            },
+            {
+              key: "javaPath",
+              label: "JAVA PATH",
+              meta: importData?.javaPath || undefined,
+              disabled: !hasJavaPathData(importData),
+            },
+            {
+              key: "window",
+              label: "WINDOW SIZE",
+              meta: formatWindowSettingsMeta(importData),
+              disabled: !hasWindowSettingsData(importData),
+            },
+            {
+              key: "mods",
+              label: "MODS",
+              meta: importData ? `${importData.mods?.length ?? 0}` : undefined,
+              disabled: !importData?.mods?.length,
+              items: importData?.mods ?? [],
+            },
+            {
+              key: "shaders",
+              label: "SHADERS",
+              meta: importData ? `${importData.shaders?.length ?? 0}` : undefined,
+              disabled: !importData?.shaders?.length,
+              items: importData?.shaders ?? [],
+            },
+            {
+              key: "resourcePacks",
+              label: "RESOURCE PACKS",
+              meta: importData ? `${importData.resourcePacks?.length ?? 0}` : undefined,
+              disabled: !importData?.resourcePacks?.length,
+              items: importData?.resourcePacks ?? [],
+            },
+          ];
+          const toggle = (key: ImportKey) =>
+            setImportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+          const close = () => {
+            if (importWorking) return;
+            setImportModalOpen(false);
+            setImportData(null);
+            setImportSourcePath("");
+            setImportError("");
+            setListPreview(null);
+          };
+          return (
+            <div className="confirm-overlay" onClick={close}>
+              <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
+                <span className="confirm-label">IMPORT BUILD</span>
+                <p className="confirm-title">{importData?.name || "НОВАЯ СБОРКА"}</p>
+                {importData ? (
+                  <>
+                    <div className="eximp-options">
+                      {rows.map(({ key, label, meta, disabled, items }) => (
+                        <div key={key}>
+                          <div
+                            className={`eximp-option${disabled ? " disabled" : ""}`}
+                            data-list-preview-owner={`import-${key}`}
+                            onClick={() => !disabled && toggle(key)}
+                            onMouseEnter={(e) => {
+                              if (items && items.length > 0) {
+                                const ownerId = `import-${key}`;
+                                altSourceHoveredRef.current = true;
+                                altHoverRef.current = {
+                                  items,
+                                  label,
+                                  el: e.currentTarget,
+                                  ownerId,
+                                };
+                                if (e.altKey) {
+                                  setListPreview({
+                                    items,
+                                    label,
+                                    rect: e.currentTarget.getBoundingClientRect(),
+                                    ownerId,
+                                  });
+                                }
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              altSourceHoveredRef.current = false;
+                              const next = e.relatedTarget;
+                              if (
+                                !(next instanceof Element) ||
+                                !next.closest(`[data-list-preview-owner="import-${key}"]`)
+                              ) {
+                                altHoverRef.current = null;
+                                setListPreview(null);
+                              }
+                            }}
+                          >
+                            <OptionToggle
+                              enabled={importOptions[key] && !disabled}
+                              onToggle={() => !disabled && toggle(key)}
+                              disabled={disabled}
+                            />
+                            <span className="eximp-option-label">{label}</span>
+                            <span className="eximp-option-meta">
+                              {items && items.length > 0 && (
+                                <span className="eximp-alt-hint">alt </span>
+                              )}
+                              {meta}
+                            </span>
+                          </div>
+                          {key === "name" && !importOptions.name && (
+                            <div className="eximp-name-input-wrap">
+                              <input
+                                placeholder="Введите название сборки"
+                                value={importCustomName}
+                                onChange={(e) => setImportCustomName(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="eximp-notice">
+                      {importSourceFormat === "mrpack"
+                        ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
+                        : "Version and loader come from the file. Modrinth projects will be downloaded again."}
+                    </p>
+                    {importError && (
+                      <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
+                        {importError}
+                      </p>
+                    )}
+                    {importWorking && <p className="eximp-working">ИМПОРТ...</p>}
+                    <div className="confirm-actions" style={{ marginTop: 24 }}>
+                      <button
+                        className="primary-action"
+                        type="button"
+                        disabled={
+                          importWorking || (!importOptions.name && !importCustomName.trim())
+                        }
+                        onClick={handleImportConfirm}
+                      >
+                        {importWorking ? "WORKING..." : "IMPORT"}
+                      </button>
+                      <button
+                        className="ghost-action"
+                        type="button"
+                        onClick={close}
+                        disabled={importWorking}
+                      >
+                        CANCEL
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="confirm-body" style={{ color: "var(--accent)" }}>
+                      {importError || "Ошибка чтения файла."}
+                    </p>
+                    <div className="confirm-actions" style={{ marginTop: 8 }}>
+                      <button className="ghost-action" type="button" onClick={close}>
+                        CLOSE
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+      {/* ── Hover list preview with an interactive bridge ── */}
+      {listPreview &&
+        listPreview.items.length > 0 &&
+        (() => {
+          const gap = 10;
+          const bridgeOverlap = 2;
+          const previewW = 280;
+          const previewItemHeight = 46;
+          const previewH = Math.min(listPreview.items.length * previewItemHeight + 46, 320);
+          const spaceRight = window.innerWidth - listPreview.rect.right - gap;
+          const opensRight = spaceRight >= previewW;
+          const left = opensRight
+            ? listPreview.rect.right + gap
+            : listPreview.rect.left - previewW - gap;
+          const top = Math.max(
+            8,
+            Math.min(listPreview.rect.top, window.innerHeight - previewH - 8),
+          );
+          const bridgeTop = Math.min(listPreview.rect.top, top);
+          const bridgeBottom = Math.max(listPreview.rect.bottom, top + previewH);
+          const bridgeLeft = opensRight
+            ? listPreview.rect.right - bridgeOverlap
+            : left + previewW - bridgeOverlap;
+          const keepPreviewOpen = (target: EventTarget | null) =>
+            target instanceof Element &&
+            target.closest(`[data-list-preview-owner="${listPreview.ownerId}"]`) !== null;
+          const handlePreviewMouseLeave = (event: React.MouseEvent<HTMLElement>) => {
+            if (keepPreviewOpen(event.relatedTarget)) return;
+            altHoverRef.current = null;
+            setListPreview(null);
+          };
+
+          return (
+            <>
+              <div
+                className="eximp-list-preview-bridge"
+                data-list-preview-owner={listPreview.ownerId}
+                style={{
+                  left: bridgeLeft,
+                  top: bridgeTop,
+                  width: gap + bridgeOverlap * 2,
+                  height: bridgeBottom - bridgeTop,
+                }}
+                onMouseLeave={handlePreviewMouseLeave}
+              />
+              <div
+                className="eximp-list-preview"
+                data-list-preview-owner={listPreview.ownerId}
+                style={{ left, top, width: previewW }}
+                onMouseLeave={handlePreviewMouseLeave}
+              >
+                <div className="eximp-list-preview-head">
+                  <span>{listPreview.label}</span>
+                  <span className="eximp-list-preview-count">{listPreview.items.length}</span>
+                </div>
+                {listPreview.items.map((item, i) => (
+                  <div
+                    key={`${item.projectId ?? item.title}-${i}`}
+                    className="eximp-list-preview-item"
+                  >
+                    <ExportedItemIcon
+                      src={getExportedItemIconUrl(item)}
+                      title={item.title}
+                      source={item.source}
+                    />
+                    <span className="eximp-list-preview-title">{item.title}</span>
+                    <span className="eximp-list-preview-src">{item.source}</span>
                   </div>
                 ))}
               </div>
-              <p className="eximp-notice">
-                .SLBUILD stores the project list. .MRPACK also includes local mods, configs,
-                and other user files through OVERRIDES.
-              </p>
-              {exportError && (
-                <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
-                  {exportError}
-                </p>
-              )}
-              {exportWorking && <p className="eximp-working">CREATING .MRPACK...</p>}
-              <div className="confirm-actions" style={{ marginTop: 24 }}>
-                <button
-                  className="primary-action"
-                  type="button"
-                  disabled={!exportData || exportWorking}
-                  onClick={handleExportDownload}
-                >
-                  .SLBUILD
-                </button>
-                <button
-                  className="ghost-action"
-                  type="button"
-                  disabled={!exportData || exportWorking}
-                  onClick={() => void handleExportMrpack()}
-                >
-                  .MRPACK
-                </button>
-                <button
-                  className="ghost-action"
-                  type="button"
-                  disabled={exportWorking}
-                  onClick={() => { setExportInstanceId(null); setListPreview(null); }}
-                >
-                  CANCEL
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Import modal ── */}
-      {importModalOpen && (() => {
-        type ImportKey = keyof typeof importOptions;
-        type ImportRow = { key: ImportKey; label: string; meta?: string; disabled?: boolean; items?: ExportedItem[] };
-        const rows: ImportRow[] = [
-          { key: "name",          label: "BUILD NAME",     meta: importData?.name || undefined },
-          { key: "ram",           label: "RAM SETTINGS",   meta: importData?.ram ? `${importData.ram} GB` : undefined },
-          { key: "javaArgs",      label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(importData), disabled: !hasJavaArgsData(importData) },
-          { key: "javaPath",      label: "JAVA PATH",      meta: importData?.javaPath || undefined, disabled: !hasJavaPathData(importData) },
-          { key: "window",        label: "WINDOW SIZE",    meta: formatWindowSettingsMeta(importData), disabled: !hasWindowSettingsData(importData) },
-          { key: "mods",          label: "MODS",           meta: importData ? `${importData.mods?.length ?? 0}` : undefined,         disabled: !importData?.mods?.length,         items: importData?.mods ?? [] },
-          { key: "shaders",       label: "SHADERS",        meta: importData ? `${importData.shaders?.length ?? 0}` : undefined,      disabled: !importData?.shaders?.length,      items: importData?.shaders ?? [] },
-          { key: "resourcePacks", label: "RESOURCE PACKS", meta: importData ? `${importData.resourcePacks?.length ?? 0}` : undefined, disabled: !importData?.resourcePacks?.length, items: importData?.resourcePacks ?? [] },
-        ];
-        const toggle = (key: ImportKey) =>
-          setImportOptions((prev) => ({ ...prev, [key]: !prev[key] }));
-        const close = () => { if (importWorking) return; setImportModalOpen(false); setImportData(null); setImportSourcePath(""); setImportError(""); setListPreview(null); };
-        return (
-          <div className="confirm-overlay" onClick={close}>
-            <div className="confirm-dialog eximp-dialog" onClick={(e) => e.stopPropagation()}>
-              <span className="confirm-label">IMPORT BUILD</span>
-              <p className="confirm-title">{importData?.name || "НОВАЯ СБОРКА"}</p>
-              {importData ? (
-                <>
-                  <div className="eximp-options">
-                    {rows.map(({ key, label, meta, disabled, items }) => (
-                      <div key={key}>
-                        <div
-                          className={`eximp-option${disabled ? " disabled" : ""}`}
-                          data-list-preview-owner={`import-${key}`}
-                          onClick={() => !disabled && toggle(key)}
-                          onMouseEnter={(e) => {
-                            if (items && items.length > 0) {
-                              const ownerId = `import-${key}`;
-                              altSourceHoveredRef.current = true;
-                              altHoverRef.current = { items, label, el: e.currentTarget, ownerId };
-                              if (e.altKey) {
-                                setListPreview({
-                                  items,
-                                  label,
-                                  rect: e.currentTarget.getBoundingClientRect(),
-                                  ownerId,
-                                });
-                              }
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            altSourceHoveredRef.current = false;
-                            const next = e.relatedTarget;
-                            if (!(next instanceof Element) || !next.closest(`[data-list-preview-owner="import-${key}"]`)) {
-                              altHoverRef.current = null;
-                              setListPreview(null);
-                            }
-                          }}
-                        >
-                          <OptionToggle
-                            enabled={importOptions[key] && !disabled}
-                            onToggle={() => !disabled && toggle(key)}
-                            disabled={disabled}
-                          />
-                          <span className="eximp-option-label">{label}</span>
-                          <span className="eximp-option-meta">
-                            {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
-                            {meta}
-                          </span>
-                        </div>
-                        {key === "name" && !importOptions.name && (
-                          <div className="eximp-name-input-wrap">
-                            <input
-                              placeholder="Введите название сборки"
-                              value={importCustomName}
-                              onChange={(e) => setImportCustomName(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <p className="eximp-notice">
-                    {importSourceFormat === "mrpack"
-                      ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
-                      : "Version and loader come from the file. Modrinth projects will be downloaded again."}
-                  </p>
-                  {importError && (
-                    <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
-                      {importError}
-                    </p>
-                  )}
-                  {importWorking && <p className="eximp-working">ИМПОРТ...</p>}
-                  <div className="confirm-actions" style={{ marginTop: 24 }}>
-                    <button
-                      className="primary-action"
-                      type="button"
-                      disabled={importWorking || (!importOptions.name && !importCustomName.trim())}
-                      onClick={handleImportConfirm}
-                    >
-                      {importWorking ? "WORKING..." : "IMPORT"}
-                    </button>
-                    <button className="ghost-action" type="button" onClick={close} disabled={importWorking}>
-                      CANCEL
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="confirm-body" style={{ color: "var(--accent)" }}>{importError || "Ошибка чтения файла."}</p>
-                  <div className="confirm-actions" style={{ marginTop: 8 }}>
-                    <button className="ghost-action" type="button" onClick={close}>CLOSE</button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Hover list preview with an interactive bridge ── */}
-      {listPreview && listPreview.items.length > 0 && (() => {
-        const gap = 10;
-        const bridgeOverlap = 2;
-        const previewW = 280;
-        const previewItemHeight = 46;
-        const previewH = Math.min(listPreview.items.length * previewItemHeight + 46, 320);
-        const spaceRight = window.innerWidth - listPreview.rect.right - gap;
-        const opensRight = spaceRight >= previewW;
-        const left = opensRight
-          ? listPreview.rect.right + gap
-          : listPreview.rect.left - previewW - gap;
-        const top = Math.max(
-          8,
-          Math.min(listPreview.rect.top, window.innerHeight - previewH - 8),
-        );
-        const bridgeTop = Math.min(listPreview.rect.top, top);
-        const bridgeBottom = Math.max(listPreview.rect.bottom, top + previewH);
-        const bridgeLeft = opensRight
-          ? listPreview.rect.right - bridgeOverlap
-          : left + previewW - bridgeOverlap;
-        const keepPreviewOpen = (target: EventTarget | null) =>
-          target instanceof Element
-          && target.closest(`[data-list-preview-owner="${listPreview.ownerId}"]`) !== null;
-        const handlePreviewMouseLeave = (event: React.MouseEvent<HTMLElement>) => {
-          if (keepPreviewOpen(event.relatedTarget)) return;
-          altHoverRef.current = null;
-          setListPreview(null);
-        };
-
-        return (
-          <>
-            <div
-              className="eximp-list-preview-bridge"
-              data-list-preview-owner={listPreview.ownerId}
-              style={{
-                left: bridgeLeft,
-                top: bridgeTop,
-                width: gap + bridgeOverlap * 2,
-                height: bridgeBottom - bridgeTop,
-              }}
-              onMouseLeave={handlePreviewMouseLeave}
-            />
-            <div
-              className="eximp-list-preview"
-              data-list-preview-owner={listPreview.ownerId}
-              style={{ left, top, width: previewW }}
-              onMouseLeave={handlePreviewMouseLeave}
-            >
-              <div className="eximp-list-preview-head">
-                <span>{listPreview.label}</span>
-                <span className="eximp-list-preview-count">{listPreview.items.length}</span>
-              </div>
-              {listPreview.items.map((item, i) => (
-                <div key={`${item.projectId ?? item.title}-${i}`} className="eximp-list-preview-item">
-                  <ExportedItemIcon
-                    src={getExportedItemIconUrl(item)}
-                    title={item.title}
-                    source={item.source}
-                  />
-                  <span className="eximp-list-preview-title">{item.title}</span>
-                  <span className="eximp-list-preview-src">{item.source}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        );
-      })()}
+            </>
+          );
+        })()}
     </div>
   );
 }

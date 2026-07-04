@@ -16,12 +16,7 @@ import { BuildCardContentView } from "../components/builds/BuildCardContentView"
 import { InfoPanel } from "../components/display/InfoPanel";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import { formatLastPlayed, formatPlaytime } from "../utils/playtime";
-import type {
-  DropdownKey,
-  InstanceItem,
-  InstallProgressPayload,
-  LoaderType,
-} from "../types";
+import type { DropdownKey, InstanceItem, InstallProgressPayload, LoaderType } from "../types";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 
 interface InstancesTabProps {
@@ -172,8 +167,20 @@ export function InstancesTab({
                 title="Импортировать сборку из файла"
                 onClick={handleImportBuild}
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M7 9.5L4.5 7M7 9.5L9.5 7M7 9.5V3.5M2.5 11.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M7 9.5L4.5 7M7 9.5L9.5 7M7 9.5V3.5M2.5 11.5h9"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </button>
               <button
@@ -195,7 +202,10 @@ export function InstancesTab({
             style={{ flex: 1, minHeight: 0 }}
           >
             {/* Hidden measurement card */}
-            <div style={{ height: 0, overflow: "hidden", pointerEvents: "none" }} aria-hidden="true">
+            <div
+              style={{ height: 0, overflow: "hidden", pointerEvents: "none" }}
+              aria-hidden="true"
+            >
               <div
                 ref={createCardMeasureRef}
                 className={`instance-card ${createMeasureAppearance.image ? "instance-card-with-image" : ""}`}
@@ -238,12 +248,11 @@ export function InstancesTab({
             ) : (
               sortedInstances.map((instance) => {
                 const cardAppearance = getBuildCardAppearance(instance.id);
-                const cardStyle: CSSProperties | undefined = getBuildCardAppearanceStyle(cardAppearance);
-                const resolvedContentTags = resolveBuildCardContentTags(
-                  cardAppearance,
-                  instance,
-                  { buildState: isRunning(instance.id) ? "RUNNING" : "" },
-                );
+                const cardStyle: CSSProperties | undefined =
+                  getBuildCardAppearanceStyle(cardAppearance);
+                const resolvedContentTags = resolveBuildCardContentTags(cardAppearance, instance, {
+                  buildState: isRunning(instance.id) ? "RUNNING" : "",
+                });
                 const isDropTarget = dragContentActive && dragOverInstanceId === instance.id;
 
                 return (
@@ -258,15 +267,15 @@ export function InstancesTab({
                     }}
                     className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""} ${isDropTarget ? "drag-target" : ""}`}
                     style={cardStyle}
+                    data-instance-id={instance.id}
+                    data-mascot-stealable
                     onClick={() => {
                       setSelectedInstanceId(instance.id);
                       setCreateMode(false);
                     }}
                     type="button"
                   >
-                    {isDropTarget && (
-                      <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>
-                    )}
+                    {isDropTarget && <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>}
                     <div className="instance-card-top">
                       <span className="instance-name">{instance.name}</span>
                       {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
@@ -274,17 +283,13 @@ export function InstancesTab({
                           className="instance-running-badge"
                           style={getBuildCardBadgeStyle(cardAppearance)}
                         >
-                          {resolveForTarget(
-                            getBuildCardBadgeText(cardAppearance),
-                            instance,
-                            {
-                              buildState:
-                                isRunning(instance.id) ||
-                                getBuildCardBadgeVisibility(cardAppearance) === "always"
-                                  ? "RUNNING"
-                                  : "",
-                            },
-                          )}
+                          {resolveForTarget(getBuildCardBadgeText(cardAppearance), instance, {
+                            buildState:
+                              isRunning(instance.id) ||
+                              getBuildCardBadgeVisibility(cardAppearance) === "always"
+                                ? "RUNNING"
+                                : "",
+                          })}
                         </span>
                       )}
                     </div>
@@ -317,240 +322,316 @@ export function InstancesTab({
         {/* ── Details / Creator panel ── */}
         <div className="instance-details-column">
           <div className="panel-card instance-details-card">
-          {showCreator ? (
-            <>
-              <span className="panel-label">CREATE NEW BUILD</span>
-              <div className="form-grid single-form-grid">
-                <label className="field">
-                  <span>BUILD NAME</span>
-                  <input
-                    placeholder="My Vanilla Build"
-                    value={createBuildName}
-                    onChange={(e) => setCreateBuildName(e.target.value)}
-                  />
-                </label>
-              </div>
+            {showCreator ? (
+              <>
+                <span className="panel-label">CREATE NEW BUILD</span>
+                <div className="form-grid single-form-grid">
+                  <label className="field">
+                    <span>BUILD NAME</span>
+                    <input
+                      placeholder="My Vanilla Build"
+                      value={createBuildName}
+                      onChange={(e) => setCreateBuildName(e.target.value)}
+                    />
+                  </label>
+                </div>
 
-              <div className="inline-dropdown-grid" style={{ marginTop: 24 }}>
-                <InlineDropdown
-                  label="MC VERSION"
-                  value={createVersion || "SELECT VERSION"}
-                  options={minecraftVersions}
-                  isOpen={openDropdown === "create-version"}
-                  onToggle={() => setOpenDropdown(openDropdown === "create-version" ? null : "create-version")}
-                  onSelect={(value) => {
-                    setCreateVersion(value);
-                    setOpenDropdown(null);
-                  }}
-                />
-
-                <div className="create-loader-stack">
+                <div className="inline-dropdown-grid" style={{ marginTop: 24 }}>
                   <InlineDropdown
-                    label="LOADER"
-                    value={createLoader}
-                    options={LOADER_OPTIONS}
-                    isOpen={openDropdown === "create-loader"}
-                    onToggle={() => setOpenDropdown(openDropdown === "create-loader" ? null : "create-loader")}
+                    label="MC VERSION"
+                    value={createVersion || "SELECT VERSION"}
+                    options={minecraftVersions}
+                    isOpen={openDropdown === "create-version"}
+                    onToggle={() =>
+                      setOpenDropdown(openDropdown === "create-version" ? null : "create-version")
+                    }
                     onSelect={(value) => {
-                      const nextLoader = value as LoaderType;
-                      setCreateLoader(nextLoader);
-                      setCreateLoaderVersion("");
+                      setCreateVersion(value);
                       setOpenDropdown(null);
                     }}
                   />
-                </div>
-              </div>
 
-              {createLoader !== "Vanilla" ? (
-                <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
-                  <div className="detail-block create-loader-detail-block">
-                    <span className="detail-title">{createLoader.toUpperCase()} LOADER VERSION</span>
+                  <div className="create-loader-stack">
                     <InlineDropdown
-                      label=""
-                      value={
-                        loaderVersionsLoading
-                          ? "LOADING..."
-                          : createLoaderVersion || "SELECT " + createLoader.toUpperCase() + " VERSION"
-                      }
-                      options={loaderVersions}
-                      isOpen={openDropdown === "create-loader-version"}
+                      label="LOADER"
+                      value={createLoader}
+                      options={LOADER_OPTIONS}
+                      isOpen={openDropdown === "create-loader"}
                       onToggle={() =>
-                        setOpenDropdown(openDropdown === "create-loader-version" ? null : "create-loader-version")
+                        setOpenDropdown(openDropdown === "create-loader" ? null : "create-loader")
                       }
                       onSelect={(value) => {
-                        setCreateLoaderVersion(value);
+                        const nextLoader = value as LoaderType;
+                        setCreateLoader(nextLoader);
+                        setCreateLoaderVersion("");
                         setOpenDropdown(null);
                       }}
                     />
                   </div>
                 </div>
-              ) : null}
 
-              {createError && (
-                <p className="panel-text" style={{ color: "var(--accent)" }}>{createError}</p>
-              )}
+                {createLoader !== "Vanilla" ? (
+                  <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
+                    <div className="detail-block create-loader-detail-block">
+                      <span className="detail-title">
+                        {createLoader.toUpperCase()} LOADER VERSION
+                      </span>
+                      <InlineDropdown
+                        label=""
+                        value={
+                          loaderVersionsLoading
+                            ? "LOADING..."
+                            : createLoaderVersion ||
+                              "SELECT " + createLoader.toUpperCase() + " VERSION"
+                        }
+                        options={loaderVersions}
+                        isOpen={openDropdown === "create-loader-version"}
+                        onToggle={() =>
+                          setOpenDropdown(
+                            openDropdown === "create-loader-version"
+                              ? null
+                              : "create-loader-version",
+                          )
+                        }
+                        onSelect={(value) => {
+                          setCreateLoaderVersion(value);
+                          setOpenDropdown(null);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
-              <div className="instance-actions">
-                <button
-                  className="primary-action"
-                  type="button"
-                  onClick={handleCreateBuild}
-                  disabled={working}
-                  data-mascot-stealable
-                  data-mascot-label="CREATE BUILD"
-                >
-                  {working ? "WORKING..." : "CREATE BUILD"}
-                </button>
-                {instances.length > 0 && (
-                  <button className="ghost-action" onClick={() => setCreateMode(false)}>CANCEL</button>
+                {createError && (
+                  <p className="panel-text" style={{ color: "var(--accent)" }}>
+                    {createError}
+                  </p>
                 )}
-                {advancedSettingsEnabled && (
+
+                <div className="instance-actions">
                   <button
-                    className="ghost-action icon-square-action settings-icon-action"
+                    className="primary-action"
                     type="button"
-                    onClick={() => openBuildCardSettings(null)}
-                    title="Build settings"
-                  >
-                    <SettingsGearIcon />
-                  </button>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <span className="panel-label">BUILD CONFIGURATION</span>
-
-              <div className="inline-dropdown-grid">
-                <InlineDropdown
-                  label="SELECT BUILD"
-                  value={selectedInstance?.name || "NO BUILD"}
-                  options={instances.map((i) => i.name)}
-                  isOpen={openDropdown === "build"}
-                  onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
-                  onSelect={(value) => {
-                    const found = instances.find((i) => i.name === value);
-                    if (found) {
-                      setSelectedInstanceId(found.id);
-                    }
-                    setOpenDropdown(null);
-                  }}
-                />
-
-                <InfoPanel
-                  label="MC VERSION"
-                  value={selectedInstance?.version}
-                  placeholder="SELECT VERSION"
-                  bottomSpace={buildInfoBottomSpace}
-                />
-
-                <InfoPanel
-                  label="LOADER"
-                  value={selectedInstance?.loaderVersion
-                    ? selectedInstance.loader + " " + selectedInstance.loaderVersion
-                    : selectedInstance?.loader}
-                  placeholder="SELECT LOADER"
-                  bottomSpace={buildInfoBottomSpace}
-                />
-
-                <InfoPanel label="SOURCE" value="OFFICIAL" bottomSpace={buildInfoBottomSpace} />
-
-                <InfoPanel
-                  className="info-panel--right-column"
-                  label="TIME IN BUILD"
-                  value={formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}
-                  placeholder="0 hrs on record"
-                  bottomSpace={buildInfoBottomSpace}
-                />
-              </div>
-
-              <div className="instance-actions instance-actions-build">
-                {selectedInstance && isRunning(selectedInstance.id) ? (
-                  <button className="primary-action kill-action build-play-action" type="button" onClick={() => handleKillGame(selectedInstance.id)}>
-                    <span className="bpa-stack">
-                      <span className="bpa-label">✕ KILL GAME</span>
-                      <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    className="primary-action build-play-action"
-                    type="button"
-                    onClick={() => handleLaunchSelected()}
+                    onClick={handleCreateBuild}
                     disabled={working}
                     data-mascot-stealable
-                    data-mascot-label="PLAY BUILD"
+                    data-mascot-label="CREATE BUILD"
                   >
-                    <span className="bpa-stack">
-                      <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
-                      <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
-                    </span>
+                    {working ? "WORKING..." : "CREATE BUILD"}
                   </button>
-                )}
-                <button
-                  className="ghost-action"
-                  type="button"
-                  onClick={handleInstallSelected}
-                  disabled={working}
-                  data-mascot-stealable
-                  data-mascot-label="INSTALL"
-                >
-                  INSTALL
-                </button>
-                <button className="ghost-action" type="button" onClick={handleOpenFolder}>FOLDER</button>
-                <button className="ghost-action" type="button" onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}>STATS</button>
-                <div className="instance-side-actions">
-                  <button
-                    className="ghost-action icon-square-action export-action"
-                    type="button"
-                    title="Экспортировать сборку"
-                    onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M7 3.5L9.5 6M7 3.5L4.5 6M7 3.5V9.5M2.5 11.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
+                  {instances.length > 0 && (
+                    <button className="ghost-action" onClick={() => setCreateMode(false)}>
+                      CANCEL
+                    </button>
+                  )}
                   {advancedSettingsEnabled && (
                     <button
                       className="ghost-action icon-square-action settings-icon-action"
                       type="button"
-                      onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
+                      onClick={() => openBuildCardSettings(null)}
                       title="Build settings"
                     >
                       <SettingsGearIcon />
                     </button>
                   )}
-                  <button
-                    className="ghost-action icon-square-action screenshots-action"
-                    type="button"
-                    title="Screenshots"
-                    onClick={() => selectedInstance && setScreenshotsInstanceId(selectedInstance.id)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M4.7 3.2l.7-1.1h3.2l.7 1.1h2.2a1 1 0 011 1v6.4a1 1 0 01-1 1h-9a1 1 0 01-1-1V4.2a1 1 0 011-1h2.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-                      <circle cx="7" cy="7.3" r="2.1" stroke="currentColor" strokeWidth="1.2"/>
-                    </svg>
-                  </button>
-                  <button
-                    className="ghost-action icon-square-action trash-action"
-                    type="button"
-                    title="Удалить сборку"
-                    onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </button>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <span className="panel-label">BUILD CONFIGURATION</span>
+
+                <div className="inline-dropdown-grid">
+                  <InlineDropdown
+                    label="SELECT BUILD"
+                    value={selectedInstance?.name || "NO BUILD"}
+                    options={instances.map((i) => i.name)}
+                    isOpen={openDropdown === "build"}
+                    onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
+                    onSelect={(value) => {
+                      const found = instances.find((i) => i.name === value);
+                      if (found) {
+                        setSelectedInstanceId(found.id);
+                      }
+                      setOpenDropdown(null);
+                    }}
+                  />
+
+                  <InfoPanel
+                    label="MC VERSION"
+                    value={selectedInstance?.version}
+                    placeholder="SELECT VERSION"
+                    bottomSpace={buildInfoBottomSpace}
+                  />
+
+                  <InfoPanel
+                    label="LOADER"
+                    value={
+                      selectedInstance?.loaderVersion
+                        ? selectedInstance.loader + " " + selectedInstance.loaderVersion
+                        : selectedInstance?.loader
+                    }
+                    placeholder="SELECT LOADER"
+                    bottomSpace={buildInfoBottomSpace}
+                  />
+
+                  <InfoPanel label="SOURCE" value="OFFICIAL" bottomSpace={buildInfoBottomSpace} />
+
+                  <InfoPanel
+                    className="info-panel--right-column"
+                    label="TIME IN BUILD"
+                    value={formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}
+                    placeholder="0 hrs on record"
+                    bottomSpace={buildInfoBottomSpace}
+                  />
+                </div>
+
+                <div className="instance-actions instance-actions-build">
+                  {selectedInstance && isRunning(selectedInstance.id) ? (
+                    <button
+                      className="primary-action kill-action build-play-action"
+                      type="button"
+                      onClick={() => handleKillGame(selectedInstance.id)}
+                    >
+                      <span className="bpa-stack">
+                        <span className="bpa-label">✕ KILL GAME</span>
+                        <span className="bpa-sizer" aria-hidden="true">
+                          ✕ KILL GAME
+                        </span>
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      className="primary-action build-play-action"
+                      type="button"
+                      onClick={() => handleLaunchSelected()}
+                      disabled={working}
+                      data-mascot-stealable
+                      data-mascot-label="PLAY BUILD"
+                    >
+                      <span className="bpa-stack">
+                        <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
+                        <span className="bpa-sizer" aria-hidden="true">
+                          ✕ KILL GAME
+                        </span>
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={handleInstallSelected}
+                    disabled={working}
+                    data-mascot-stealable
+                    data-mascot-label="INSTALL"
+                  >
+                    INSTALL
+                  </button>
+                  <button className="ghost-action" type="button" onClick={handleOpenFolder}>
+                    FOLDER
+                  </button>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}
+                  >
+                    STATS
+                  </button>
+                  <div className="instance-side-actions">
+                    <button
+                      className="ghost-action icon-square-action export-action"
+                      type="button"
+                      title="Экспортировать сборку"
+                      onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M7 3.5L9.5 6M7 3.5L4.5 6M7 3.5V9.5M2.5 11.5h9"
+                          stroke="currentColor"
+                          strokeWidth="1.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    {advancedSettingsEnabled && (
+                      <button
+                        className="ghost-action icon-square-action settings-icon-action"
+                        type="button"
+                        onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
+                        title="Build settings"
+                      >
+                        <SettingsGearIcon />
+                      </button>
+                    )}
+                    <button
+                      className="ghost-action icon-square-action screenshots-action"
+                      type="button"
+                      title="Screenshots"
+                      onClick={() =>
+                        selectedInstance && setScreenshotsInstanceId(selectedInstance.id)
+                      }
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M4.7 3.2l.7-1.1h3.2l.7 1.1h2.2a1 1 0 011 1v6.4a1 1 0 01-1 1h-9a1 1 0 01-1-1V4.2a1 1 0 011-1h2.2z"
+                          stroke="currentColor"
+                          strokeWidth="1.2"
+                          strokeLinejoin="round"
+                        />
+                        <circle cx="7" cy="7.3" r="2.1" stroke="currentColor" strokeWidth="1.2" />
+                      </svg>
+                    </button>
+                    <button
+                      className="ghost-action icon-square-action trash-action"
+                      type="button"
+                      title="Удалить сборку"
+                      data-mascot-instance-id={selectedInstance?.id}
+                      data-mascot-instance-name={selectedInstance?.name}
+                      onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
+                          stroke="currentColor"
+                          strokeWidth="1.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {((busyMessage && !installProgress) || actionError) && (
             <div className="build-status-stack">
               <div className="status-box">
                 {busyMessage && !installProgress && <p className="panel-text">{busyMessage}</p>}
-                {actionError && <p className="panel-text" style={{ color: "var(--accent)" }}>{actionError}</p>}
+                {actionError && (
+                  <p className="panel-text" style={{ color: "var(--accent)" }}>
+                    {actionError}
+                  </p>
+                )}
               </div>
             </div>
           )}

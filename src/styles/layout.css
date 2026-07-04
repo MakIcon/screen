@@ -102,6 +102,17 @@
   opacity: 0.5;
 }
 
+.nav-controls button.mascot-window-button-pressed {
+  opacity: 0.38;
+  transform: translateY(2px) scale(0.94);
+  transition-duration: 60ms;
+}
+
+.nav-controls .close-btn.mascot-window-button-pressed {
+  color: var(--accent);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .nav-controls .close-btn {
   color: var(--accent);
 }
@@ -150,7 +161,9 @@
   text-align: left;
   cursor: pointer;
   letter-spacing: 1px;
-  transition: opacity 0.2s, color 0.2s;
+  transition:
+    opacity 0.2s,
+    color 0.2s;
 }
 
 .side-nav button:hover {
