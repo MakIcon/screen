@@ -21,6 +21,7 @@ import surprisedSprite from "../../assets/mascot/sprites/surprised.png";
 import leftArmPiskel from "../../assets/mascot/hands/left-arm.piskel?raw";
 import pointHandPiskel from "../../assets/mascot/hands/point-hand.piskel?raw";
 import rightArmPiskel from "../../assets/mascot/hands/right-arm.piskel?raw";
+import scrollHandPiskel from "../../assets/mascot/hands/scroll-hand.piskel?raw";
 import smoke1Piskel from "../../assets/mascot/effects/smoke1.piskel?raw";
 import smoke2Piskel from "../../assets/mascot/effects/smoke2.piskel?raw";
 import smoke3Piskel from "../../assets/mascot/effects/smoke3.piskel?raw";
@@ -42,8 +43,17 @@ const THROWS_TO_CHAOS = 3;
 const MISCHIEF_DECAY_MS = 8_000;
 const MIN_STEAL_DELAY_MS = 18_000;
 const STEAL_DELAY_VARIANCE_MS = 14_000;
+const UNFOCUSED_SLEEP_DELAY_MS = 5_000;
 const STEAL_REACH_PX = 54;
 const MAX_CHAOS_DEBRIS = 14;
+const SCROLL_HAND_SIZE = 32;
+
+const SCROLLABLE_SELECTOR = [
+  ".csa-content",
+  ".installed-mods-list",
+  ".mod-list",
+  "[data-mascot-scrollable]",
+].join(", ");
 
 const STEALABLE_SELECTOR = [
   "[data-mascot-stealable]",
@@ -81,6 +91,7 @@ const MASCOT_SPRITES = {
 type MascotEmotion = keyof typeof MASCOT_SPRITES;
 type MascotPhase =
   | "idle"
+  | "sleeping"
   | "walking"
   | "running"
   | "dragging"
@@ -127,6 +138,10 @@ type DragState = {
   shakeTurns: number;
   lastDirection: number;
   samples: PointerSample[];
+};
+
+type SleepingDragState = {
+  wokeFromShake: boolean;
 };
 
 type ChangedToggle = {
@@ -218,6 +233,30 @@ function isStealableElement(element: HTMLElement) {
   return true;
 }
 
+function getScrollableAncestor(element: HTMLElement) {
+  const scrollable = element.parentElement?.closest<HTMLElement>(SCROLLABLE_SELECTOR) ?? null;
+  return scrollable && scrollable.scrollHeight > scrollable.clientHeight + 8 ? scrollable : null;
+}
+
+function isRenderedStealTarget(element: HTMLElement) {
+  if (element.hidden || element.closest("[aria-hidden='true']")) return false;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 20 || rect.height < 12) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+}
+
+function isVisibleInsideScroller(element: HTMLElement, scrollable: HTMLElement) {
+  const elementRect = element.getBoundingClientRect();
+  const scrollRect = scrollable.getBoundingClientRect();
+  return (
+    elementRect.bottom > scrollRect.top + 6 &&
+    elementRect.top < scrollRect.bottom - 6 &&
+    elementRect.right > scrollRect.left &&
+    elementRect.left < scrollRect.right
+  );
+}
+
 function setNativeControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const prototype =
     element instanceof HTMLTextAreaElement
@@ -295,6 +334,7 @@ const HAND_ASSETS = {
   point: parsePiskelAsset(pointHandPiskel),
   left: parsePiskelAsset(leftArmPiskel),
   right: parsePiskelAsset(rightArmPiskel),
+  scroll: parsePiskelAsset(scrollHandPiskel),
 } as const;
 
 // Landing dust (plays feet-down on impact) and the eating mouth (frame 0 = shut,
@@ -409,6 +449,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const positionRef = useRef<MascotPosition>({ x: 118, y: 86 });
   const phaseRef = useRef<MascotPhase>("idle");
   const dragRef = useRef<DragState | null>(null);
+  const sleepingDragRef = useRef<SleepingDragState | null>(null);
   const motionFrameRef = useRef<number | null>(null);
   const motionFinishRef = useRef<((completed: boolean) => void) | null>(null);
   const emotionTimerRef = useRef<number | null>(null);
@@ -452,6 +493,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     rotation: 0,
   });
   const [ragePress, setRagePress] = useState<MascotPosition | null>(null);
+  const [scrollHand, setScrollHand] = useState<MascotPosition | null>(null);
   const [chaosActive, setChaosActive] = useState(false);
   const [modalForeground, setModalForeground] = useState(false);
   const [throwProgress, setThrowProgress] = useState(0);
@@ -542,6 +584,91 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       emotionTimerRef.current = null;
     }
   }, []);
+
+  const getScrollHandPosition = useCallback(
+    (scrollable: HTMLElement) => {
+      const root = getRoot();
+      if (!root || !scrollable.isConnected) return null;
+      const rootRect = root.getBoundingClientRect();
+      const scrollRect = scrollable.getBoundingClientRect();
+      const maxScrollTop = Math.max(0, scrollable.scrollHeight - scrollable.clientHeight);
+      const ratio = scrollable.clientHeight / Math.max(1, scrollable.scrollHeight);
+      const customRoot = scrollable.closest<HTMLElement>(".csa-root");
+      const customTrack = customRoot?.querySelector<HTMLElement>(".csa-track") ?? null;
+      const customThumb =
+        customRoot?.querySelector<HTMLElement>("[data-mascot-scroll-thumb], .csa-thumb") ?? null;
+
+      let thumbCenterX: number;
+      let thumbCenterY: number;
+      if (customTrack && customThumb) {
+        const trackRect = customTrack.getBoundingClientRect();
+        const trackInset = 6;
+        const trackHeight = Math.max(0, trackRect.height - trackInset * 2);
+        const thumbHeight = Math.max(28, ratio * trackHeight);
+        const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
+        const thumbTop =
+          trackRect.top +
+          trackInset +
+          (maxScrollTop > 0 ? (scrollable.scrollTop / maxScrollTop) * maxThumbTravel : 0);
+        const thumbRect = customThumb.getBoundingClientRect();
+        thumbCenterX = thumbRect.left + thumbRect.width / 2;
+        thumbCenterY = thumbTop + thumbHeight / 2;
+      } else {
+        const thumbHeight = Math.max(28, ratio * scrollRect.height);
+        const maxThumbTravel = Math.max(0, scrollRect.height - thumbHeight);
+        const thumbTop =
+          scrollRect.top +
+          (maxScrollTop > 0 ? (scrollable.scrollTop / maxScrollTop) * maxThumbTravel : 0);
+        thumbCenterX = scrollRect.right - 2;
+        thumbCenterY = thumbTop + thumbHeight / 2;
+      }
+
+      return {
+        x: thumbCenterX - rootRect.left - SCROLL_HAND_SIZE / 2,
+        y: thumbCenterY - rootRect.top - SCROLL_HAND_SIZE / 2,
+      };
+    },
+    [getRoot],
+  );
+
+  const animateListScroll = useCallback(
+    (scrollable: HTMLElement, requestedTop: number, isAlive: () => boolean, duration = 620) => {
+      const maxScrollTop = Math.max(0, scrollable.scrollHeight - scrollable.clientHeight);
+      const startTop = scrollable.scrollTop;
+      const targetTop = clamp(requestedTop, 0, maxScrollTop);
+      if (Math.abs(targetTop - startTop) < 1) return Promise.resolve(true);
+
+      setPhase("scrolling");
+      const firstHandPosition = getScrollHandPosition(scrollable);
+      if (firstHandPosition) setScrollHand(firstHandPosition);
+
+      return new Promise<boolean>((resolve) => {
+        const startTime = performance.now();
+        const step = (now: number) => {
+          if (!isAlive() || !scrollable.isConnected) {
+            resolve(false);
+            return;
+          }
+
+          const progress = clamp((now - startTime) / duration, 0, 1);
+          const eased =
+            progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          scrollable.scrollTop = startTop + (targetTop - startTop) * eased;
+          const handPosition = getScrollHandPosition(scrollable);
+          if (handPosition) setScrollHand(handPosition);
+
+          if (progress >= 1) {
+            scrollable.scrollTop = targetTop;
+            resolve(true);
+            return;
+          }
+          window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+      });
+    },
+    [getScrollHandPosition, setPhase],
+  );
 
   const clearMischiefDecayTimer = useCallback(() => {
     if (mischiefDecayTimerRef.current !== null) {
@@ -716,6 +843,25 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     [clampPosition, getRoot],
   );
 
+  const buildScrollbarApproachPath = useCallback(
+    (scrollable: HTMLElement) => {
+      const root = getRoot();
+      if (!root || !scrollable.isConnected) return [];
+      const rootRect = root.getBoundingClientRect();
+      const scrollRect = scrollable.getBoundingClientRect();
+      const handPosition = getScrollHandPosition(scrollable);
+      const destination = clampPosition({
+        x: scrollRect.right - rootRect.left - MASCOT_SIZE + 8,
+        y: handPosition
+          ? handPosition.y - (MASCOT_SIZE - SCROLL_HAND_SIZE) / 2
+          : scrollRect.top - rootRect.top + scrollRect.height / 2 - MASCOT_SIZE / 2,
+      });
+      const current = positionRef.current;
+      return [{ x: destination.x, y: current.y }, destination];
+    },
+    [clampPosition, getRoot, getScrollHandPosition],
+  );
+
   const collectContours = useCallback(() => {
     const root = getRoot();
     if (!root) return [];
@@ -859,6 +1005,43 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     [resetStealClock, setPhase],
   );
 
+  const scrollTargetIntoView = useCallback(
+    async (target: HTMLElement, isAlive: () => boolean) => {
+      const scrollable = getScrollableAncestor(target);
+      if (!scrollable) return true;
+
+      const scrollRect = scrollable.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const targetTop =
+        scrollable.scrollTop +
+        targetRect.top -
+        scrollRect.top -
+        (scrollable.clientHeight - targetRect.height) / 2;
+
+      if (Math.abs(targetTop - scrollable.scrollTop) < 1) {
+        return isVisibleInsideScroller(target, scrollable);
+      }
+
+      setEmotion("cool");
+      const approached = await animatePath(
+        buildScrollbarApproachPath(scrollable),
+        WALK_SPEED,
+        "walking",
+      );
+      if (!approached || !isAlive()) return false;
+
+      try {
+        const scrolled = await animateListScroll(scrollable, targetTop, isAlive, 760);
+        if (!scrolled || !isAlive()) return false;
+        await wait(100);
+        return isAlive() && isVisibleInsideScroller(target, scrollable);
+      } finally {
+        setScrollHand(null);
+      }
+    },
+    [animateListScroll, animatePath, buildScrollbarApproachPath],
+  );
+
   useEffect(() => {
     const holder = replicaRef.current;
     if (!holder || !carriedButton) return;
@@ -897,7 +1080,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     const rootRect = root.getBoundingClientRect();
     const candidates = Array.from(
       stealScope.querySelectorAll<HTMLElement>(STEALABLE_SELECTOR),
-    ).filter((element) => isVisible(element, rootRect) && isStealableElement(element));
+    ).filter((element) => {
+      if (!isStealableElement(element) || !isRenderedStealTarget(element)) return false;
+      if (isVisible(element, rootRect)) return true;
+      const scrollable = getScrollableAncestor(element);
+      return !!scrollable && isVisible(scrollable, rootRect);
+    });
     const target = randomItem(candidates);
     if (!target) {
       resetStealClock();
@@ -906,14 +1094,29 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
     setEmotion("cool");
     const tabIndex = activeIndexRef.current;
+    const activityToken = activityTokenRef.current;
+    const targetIsAlive = () =>
+      target.isConnected &&
+      !chaosActiveRef.current &&
+      !dragRef.current &&
+      tabIndex === activeIndexRef.current &&
+      activityToken === activityTokenRef.current;
+    const readyToSteal = await scrollTargetIntoView(target, targetIsAlive);
+    if (!readyToSteal) {
+      const interruptedPhase = phaseRef.current as MascotPhase;
+      if (
+        !chaosActiveRef.current &&
+        interruptedPhase !== "dragging" &&
+        interruptedPhase !== "thrown"
+      ) {
+        setPhase("idle");
+      }
+      resetStealClock();
+      return false;
+    }
+
     const arrived = await animatePath(buildContourPath(target), RUN_SPEED, "running");
-    if (
-      !arrived ||
-      !target.isConnected ||
-      chaosActiveRef.current ||
-      tabIndex !== activeIndexRef.current ||
-      !isNearElement(target)
-    ) {
+    if (!arrived || !targetIsAlive() || !isNearElement(target)) {
       const interruptedPhase = phaseRef.current as MascotPhase;
       if (!chaosActiveRef.current && interruptedPhase === "running") setPhase("idle");
       resetStealClock();
@@ -966,6 +1169,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     getSceneRoot,
     isNearElement,
     resetStealClock,
+    scrollTargetIntoView,
     setPhase,
   ]);
 
@@ -1020,7 +1224,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     } finally {
       activityBusyRef.current = false;
       const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
         setEmotion("happy");
         setPhase("idle");
       }
@@ -1034,11 +1243,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (!root || !stage) return false;
     const rootRect = root.getBoundingClientRect();
     const scrollable = randomItem(
-      Array.from(
-        stage.querySelectorAll<HTMLElement>(
-          ".csa-content, .installed-mods-list, .mod-list, [data-mascot-scrollable]",
-        ),
-      ).filter(
+      Array.from(stage.querySelectorAll<HTMLElement>(SCROLLABLE_SELECTOR)).filter(
         (element) =>
           element.scrollHeight > element.clientHeight + 8 && isVisible(element, rootRect),
       ),
@@ -1050,7 +1255,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     const tabIndex = activeIndexRef.current;
     try {
       setEmotion("cool");
-      const arrived = await animatePath(buildContourPath(scrollable), WALK_SPEED, "walking");
+      const arrived = await animatePath(
+        buildScrollbarApproachPath(scrollable),
+        WALK_SPEED,
+        "walking",
+      );
       if (
         !arrived ||
         !scrollable.isConnected ||
@@ -1063,33 +1272,46 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
       const maxScrollTop = scrollable.scrollHeight - scrollable.clientHeight;
       let direction = scrollable.scrollTop > maxScrollTop * 0.72 ? -1 : 1;
+      const isAlive = () =>
+        scrollable.isConnected &&
+        tabIndex === activeIndexRef.current &&
+        activityToken === activityTokenRef.current &&
+        isNearElement(scrollable);
       for (let step = 0; step < 3; step += 1) {
-        if (
-          !scrollable.isConnected ||
-          tabIndex !== activeIndexRef.current ||
-          activityToken !== activityTokenRef.current ||
-          !isNearElement(scrollable)
-        )
-          return false;
+        if (!isAlive()) return false;
         const nextTop = clamp(
           scrollable.scrollTop + direction * Math.max(80, scrollable.clientHeight * 0.42),
           0,
           maxScrollTop,
         );
-        scrollable.scrollTo({ top: nextTop, behavior: "smooth" });
-        await wait(520);
+        if (!(await animateListScroll(scrollable, nextTop, isAlive, 520))) return false;
+        await wait(90);
         if (nextTop <= 0 || nextTop >= maxScrollTop) direction *= -1;
       }
       return true;
     } finally {
+      setScrollHand(null);
       activityBusyRef.current = false;
       const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
         setEmotion("happy");
         setPhase("idle");
       }
     }
-  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
+  }, [
+    animateListScroll,
+    animatePath,
+    buildScrollbarApproachPath,
+    getActiveStage,
+    getRoot,
+    isNearElement,
+    setPhase,
+  ]);
 
   const teaseSlider = useCallback(async () => {
     if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
@@ -1124,7 +1346,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     } finally {
       activityBusyRef.current = false;
       const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
         setEmotion("happy");
         setPhase("idle");
       }
@@ -1201,7 +1428,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       activityBusyRef.current = false;
       setMouthFrame(null);
       const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
         setEmotion("neutral");
         setPhase("idle");
       }
@@ -1259,7 +1491,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       activityBusyRef.current = false;
       setSpeech(null);
       const finishingPhase = phaseRef.current as MascotPhase;
-      if (!chaosActiveRef.current && finishingPhase !== "dragging" && finishingPhase !== "thrown") {
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
         setEmotion("happy");
         setPhase("idle");
       }
@@ -2383,6 +2620,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (chaosActiveRef.current) return;
+    const startedSleeping = phaseRef.current === "sleeping";
     const root = getRoot();
     if (!root) return;
     scheduleMischiefDecay();
@@ -2404,10 +2642,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       lastDirection: 0,
       samples: [{ x: event.clientX, y: event.clientY, time: now }],
     };
+    sleepingDragRef.current = startedSleeping ? { wokeFromShake: false } : null;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setEmotion("surprised");
+    setEmotion(startedSleeping ? "sleepy" : "surprised");
     setPhase("dragging");
     // Grabbing it while it holds loot and just… holding → it breaks free.
     clearLongPress();
@@ -2445,7 +2684,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       if (Math.abs(dx) > 7 && drag.lastDirection !== 0 && direction !== drag.lastDirection)
         drag.shakeTurns += 1;
       if (Math.abs(dx) > 7) drag.lastDirection = direction;
-      if (drag.shakeTurns >= 4) setEmotion("excited");
+      const sleepingDrag = sleepingDragRef.current;
+      if (sleepingDrag && drag.shakeTurns >= 3 && !sleepingDrag.wokeFromShake) {
+        sleepingDrag.wokeFromShake = true;
+        setEmotion("surprised");
+      } else if ((!sleepingDrag || sleepingDrag.wokeFromShake) && drag.shakeTurns >= 4) {
+        setEmotion("excited");
+      }
       // Shaking the mascot while it clutches a stolen element makes it lose its
       // grip — the element tumbles out of its hands and returns to its place.
       if (drag.shakeTurns >= 3 && carriedButtonRef.current) {
@@ -2470,11 +2715,18 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       clearLongPress();
       const drag = dragRef.current;
       if (!drag || (pointerId !== undefined && drag.pointerId !== pointerId)) return;
+      const sleepingDrag = sleepingDragRef.current;
       dragRef.current = null;
+      sleepingDragRef.current = null;
       if (captureTarget?.hasPointerCapture(drag.pointerId)) {
         captureTarget.releasePointerCapture(drag.pointerId);
       }
       if (!drag.moved) {
+        if (sleepingDrag) {
+          setEmotion("sleepy");
+          setPhase("sleeping");
+          return;
+        }
         if (!carriedButtonRef.current && modalOpenRef.current) void attendModal();
         else setPhase(carriedButtonRef.current ? "carrying" : "idle");
         return;
@@ -2491,8 +2743,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         latest && oldest
           ? { x: (latest.x - oldest.x) / elapsed, y: (latest.y - oldest.y) / elapsed }
           : { x: 0, y: 0 };
-      if (Math.hypot(velocity.x, velocity.y) > 0.32) launchThrow(velocity);
-      else {
+      if (Math.hypot(velocity.x, velocity.y) > 0.32) {
+        if (sleepingDrag) setEmotion("surprised");
+        launchThrow(velocity);
+      } else if (sleepingDrag && !sleepingDrag.wokeFromShake) {
+        setEmotion("sleepy");
+        setPhase("sleeping");
+      } else {
         setEmotion(drag.shakeTurns >= 4 ? "excited" : "happy");
         if (!carriedButtonRef.current && modalOpenRef.current) void attendModal();
         else setPhase(carriedButtonRef.current ? "carrying" : "idle");
@@ -2505,7 +2762,27 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     completeDrag(event.pointerId, event.currentTarget);
   };
 
+  const wakeMascot = useCallback(() => {
+    if (phaseRef.current !== "sleeping") return;
+    activityTokenRef.current += 1;
+    activityBusyRef.current = false;
+    clearEmotionTimer();
+    resetStealClock();
+    setEmotion("surprised");
+    setPhase("stretch");
+    emotionTimerRef.current = window.setTimeout(() => {
+      emotionTimerRef.current = null;
+      if (phaseRef.current !== "stretch") return;
+      setEmotion("happy");
+      setPhase("idle");
+    }, 950);
+  }, [clearEmotionTimer, resetStealClock, setPhase]);
+
   const handleClick = () => {
+    if (phaseRef.current === "sleeping") {
+      wakeMascot();
+      return;
+    }
     if (ignoreClickRef.current) {
       ignoreClickRef.current = false;
       return;
@@ -2530,9 +2807,88 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
+    if (phaseRef.current === "sleeping") {
+      wakeMascot();
+      return;
+    }
     if (carriedButtonRef.current) restoreCarriedButton(true);
     else petMascot();
   };
+
+  useEffect(() => {
+    if (!enabled) return;
+    let focused = document.hasFocus() && document.visibilityState === "visible";
+    let sleepTimer: number | null = null;
+
+    const clearSleepTimer = () => {
+      if (sleepTimer === null) return;
+      window.clearTimeout(sleepTimer);
+      sleepTimer = null;
+    };
+
+    const tryToSleep = () => {
+      sleepTimer = null;
+      if (focused || phaseRef.current === "sleeping") return;
+      if (chaosActiveRef.current || dragRef.current) {
+        sleepTimer = window.setTimeout(tryToSleep, 1_000);
+        return;
+      }
+
+      activityTokenRef.current += 1;
+      modalClimbTokenRef.current += 1;
+      activityBusyRef.current = false;
+      cancelMotion();
+      clearEmotionTimer();
+      setRagePress(null);
+      setScrollHand(null);
+      setMouthFrame(null);
+      setSpeech(null);
+      if (carriedButtonRef.current) restoreCarriedButton(false);
+      if (looseButtonRef.current) clearLooseButton();
+      setEmotion("sleepy");
+      setPhase("sleeping");
+    };
+
+    const armSleepTimer = () => {
+      clearSleepTimer();
+      if (!focused && phaseRef.current !== "sleeping") {
+        sleepTimer = window.setTimeout(tryToSleep, UNFOCUSED_SLEEP_DELAY_MS);
+      }
+    };
+
+    const handleFocus = () => {
+      focused = true;
+      clearSleepTimer();
+      // Deliberately keep the sleeping phase: only pressing the mascot wakes it.
+    };
+    const handleBlur = () => {
+      focused = false;
+      armSleepTimer();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && document.hasFocus()) handleFocus();
+      else handleBlur();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    if (!focused) armSleepTimer();
+
+    return () => {
+      clearSleepTimer();
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    cancelMotion,
+    clearEmotionTimer,
+    clearLooseButton,
+    enabled,
+    restoreCarriedButton,
+    setPhase,
+  ]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -2592,6 +2948,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         return;
       }
 
+      if (phaseRef.current === "sleeping") return;
+
       activityTokenRef.current += 1;
       activityBusyRef.current = false;
       modalBusyRef.current = false;
@@ -2627,6 +2985,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (!enabled) return;
     const firstRoam = window.setTimeout(() => void runAutonomousAction(), 450);
     const interval = window.setInterval(() => {
+      if (phaseRef.current === "sleeping") return;
       if (modalOpenRef.current) {
         // Keep the mascot busy on any open modal (also re-boards it after a throw).
         if (!modalBusyRef.current && !dragRef.current && !chaosActiveRef.current) {
@@ -2658,6 +3017,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   useEffect(() => {
     if (!enabled || chaosActiveRef.current || dragRef.current) return;
+    const wasSleeping = phaseRef.current === "sleeping";
     activityTokenRef.current += 1;
     activityBusyRef.current = false;
     cancelMotion();
@@ -2665,6 +3025,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     setSpeech(null);
     if (carriedButtonRef.current) restoreCarriedButton(false);
     if (looseButtonRef.current) clearLooseButton();
+    if (wasSleeping) {
+      setEmotion("sleepy");
+      setPhase("sleeping");
+      return;
+    }
     setPhase("idle");
     const timer = window.setTimeout(() => void runAutonomousAction(), 220);
     return () => window.clearTimeout(timer);
@@ -2712,6 +3077,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       }
       activityBusyRef.current = false;
       dragRef.current = null;
+      sleepingDragRef.current = null;
       setRagePress(null);
       setModalForeground(false);
       setMouthFrame(null);
@@ -2788,6 +3154,14 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         />
       )}
 
+      {scrollHand && (
+        <PiskelSprite
+          asset={HAND_ASSETS.scroll}
+          className="launcher-mascot-scroll-hand"
+          style={{ left: scrollHand.x, top: scrollHand.y }}
+        />
+      )}
+
       {looseButton && (
         <div
           ref={looseButtonReplicaRef}
@@ -2819,7 +3193,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         data-emotion={emotion}
         role="button"
         aria-label={
-          carriedButton
+          phase === "sleeping"
+            ? "Маскот спит. Нажмите на него, чтобы разбудить."
+            : carriedButton
             ? "Маскот несёт кнопку. Нажмите, чтобы вернуть её."
             : "Маскот. Нажмите, чтобы погладить, или перетащите и бросьте."
         }
@@ -2840,6 +3216,12 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           <span className="launcher-mascot-speech" aria-hidden="true">
             <span className="launcher-mascot-speech-text">{speech}</span>
             <span className="launcher-mascot-speech-caret" />
+          </span>
+        )}
+        {phase === "sleeping" && (
+          <span className="launcher-mascot-sleep-z" aria-hidden="true">
+            <span>z</span>
+            <span>Z</span>
           </span>
         )}
         {carriedButton && phase !== "eating" && (
@@ -2893,7 +3275,11 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           </span>
         )}
         <span className="launcher-mascot-tooltip" aria-hidden="true">
-          {carriedButton ? "Нажми, чтобы вернуть кнопку" : "Погладь или брось маскота"}
+          {phase === "sleeping"
+            ? "Нажми, чтобы разбудить"
+            : carriedButton
+              ? "Нажми, чтобы вернуть кнопку"
+              : "Погладь или брось маскота"}
         </span>
       </div>
     </div>

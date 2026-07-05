@@ -178,6 +178,7 @@ export function CustomScrollArea({
           {/* thin square thumb — no border-radius, matches sharp-corner style */}
           <div
             className="csa-thumb"
+            data-mascot-scroll-thumb
             onPointerDown={onThumbPointerDown}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLDivElement).style.background =
