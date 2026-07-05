@@ -39,7 +39,7 @@ fn download_client() -> Result<Client, String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        let proxy = reqwest::Proxy::all(proxy).map_err(|e| format!("invalid proxy: {e}"))?;
+        let proxy = mirrors::configured_proxy(proxy, &config.proxy_bypass)?;
         builder = builder.proxy(proxy);
     }
 

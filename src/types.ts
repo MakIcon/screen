@@ -201,6 +201,7 @@ export type LauncherPluginsSettings = {
 export type ProxyPluginSettings = {
   enabled: boolean;
   url: string;
+  bypass: string;
 };
 
 export type DiscordRpcPluginSettings = {
@@ -336,8 +337,6 @@ export type MicrosoftAccount = {
   id: string;
   uuid: string;
   username: string;
-  accessToken: string;
-  refreshToken: string;
   expiresAt: number;
 };
 

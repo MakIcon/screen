@@ -501,6 +501,10 @@ pub struct ProxyPluginSettings {
     /// e.g. `http://127.0.0.1:8080` or `socks5://127.0.0.1:1080`.
     #[serde(default)]
     pub url: String,
+    /// Comma/newline separated hosts, domains, IPs or CIDR ranges that should
+    /// connect directly instead of using the proxy.
+    #[serde(default)]
+    pub bypass: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -632,8 +636,7 @@ pub struct ObsTelemetryStatus {
     pub logs: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct MicrosoftAccount {
     pub id: String,
     pub uuid: String,
@@ -641,6 +644,26 @@ pub struct MicrosoftAccount {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MicrosoftAccountSummary {
+    pub id: String,
+    pub uuid: String,
+    pub username: String,
+    pub expires_at: u64,
+}
+
+impl From<&MicrosoftAccount> for MicrosoftAccountSummary {
+    fn from(account: &MicrosoftAccount) -> Self {
+        Self {
+            id: account.id.clone(),
+            uuid: account.uuid.clone(),
+            username: account.username.clone(),
+            expires_at: account.expires_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

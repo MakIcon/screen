@@ -4,6 +4,7 @@ pub mod models;
 pub mod paths;
 pub mod plugins;
 pub mod progress;
+pub mod secure_storage;
 pub mod window_fx;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,6 +76,7 @@ pub fn run() {
             commands::settings::set_mascot_enabled,
             commands::settings::set_launcher_plugins,
             commands::settings::set_network_settings,
+            commands::settings::test_proxy_connection,
             plugins::discord_rpc::start_discord_rpc_for_launcher,
             plugins::discord_rpc::start_discord_rpc_for_instance,
             plugins::discord_rpc::stop_discord_rpc_for_instance,

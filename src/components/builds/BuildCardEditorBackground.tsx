@@ -3,16 +3,8 @@ import { useState } from "react";
 import { InlineDropdown } from "../inputs/InlineDropdown";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { ColorPicker } from "../color-picker/ColorPicker";
-import type { BuildCardAppearance } from "./BuildCardSettingsPopup";
+import type { BuildCardAppearance, BuildCardBackgroundMode } from "./BuildCardSettingsPopup";
 import { EditorSection, EditorRow } from "./BuildCardEditorSection";
-
-type BgMode = "color" | "image" | "url";
-
-function detectMode(draft: BuildCardAppearance): BgMode {
-  if (!draft.image) return "color";
-  if (draft.image.startsWith("data:")) return "image";
-  return "url";
-}
 
 type Props = {
   draft: BuildCardAppearance;
@@ -22,28 +14,24 @@ type Props = {
 
 export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props) {
   const [open, setOpen] = useState(true);
-  const [mode, setMode] = useState<BgMode>(() => detectMode(draft));
   const [fitOpen, setFitOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(() =>
     draft.image && !draft.image.startsWith("data:") ? draft.image : "",
   );
 
-  function switchMode(next: BgMode) {
-    setMode(next);
-    if (next === "color") {
-      onDraftChange((prev) => ({ ...prev, image: "" }));
-      return;
+  const mode = draft.backgroundMode;
+
+  function switchMode(next: BuildCardBackgroundMode) {
+    onDraftChange((prev) => {
+      let image = prev.image;
+      if (next === "color") image = "";
+      if (next === "image" && image && !image.startsWith("data:")) image = "";
+      if (next === "url" && image.startsWith("data:")) image = "";
+      return { ...prev, backgroundMode: next, image };
+    });
+    if (next === "url") {
+      setUrlInput(draft.image && !draft.image.startsWith("data:") ? draft.image : "");
     }
-    if (next === "image") {
-      if (draft.image && !draft.image.startsWith("data:")) {
-        onDraftChange((prev) => ({ ...prev, image: "" }));
-      }
-      return;
-    }
-    if (draft.image.startsWith("data:")) {
-      onDraftChange((prev) => ({ ...prev, image: "" }));
-    }
-    setUrlInput(draft.image && !draft.image.startsWith("data:") ? draft.image : "");
   }
 
   function applyUrl(raw: string) {
@@ -56,6 +44,10 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
       onDraftChange((prev) => ({ ...prev, backgroundOpacity: v / 100 }));
       return;
     }
+    if (mode === "draw") {
+      onDraftChange((prev) => ({ ...prev, drawingOpacity: v / 100 }));
+      return;
+    }
     onDraftChange((prev) => ({ ...prev, imageOpacity: v / 100 }));
   }
 
@@ -63,7 +55,9 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
   const opacityValue =
     mode === "color"
       ? Math.round(draft.backgroundOpacity * 100)
-      : Math.round(draft.imageOpacity * 100);
+      : mode === "draw"
+        ? Math.round(draft.drawingOpacity * 100)
+        : Math.round(draft.imageOpacity * 100);
 
   const fitRow = (
     <EditorRow label="Fit">
@@ -106,21 +100,23 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
   );
 
   return (
-    <EditorSection
-      title="Background"
-      open={open}
-      onToggle={() => setOpen((prev) => !prev)}
-    >
+    <EditorSection title="Background" open={open} onToggle={() => setOpen((prev) => !prev)}>
       <EditorRow label="Type">
         <div className="bce-mode-switch">
-          {(["color", "image", "url"] as BgMode[]).map((entry) => (
+          {(["color", "image", "url", "draw"] as BuildCardBackgroundMode[]).map((entry) => (
             <button
               key={entry}
               type="button"
               className={`bce-mode-pill ${mode === entry ? "bce-mode-pill--active" : ""}`}
               onClick={() => switchMode(entry)}
             >
-              {entry === "color" ? "Color" : entry === "image" ? "Image" : "URL"}
+              {entry === "color"
+                ? "Color"
+                : entry === "image"
+                  ? "Image"
+                  : entry === "url"
+                    ? "URL"
+                    : "Draw"}
             </button>
           ))}
         </div>
@@ -131,9 +127,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
           <EditorRow label="Color" alignTop>
             <ColorPicker
               value={draft.backgroundColor}
-              onChange={(hex) =>
-                onDraftChange((prev) => ({ ...prev, backgroundColor: hex }))
-              }
+              onChange={(hex) => onDraftChange((prev) => ({ ...prev, backgroundColor: hex }))}
             />
           </EditorRow>
           {opacityRow}
@@ -144,9 +138,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
         <>
           <EditorRow label="Source" alignTop>
             <div className="bce-upload-area">
-              <label
-                className={`bce-upload-btn ${draft.image ? "bce-upload-btn--has-image" : ""}`}
-              >
+              <label className={`bce-upload-btn ${draft.image ? "bce-upload-btn--has-image" : ""}`}>
                 {draft.image ? (
                   <>
                     <img className="bce-upload-thumb" src={draft.image} alt="" />
@@ -213,6 +205,17 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
             />
           </EditorRow>
           {fitRow}
+          {opacityRow}
+        </>
+      )}
+
+      {mode === "draw" && (
+        <>
+          <EditorRow label="Canvas" alignTop>
+            <p className="bce-drawing-hint">
+              Draw directly on the card canvas. Choose a brush color and size on the left.
+            </p>
+          </EditorRow>
           {opacityRow}
         </>
       )}

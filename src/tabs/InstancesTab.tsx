@@ -7,6 +7,7 @@ import {
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
   getBuildCardBadgeVisibility,
+  hasBuildCardBackgroundImage,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
   type BuildCardContentTag,
@@ -208,7 +209,7 @@ export function InstancesTab({
             >
               <div
                 ref={createCardMeasureRef}
-                className={`instance-card ${createMeasureAppearance.image ? "instance-card-with-image" : ""}`}
+                className={`instance-card ${hasBuildCardBackgroundImage(createMeasureAppearance) ? "instance-card-with-image" : ""}`}
                 style={getBuildCardAppearanceStyle(createMeasureAppearance)}
               >
                 <div className="instance-card-top">
@@ -265,7 +266,7 @@ export function InstancesTab({
                         instanceCardRefs.current.delete(instance.id);
                       }
                     }}
-                    className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${cardAppearance.image ? "instance-card-with-image" : ""} ${isDropTarget ? "drag-target" : ""}`}
+                    className={`instance-card ${selectedInstanceId === instance.id ? "selected" : ""} ${hasBuildCardBackgroundImage(cardAppearance) ? "instance-card-with-image" : ""} ${isDropTarget ? "drag-target" : ""}`}
                     style={cardStyle}
                     data-instance-id={instance.id}
                     data-mascot-stealable

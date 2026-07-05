@@ -7,6 +7,7 @@ import { BuildCardContentView } from "./BuildCardContentView";
 import {
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
+  hasBuildCardBackgroundImage,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
   type BuildCardPreviewSize,
@@ -15,6 +16,7 @@ import { EditorSection, EditorRow } from "./BuildCardEditorSection";
 import { BackgroundSection } from "./BuildCardEditorBackground";
 import { BadgeSection } from "./BuildCardEditorBadge";
 import { ContentSection } from "./BuildCardEditorContent";
+import { BuildCardDrawingCanvas } from "./BuildCardDrawingCanvas";
 
 type Props = {
   buildName: string;
@@ -59,6 +61,8 @@ export function BuildCardEditor({
   }));
   const basePreviewHeight = previewCardSize?.height ?? 86;
   const heightValue = draft.cardHeight > 0 ? draft.cardHeight : basePreviewHeight;
+  const drawingWidth = Math.max(1, Math.round(previewCardSize?.width ?? 356));
+  const drawingHeight = Math.max(1, Math.round(heightValue));
   const layoutStyle = previewCardSize
     ? ({
         ["--bce-preview-card-width" as string]: `${previewCardSize.width}px`,
@@ -78,7 +82,11 @@ export function BuildCardEditor({
             <button className="bce-hdr-btn" type="button" onClick={onResetAll}>
               RESET
             </button>
-            <button className="bce-hdr-btn bce-hdr-btn--save" type="button" onClick={() => void onSave()}>
+            <button
+              className="bce-hdr-btn bce-hdr-btn--save"
+              type="button"
+              onClick={() => void onSave()}
+            >
               SAVE
             </button>
             <button className="bce-hdr-close" type="button" onClick={onClose} aria-label="Close">
@@ -102,43 +110,53 @@ export function BuildCardEditor({
 
       <div className="bce-layout" style={layoutStyle}>
         <div className="bce-preview-col">
-          <span className="bce-preview-label">Preview</span>
+          <span className="bce-preview-label">
+            {draft.backgroundMode === "draw" ? "Drawing canvas" : "Preview"}
+          </span>
           <div className="bce-preview-stage">
-            <div
-              className={`instance-card bce-preview-card ${draft.image ? "instance-card-with-image" : ""}`}
-              style={getBuildCardAppearanceStyle(draft)}
-            >
-              <div className="instance-card-top">
-                <span className="instance-name">{buildName}</span>
-                {shouldShowBuildCardBadge(draft, true) && (
-                  <span
-                    className="instance-running-badge"
-                    style={getBuildCardBadgeStyle(draft)}
-                  >
-                    {badgePreviewText}
-                  </span>
-                )}
-              </div>
+            {draft.backgroundMode === "draw" ? (
+              <BuildCardDrawingCanvas
+                width={drawingWidth}
+                height={drawingHeight}
+                image={draft.drawingImage}
+                onImageChange={(drawingImage) =>
+                  onDraftChange((prev) => ({ ...prev, drawingImage }))
+                }
+              />
+            ) : (
               <div
-                className={`instance-card-meta ${draft.contentEnabled ? "instance-card-meta--content" : ""}`}
+                className={`instance-card bce-preview-card ${hasBuildCardBackgroundImage(draft) ? "instance-card-with-image" : ""}`}
+                style={getBuildCardAppearanceStyle(draft)}
               >
-                {draft.contentEnabled ? (
-                  <BuildCardContentView
-                    mode={draft.contentMode}
-                    align={draft.contentTextAlign}
-                    tags={previewContentTags}
-                    strokeEnabled={draft.contentTextStrokeEnabled}
-                  />
-                ) : (
-                  <>
-                    <span>{buildVersion}</span>
-                    <span>{buildLoader}</span>
-                    <span>{buildRamGb} GB</span>
-                    <span>{lastPlayedLabel}</span>
-                  </>
-                )}
+                <div className="instance-card-top">
+                  <span className="instance-name">{buildName}</span>
+                  {shouldShowBuildCardBadge(draft, true) && (
+                    <span className="instance-running-badge" style={getBuildCardBadgeStyle(draft)}>
+                      {badgePreviewText}
+                    </span>
+                  )}
+                </div>
+                <div
+                  className={`instance-card-meta ${draft.contentEnabled ? "instance-card-meta--content" : ""}`}
+                >
+                  {draft.contentEnabled ? (
+                    <BuildCardContentView
+                      mode={draft.contentMode}
+                      align={draft.contentTextAlign}
+                      tags={previewContentTags}
+                      strokeEnabled={draft.contentTextStrokeEnabled}
+                    />
+                  ) : (
+                    <>
+                      <span>{buildVersion}</span>
+                      <span>{buildLoader}</span>
+                      <span>{buildRamGb} GB</span>
+                      <span>{lastPlayedLabel}</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

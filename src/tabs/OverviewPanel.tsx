@@ -50,7 +50,7 @@ export function OverviewPanel({
               <span className="mockup-label">NICKNAME</span>
               <HoverRevealValue value={nickname}>
                 <input
-                  className="mockup-input mockup-input-uppercase"
+                  className="mockup-input"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   spellCheck={false}

@@ -160,11 +160,11 @@ pub async fn launch_instance(
     // Resolve Microsoft account (refresh token if needed)
     let ms_account = if let Some(acc_id) = ms_account_id {
         let accounts = read_accounts().await?;
-        if let Some(acc) = accounts.into_iter().find(|a| a.id == acc_id) {
-            Some(refresh_account_if_expired(&acc).await?)
-        } else {
-            None
-        }
+        let account = accounts
+            .into_iter()
+            .find(|account| account.id == acc_id)
+            .ok_or_else(|| "Selected Microsoft account no longer exists".to_string())?;
+        Some(refresh_account_if_expired(&account).await?)
     } else {
         None
     };

@@ -1077,7 +1077,14 @@ export default function App() {
         setLauncherSettings(settingsResponse);
         setMsAccounts(msAccountsResponse);
         if (msAccountsResponse.length > 0) {
-          setActiveMsAccountId(msAccountsResponse[0].id);
+          setActiveMsAccountId((current) =>
+            current && msAccountsResponse.some((account) => account.id === current)
+              ? current
+              : msAccountsResponse[0].id,
+          );
+        } else {
+          setActiveMsAccountId(null);
+          setAccountType("OFFLINE");
         }
         setSettingsRamDraft(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
 
@@ -1559,6 +1566,11 @@ export default function App() {
   const handleLaunchSelected = async (instanceToLaunch?: InstanceItem) => {
     const target = instanceToLaunch ?? selectedInstance;
     if (!target) return;
+    if (accountType === "MICROSOFT" && !activeMsAccountId) {
+      setActionError("Select a Microsoft account before launching");
+      setShowMsModal(true);
+      return;
+    }
 
     setSelectedInstanceId(target.id);
 

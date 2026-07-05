@@ -31,9 +31,105 @@
   font-family: inherit;
 }
 
-.proxy-field input:focus {
+.proxy-field input:focus,
+.proxy-field textarea:focus {
   border-color: var(--line-strong);
   background: var(--bg-card-strong);
+}
+
+.proxy-field textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--ink);
+  outline: none;
+  padding: 11px 14px;
+  font: 11px/1.55 inherit;
+  letter-spacing: 0.03em;
+}
+
+.proxy-secret-input {
+  position: relative;
+  display: block;
+}
+
+.proxy-secret-input input {
+  padding-right: 48px;
+}
+
+.proxy-secret-input button {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.proxy-secret-input button:hover,
+.proxy-secret-input button.active {
+  color: var(--ink);
+  background: var(--bg-card-strong);
+}
+
+.proxy-test-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.proxy-test-button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink);
+  color: var(--bg);
+  font: 900 10px/1 inherit;
+  letter-spacing: 0.11em;
+  cursor: pointer;
+}
+
+.proxy-test-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.proxy-test-result {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+}
+
+.proxy-test-result strong {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.proxy-test-result span {
+  overflow-wrap: anywhere;
+  color: var(--text-alt);
+  font-size: 10px;
+}
+
+.proxy-test-result.success {
+  border-color: color-mix(in srgb, #43a86b 60%, var(--line));
+}
+
+.proxy-test-result.error {
+  border-color: color-mix(in srgb, #d65745 62%, var(--line));
 }
 
 .proxy-hint {

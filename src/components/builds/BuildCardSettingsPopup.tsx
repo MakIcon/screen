@@ -8,6 +8,7 @@ import type { BuildRuntimeSettingsDraft } from "../../types";
 import "./BuildCardSettingsPopup.css";
 
 export type BuildCardImageFit = "cover" | "stretch";
+export type BuildCardBackgroundMode = "color" | "image" | "url" | "draw";
 export type BuildCardBadgeVisibility = "on" | "off" | "always";
 export type BuildCardPreviewSize = {
   width: number;
@@ -56,9 +57,12 @@ export function getDefaultBuildCardBadgePosition(): BuildCardElementPosition {
 }
 
 export type BuildCardAppearance = {
+  backgroundMode: BuildCardBackgroundMode;
   image: string;
   imageFit: BuildCardImageFit;
   imageOpacity: number;
+  drawingImage: string;
+  drawingOpacity: number;
   cardHeight: number;
   backgroundColor: string;
   backgroundOpacity: number;
@@ -144,10 +148,7 @@ function normalizeBuildCardTagPositions(
   value: unknown,
   tags: BuildCardContentTag[],
 ): Record<string, BuildCardElementPosition> {
-  const source =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
   return Object.fromEntries(
     tags.map((tag, index) => [
@@ -179,10 +180,7 @@ export function createBuildCardContentTag(
       typeof overrides.fillOpacity === "number" ? overrides.fillOpacity : defaultFillOpacity,
       defaultFillOpacity,
     ),
-    fontSize: clampFontSize(
-      typeof overrides.fontSize === "number" ? overrides.fontSize : 9,
-      9,
-    ),
+    fontSize: clampFontSize(typeof overrides.fontSize === "number" ? overrides.fontSize : 9, 9),
   };
 }
 
@@ -226,9 +224,12 @@ export function cloneBuildCardContentTags(tags: BuildCardContentTag[]) {
 }
 
 export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
+  backgroundMode: "color",
   image: "",
   imageFit: "cover",
   imageOpacity: 0.78,
+  drawingImage: "",
+  drawingOpacity: 1,
   cardHeight: 0,
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
@@ -278,20 +279,11 @@ function normalizeBuildCardContentTag(
 
   const draft = value as Partial<BuildCardContentTag>;
   return createBuildCardContentTag(mode, {
-    id:
-      typeof draft.id === "string" && draft.id.trim()
-        ? draft.id.trim()
-        : fallback.id,
-    text:
-      typeof draft.text === "string" && draft.text.length > 0
-        ? draft.text
-        : fallback.text,
+    id: typeof draft.id === "string" && draft.id.trim() ? draft.id.trim() : fallback.id,
+    text: typeof draft.text === "string" && draft.text.length > 0 ? draft.text : fallback.text,
     borderColor: normalizeHexColor(draft.borderColor, fallback.borderColor),
     fillColor: normalizeHexColor(draft.fillColor, fallback.fillColor),
-    textColor: normalizeHexColor(
-      draft.textColor,
-      fallback.textColor,
-    ),
+    textColor: normalizeHexColor(draft.textColor, fallback.textColor),
     fillOpacity: clampPercent(
       typeof draft.fillOpacity === "number" ? draft.fillOpacity : fallback.fillOpacity,
       fallback.fillOpacity,
@@ -371,6 +363,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
   if (typeof value === "string") {
     return {
       ...DEFAULT_BUILD_CARD_APPEARANCE,
+      backgroundMode: value.startsWith("data:") ? "image" : "url",
       image: value,
       contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
     };
@@ -384,6 +377,17 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
   }
 
   const draft = value as Partial<BuildCardAppearance>;
+  const backgroundMode: BuildCardBackgroundMode =
+    draft.backgroundMode === "color" ||
+    draft.backgroundMode === "image" ||
+    draft.backgroundMode === "url" ||
+    draft.backgroundMode === "draw"
+      ? draft.backgroundMode
+      : typeof draft.image === "string" && draft.image
+        ? draft.image.startsWith("data:")
+          ? "image"
+          : "url"
+        : "color";
   const legacyVisibility = (draft as { badgeVisible?: boolean | string }).badgeVisible;
   const normalizedBadgeColor = normalizeHexColor(
     draft.badgeColor,
@@ -397,10 +401,11 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : draft.badgeVisibility === "on"
           ? "on"
           : typeof legacyVisibility === "boolean"
-            ? (legacyVisibility ? "on" : "off")
+            ? legacyVisibility
+              ? "on"
+              : "off"
             : DEFAULT_BUILD_CARD_APPEARANCE.badgeVisibility;
-  const contentMode: BuildCardContentMode =
-    draft.contentMode === "text" ? "text" : "tags";
+  const contentMode: BuildCardContentMode = draft.contentMode === "text" ? "text" : "tags";
   const contentTextAlign: BuildCardTextAlign =
     draft.contentTextAlign === "center" || draft.contentTextAlign === "right"
       ? draft.contentTextAlign
@@ -409,13 +414,13 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
     ? draft.contentTags.map((tag, index) =>
         normalizeBuildCardContentTag(
           tag,
-          DEFAULT_BUILD_CARD_CONTENT_TAGS[index] ??
-            createBuildCardContentTag(contentMode),
+          DEFAULT_BUILD_CARD_CONTENT_TAGS[index] ?? createBuildCardContentTag(contentMode),
           contentMode,
         ),
       )
     : cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS);
   return {
+    backgroundMode,
     image: typeof draft.image === "string" ? draft.image : "",
     imageFit: draft.imageFit === "stretch" ? "stretch" : "cover",
     imageOpacity: clampUnit(
@@ -423,6 +428,13 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         ? draft.imageOpacity
         : DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
       DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
+    ),
+    drawingImage: typeof draft.drawingImage === "string" ? draft.drawingImage : "",
+    drawingOpacity: clampUnit(
+      typeof draft.drawingOpacity === "number"
+        ? draft.drawingOpacity
+        : DEFAULT_BUILD_CARD_APPEARANCE.drawingOpacity,
+      DEFAULT_BUILD_CARD_APPEARANCE.drawingOpacity,
     ),
     cardHeight: clampCardHeight(
       typeof draft.cardHeight === "number"
@@ -450,14 +462,8 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.titleFontSize,
       DEFAULT_BUILD_CARD_APPEARANCE.titleFontSize,
     ),
-    titleColor: normalizeHexColor(
-      draft.titleColor,
-      DEFAULT_BUILD_CARD_APPEARANCE.titleColor,
-    ),
-    titlePosition: normalizeBuildCardElementPosition(
-      draft.titlePosition,
-      DEFAULT_TITLE_POSITION,
-    ),
+    titleColor: normalizeHexColor(draft.titleColor, DEFAULT_BUILD_CARD_APPEARANCE.titleColor),
+    titlePosition: normalizeBuildCardElementPosition(draft.titlePosition, DEFAULT_TITLE_POSITION),
     badgeEnabled:
       typeof draft.badgeEnabled === "boolean"
         ? draft.badgeEnabled
@@ -472,10 +478,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       draft.badgeTextColor,
       getContrastTextColor(normalizedBadgeColor),
     ),
-    badgePosition: normalizeBuildCardElementPosition(
-      draft.badgePosition,
-      DEFAULT_BADGE_POSITION,
-    ),
+    badgePosition: normalizeBuildCardElementPosition(draft.badgePosition, DEFAULT_BADGE_POSITION),
     contentEnabled:
       typeof draft.contentEnabled === "boolean"
         ? draft.contentEnabled
@@ -496,10 +499,18 @@ export function getBuildCardAppearanceStyle(
 ): CSSProperties | undefined {
   if (!appearance) return undefined;
 
-  const hasImage = Boolean(appearance.image);
+  const backgroundImage =
+    appearance.backgroundMode === "draw"
+      ? appearance.drawingImage
+      : appearance.backgroundMode === "image" || appearance.backgroundMode === "url"
+        ? appearance.image
+        : "";
+  const hasImage = Boolean(backgroundImage);
   const safeImageOpacity = clampUnit(
-    appearance.imageOpacity,
-    DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
+    appearance.backgroundMode === "draw" ? appearance.drawingOpacity : appearance.imageOpacity,
+    appearance.backgroundMode === "draw"
+      ? DEFAULT_BUILD_CARD_APPEARANCE.drawingOpacity
+      : DEFAULT_BUILD_CARD_APPEARANCE.imageOpacity,
   );
   const imageFade = hexToRgba("#f8f7f2", 1 - safeImageOpacity);
   const safeBgOpacity = clampUnit(
@@ -509,14 +520,12 @@ export function getBuildCardAppearanceStyle(
 
   return {
     backgroundColor:
-      safeBgOpacity > 0
-        ? hexToRgba(appearance.backgroundColor, safeBgOpacity)
-        : undefined,
+      safeBgOpacity > 0 ? hexToRgba(appearance.backgroundColor, safeBgOpacity) : undefined,
     backgroundImage: hasImage
-      ? `linear-gradient(${imageFade}, ${imageFade}), url(${appearance.image})`
+      ? `linear-gradient(${imageFade}, ${imageFade}), url(${backgroundImage})`
       : undefined,
     backgroundSize: hasImage
-      ? appearance.imageFit === "stretch"
+      ? appearance.backgroundMode === "draw" || appearance.imageFit === "stretch"
         ? "100% 100%, 100% 100%"
         : "cover, cover"
       : undefined,
@@ -525,6 +534,15 @@ export function getBuildCardAppearanceStyle(
     borderColor: hasImage ? "transparent" : undefined,
     minHeight: appearance.cardHeight > 0 ? `${appearance.cardHeight}px` : undefined,
   };
+}
+
+export function hasBuildCardBackgroundImage(appearance?: BuildCardAppearance | null): boolean {
+  if (!appearance) return false;
+  if (appearance.backgroundMode === "draw") return Boolean(appearance.drawingImage);
+  if (appearance.backgroundMode === "image" || appearance.backgroundMode === "url") {
+    return Boolean(appearance.image);
+  }
+  return false;
 }
 
 export function SettingsGearIcon() {
@@ -537,7 +555,15 @@ export function SettingsGearIcon() {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle
+        cx="12"
+        cy="12"
+        r="3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path
         d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
         stroke="currentColor"
@@ -580,11 +606,7 @@ export function BuildCardSettingsPopup(props: Props) {
   const isModsTab = activeTab === "mods";
 
   return (
-    <ElementPopup
-      open
-      onClose={props.onClose}
-      className="build-card-settings-dialog"
-    >
+    <ElementPopup open onClose={props.onClose} className="build-card-settings-dialog">
       <div className="bcs-shell">
         <div className="bce-header bcs-header">
           <div className="bcs-heading">
@@ -641,7 +663,12 @@ export function BuildCardSettingsPopup(props: Props) {
                 </button>
               </>
             )}
-            <button className="bce-hdr-close" type="button" onClick={props.onClose} aria-label="Close">
+            <button
+              className="bce-hdr-close"
+              type="button"
+              onClick={props.onClose}
+              aria-label="Close"
+            >
               <svg
                 width="11"
                 height="11"

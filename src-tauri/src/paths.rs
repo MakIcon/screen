@@ -54,6 +54,9 @@ pub fn java_runtimes_root() -> Result<PathBuf, String> {
 pub fn accounts_path() -> Result<PathBuf, String> {
     Ok(launcher_root()?.join("accounts.json"))
 }
+pub fn account_secrets_root() -> Result<PathBuf, String> {
+    Ok(launcher_root()?.join("account-secrets"))
+}
 pub fn playtime_log_path(instance_id: &str) -> Result<PathBuf, String> {
     Ok(launcher_root()?
         .join("playtime")
@@ -155,7 +158,7 @@ fn sync_network_config(settings: &LauncherSettings) {
     } else {
         ""
     };
-    crate::minecraft::mirrors::apply_from(&settings.network.mirror, proxy_url);
+    crate::minecraft::mirrors::apply_from(&settings.network.mirror, proxy_url, &proxy.bypass);
 }
 
 pub async fn write_settings(settings: &LauncherSettings) -> Result<(), String> {

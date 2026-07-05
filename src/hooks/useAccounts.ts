@@ -1,5 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MicrosoftAccount } from "../types";
+
+const ACTIVE_MICROSOFT_ACCOUNT_KEY = "screen.activeMicrosoftAccountId";
+const ACCOUNT_TYPE_KEY = "screen.accountType";
+
+function readStoredAccountType() {
+  return window.localStorage.getItem(ACCOUNT_TYPE_KEY) === "MICROSOFT" ? "MICROSOFT" : "OFFLINE";
+}
 
 /**
  * Player identity used to launch the game: the offline nickname, the selected
@@ -8,10 +15,24 @@ import type { MicrosoftAccount } from "../types";
  */
 export function useAccounts() {
   const [nickname, setNickname] = useState("PLAYER");
-  const [accountType, setAccountType] = useState("OFFLINE");
+  const [accountType, setAccountType] = useState(readStoredAccountType);
   const [msAccounts, setMsAccounts] = useState<MicrosoftAccount[]>([]);
-  const [activeMsAccountId, setActiveMsAccountId] = useState<string | null>(null);
+  const [activeMsAccountId, setActiveMsAccountId] = useState<string | null>(() =>
+    window.localStorage.getItem(ACTIVE_MICROSOFT_ACCOUNT_KEY),
+  );
   const [showMsModal, setShowMsModal] = useState(false);
+
+  useEffect(() => {
+    window.localStorage.setItem(ACCOUNT_TYPE_KEY, accountType);
+  }, [accountType]);
+
+  useEffect(() => {
+    if (activeMsAccountId) {
+      window.localStorage.setItem(ACTIVE_MICROSOFT_ACCOUNT_KEY, activeMsAccountId);
+    } else {
+      window.localStorage.removeItem(ACTIVE_MICROSOFT_ACCOUNT_KEY);
+    }
+  }, [activeMsAccountId]);
 
   return {
     nickname,

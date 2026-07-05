@@ -11,7 +11,6 @@ use std::{
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use reqwest::Client;
 use tauri::{AppHandle, Emitter};
 
 use crate::{
@@ -28,6 +27,7 @@ use super::{
     assets::download_logging_config,
     effective_version_id_for_instance,
     java::{effective_ram_gb, is_modern_mc, optimized_minecraft_jvm_args, resolve_java_bin},
+    mirrors,
     version::{
         collect_argument_list, evaluate_rules, library_path_from_download, replace_tokens,
         resolve_library_artifact_download, resolve_version_meta,
@@ -338,7 +338,7 @@ pub async fn build_launch_command(
     optimized_java_args_enabled: bool,
     extra_jvm_args: &[String],
 ) -> Result<(String, Vec<String>), String> {
-    let client = Client::new();
+    let client = mirrors::build_client()?;
     let resolved_version_id = effective_version_id_for_instance(instance)?;
     let resolved = resolve_version_meta(&client, &resolved_version_id).await?;
     let game_dir = PathBuf::from(&instance.game_dir);

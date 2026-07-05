@@ -41,7 +41,10 @@
   border: 1px solid var(--line-strong);
   cursor: pointer;
   line-height: 1;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
 }
 
 .bce-hdr-btn:hover {
@@ -72,7 +75,9 @@
   border: none;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    background 0.12s;
 }
 
 .bce-hdr-close:hover {
@@ -131,6 +136,34 @@
   max-width: 100%;
 }
 
+.bce-drawing-surface {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  background-color: var(--bg-elevated);
+  background-image:
+    linear-gradient(45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--line) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--line) 75%);
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+}
+
+.bce-drawing-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
 .bce-canvas-toolbar {
   display: flex;
   flex-direction: column;
@@ -169,6 +202,26 @@
   gap: 6px;
 }
 
+.bce-canvas-toolbar__brush,
+.bce-canvas-toolbar__size {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.bce-canvas-toolbar__brush .cp-trigger {
+  width: 100%;
+  min-height: 36px;
+}
+
+.bce-drawing-size-slider .es-body--bare {
+  padding-top: 4px;
+}
+
+.bce-drawing-size-slider .es-ticks {
+  display: none;
+}
+
 .bce-mini-btn {
   min-width: 78px;
   padding: 7px 10px;
@@ -180,7 +233,10 @@
   letter-spacing: 0.11em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
 }
 
 .bce-mini-btn:hover:not(:disabled) {
@@ -302,7 +358,10 @@
   letter-spacing: 0.11em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
 
 .bce-mode-pill:hover {
@@ -341,7 +400,10 @@
   letter-spacing: 0.13em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.12s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.12s;
 }
 
 .bce-upload-btn:hover {
@@ -381,7 +443,9 @@
   background: var(--bg-elevated);
   color: var(--ink);
   outline: none;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .bce-url-input:focus,
@@ -393,6 +457,13 @@
 .bce-url-input::placeholder,
 .bce-text-input::placeholder {
   color: var(--muted-soft);
+}
+
+.bce-drawing-hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .bce-badge-text-input {
@@ -598,7 +669,9 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    background 0.12s;
 }
 
 .bce-tag-delete:hover {
@@ -631,7 +704,10 @@
   letter-spacing: 0.13em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
 }
 
 .bce-add-tag:hover {

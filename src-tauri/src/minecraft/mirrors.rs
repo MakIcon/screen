@@ -52,6 +52,7 @@ pub struct NetworkConfig {
     pub mirror: MirrorMode,
     /// e.g. `http://127.0.0.1:8080` or `socks5://127.0.0.1:1080`.
     pub proxy: Option<String>,
+    pub proxy_bypass: String,
 }
 
 fn cell() -> &'static RwLock<NetworkConfig> {
@@ -71,12 +72,32 @@ pub fn current_config() -> NetworkConfig {
 }
 
 /// Convenience wrapper for the string-typed fields stored in settings.
-pub fn apply_from(mirror: &str, proxy: &str) {
+pub fn apply_from(mirror: &str, proxy: &str, proxy_bypass: &str) {
     let proxy = proxy.trim();
     apply_config(NetworkConfig {
         mirror: MirrorMode::parse(mirror),
         proxy: (!proxy.is_empty()).then(|| proxy.to_string()),
+        proxy_bypass: normalize_proxy_bypass(proxy_bypass),
     });
+}
+
+pub fn normalize_proxy_bypass(value: &str) -> String {
+    value
+        .split([',', ';', '\n', '\r'])
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub fn configured_proxy(proxy_url: &str, bypass: &str) -> Result<reqwest::Proxy, String> {
+    let mut proxy = reqwest::Proxy::all(proxy_url.trim())
+        .map_err(|_| "Invalid proxy URL or protocol".to_string())?;
+    let bypass = normalize_proxy_bypass(bypass);
+    if !bypass.is_empty() {
+        proxy = proxy.no_proxy(reqwest::NoProxy::from_string(&bypass));
+    }
+    Ok(proxy)
 }
 
 /// Prefix rewrites from an official host to the BMCLAPI equivalent.
@@ -155,7 +176,7 @@ pub async fn get_with_fallback(client: &Client, url: &str) -> Result<reqwest::Re
 }
 
 /// Cached HTTP client paired with the proxy string it was built for.
-type CachedClient = (Option<String>, Client);
+type CachedClient = (Option<String>, String, Client);
 
 fn client_cache() -> &'static RwLock<Option<CachedClient>> {
     static CLIENT: OnceLock<RwLock<Option<CachedClient>>> = OnceLock::new();
@@ -167,16 +188,18 @@ fn client_cache() -> &'static RwLock<Option<CachedClient>> {
 /// so the dozens of small Modrinth requests share keep-alive connections instead
 /// of paying a fresh TLS handshake each time. A new proxy rebuilds it.
 pub fn build_client() -> Result<Client, String> {
-    let proxy = current_config()
+    let config = current_config();
+    let proxy = config
         .proxy
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
+    let proxy_bypass = config.proxy_bypass;
 
     if let Ok(guard) = client_cache().read() {
-        if let Some((cached_proxy, client)) = guard.as_ref() {
-            if *cached_proxy == proxy {
+        if let Some((cached_proxy, cached_bypass, client)) = guard.as_ref() {
+            if *cached_proxy == proxy && *cached_bypass == proxy_bypass {
                 return Ok(client.clone());
             }
         }
@@ -187,10 +210,7 @@ pub fn build_client() -> Result<Client, String> {
         .timeout(Duration::from_secs(60));
 
     if let Some(proxy_url) = proxy.as_deref() {
-        match reqwest::Proxy::all(proxy_url) {
-            Ok(configured) => builder = builder.proxy(configured),
-            Err(error) => return Err(format!("invalid proxy '{proxy_url}': {error}")),
-        }
+        builder = builder.proxy(configured_proxy(proxy_url, &proxy_bypass)?);
     }
 
     let client = builder
@@ -198,7 +218,7 @@ pub fn build_client() -> Result<Client, String> {
         .map_err(|error| format!("http client error: {error}"))?;
 
     if let Ok(mut guard) = client_cache().write() {
-        *guard = Some((proxy, client.clone()));
+        *guard = Some((proxy, proxy_bypass, client.clone()));
     }
 
     Ok(client)
@@ -242,11 +262,28 @@ mod tests {
         apply_config(NetworkConfig {
             mirror: MirrorMode::Official,
             proxy: None,
+            proxy_bypass: String::new(),
         });
         assert_eq!(
             candidates("https://piston-meta.mojang.com/x.json"),
             vec!["https://piston-meta.mojang.com/x.json".to_string()]
         );
         apply_config(NetworkConfig::default());
+    }
+
+    #[test]
+    fn normalizes_proxy_bypass_entries() {
+        assert_eq!(
+            normalize_proxy_bypass(" localhost; .example.com\n10.0.0.0/8, localhost "),
+            "localhost,.example.com,10.0.0.0/8,localhost"
+        );
+    }
+
+    #[test]
+    fn invalid_proxy_error_does_not_echo_credentials() {
+        let error = configured_proxy("://user:very-secret@example.com", "").unwrap_err();
+
+        assert_eq!(error, "Invalid proxy URL or protocol");
+        assert!(!error.contains("very-secret"));
     }
 }
