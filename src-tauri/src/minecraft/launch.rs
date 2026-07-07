@@ -32,6 +32,7 @@ use super::{
         collect_argument_list, evaluate_rules, library_path_from_download, replace_tokens,
         resolve_library_artifact_download, resolve_version_meta,
     },
+    LoaderKind,
 };
 
 pub fn normalized_ram(ram: u32) -> u32 {
@@ -132,6 +133,11 @@ fn split_custom_arguments(s: &str) -> Vec<String> {
 
 fn is_memory_argument(arg: &str) -> bool {
     arg.starts_with("-Xmx") || arg.starts_with("-Xms")
+}
+
+fn should_append_client_jar(instance: &InstanceItem) -> Result<bool, String> {
+    let loader = LoaderKind::parse(&instance.loader)?;
+    Ok(!matches!(loader, LoaderKind::NeoForge))
 }
 
 fn instance_java_args(instance: &InstanceItem) -> Option<Vec<String>> {
@@ -263,6 +269,17 @@ fn diagnose_launch_hint(log_tail: &str, crash_report_tail: Option<&str>) -> Opti
         crash_report_tail.unwrap_or_default().to_ascii_lowercase()
     );
 
+    if combined.contains("resolutionexception")
+        && combined.contains("_1._21._1")
+        && combined.contains("minecraft")
+        && (combined.contains("export package") || combined.contains("contains package"))
+    {
+        return Some(
+            "NeoForge is seeing the vanilla Minecraft client jar and its transformed client at the same time. Update ScreenLauncher so NeoForge launches without adding the vanilla client jar to the JVM classpath."
+                .to_string(),
+        );
+    }
+
     if combined.contains("modsettingsentry")
         || (combined.contains("noclassdeffounderror") && combined.contains("net/vulkanmod"))
     {
@@ -346,11 +363,13 @@ pub async fn build_launch_command(
     let natives_dir = instance_dir.join("natives");
     let logging_path = download_logging_config(app, &resolved).await?;
 
-    let client_jar = versions_root()?
-        .join(&instance.version)
-        .join(format!("{}.jar", instance.version));
     let mut classpath_entries = download_libraries(app, &resolved).await?;
-    classpath_entries.push(client_jar);
+    if should_append_client_jar(instance)? {
+        let client_jar = versions_root()?
+            .join(&instance.version)
+            .join(format!("{}.jar", instance.version));
+        classpath_entries.push(client_jar);
+    }
 
     let classpath_separator = ";";
     let classpath = classpath_entries
@@ -547,6 +566,39 @@ pub async fn build_launch_command(
     Ok((java_bin, args))
 }
 
+fn redact_sensitive_launch_args(args: &[String]) -> Vec<String> {
+    let mut redacted = Vec::with_capacity(args.len());
+    let mut redact_next = false;
+
+    for arg in args {
+        if redact_next {
+            redacted.push("<redacted>".to_string());
+            redact_next = false;
+            continue;
+        }
+
+        if arg == "--accessToken" || arg == "--access_token" || arg == "--clientToken" {
+            redacted.push(arg.clone());
+            redact_next = true;
+            continue;
+        }
+
+        if let Some((key, _)) = arg.split_once('=') {
+            if key.eq_ignore_ascii_case("--accesstoken")
+                || key.eq_ignore_ascii_case("--access_token")
+                || key.eq_ignore_ascii_case("--clienttoken")
+            {
+                redacted.push(format!("{key}=<redacted>"));
+                continue;
+            }
+        }
+
+        redacted.push(arg.clone());
+    }
+
+    redacted
+}
+
 pub async fn spawn_minecraft_and_persist(
     app: AppHandle,
     instance: &InstanceItem,
@@ -563,12 +615,13 @@ pub async fn spawn_minecraft_and_persist(
         .truncate(true)
         .open(&log_path)
         .map_err(|e| format!("create launch log error: {e}"))?;
+    let log_args = redact_sensitive_launch_args(&args);
 
     writeln!(header_file, "ScreenLauncher launch log")
         .and_then(|_| writeln!(header_file, "Instance: {} ({})", instance.name, instance.id))
         .and_then(|_| writeln!(header_file, "Game dir: {}", instance.game_dir))
         .and_then(|_| writeln!(header_file, "Java: {java_bin}"))
-        .and_then(|_| writeln!(header_file, "Args: {}", args.join(" ")))
+        .and_then(|_| writeln!(header_file, "Args: {}", log_args.join(" ")))
         .and_then(|_| writeln!(header_file, "\n== Process output =="))
         .map_err(|e| format!("write launch log header error: {e}"))?;
     drop(header_file);
@@ -683,4 +736,81 @@ pub async fn spawn_minecraft_and_persist(
     }
 
     Ok(pid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn instance_with_loader(loader: &str) -> InstanceItem {
+        InstanceItem {
+            id: "inst-test".to_string(),
+            name: "Test".to_string(),
+            version: "1.21.1".to_string(),
+            loader: loader.to_string(),
+            loader_version: Some("21.1.235".to_string()),
+            status: "READY".to_string(),
+            ram: 4,
+            java_args: None,
+            java_path: None,
+            window_width: None,
+            window_height: None,
+            fullscreen: false,
+            last_played: String::new(),
+            playtime_secs: 0,
+            created_at: String::new(),
+            game_dir: "C:\\Minecraft\\Test".to_string(),
+        }
+    }
+
+    #[test]
+    fn neoforge_does_not_append_vanilla_client_jar_to_classpath() {
+        assert!(!should_append_client_jar(&instance_with_loader("NeoForge")).unwrap());
+    }
+
+    #[test]
+    fn vanilla_and_fabric_still_append_client_jar_to_classpath() {
+        let mut vanilla = instance_with_loader("Vanilla");
+        vanilla.loader_version = None;
+        assert!(should_append_client_jar(&vanilla).unwrap());
+        assert!(should_append_client_jar(&instance_with_loader("Fabric")).unwrap());
+    }
+
+    #[test]
+    fn launch_log_args_redact_access_tokens() {
+        let args = vec![
+            "--username".to_string(),
+            "Player".to_string(),
+            "--accessToken".to_string(),
+            "secret-token".to_string(),
+            "--clientToken=client-secret".to_string(),
+            "--version".to_string(),
+            "1.21.1".to_string(),
+        ];
+
+        let redacted = redact_sensitive_launch_args(&args);
+        assert_eq!(
+            redacted,
+            vec![
+                "--username",
+                "Player",
+                "--accessToken",
+                "<redacted>",
+                "--clientToken=<redacted>",
+                "--version",
+                "1.21.1",
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_minecraft_module_log_gets_neoforge_hint() {
+        let hint = diagnose_launch_hint(
+            "java.lang.module.ResolutionException: Modules _1._21._1 and minecraft export package com.mojang.blaze3d.platform to module flywheel",
+            None,
+        )
+        .unwrap();
+
+        assert!(hint.contains("vanilla Minecraft client jar"));
+    }
 }
