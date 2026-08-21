@@ -1,3 +1,8 @@
+import { useEffect, useState } from "react";
+import {
+  ModrinthProjectIcon,
+  ModrinthProjectModal,
+} from "../components/modrinth/ModrinthProjectModal";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
@@ -163,11 +168,17 @@ export function ModrinthContentTab({
     install,
     uninstall,
   } = controller;
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const hiddenProjectIds = new Set(mascotHiddenProjectIds);
   const visibleItems = items.filter((item) => !hiddenProjectIds.has(item.projectId));
+  const selectedProject = items.find((item) => item.projectId === selectedProjectId) ?? null;
   const visibleInstalledItems = installedItems.filter(
     (item) => !item.projectId || !hiddenProjectIds.has(item.projectId),
   );
+
+  useEffect(() => {
+    setSelectedProjectId(null);
+  }, [kind, selectedTarget?.id]);
 
   return (
     <section className="launcher-panel">
@@ -238,15 +249,32 @@ export function ModrinthContentTab({
                       <div
                         className="mod-card modrinth-card"
                         key={item.projectId}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${item.title} details`}
+                        aria-haspopup="dialog"
+                        onClick={() => setSelectedProjectId(item.projectId)}
+                        onKeyDown={(event) => {
+                          if (
+                            event.target === event.currentTarget &&
+                            (event.key === "Enter" || event.key === " ")
+                          ) {
+                            event.preventDefault();
+                            setSelectedProjectId(item.projectId);
+                          }
+                        }}
                         data-mascot-content-kind={kind}
                         data-mascot-project-id={item.projectId}
                         data-mascot-content-title={item.title}
                         data-mascot-installed={item.installed ? "true" : "false"}
                       >
                         <div className="mod-card-head">
-                          <div className="mod-title-row">
-                            <h3>{item.title}</h3>
-                            <span className="mod-category">{category.toUpperCase()}</span>
+                          <div className="mod-card-project">
+                            <ModrinthProjectIcon iconUrl={item.iconUrl} title={item.title} />
+                            <div className="mod-title-row">
+                              <h3>{item.title}</h3>
+                              <span className="mod-category">{category.toUpperCase()}</span>
+                            </div>
                           </div>
                           <div
                             style={{ display: "flex", gap: 8 }}
@@ -298,9 +326,10 @@ export function ModrinthContentTab({
                                 className="catalog-action install"
                                 type="button"
                                 disabled={busy}
-                                onClick={() => void install(item.projectId)}
+                                onClick={() => setSelectedProjectId(item.projectId)}
                                 data-mascot-stealable
                                 data-mascot-label="INSTALL"
+                                aria-haspopup="dialog"
                               >
                                 {busy ? "INSTALLING..." : "INSTALL"}
                               </button>
@@ -420,6 +449,19 @@ export function ModrinthContentTab({
           </div>
         </div>
       </div>
+
+      <ModrinthProjectModal
+        kind={kind}
+        project={selectedProject}
+        busy={busyProjectId === selectedProject?.projectId}
+        onClose={() => setSelectedProjectId(null)}
+        onInstall={() => {
+          if (selectedProject) void install(selectedProject.projectId);
+        }}
+        onUninstall={() => {
+          if (selectedProject) void uninstall(selectedProject.projectId);
+        }}
+      />
     </section>
   );
 }

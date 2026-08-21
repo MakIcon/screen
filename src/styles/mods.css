@@ -140,6 +140,7 @@
   background: var(--bg-card-strong);
   padding: 18px 24px 14px 24px;
   margin-bottom: 12px;
+  cursor: pointer;
   transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
   position: relative;
   overflow: hidden;
@@ -165,6 +166,16 @@
 
 .mod-card.modrinth-card:hover::before {
   width: 4px;
+}
+
+.mod-card.modrinth-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.modrinth-card .catalog-action,
+.modrinth-card .ghost-action {
+  cursor: pointer;
 }
 
 /* ── Sidebar cards for installed items ── */
@@ -385,5 +396,406 @@
 @keyframes catalog-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ── Modrinth project icons and details sheet ── */
+
+.modrinth-card .mod-card-head {
+  align-items: center;
+}
+
+.modrinth-card .mod-card-project {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.modrinth-project-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 65%),
+    var(--bg-elevated);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: -0.04em;
+}
+
+.modrinth-project-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modrinth-project-icon--large {
+  width: 78px;
+  height: 78px;
+  flex-basis: 78px;
+  border-width: 1px;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--ink) 10%, transparent);
+  font-size: 30px;
+}
+
+.modrinth-detail-overlay {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: color-mix(in srgb, var(--ink) 40%, transparent);
+  backdrop-filter: blur(8px);
+  animation: confirm-overlay-in 0.18s ease;
+}
+
+.modrinth-detail-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(790px, calc(100vh - 64px));
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(140deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 28%),
+    var(--bg);
+  box-shadow: var(--surface-shadow-strong);
+  animation: confirm-dialog-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modrinth-detail-close {
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  right: 18px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.modrinth-detail-close span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 13px;
+  height: 1px;
+  background: currentColor;
+}
+
+.modrinth-detail-close span:first-child {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.modrinth-detail-close span:last-child {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.modrinth-detail-close:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.modrinth-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 38px 78px 24px 34px;
+}
+
+.modrinth-detail-heading {
+  min-width: 0;
+}
+
+.modrinth-detail-kicker,
+.modrinth-detail-section-label {
+  display: block;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.17em;
+}
+
+.modrinth-detail-heading h2 {
+  margin: 6px 0 5px;
+  color: var(--ink);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 850;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.modrinth-detail-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+}
+
+.modrinth-detail-summary {
+  margin: 0 34px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card-strong);
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.modrinth-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 25px 34px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.modrinth-detail-stats > div {
+  min-width: 0;
+  padding: 14px 13px;
+  border-right: 1px solid var(--line);
+}
+
+.modrinth-detail-stats > div:last-child {
+  border-right: 0;
+}
+
+.modrinth-detail-stats strong,
+.modrinth-detail-stats span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modrinth-detail-stats strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.modrinth-detail-stats span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+.modrinth-detail-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 22px 34px 26px;
+}
+
+.modrinth-detail-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.modrinth-detail-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+
+.modrinth-detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 20px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.modrinth-detail-error {
+  margin: 0 0 20px;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.modrinth-detail-description {
+  margin-bottom: 23px;
+}
+
+.modrinth-detail-description p {
+  margin: 10px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.modrinth-detail-link {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.modrinth-detail-link:hover {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.modrinth-detail-link:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.modrinth-detail-chip-section + .modrinth-detail-chip-section {
+  margin-top: 19px;
+}
+
+.modrinth-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.modrinth-detail-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-card);
+  color: var(--text-subtle);
+  padding: 6px 8px;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.modrinth-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 16px 34px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel-strong);
+}
+
+.modrinth-detail-primary,
+.modrinth-detail-secondary {
+  min-height: 42px;
+  padding: 0 17px;
+  border: 1px solid var(--line-strong);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: transform 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+}
+
+.modrinth-detail-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.modrinth-install-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke: currentColor;
+}
+
+.modrinth-detail-secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.modrinth-detail-primary:hover:not(:disabled),
+.modrinth-detail-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.modrinth-detail-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.modrinth-detail-actions button:disabled {
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .modrinth-detail-overlay {
+    padding: 14px;
+  }
+
+  .modrinth-detail-modal {
+    max-height: calc(100vh - 28px);
+  }
+
+  .modrinth-detail-header {
+    gap: 13px;
+    padding: 30px 60px 20px 20px;
+  }
+
+  .modrinth-project-icon--large {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+    font-size: 23px;
+  }
+
+  .modrinth-detail-summary,
+  .modrinth-detail-stats {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .modrinth-detail-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modrinth-detail-stats > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .modrinth-detail-stats > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .modrinth-detail-scroll {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .modrinth-detail-actions {
+    padding: 13px 20px;
   }
 }

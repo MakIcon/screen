@@ -57,6 +57,29 @@ export type ModrinthProject = {
   installed?: boolean;
 };
 
+export type ModrinthProjectDetails = {
+  projectId: string;
+  slug: string;
+  title: string;
+  author: string;
+  description: string;
+  body: string;
+  projectType: string;
+  categories: string[];
+  gameVersions: string[];
+  loaders: string[];
+  downloads: number;
+  follows: number;
+  iconUrl?: string | null;
+  published?: string | null;
+  updated?: string | null;
+  license?: string | null;
+  sourceUrl?: string | null;
+  issuesUrl?: string | null;
+  wikiUrl?: string | null;
+  discordUrl?: string | null;
+};
+
 export type ModrinthSearchResponse = {
   totalHits: number;
   hits: ModrinthProject[];

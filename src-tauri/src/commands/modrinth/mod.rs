@@ -58,6 +58,39 @@ pub struct ModrinthProject {
     pub installed: bool,
 }
 
+/// The richer project payload is fetched only after the user opens a catalog
+/// item. Keeping it separate from search results keeps scrolling fast while
+/// still giving the project sheet the same useful context as Modrinth.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModrinthProjectDetails {
+    pub project_id: String,
+    pub slug: String,
+    pub title: String,
+    pub author: String,
+    pub description: String,
+    pub body: String,
+    pub project_type: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub game_versions: Vec<String>,
+    #[serde(default)]
+    pub loaders: Vec<String>,
+    #[serde(default)]
+    pub downloads: u64,
+    #[serde(default)]
+    pub follows: u64,
+    pub icon_url: Option<String>,
+    pub published: Option<String>,
+    pub updated: Option<String>,
+    pub license: Option<String>,
+    pub source_url: Option<String>,
+    pub issues_url: Option<String>,
+    pub wiki_url: Option<String>,
+    pub discord_url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledModEntry {
@@ -491,6 +524,112 @@ pub async fn get_modrinth_project_authors(
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_modrinth_project_details(
+    project_id: String,
+) -> Result<ModrinthProjectDetails, String> {
+    let project_id = project_id.trim();
+    if project_id.is_empty() {
+        return Err("Project id is empty".to_string());
+    }
+
+    let client = build_client()?;
+    let project: Value = http_json(
+        &client,
+        &format!("{MODRINTH_API_BASE}/project/{project_id}"),
+    )
+    .await?;
+    let author = fetch_project_author(&client, project_id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "Modrinth".to_string());
+    let license = project
+        .get("license")
+        .and_then(|value| {
+            value
+                .get("id")
+                .or_else(|| value.get("name"))
+                .and_then(Value::as_str)
+        })
+        .map(str::to_string);
+
+    Ok(ModrinthProjectDetails {
+        project_id: project
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or(project_id)
+            .to_string(),
+        slug: project
+            .get("slug")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        title: project
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("Unknown project")
+            .to_string(),
+        author,
+        description: project
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        body: project
+            .get("body")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        project_type: project
+            .get("project_type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        categories: as_string_vec(project.get("categories")),
+        game_versions: as_string_vec(project.get("game_versions")),
+        loaders: as_string_vec(project.get("loaders")),
+        downloads: project
+            .get("downloads")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        follows: project
+            .get("followers")
+            .or_else(|| project.get("follows"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        icon_url: project
+            .get("icon_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        published: project
+            .get("published")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        updated: project
+            .get("updated")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        license,
+        source_url: project
+            .get("source_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        issues_url: project
+            .get("issues_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        wiki_url: project
+            .get("wiki_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        discord_url: project
+            .get("discord_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
 }
 
 pub(crate) async fn resolve_project_version(
