@@ -51,6 +51,9 @@ pub fn assets_root() -> Result<PathBuf, String> {
 pub fn java_runtimes_root() -> Result<PathBuf, String> {
     Ok(launcher_root()?.join("java"))
 }
+pub fn extensions_root() -> Result<PathBuf, String> {
+    Ok(launcher_root()?.join("extensions"))
+}
 pub fn accounts_path() -> Result<PathBuf, String> {
     Ok(launcher_root()?.join("accounts.json"))
 }

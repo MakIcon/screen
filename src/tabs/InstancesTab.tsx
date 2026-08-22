@@ -87,7 +87,7 @@ interface InstancesTabProps {
   handleCreateBuild: () => Promise<void>;
   handleInstallSelected: () => Promise<void>;
   handleLaunchSelected: () => Promise<void>;
-  handleKillGame: (id: string) => Promise<void>;
+  handleStopGame: (id: string) => Promise<void>;
   handleDeleteInstance: (id: string) => void;
   handleExportInstance: (id: string) => void;
   handleImportBuild: () => void;
@@ -141,7 +141,7 @@ export function InstancesTab({
   handleCreateBuild,
   handleInstallSelected,
   handleLaunchSelected,
-  handleKillGame,
+  handleStopGame,
   handleDeleteInstance,
   handleExportInstance,
   handleImportBuild,
@@ -491,12 +491,12 @@ export function InstancesTab({
                     <button
                       className="primary-action kill-action build-play-action"
                       type="button"
-                      onClick={() => handleKillGame(selectedInstance.id)}
+                      onClick={() => handleStopGame(selectedInstance.id)}
                     >
                       <span className="bpa-stack">
-                        <span className="bpa-label">✕ KILL GAME</span>
+                        <span className="bpa-label">■ STOP GAME</span>
                         <span className="bpa-sizer" aria-hidden="true">
-                          ✕ KILL GAME
+                          ■ STOP GAME
                         </span>
                       </span>
                     </button>
@@ -512,7 +512,7 @@ export function InstancesTab({
                       <span className="bpa-stack">
                         <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
                         <span className="bpa-sizer" aria-hidden="true">
-                          ✕ KILL GAME
+                          ■ STOP GAME
                         </span>
                       </span>
                     </button>

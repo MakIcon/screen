@@ -1,2 +1,5 @@
+packages:
+  - "extensions/*"
+
 allowBuilds:
   esbuild: false

@@ -1,9 +1,5 @@
-import discordIcon from "../../../assets/plugins/discord.svg";
-import type {
-  DiscordRpcPluginSettings,
-  LauncherPluginsSettings,
-} from "../../../types";
-import type { PluginDefinition } from "../pluginTypes";
+import type { DiscordRpcPluginSettings } from "../../../types";
+import type { PluginSettingsProps } from "../pluginTypes";
 import "./DiscordRpcPlugin.css";
 
 type DiscordRpcDisplayMode = DiscordRpcPluginSettings["displayMode"];
@@ -16,113 +12,6 @@ const DISCORD_RPC_DISPLAY_MODES: {
   { id: "launcher", label: "LAUNCHER" },
   { id: "combined", label: "BOTH" },
 ];
-
-export const DEFAULT_DISCORD_RPC_SETTINGS: DiscordRpcPluginSettings = {
-  enabled: false,
-  applicationId: "",
-  displayMode: "minecraft",
-  activityNameTemplate: "",
-  detailsTemplate: "Playing %build_name%",
-  stateTemplate: "%build_version% / %build_loader% via ScreenLauncher",
-  launcherDetailsTemplate: "In ScreenLauncher",
-  launcherStateTemplate: "Managing %total_builds% builds",
-  combinedDetailsTemplate: "Playing %build_name%",
-  combinedStateTemplate: "%build_version% / %build_loader% via ScreenLauncher",
-  showElapsedTime: true,
-  largeImageKey: "",
-  largeImageTextTemplate: "ScreenLauncher",
-  smallImageKey: "",
-  smallImageTextTemplate: "Minecraft %build_version%",
-  buttonLabel: "",
-  buttonUrl: "",
-};
-
-function normalizeText(value: unknown, fallback: string) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function normalizeDiscordRpcDisplayMode(value: unknown): DiscordRpcDisplayMode {
-  return DISCORD_RPC_DISPLAY_MODES.some((mode) => mode.id === value)
-    ? (value as DiscordRpcDisplayMode)
-    : DEFAULT_DISCORD_RPC_SETTINGS.displayMode;
-}
-
-export function normalizeDiscordRpcSettings(
-  value: unknown,
-): DiscordRpcPluginSettings {
-  const draft =
-    value && typeof value === "object"
-      ? (value as Partial<DiscordRpcPluginSettings>)
-      : {};
-
-  return {
-    enabled:
-      typeof draft.enabled === "boolean"
-        ? draft.enabled
-        : DEFAULT_DISCORD_RPC_SETTINGS.enabled,
-    applicationId: normalizeText(
-      draft.applicationId,
-      DEFAULT_DISCORD_RPC_SETTINGS.applicationId,
-    ),
-    displayMode: normalizeDiscordRpcDisplayMode(draft.displayMode),
-    activityNameTemplate: normalizeText(
-      draft.activityNameTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.activityNameTemplate,
-    ),
-    detailsTemplate: normalizeText(
-      draft.detailsTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.detailsTemplate,
-    ),
-    stateTemplate: normalizeText(
-      draft.stateTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.stateTemplate,
-    ),
-    launcherDetailsTemplate: normalizeText(
-      draft.launcherDetailsTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.launcherDetailsTemplate,
-    ),
-    launcherStateTemplate: normalizeText(
-      draft.launcherStateTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.launcherStateTemplate,
-    ),
-    combinedDetailsTemplate: normalizeText(
-      draft.combinedDetailsTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.combinedDetailsTemplate,
-    ),
-    combinedStateTemplate: normalizeText(
-      draft.combinedStateTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.combinedStateTemplate,
-    ),
-    showElapsedTime:
-      typeof draft.showElapsedTime === "boolean"
-        ? draft.showElapsedTime
-        : DEFAULT_DISCORD_RPC_SETTINGS.showElapsedTime,
-    largeImageKey: normalizeText(
-      draft.largeImageKey,
-      DEFAULT_DISCORD_RPC_SETTINGS.largeImageKey,
-    ),
-    largeImageTextTemplate: normalizeText(
-      draft.largeImageTextTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.largeImageTextTemplate,
-    ),
-    smallImageKey: normalizeText(
-      draft.smallImageKey,
-      DEFAULT_DISCORD_RPC_SETTINGS.smallImageKey,
-    ),
-    smallImageTextTemplate: normalizeText(
-      draft.smallImageTextTemplate,
-      DEFAULT_DISCORD_RPC_SETTINGS.smallImageTextTemplate,
-    ),
-    buttonLabel: normalizeText(
-      draft.buttonLabel,
-      DEFAULT_DISCORD_RPC_SETTINGS.buttonLabel,
-    ),
-    buttonUrl: normalizeText(
-      draft.buttonUrl,
-      DEFAULT_DISCORD_RPC_SETTINGS.buttonUrl,
-    ),
-  };
-}
 
 function DiscordRpcSettingsEditor({
   settings,
@@ -148,15 +37,13 @@ function DiscordRpcSettingsEditor({
             detailsKey: "combinedDetailsTemplate" as const,
             stateKey: "combinedStateTemplate" as const,
             detailsPlaceholder: "Playing %build_name%",
-            statePlaceholder:
-              "%build_version% / %build_loader% via ScreenLauncher",
+            statePlaceholder: "%build_version% / %build_loader% via ScreenLauncher",
           }
         : {
             detailsKey: "detailsTemplate" as const,
             stateKey: "stateTemplate" as const,
             detailsPlaceholder: "Playing %build_name%",
-            statePlaceholder:
-              "%build_version% / %build_loader% via ScreenLauncher",
+            statePlaceholder: "%build_version% / %build_loader% via ScreenLauncher",
           };
 
   const hasButton = settings.buttonLabel.trim().length > 0;
@@ -207,9 +94,7 @@ function DiscordRpcSettingsEditor({
               <input
                 value={settings.largeImageKey}
                 placeholder="image"
-                onChange={(event) =>
-                  update({ largeImageKey: event.target.value })
-                }
+                onChange={(event) => update({ largeImageKey: event.target.value })}
               />
             </div>
             <div
@@ -219,9 +104,7 @@ function DiscordRpcSettingsEditor({
               <input
                 value={settings.smallImageKey}
                 placeholder="+"
-                onChange={(event) =>
-                  update({ smallImageKey: event.target.value })
-                }
+                onChange={(event) => update({ smallImageKey: event.target.value })}
               />
             </div>
           </div>
@@ -231,25 +114,19 @@ function DiscordRpcSettingsEditor({
               className="drpc-line drpc-line--name"
               value={settings.activityNameTemplate}
               placeholder="ScreenLauncher"
-              onChange={(event) =>
-                update({ activityNameTemplate: event.target.value })
-              }
+              onChange={(event) => update({ activityNameTemplate: event.target.value })}
             />
             <input
               className="drpc-line drpc-line--details"
               value={settings[modeTemplates.detailsKey]}
               placeholder={modeTemplates.detailsPlaceholder}
-              onChange={(event) =>
-                update({ [modeTemplates.detailsKey]: event.target.value })
-              }
+              onChange={(event) => update({ [modeTemplates.detailsKey]: event.target.value })}
             />
             <input
               className="drpc-line drpc-line--state"
               value={settings[modeTemplates.stateKey]}
               placeholder={modeTemplates.statePlaceholder}
-              onChange={(event) =>
-                update({ [modeTemplates.stateKey]: event.target.value })
-              }
+              onChange={(event) => update({ [modeTemplates.stateKey]: event.target.value })}
             />
             <span className="drpc-timer is-on">
               <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
@@ -281,43 +158,19 @@ function DiscordRpcSettingsEditor({
 
       <p className="drpc-hint">
         Placeholders: <code>%build_name%</code> <code>%build_version%</code>{" "}
-        <code>%build_loader%</code> <code>%total_builds%</code>. Image fields take
-        the <em>asset name</em> you uploaded under Rich Presence → Art Assets in
-        the Discord Developer Portal.
+        <code>%build_loader%</code> <code>%total_builds%</code>. Image fields take the{" "}
+        <em>asset name</em> you uploaded under Rich Presence → Art Assets in the Discord Developer
+        Portal.
       </p>
     </div>
   );
 }
 
-export const DISCORD_RPC_PLUGIN_DEFINITION: PluginDefinition = {
-  id: "discordRpc",
-  title: "DISCORD RPC",
-  tag: "PRESENCE",
-  mark: "RPC",
-  icon: {
-    src: discordIcon,
-    alt: "Discord",
-  },
-  description: "Shows the active build, version, loader and play time in Discord.",
-  getEnabled: (plugins) => plugins.discordRpc.enabled,
-  getStatus: (plugins) => {
-    if (!plugins.discordRpc.enabled) return "OFF";
-    return plugins.discordRpc.applicationId.trim() ? "ON" : "NEEDS APP ID";
-  },
-  setEnabled: (plugins, enabled) => ({
-    ...plugins,
-    discordRpc: {
-      ...plugins.discordRpc,
-      enabled,
-    },
-  }),
-  renderSettings: (
-    plugins: LauncherPluginsSettings,
-    onChange: (plugins: LauncherPluginsSettings) => void,
-  ) => (
+export function DiscordRpcSettings({ plugins, onChange }: PluginSettingsProps) {
+  return (
     <DiscordRpcSettingsEditor
       settings={plugins.discordRpc}
       onChange={(discordRpc) => onChange({ ...plugins, discordRpc })}
     />
-  ),
-};
+  );
+}

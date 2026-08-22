@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
-    time::UNIX_EPOCH,
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use tauri::{AppHandle, State};
@@ -212,24 +212,42 @@ pub async fn read_instance_launch_log(instance_id: String) -> Result<LaunchLogSn
 }
 
 #[tauri::command]
-pub async fn kill_instance(pid: u32) -> Result<ActionResult, String> {
-    let output = Command::new("taskkill")
-        .args(["/T", "/F", "/PID", &pid.to_string()])
+pub async fn stop_instance(pid: u32) -> Result<ActionResult, String> {
+    let graceful = Command::new("taskkill")
+        .args(["/T", "/PID", &pid.to_string()])
         .output()
         .map_err(|e| format!("taskkill error: {e}"))?;
 
-    if !output.status.success() && is_pid_alive(pid) {
-        let details = task_output_text(&output);
-        return Err(if details.is_empty() {
-            "taskkill failed and the process is still running".to_string()
-        } else {
-            format!("taskkill failed: {details}")
-        });
+    if graceful.status.success() {
+        let started = Instant::now();
+        while is_pid_alive(pid) && started.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    let forced = is_pid_alive(pid);
+    if forced {
+        let output = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .output()
+            .map_err(|e| format!("forced taskkill error: {e}"))?;
+        if !output.status.success() && is_pid_alive(pid) {
+            let details = task_output_text(&output);
+            return Err(if details.is_empty() {
+                "Minecraft did not respond to a normal close or a forced stop".to_string()
+            } else {
+                format!("Minecraft stop failed: {details}")
+            });
+        }
     }
 
     Ok(ActionResult {
         ok: true,
-        message: "Instance killed".to_string(),
+        message: if forced {
+            "Minecraft did not answer the close request and was force-stopped".to_string()
+        } else {
+            "Minecraft closed normally".to_string()
+        },
         pid: None,
     })
 }

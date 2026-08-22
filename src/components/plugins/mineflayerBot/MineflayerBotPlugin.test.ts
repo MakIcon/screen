@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_MINEFLAYER_BOT_SETTINGS,
-  normalizeMineflayerBotSettings,
-} from "./MineflayerBotPlugin";
+import { DEFAULT_MINEFLAYER_BOT_SETTINGS, normalizeMineflayerBotSettings } from "../pluginSettings";
 
 describe("normalizeMineflayerBotSettings", () => {
   it("adds safe defaults to legacy settings", () => {

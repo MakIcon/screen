@@ -75,7 +75,9 @@
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.12em;
-  transition: background 0.14s, color 0.14s;
+  transition:
+    background 0.14s,
+    color 0.14s;
 }
 
 .discord-rpc-segmented-control button:last-child {
@@ -243,7 +245,9 @@
   outline: none;
   font-family: inherit;
   padding: 3px 6px;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .drpc-line:hover {
@@ -317,7 +321,9 @@
   font-weight: 600;
   text-align: center;
   padding: 0 10px;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .drpc-card-button.is-set .drpc-btn-label {

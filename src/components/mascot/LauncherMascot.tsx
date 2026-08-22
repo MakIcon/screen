@@ -3,445 +3,68 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import angrySprite from "../../assets/mascot/sprites/angry.png";
-import confusedSprite from "../../assets/mascot/sprites/confused.png";
-import coolSprite from "../../assets/mascot/sprites/cool.png";
-import excitedSprite from "../../assets/mascot/sprites/excited.png";
-import happySprite from "../../assets/mascot/sprites/happy.png";
-import loveSprite from "../../assets/mascot/sprites/love.png";
-import neutralSprite from "../../assets/mascot/sprites/neutral.png";
-import sadSprite from "../../assets/mascot/sprites/sad.png";
-import shySprite from "../../assets/mascot/sprites/shy.png";
-import sleepySprite from "../../assets/mascot/sprites/sleepy.png";
-import surprisedSprite from "../../assets/mascot/sprites/surprised.png";
-import leftArmPiskel from "../../assets/mascot/hands/left-arm.piskel?raw";
-import pointHandPiskel from "../../assets/mascot/hands/point-hand.piskel?raw";
-import rightArmPiskel from "../../assets/mascot/hands/right-arm.piskel?raw";
-import scrollHandPiskel from "../../assets/mascot/hands/scroll-hand.piskel?raw";
-import smoke1Piskel from "../../assets/mascot/effects/smoke1.piskel?raw";
-import smoke2Piskel from "../../assets/mascot/effects/smoke2.piskel?raw";
-import smoke3Piskel from "../../assets/mascot/effects/smoke3.piskel?raw";
-import smoke4Piskel from "../../assets/mascot/effects/smoke4.piskel?raw";
-import mouth1Piskel from "../../assets/mascot/mouth/mouth1.piskel?raw";
-import mouth2Piskel from "../../assets/mascot/mouth/mouth2.piskel?raw";
-import mouth3Piskel from "../../assets/mascot/mouth/mouth3.piskel?raw";
-import mouth4Piskel from "../../assets/mascot/mouth/mouth4.piskel?raw";
+import {
+  MASCOT_FAKE_CONTENT_DELETE_EVENT,
+  MASCOT_FAKE_DELETE_EVENT,
+  MASCOT_FAKE_RESTORE_EVENT,
+} from "./events";
+import {
+  CHAOS_SPEED,
+  MAX_CHAOS_DEBRIS,
+  MASCOT_SIZE,
+  MIN_STEAL_DELAY_MS,
+  MISCHIEF_DECAY_MS,
+  ROAMING_EMOTIONS,
+  ROAM_INTERVAL_MS,
+  RUN_SPEED,
+  SCROLLABLE_SELECTOR,
+  SCROLL_HAND_SIZE,
+  STEALABLE_SELECTOR,
+  STEAL_DELAY_VARIANCE_MS,
+  STEAL_REACH_PX,
+  THROWS_TO_CHAOS,
+  THROW_HISTORY_MS,
+  THROW_THRESHOLD,
+  UNFOCUSED_SLEEP_DELAY_MS,
+  WALK_SPEED,
+} from "./mascotConfig";
+import { SMOKE_FRAMES, TYPED_SNIPPETS } from "./mascotAssets";
+import { MascotView } from "./MascotView";
+import {
+  clamp,
+  distance,
+  getScrollableAncestor,
+  getToggleLabel,
+  hasDrawnEdge,
+  isRenderedStealTarget,
+  isStealableElement,
+  isVisible,
+  isVisibleInsideScroller,
+  mountElementReplica,
+  nudgeSlider,
+  playSlider,
+  randomItem,
+  restoreCarriedElement,
+  setNativeControlValue,
+  shuffled,
+  wait,
+} from "./mascotDom";
+import type {
+  CarriedElement,
+  ChaosDebris,
+  ChaosSnapshot,
+  DragState,
+  LauncherMascotProps,
+  LooseButtonTransform,
+  MascotEmotion,
+  MascotPhase,
+  MascotPosition,
+  SleepingDragState,
+} from "./mascotTypes";
 import "./LauncherMascot.css";
-
-const MASCOT_SIZE = 64;
-const ROAM_INTERVAL_MS = 3_800;
-const WALK_SPEED = 205;
-const RUN_SPEED = 355;
-const CHAOS_SPEED = 1_600;
-const THROW_THRESHOLD = 1.15;
-const THROW_HISTORY_MS = 11_000;
-const THROWS_TO_CHAOS = 3;
-const MISCHIEF_DECAY_MS = 8_000;
-const MIN_STEAL_DELAY_MS = 18_000;
-const STEAL_DELAY_VARIANCE_MS = 14_000;
-const UNFOCUSED_SLEEP_DELAY_MS = 5_000;
-const STEAL_REACH_PX = 54;
-const MAX_CHAOS_DEBRIS = 14;
-const SCROLL_HAND_SIZE = 32;
-
-const SCROLLABLE_SELECTOR = [
-  ".csa-content",
-  ".installed-mods-list",
-  ".mod-list",
-  "[data-mascot-scrollable]",
-].join(", ");
-
-const STEALABLE_SELECTOR = [
-  "[data-mascot-stealable]",
-  "button:not(:disabled)",
-  ".mod-card",
-  ".installed-mod-row",
-  ".bme-row",
-  ".instance-card",
-  ".info-panel",
-  ".detail-block",
-  ".inline-dropdown",
-  ".field",
-  ".brs-section",
-  ".settings-toggle-row",
-].join(", ");
-
-export const MASCOT_FAKE_DELETE_EVENT = "launcher-mascot-fake-delete";
-export const MASCOT_FAKE_CONTENT_DELETE_EVENT = "launcher-mascot-fake-content-delete";
-export const MASCOT_FAKE_RESTORE_EVENT = "launcher-mascot-fake-restore";
-
-const MASCOT_SPRITES = {
-  angry: angrySprite,
-  confused: confusedSprite,
-  cool: coolSprite,
-  excited: excitedSprite,
-  happy: happySprite,
-  love: loveSprite,
-  neutral: neutralSprite,
-  sad: sadSprite,
-  shy: shySprite,
-  sleepy: sleepySprite,
-  surprised: surprisedSprite,
-} as const;
-
-type MascotEmotion = keyof typeof MASCOT_SPRITES;
-type MascotPhase =
-  | "idle"
-  | "sleeping"
-  | "walking"
-  | "running"
-  | "dragging"
-  | "thrown"
-  | "petting"
-  | "carrying"
-  | "climbing"
-  | "jumping"
-  | "playing"
-  | "scrolling"
-  | "chaos"
-  | "trick"
-  | "eating"
-  | "typing"
-  | "yawn"
-  | "stretch"
-  | "scratch"
-  | "struggle"
-  | "wallslide";
-type MascotPosition = { x: number; y: number };
-type PointerSample = MascotPosition & { time: number };
-type LooseButtonTransform = MascotPosition & { rotation: number };
-
-type PiskelAsset = {
-  width: number;
-  height: number;
-  src: string;
-};
-
-type CarriedElement = {
-  element: HTMLElement;
-  width: number;
-  height: number;
-  previousAriaHidden: string | null;
-};
-
-type DragState = {
-  pointerId: number;
-  offsetX: number;
-  offsetY: number;
-  startX: number;
-  startY: number;
-  moved: boolean;
-  shakeTurns: number;
-  lastDirection: number;
-  samples: PointerSample[];
-};
-
-type SleepingDragState = {
-  wokeFromShake: boolean;
-};
-
-type ChangedToggle = {
-  label: string;
-  wasEnabled: boolean;
-};
-
-type ChaosDebris = {
-  source: HTMLElement;
-  clone: HTMLElement;
-  previousAriaHidden: string | null;
-};
-
-type ChaosSnapshot = {
-  originalTabIndex: number;
-  toggles: ChangedToggle[];
-};
-
-interface LauncherMascotProps {
-  activeIndex: number;
-  enabled: boolean;
-}
-
-const ROAMING_EMOTIONS: MascotEmotion[] = [
-  "neutral",
-  "happy",
-  "cool",
-  "confused",
-  "excited",
-  "love",
-  "shy",
-  "surprised",
-];
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function wait(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-}
-
-function randomItem<T>(items: T[]): T | undefined {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
-function shuffled<T>(items: T[]) {
-  return [...items].sort(() => Math.random() - 0.5);
-}
-
-function distance(a: MascotPosition, b: MascotPosition) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function isVisible(element: HTMLElement, rootRect: DOMRect) {
-  if (element.hidden || element.closest("[aria-hidden='true']")) return false;
-  const rect = element.getBoundingClientRect();
-  if (rect.width < 20 || rect.height < 12) return false;
-  if (rect.bottom < rootRect.top || rect.top > rootRect.bottom) return false;
-  if (rect.right < rootRect.left || rect.left > rootRect.right) return false;
-  const style = window.getComputedStyle(element);
-  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-}
-
-function hasDrawnEdge(element: HTMLElement) {
-  if (element.matches(".gallery-header, .sidebar, .gallery-footer")) return true;
-  const style = window.getComputedStyle(element);
-  return [
-    style.borderTopWidth,
-    style.borderRightWidth,
-    style.borderBottomWidth,
-    style.borderLeftWidth,
-  ].some((width) => Number.parseFloat(width) > 0);
-}
-
-function getToggleLabel(toggle: HTMLButtonElement) {
-  return (
-    toggle
-      .closest(".settings-toggle-row")
-      ?.querySelector(".settings-toggle-title")
-      ?.textContent?.trim() ?? ""
-  );
-}
-
-function isStealableElement(element: HTMLElement) {
-  if (element.matches("[data-mascot-ignore], .mascot-button-carried-source")) return false;
-  if (element.closest(".launcher-mascot-layer, .ep-backdrop, .confirm-overlay")) return false;
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return false;
-  return true;
-}
-
-function getScrollableAncestor(element: HTMLElement) {
-  const scrollable = element.parentElement?.closest<HTMLElement>(SCROLLABLE_SELECTOR) ?? null;
-  return scrollable && scrollable.scrollHeight > scrollable.clientHeight + 8 ? scrollable : null;
-}
-
-function isRenderedStealTarget(element: HTMLElement) {
-  if (element.hidden || element.closest("[aria-hidden='true']")) return false;
-  const rect = element.getBoundingClientRect();
-  if (rect.width < 20 || rect.height < 12) return false;
-  const style = window.getComputedStyle(element);
-  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
-}
-
-function isVisibleInsideScroller(element: HTMLElement, scrollable: HTMLElement) {
-  const elementRect = element.getBoundingClientRect();
-  const scrollRect = scrollable.getBoundingClientRect();
-  return (
-    elementRect.bottom > scrollRect.top + 6 &&
-    elementRect.top < scrollRect.bottom - 6 &&
-    elementRect.right > scrollRect.left &&
-    elementRect.left < scrollRect.right
-  );
-}
-
-function setNativeControlValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
-  const prototype =
-    element instanceof HTMLTextAreaElement
-      ? window.HTMLTextAreaElement.prototype
-      : window.HTMLInputElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-  setter?.call(element, value);
-  element.dispatchEvent(new Event("input", { bubbles: true }));
-  element.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
-function fireSliderKey(slider: HTMLElement, key: string) {
-  slider.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-  slider.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
-}
-
-function getSliderSpan(slider: HTMLElement) {
-  const min = Number(slider.getAttribute("aria-valuemin"));
-  const max = Number(slider.getAttribute("aria-valuemax"));
-  return Number.isFinite(min) && Number.isFinite(max) && max > min
-    ? Math.min(64, Math.round(max - min))
-    : 20;
-}
-
-// Synchronous, forceful slider tantrum — a burst of back-and-forth yanking that
-// ends by slamming the thumb to a random value. Used inside the rage sequence.
-function nudgeSlider(slider: HTMLElement) {
-  slider.focus({ preventScroll: true });
-  const span = getSliderSpan(slider);
-  const bursts = 3 + Math.floor(Math.random() * 4);
-  for (let b = 0; b < bursts; b += 1) {
-    const key = b % 2 === 0 ? "ArrowRight" : "ArrowLeft";
-    const steps = 3 + Math.floor(Math.random() * 6);
-    for (let s = 0; s < steps; s += 1) fireSliderKey(slider, key);
-  }
-  for (let s = 0; s < span; s += 1) fireSliderKey(slider, "ArrowLeft");
-  const target = Math.floor(Math.random() * (span + 1));
-  for (let s = 0; s < target; s += 1) fireSliderKey(slider, "ArrowRight");
-}
-
-// Animated, visible slider play — yanks the thumb hard in alternating directions
-// with pauses so the motion reads, then settles on a random value.
-async function playSlider(slider: HTMLElement, isAlive: () => boolean) {
-  slider.focus({ preventScroll: true });
-  const span = getSliderSpan(slider);
-  const bursts = 4 + Math.floor(Math.random() * 4);
-  for (let b = 0; b < bursts; b += 1) {
-    if (!isAlive()) return;
-    const key = b % 2 === 0 ? "ArrowRight" : "ArrowLeft";
-    const steps = 4 + Math.floor(Math.random() * Math.max(4, Math.ceil(span * 0.6)));
-    for (let s = 0; s < steps; s += 1) fireSliderKey(slider, key);
-    await wait(80 + Math.random() * 70);
-  }
-  if (!isAlive()) return;
-  for (let s = 0; s < span; s += 1) fireSliderKey(slider, "ArrowLeft");
-  const target = Math.floor(Math.random() * (span + 1));
-  for (let s = 0; s < target; s += 1) fireSliderKey(slider, "ArrowRight");
-}
-
-function parsePiskelAsset(source: string): PiskelAsset {
-  const document = JSON.parse(source) as {
-    piskel: { width: number; height: number; layers: string[] };
-  };
-  const layer = JSON.parse(document.piskel.layers[0]) as {
-    chunks: Array<{ base64PNG: string }>;
-  };
-  return {
-    width: document.piskel.width,
-    height: document.piskel.height,
-    src: layer.chunks[0].base64PNG,
-  };
-}
-
-const HAND_ASSETS = {
-  point: parsePiskelAsset(pointHandPiskel),
-  left: parsePiskelAsset(leftArmPiskel),
-  right: parsePiskelAsset(rightArmPiskel),
-  scroll: parsePiskelAsset(scrollHandPiskel),
-} as const;
-
-// Landing dust (plays feet-down on impact) and the eating mouth (frame 0 = shut,
-// frame 3 = wide open — a stolen button is composited into the open cavity).
-const SMOKE_FRAMES = [smoke1Piskel, smoke2Piskel, smoke3Piskel, smoke4Piskel].map(parsePiskelAsset);
-const MOUTH_FRAMES = [mouth1Piskel, mouth2Piskel, mouth3Piskel, mouth4Piskel].map(parsePiskelAsset);
-const TYPED_SNIPPETS = [
-  "hello world",
-  "sudo rm -rf /",
-  "01001000 01001001",
-  "todo: nothing",
-  ":)))",
-  "why am i here",
-  "print('mrrp')",
-  "npm run vibes",
-];
-
-function PiskelSprite({
-  asset,
-  className,
-  style,
-}: {
-  asset: PiskelAsset;
-  className: string;
-  style?: CSSProperties;
-}) {
-  return (
-    <img
-      className={className}
-      src={asset.src}
-      width={asset.width * 2}
-      height={asset.height * 2}
-      style={style}
-      draggable={false}
-      alt=""
-      aria-hidden="true"
-    />
-  );
-}
-
-function copyComputedTree(source: HTMLElement, clone: HTMLElement) {
-  const sourceNodes: Element[] = [source, ...Array.from(source.querySelectorAll("*"))];
-  const cloneNodes: Element[] = [clone, ...Array.from(clone.querySelectorAll("*"))];
-  sourceNodes.forEach((sourceNode, index) => {
-    const cloneNode = cloneNodes[index];
-    if (!cloneNode) return;
-    const computed = window.getComputedStyle(sourceNode);
-    const inlineStyle = (cloneNode as HTMLElement | SVGElement).style;
-    Array.from(computed).forEach((property) => {
-      inlineStyle.setProperty(
-        property,
-        computed.getPropertyValue(property),
-        computed.getPropertyPriority(property),
-      );
-    });
-  });
-}
-
-function mountElementReplica(holder: HTMLElement, carried: CarriedElement) {
-  const clone = carried.element.cloneNode(true) as HTMLElement;
-  carried.element.classList.remove("mascot-button-carried-source");
-  const sourceRadius = window.getComputedStyle(carried.element).borderRadius;
-  try {
-    copyComputedTree(carried.element, clone);
-  } finally {
-    carried.element.classList.add("mascot-button-carried-source");
-  }
-  // The launcher surfaces are translucent, so a bare clone lets the page bleed
-  // through it. Back the replica with the opaque app background and clip it to
-  // the source's rounded corners so the carried element reads as solid.
-  holder.style.setProperty("background", "var(--bg)", "important");
-  holder.style.setProperty("border-radius", sourceRadius, "important");
-  holder.style.setProperty("overflow", "hidden", "important");
-  holder.style.setProperty("box-shadow", "var(--surface-shadow-soft)", "important");
-  clone.classList.remove("mascot-button-carried-source");
-  clone.removeAttribute("id");
-  clone.removeAttribute("aria-hidden");
-  clone.setAttribute("aria-hidden", "true");
-  clone.tabIndex = -1;
-  clone.style.setProperty("width", `${carried.width}px`, "important");
-  clone.style.setProperty("height", `${carried.height}px`, "important");
-  clone.style.setProperty("min-width", `${carried.width}px`, "important");
-  clone.style.setProperty("max-width", `${carried.width}px`, "important");
-  clone.style.setProperty("box-sizing", "border-box", "important");
-  clone.style.setProperty("position", "relative", "important");
-  clone.style.setProperty("inset", "auto", "important");
-  clone.style.setProperty("margin", "0", "important");
-  clone.style.setProperty("transform", "none", "important");
-  clone.style.setProperty("visibility", "visible", "important");
-  clone.style.setProperty("opacity", "1", "important");
-  clone.style.setProperty("pointer-events", "none", "important");
-  holder.replaceChildren(clone);
-  return () => {
-    holder.replaceChildren();
-    holder.style.removeProperty("background");
-    holder.style.removeProperty("border-radius");
-    holder.style.removeProperty("overflow");
-    holder.style.removeProperty("box-shadow");
-  };
-}
-
-function restoreCarriedElement(carried: CarriedElement) {
-  if (!carried.element.isConnected) return;
-  carried.element.classList.remove("mascot-button-carried-source");
-  if (carried.previousAriaHidden === null) carried.element.removeAttribute("aria-hidden");
-  else carried.element.setAttribute("aria-hidden", carried.previousAriaHidden);
-}
 
 export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -2881,14 +2504,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       window.removeEventListener("blur", handleBlur);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [
-    cancelMotion,
-    clearEmotionTimer,
-    clearLooseButton,
-    enabled,
-    restoreCarriedButton,
-    setPhase,
-  ]);
+  }, [cancelMotion, clearEmotionTimer, clearLooseButton, enabled, restoreCarriedButton, setPhase]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -3130,158 +2746,33 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   if (!enabled) return null;
 
-  const style = {
-    transform: `translate3d(${position.x.toFixed(2)}px, ${position.y.toFixed(2)}px, 0)`,
-  } satisfies CSSProperties;
-
   return (
-    <div
-      ref={layerRef}
-      className={`launcher-mascot-layer ${modalForeground ? "launcher-mascot-layer--foreground" : ""}`}
-    >
-      {chaosActive && (
-        <button className="launcher-mascot-undo" type="button" onClick={() => void undoChaos()}>
-          <span aria-hidden="true">↶</span>
-          ОТКАТИТЬ ИЗМЕНЕНИЯ МАСКОТА
-        </button>
-      )}
-
-      {ragePress && (
-        <PiskelSprite
-          asset={HAND_ASSETS.point}
-          className="launcher-mascot-rage-hand"
-          style={{ left: ragePress.x, top: ragePress.y }}
-        />
-      )}
-
-      {scrollHand && (
-        <PiskelSprite
-          asset={HAND_ASSETS.scroll}
-          className="launcher-mascot-scroll-hand"
-          style={{ left: scrollHand.x, top: scrollHand.y }}
-        />
-      )}
-
-      {looseButton && (
-        <div
-          ref={looseButtonReplicaRef}
-          className="launcher-mascot-loose-button"
-          style={{
-            width: looseButton.width,
-            height: looseButton.height,
-            transform: `translate3d(${looseButtonTransform.x.toFixed(2)}px, ${looseButtonTransform.y.toFixed(2)}px, 0) rotate(${looseButtonTransform.rotation.toFixed(2)}deg)`,
-          }}
-          aria-hidden="true"
-        />
-      )}
-
-      {smoke && (
-        <img
-          className="launcher-mascot-smoke"
-          src={SMOKE_FRAMES[smoke.frame].src}
-          style={{ transform: `translate3d(${smoke.x.toFixed(2)}px, ${smoke.y.toFixed(2)}px, 0)` }}
-          alt=""
-          draggable={false}
-          aria-hidden="true"
-        />
-      )}
-
-      <div
-        ref={characterRef}
-        className={`launcher-mascot-character launcher-mascot-character--${phase}`}
-        style={style}
-        data-emotion={emotion}
-        role="button"
-        aria-label={
-          phase === "sleeping"
-            ? "Маскот спит. Нажмите на него, чтобы разбудить."
-            : carriedButton
-            ? "Маскот несёт кнопку. Нажмите, чтобы вернуть её."
-            : "Маскот. Нажмите, чтобы погладить, или перетащите и бросьте."
-        }
-        tabIndex={0}
-        onClick={handleClick}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
-        onKeyDown={handleKeyDown}
-      >
-        {throwProgress > 0 && throwProgress < THROWS_TO_CHAOS && (
-          <span className="launcher-mascot-mischief" aria-hidden="true">
-            {"!".repeat(throwProgress)}
-          </span>
-        )}
-        {speech !== null && (
-          <span className="launcher-mascot-speech" aria-hidden="true">
-            <span className="launcher-mascot-speech-text">{speech}</span>
-            <span className="launcher-mascot-speech-caret" />
-          </span>
-        )}
-        {phase === "sleeping" && (
-          <span className="launcher-mascot-sleep-z" aria-hidden="true">
-            <span>z</span>
-            <span>Z</span>
-          </span>
-        )}
-        {carriedButton && phase !== "eating" && (
-          <span
-            className="launcher-mascot-cargo"
-            style={{ width: carriedButton.width, height: carriedButton.height }}
-            aria-hidden="true"
-          >
-            <PiskelSprite
-              asset={HAND_ASSETS.left}
-              className="launcher-mascot-arm launcher-mascot-arm--left"
-            />
-            <div ref={replicaRef} className="launcher-mascot-button-replica" />
-            <PiskelSprite
-              asset={HAND_ASSETS.right}
-              className="launcher-mascot-arm launcher-mascot-arm--right"
-            />
-          </span>
-        )}
-        <img
-          className="launcher-mascot-body"
-          src={mouthFrame !== null ? MOUTH_FRAMES[mouthFrame].src : MASCOT_SPRITES[emotion]}
-          alt=""
-          draggable={false}
-          aria-hidden="true"
-        />
-        {carriedButton && phase === "eating" && (
-          <div
-            ref={eatReplicaRef}
-            className="launcher-mascot-eat"
-            style={{
-              width: carriedButton.width,
-              height: carriedButton.height,
-              transform: `translate(-50%, -50%) scale(${(
-                (26 / Math.max(1, carriedButton.width)) *
-                (0.55 + (mouthFrame ?? 0) * 0.15)
-              ).toFixed(3)})`,
-              opacity: (mouthFrame ?? 0) === 0 ? 0 : 1,
-            }}
-            aria-hidden="true"
-          />
-        )}
-        {phase === "typing" && (
-          <span className="launcher-mascot-keyboard" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </span>
-        )}
-        <span className="launcher-mascot-tooltip" aria-hidden="true">
-          {phase === "sleeping"
-            ? "Нажми, чтобы разбудить"
-            : carriedButton
-              ? "Нажми, чтобы вернуть кнопку"
-              : "Погладь или брось маскота"}
-        </span>
-      </div>
-    </div>
+    <MascotView
+      layerRef={layerRef}
+      characterRef={characterRef}
+      replicaRef={replicaRef}
+      looseButtonReplicaRef={looseButtonReplicaRef}
+      eatReplicaRef={eatReplicaRef}
+      position={position}
+      phase={phase}
+      emotion={emotion}
+      carriedButton={carriedButton}
+      looseButton={looseButton}
+      looseButtonTransform={looseButtonTransform}
+      ragePress={ragePress}
+      scrollHand={scrollHand}
+      chaosActive={chaosActive}
+      modalForeground={modalForeground}
+      throwProgress={throwProgress}
+      smoke={smoke}
+      mouthFrame={mouthFrame}
+      speech={speech}
+      onUndoChaos={() => void undoChaos()}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerFinish={finishDrag}
+      onKeyDown={handleKeyDown}
+    />
   );
 }

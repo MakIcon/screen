@@ -117,6 +117,15 @@ fn snapshot_status(runtime: &BlueMapRuntime) -> BlueMapStatus {
     }
 }
 
+pub(crate) fn current_status(state: &BlueMapState) -> Result<BlueMapStatus, String> {
+    let mut runtime = state
+        .inner
+        .lock()
+        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+    refresh_child_state(&mut runtime);
+    Ok(snapshot_status(&runtime))
+}
+
 fn refresh_child_state(runtime: &mut BlueMapRuntime) {
     let exit_status = match runtime.child.as_mut() {
         Some(child) => match child.try_wait() {
@@ -272,7 +281,7 @@ fn select_available_map_url(map_url: &str) -> Result<BlueMapPortSelection, Strin
 }
 
 fn managed_bluemap_dir() -> Result<PathBuf, String> {
-    Ok(launcher_root()?.join("plugins").join("bluemap"))
+    super::optional_extensions::extension_dir(super::optional_extensions::BLUE_MAP_SERVER_ID)
 }
 
 fn is_probably_file_path(value: &str) -> bool {
@@ -772,33 +781,13 @@ fn newest_file(paths: Vec<PathBuf>) -> Option<PathBuf> {
 }
 
 fn blue_map_search_roots(working_dir: &Path) -> Vec<(PathBuf, usize)> {
-    let mut roots = vec![
+    vec![
         (working_dir.to_path_buf(), 4),
         (
             managed_bluemap_dir().unwrap_or_else(|_| working_dir.to_path_buf()),
             4,
         ),
-    ];
-
-    if let Ok(root) = launcher_root() {
-        roots.push((root, 4));
-    }
-
-    if let Ok(profile) = env::var("USERPROFILE") {
-        let profile = PathBuf::from(profile);
-        roots.push((profile.join("Downloads"), 2));
-        roots.push((profile.join("Desktop"), 2));
-    }
-
-    #[cfg(windows)]
-    {
-        roots.extend([
-            (PathBuf::from(r"C:\Program Files\BlueMap"), 3),
-            (PathBuf::from(r"C:\Program Files (x86)\BlueMap"), 3),
-        ]);
-    }
-
-    roots
+    ]
 }
 
 fn find_local_bluemap_cli_jar(
@@ -939,15 +928,32 @@ async fn resolve_cli_jar(
         return Ok((path, false));
     }
 
-    let managed_dir = managed_bluemap_dir()?;
-    if java_major.map(|major| major < 25).unwrap_or(false) {
-        let downloaded =
-            download_bluemap_cli_target(&managed_dir, java21_download_target(), java_major).await?;
-        return Ok((downloaded, true));
-    }
+    Err(
+        "BlueMap Server package is not installed. Open Extensions and install it first."
+            .to_string(),
+    )
+}
 
-    let downloaded = download_latest_bluemap_cli(&managed_dir).await?;
-    Ok((downloaded, true))
+pub async fn install_server_package() -> Result<PathBuf, String> {
+    let mut settings = read_settings().await?;
+    let plugin = settings.blue_map_plugin().clone();
+    let java_bin = java_executable(&plugin.java_path);
+    let java_major = detect_java_major(&java_bin);
+    let managed_dir = managed_bluemap_dir()?;
+    let cli_jar = if java_major.unwrap_or(21) < 25 {
+        download_bluemap_cli_target(&managed_dir, java21_download_target(), java_major).await?
+    } else {
+        download_latest_bluemap_cli(&managed_dir).await?
+    };
+
+    let blue_map = settings.blue_map_plugin_mut();
+    blue_map.cli_jar_path = cli_jar.to_string_lossy().to_string();
+    if blue_map.working_dir.trim().is_empty() {
+        blue_map.working_dir = managed_dir.to_string_lossy().to_string();
+    }
+    blue_map.java_path = java_bin;
+    write_settings(&settings).await?;
+    Ok(cli_jar)
 }
 
 async fn prepare_bluemap_settings(
@@ -992,12 +998,7 @@ async fn prepare_bluemap_settings(
 
 #[tauri::command]
 pub async fn get_bluemap_status(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, String> {
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-    refresh_child_state(&mut runtime);
-    Ok(snapshot_status(&runtime))
+    current_status(&state)
 }
 
 #[tauri::command]

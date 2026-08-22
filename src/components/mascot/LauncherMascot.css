@@ -279,6 +279,16 @@
   opacity: 0 !important;
 }
 
+/* RAM slider teasing is deliberately visual-only; every other chaos action
+   continues to use the real control and is covered by the undo snapshot. */
+.mascot-fake-slider-preview .es-thumb-inner {
+  transform: scale(1.22);
+  box-shadow:
+    0 0 0 1.5px var(--slider-thumb-ring, #1a1714),
+    0 0 0 5px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
 /* Landing dust puff. */
 .launcher-mascot-smoke {
   position: absolute;

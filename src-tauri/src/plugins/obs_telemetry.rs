@@ -137,6 +137,14 @@ fn snapshot_status(runtime: &ObsTelemetryRuntime) -> ObsTelemetryStatus {
     }
 }
 
+pub(crate) fn current_status(state: &ObsTelemetryState) -> Result<ObsTelemetryStatus, String> {
+    let runtime = state
+        .inner
+        .lock()
+        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+    Ok(snapshot_status(&runtime))
+}
+
 fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
@@ -886,11 +894,7 @@ pub async fn prepare_obs_telemetry_for_launch(
 pub async fn get_obs_telemetry_status(
     state: State<'_, ObsTelemetryState>,
 ) -> Result<ObsTelemetryStatus, String> {
-    let runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
-    Ok(snapshot_status(&runtime))
+    current_status(&state)
 }
 
 #[tauri::command]

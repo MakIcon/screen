@@ -2,6 +2,8 @@ pub mod blue_map;
 pub mod discord_rpc;
 pub mod mineflayer_bot;
 pub mod obs_telemetry;
+pub mod optional_extensions;
+pub mod runtime_monitor;
 
 /// Append a line to a plugin's in-memory log ring, dropping the oldest lines so
 /// it never grows past `capacity`. Shared by the managed-process plugins, which

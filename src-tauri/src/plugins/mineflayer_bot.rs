@@ -10,7 +10,7 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::{
     commands::auth::{read_accounts, refresh_account_if_expired},
@@ -150,6 +150,15 @@ fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
         last_error: runtime.last_error.clone(),
         logs: runtime.logs.clone(),
     }
+}
+
+pub(crate) fn current_status(state: &MineflayerBotState) -> Result<MineflayerBotStatus, String> {
+    let mut runtime = state
+        .inner
+        .lock()
+        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+    refresh_child_state(&mut runtime);
+    Ok(snapshot_status(&runtime))
 }
 
 fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
@@ -337,23 +346,9 @@ async fn resolve_bot_account(
     })
 }
 
-fn worker_path(app: &AppHandle) -> Result<PathBuf, String> {
-    if cfg!(debug_assertions) {
-        return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("mineflayer-bot-worker.cjs"));
-    }
-
-    app.path()
-        .resource_dir()
-        .map(|path| path.join("resources").join("mineflayer-bot-worker.cjs"))
-        .map_err(|error| format!("resolve resource dir error: {error}"))
-}
-
-fn project_root_for_node() -> Option<PathBuf> {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|path| path.to_path_buf())
+fn worker_path() -> Result<(PathBuf, PathBuf), String> {
+    let runtime_dir = super::optional_extensions::mineflayer_runtime_dir()?;
+    Ok((runtime_dir.join("worker.cjs"), runtime_dir))
 }
 
 fn node_executable() -> &'static str {
@@ -368,12 +363,7 @@ fn node_executable() -> &'static str {
 pub async fn get_mineflayer_bot_status(
     state: State<'_, MineflayerBotState>,
 ) -> Result<MineflayerBotStatus, String> {
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
-    refresh_child_state(&mut runtime);
-    Ok(snapshot_status(&runtime))
+    current_status(&state)
 }
 
 #[tauri::command]
@@ -398,7 +388,7 @@ pub async fn stop_mineflayer_bot(
 
 #[tauri::command]
 pub async fn start_mineflayer_bot(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, MineflayerBotState>,
     launcher_nickname: String,
     launcher_account_type: String,
@@ -487,7 +477,7 @@ pub async fn start_mineflayer_bot(
         },
     };
 
-    let worker = worker_path(&app)?;
+    let (worker, runtime_dir) = worker_path()?;
     if !worker.exists() {
         return Err(format!("Mineflayer worker not found: {}", worker.display()));
     }
@@ -512,10 +502,8 @@ pub async fn start_mineflayer_bot(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if let Some(root) = project_root_for_node() {
-        command.current_dir(&root);
-        command.env("NODE_PATH", root.join("node_modules"));
-    }
+    command.current_dir(&runtime_dir);
+    command.env("NODE_PATH", runtime_dir.join("node_modules"));
 
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);

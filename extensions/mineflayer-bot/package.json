@@ -1,0 +1,17 @@
+{
+  "name": "@screenlauncher/mineflayer-bot",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --no-deprecation --test worker.test.mjs"
+  },
+  "dependencies": {
+    "minecraft-data": "^3.113.2",
+    "mineflayer": "^4.37.1",
+    "mineflayer-movement": "^0.4.4",
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-chunk": "^1.41.0",
+    "prismarine-physics": "^1.11.1"
+  }
+}

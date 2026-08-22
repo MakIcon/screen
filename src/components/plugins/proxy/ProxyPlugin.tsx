@@ -1,15 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { LauncherPluginsSettings, ProxyPluginSettings } from "../../../types";
-import proxyIcon from "../../../assets/plugins/proxy.svg";
-import type { PluginDefinition } from "../pluginTypes";
+import type { ProxyPluginSettings } from "../../../types";
+import type { PluginSettingsProps } from "../pluginTypes";
+import { normalizeProxySettings } from "../pluginSettings";
 import "./ProxyPlugin.css";
-
-export const DEFAULT_PROXY_SETTINGS: ProxyPluginSettings = {
-  enabled: false,
-  url: "",
-  bypass: "",
-};
 
 type ProxyTestResult = {
   ok: boolean;
@@ -17,19 +11,6 @@ type ProxyTestResult = {
   latencyMs: number;
   message: string;
 };
-
-export function normalizeProxySettings(value: unknown): ProxyPluginSettings {
-  const draft =
-    value && typeof value === "object" ? (value as Partial<ProxyPluginSettings>) : {};
-
-  return {
-    enabled:
-      typeof draft.enabled === "boolean" ? draft.enabled : DEFAULT_PROXY_SETTINGS.enabled,
-    url: typeof draft.url === "string" ? draft.url : DEFAULT_PROXY_SETTINGS.url,
-    bypass:
-      typeof draft.bypass === "string" ? draft.bypass : DEFAULT_PROXY_SETTINGS.bypass,
-  };
-}
 
 function ProxySettingsEditor({
   settings,
@@ -130,43 +111,19 @@ function ProxySettingsEditor({
       </div>
 
       <p className="proxy-hint">
-        Supports <code>http://</code>, <code>https://</code> and <code>socks5://</code>.
-        Separate bypass entries with commas or new lines. Domains include their subdomains; IP
-        addresses and CIDR ranges are also supported.
+        Supports <code>http://</code>, <code>https://</code> and <code>socks5://</code>. Separate
+        bypass entries with commas or new lines. Domains include their subdomains; IP addresses and
+        CIDR ranges are also supported.
       </p>
     </div>
   );
 }
 
-export const PROXY_PLUGIN_DEFINITION: PluginDefinition = {
-  id: "proxy",
-  title: "PROXY",
-  tag: "NETWORK",
-  mark: "PXY",
-  icon: {
-    src: proxyIcon,
-    alt: "Proxy network",
-  },
-  description: "Tunnels launcher downloads through HTTP, HTTPS or SOCKS5 proxies.",
-  getEnabled: (plugins) => plugins.proxy.enabled,
-  getStatus: (plugins) => {
-    if (!plugins.proxy.enabled) return "OFF";
-    return plugins.proxy.url.trim() ? "ON" : "NEEDS URL";
-  },
-  setEnabled: (plugins, enabled) => ({
-    ...plugins,
-    proxy: {
-      ...plugins.proxy,
-      enabled,
-    },
-  }),
-  renderSettings: (
-    plugins: LauncherPluginsSettings,
-    onChange: (plugins: LauncherPluginsSettings) => void,
-  ) => (
+export function ProxySettings({ plugins, onChange }: PluginSettingsProps) {
+  return (
     <ProxySettingsEditor
       settings={plugins.proxy}
       onChange={(proxy) => onChange({ ...plugins, proxy })}
     />
-  ),
-};
+  );
+}

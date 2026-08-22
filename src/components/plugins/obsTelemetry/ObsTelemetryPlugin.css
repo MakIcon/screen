@@ -115,7 +115,10 @@
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.1em;
-  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  transition:
+    background 0.14s,
+    border-color 0.14s,
+    color 0.14s;
 }
 
 .obs-telemetry-controls button:hover:not(:disabled) {

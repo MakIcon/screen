@@ -7,7 +7,8 @@ Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It mana
 - `src/` — React UI, tabs, reusable controls and frontend hooks.
 - `src-tauri/src/commands/` — Tauri command boundary for accounts, builds, settings and Modrinth.
 - `src-tauri/src/minecraft/` — version resolution, downloads, Java selection and game launch.
-- `src-tauri/src/plugins/` — Discord RPC, Mineflayer, BlueMap and OBS telemetry runtimes.
+- `src-tauri/src/plugins/` — launcher-side bridges for Discord RPC, optional packages and OBS telemetry.
+- `extensions/mineflayer-bot/` — isolated Mineflayer worker and locked Node dependency manifest. Its dependencies are installed on demand into the launcher's data directory.
 - `obs-telemetry-mod/` — client-only Fabric helper mod bundled with the launcher.
 - `scripts/` — maintained project build scripts.
 
@@ -27,6 +28,14 @@ pnpm build
 pnpm check
 pnpm test
 ```
+
+Build a standalone optional-extension archive when one is needed for manual distribution:
+
+```powershell
+pnpm package:extensions
+```
+
+The Extensions screen installs Mineflayer's locked dependencies from the npm registry on demand into `%APPDATA%/ScreenLauncher/extensions/mineflayer-bot`. BlueMap's CLI/server package is downloaded on demand into `%APPDATA%/ScreenLauncher/extensions/blue-map-server`. Both packages can be removed independently from the launcher.
 
 Build the OBS telemetry mod for every version listed in `obs-telemetry-mod/gradle.properties`:
 

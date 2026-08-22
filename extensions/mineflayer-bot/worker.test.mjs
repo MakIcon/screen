@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import { createRequire } from "node:module";
 import test from "node:test";
-import worker from "../src-tauri/resources/mineflayer-bot-worker.cjs";
+import worker from "./worker.cjs";
 
 const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
@@ -121,9 +121,7 @@ test("reads the actual protocol 775 update_time wire format", async () => {
     name: "update_time",
     params: {
       age: [0, 12345],
-      clockUpdates: [
-        { id: 0, totalTicks: 6000, partialTick: 0.5, rate: 1 },
-      ],
+      clockUpdates: [{ id: 0, totalTicks: 6000, partialTick: 0.5, rate: 1 }],
     },
   });
   const [parsed] = await packetPromise;

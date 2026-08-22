@@ -370,6 +370,29 @@ export type ObsTelemetryStatus = {
   logs: string[];
 };
 
+export type OptionalExtensionId = "mineflayer-bot" | "blue-map-server";
+
+export type OptionalExtensionStatus = {
+  id: OptionalExtensionId;
+  installed: boolean;
+  version?: string | null;
+  installPath: string;
+  message: string;
+};
+
+export type RuntimeProcessStatus = {
+  pid: number;
+  alive: boolean;
+};
+
+export type RuntimeMonitorSnapshot = {
+  mineflayerBot: MineflayerBotStatus;
+  blueMap: BlueMapStatus;
+  obsTelemetry: ObsTelemetryStatus;
+  processes: RuntimeProcessStatus[];
+  optionalExtensions: OptionalExtensionStatus[];
+};
+
 export type MicrosoftAccount = {
   id: string;
   uuid: string;

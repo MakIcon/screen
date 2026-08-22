@@ -4,7 +4,7 @@ interface OverviewTabProps {
   selectedInstance: InstanceItem | null;
   isRunning: (id: string) => boolean;
   resolve: (template: string) => string;
-  handleKillGame: (id: string) => void;
+  handleStopGame: (id: string) => void;
   handleLaunchSelected: () => void;
   working: boolean;
   setTabAnimated: (tab: TabKey) => void;
@@ -14,7 +14,7 @@ export function OverviewTab({
   selectedInstance,
   isRunning,
   resolve,
-  handleKillGame,
+  handleStopGame,
   handleLaunchSelected,
   working,
   setTabAnimated,
@@ -98,11 +98,11 @@ export function OverviewTab({
               <button
                 className="primary-action play-last-button kill-action build-play-action"
                 type="button"
-                onClick={() => handleKillGame(selectedInstance.id)}
+                onClick={() => handleStopGame(selectedInstance.id)}
               >
                 <span className="bpa-stack">
-                  <span className="bpa-label">✕ KILL GAME</span>
-                  <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                  <span className="bpa-label">■ STOP GAME</span>
+                  <span className="bpa-sizer" aria-hidden="true">■ STOP GAME</span>
                 </span>
               </button>
             ) : (
@@ -116,7 +116,7 @@ export function OverviewTab({
               >
                 <span className="bpa-stack">
                   <span className="bpa-label">{working ? "WORKING..." : "PLAY LAST"}</span>
-                  <span className="bpa-sizer" aria-hidden="true">✕ KILL GAME</span>
+                  <span className="bpa-sizer" aria-hidden="true">■ STOP GAME</span>
                 </span>
               </button>
             )}

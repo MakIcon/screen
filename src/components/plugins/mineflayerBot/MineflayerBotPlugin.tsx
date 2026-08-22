@@ -1,50 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import steveFaceIcon from "../../../assets/plugins/steve-face.svg";
-import type {
-  LauncherPluginsSettings,
-  MineflayerBotPluginSettings,
-  MineflayerBotStatus,
-} from "../../../types";
-import type { PluginDefinition, PluginRenderContext } from "../pluginTypes";
+import type { MineflayerBotPluginSettings, MineflayerBotStatus } from "../../../types";
+import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
+import { normalizeMineflayerBotSettings } from "../pluginSettings";
 import { toErrorMessage } from "../../../utils/errors";
+import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import "./MineflayerBotPlugin.css";
 
-type BotAccountMode = MineflayerBotPluginSettings["botAccountMode"];
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
 type SettingsSection = "connection" | "behavior" | "commands" | "control";
-
-export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
-  enabled: false,
-  host: "",
-  port: 25565,
-  version: "",
-  commandPrefix: "!",
-  commandSource: "both",
-  extraOwners: "",
-  commandCooldownMs: 500,
-  sendChatFeedback: true,
-  allowSayCommand: false,
-  allowQuitCommand: true,
-  botAccountMode: "offline",
-  botNickname: "SCREEN_BOT",
-  botMicrosoftAccountId: null,
-  followDistance: 3,
-  gotoRadius: 1,
-  allowSprinting: true,
-  allowParkour: true,
-  canDig: false,
-  maxDropDown: 3,
-  autoFollowOnSpawn: false,
-  announceOnSpawn: false,
-  spawnMessage: "Ready, %owner%!",
-  autoReconnect: true,
-  reconnectDelaySeconds: 5,
-  maxReconnectAttempts: 10,
-  connectTimeoutSeconds: 30,
-  autoRespawn: true,
-  logPathUpdates: false,
-};
 
 const SETTINGS_SECTIONS: Array<{
   id: SettingsSection;
@@ -101,88 +65,6 @@ const MOVEMENT_PRESETS: Array<{
   },
 ];
 
-function normalizeText(value: unknown, fallback: string) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function normalizeBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function normalizeInteger(value: unknown, fallback: number, minimum: number, maximum: number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(minimum, Math.min(Math.round(parsed), maximum));
-}
-
-function normalizeBotAccountMode(value: unknown): BotAccountMode {
-  return value === "microsoft" ? "microsoft" : "offline";
-}
-
-function normalizeCommandSource(value: unknown): CommandSource {
-  if (value === "chat" || value === "whisper") return value;
-  return "both";
-}
-
-export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPluginSettings {
-  const draft =
-    value && typeof value === "object" ? (value as Partial<MineflayerBotPluginSettings>) : {};
-  const defaults = DEFAULT_MINEFLAYER_BOT_SETTINGS;
-
-  return {
-    enabled: normalizeBoolean(draft.enabled, defaults.enabled),
-    host: normalizeText(draft.host, defaults.host),
-    port: normalizeInteger(draft.port, defaults.port, 1, 65535),
-    version: normalizeText(draft.version, defaults.version),
-    commandPrefix: normalizeText(draft.commandPrefix, defaults.commandPrefix),
-    commandSource: normalizeCommandSource(draft.commandSource),
-    extraOwners: normalizeText(draft.extraOwners, defaults.extraOwners),
-    commandCooldownMs: normalizeInteger(
-      draft.commandCooldownMs,
-      defaults.commandCooldownMs,
-      0,
-      10_000,
-    ),
-    sendChatFeedback: normalizeBoolean(draft.sendChatFeedback, defaults.sendChatFeedback),
-    allowSayCommand: normalizeBoolean(draft.allowSayCommand, defaults.allowSayCommand),
-    allowQuitCommand: normalizeBoolean(draft.allowQuitCommand, defaults.allowQuitCommand),
-    botAccountMode: normalizeBotAccountMode(draft.botAccountMode),
-    botNickname: normalizeText(draft.botNickname, defaults.botNickname),
-    botMicrosoftAccountId:
-      typeof draft.botMicrosoftAccountId === "string" ? draft.botMicrosoftAccountId : null,
-    followDistance: normalizeInteger(draft.followDistance, defaults.followDistance, 1, 16),
-    gotoRadius: normalizeInteger(draft.gotoRadius, defaults.gotoRadius, 1, 16),
-    allowSprinting: normalizeBoolean(draft.allowSprinting, defaults.allowSprinting),
-    allowParkour: normalizeBoolean(draft.allowParkour, defaults.allowParkour),
-    canDig: normalizeBoolean(draft.canDig, defaults.canDig),
-    maxDropDown: normalizeInteger(draft.maxDropDown, defaults.maxDropDown, 1, 16),
-    autoFollowOnSpawn: normalizeBoolean(draft.autoFollowOnSpawn, defaults.autoFollowOnSpawn),
-    announceOnSpawn: normalizeBoolean(draft.announceOnSpawn, defaults.announceOnSpawn),
-    spawnMessage: normalizeText(draft.spawnMessage, defaults.spawnMessage),
-    autoReconnect: normalizeBoolean(draft.autoReconnect, defaults.autoReconnect),
-    reconnectDelaySeconds: normalizeInteger(
-      draft.reconnectDelaySeconds,
-      defaults.reconnectDelaySeconds,
-      1,
-      300,
-    ),
-    maxReconnectAttempts: normalizeInteger(
-      draft.maxReconnectAttempts,
-      defaults.maxReconnectAttempts,
-      0,
-      100,
-    ),
-    connectTimeoutSeconds: normalizeInteger(
-      draft.connectTimeoutSeconds,
-      defaults.connectTimeoutSeconds,
-      5,
-      300,
-    ),
-    autoRespawn: normalizeBoolean(draft.autoRespawn, defaults.autoRespawn),
-    logPathUpdates: normalizeBoolean(draft.logPathUpdates, defaults.logPathUpdates),
-  };
-}
-
 function formatStatusValue(value?: string | number | null) {
   if (value === null || value === undefined || value === "") return "NONE";
   return String(value);
@@ -233,7 +115,11 @@ function MineflayerBotSettingsEditor({
   onChange: (settings: MineflayerBotPluginSettings) => void;
   context: PluginRenderContext;
 }) {
-  const [status, setStatus] = useState<MineflayerBotStatus | null>(null);
+  const monitor = useRuntimeMonitor();
+  const status = monitor.snapshot?.mineflayerBot ?? null;
+  const packageInstalled = Boolean(
+    monitor.snapshot?.optionalExtensions.find((item) => item.id === "mineflayer-bot")?.installed,
+  );
   const [busyAction, setBusyAction] = useState("");
   const [actionError, setActionError] = useState("");
   const [activeSection, setActiveSection] = useState<SettingsSection>("connection");
@@ -247,34 +133,16 @@ function MineflayerBotSettingsEditor({
     settings.botMicrosoftAccountId === context.launcherMsAccountId;
   const canStart = useMemo(() => {
     if (busyAction || status?.running) return false;
-    if (!settings.enabled || !settings.host.trim()) return false;
+    if (!settings.enabled || !packageInstalled || !settings.host.trim()) return false;
     if (settings.botAccountMode === "microsoft" && !settings.botMicrosoftAccountId) {
       return false;
     }
     return !sameAsLauncherAccount;
-  }, [busyAction, sameAsLauncherAccount, settings, status?.running]);
+  }, [busyAction, packageInstalled, sameAsLauncherAccount, settings, status?.running]);
 
   const update = (patch: Partial<MineflayerBotPluginSettings>) => {
     onChange(normalizeMineflayerBotSettings({ ...settings, ...patch }));
   };
-
-  const refreshStatus = async (clearError = true) => {
-    try {
-      const next = await invoke<MineflayerBotStatus>("get_mineflayer_bot_status");
-      setStatus(next);
-      if (clearError) setActionError("");
-      return next;
-    } catch (error) {
-      setActionError(toErrorMessage(error));
-      return null;
-    }
-  };
-
-  useEffect(() => {
-    void refreshStatus();
-    const timer = window.setInterval(() => void refreshStatus(false), 2500);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const invokeStart = () =>
     invoke<MineflayerBotStatus>("start_mineflayer_bot", {
@@ -288,7 +156,8 @@ function MineflayerBotSettingsEditor({
     try {
       setBusyAction("STARTING");
       setActionError("");
-      setStatus(await invokeStart());
+      await invokeStart();
+      await monitor.refresh();
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -300,7 +169,8 @@ function MineflayerBotSettingsEditor({
     try {
       setBusyAction("STOPPING");
       setActionError("");
-      setStatus(await invoke<MineflayerBotStatus>("stop_mineflayer_bot"));
+      await invoke<MineflayerBotStatus>("stop_mineflayer_bot");
+      await monitor.refresh();
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -314,7 +184,8 @@ function MineflayerBotSettingsEditor({
       setBusyAction("RESTARTING");
       setActionError("");
       await invoke<MineflayerBotStatus>("stop_mineflayer_bot");
-      setStatus(await invokeStart());
+      await invokeStart();
+      await monitor.refresh();
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -789,7 +660,7 @@ function MineflayerBotSettingsEditor({
               <button
                 type="button"
                 disabled={Boolean(busyAction)}
-                onClick={() => void refreshStatus()}
+                onClick={() => void monitor.refresh()}
               >
                 REFRESH
               </button>
@@ -847,45 +718,12 @@ function MineflayerBotSettingsEditor({
   );
 }
 
-export const MINEFLAYER_BOT_PLUGIN_DEFINITION: PluginDefinition = {
-  id: "mineflayerBot",
-  title: "MINEFLAYER BOT",
-  tag: "BOT",
-  mark: "BOT",
-  icon: {
-    src: steveFaceIcon,
-    alt: "Steve face",
-  },
-  description:
-    "A configurable Minecraft companion with owner-only commands and resilient pathfinding.",
-  getEnabled: (plugins) => plugins.mineflayerBot.enabled,
-  getStatus: (plugins) => {
-    if (!plugins.mineflayerBot.enabled) return "OFF";
-    if (!plugins.mineflayerBot.host.trim()) return "NEEDS SERVER";
-    if (
-      plugins.mineflayerBot.botAccountMode === "microsoft" &&
-      !plugins.mineflayerBot.botMicrosoftAccountId
-    ) {
-      return "NEEDS ACCOUNT";
-    }
-    return "ON";
-  },
-  setEnabled: (plugins, enabled) => ({
-    ...plugins,
-    mineflayerBot: {
-      ...plugins.mineflayerBot,
-      enabled,
-    },
-  }),
-  renderSettings: (
-    plugins: LauncherPluginsSettings,
-    onChange: (plugins: LauncherPluginsSettings) => void,
-    context: PluginRenderContext,
-  ) => (
+export function MineflayerBotSettings({ plugins, onChange, context }: PluginSettingsProps) {
+  return (
     <MineflayerBotSettingsEditor
       settings={plugins.mineflayerBot}
       context={context}
       onChange={(mineflayerBot) => onChange({ ...plugins, mineflayerBot })}
     />
-  ),
-};
+  );
+}
