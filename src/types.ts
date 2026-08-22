@@ -1,10 +1,4 @@
-export type TabKey =
-  | "overview"
-  | "instances"
-  | "mods"
-  | "resourcepacks"
-  | "shaders"
-  | "settings";
+export type TabKey = "overview" | "instances" | "mods" | "resourcepacks" | "shaders" | "settings";
 
 export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "Forge" | "NeoForge";
 
@@ -29,7 +23,7 @@ export type InstanceItem = {
 };
 
 export type PlaytimeSession = {
-  ts: number;   // unix seconds when the session ended
+  ts: number; // unix seconds when the session ended
   secs: number; // duration in seconds
 };
 
@@ -253,10 +247,30 @@ export type MineflayerBotPluginSettings = {
   port: number;
   version: string;
   commandPrefix: string;
+  commandSource: "chat" | "whisper" | "both";
+  extraOwners: string;
+  commandCooldownMs: number;
+  sendChatFeedback: boolean;
+  allowSayCommand: boolean;
+  allowQuitCommand: boolean;
   botAccountMode: "offline" | "microsoft";
   botNickname: string;
   botMicrosoftAccountId?: string | null;
   followDistance: number;
+  gotoRadius: number;
+  allowSprinting: boolean;
+  allowParkour: boolean;
+  canDig: boolean;
+  maxDropDown: number;
+  autoFollowOnSpawn: boolean;
+  announceOnSpawn: boolean;
+  spawnMessage: string;
+  autoReconnect: boolean;
+  reconnectDelaySeconds: number;
+  maxReconnectAttempts: number;
+  connectTimeoutSeconds: number;
+  autoRespawn: boolean;
+  logPathUpdates: boolean;
 };
 
 export type BlueMapPluginSettings = {
@@ -440,7 +454,6 @@ export type DropdownKey =
   | "mc"
   | "loader"
   | "source"
-
   | "account"
   | "create-version"
   | "create-loader"

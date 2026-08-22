@@ -450,6 +450,18 @@ pub struct MineflayerBotPluginSettings {
     pub version: String,
     #[serde(default = "default_mineflayer_bot_command_prefix")]
     pub command_prefix: String,
+    #[serde(default = "default_mineflayer_bot_command_source")]
+    pub command_source: String,
+    #[serde(default)]
+    pub extra_owners: String,
+    #[serde(default = "default_mineflayer_bot_command_cooldown_ms")]
+    pub command_cooldown_ms: u32,
+    #[serde(default = "default_true")]
+    pub send_chat_feedback: bool,
+    #[serde(default)]
+    pub allow_say_command: bool,
+    #[serde(default = "default_true")]
+    pub allow_quit_command: bool,
     #[serde(default = "default_mineflayer_bot_account_mode")]
     pub bot_account_mode: String,
     #[serde(default = "default_mineflayer_bot_nickname")]
@@ -458,6 +470,34 @@ pub struct MineflayerBotPluginSettings {
     pub bot_microsoft_account_id: Option<String>,
     #[serde(default = "default_mineflayer_bot_follow_distance")]
     pub follow_distance: u32,
+    #[serde(default = "default_mineflayer_bot_goto_radius")]
+    pub goto_radius: u32,
+    #[serde(default = "default_true")]
+    pub allow_sprinting: bool,
+    #[serde(default = "default_true")]
+    pub allow_parkour: bool,
+    #[serde(default)]
+    pub can_dig: bool,
+    #[serde(default = "default_mineflayer_bot_max_drop_down")]
+    pub max_drop_down: u32,
+    #[serde(default)]
+    pub auto_follow_on_spawn: bool,
+    #[serde(default)]
+    pub announce_on_spawn: bool,
+    #[serde(default = "default_mineflayer_bot_spawn_message")]
+    pub spawn_message: String,
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+    #[serde(default = "default_mineflayer_bot_reconnect_delay_seconds")]
+    pub reconnect_delay_seconds: u32,
+    #[serde(default = "default_mineflayer_bot_max_reconnect_attempts")]
+    pub max_reconnect_attempts: u32,
+    #[serde(default = "default_mineflayer_bot_connect_timeout_seconds")]
+    pub connect_timeout_seconds: u32,
+    #[serde(default = "default_true")]
+    pub auto_respawn: bool,
+    #[serde(default)]
+    pub log_path_updates: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -760,10 +800,30 @@ impl Default for MineflayerBotPluginSettings {
             port: default_mineflayer_bot_port(),
             version: String::new(),
             command_prefix: default_mineflayer_bot_command_prefix(),
+            command_source: default_mineflayer_bot_command_source(),
+            extra_owners: String::new(),
+            command_cooldown_ms: default_mineflayer_bot_command_cooldown_ms(),
+            send_chat_feedback: true,
+            allow_say_command: false,
+            allow_quit_command: true,
             bot_account_mode: default_mineflayer_bot_account_mode(),
             bot_nickname: default_mineflayer_bot_nickname(),
             bot_microsoft_account_id: None,
             follow_distance: default_mineflayer_bot_follow_distance(),
+            goto_radius: default_mineflayer_bot_goto_radius(),
+            allow_sprinting: true,
+            allow_parkour: true,
+            can_dig: false,
+            max_drop_down: default_mineflayer_bot_max_drop_down(),
+            auto_follow_on_spawn: false,
+            announce_on_spawn: false,
+            spawn_message: default_mineflayer_bot_spawn_message(),
+            auto_reconnect: true,
+            reconnect_delay_seconds: default_mineflayer_bot_reconnect_delay_seconds(),
+            max_reconnect_attempts: default_mineflayer_bot_max_reconnect_attempts(),
+            connect_timeout_seconds: default_mineflayer_bot_connect_timeout_seconds(),
+            auto_respawn: true,
+            log_path_updates: false,
         }
     }
 }
@@ -855,6 +915,14 @@ fn default_mineflayer_bot_command_prefix() -> String {
     "!".to_string()
 }
 
+fn default_mineflayer_bot_command_source() -> String {
+    "both".to_string()
+}
+
+fn default_mineflayer_bot_command_cooldown_ms() -> u32 {
+    500
+}
+
 fn default_mineflayer_bot_account_mode() -> String {
     "offline".to_string()
 }
@@ -865,6 +933,34 @@ fn default_mineflayer_bot_nickname() -> String {
 
 fn default_mineflayer_bot_follow_distance() -> u32 {
     3
+}
+
+fn default_mineflayer_bot_goto_radius() -> u32 {
+    1
+}
+
+fn default_mineflayer_bot_max_drop_down() -> u32 {
+    3
+}
+
+fn default_mineflayer_bot_spawn_message() -> String {
+    "Ready, %owner%!".to_string()
+}
+
+fn default_mineflayer_bot_reconnect_delay_seconds() -> u32 {
+    5
+}
+
+fn default_mineflayer_bot_max_reconnect_attempts() -> u32 {
+    10
+}
+
+fn default_mineflayer_bot_connect_timeout_seconds() -> u32 {
+    30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_bluemap_map_url() -> String {
@@ -954,7 +1050,7 @@ pub struct ImportInstancePayload {
 
 #[cfg(test)]
 mod loader_schema_tests {
-    use super::InstanceExportData;
+    use super::{InstanceExportData, MineflayerBotPluginSettings};
 
     #[test]
     fn reads_legacy_fabric_loader_version_and_writes_loader_version() {
@@ -972,5 +1068,23 @@ mod loader_schema_tests {
         let serialized = serde_json::to_value(parsed).unwrap();
         assert_eq!(serialized["loaderVersion"], "0.16.14");
         assert!(serialized.get("fabricLoaderVersion").is_none());
+    }
+
+    #[test]
+    fn reads_legacy_mineflayer_settings_with_safe_defaults() {
+        let legacy = serde_json::json!({
+            "enabled": true,
+            "host": "localhost",
+            "followDistance": 5
+        });
+        let parsed: MineflayerBotPluginSettings = serde_json::from_value(legacy).unwrap();
+
+        assert_eq!(parsed.host, "localhost");
+        assert_eq!(parsed.follow_distance, 5);
+        assert!(parsed.auto_reconnect);
+        assert!(parsed.auto_respawn);
+        assert!(!parsed.can_dig);
+        assert_eq!(parsed.command_source, "both");
+        assert_eq!(parsed.command_cooldown_ms, 500);
     }
 }

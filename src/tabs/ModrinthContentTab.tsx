@@ -326,10 +326,9 @@ export function ModrinthContentTab({
                                 className="catalog-action install"
                                 type="button"
                                 disabled={busy}
-                                onClick={() => setSelectedProjectId(item.projectId)}
+                                onClick={() => void install(item.projectId)}
                                 data-mascot-stealable
                                 data-mascot-label="INSTALL"
-                                aria-haspopup="dialog"
                               >
                                 {busy ? "INSTALLING..." : "INSTALL"}
                               </button>

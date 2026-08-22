@@ -58,9 +58,11 @@ impl Default for MineflayerBotRuntime {
 struct WorkerConfig {
     server: WorkerServerConfig,
     owner_name: String,
-    command_prefix: String,
-    follow_distance: u32,
     account: WorkerAccountConfig,
+    commands: WorkerCommandConfig,
+    movement: WorkerMovementConfig,
+    connection: WorkerConnectionConfig,
+    behavior: WorkerBehaviorConfig,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +80,48 @@ struct WorkerAccountConfig {
     username: String,
     uuid: Option<String>,
     access_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerCommandConfig {
+    prefix: String,
+    source: String,
+    extra_owners: Vec<String>,
+    cooldown_ms: u32,
+    send_feedback: bool,
+    allow_say: bool,
+    allow_quit: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerMovementConfig {
+    follow_distance: u32,
+    goto_radius: u32,
+    allow_sprinting: bool,
+    allow_parkour: bool,
+    can_dig: bool,
+    max_drop_down: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerConnectionConfig {
+    auto_reconnect: bool,
+    reconnect_delay_ms: u64,
+    max_reconnect_attempts: u32,
+    check_timeout_interval_ms: u64,
+    auto_respawn: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerBehaviorConfig {
+    auto_follow_on_spawn: bool,
+    announce_on_spawn: bool,
+    spawn_message: String,
+    log_path_updates: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +175,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         "ready" => {
             runtime.state = "connected".to_string();
             runtime.bot_username = event.bot_username;
+            runtime.last_error = None;
             if let Some(message) = event.message {
                 push_log(runtime, message);
             }
@@ -204,6 +249,22 @@ fn clean_player_name(name: &str, fallback: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn parse_extra_owners(raw: &str) -> Vec<String> {
+    let mut owners = Vec::new();
+    for candidate in raw.split([',', ';', '\n', '\r']) {
+        let candidate = candidate.trim();
+        if candidate.is_empty()
+            || owners
+                .iter()
+                .any(|owner: &String| owner.eq_ignore_ascii_case(candidate))
+        {
+            continue;
+        }
+        owners.push(candidate.to_string());
+    }
+    owners
 }
 
 async fn microsoft_account_by_id(id: &str) -> Result<MicrosoftAccount, String> {
@@ -360,7 +421,12 @@ pub async fn start_mineflayer_bot(
     }
 
     let command_prefix = clean_player_name(&plugin.command_prefix, "!");
-    let follow_distance = plugin.follow_distance.clamp(1, 16);
+    let command_source = match plugin.command_source.trim().to_ascii_lowercase().as_str() {
+        "chat" => "chat",
+        "whisper" => "whisper",
+        _ => "both",
+    }
+    .to_string();
     let owner_name = resolve_owner_name(
         &launcher_nickname,
         &launcher_account_type,
@@ -387,9 +453,38 @@ pub async fn start_mineflayer_bot(
             },
         },
         owner_name: owner_name.clone(),
-        command_prefix,
-        follow_distance,
         account,
+        commands: WorkerCommandConfig {
+            prefix: command_prefix,
+            source: command_source,
+            extra_owners: parse_extra_owners(&plugin.extra_owners),
+            cooldown_ms: plugin.command_cooldown_ms.min(10_000),
+            send_feedback: plugin.send_chat_feedback,
+            allow_say: plugin.allow_say_command,
+            allow_quit: plugin.allow_quit_command,
+        },
+        movement: WorkerMovementConfig {
+            follow_distance: plugin.follow_distance.clamp(1, 16),
+            goto_radius: plugin.goto_radius.clamp(1, 16),
+            allow_sprinting: plugin.allow_sprinting,
+            allow_parkour: plugin.allow_parkour,
+            can_dig: plugin.can_dig,
+            max_drop_down: plugin.max_drop_down.clamp(1, 16),
+        },
+        connection: WorkerConnectionConfig {
+            auto_reconnect: plugin.auto_reconnect,
+            reconnect_delay_ms: u64::from(plugin.reconnect_delay_seconds.clamp(1, 300)) * 1_000,
+            max_reconnect_attempts: plugin.max_reconnect_attempts.min(100),
+            check_timeout_interval_ms: u64::from(plugin.connect_timeout_seconds.clamp(5, 300))
+                * 1_000,
+            auto_respawn: plugin.auto_respawn,
+        },
+        behavior: WorkerBehaviorConfig {
+            auto_follow_on_spawn: plugin.auto_follow_on_spawn,
+            announce_on_spawn: plugin.announce_on_spawn,
+            spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),
+            log_path_updates: plugin.log_path_updates,
+        },
     };
 
     let worker = worker_path(&app)?;
@@ -411,6 +506,7 @@ pub async fn start_mineflayer_bot(
 
     let mut command = Command::new(node_executable());
     command
+        .arg("--no-deprecation")
         .arg(&worker)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -456,4 +552,17 @@ pub async fn start_mineflayer_bot(
     push_log(&mut runtime, "start requested from launcher");
 
     Ok(snapshot_status(&runtime))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_extra_owners;
+
+    #[test]
+    fn parses_and_deduplicates_extra_owners() {
+        assert_eq!(
+            parse_extra_owners("Alex, steve\nALEX; Builder"),
+            vec!["Alex", "steve", "Builder"]
+        );
+    }
 }

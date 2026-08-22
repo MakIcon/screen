@@ -14,16 +14,19 @@
     "tauri": "tauri",
     "check": "pnpm typecheck && cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:web": "vitest run"
+    "test:web": "vitest run",
+    "test:worker": "node --no-deprecation --test scripts/mineflayer-worker.node.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
+    "minecraft-data": "^3.113.2",
     "mineflayer": "^4.37.1",
     "mineflayer-movement": "^0.4.4",
     "mineflayer-pathfinder": "^2.4.5",
-    "prismarine-physics": "^1.11.0",
+    "prismarine-chunk": "^1.41.0",
+    "prismarine-physics": "^1.11.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "skinview3d": "^3.4.2"

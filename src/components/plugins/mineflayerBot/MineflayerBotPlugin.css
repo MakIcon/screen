@@ -1,12 +1,126 @@
 .mineflayer-bot-settings {
   display: grid;
-  gap: 20px;
+  gap: 18px;
+}
+
+.mineflayer-bot-live {
+  display: grid;
+  grid-template-columns: 12px minmax(84px, 0.7fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 62px;
+  border: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(194, 65, 12, 0.045), transparent 45%), var(--bg-card);
+  padding: 0 16px;
+}
+
+.mineflayer-bot-live-dot {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--muted);
+  box-shadow: 0 0 0 4px var(--bg-hover);
+}
+
+.mineflayer-bot-live--online .mineflayer-bot-live-dot {
+  border-color: var(--success);
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(47, 111, 69, 0.1);
+  animation: mineflayer-bot-pulse 2s ease-in-out infinite;
+}
+
+.mineflayer-bot-live div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.mineflayer-bot-live span,
+.mineflayer-bot-status span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.mineflayer-bot-live strong,
+.mineflayer-bot-status strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mineflayer-bot-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.mineflayer-bot-tabs button {
+  min-width: 0;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  transition:
+    background 0.14s,
+    color 0.14s,
+    box-shadow 0.14s;
+}
+
+.mineflayer-bot-tabs button:last-child {
+  border-right: none;
+}
+
+.mineflayer-bot-tabs button span {
+  color: var(--line-strong);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 8px;
+}
+
+.mineflayer-bot-tabs button:hover,
+.mineflayer-bot-tabs button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.mineflayer-bot-tabs button.active {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.mineflayer-bot-tabs button.active span {
+  color: var(--accent);
+}
+
+.mineflayer-bot-section {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
 }
 
 .mineflayer-bot-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px;
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mineflayer-bot-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .mineflayer-bot-field {
@@ -20,68 +134,127 @@
   grid-column: 1 / -1;
 }
 
-.mineflayer-bot-field span,
-.mineflayer-bot-subhead {
+.mineflayer-bot-field > span {
   color: var(--muted);
   font-size: 9px;
   font-weight: 900;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
 }
 
-.mineflayer-bot-field input {
+.mineflayer-bot-field input,
+.mineflayer-bot-field textarea {
   width: 100%;
   min-width: 0;
-  min-height: 40px;
   border: 1px solid var(--line);
+  border-radius: 0;
   background: var(--bg-card);
   color: var(--ink);
   padding: 0 12px;
   font: inherit;
   font-size: 12px;
   outline: none;
-  transition: border-color 0.14s, background 0.14s;
+  resize: vertical;
+  transition:
+    border-color 0.14s,
+    background 0.14s,
+    opacity 0.14s;
 }
 
-.mineflayer-bot-field input:focus {
-  border-color: rgba(194, 65, 12, 0.42);
+.mineflayer-bot-field input {
+  min-height: 40px;
+}
+
+.mineflayer-bot-field textarea {
+  min-height: 72px;
+  padding-top: 11px;
+  line-height: 1.45;
+}
+
+.mineflayer-bot-field input:focus,
+.mineflayer-bot-field textarea:focus {
+  border-color: rgba(194, 65, 12, 0.5);
   background: var(--bg-panel);
 }
 
+.mineflayer-bot-field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .mineflayer-bot-subhead {
-  padding-bottom: 12px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
 }
 
-.mineflayer-bot-mode {
+.mineflayer-bot-subhead span,
+.mineflayer-bot-subhead small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.mineflayer-bot-subhead span {
+  color: var(--ink);
+}
+
+.mineflayer-bot-subhead small {
+  font-size: 8px;
+}
+
+.mineflayer-bot-mode,
+.mineflayer-bot-source {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   border: 1px solid var(--line);
 }
 
+.mineflayer-bot-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mineflayer-bot-source {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .mineflayer-bot-mode button,
+.mineflayer-bot-source button,
 .mineflayer-bot-controls button,
-.mineflayer-bot-account-list button {
+.mineflayer-bot-account-list button,
+.mineflayer-bot-presets button {
   border: none;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-size: 10px;
   font-weight: 900;
-  letter-spacing: 0.14em;
-  transition: background 0.14s, color 0.14s;
+  letter-spacing: 0.12em;
+  transition:
+    background 0.14s,
+    border-color 0.14s,
+    color 0.14s,
+    transform 0.14s;
 }
 
-.mineflayer-bot-mode button {
+.mineflayer-bot-mode button,
+.mineflayer-bot-source button {
   min-height: 40px;
   border-right: 1px solid var(--line);
 }
 
-.mineflayer-bot-mode button:last-child {
+.mineflayer-bot-mode button:last-child,
+.mineflayer-bot-source button:last-child {
   border-right: none;
 }
 
 .mineflayer-bot-mode button:hover,
 .mineflayer-bot-mode button.active,
+.mineflayer-bot-source button:hover,
+.mineflayer-bot-source button.active,
 .mineflayer-bot-controls button:hover:not(:disabled),
 .mineflayer-bot-account-list button:hover,
 .mineflayer-bot-account-list button.active {
@@ -112,6 +285,156 @@
   image-rendering: pixelated;
 }
 
+.mineflayer-bot-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mineflayer-bot-toggle {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: left;
+  transition:
+    border-color 0.14s,
+    background 0.14s,
+    color 0.14s;
+}
+
+.mineflayer-bot-toggle:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+}
+
+.mineflayer-bot-toggle--active {
+  border-color: rgba(47, 111, 69, 0.3);
+  background: rgba(47, 111, 69, 0.055);
+}
+
+.mineflayer-bot-toggle--warning.mineflayer-bot-toggle--active {
+  border-color: rgba(194, 65, 12, 0.34);
+  background: var(--bg-hover-strong);
+}
+
+.mineflayer-bot-toggle-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.mineflayer-bot-toggle-copy strong,
+.mineflayer-bot-toggle-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mineflayer-bot-toggle-copy strong {
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+}
+
+.mineflayer-bot-toggle-copy small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.mineflayer-bot-toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-panel);
+}
+
+.mineflayer-bot-toggle-track span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  background: var(--muted);
+  transition:
+    transform 0.16s,
+    background 0.16s;
+}
+
+.mineflayer-bot-toggle--active .mineflayer-bot-toggle-track span {
+  background: var(--success);
+  transform: translateX(16px);
+}
+
+.mineflayer-bot-toggle--warning.mineflayer-bot-toggle--active .mineflayer-bot-toggle-track span {
+  background: var(--accent);
+}
+
+.mineflayer-bot-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mineflayer-bot-presets button {
+  min-height: 66px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.mineflayer-bot-presets button strong {
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.mineflayer-bot-presets button span {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.09em;
+}
+
+.mineflayer-bot-presets button:hover {
+  border-color: rgba(194, 65, 12, 0.42);
+  background: var(--bg-hover-strong);
+  transform: translateY(-1px);
+}
+
+.mineflayer-bot-command-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.mineflayer-bot-command-list span {
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--text-alt);
+  padding: 7px 9px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+}
+
+.mineflayer-bot-command-list span.disabled {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
 .mineflayer-bot-empty,
 .mineflayer-bot-warning,
 .mineflayer-bot-error {
@@ -136,7 +459,7 @@
 
 .mineflayer-bot-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -147,7 +470,7 @@
 
 .mineflayer-bot-controls button:disabled {
   cursor: not-allowed;
-  opacity: 0.48;
+  opacity: 0.42;
 }
 
 .mineflayer-bot-status {
@@ -170,29 +493,11 @@
   border-right: none;
 }
 
-.mineflayer-bot-status span {
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-}
-
-.mineflayer-bot-status strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .mineflayer-bot-log {
   display: grid;
   gap: 6px;
-  min-height: 104px;
-  max-height: 180px;
+  min-height: 150px;
+  max-height: 290px;
   overflow: auto;
   border: 1px solid var(--line);
   background: var(--bg-card);
@@ -208,8 +513,43 @@
   overflow-wrap: anywhere;
 }
 
+@keyframes mineflayer-bot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
+}
+
 @media (max-width: 760px) {
+  .mineflayer-bot-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mineflayer-bot-tabs button:nth-child(2) {
+    border-right: none;
+  }
+
+  .mineflayer-bot-tabs button:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .mineflayer-bot-live {
+    grid-template-columns: 12px minmax(0, 1fr);
+    padding: 12px 16px;
+  }
+
+  .mineflayer-bot-live-dot {
+    grid-row: 1 / 4;
+  }
+
   .mineflayer-bot-grid,
+  .mineflayer-bot-grid--three,
+  .mineflayer-bot-toggle-grid,
+  .mineflayer-bot-presets,
   .mineflayer-bot-controls,
   .mineflayer-bot-status {
     grid-template-columns: 1fr;
