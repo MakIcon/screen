@@ -88,7 +88,6 @@ import { InstancesTab } from "./tabs/InstancesTab";
 import { ModrinthContentTab } from "./tabs/ModrinthContentTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { useModrinthContent, type ModrinthContentKind } from "./hooks/useModrinthContent";
-import { useTheme } from "./hooks/useTheme";
 import { RuntimeMonitorScope, useRuntimeMonitorController } from "./hooks/useRuntimeMonitor";
 import { useInstanceTransfers } from "./hooks/useInstanceTransfers";
 import { InstanceTransferModals } from "./components/transfer/InstanceTransferModals";
@@ -107,6 +106,23 @@ import {
   getDefaultRuntimeSettingsDraft,
   normalizeRuntimeSettingsDraft,
 } from "./utils/javaArgs";
+import { useAppearance } from "./appearance/useAppearance";
+import { openAppearanceStudioWindow } from "./appearance/window";
+import {
+  getCloseAnimationDuration,
+  playWindowOpeningPreview,
+  playTabTransition,
+  type CloseAnimationId,
+} from "./appearance/animations";
+import { resolveTabAnimation } from "./appearance/profile";
+import {
+  resolveElementTarget,
+  mapDrawingCursorToCover,
+  type DrawingCursorPayload,
+  type WindowAnimationPreviewPayload,
+} from "./appearance/elementOverrides";
+import type { AppearanceElementTarget } from "./appearance/types";
+import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -121,10 +137,20 @@ const LauncherMascot = lazy(() =>
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const SELECTED_INSTANCE_STORAGE_KEY = "screenlauncher-selected-instance-id";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
+const CLOSE_EFFECT_CLASS: Record<CloseAnimationId, string> = {
+  tear: "tearing",
+  shred: "shredding",
+  fade: "closing-fade",
+  scale: "closing-scale",
+  "slide-down": "closing-slide-down",
+  none: "",
+};
 
 export default function App() {
   const [phase, setPhase] = useState("init");
-  const [closeEffect, setCloseEffect] = useState<"tear" | "shred" | null>(null);
+  const [closeEffect, setCloseEffect] = useState<CloseAnimationId | null>(null);
+  const [previewCloseEffect, setPreviewCloseEffect] = useState<CloseAnimationId | null>(null);
+  const [drawingCursor, setDrawingCursor] = useState<DrawingCursorPayload | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [tabAnimating, setTabAnimating] = useState(false);
 
@@ -356,11 +382,18 @@ export default function App() {
     null,
   );
 
-  const { theme, setTheme } = useTheme();
+  const { appearance, theme, setTheme } = useAppearance();
   const { toasts, pushToast, dismissToast } = useToasts();
   const win = useMemo(() => getCurrentWindow(), []);
   const closeStartedRef = useRef(false);
+  const galleryRootRef = useRef<HTMLDivElement | null>(null);
+  const openingPreviewRef = useRef<Animation | null>(null);
+  const closePreviewTimerRef = useRef(0);
+  const revealFrameRef = useRef(0);
+  const revealTimerRef = useRef(0);
+  const revealedElementRef = useRef<HTMLElement | null>(null);
   const wheelLockRef = useRef(false);
+  const tabContentRef = useRef<HTMLDivElement | null>(null);
   const installProgressWindowOpeningRef = useRef(false);
   const installProgressWindowStateRef = useRef<InstallProgressWindowState>({
     busyMessage: "",
@@ -369,6 +402,101 @@ export default function App() {
   const instanceCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const dragEventRef = useRef<(payload: any) => void>(() => {});
   const createCardMeasureRef = useRef<HTMLDivElement | null>(null);
+
+  const previewWindowAnimation = useCallback((payload: WindowAnimationPreviewPayload) => {
+    if (closeStartedRef.current) return;
+
+    openingPreviewRef.current?.cancel();
+    openingPreviewRef.current = null;
+    window.clearTimeout(closePreviewTimerRef.current);
+    setPreviewCloseEffect(null);
+
+    if (payload.kind === "opening") {
+      window.requestAnimationFrame(() => {
+        openingPreviewRef.current = playWindowOpeningPreview(
+          galleryRootRef.current,
+          payload.animation,
+        );
+      });
+      return;
+    }
+
+    if (payload.animation === "none") return;
+    window.requestAnimationFrame(() => setPreviewCloseEffect(payload.animation));
+    closePreviewTimerRef.current = window.setTimeout(
+      () => setPreviewCloseEffect(null),
+      getCloseAnimationDuration(payload.animation) + 80,
+    );
+  }, []);
+
+  const revealAppearanceTarget = useCallback(
+    (target: AppearanceElementTarget) => {
+      setOpenDropdown(null);
+      if (target.tab) setActiveTab(target.tab);
+      void win.setFocus();
+
+      window.cancelAnimationFrame(revealFrameRef.current);
+      window.clearTimeout(revealTimerRef.current);
+      revealedElementRef.current?.classList.remove("appearance-reveal-target");
+      revealedElementRef.current = null;
+
+      let attempts = 0;
+      const reveal = () => {
+        const root = galleryRootRef.current;
+        const element = root ? resolveElementTarget(root, target) : null;
+        if (!element && attempts++ < 30) {
+          revealFrameRef.current = window.requestAnimationFrame(reveal);
+          return;
+        }
+        if (!element) return;
+
+        element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        element.classList.add("appearance-reveal-target");
+        revealedElementRef.current = element;
+        revealTimerRef.current = window.setTimeout(() => {
+          element.classList.remove("appearance-reveal-target");
+          if (revealedElementRef.current === element) revealedElementRef.current = null;
+        }, 2400);
+      };
+      revealFrameRef.current = window.requestAnimationFrame(reveal);
+    },
+    [win],
+  );
+
+  const updateDrawingCursor = useCallback((payload: DrawingCursorPayload) => {
+    if (!payload.visible) {
+      setDrawingCursor(null);
+      return;
+    }
+    setDrawingCursor({
+      visible: true,
+      x: Math.min(1, Math.max(0, payload.x)),
+      y: Math.min(1, Math.max(0, payload.y)),
+      size: Math.min(42, Math.max(2, payload.size)),
+      color: /^#[0-9a-f]{6}$/i.test(payload.color) ? payload.color : "#c2410c",
+      eraser: Boolean(payload.eraser),
+    });
+  }, []);
+
+  useMainAppearanceRuntime({
+    rootRef: galleryRootRef,
+    appearance,
+    activeTab,
+    onAnimationPreview: previewWindowAnimation,
+    onRevealTarget: revealAppearanceTarget,
+    onDrawingCursor: updateDrawingCursor,
+  });
+
+  useEffect(
+    () => () => {
+      openingPreviewRef.current?.cancel();
+      window.clearTimeout(closePreviewTimerRef.current);
+      window.cancelAnimationFrame(revealFrameRef.current);
+      window.clearTimeout(revealTimerRef.current);
+      revealedElementRef.current?.classList.remove("appearance-reveal-target");
+    },
+    [],
+  );
 
   const optimizedJavaArgsEnabled = launcherSettings?.optimizedJavaArgs ?? true;
 
@@ -1121,23 +1249,28 @@ export default function App() {
     pushToast,
   });
 
-  const beginClose = useCallback((effect: "tear" | "shred") => {
-    if (closeStartedRef.current) return;
+  const beginClose = useCallback(
+    (requestedEffect: CloseAnimationId) => {
+      if (closeStartedRef.current) return;
 
-    closeStartedRef.current = true;
-    setCloseEffect(effect);
-    void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
-      logger.error("stop_discord_rpc_for_instance failed", error);
-    });
-    window.setTimeout(
-      () => {
+      closeStartedRef.current = true;
+      openingPreviewRef.current?.cancel();
+      window.clearTimeout(closePreviewTimerRef.current);
+      setPreviewCloseEffect(null);
+      const effect = appearance.motion.enabled ? requestedEffect : "none";
+      if (effect !== "none") setCloseEffect(effect);
+
+      void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
+        logger.error("stop_discord_rpc_for_instance failed", error);
+      });
+      window.setTimeout(() => {
         void invoke("exit_launcher").catch((error) => {
           logger.error("exit_launcher failed", error);
         });
-      },
-      effect === "shred" ? 950 : 400,
-    );
-  }, []);
+      }, getCloseAnimationDuration(effect));
+    },
+    [appearance.motion.enabled],
+  );
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -1146,7 +1279,7 @@ export default function App() {
     void win
       .onCloseRequested((event) => {
         event.preventDefault();
-        beginClose("shred");
+        beginClose(appearance.motion.closeSystem);
       })
       .then((dispose) => {
         if (mounted) {
@@ -1160,10 +1293,16 @@ export default function App() {
       mounted = false;
       unlisten?.();
     };
-  }, [beginClose, win]);
+  }, [appearance.motion.closeSystem, beginClose, win]);
 
   const handleClose = () => {
-    beginClose("tear");
+    beginClose(appearance.motion.closeButton);
+  };
+
+  const handleCustomizeAppearance = () => {
+    void openAppearanceStudioWindow().catch((error) => {
+      pushToast("error", toErrorMessage(error), { title: "Couldn't open Appearance Studio" });
+    });
   };
 
   const handleMaximize = async () => {
@@ -1177,10 +1316,23 @@ export default function App() {
 
   const setTabAnimated = (nextTab: TabKey) => {
     if (nextTab === activeTab) return;
-    setTabAnimating(true);
     setOpenDropdown(null);
+
+    if (!appearance.customized) {
+      // Keep the launcher's original transition for every built-in theme.
+      setTabAnimating(true);
+      setActiveTab(nextTab);
+      window.setTimeout(() => setTabAnimating(false), 360);
+      return;
+    }
+
+    setTabAnimating(false);
     setActiveTab(nextTab);
-    window.setTimeout(() => setTabAnimating(false), 360);
+    const animation = resolveTabAnimation(appearance, nextTab);
+    const duration = appearance.motion.uiStyle === "snappy" ? 190 : 360;
+    window.requestAnimationFrame(() => {
+      playTabTransition(tabContentRef.current, animation, duration);
+    });
   };
 
   const switchTabByWheel = (direction: "next" | "prev") => {
@@ -1197,9 +1349,12 @@ export default function App() {
     wheelLockRef.current = true;
     setTabAnimated(TAB_ORDER[nextIndex]);
 
-    window.setTimeout(() => {
-      wheelLockRef.current = false;
-    }, 520);
+    window.setTimeout(
+      () => {
+        wheelLockRef.current = false;
+      },
+      appearance.motion.enabled ? (appearance.motion.uiStyle === "snappy" ? 260 : 520) : 80,
+    );
   };
 
   const isScrollableElement = (target: EventTarget | null) => {
@@ -1848,6 +2003,8 @@ export default function App() {
             microsoftAccounts={msAccounts}
             theme={theme}
             setTheme={setTheme}
+            appearanceCustomized={appearance.customized}
+            onCustomizeAppearance={handleCustomizeAppearance}
           />
         );
       default:
@@ -1857,6 +2014,7 @@ export default function App() {
 
   const mainUI = (
     <div className="ui-container" onWheel={onWheelTabs}>
+      <div className="appearance-background" />
       <div className="paper-texture" />
 
       <header
@@ -1902,7 +2060,10 @@ export default function App() {
         <section
           className={`main-stage ${activeTab === "overview" ? "with-right-panel" : "no-right-panel"}`}
         >
-          <div className={`content-wrap launcher-wrap ${tabAnimating ? "tab-animated" : ""}`}>
+          <div
+            ref={tabContentRef}
+            className={`content-wrap launcher-wrap ${tabAnimating ? "tab-animated" : ""}`}
+          >
             {renderMainContent()}
           </div>
 
@@ -1954,14 +2115,41 @@ export default function App() {
       </Suspense>
     </div>
   );
+  const renderedCloseEffect = closeEffect ?? previewCloseEffect;
+  let drawingCursorStyle: CSSProperties | undefined;
+  if (drawingCursor) {
+    const rootWidth = galleryRootRef.current?.clientWidth || 960;
+    const rootHeight = galleryRootRef.current?.clientHeight || 540;
+    const mappedCursor = mapDrawingCursorToCover(drawingCursor, rootWidth, rootHeight);
+    drawingCursorStyle = {
+      left: `${mappedCursor.x}px`,
+      top: `${mappedCursor.y}px`,
+      "--drawing-brush-size": `${mappedCursor.diameter}px`,
+      "--drawing-brush-color": drawingCursor.color,
+    } as CSSProperties;
+  }
 
   return (
     <RuntimeMonitorScope controller={runtimeMonitor}>
       <div
+        ref={galleryRootRef}
         className={`gallery-root ${phase} ${
-          closeEffect === "tear" ? "tearing" : closeEffect === "shred" ? "shredding" : ""
+          renderedCloseEffect ? CLOSE_EFFECT_CLASS[renderedCloseEffect] : ""
         }`}
       >
+        {drawingCursor && drawingCursorStyle && (
+          <div
+            className={`appearance-drawing-cursor${drawingCursor.eraser ? " eraser" : ""}`}
+            style={drawingCursorStyle}
+            aria-hidden="true"
+          >
+            <span />
+            <svg viewBox="0 0 24 24">
+              <path d="M14.7 3.2 20.8 9.3 10.5 19.6 4.4 13.5Z" />
+              <path d="m4.4 13.5-1.2 5.9 6.1-1Z" />
+            </svg>
+          </div>
+        )}
         <ToastStack toasts={toasts} onDismiss={dismissToast} />
         {dragKind === "build" && (
           <div className="global-drop-overlay">
@@ -2006,9 +2194,9 @@ export default function App() {
               </div>
             );
           })()}
-        {!closeEffect ? (
+        {!renderedCloseEffect ? (
           mainUI
-        ) : closeEffect === "tear" ? (
+        ) : renderedCloseEffect === "tear" ? (
           <>
             <div
               className="tear-half left-half"
@@ -2023,7 +2211,7 @@ export default function App() {
               <div className="fixed-content">{mainUI}</div>
             </div>
           </>
-        ) : (
+        ) : renderedCloseEffect === "shred" ? (
           <div className="shred-stack" aria-hidden="true">
             {shredPaths.map((strip, index) => (
               <div
@@ -2045,6 +2233,8 @@ export default function App() {
               </div>
             ))}
           </div>
+        ) : (
+          mainUI
         )}
 
         {buildCardSettingsOpen && (

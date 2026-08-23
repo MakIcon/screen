@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useTheme } from "../../hooks/useTheme";
+import { useAppearance } from "../../appearance/useAppearance";
 import type { InstallProgressPayload } from "../../types";
 
 export const INSTALL_PROGRESS_WINDOW_LABEL = "install-progress";
@@ -42,7 +42,7 @@ function clampProgressPercent(value: number) {
 }
 
 export function InstallProgressWindowApp() {
-  useTheme();
+  useAppearance();
   const [state, setState] = useState<InstallProgressWindowState>(() =>
     readPersistedInstallProgressState(),
   );
@@ -82,7 +82,10 @@ export function InstallProgressWindowApp() {
             <span>BUILD TASK</span>
             <strong>{phase}</strong>
           </div>
-          <div className="install-progress-window-actions" onMouseDown={(event) => event.stopPropagation()}>
+          <div
+            className="install-progress-window-actions"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <button
               className="install-progress-window-action"
               type="button"

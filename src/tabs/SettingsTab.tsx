@@ -8,7 +8,7 @@ import {
   normalizeLauncherPluginsSettings,
 } from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
-import type { Theme } from "../hooks/useTheme";
+import type { Theme } from "../appearance/types";
 import type { LauncherPluginsSettings, MicrosoftAccount, MirrorMode } from "../types";
 
 const MIRROR_OPTIONS: { value: MirrorMode; label: string }[] = [
@@ -186,6 +186,8 @@ interface SettingsTabProps {
   microsoftAccounts: MicrosoftAccount[];
   theme: Theme;
   setTheme: (t: Theme) => void;
+  appearanceCustomized: boolean;
+  onCustomizeAppearance: () => void;
 }
 
 export function SettingsTab({
@@ -217,6 +219,8 @@ export function SettingsTab({
   microsoftAccounts,
   theme,
   setTheme,
+  appearanceCustomized,
+  onCustomizeAppearance,
 }: SettingsTabProps) {
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
@@ -265,28 +269,35 @@ export function SettingsTab({
             <span className="theme-switch-label">APPEARANCE</span>
             <div className="theme-switch">
               <button
-                className={`theme-switch-btn${theme === "light" ? " active" : ""}`}
+                className={`theme-switch-btn${!appearanceCustomized && theme === "light" ? " active" : ""}`}
                 type="button"
-                onClick={() => theme !== "light" && setTheme("light")}
+                onClick={() => (appearanceCustomized || theme !== "light") && setTheme("light")}
               >
                 <SunIcon />
                 LIGHT
               </button>
               <button
-                className={`theme-switch-btn${theme === "dark" ? " active" : ""}`}
+                className={`theme-switch-btn${!appearanceCustomized && theme === "dark" ? " active" : ""}`}
                 type="button"
-                onClick={() => theme !== "dark" && setTheme("dark")}
+                onClick={() => (appearanceCustomized || theme !== "dark") && setTheme("dark")}
               >
                 <MoonIcon />
                 DARK
               </button>
               <button
-                className={`theme-switch-btn${theme === "void" ? " active" : ""}`}
+                className={`theme-switch-btn${!appearanceCustomized && theme === "void" ? " active" : ""}`}
                 type="button"
-                onClick={() => theme !== "void" && setTheme("void")}
+                onClick={() => (appearanceCustomized || theme !== "void") && setTheme("void")}
               >
                 <VoidIcon />
                 VOID
+              </button>
+              <button
+                className={`theme-switch-btn theme-customize-btn${appearanceCustomized ? " active" : ""}`}
+                type="button"
+                onClick={onCustomizeAppearance}
+              >
+                CUSTOMIZE
               </button>
             </div>
           </div>

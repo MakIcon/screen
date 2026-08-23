@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useTheme } from "../../hooks/useTheme";
+import { useAppearance } from "../../appearance/useAppearance";
 import type { InstanceItem, LaunchLogSnapshot, MinecraftExitPayload } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 import { BuildLogsModal } from "./BuildLogsModal";
@@ -79,9 +79,11 @@ function consumeStoredPayload(payloadKey: string): StoredLogWindowPayload | null
 }
 
 export function BuildLogsWindowApp({ instanceId, payloadKey }: BuildLogsWindowRoute) {
-  useTheme();
+  useAppearance();
   const [instance, setInstance] = useState<InstanceItem | null>(null);
-  const [initialLog, setInitialLog] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(null);
+  const [initialLog, setInitialLog] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(
+    null,
+  );
 
   useEffect(() => {
     const windowHandle = getCurrentWindow();
