@@ -1,4 +1,5 @@
 import type { InstanceItem, TabKey } from "../types";
+import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 
 interface OverviewTabProps {
   selectedInstance: InstanceItem | null;
@@ -74,22 +75,35 @@ export function OverviewTab({
           <div className="hero-meta two-col-meta">
             <div className="meta-block">
               <span className="meta-title">BUILD</span>
-              <strong>{resolve("%build_name%")}</strong>
+              <strong {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}>
+                {resolve("%build_name%")}
+              </strong>
             </div>
 
             <div className="meta-block">
               <span className="meta-title">MC / LOADER</span>
-              <strong>{resolve("%build_version% / %build_loader%")}</strong>
+              <strong
+                {...createPlaceholderAppearanceAttributes(
+                  "%build_version% / %build_loader%",
+                  resolve,
+                )}
+              >
+                {resolve("%build_version% / %build_loader%")}
+              </strong>
             </div>
 
             <div className="meta-block">
               <span className="meta-title">LAST PLAYED</span>
-              <strong>{resolve("%build_last_played%")}</strong>
+              <strong {...createPlaceholderAppearanceAttributes("%build_last_played%", resolve)}>
+                {resolve("%build_last_played%")}
+              </strong>
             </div>
 
             <div className="meta-block">
               <span className="meta-title">TIME IN GAME</span>
-              <strong>{resolve("%build_playtime%")}</strong>
+              <strong {...createPlaceholderAppearanceAttributes("%build_playtime%", resolve)}>
+                {resolve("%build_playtime%")}
+              </strong>
             </div>
           </div>
 

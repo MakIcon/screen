@@ -16,7 +16,8 @@ import {
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
 import { InfoPanel } from "../components/display/InfoPanel";
 import { LOADER_OPTIONS } from "../constants/tabs";
-import { formatLastPlayed, formatPlaytime } from "../utils/playtime";
+import { formatPlaytime } from "../utils/playtime";
+import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 import type { DropdownKey, InstanceItem, InstallProgressPayload, LoaderType } from "../types";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 
@@ -206,6 +207,7 @@ export function InstancesTab({
             <div
               style={{ height: 0, overflow: "hidden", pointerEvents: "none" }}
               aria-hidden="true"
+              data-appearance-grid-ignore="true"
             >
               <div
                 ref={createCardMeasureRef}
@@ -254,6 +256,19 @@ export function InstancesTab({
                 const resolvedContentTags = resolveBuildCardContentTags(cardAppearance, instance, {
                   buildState: isRunning(instance.id) ? "RUNNING" : "",
                 });
+                const resolveInstanceTemplate = (template: string) =>
+                  resolveForTarget(template, instance, {
+                    buildState: isRunning(instance.id) ? "RUNNING" : "",
+                  });
+                const badgeTemplate = getBuildCardBadgeText(cardAppearance);
+                const resolveBadgeTemplate = (template: string) =>
+                  resolveForTarget(template, instance, {
+                    buildState:
+                      isRunning(instance.id) ||
+                      getBuildCardBadgeVisibility(cardAppearance) === "always"
+                        ? "RUNNING"
+                        : "",
+                  });
                 const isDropTarget = dragContentActive && dragOverInstanceId === instance.id;
 
                 return (
@@ -278,19 +293,25 @@ export function InstancesTab({
                   >
                     {isDropTarget && <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>}
                     <div className="instance-card-top">
-                      <span className="instance-name">{instance.name}</span>
+                      <span
+                        className="instance-name"
+                        {...createPlaceholderAppearanceAttributes(
+                          "%build_name%",
+                          resolveInstanceTemplate,
+                        )}
+                      >
+                        {resolveInstanceTemplate("%build_name%")}
+                      </span>
                       {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
                         <span
                           className="instance-running-badge"
                           style={getBuildCardBadgeStyle(cardAppearance)}
+                          {...createPlaceholderAppearanceAttributes(
+                            badgeTemplate,
+                            resolveBadgeTemplate,
+                          )}
                         >
-                          {resolveForTarget(getBuildCardBadgeText(cardAppearance), instance, {
-                            buildState:
-                              isRunning(instance.id) ||
-                              getBuildCardBadgeVisibility(cardAppearance) === "always"
-                                ? "RUNNING"
-                                : "",
-                          })}
+                          {resolveBadgeTemplate(badgeTemplate)}
                         </span>
                       )}
                     </div>
@@ -306,10 +327,38 @@ export function InstancesTab({
                         />
                       ) : (
                         <>
-                          <span>{instance.version}</span>
-                          <span>{instance.loader}</span>
-                          <span>{instance.ram} GB</span>
-                          <span>{formatLastPlayed(instance.lastPlayed)}</span>
+                          <span
+                            {...createPlaceholderAppearanceAttributes(
+                              "%build_version%",
+                              resolveInstanceTemplate,
+                            )}
+                          >
+                            {resolveInstanceTemplate("%build_version%")}
+                          </span>
+                          <span
+                            {...createPlaceholderAppearanceAttributes(
+                              "%build_loader%",
+                              resolveInstanceTemplate,
+                            )}
+                          >
+                            {resolveInstanceTemplate("%build_loader%")}
+                          </span>
+                          <span
+                            {...createPlaceholderAppearanceAttributes(
+                              "%build_ram%",
+                              resolveInstanceTemplate,
+                            )}
+                          >
+                            {resolveInstanceTemplate("%build_ram%")}
+                          </span>
+                          <span
+                            {...createPlaceholderAppearanceAttributes(
+                              "%build_last_played%",
+                              resolveInstanceTemplate,
+                            )}
+                          >
+                            {resolveInstanceTemplate("%build_last_played%")}
+                          </span>
                         </>
                       )}
                     </div>

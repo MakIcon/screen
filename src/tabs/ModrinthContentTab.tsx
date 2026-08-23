@@ -8,6 +8,7 @@ import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 import type { DropdownKey, InstanceItem } from "../types";
+import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 
 type ContentPresentation = {
   searchLabel: string;
@@ -384,7 +385,12 @@ export function ModrinthContentTab({
           <div className="detail-grid detail-grid--sidebar">
             <div className="detail-block">
               <span className="detail-title">TARGET VERSION</span>
-              <span className="detail-value">
+              <span
+                className="detail-value"
+                {...createPlaceholderAppearanceAttributes("%build_version%", (template) =>
+                  resolveForTarget(template, selectedTarget),
+                )}
+              >
                 {resolveForTarget("%build_version%", selectedTarget)}
               </span>
             </div>

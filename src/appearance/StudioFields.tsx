@@ -1,4 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ColorPicker } from "../components/color-picker/ColorPicker";
+import { CustomNumberInput } from "../components/inputs/CustomNumberInput";
+import { ElementSlider } from "../components/inputs/ElementSlider";
+import { InlineDropdown } from "../components/inputs/InlineDropdown";
 
 type ColorFieldProps = {
   label: string;
@@ -7,30 +11,11 @@ type ColorFieldProps = {
 };
 
 export function ColorField({ label, value, onChange }: ColorFieldProps) {
-  const [textValue, setTextValue] = useState(value.toUpperCase());
-
-  useEffect(() => {
-    setTextValue(value.toUpperCase());
-  }, [value]);
-
   return (
-    <label className="studio-color-field">
+    <div className="studio-color-field">
       <span>{label}</span>
-      <div>
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
-        <input
-          value={textValue}
-          maxLength={7}
-          spellCheck={false}
-          onChange={(event) => {
-            const next = event.target.value;
-            setTextValue(next);
-            if (/^#[0-9a-f]{6}$/i.test(next)) onChange(next);
-          }}
-          onBlur={() => setTextValue(value.toUpperCase())}
-        />
-      </div>
-    </label>
+      <ColorPicker value={value} onChange={onChange} label={label} />
+    </div>
   );
 }
 
@@ -41,6 +26,10 @@ type RangeFieldProps = {
   max: number;
   step?: number;
   suffix?: string;
+  zeroSuffix?: string;
+  disabled?: boolean;
+  defaultValue?: number;
+  valueEditable?: boolean;
   onChange: (value: number) => void;
 };
 
@@ -51,26 +40,55 @@ export function RangeField({
   max,
   step = 1,
   suffix = "",
+  zeroSuffix,
+  disabled = false,
+  defaultValue,
+  valueEditable = true,
   onChange,
 }: RangeFieldProps) {
+  const displayedSuffix = value === 0 && zeroSuffix ? zeroSuffix : suffix;
+  const updateValue = (nextValue: number) => {
+    const safeStep = step > 0 ? step : 1;
+    const stepped = min + Math.round((nextValue - min) / safeStep) * safeStep;
+    const precision = Math.min(8, Math.max(0, String(safeStep).split(".")[1]?.length ?? 0));
+    onChange(Math.min(max, Math.max(min, Number(stepped.toFixed(precision)))));
+  };
+
   return (
-    <label className="studio-range-field">
+    <div className="studio-range-field">
       <div>
         <span>{label}</span>
-        <strong>
-          {Number.isInteger(value) ? value : value.toFixed(2)}
-          {suffix}
-        </strong>
+        <div className="studio-range-value-editor">
+          <CustomNumberInput
+            value={value}
+            min={min}
+            max={max}
+            step={step}
+            showArrows={false}
+            disabled={disabled || !valueEditable}
+            ariaLabel={`${label} value`}
+            onChange={updateValue}
+          />
+          {displayedSuffix && <span>{displayedSuffix.trim()}</span>}
+        </div>
       </div>
-      <input
-        type="range"
+      <ElementSlider
+        className="studio-field-slider"
+        showHeader={false}
+        showValue={false}
+        valueEditable={false}
+        showDefaultMarker={defaultValue !== undefined}
+        defaultValue={defaultValue ?? value}
+        tickMode="none"
         value={value}
         min={min}
         max={max}
         step={step}
-        onChange={(event) => onChange(Number(event.target.value))}
+        keyboardEnabled={!disabled}
+        disabled={disabled}
+        onChange={updateValue}
       />
-    </label>
+    </div>
   );
 }
 
@@ -87,17 +105,41 @@ export function SelectField<T extends string>({
   options,
   onChange,
 }: SelectFieldProps<T>) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selectedLabel = options.find((option) => option.id === value)?.label ?? value;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOutside = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || rootRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest(".inline-dropdown-menu-portal")) return;
+      setIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOutside, true);
+    return () => document.removeEventListener("pointerdown", closeOutside, true);
+  }, [isOpen]);
+
   return (
-    <label className="studio-select-field">
+    <div className="studio-select-field" ref={rootRef}>
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value as T)}>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      <InlineDropdown
+        compact
+        label={label}
+        value={selectedLabel}
+        options={options.map((option) => option.label)}
+        isOpen={isOpen}
+        onToggle={() => setIsOpen((current) => !current)}
+        onSelect={(nextLabel) => {
+          const nextOption = options.find((option) => option.label === nextLabel);
+          if (nextOption) onChange(nextOption.id);
+          setIsOpen(false);
+        }}
+      />
+    </div>
   );
 }
 

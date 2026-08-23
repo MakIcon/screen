@@ -11,6 +11,10 @@ import {
   type BuildCardContentTag,
 } from "./BuildCardSettingsPopup";
 import { EditorSection, EditorRow } from "./BuildCardEditorSection";
+import {
+  createPlaceholderAppearanceAttributes,
+  type PlaceholderAppearanceAttributes,
+} from "../../utils/placeholders";
 
 function alphaColor(hex: string, opacity: number) {
   const normalizedOpacity = Math.max(0, Math.min(100, opacity));
@@ -24,6 +28,7 @@ type ContentTagRowProps = {
   tag: BuildCardContentTag;
   mode: BuildCardContentMode;
   previewText: string;
+  previewAppearance: PlaceholderAppearanceAttributes;
   strokeEnabled: boolean;
   onUpdate: (tag: BuildCardContentTag) => void;
   onDelete: () => void;
@@ -33,6 +38,7 @@ function ContentTagRow({
   tag,
   mode,
   previewText,
+  previewAppearance,
   strokeEnabled,
   onUpdate,
   onDelete,
@@ -50,6 +56,7 @@ function ContentTagRow({
         >
           <span
             className={`bce-tag-preview ${mode === "text" ? "bce-tag-preview--text" : ""}`}
+            {...previewAppearance}
             style={
               mode === "tags"
                 ? {
@@ -196,6 +203,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
   const previewContentTags = draft.contentTags.map((tag) => ({
     ...tag,
     text: resolvePreviewText(tag.text),
+    appearance: createPlaceholderAppearanceAttributes(tag.text, resolvePreviewText),
   }));
 
   function updateContentTag(tagId: string, nextTag: BuildCardContentTag) {
@@ -321,6 +329,10 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
               tag={tag}
               mode={draft.contentMode}
               previewText={previewContentTags[index]?.text ?? ""}
+              previewAppearance={
+                previewContentTags[index]?.appearance ??
+                createPlaceholderAppearanceAttributes(tag.text, resolvePreviewText)
+              }
               strokeEnabled={draft.contentTextStrokeEnabled}
               onUpdate={(nextTag) => updateContentTag(tag.id, nextTag)}
               onDelete={() => deleteContentTag(tag.id)}

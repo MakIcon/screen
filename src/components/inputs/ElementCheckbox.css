@@ -1,7 +1,7 @@
 .element-checkbox {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--element-checkbox-gap, 10px);
   width: max-content;
   max-width: 100%;
   border: 0;
@@ -24,12 +24,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--element-checkbox-size, 16px);
+  height: var(--element-checkbox-size, 16px);
   border: 1px solid var(--line-strong);
   background: var(--bg-field);
   flex: 0 0 auto;
-  transition: background 0.14s, border-color 0.14s;
+  transition:
+    background 0.14s,
+    border-color 0.14s;
 }
 
 .element-checkbox:hover .element-checkbox-box {
@@ -49,7 +51,9 @@
   border-bottom: 2px solid var(--bg);
   opacity: 0;
   transform: translateY(-1px) rotate(45deg) scale(0.7);
-  transition: opacity 0.14s, transform 0.14s;
+  transition:
+    opacity 0.14s,
+    transform 0.14s;
 }
 
 .element-checkbox--checked .element-checkbox-mark {

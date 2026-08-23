@@ -165,7 +165,9 @@
   border: none;
   color: var(--muted);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   font-family: inherit;
 }
 
@@ -197,8 +199,9 @@
   margin-bottom: 24px;
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
   gap: 18px;
 }
 
@@ -209,14 +212,19 @@
 }
 
 .settings-toggle-row {
+  --element-toggle-scale: 1;
+  --element-toggle-inset: calc(4px * var(--element-toggle-scale));
+  --element-toggle-knob-size: calc(24px * var(--element-toggle-scale));
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
 }
 
 .settings-toggle-title {
   display: block;
+  width: fit-content;
+  max-width: 100%;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 1.4px;
@@ -224,6 +232,8 @@
 }
 
 .settings-toggle-note {
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
@@ -231,14 +241,15 @@
 }
 
 .toggle-switch {
-  width: 64px;
-  height: 34px;
+  width: calc(64px * var(--element-toggle-scale, 1));
+  height: calc(34px * var(--element-toggle-scale, 1));
   border: 1px solid var(--line);
   background: transparent;
   position: relative;
   cursor: pointer;
   padding: 0;
   flex: 0 0 auto;
+  align-self: center;
 }
 
 .toggle-switch.enabled {
@@ -248,16 +259,19 @@
 
 .toggle-knob {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 24px;
-  height: 24px;
+  top: 50%;
+  left: var(--element-toggle-inset, 4px);
+  width: var(--element-toggle-knob-size, 24px);
+  height: var(--element-toggle-knob-size, 24px);
   background: var(--ink);
-  transition: transform 0.22s ease;
+  translate: 0 -50%;
+  transform: none;
+  transition: left 0.22s ease;
 }
 
 .toggle-switch.enabled .toggle-knob {
-  transform: translateX(30px);
+  left: calc(100% - var(--element-toggle-inset, 4px) - var(--element-toggle-knob-size, 24px));
+  transform: none;
 }
 
 /* ── Right panel (mockup) overlay styles ── */
@@ -401,7 +415,9 @@
   letter-spacing: 1px;
   cursor: pointer;
   color: var(--ink);
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .mockup-dropdown-menu button:last-child {

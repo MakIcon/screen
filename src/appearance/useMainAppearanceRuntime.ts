@@ -14,6 +14,7 @@ import {
 } from "./elementOverrides";
 import type { AppearanceElementTarget, AppearanceProfile } from "./types";
 import type { TabKey } from "../types";
+import { APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE } from "../utils/placeholders";
 
 type MainAppearanceRuntimeOptions = {
   rootRef: RefObject<HTMLElement | null>;
@@ -51,7 +52,13 @@ export function useMainAppearanceRuntime({
 
     sync();
     const observer = new MutationObserver(sync);
-    observer.observe(root, { childList: true, characterData: true, subtree: true });
+    observer.observe(root, {
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE],
+      subtree: true,
+    });
     return () => {
       observer.disconnect();
       window.cancelAnimationFrame(frame);

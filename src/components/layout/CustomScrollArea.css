@@ -8,6 +8,11 @@
 
 .csa-thumb {
   opacity: 1;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.csa-thumb:hover {
+  background: color-mix(in srgb, var(--ink) 48%, transparent);
 }
 
 .csa-thumb:active {

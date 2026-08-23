@@ -161,7 +161,7 @@ interface SettingsTabProps {
   systemRamGb: number;
   settingsRamDraft: number;
   setSettingsRamDraft: (v: number) => void;
-  saveSettingsRam: () => Promise<void>;
+  saveSettingsRam: (value: number) => Promise<void>;
   optimizedJavaArgs: boolean;
   saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
   autoDownloadJava: boolean;
@@ -250,9 +250,13 @@ export function SettingsTab({
 
             <div className="settings-element-slider">
               <ElementSlider
+                label="RAM"
                 showHeader={false}
                 min={1}
                 max={minecraftRamMax}
+                defaultValue={4}
+                appearanceConstraint="system-ram"
+                appearanceSystemMax={minecraftRamMax}
                 step={1}
                 value={settingsRamDraft}
                 tickMode="custom"
@@ -260,7 +264,7 @@ export function SettingsTab({
                 onChange={(value) => {
                   setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
                 }}
-                onCommit={() => void saveSettingsRam()}
+                onCommit={(value) => void saveSettingsRam(value)}
               />
             </div>
           </div>

@@ -54,9 +54,7 @@ export function CustomScrollArea({
     const maxThumbTop = trackH - height;
     const maxScrollTop = scrollHeight - clientHeight;
     const top =
-      maxScrollTop > 0
-        ? TRACK_INSET + (scrollTop / maxScrollTop) * maxThumbTop
-        : TRACK_INSET;
+      maxScrollTop > 0 ? TRACK_INSET + (scrollTop / maxScrollTop) * maxThumbTop : TRACK_INSET;
 
     setThumb({ height, top, visible: true });
   }, []);
@@ -68,6 +66,7 @@ export function CustomScrollArea({
     el.addEventListener("scroll", recalc, { passive: true });
     const ro = new ResizeObserver(recalc);
     ro.observe(el);
+    Array.from(el.children).forEach((child) => ro.observe(child));
     recalc();
 
     return () => {
@@ -101,10 +100,7 @@ export function CustomScrollArea({
       if (maxThumbTravel <= 0) return;
 
       const scrollDelta = (dy / maxThumbTravel) * maxScrollTop;
-      el.scrollTop = Math.max(
-        0,
-        Math.min(maxScrollTop, dragStart.current.scrollTop + scrollDelta)
-      );
+      el.scrollTop = Math.max(0, Math.min(maxScrollTop, dragStart.current.scrollTop + scrollDelta));
     };
 
     const onUp = () => {
@@ -145,16 +141,19 @@ export function CustomScrollArea({
       <div
         ref={contentRef}
         className="csa-content"
+        data-appearance-layout-container="true"
         onWheel={onWheel}
         onScroll={handleScroll}
-        style={{
-          flex: 1,
-          overflowY: "scroll",
-          overflowX: "hidden",
-          minHeight: 0,
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-        } as CSSProperties}
+        style={
+          {
+            flex: 1,
+            overflowY: "scroll",
+            overflowX: "hidden",
+            minHeight: 0,
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          } as CSSProperties
+        }
       >
         {children}
       </div>
@@ -180,14 +179,6 @@ export function CustomScrollArea({
             className="csa-thumb"
             data-mascot-scroll-thumb
             onPointerDown={onThumbPointerDown}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background =
-                "rgba(26,26,26,0.48)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background =
-                "rgba(26,26,26,0.2)";
-            }}
             style={{
               position: "absolute",
               /* centered in the 14px track */
@@ -196,7 +187,6 @@ export function CustomScrollArea({
               width: 3,
               height: thumb.height,
               borderRadius: 0,
-              background: "rgba(26,26,26,0.2)",
               cursor: "grab",
               userSelect: "none",
               transition: "background 0.18s",

@@ -16,8 +16,10 @@ import {
 } from "./animations";
 import { DrawingCanvas } from "./DrawingCanvas";
 import { ElementInspector } from "./ElementInspector";
+import { refreshElementSizingTarget } from "./elementSizing";
 import { prepareBackgroundImage } from "./imageTools";
 import { ColorField, RangeField, Section, SelectField } from "./StudioFields";
+import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import {
   APPEARANCE_CHANGED_EVENT,
   APPEARANCE_PREVIEW_EVENT,
@@ -29,7 +31,11 @@ import {
   writeStoredAppearance,
 } from "./profile";
 import type { AppearanceBackgroundKind, AppearanceProfile, Theme } from "./types";
-import type { AppearanceElementOverride, AppearanceElementTarget } from "./types";
+import type {
+  AppearanceElementComponentOverride,
+  AppearanceElementOverride,
+  AppearanceElementTarget,
+} from "./types";
 import {
   APPEARANCE_ELEMENT_PICK_CANCEL_EVENT,
   APPEARANCE_ELEMENT_PICKED_EVENT,
@@ -63,6 +69,14 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   }
   if (override.style.opacity !== undefined) {
     badges.push({ label: "OPACITY", value: `${Math.round(override.style.opacity * 100)}%` });
+  }
+  if (override.style.width !== undefined || override.style.height !== undefined) {
+    const boxValue = (value: number | undefined) =>
+      value === undefined ? "DEFAULT" : value === 0 ? "AUTO" : String(value);
+    badges.push({
+      label: "BOX",
+      value: `${boxValue(override.style.width)} × ${boxValue(override.style.height)}`,
+    });
   }
   if (override.style.radius !== undefined) {
     badges.push({ label: "RADIUS", value: `${override.style.radius} PX` });
@@ -99,6 +113,9 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   if (override.style.scale !== undefined) {
     badges.push({ label: "SCALE", value: `${Math.round(override.style.scale * 100)}%` });
   }
+  if (override.componentSettings) {
+    badges.push({ label: "PROPS", value: override.componentSettings.kind.toUpperCase() });
+  }
   return badges;
 }
 
@@ -114,6 +131,10 @@ export function AppearanceStudioApp() {
   const [selectedTarget, setSelectedTarget] = useState<AppearanceElementTarget | null>(null);
   const [pickingElement, setPickingElement] = useState(false);
   const [elementListOpen, setElementListOpen] = useState(false);
+  const baseDefaults = useMemo(
+    () => createDefaultAppearance(draft.baseTheme, true),
+    [draft.baseTheme],
+  );
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const originalAppearanceRef = useRef(readStoredAppearance());
   const closingRef = useRef(false);
@@ -150,14 +171,16 @@ export function AppearanceStudioApp() {
     let unlisten: (() => void) | undefined;
     void listen<AppearanceElementTarget | null>(APPEARANCE_ELEMENT_PICKED_EVENT, (event) => {
       setPickingElement(false);
-      if (!event.payload) {
+      const target = event.payload;
+      if (!target) {
         setMessage("ELEMENT PICK CANCELLED");
         return;
       }
-      setSelectedTarget(event.payload);
+      setDraft((current) => refreshElementSizingTarget(current, target));
+      setSelectedTarget(target);
       setCategory("element");
       setElementListOpen(false);
-      setMessage(`SELECTED: ${event.payload.label}`);
+      setMessage(`SELECTED: ${target.label}`);
     })
       .then((dispose) => {
         unlisten = dispose;
@@ -201,10 +224,24 @@ export function AppearanceStudioApp() {
       const existing = current.elementOverrides.find(
         (override) => override.id === selectedTarget.id,
       );
+      const nextStyle = { ...existing?.style, ...style };
+      for (const key of Object.keys(nextStyle) as (keyof typeof nextStyle)[]) {
+        if (nextStyle[key] === undefined) delete nextStyle[key];
+      }
+      const hasTextOverride =
+        existing !== undefined && Object.prototype.hasOwnProperty.call(existing, "text");
+      if (Object.keys(nextStyle).length === 0 && !hasTextOverride && !existing?.componentSettings) {
+        return {
+          ...current,
+          elementOverrides: current.elementOverrides.filter(
+            (override) => override.id !== selectedTarget.id,
+          ),
+        };
+      }
       const next: AppearanceElementOverride = {
         ...existing,
         ...selectedTarget,
-        style: { ...existing?.style, ...style },
+        style: nextStyle,
       };
       return {
         ...current,
@@ -229,7 +266,7 @@ export function AppearanceStudioApp() {
         ...(text !== undefined ? { text } : {}),
       };
       if (text === undefined) delete next.text;
-      if (text === undefined && Object.keys(next.style).length === 0) {
+      if (text === undefined && Object.keys(next.style).length === 0 && !next.componentSettings) {
         return {
           ...current,
           elementOverrides: current.elementOverrides.filter(
@@ -237,6 +274,29 @@ export function AppearanceStudioApp() {
           ),
         };
       }
+      return {
+        ...current,
+        elementOverrides: [
+          ...current.elementOverrides.filter((override) => override.id !== selectedTarget.id),
+          next,
+        ],
+      };
+    });
+  };
+
+  const patchSelectedComponent = (componentSettings: AppearanceElementComponentOverride) => {
+    if (!selectedTarget?.component || selectedTarget.component.kind !== componentSettings.kind)
+      return;
+    patchDraft((current) => {
+      const existing = current.elementOverrides.find(
+        (override) => override.id === selectedTarget.id,
+      );
+      const next: AppearanceElementOverride = {
+        ...existing,
+        ...selectedTarget,
+        style: existing?.style ?? {},
+        componentSettings,
+      };
       return {
         ...current,
         elementOverrides: [
@@ -326,7 +386,7 @@ export function AppearanceStudioApp() {
         eraser: false,
       } satisfies DrawingCursorPayload).catch(() => {});
     }
-    window.requestAnimationFrame(() => controlsRef.current?.scrollTo({ top: 0 }));
+    window.requestAnimationFrame(() => controlsRef.current?.parentElement?.scrollTo({ top: 0 }));
   };
 
   const selectBaseTheme = (baseTheme: Theme) => {
@@ -409,6 +469,7 @@ export function AppearanceStudioApp() {
             onPick={requestElementPick}
             onStyleChange={patchSelectedStyle}
             onTextChange={patchSelectedText}
+            onComponentChange={patchSelectedComponent}
           />
         );
 
@@ -507,6 +568,7 @@ export function AppearanceStudioApp() {
                   min={0}
                   max={0.9}
                   step={0.05}
+                  defaultValue={baseDefaults.background.dim}
                   onChange={(dim) =>
                     patchDraft((current) => ({
                       ...current,
@@ -520,6 +582,7 @@ export function AppearanceStudioApp() {
                   min={0}
                   max={24}
                   suffix=" PX"
+                  defaultValue={baseDefaults.background.blur}
                   onChange={(blur) =>
                     patchDraft((current) => ({
                       ...current,
@@ -637,6 +700,7 @@ export function AppearanceStudioApp() {
                 min={0}
                 max={40}
                 suffix=" PX"
+                defaultValue={draft.shape.radius}
                 onChange={(nextRadius) => patchSelectedStyle({ radius: nextRadius })}
               />
             </Section>
@@ -660,6 +724,7 @@ export function AppearanceStudioApp() {
               min={0}
               max={28}
               suffix=" PX"
+              defaultValue={baseDefaults.shape.radius}
               onChange={(radius) => patchDraft((current) => ({ ...current, shape: { radius } }))}
             />
           </Section>
@@ -754,6 +819,7 @@ export function AppearanceStudioApp() {
                 min={0}
                 max={1}
                 step={0.05}
+                defaultValue={1}
                 onChange={(opacity) => patchSelectedStyle({ opacity })}
               />
             </Section>
@@ -770,6 +836,7 @@ export function AppearanceStudioApp() {
               min={0.55}
               max={1}
               step={0.05}
+              defaultValue={baseDefaults.opacity.window}
               onChange={(windowOpacity) =>
                 patchDraft((current) => ({
                   ...current,
@@ -783,6 +850,7 @@ export function AppearanceStudioApp() {
               min={0}
               max={1}
               step={0.05}
+              defaultValue={baseDefaults.opacity.panels}
               onChange={(panels) =>
                 patchDraft((current) => ({
                   ...current,
@@ -796,6 +864,7 @@ export function AppearanceStudioApp() {
               min={0.35}
               max={1}
               step={0.05}
+              defaultValue={baseDefaults.opacity.controls}
               onChange={(controls) =>
                 patchDraft((current) => ({
                   ...current,
@@ -1099,46 +1168,50 @@ export function AppearanceStudioApp() {
             )}
           </div>
           {elementListOpen ? (
-            <div className="appearance-element-list">
-              <header>
-                <span>INDIVIDUAL ELEMENTS</span>
-                <strong>{draft.elementOverrides.length} CUSTOMIZED</strong>
-                <p>Choose an object to open its launcher tab and highlight it.</p>
-              </header>
-              <div>
-                {draft.elementOverrides.map((override, index) => (
-                  <article key={override.id}>
-                    <button
-                      type="button"
-                      className="appearance-element-list-link"
-                      onClick={() => revealElement(override)}
-                    >
-                      <span>
-                        {String(index + 1).padStart(2, "0")} /{" "}
-                        {override.tab ? TAB_TITLE[override.tab] : "ALL TABS"}
-                      </span>
-                      <strong>{override.label}</strong>
-                      <small>OPEN TAB & HIGHLIGHT →</small>
-                    </button>
-                    <div className="appearance-element-list-badges">
-                      {elementStyleBadges(override).map((badge) => (
-                        <span key={badge.label}>
-                          {badge.color && (
-                            <i style={{ backgroundColor: badge.color }} aria-hidden="true" />
-                          )}
-                          <b>{badge.label}</b>
-                          {badge.value}
+            <CustomScrollArea className="appearance-element-list-scroll">
+              <div className="appearance-element-list">
+                <header>
+                  <span>INDIVIDUAL ELEMENTS</span>
+                  <strong>{draft.elementOverrides.length} CUSTOMIZED</strong>
+                  <p>Choose an object to open its launcher tab and highlight it.</p>
+                </header>
+                <div>
+                  {draft.elementOverrides.map((override, index) => (
+                    <article key={override.id}>
+                      <button
+                        type="button"
+                        className="appearance-element-list-link"
+                        onClick={() => revealElement(override)}
+                      >
+                        <span>
+                          {String(index + 1).padStart(2, "0")} /{" "}
+                          {override.tab ? TAB_TITLE[override.tab] : "ALL TABS"}
                         </span>
-                      ))}
-                    </div>
-                  </article>
-                ))}
+                        <strong>{override.label}</strong>
+                        <small>OPEN TAB & HIGHLIGHT →</small>
+                      </button>
+                      <div className="appearance-element-list-badges">
+                        {elementStyleBadges(override).map((badge) => (
+                          <span key={badge.label}>
+                            {badge.color && (
+                              <i style={{ backgroundColor: badge.color }} aria-hidden="true" />
+                            )}
+                            <b>{badge.label}</b>
+                            {badge.value}
+                          </span>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
               </div>
-            </div>
+            </CustomScrollArea>
           ) : (
-            <div ref={controlsRef} className="appearance-studio-controls">
-              {renderEditor()}
-            </div>
+            <CustomScrollArea className="appearance-studio-controls-scroll">
+              <div ref={controlsRef} className="appearance-studio-controls">
+                {renderEditor()}
+              </div>
+            </CustomScrollArea>
           )}
 
           <footer className="appearance-studio-actions">

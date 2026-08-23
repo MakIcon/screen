@@ -4,9 +4,15 @@ import {
   useCallback,
   useEffect,
   type KeyboardEvent,
-  type MouseEvent,
   type PointerEvent,
 } from "react";
+import { useAppearanceComponentSettings } from "../../appearance/useAppearanceComponentSettings";
+import { CustomNumberInput } from "./CustomNumberInput";
+import {
+  magnetizeSliderRatio,
+  normalizeCustomSliderTicks,
+  projectPointerToSliderRatio,
+} from "./sliderMath";
 import "./ElementSlider.css";
 
 export type TickMode =
@@ -29,6 +35,14 @@ export interface ElementSliderProps {
   tickMode?: TickMode;
   customTicks?: number[];
   showHeader?: boolean;
+  showValue?: boolean;
+  valueEditable?: boolean;
+  keyboardEnabled?: boolean;
+  showDefaultMarker?: boolean;
+  defaultMarkerMagnetic?: boolean;
+  disabled?: boolean;
+  appearanceConstraint?: "none" | "system-ram";
+  appearanceSystemMax?: number;
   className?: string;
   onChange?: (value: number) => void;
   onCommit?: (value: number) => void;
@@ -67,18 +81,86 @@ export function ElementSlider({
   tickMode = "every-4",
   customTicks = [],
   showHeader = true,
+  showValue,
+  valueEditable = false,
+  keyboardEnabled = true,
+  showDefaultMarker = false,
+  defaultMarkerMagnetic = true,
+  disabled = false,
+  appearanceConstraint = "none",
+  appearanceSystemMax = max,
   className,
   onChange,
   onCommit,
 }: ElementSliderProps) {
+  const componentDefaults = {
+    label,
+    min,
+    max,
+    step,
+    defaultValue: defaultValue ?? Math.round((min + max) / 2),
+    constraint: appearanceConstraint,
+    maxMode: appearanceConstraint === "system-ram" ? "system" : "custom",
+    systemMax: Math.max(min, appearanceSystemMax),
+    tickMode,
+    customTicks,
+    showHeader,
+    showValue: showValue ?? showHeader,
+    valueEditable,
+    keyboardEnabled,
+    showDefaultMarker,
+    defaultMarkerMagnetic,
+  } satisfies import("../../appearance/types").AppearanceSliderSettings;
+  const { settings: componentSettings, appearanceProps } = useAppearanceComponentSettings(
+    "slider",
+    componentDefaults,
+  );
+
+  const hardMax =
+    componentSettings.constraint === "system-ram"
+      ? Math.max(1, componentSettings.systemMax)
+      : Number.POSITIVE_INFINITY;
+  const hardMin = componentSettings.constraint === "system-ram" ? 1 : Number.NEGATIVE_INFINITY;
+  const requestedMax =
+    componentSettings.constraint === "system-ram" && componentSettings.maxMode === "system"
+      ? componentSettings.systemMax
+      : componentSettings.max;
+  const normalizedRequestedMax =
+    componentSettings.constraint === "system-ram" ? Math.round(requestedMax) : requestedMax;
+  const effectiveMax = Math.min(hardMax, Math.max(normalizedRequestedMax, 0.01));
+  const effectiveMin =
+    componentSettings.constraint === "system-ram"
+      ? Math.min(effectiveMax, Math.max(hardMin, Math.round(componentSettings.min)))
+      : Math.min(componentSettings.min, effectiveMax - 0.01);
+  const effectiveStep =
+    componentSettings.constraint === "system-ram"
+      ? Math.max(1, Math.round(componentSettings.step))
+      : Math.max(0.01, componentSettings.step);
+  const effectiveDefaultValue =
+    componentSettings.constraint === "system-ram"
+      ? Math.round(componentSettings.defaultValue)
+      : componentSettings.defaultValue;
+  const effectiveTickMode = componentSettings.tickMode;
+  const effectiveCustomTicks = componentSettings.customTicks.map((tick) =>
+    componentSettings.constraint === "system-ram" ? Math.round(tick) : tick,
+  );
+  const effectiveShowHeader = componentSettings.showHeader;
+  const effectiveShowValue = componentSettings.showValue;
+  const effectiveValueEditable = componentSettings.valueEditable;
+  const effectiveKeyboardEnabled = componentSettings.keyboardEnabled;
+  const effectiveShowDefaultMarker = componentSettings.showDefaultMarker;
+  const effectiveDefaultMarkerMagnetic = componentSettings.defaultMarkerMagnetic;
+  const effectiveLabel = componentSettings.label;
   const isControlled = value !== undefined;
   const initialValue = Math.max(
-    min,
-    Math.min(max, value ?? defaultValue ?? Math.round((min + max) / 2))
+    effectiveMin,
+    Math.min(effectiveMax, value ?? effectiveDefaultValue),
   );
 
   const [internalValue, setInternalValue] = useState(initialValue);
-  const currentValue = isControlled ? Math.max(min, Math.min(max, value ?? initialValue)) : internalValue;
+  const currentValue = isControlled
+    ? Math.max(effectiveMin, Math.min(effectiveMax, value ?? initialValue))
+    : Math.max(effectiveMin, Math.min(effectiveMax, internalValue));
 
   const dragging = useRef(false);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -86,25 +168,31 @@ export function ElementSlider({
   const fillRef = useRef<HTMLDivElement>(null);
   const badgeRef = useRef<HTMLSpanElement>(null);
   const liveVal = useRef(currentValue);
+  const previousDefaultValue = useRef(effectiveDefaultValue);
 
-  const total = Math.max(step, max - min);
+  const total = Math.max(0, effectiveMax - effectiveMin);
 
   const snap = useCallback(
     (raw: number) => {
-      const stepped = Math.round(raw / step) * step;
-      return Math.max(min, Math.min(max, stepped));
+      const stepped =
+        effectiveMin + Math.round((raw - effectiveMin) / effectiveStep) * effectiveStep;
+      const precision = Math.min(8, Math.max(0, String(effectiveStep).split(".")[1]?.length ?? 0));
+      return Math.max(effectiveMin, Math.min(effectiveMax, Number(stepped.toFixed(precision))));
     },
-    [min, max, step]
+    [effectiveMax, effectiveMin, effectiveStep],
   );
+
+  const defaultMarkerValue = snap(effectiveDefaultValue);
+  const defaultMarkerRatio = total === 0 ? 0 : (defaultMarkerValue - effectiveMin) / total;
 
   const applyDOM = useCallback(
     (nextValue: number) => {
-      const pct = total === 0 ? 0 : ((nextValue - min) / total) * 100;
+      const pct = total === 0 ? 0 : ((nextValue - effectiveMin) / total) * 100;
       if (thumbRef.current) thumbRef.current.style.left = `${pct}%`;
       if (fillRef.current) fillRef.current.style.width = `${pct}%`;
       if (badgeRef.current) badgeRef.current.textContent = String(nextValue);
     },
-    [min, total]
+    [effectiveMin, total],
   );
 
   const updateValue = useCallback(
@@ -120,65 +208,113 @@ export function ElementSlider({
         onCommit?.(snappedValue);
       }
     },
-    [applyDOM, isControlled, onChange, onCommit, snap]
+    [applyDOM, isControlled, onChange, onCommit, snap],
   );
 
   const clientToValue = useCallback(
-    (clientX: number) => {
+    (clientX: number, clientY: number) => {
       const track = trackRef.current;
+      const root = appearanceProps.ref.current;
       if (!track) return liveVal.current;
-      const { left, width } = track.getBoundingClientRect();
-      if (width <= 0) return liveVal.current;
-      return snap(((clientX - left) / width) * total + min);
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0 && rect.height <= 0) return liveVal.current;
+
+      let axisX = 1;
+      let axisY = 0;
+      let axisScale = 1;
+      if (root) {
+        const transform = window.getComputedStyle(root).transform;
+        if (transform && transform !== "none") {
+          const matrix = new DOMMatrixReadOnly(transform);
+          axisScale = Math.hypot(matrix.a, matrix.b) || 1;
+          axisX = matrix.a / axisScale;
+          axisY = matrix.b / axisScale;
+        }
+      }
+
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const visualWidth = Math.max(1, track.offsetWidth * axisScale);
+      const pointerRatio = projectPointerToSliderRatio(
+        clientX,
+        clientY,
+        centerX,
+        centerY,
+        visualWidth,
+        axisX,
+        axisY,
+      );
+      const ratio =
+        effectiveShowDefaultMarker && effectiveDefaultMarkerMagnetic
+          ? magnetizeSliderRatio(pointerRatio, defaultMarkerRatio, visualWidth)
+          : pointerRatio;
+      return snap(ratio * total + effectiveMin);
     },
-    [min, snap, total]
+    [
+      appearanceProps.ref,
+      defaultMarkerRatio,
+      effectiveDefaultMarkerMagnetic,
+      effectiveMin,
+      effectiveShowDefaultMarker,
+      snap,
+      total,
+    ],
   );
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       dragging.current = true;
-      const nextValue = clientToValue(e.clientX);
+      const nextValue = clientToValue(e.clientX, e.clientY);
       updateValue(nextValue, false);
     },
-    [clientToValue, updateValue]
+    [clientToValue, disabled, updateValue],
   );
 
   const onPointerMove = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
       if (!dragging.current) return;
-      const nextValue = clientToValue(e.clientX);
+      const nextValue = clientToValue(e.clientX, e.clientY);
       if (nextValue === liveVal.current) return;
       updateValue(nextValue, false);
     },
-    [clientToValue, updateValue]
+    [clientToValue, updateValue],
   );
 
-  const onPointerUp = useCallback(() => {
-    if (!dragging.current) return;
-    dragging.current = false;
-    onCommit?.(liveVal.current);
-  }, [onCommit]);
-
-  const onTrackClick = useCallback(
-    (e: MouseEvent<HTMLDivElement>) => {
-      if (dragging.current) return;
-      const nextValue = clientToValue(e.clientX);
-      updateValue(nextValue, true);
+  const onPointerUp = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      onCommit?.(liveVal.current);
     },
-    [clientToValue, updateValue]
+    [onCommit],
   );
+
+  const onPointerCancel = useCallback(() => {
+    dragging.current = false;
+    applyDOM(currentValue);
+    liveVal.current = currentValue;
+  }, [applyDOM, currentValue]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       let nextValue = liveVal.current;
-      if (e.key === "ArrowRight" || e.key === "ArrowUp") nextValue = snap(nextValue + step);
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") nextValue = snap(nextValue - step);
+      if (e.key === "ArrowRight" || e.key === "ArrowUp")
+        nextValue = snap(nextValue + effectiveStep);
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown")
+        nextValue = snap(nextValue - effectiveStep);
       if (nextValue !== liveVal.current) {
+        e.preventDefault();
         updateValue(nextValue, true);
       }
     },
-    [snap, step, updateValue]
+    [effectiveStep, snap, updateValue],
   );
 
   useEffect(() => {
@@ -189,57 +325,121 @@ export function ElementSlider({
     }
   }, [applyDOM, currentValue, isControlled]);
 
+  useEffect(() => {
+    const changed = previousDefaultValue.current !== effectiveDefaultValue;
+    previousDefaultValue.current = effectiveDefaultValue;
+    if (!isControlled && changed) updateValue(effectiveDefaultValue, false);
+  }, [effectiveDefaultValue, isControlled, updateValue]);
+
+  const defaultMarkerPercent =
+    total === 0 ? 0 : ((defaultMarkerValue - effectiveMin) / total) * 100;
   const ticks: number[] = [];
-  for (let i = min; i <= max; i += step) {
-    ticks.push(i);
+  if (effectiveTickMode === "custom") {
+    ticks.push(
+      ...normalizeCustomSliderTicks(
+        effectiveCustomTicks,
+        effectiveMin,
+        effectiveMax,
+        componentSettings.constraint === "system-ram",
+      ),
+    );
+  } else {
+    const tickCount = total === 0 ? 0 : Math.floor(total / effectiveStep);
+    if (tickCount <= 2_000) {
+      for (let index = 0; index <= tickCount; index += 1) {
+        ticks.push(snap(effectiveMin + index * effectiveStep));
+      }
+      if (ticks[ticks.length - 1] !== effectiveMax) ticks.push(effectiveMax);
+    }
   }
 
   return (
-    <div className={["es-root", className].filter(Boolean).join(" ")}>
-      {showHeader && (
-        <div className="es-header">
-          <span className="es-label">{label}</span>
-          <span className="es-value-badge" ref={badgeRef}>
-            {currentValue}
-          </span>
+    <div
+      {...appearanceProps}
+      className={["es-root", disabled ? "es-root--disabled" : "", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {(effectiveShowHeader || effectiveShowValue) && (
+        <div className={`es-header ${!effectiveShowHeader ? "es-header--value-only" : ""}`}>
+          {effectiveShowHeader && <span className="es-label">{effectiveLabel}</span>}
+          {effectiveShowValue &&
+            (effectiveValueEditable ? (
+              <CustomNumberInput
+                className="es-value-editor"
+                value={currentValue}
+                min={effectiveMin}
+                max={effectiveMax}
+                step={effectiveStep}
+                showArrows={false}
+                disabled={disabled}
+                ariaLabel={`${effectiveLabel} value`}
+                onChange={(nextValue) => updateValue(nextValue, false)}
+                onCommit={(nextValue) => onCommit?.(snap(nextValue))}
+              />
+            ) : (
+              <span className="es-value-badge" ref={badgeRef}>
+                {currentValue}
+              </span>
+            ))}
         </div>
       )}
 
-      <div className={`es-body ${showHeader ? "" : "es-body--bare"}`}>
-        <div className="es-track-wrap" ref={trackRef} onClick={onTrackClick}>
+      <div
+        className={`es-body ${effectiveShowHeader || effectiveShowValue ? "" : "es-body--bare"}`}
+      >
+        <div
+          className="es-track-wrap"
+          ref={trackRef}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+        >
           <div className="es-rail">
             <div
               className="es-fill"
               ref={fillRef}
-              style={{ width: `${total === 0 ? 0 : ((currentValue - min) / total) * 100}%` }}
+              style={{
+                width: `${total === 0 ? 0 : ((currentValue - effectiveMin) / total) * 100}%`,
+              }}
             />
           </div>
+
+          {effectiveShowDefaultMarker && (
+            <span
+              className="es-default-marker"
+              style={{ left: `${defaultMarkerPercent}%` }}
+              title={`Default: ${defaultMarkerValue}`}
+              aria-hidden="true"
+            />
+          )}
 
           <div
             className="es-thumb"
             ref={thumbRef}
-            style={{ left: `${total === 0 ? 0 : ((currentValue - min) / total) * 100}%` }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
+            style={{ left: `${total === 0 ? 0 : ((currentValue - effectiveMin) / total) * 100}%` }}
             role="slider"
-            aria-valuemin={min}
-            aria-valuemax={max}
+            aria-label={effectiveLabel}
+            aria-valuemin={effectiveMin}
+            aria-valuemax={effectiveMax}
             aria-valuenow={currentValue}
-            tabIndex={0}
-            onKeyDown={onKeyDown}
+            aria-disabled={disabled || undefined}
+            tabIndex={!disabled && effectiveKeyboardEnabled ? 0 : -1}
+            onKeyDown={!disabled && effectiveKeyboardEnabled ? onKeyDown : undefined}
           >
             <div className="es-thumb-inner" />
           </div>
         </div>
 
-        {tickMode !== "none" && (
+        {effectiveTickMode !== "none" && (
           <div className="es-ticks">
             {ticks.map((n) => {
-              const show = shouldShowTick(n, tickMode, customTicks);
-              const p = total === 0 ? 0 : ((n - min) / total) * 100;
+              const show = shouldShowTick(n, effectiveTickMode, effectiveCustomTicks);
+              const p = total === 0 ? 0 : ((n - effectiveMin) / total) * 100;
+              const edgeClass = p <= 5 ? "es-tick--edge-start" : p >= 95 ? "es-tick--edge-end" : "";
               return (
-                <div key={n} className="es-tick" style={{ left: `${p}%` }}>
+                <div key={n} className={`es-tick ${edgeClass}`} style={{ left: `${p}%` }}>
                   <span className={`es-tick-mark ${show ? "es-tick-mark--labeled" : ""}`} />
                   {show && <span className="es-tick-label">{n}</span>}
                 </div>

@@ -1,12 +1,30 @@
 .settings-toggle-row {
+  --element-toggle-scale: 1;
+  --element-toggle-inset: calc(4px * var(--element-toggle-scale));
+  --element-toggle-knob-size: calc(24px * var(--element-toggle-scale));
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
 }
 
+.settings-toggle-row--compact {
+  gap: 12px;
+}
+
+.settings-toggle-row--compact .settings-toggle-title {
+  margin-bottom: 0;
+}
+
+.settings-toggle-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .settings-toggle-title {
   display: block;
+  width: fit-content;
+  max-width: 100%;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 1.4px;
@@ -14,38 +32,44 @@
 }
 
 .settings-toggle-note {
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-alt);
 }
 
-.toggle-switch {
-  width: 64px;
-  height: 34px;
+.settings-toggle-row .toggle-switch {
+  width: calc(64px * var(--element-toggle-scale));
+  height: calc(34px * var(--element-toggle-scale));
   border: 1px solid var(--line);
   background: transparent;
   position: relative;
   cursor: pointer;
   padding: 0;
   flex: 0 0 auto;
+  align-self: center;
 }
 
-.toggle-switch.enabled {
+.settings-toggle-row .toggle-switch.enabled {
   background: var(--bg-toggle-on);
   border-color: rgba(194, 65, 12, 0.25);
 }
 
-.toggle-knob {
+.settings-toggle-row .toggle-knob {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 24px;
-  height: 24px;
+  top: 50%;
+  left: var(--element-toggle-inset);
+  width: var(--element-toggle-knob-size);
+  height: var(--element-toggle-knob-size);
   background: var(--ink);
-  transition: transform 0.22s ease;
+  translate: 0 -50%;
+  transform: none;
+  transition: left 0.22s ease;
 }
 
-.toggle-switch.enabled .toggle-knob {
-  transform: translateX(30px);
+.settings-toggle-row .toggle-switch.enabled .toggle-knob {
+  left: calc(100% - var(--element-toggle-inset) - var(--element-toggle-knob-size));
+  transform: none;
 }

@@ -2,6 +2,7 @@ import { formatLastPlayed, formatPlaytime } from "./playtime";
 
 export type PlaceholderContext = {
   systemRamGb: number;
+  playerName: string;
   buildName: string;
   buildVersion: string;
   buildLoader: string;
@@ -13,6 +14,30 @@ export type PlaceholderContext = {
   accountType: string;
   totalPlaytimeSecs: number;
   totalBuilds: number;
+};
+
+export const APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE = "data-appearance-text-template";
+export const APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE = "data-appearance-placeholder-values";
+
+export const AVAILABLE_PLACEHOLDERS = [
+  { token: "%player_name%", label: "PLAYER NAME" },
+  { token: "%system_ram%", label: "SYSTEM RAM" },
+  { token: "%build_name%", label: "BUILD NAME" },
+  { token: "%build_version%", label: "BUILD VERSION" },
+  { token: "%build_loader%", label: "BUILD LOADER" },
+  { token: "%build_ram%", label: "BUILD RAM" },
+  { token: "%build_playtime%", label: "BUILD PLAYTIME" },
+  { token: "%build_last_played%", label: "LAST PLAYED" },
+  { token: "%build_status%", label: "BUILD STATUS" },
+  { token: "%build_state%", label: "BUILD STATE" },
+  { token: "%account_type%", label: "ACCOUNT TYPE" },
+  { token: "%total_playtime%", label: "TOTAL PLAYTIME" },
+  { token: "%total_builds%", label: "TOTAL BUILDS" },
+] as const;
+
+export type PlaceholderAppearanceAttributes = {
+  "data-appearance-text-template": string;
+  "data-appearance-placeholder-values": string;
 };
 
 const FRIENDLY_PLACEHOLDER_VALUES: Record<string, string> = {
@@ -47,6 +72,8 @@ function toFriendlyPlaceholderValue(value: string): string {
 
 function resolvePlaceholderValue(key: string, ctx: PlaceholderContext): string | null {
   switch (key) {
+    case "player_name":      return ctx.playerName;
+    case "nickname":         return ctx.playerName;
     case "system_ram":
     case "system_ram_max":    return `${ctx.systemRamGb} GB`;
     case "build_name":        return ctx.buildName;
@@ -70,4 +97,44 @@ export function resolvePlaceholders(template: string, ctx: PlaceholderContext): 
     if (value === null) return match;
     return uppercaseFlag ? value.toUpperCase() : value;
   });
+}
+
+export function createPlaceholderAppearanceAttributes(
+  template: string,
+  resolve: (template: string) => string,
+): PlaceholderAppearanceAttributes {
+  const values = Object.fromEntries(
+    AVAILABLE_PLACEHOLDERS.map(({ token }) => {
+      const key = token.slice(1, -1);
+      return [key, resolve(token)];
+    }),
+  );
+  // Keep the legacy nickname alias usable in hand-written templates.
+  values.nickname = values.player_name;
+  return {
+    [APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE]: template,
+    [APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE]: JSON.stringify(values),
+  };
+}
+
+export function resolveAppearancePlaceholderTemplate(
+  template: string,
+  serializedValues: string | null | undefined,
+) {
+  if (!serializedValues) return template;
+  try {
+    const parsed = JSON.parse(serializedValues) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return template;
+    const values = parsed as Record<string, unknown>;
+    return template.replace(
+      /(\^)?%(\w+)%/g,
+      (match, uppercaseFlag: string | undefined, key: string) => {
+        const value = values[key];
+        if (typeof value !== "string") return match;
+        return uppercaseFlag ? value.toUpperCase() : value;
+      },
+    );
+  } catch {
+    return template;
+  }
 }

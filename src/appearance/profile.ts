@@ -11,7 +11,15 @@ import {
   type TabAnimationId,
   type UiMotionStyle,
 } from "./animations";
-import type { AppearanceBackgroundKind, AppearanceProfile, Theme } from "./types";
+import type {
+  AppearanceBackgroundKind,
+  AppearanceComponentKind,
+  AppearanceElementComponentOverride,
+  AppearanceElementComponentTarget,
+  AppearanceElementKind,
+  AppearanceProfile,
+  Theme,
+} from "./types";
 
 export const APPEARANCE_STORAGE_KEY = "screenlauncher-appearance-v2";
 export const LEGACY_THEME_STORAGE_KEY = "screenlauncher-theme";
@@ -120,6 +128,160 @@ function pickImageDataUrl(value: unknown) {
     : "";
 }
 
+const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
+  "slider",
+  "toggle",
+  "checkbox",
+  "dropdown",
+  "button",
+  "input",
+  "select",
+  "list",
+  "container",
+  "text",
+];
+
+const COMPONENT_KINDS: readonly AppearanceComponentKind[] = [
+  "slider",
+  "toggle",
+  "checkbox",
+  "dropdown",
+];
+
+function normalizeComponentValues(
+  kind: AppearanceComponentKind,
+  value: unknown,
+  partial: boolean,
+): Record<string, unknown> {
+  const raw = isRecord(value) ? value : {};
+  const output: Record<string, unknown> = {};
+  const has = (key: string) => !partial || Object.prototype.hasOwnProperty.call(raw, key);
+
+  if (kind === "slider") {
+    const min = clampNumber(raw.min, 0, -10_000, 10_000);
+    const requestedMax = clampNumber(raw.max, 100, -9_999, 10_001);
+    const max = requestedMax > min ? requestedMax : min + 1;
+    const constraint = pickEnum(raw.constraint, ["none", "system-ram"] as const, "none");
+    const systemMax = clampNumber(raw.systemMax, max, 1, 4_096);
+    if (has("label")) output.label = pickString(raw.label, "Value").slice(0, 80);
+    if (has("min")) output.min = constraint === "system-ram" ? Math.max(1, Math.round(min)) : min;
+    if (has("max")) {
+      output.max = constraint === "system-ram" ? Math.max(1, Math.round(max)) : max;
+    }
+    if (has("step")) {
+      output.step =
+        constraint === "system-ram"
+          ? Math.max(
+              1,
+              Math.min(Math.round(systemMax), Math.round(clampNumber(raw.step, 1, 1, 4_096))),
+            )
+          : clampNumber(raw.step, 1, 0.01, 10_000);
+    }
+    if (!partial) {
+      output.constraint = constraint;
+      output.systemMax = systemMax;
+    }
+    if (has("maxMode")) {
+      output.maxMode = pickEnum(raw.maxMode, ["custom", "system"] as const, "custom");
+    }
+    if (has("defaultValue")) {
+      output.defaultValue = clampNumber(raw.defaultValue, Math.round((min + max) / 2), min, max);
+    }
+    if (has("tickMode")) {
+      output.tickMode = pickEnum(
+        raw.tickMode,
+        ["none", "every", "every-2", "every-3", "every-4", "even", "odd", "custom"] as const,
+        "every-4",
+      );
+    }
+    if (has("customTicks")) {
+      const tickMin = constraint === "system-ram" ? 1 : -10_000;
+      const tickMax = constraint === "system-ram" ? systemMax : 10_001;
+      output.customTicks = Array.isArray(raw.customTicks)
+        ? raw.customTicks
+            .filter((tick): tick is number => typeof tick === "number" && Number.isFinite(tick))
+            .slice(0, 64)
+            .map((tick) => Math.min(tickMax, Math.max(tickMin, tick)))
+        : [];
+    }
+    if (has("showHeader")) output.showHeader = raw.showHeader !== false;
+    if (has("showValue")) {
+      output.showValue =
+        typeof raw.showValue === "boolean" ? raw.showValue : raw.showHeader !== false;
+    }
+    if (has("valueEditable")) output.valueEditable = raw.valueEditable === true;
+    if (has("keyboardEnabled")) output.keyboardEnabled = raw.keyboardEnabled !== false;
+    if (has("showDefaultMarker")) output.showDefaultMarker = raw.showDefaultMarker === true;
+    if (has("defaultMarkerMagnetic")) {
+      output.defaultMarkerMagnetic = raw.defaultMarkerMagnetic !== false;
+    }
+  }
+
+  if (kind === "toggle") {
+    if (has("title")) output.title = pickString(raw.title, "TOGGLE").slice(0, 120);
+    if (has("note")) output.note = pickString(raw.note, "").slice(0, 240);
+    if (has("showNote")) output.showNote = raw.showNote !== false;
+    if (has("compact")) output.compact = raw.compact === true;
+    if (has("switchScale")) output.switchScale = clampNumber(raw.switchScale, 1, 0.65, 1.6);
+  }
+
+  if (kind === "checkbox") {
+    if (has("label")) output.label = pickString(raw.label, "CHECKBOX").slice(0, 120);
+    if (has("indicatorSize")) output.indicatorSize = clampNumber(raw.indicatorSize, 16, 10, 36);
+    if (has("labelGap")) output.labelGap = clampNumber(raw.labelGap, 10, 0, 40);
+  }
+
+  if (kind === "dropdown") {
+    if (has("label")) output.label = pickString(raw.label, "OPTIONS").slice(0, 120);
+    if (has("showLabel")) output.showLabel = raw.showLabel !== false;
+    if (has("visibleItems"))
+      output.visibleItems = Math.round(clampNumber(raw.visibleItems, 5, 1, 12));
+    if (has("itemHeight")) output.itemHeight = clampNumber(raw.itemHeight, 49, 28, 96);
+  }
+
+  return output;
+}
+
+function normalizeComponentTarget(value: unknown): AppearanceElementComponentTarget | undefined {
+  if (!isRecord(value)) return undefined;
+  const kind = pickEnum(value.kind, COMPONENT_KINDS, "slider");
+  if (!COMPONENT_KINDS.includes(value.kind as AppearanceComponentKind)) return undefined;
+  return {
+    kind,
+    props: normalizeComponentValues(kind, value.props, false),
+  } as AppearanceElementComponentTarget;
+}
+
+function normalizeComponentOverride(
+  value: unknown,
+  target?: AppearanceElementComponentTarget,
+): AppearanceElementComponentOverride | undefined {
+  if (!target || !isRecord(value) || value.kind !== target.kind) return undefined;
+  const settings = normalizeComponentValues(target.kind, value.settings, true);
+  if (target.kind === "slider" && target.props.constraint === "system-ram") {
+    const systemMax = target.props.systemMax;
+    if (typeof settings.max === "number") {
+      settings.max = Math.max(1, Math.min(systemMax, Math.round(settings.max)));
+    }
+    if (typeof settings.min === "number") {
+      settings.min = Math.max(1, Math.min(systemMax, Math.round(settings.min)));
+    }
+    if (typeof settings.step === "number") {
+      settings.step = Math.max(1, Math.min(systemMax, Math.round(settings.step)));
+    }
+    if (typeof settings.defaultValue === "number") {
+      settings.defaultValue = Math.max(1, Math.min(systemMax, Math.round(settings.defaultValue)));
+    }
+    if (Array.isArray(settings.customTicks)) {
+      settings.customTicks = settings.customTicks.map((tick) =>
+        typeof tick === "number" ? Math.max(1, Math.min(systemMax, Math.round(tick))) : tick,
+      );
+    }
+  }
+  if (Object.keys(settings).length === 0) return undefined;
+  return { kind: target.kind, settings } as AppearanceElementComponentOverride;
+}
+
 function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOverrides"] {
   if (!Array.isArray(value)) return [];
 
@@ -158,6 +320,18 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
 
     const rawStyle = isRecord(candidate.style) ? candidate.style : {};
     const style: AppearanceProfile["elementOverrides"][number]["style"] = {};
+    if (typeof rawStyle.width === "number" && Number.isFinite(rawStyle.width)) {
+      style.width = clampNumber(rawStyle.width, 0, 0, 1_600);
+    }
+    if (typeof rawStyle.height === "number" && Number.isFinite(rawStyle.height)) {
+      style.height = clampNumber(rawStyle.height, 0, 0, 1_200);
+    }
+    if (typeof rawStyle.minWidth === "number" && Number.isFinite(rawStyle.minWidth)) {
+      style.minWidth = clampNumber(rawStyle.minWidth, 0, 0, 1_600);
+    }
+    if (typeof rawStyle.minHeight === "number" && Number.isFinite(rawStyle.minHeight)) {
+      style.minHeight = clampNumber(rawStyle.minHeight, 0, 0, 1_200);
+    }
     if (typeof rawStyle.opacity === "number" && Number.isFinite(rawStyle.opacity)) {
       style.opacity = clampNumber(rawStyle.opacity, 1, 0, 1);
     }
@@ -207,12 +381,22 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
       style.scale = clampNumber(rawStyle.scale, 1, 0.5, 1.5);
     }
     if (typeof rawStyle.rotate === "number" && Number.isFinite(rawStyle.rotate)) {
-      style.rotate = clampNumber(rawStyle.rotate, 0, -15, 15);
+      style.rotate = clampNumber(rawStyle.rotate, 0, -180, 180);
+    }
+    if (["default", "row", "column", "grid"].includes(rawStyle.layout as string)) {
+      style.layout = rawStyle.layout as NonNullable<typeof style.layout>;
+    }
+    if (typeof rawStyle.columns === "number" && Number.isFinite(rawStyle.columns)) {
+      style.columns = Math.round(clampNumber(rawStyle.columns, 2, 1, 12));
+    }
+    if (typeof rawStyle.gap === "number" && Number.isFinite(rawStyle.gap)) {
+      style.gap = clampNumber(rawStyle.gap, 0, 0, 96);
     }
 
     const rawTextTarget = isRecord(candidate.textTarget) ? candidate.textTarget : null;
     const textPath = rawTextTarget?.path;
     const originalText = rawTextTarget?.original;
+    const templateText = rawTextTarget?.template;
     const textTarget =
       Array.isArray(textPath) &&
       textPath.length > 0 &&
@@ -226,10 +410,36 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
         ? {
             path: textPath as number[],
             original: originalText.trim().slice(0, MAX_ELEMENT_TEXT_LENGTH),
+            ...(typeof templateText === "string" && templateText.trim()
+              ? { template: templateText.trim().slice(0, MAX_ELEMENT_TEXT_LENGTH) }
+              : {}),
           }
         : undefined;
     const hasTextOverride = textTarget !== undefined && typeof candidate.text === "string";
-    if (Object.keys(style).length === 0 && !hasTextOverride) return [];
+    const rawDefaults = isRecord(candidate.defaults) ? candidate.defaults : null;
+    const defaults = rawDefaults
+      ? {
+          width: clampNumber(rawDefaults.width, 0, 0, 1_600),
+          height: clampNumber(rawDefaults.height, 0, 0, 1_200),
+          minWidth: clampNumber(rawDefaults.minWidth, 0, 0, 1_600),
+          minHeight: clampNumber(rawDefaults.minHeight, 0, 0, 1_200),
+          ...(typeof rawDefaults.widthAuto === "boolean"
+            ? { widthAuto: rawDefaults.widthAuto }
+            : {}),
+          ...(typeof rawDefaults.heightAuto === "boolean"
+            ? { heightAuto: rawDefaults.heightAuto }
+            : {}),
+          ...(typeof rawDefaults.minWidthAuto === "boolean"
+            ? { minWidthAuto: rawDefaults.minWidthAuto }
+            : {}),
+          ...(typeof rawDefaults.minHeightAuto === "boolean"
+            ? { minHeightAuto: rawDefaults.minHeightAuto }
+            : {}),
+        }
+      : undefined;
+    const component = normalizeComponentTarget(candidate.component);
+    const componentSettings = normalizeComponentOverride(candidate.componentSettings, component);
+    if (Object.keys(style).length === 0 && !hasTextOverride && !componentSettings) return [];
 
     return [
       {
@@ -238,9 +448,15 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
         path,
         ...(TAB_ORDER.includes(candidate.tab as TabKey) ? { tab: candidate.tab as TabKey } : {}),
         ...(textTarget ? { textTarget } : {}),
+        ...(defaults ? { defaults } : {}),
+        ...(ELEMENT_KINDS.includes(candidate.kind as AppearanceElementKind)
+          ? { kind: candidate.kind as AppearanceElementKind }
+          : {}),
+        ...(component ? { component } : {}),
         ...(hasTextOverride
           ? { text: (candidate.text as string).slice(0, MAX_ELEMENT_TEXT_LENGTH) }
           : {}),
+        ...(componentSettings ? { componentSettings } : {}),
         style,
       },
     ];

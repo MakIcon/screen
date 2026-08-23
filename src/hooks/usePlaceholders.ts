@@ -23,6 +23,7 @@ type BuildPlaceholderContextOptions = {
   instances: InstanceItem[];
   target: PlaceholderTarget;
   systemRamGb: number;
+  playerName?: string | null;
   accountType?: string | null;
   buildState?: string | null;
 };
@@ -31,11 +32,13 @@ export function buildPlaceholderContext({
   instances,
   target,
   systemRamGb,
+  playerName,
   accountType,
   buildState,
 }: BuildPlaceholderContextOptions): PlaceholderContext {
   return {
     systemRamGb,
+    playerName: playerName ?? "PLAYER",
     buildName: target?.name ?? "—",
     buildVersion: target?.version ?? "—",
     buildLoader: target?.loader ?? "—",
@@ -55,6 +58,7 @@ export function buildPlaceholderContext({
  * Use anywhere in the component tree — no need to pass context manually.
  *
  * Available placeholders:
+ *   %player_name%       %nickname%
  *   %system_ram%        %system_ram_max%
  *   %build_name%        %build_version%   %build_loader%
  *   %build_ram%         %build_playtime%  %build_last_played%  %build_status%
@@ -67,11 +71,13 @@ export function usePlaceholders(
   selectedInstance: InstanceItem | null | undefined,
   systemRamGb: number,
   accountType: string,
+  playerName: string,
   buildState = "",
 ): (template: string) => string {
   return useMemo(() => {
     const ctx: PlaceholderContext = {
       systemRamGb,
+      playerName,
       accountType,
       buildState,
       buildName: selectedInstance?.name ?? "—",
@@ -89,6 +95,7 @@ export function usePlaceholders(
     systemRamGb,
     instances,
     accountType,
+    playerName,
     buildState,
     selectedInstance?.name,
     selectedInstance?.version,

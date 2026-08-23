@@ -6,6 +6,7 @@ import "./CustomNumberInput.css";
 type CustomNumberInputProps = {
   value: number;
   onChange: (value: number) => void;
+  onCommit?: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -44,6 +45,7 @@ function isAboveUpperBound(value: number, max: number | undefined) {
 export function CustomNumberInput({
   value,
   onChange,
+  onCommit,
   min = 0,
   max = -1,
   step = 1,
@@ -72,6 +74,7 @@ export function CustomNumberInput({
     const normalized = clampValue(nextValue, min, max);
     setDraft(String(normalized));
     onChange(normalized);
+    onCommit?.(normalized);
   };
 
   const commitDraft = () => {

@@ -11,6 +11,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import "./App.css";
 import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
@@ -76,7 +77,7 @@ import type {
 import { ToastStack } from "./components/notifications/ToastStack";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
-import { resolvePlaceholders } from "./utils/placeholders";
+import { createPlaceholderAppearanceAttributes, resolvePlaceholders } from "./utils/placeholders";
 import {
   buildPlaceholderContext,
   type PlaceholderTarget,
@@ -116,6 +117,8 @@ import {
 } from "./appearance/animations";
 import { resolveTabAnimation } from "./appearance/profile";
 import {
+  APPEARANCE_ELEMENT_PICKED_EVENT,
+  createElementTarget,
   resolveElementTarget,
   mapDrawingCursorToCover,
   type DrawingCursorPayload,
@@ -448,7 +451,12 @@ export default function App() {
           revealFrameRef.current = window.requestAnimationFrame(reveal);
           return;
         }
-        if (!element) return;
+        if (!root || !element) return;
+
+        const refreshedTarget = createElementTarget(root, element, target.tab);
+        if (refreshedTarget) {
+          void emit(APPEARANCE_ELEMENT_PICKED_EVENT, refreshedTarget).catch(() => {});
+        }
 
         element.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
         element.classList.add("appearance-reveal-target");
@@ -737,6 +745,7 @@ export default function App() {
     selectedInstance,
     systemRamGb,
     accountType,
+    nickname,
     selectedBuildState,
   );
   const resolveForTarget = (
@@ -753,6 +762,7 @@ export default function App() {
         instances,
         target,
         systemRamGb,
+        playerName: nickname,
         accountType: overrides.accountType ?? accountType,
         buildState: overrides.buildState ?? "",
       }),
@@ -838,10 +848,14 @@ export default function App() {
       buildState?: string;
     } = {},
   ) =>
-    appearance.contentTags.map((tag) => ({
-      ...tag,
-      text: resolveForTarget(tag.text, target, overrides),
-    }));
+    appearance.contentTags.map((tag) => {
+      const resolveTag = (template: string) => resolveForTarget(template, target, overrides);
+      return {
+        ...tag,
+        text: resolveTag(tag.text),
+        appearance: createPlaceholderAppearanceAttributes(tag.text, resolveTag),
+      };
+    });
 
   const selectedModTarget = useMemo(
     () =>
@@ -1379,9 +1393,9 @@ export default function App() {
     else switchTabByWheel("prev");
   };
 
-  const saveSettingsRam = async () => {
+  const saveSettingsRam = async (requestedValue = settingsRamDraft) => {
     try {
-      const value = clampRamToSystem(settingsRamDraft, systemRamGb);
+      const value = clampRamToSystem(requestedValue, systemRamGb);
       const updated = await invoke<LauncherSettings>("set_default_ram_gb", { ram: value });
       const normalized = clampRamToSystem(updated.defaultRamGb, systemRamGb);
       setLauncherSettings(updated);

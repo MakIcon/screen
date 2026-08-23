@@ -1,10 +1,22 @@
 import type {
+  AppearanceElementComponentTarget,
+  AppearanceElementKind,
   AppearanceElementOverride,
   AppearanceElementPathSegment,
   AppearanceElementTarget,
 } from "./types";
+import {
+  APPEARANCE_COMPONENT_ATTRIBUTE,
+  APPEARANCE_COMPONENT_PROPS_ATTRIBUTE,
+  APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE,
+} from "./useAppearanceComponentSettings";
 import type { CloseAnimationId, OpenAnimationId } from "./animations";
 import type { TabKey } from "../types";
+import {
+  APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE,
+  APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE,
+  resolveAppearancePlaceholderTemplate,
+} from "../utils/placeholders";
 
 export const APPEARANCE_ELEMENT_PICK_REQUEST_EVENT = "appearance-element-pick-request";
 export const APPEARANCE_ELEMENT_PICKED_EVENT = "appearance-element-picked";
@@ -97,6 +109,89 @@ function describeElement(element: HTMLElement) {
   return `${element.tagName}${text ? ` · ${text}` : className ? ` · ${className}` : ""}`;
 }
 
+function readElementDefaults(element: HTMLElement) {
+  const overrideId = element.getAttribute(OVERRIDE_ATTRIBUTE);
+  if (overrideId) element.removeAttribute(OVERRIDE_ATTRIBUTE);
+  const rect = element.getBoundingClientRect();
+  const computed = window.getComputedStyle(element);
+  const computedMinWidth = computed.minWidth;
+  const computedMinHeight = computed.minHeight;
+
+  const originalTransition = element.style.getPropertyValue("transition");
+  const originalTransitionPriority = element.style.getPropertyPriority("transition");
+  element.style.setProperty("transition", "none", "important");
+
+  const matchesAutoSize = (property: "width" | "height", measuredSize: number) => {
+    const originalValue = element.style.getPropertyValue(property);
+    const originalPriority = element.style.getPropertyPriority(property);
+    element.style.setProperty(property, "auto", "important");
+    const autoSize = element.getBoundingClientRect()[property];
+    if (originalValue) element.style.setProperty(property, originalValue, originalPriority);
+    else element.style.removeProperty(property);
+    return Math.abs(autoSize - measuredSize) <= 0.75;
+  };
+
+  const widthAuto = matchesAutoSize("width", rect.width);
+  const heightAuto = matchesAutoSize("height", rect.height);
+
+  if (originalTransition) {
+    element.style.setProperty("transition", originalTransition, originalTransitionPriority);
+  } else {
+    element.style.removeProperty("transition");
+  }
+  if (overrideId) element.setAttribute(OVERRIDE_ATTRIBUTE, overrideId);
+
+  const round = (value: number) => Math.max(0, Math.round(value * 100) / 100);
+  const cssSize = (value: string) => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? round(parsed) : 0;
+  };
+
+  return {
+    width: round(rect.width),
+    height: round(rect.height),
+    minWidth: cssSize(computedMinWidth),
+    minHeight: cssSize(computedMinHeight),
+    widthAuto,
+    heightAuto,
+    minWidthAuto: computedMinWidth === "auto",
+    minHeightAuto: computedMinHeight === "auto",
+  };
+}
+
+function readComponentTarget(element: HTMLElement): AppearanceElementComponentTarget | undefined {
+  const kind = element.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE);
+  if (!kind || !["slider", "toggle", "checkbox", "dropdown"].includes(kind)) return undefined;
+  const rawProps = element.getAttribute(APPEARANCE_COMPONENT_PROPS_ATTRIBUTE);
+  if (!rawProps) return undefined;
+  try {
+    const props = JSON.parse(rawProps) as unknown;
+    if (!props || typeof props !== "object" || Array.isArray(props)) return undefined;
+    return { kind, props } as AppearanceElementComponentTarget;
+  } catch {
+    return undefined;
+  }
+}
+
+function inferElementKind(
+  element: HTMLElement,
+  component?: AppearanceElementComponentTarget,
+): AppearanceElementKind {
+  if (component) return component.kind;
+  if (element.dataset.appearanceLayoutContainer === "true") return "list";
+  const tag = element.tagName.toLowerCase();
+  const role = element.getAttribute("role");
+  if (element.classList.contains("csa-root")) return "container";
+  if (tag === "button" || role === "button") return "button";
+  if (tag === "input" || tag === "textarea") return "input";
+  if (tag === "select") return "select";
+  if (tag === "ul" || tag === "ol" || /(?:^|-)(?:list|grid|menu)(?:-|$)/.test(element.className)) {
+    return "list";
+  }
+  if (element.children.length > 0) return "container";
+  return "text";
+}
+
 function isEditableTextNode(node: Text) {
   if (!node.data.trim()) return false;
   const parent = node.parentElement;
@@ -136,7 +231,18 @@ function createTextTarget(element: HTMLElement, preferredSource?: HTMLElement | 
 
   const original = textNode.data.replace(/\s+/g, " ").trim();
   if (!original || path.length === 0 || path.length > MAX_TEXT_TARGET_DEPTH) return undefined;
-  return { path, original: original.slice(0, 160) };
+  const templateOwner = textNode.parentElement?.closest<HTMLElement>(
+    `[${APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE}]`,
+  );
+  const template = templateOwner
+    ?.getAttribute(APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE)
+    ?.trim()
+    .slice(0, 160);
+  return {
+    path,
+    original: original.slice(0, 160),
+    ...(template ? { template } : {}),
+  };
 }
 
 export function createElementTarget(
@@ -166,13 +272,20 @@ export function createElementTarget(
   }
 
   if (current !== root || path.length === 0 || path.length > 24) return null;
-  const textTarget = createTextTarget(element, preferredTextSource);
+  const component = readComponentTarget(element);
+  const defaults = readElementDefaults(element);
+  // Component roots expose their editable copy through typed props. A raw text-node
+  // replacement would be overwritten by React (and could accidentally target a slider tick).
+  const textTarget = component ? undefined : createTextTarget(element, preferredTextSource);
   return {
     id: targetId(path, tab),
     label: describeElement(element),
     path,
     ...(tab ? { tab } : {}),
     ...(textTarget ? { textTarget } : {}),
+    defaults,
+    kind: inferElementKind(element, component),
+    ...(component ? { component } : {}),
   };
 }
 
@@ -212,6 +325,37 @@ export function resolveElementTextTarget(
 
 export function buildElementOverrideRule(override: AppearanceElementOverride) {
   const declarations: string[] = [];
+  const legacyWidthZero = override.style.width === 0 && override.defaults?.widthAuto === undefined;
+  const legacyHeightZero =
+    override.style.height === 0 && override.defaults?.heightAuto === undefined;
+  if (override.style.width !== undefined && !legacyWidthZero) {
+    const width =
+      override.style.width === 0 && override.defaults?.widthAuto !== false
+        ? "auto"
+        : `${override.style.width}px`;
+    declarations.push(`width: ${width} !important`);
+  }
+  if (override.style.height !== undefined && !legacyHeightZero) {
+    const height =
+      override.style.height === 0 && override.defaults?.heightAuto !== false
+        ? "auto"
+        : `${override.style.height}px`;
+    declarations.push(`height: ${height} !important`);
+  }
+  if (override.style.minWidth !== undefined) {
+    const minWidth =
+      override.style.minWidth === 0 && override.defaults?.minWidthAuto === true
+        ? "auto"
+        : `${override.style.minWidth}px`;
+    declarations.push(`min-width: ${minWidth} !important`);
+  }
+  if (override.style.minHeight !== undefined) {
+    const minHeight =
+      override.style.minHeight === 0 && override.defaults?.minHeightAuto === true
+        ? "auto"
+        : `${override.style.minHeight}px`;
+    declarations.push(`min-height: ${minHeight} !important`);
+  }
   if (override.style.opacity !== undefined) {
     declarations.push(`opacity: ${override.style.opacity} !important`);
   }
@@ -266,11 +410,42 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
     );
     declarations.push("transform-origin: center !important");
   }
+  if (
+    override.kind === "list" &&
+    (override.style.layout === "row" || override.style.layout === "column")
+  ) {
+    declarations.push("display: flex !important");
+    declarations.push(`flex-direction: ${override.style.layout} !important`);
+  }
+  if (override.kind === "list" && override.style.layout === "grid") {
+    declarations.push("display: grid !important");
+    declarations.push(
+      `grid-template-columns: repeat(${override.style.columns ?? 2}, minmax(0, 1fr)) !important`,
+    );
+    declarations.push("align-content: start !important");
+    declarations.push("align-items: start !important");
+    declarations.push("position: relative !important");
+  }
+  if (override.kind === "list" && override.style.gap !== undefined) {
+    declarations.push(`gap: ${override.style.gap}px !important`);
+  }
   if (declarations.length === 0) return "";
   const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
   // Individual edits must outrank the global custom-appearance rules, which
   // intentionally use !important to cover the launcher's existing components.
-  return `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target} { ${declarations.join("; ")} }`;
+  const selector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
+  const rules = [`${selector} { ${declarations.join("; ")} }`];
+  if (override.kind === "list" && override.style.layout === "grid") {
+    rules.push(
+      `${selector} > * { min-width: 0 !important; max-width: 100% !important; margin-bottom: 0 !important; box-sizing: border-box !important; }`,
+      `${selector} .mod-card-head { flex-wrap: wrap !important; }`,
+      `${selector} .mod-card-head > div:last-child { max-width: 100% !important; flex-wrap: wrap !important; }`,
+      `${selector} .mod-card-project { min-width: 0 !important; flex: 1 1 180px !important; }`,
+      `${selector} .mod-meta-strip { min-width: 0 !important; flex-wrap: wrap !important; }`,
+      `${selector} > [data-appearance-grid-ignore="true"] { position: absolute !important; width: 100% !important; visibility: hidden !important; pointer-events: none !important; }`,
+    );
+  }
+  return rules.join("\n");
 }
 
 export function applyElementAppearanceOverrides(
@@ -280,6 +455,9 @@ export function applyElementAppearanceOverrides(
   root.querySelectorAll<HTMLElement>(`[${OVERRIDE_ATTRIBUTE}]`).forEach((element) => {
     element.removeAttribute(OVERRIDE_ATTRIBUTE);
   });
+  root
+    .querySelectorAll<HTMLElement>(`[${APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE}]`)
+    .forEach((element) => element.removeAttribute(APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE));
 
   const rules: string[] = [];
   const nextTextNodes = new Set<Text>();
@@ -289,23 +467,39 @@ export function applyElementAppearanceOverrides(
     if (!element) continue;
     element.setAttribute(TARGET_ATTRIBUTE, override.id);
     element.setAttribute(OVERRIDE_ATTRIBUTE, override.id);
+    if (
+      override.componentSettings &&
+      element.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE) === override.componentSettings.kind
+    ) {
+      element.setAttribute(
+        APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE,
+        JSON.stringify(override.componentSettings.settings),
+      );
+    }
     const rule = buildElementOverrideRule(override);
     if (rule) rules.push(rule);
 
     if (override.text !== undefined) {
       const textNode = resolveElementTextTarget(element, override);
       if (textNode) {
+        const placeholderOwner = textNode.parentElement?.closest<HTMLElement>(
+          `[${APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE}]`,
+        );
+        const appliedText = resolveAppearancePlaceholderTemplate(
+          override.text,
+          placeholderOwner?.getAttribute(APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE),
+        );
         nextTextNodes.add(textNode);
         const active = activeTextOverrides.get(textNode);
         if (!active) {
-          activeTextOverrides.set(textNode, { original: textNode.data, applied: override.text });
+          activeTextOverrides.set(textNode, { original: textNode.data, applied: appliedText });
         } else {
           // React may update a dynamic label (for example PLAY LAST -> WORKING).
           // Preserve that latest source value so removing the override restores it.
           if (textNode.data !== active.applied) active.original = textNode.data;
-          active.applied = override.text;
+          active.applied = appliedText;
         }
-        if (textNode.data !== override.text) textNode.data = override.text;
+        if (textNode.data !== appliedText) textNode.data = appliedText;
       }
     }
   }
@@ -339,12 +533,35 @@ function eventElement(event: Event, root: HTMLElement) {
         : null;
   if (!element || element === root || !root.contains(element)) return null;
   if (element.closest(".paper-texture, .appearance-background")) return null;
+  const component = element.closest<HTMLElement>(`[${APPEARANCE_COMPONENT_ATTRIBUTE}]`);
   const interactive = element.closest<HTMLElement>(
-    "button, input, select, textarea, label, [role='button']",
+    "button, input, select, textarea, label, [role='button'], [role='switch'], [role='slider'], [role='checkbox'], [role='option']",
   );
+  const textBoundary = component ?? root;
+  let textElement: HTMLElement | null = element;
+  while (textElement && textElement !== textBoundary) {
+    const hasDirectText = Array.from(textElement.childNodes).some(
+      (node) => node.nodeType === 3 && Boolean(node.textContent?.trim()),
+    );
+    if (hasDirectText) break;
+    textElement = textElement.parentElement;
+  }
+  if (textElement === textBoundary) {
+    const boundaryHasDirectText = Array.from(textElement.childNodes).some(
+      (node) => node.nodeType === 3 && Boolean(node.textContent?.trim()),
+    );
+    if (!boundaryHasDirectText) textElement = null;
+  }
+
   return {
     element:
-      interactive && interactive !== root && root.contains(interactive) ? interactive : element,
+      textElement && textElement !== root && root.contains(textElement)
+        ? textElement
+        : interactive && interactive !== root && root.contains(interactive)
+          ? interactive
+          : component && component !== root && root.contains(component)
+            ? component
+            : element,
     textSource: element,
   };
 }

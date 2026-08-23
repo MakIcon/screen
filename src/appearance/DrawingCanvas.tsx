@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ColorPicker } from "../components/color-picker/ColorPicker";
 import type { DrawingCursorPayload } from "./elementOverrides";
 
 type DrawingCanvasProps = {
@@ -160,13 +161,9 @@ export function DrawingCanvas({
   return (
     <div className="drawing-editor">
       <div className="drawing-toolbar">
-        <label className="studio-color-compact" title="Brush color">
-          <input
-            type="color"
-            value={brushColor}
-            onChange={(event) => setBrushColor(event.target.value)}
-          />
-        </label>
+        <div className="studio-color-compact" title="Brush color">
+          <ColorPicker value={brushColor} onChange={setBrushColor} label="Brush color" />
+        </div>
         <label className="drawing-size">
           <span>SIZE</span>
           <input

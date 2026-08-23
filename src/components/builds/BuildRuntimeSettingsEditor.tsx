@@ -405,9 +405,13 @@ export function BuildRuntimeSettingsEditor({
               </div>
               <div className="brs-slider">
                 <ElementSlider
+                  label="RAM"
                   showHeader={false}
                   min={1}
                   max={minecraftRamMax}
+                  defaultValue={4}
+                  appearanceConstraint="system-ram"
+                  appearanceSystemMax={minecraftRamMax}
                   step={1}
                   value={draft.ram}
                   tickMode="custom"

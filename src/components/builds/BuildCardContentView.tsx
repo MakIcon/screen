@@ -4,11 +4,16 @@ import type {
   BuildCardContentTag,
   BuildCardTextAlign,
 } from "./BuildCardSettingsPopup";
+import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
+
+export type ResolvedBuildCardContentTag = BuildCardContentTag & {
+  appearance?: PlaceholderAppearanceAttributes;
+};
 
 type Props = {
   mode: BuildCardContentMode;
   align: BuildCardTextAlign;
-  tags: BuildCardContentTag[];
+  tags: ResolvedBuildCardContentTag[];
   strokeEnabled?: boolean;
 };
 
@@ -45,6 +50,7 @@ export function BuildCardContentView({
             {index > 0 && <span className="build-card-content-separator">|</span>}
             <span
               className="build-card-inline-tag"
+              {...tag.appearance}
               style={{
                 color: alphaColor(tag.fillColor, tag.fillOpacity),
                 WebkitTextStroke: strokeEnabled ? `0.55px ${tag.borderColor}` : undefined,
@@ -70,6 +76,7 @@ export function BuildCardContentView({
         <span
           className="build-card-tag"
           key={tag.id}
+          {...tag.appearance}
           style={{
             borderColor: tag.borderColor,
             backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),

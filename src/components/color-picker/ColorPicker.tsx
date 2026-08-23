@@ -1,201 +1,352 @@
-import {
-  useRef, useState, useCallback, useLayoutEffect, useEffect,
-} from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { hexToHsv, hsvToRgb, rgbToHex, hexToRgb, drawSVCanvas } from "./Colorutils";
+import { ElementSlider } from "../inputs/ElementSlider";
+import { drawSVCanvas, hexToHsv, hsvToRgb, rgbToHex } from "./Colorutils";
 import "./ColorPicker.css";
 
-/* ─── Standalone picker panel ──────────────────────── */
+type HsvColor = [number, number, number];
+type RgbInput = { r: string; g: string; b: string };
+
 interface PickerPanelProps {
   value: string;
   onChange: (hex: string) => void;
 }
 
-const CW = 236;
-const CH = 130;
+const CANVAS_WIDTH = 532;
+const CANVAS_HEIGHT = 320;
+const POPUP_WIDTH = 292;
+const POPUP_GAP = 8;
+const VIEWPORT_MARGIN = 10;
+
+function toDisplayHex(r: number, g: number, b: number) {
+  return rgbToHex(r, g, b).toUpperCase();
+}
+
+function parseHex(input: string, allowShort = false) {
+  const clean = input.trim().replace(/^#/, "").toUpperCase();
+
+  if (/^[0-9A-F]{6}$/.test(clean)) return `#${clean}`;
+  if (allowShort && /^[0-9A-F]{3}$/.test(clean)) {
+    return `#${clean
+      .split("")
+      .map((character) => character.repeat(2))
+      .join("")}`;
+  }
+
+  return null;
+}
+
+function rgbInputFromHsv(hsv: HsvColor): RgbInput {
+  const [r, g, b] = hsvToRgb(...hsv);
+  return { r: String(r), g: String(g), b: String(b) };
+}
+
+function hexFromHsv(hsv: HsvColor) {
+  return toDisplayHex(...hsvToRgb(...hsv));
+}
 
 export function PickerPanel({ value, onChange }: PickerPanelProps) {
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const cursorRef   = useRef<HTMLDivElement>(null);
-  const svDragging  = useRef(false);
+  const initialHex = parseHex(value, true) ?? "#000000";
+  const initialHsv = hexToHsv(initialHex) as HsvColor;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cursorRef = useRef<HTMLDivElement>(null);
+  const svDragging = useRef(false);
+  const hsvRef = useRef<HsvColor>(initialHsv);
 
-  const [hsv, setHsv]           = useState<[number, number, number]>(() => hexToHsv(value));
-  const [hexInput, setHexInput] = useState(value);
-  const [rgbInput, setRgbInput] = useState(() => {
-    const [r, g, b] = hexToRgb(value);
-    return { r: String(r), g: String(g), b: String(b) };
-  });
-  const hsvRef = useRef(hsv);
+  const [hsv, setHsv] = useState<HsvColor>(initialHsv);
+  const [hexInput, setHexInput] = useState(initialHex);
+  const [rgbInput, setRgbInput] = useState<RgbInput>(() => rgbInputFromHsv(initialHsv));
 
-  /* sync when value prop changes externally */
+  const eyedropperConstructor =
+    typeof window === "undefined"
+      ? undefined
+      : (
+          window as Window & {
+            EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
+          }
+        ).EyeDropper;
+  const eyedropperSupported = Boolean(eyedropperConstructor);
+
+  const updateCursor = useCallback((saturation: number, brightness: number) => {
+    if (!cursorRef.current) return;
+    cursorRef.current.style.left = `${saturation * 100}%`;
+    cursorRef.current.style.top = `${(1 - brightness) * 100}%`;
+  }, []);
+
+  const applyHsv = useCallback(
+    (next: HsvColor, notify = true) => {
+      hsvRef.current = next;
+      setHsv(next);
+      updateCursor(next[1], next[2]);
+
+      const nextHex = hexFromHsv(next);
+      setHexInput(nextHex);
+      setRgbInput(rgbInputFromHsv(next));
+      if (notify) onChange(nextHex);
+    },
+    [onChange, updateCursor],
+  );
+
   useLayoutEffect(() => {
-    const next = hexToHsv(value);
+    const nextHex = parseHex(value, true) ?? "#000000";
+    if (nextHex === hexFromHsv(hsvRef.current)) {
+      setHexInput(nextHex);
+      setRgbInput(rgbInputFromHsv(hsvRef.current));
+      updateCursor(hsvRef.current[1], hsvRef.current[2]);
+      return;
+    }
+
+    const next = hexToHsv(nextHex) as HsvColor;
+
+    // Retain the last useful hue for white, grey, and black.
+    if (next[1] === 0) next[0] = hsvRef.current[0];
     hsvRef.current = next;
     setHsv(next);
-    setHexInput(value);
-    const [r, g, b] = hexToRgb(value);
-    setRgbInput({ r: String(r), g: String(g), b: String(b) });
-  }, [value]);
+    setHexInput(nextHex);
+    setRgbInput(rgbInputFromHsv(next));
+    updateCursor(next[1], next[2]);
+  }, [updateCursor, value]);
 
-  /* draw canvas whenever hue changes */
   const hue = hsv[0];
   useLayoutEffect(() => {
     if (canvasRef.current) drawSVCanvas(canvasRef.current, hue);
   }, [hue]);
 
-  /* update cursor position directly (no re-render) */
-  const updateCursor = useCallback((s: number, v: number) => {
-    if (cursorRef.current) {
-      cursorRef.current.style.left = `${s * 100}%`;
-      cursorRef.current.style.top = `${(1 - v) * 100}%`;
-    }
-  }, []);
+  const pickSV = useCallback(
+    (clientX: number, clientY: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-  useLayoutEffect(() => { updateCursor(hsv[1], hsv[2]); }, [hsv, updateCursor]);
+      const rect = canvas.getBoundingClientRect();
+      const saturation = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const brightness = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
+      applyHsv([hsvRef.current[0], saturation, brightness]);
+    },
+    [applyHsv],
+  );
 
-  const emit = useCallback((h: number, s: number, v: number) => {
-    const [r, g, b] = hsvToRgb(h, s, v);
-    const hex = rgbToHex(r, g, b);
-    setHexInput(hex);
-    setRgbInput({ r: String(r), g: String(g), b: String(b) });
-    onChange(hex);
-  }, [onChange]);
-
-  /* SV canvas */
-  const pickSV = useCallback((clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const s = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const v = Math.max(0, Math.min(1, 1 - (clientY - rect.top) / rect.height));
-    const h = hsvRef.current[0];
-    hsvRef.current = [h, s, v];
-    updateCursor(s, v);
-    emit(h, s, v);
-  }, [emit, updateCursor]);
-
-  const onSVDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    svDragging.current = true;
-    pickSV(e.clientX, e.clientY);
-  };
-  const onSVMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (svDragging.current) pickSV(e.clientX, e.clientY);
-  };
-  const onSVUp = () => { svDragging.current = false; };
-
-  /* hue */
-  const onHueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const h = Number(e.target.value);
-    const [, s, v] = hsvRef.current;
-    hsvRef.current = [h, s, v];
-    setHsv([h, s, v]);
-    emit(h, s, v);
+  const finishSVInteraction = () => {
+    svDragging.current = false;
   };
 
-  /* hex */
-  const onHexChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
+  const onSVKeyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const step = event.shiftKey ? 0.05 : 0.01;
+    const [hue, saturation, brightness] = hsvRef.current;
+    let nextSaturation = saturation;
+    let nextBrightness = brightness;
+
+    if (event.key === "ArrowLeft") nextSaturation -= step;
+    else if (event.key === "ArrowRight") nextSaturation += step;
+    else if (event.key === "ArrowUp") nextBrightness += step;
+    else if (event.key === "ArrowDown") nextBrightness -= step;
+    else return;
+
+    event.preventDefault();
+    applyHsv([
+      hue,
+      Math.max(0, Math.min(1, nextSaturation)),
+      Math.max(0, Math.min(1, nextBrightness)),
+    ]);
+  };
+
+  const onHueChange = (nextHue: number) => {
+    const [, saturation, brightness] = hsvRef.current;
+    applyHsv([nextHue, saturation, brightness]);
+  };
+
+  const applyHex = (hex: string) => {
+    const next = hexToHsv(hex) as HsvColor;
+    if (next[1] === 0) next[0] = hsvRef.current[0];
+    applyHsv(next);
+  };
+
+  const onHexChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value.toUpperCase();
     setHexInput(raw);
-    if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
-      const next = hexToHsv(raw);
-      hsvRef.current = next;
-      setHsv(next);
-      const [r, g, b] = hexToRgb(raw);
-      setRgbInput({ r: String(r), g: String(g), b: String(b) });
-      onChange(raw);
+
+    const parsed = parseHex(raw);
+    if (parsed) applyHex(parsed);
+  };
+
+  const onHexBlur = () => {
+    const parsed = parseHex(hexInput, true);
+    if (parsed) applyHex(parsed);
+    else setHexInput(hexFromHsv(hsvRef.current));
+  };
+
+  const applyRgbInput = (next: RgbInput) => {
+    const r = Number(next.r);
+    const g = Number(next.g);
+    const b = Number(next.b);
+    const nextHsv = hexToHsv(toDisplayHex(r, g, b)) as HsvColor;
+
+    if (nextHsv[1] === 0) nextHsv[0] = hsvRef.current[0];
+    applyHsv(nextHsv);
+  };
+
+  const onRgbChange = (channel: keyof RgbInput, raw: string) => {
+    if (!/^\d{0,3}$/.test(raw)) return;
+
+    const next = { ...rgbInput, [channel]: raw };
+    setRgbInput(next);
+
+    const complete = Object.values(next).every((entry) => {
+      const number = Number(entry);
+      return entry !== "" && number >= 0 && number <= 255;
+    });
+    if (complete) applyRgbInput(next);
+  };
+
+  const onRgbBlur = (channel: keyof RgbInput) => {
+    const current = rgbInputFromHsv(hsvRef.current);
+    const parsed = Number(rgbInput[channel]);
+    const safeValue =
+      rgbInput[channel] === "" || !Number.isFinite(parsed)
+        ? current[channel]
+        : String(Math.min(255, Math.max(0, Math.round(parsed))));
+
+    applyRgbInput({ ...rgbInput, [channel]: safeValue });
+  };
+
+  const pickEye = async () => {
+    if (!eyedropperConstructor) return;
+
+    try {
+      const result = await new eyedropperConstructor().open();
+      const parsed = parseHex(result.sRGBHex, true);
+      if (parsed) applyHex(parsed);
+    } catch {
+      // The native picker rejects when the user cancels it.
     }
   };
 
-  /* rgb */
-  const onRgbChange = (ch: "r" | "g" | "b", val: string) => {
-    const next = { ...rgbInput, [ch]: val };
-    setRgbInput(next);
-    const r = Math.min(255, Math.max(0, parseInt(next.r) || 0));
-    const g = Math.min(255, Math.max(0, parseInt(next.g) || 0));
-    const b = Math.min(255, Math.max(0, parseInt(next.b) || 0));
-    const hex = rgbToHex(r, g, b);
-    setHexInput(hex);
-    const nh = hexToHsv(hex);
-    hsvRef.current = nh;
-    setHsv(nh);
-    onChange(hex);
-  };
-
-  /* eyedropper */
-  const pickEye = async () => {
-    if (!("EyeDropper" in window)) return;
-    try {
-      // @ts-expect-error EyeDropper is not yet part of the TS DOM typings
-      const dropper = new window.EyeDropper();
-      const result  = await dropper.open();
-      const hex     = result.sRGBHex.toLowerCase();
-      const nh      = hexToHsv(hex);
-      hsvRef.current = nh;
-      setHsv(nh);
-      setHexInput(hex);
-      const [r, g, b] = hexToRgb(hex);
-      setRgbInput({ r: String(r), g: String(g), b: String(b) });
-      onChange(hex);
-    } catch { /* cancelled */ }
-  };
-
-  const [pr, pg, pb] = hsvToRgb(...hsv);
-  const previewColor = rgbToHex(pr, pg, pb);
+  const previewColor = hexFromHsv(hsv);
+  const saturationPercent = Math.round(hsv[1] * 100);
+  const brightnessPercent = Math.round(hsv[2] * 100);
 
   return (
     <div className="cp-panel">
-      {/* SV canvas */}
       <div className="cp-canvas-wrap">
-        <canvas ref={canvasRef} className="cp-canvas" width={CW} height={CH}
-          onPointerDown={onSVDown} onPointerMove={onSVMove} onPointerUp={onSVUp} />
-        <div ref={cursorRef} className="cp-cursor" />
+        <canvas
+          ref={canvasRef}
+          className="cp-canvas"
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          tabIndex={0}
+          role="group"
+          aria-label={`Saturation ${saturationPercent}%, brightness ${brightnessPercent}%. Use arrow keys to adjust.`}
+          onKeyDown={onSVKeyDown}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            svDragging.current = true;
+            pickSV(event.clientX, event.clientY);
+          }}
+          onPointerMove={(event) => {
+            if (svDragging.current) pickSV(event.clientX, event.clientY);
+          }}
+          onPointerUp={finishSVInteraction}
+          onPointerCancel={finishSVInteraction}
+          onLostPointerCapture={finishSVInteraction}
+        />
+        <div ref={cursorRef} className="cp-cursor" aria-hidden="true" />
       </div>
 
-      {/* hue slider */}
-      <div className="cp-hue-row">
-        <div className="cp-preview" style={{ background: previewColor }} />
-        <input type="range" className="cp-hue" min={0} max={360} step={1}
-          value={hsv[0]} onChange={onHueChange} />
-      </div>
-
-      {/* inputs row */}
-      <div className="cp-inputs">
+      <div className="cp-controls">
         <button
-          className={`cp-eyedropper ${"EyeDropper" in window ? "" : "cp-eyedropper--unsupported"}`}
+          type="button"
+          className="cp-eyedropper"
           onClick={pickEye}
-          title="Pick color from screen"
+          title={
+            eyedropperSupported ? "Pick color from screen" : "Screen color picker is unavailable"
+          }
+          aria-label="Pick color from screen"
+          disabled={!eyedropperSupported}
         >
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"
-            stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9.5 1.5l2 2-6 6-2.5.5.5-2.5 6-6z"/>
-            <line x1="7.5" y1="3.5" x2="9.5" y2="5.5"/>
-            <line x1="2" y1="11" x2="1" y2="12"/>
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m9.75 2.25 4 4-6.9 6.9-3.35.6.6-3.35 5.65-5.65" />
+            <path d="m8.25 3.75 4 4M4.1 10.4l1.5 1.5M2.75 13.25l-1 1" />
           </svg>
         </button>
 
-        <div className="cp-hex-group">
-          <input className="cp-field" value={hexInput} onChange={onHexChange}
-            spellCheck={false} maxLength={7} />
-          <span className="cp-field-label">Hex</span>
-        </div>
+        <div
+          className="cp-preview"
+          style={{ backgroundColor: previewColor }}
+          role="img"
+          aria-label={`Selected color ${previewColor}`}
+        />
 
-        {(["r", "g", "b"] as const).map(ch => (
-          <div className="cp-rgb-group" key={ch}>
-            <input className="cp-field cp-field--sm"
-              value={rgbInput[ch]}
-              onChange={e => onRgbChange(ch, e.target.value)}
-              onBlur={e => onRgbChange(ch, String(Math.min(255, Math.max(0, parseInt(e.target.value) || 0))))}
-              maxLength={3} inputMode="numeric" />
-            <span className="cp-field-label">{ch.toUpperCase()}</span>
+        <div className="cp-hue-control">
+          <div className="cp-control-meta" aria-hidden="true">
+            <span>Hue</span>
+            <output>{Math.round(hsv[0])}°</output>
           </div>
+          <ElementSlider
+            className="cp-hue-slider"
+            label="Hue"
+            min={0}
+            max={360}
+            step={1}
+            value={hsv[0]}
+            tickMode="none"
+            showHeader={false}
+            showValue={false}
+            valueEditable={false}
+            showDefaultMarker={false}
+            onChange={onHueChange}
+          />
+        </div>
+      </div>
+
+      <div className="cp-inputs">
+        <label className="cp-field-group cp-field-group--hex">
+          <span className="cp-field-label">Hex</span>
+          <input
+            className="cp-field"
+            value={hexInput}
+            onChange={onHexChange}
+            onBlur={onHexBlur}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={7}
+            aria-invalid={!parseHex(hexInput, true)}
+          />
+        </label>
+
+        {(["r", "g", "b"] as const).map((channel) => (
+          <label className="cp-field-group" key={channel}>
+            <span className="cp-field-label">{channel.toUpperCase()}</span>
+            <input
+              className="cp-field cp-field--rgb"
+              value={rgbInput[channel]}
+              onChange={(event) => onRgbChange(channel, event.target.value)}
+              onBlur={() => onRgbBlur(channel)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              maxLength={3}
+              inputMode="numeric"
+              autoComplete="off"
+            />
+          </label>
         ))}
       </div>
     </div>
   );
 }
 
-/* ─── Anchored ColorPicker trigger ─────────────────── */
 interface ColorPickerProps {
   value: string;
   onChange: (hex: string) => void;
@@ -204,70 +355,132 @@ interface ColorPickerProps {
 
 export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
   const [open, setOpen] = useState(false);
-  const [pos,  setPos]  = useState({ top: 0, left: 0 });
-  const triggerRef      = useRef<HTMLButtonElement>(null);
-  const panelRef        = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0, side: "bottom" });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const popupId = useId();
+  const displayValue = parseHex(value, true) ?? "#000000";
 
-  /* position panel below (or above) trigger, always within viewport */
-  const openPicker = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const pickerH = 320; // approximate height
-    const pickerW = 260;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const top = spaceBelow >= pickerH || spaceBelow >= rect.top
-      ? rect.bottom + 6
-      : rect.top - pickerH - 6;
-    const left = Math.min(rect.left, window.innerWidth - pickerW - 8);
-    setPos({ top: Math.max(8, top), left: Math.max(8, left) });
-    setOpen(true);
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    const panelWidth = panelRect?.width || POPUP_WIDTH;
+    const panelHeight = panelRect?.height || 290;
+    const spaceBelow = window.innerHeight - triggerRect.bottom - VIEWPORT_MARGIN;
+    const spaceAbove = triggerRect.top - VIEWPORT_MARGIN;
+    const side = spaceBelow >= panelHeight || spaceBelow >= spaceAbove ? "bottom" : "top";
+    const desiredTop =
+      side === "bottom"
+        ? triggerRect.bottom + POPUP_GAP
+        : triggerRect.top - panelHeight - POPUP_GAP;
+    const maxTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - panelHeight - VIEWPORT_MARGIN);
+
+    let left = triggerRect.left;
+    if (left + panelWidth > window.innerWidth - VIEWPORT_MARGIN) {
+      left = triggerRect.right - panelWidth;
+    }
+
+    setPosition({
+      top: Math.min(maxTop, Math.max(VIEWPORT_MARGIN, desiredTop)),
+      left: Math.min(
+        Math.max(VIEWPORT_MARGIN, window.innerWidth - panelWidth - VIEWPORT_MARGIN),
+        Math.max(VIEWPORT_MARGIN, left),
+      ),
+      side,
+    });
   }, []);
 
-  /* close on outside click */
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (panelRef.current?.contains(target)) return;
-      if (triggerRef.current?.contains(target)) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
       setOpen(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
 
-  /* close on Escape */
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [open]);
 
   return (
     <>
-      <button ref={triggerRef} className="cp-trigger"
-        onClick={() => open ? setOpen(false) : openPicker()}>
-        <span className="cp-trigger__swatch" style={{ background: value }} />
-        <span className="cp-trigger__hex">{value}</span>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="cp-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? popupId : undefined}
+        aria-label={label ? `${label}: ${displayValue}` : undefined}
+        title={`Choose color ${displayValue}`}
+      >
+        <span
+          className="cp-trigger__swatch"
+          style={{ backgroundColor: displayValue }}
+          aria-hidden="true"
+        />
+        <span className="cp-trigger__hex">{displayValue}</span>
         {label && <span className="cp-trigger__label">{label}</span>}
-        <svg className={`cp-trigger__chevron ${open ? "cp-trigger__chevron--open" : ""}`}
-          width="10" height="10" viewBox="0 0 10 10" fill="none"
-          stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <polyline points="2 3.5 5 6.5 8 3.5" />
+        <svg
+          className={`cp-trigger__chevron ${open ? "cp-trigger__chevron--open" : ""}`}
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m2 3.5 3 3 3-3" />
         </svg>
       </button>
 
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          className="cp-popup"
-          style={{ top: pos.top, left: pos.left }}
-        >
-          <PickerPanel value={value} onChange={onChange} />
-        </div>,
-        document.body,
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={popupId}
+            className="cp-popup"
+            style={{ top: position.top, left: position.left }}
+            data-side={position.side}
+            role="dialog"
+            aria-label={label ? `${label} color picker` : "Color picker"}
+          >
+            <PickerPanel value={displayValue} onChange={onChange} />
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

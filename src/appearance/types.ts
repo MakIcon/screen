@@ -19,7 +19,95 @@ export type AppearanceElementTextTarget = {
   /** Child-node indexes from the picked element to its primary visible text node. */
   path: number[];
   original: string;
+  /** Original unresolved template when the rendered text uses launcher placeholders. */
+  template?: string;
 };
+
+export type AppearanceElementDefaults = {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+  widthAuto?: boolean;
+  heightAuto?: boolean;
+  minWidthAuto?: boolean;
+  minHeightAuto?: boolean;
+};
+
+export type AppearanceElementKind =
+  | "slider"
+  | "toggle"
+  | "checkbox"
+  | "dropdown"
+  | "button"
+  | "input"
+  | "select"
+  | "list"
+  | "container"
+  | "text";
+
+export type AppearanceSliderSettings = {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  defaultValue: number;
+  constraint: "none" | "system-ram";
+  maxMode: "custom" | "system";
+  systemMax: number;
+  tickMode: "none" | "every" | "every-2" | "every-3" | "every-4" | "even" | "odd" | "custom";
+  customTicks: number[];
+  showHeader: boolean;
+  showValue: boolean;
+  valueEditable: boolean;
+  keyboardEnabled: boolean;
+  showDefaultMarker: boolean;
+  defaultMarkerMagnetic: boolean;
+};
+
+export type AppearanceToggleSettings = {
+  title: string;
+  note: string;
+  showNote: boolean;
+  compact: boolean;
+  switchScale: number;
+};
+
+export type AppearanceCheckboxSettings = {
+  label: string;
+  indicatorSize: number;
+  labelGap: number;
+};
+
+export type AppearanceDropdownSettings = {
+  label: string;
+  showLabel: boolean;
+  visibleItems: number;
+  itemHeight: number;
+};
+
+export type AppearanceComponentSettingsMap = {
+  slider: AppearanceSliderSettings;
+  toggle: AppearanceToggleSettings;
+  checkbox: AppearanceCheckboxSettings;
+  dropdown: AppearanceDropdownSettings;
+};
+
+export type AppearanceComponentKind = keyof AppearanceComponentSettingsMap;
+
+export type AppearanceElementComponentTarget = {
+  [Kind in AppearanceComponentKind]: {
+    kind: Kind;
+    props: AppearanceComponentSettingsMap[Kind];
+  };
+}[AppearanceComponentKind];
+
+export type AppearanceElementComponentOverride = {
+  [Kind in AppearanceComponentKind]: {
+    kind: Kind;
+    settings: Partial<AppearanceComponentSettingsMap[Kind]>;
+  };
+}[AppearanceComponentKind];
 
 export type AppearanceElementTarget = {
   id: string;
@@ -27,15 +115,24 @@ export type AppearanceElementTarget = {
   path: AppearanceElementPathSegment[];
   tab?: TabKey;
   textTarget?: AppearanceElementTextTarget;
+  defaults?: AppearanceElementDefaults;
+  kind?: AppearanceElementKind;
+  component?: AppearanceElementComponentTarget;
 };
 
 export type AppearanceElementShadow = "none" | "soft" | "strong" | "glow";
 export type AppearanceElementTextAlign = "left" | "center" | "right";
+export type AppearanceElementLayout = "default" | "row" | "column" | "grid";
 
 export type AppearanceElementOverride = AppearanceElementTarget & {
   /** An empty string is a valid override and intentionally hides the original text. */
   text?: string;
+  componentSettings?: AppearanceElementComponentOverride;
   style: {
+    width?: number;
+    height?: number;
+    minWidth?: number;
+    minHeight?: number;
     opacity?: number;
     radius?: number;
     fontFamily?: string;
@@ -53,6 +150,9 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
     shadow?: AppearanceElementShadow;
     scale?: number;
     rotate?: number;
+    layout?: AppearanceElementLayout;
+    columns?: number;
+    gap?: number;
   };
 };
 

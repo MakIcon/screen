@@ -1,6 +1,7 @@
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { HoverRevealValue } from "../components/display/HoverRevealValue";
 import type { DropdownKey, MicrosoftAccount } from "../types";
+import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 
 interface OverviewPanelProps {
   resolve: (template: string) => string;
@@ -35,12 +36,16 @@ export function OverviewPanel({
       <div className="mockup-overlay">
         <div className="mockup-block">
           <span className="mockup-label">ACTIVE BUILD</span>
-          <strong>{resolve("%build_name%")}</strong>
+          <strong {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}>
+            {resolve("%build_name%")}
+          </strong>
         </div>
 
         <div className="mockup-block">
           <span className="mockup-label">TOTAL TIME IN GAME</span>
-          <strong>{resolve("%total_playtime%")}</strong>
+          <strong {...createPlaceholderAppearanceAttributes("%total_playtime%", resolve)}>
+            {resolve("%total_playtime%")}
+          </strong>
         </div>
 
         <div className="mockup-split-row">
@@ -77,7 +82,12 @@ export function OverviewPanel({
                         }}
                       />
                     </div>
-                    <strong className="mockup-ms-name">{activeMs.username}</strong>
+                    <strong
+                      className="mockup-ms-name"
+                      {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}
+                    >
+                      {activeMs.username}
+                    </strong>
                   </button>
                 </HoverRevealValue>
               ) : (

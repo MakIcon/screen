@@ -729,6 +729,8 @@
 }
 
 .bce-content-toggle-wrap .settings-toggle-row {
+  --element-toggle-inset: 4px;
+  --element-toggle-knob-size: 20px;
   align-items: flex-start;
   gap: 16px;
 }
@@ -752,10 +754,6 @@
 .bce-content-toggle-wrap .toggle-knob {
   width: 20px;
   height: 20px;
-}
-
-.bce-content-toggle-wrap .toggle-switch.enabled .toggle-knob {
-  transform: translateX(24px);
 }
 
 @media (max-width: 820px) {

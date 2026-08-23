@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useAppearanceComponentSettings } from "../../appearance/useAppearanceComponentSettings";
 import "./InlineDropdown.css";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
@@ -20,6 +21,7 @@ interface InlineDropdownProps {
   onToggle: () => void;
   onSelect: (value: string) => void;
   instanceInfos?: InstanceInfo[];
+  compact?: boolean;
 }
 
 interface MenuLayout {
@@ -63,11 +65,19 @@ export function InlineDropdown({
   onToggle,
   onSelect,
   instanceInfos,
+  compact = false,
 }: InlineDropdownProps) {
   const [irisMap, setIrisMap] = useState<Map<string, boolean>>(new Map());
   const [menuDirection, setMenuDirection] = useState<"down" | "up">("down");
   const [menuLayout, setMenuLayout] = useState<MenuLayout | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const { rootRef, settings, appearanceProps } = useAppearanceComponentSettings("dropdown", {
+    label,
+    showLabel: !compact,
+    visibleItems: 5,
+    itemHeight: compact ? 36 : 49,
+  });
+  const visibleItems = Math.max(1, Math.round(settings.visibleItems));
+  const itemHeight = Math.max(28, settings.itemHeight);
 
   useEffect(() => {
     if (!instanceInfos || instanceInfos.length === 0) return;
@@ -85,8 +95,8 @@ export function InlineDropdown({
               mods.some(
                 (m) =>
                   m.title.toLowerCase().includes("iris") ||
-                  m.filename.toLowerCase().includes("iris")
-              )
+                  m.filename.toLowerCase().includes("iris"),
+              ),
             );
           } catch {
             map.set(inst.id, false);
@@ -99,12 +109,9 @@ export function InlineDropdown({
     void load();
   }, [instanceInfos]);
 
-  const infoMap = instanceInfos
-    ? Object.fromEntries(instanceInfos.map((i) => [i.name, i]))
-    : null;
+  const infoMap = instanceInfos ? Object.fromEntries(instanceInfos.map((i) => [i.name, i])) : null;
 
   const selectedInfo = infoMap?.[value];
-
 
   useLayoutEffect(() => {
     if (!isOpen) return;
@@ -114,15 +121,14 @@ export function InlineDropdown({
       if (!root) return;
 
       const rect = root.getBoundingClientRect();
-      const estimatedMenuHeight = Math.min(Math.max(options.length, 1) * 49 + 2, 240);
+      const estimatedMenuHeight =
+        Math.min(Math.max(options.length, 1), visibleItems) * itemHeight + 2;
       const gap = 2;
       const viewportPadding = 8;
       const spaceBelow = window.innerHeight - viewportPadding - rect.bottom;
       const spaceAbove = rect.top - viewportPadding;
 
-      const shouldOpenUp =
-        spaceBelow < estimatedMenuHeight + gap &&
-        spaceAbove > spaceBelow;
+      const shouldOpenUp = spaceBelow < estimatedMenuHeight + gap && spaceAbove > spaceBelow;
 
       const direction = shouldOpenUp ? "up" : "down";
       const availableHeight = Math.max(0, (shouldOpenUp ? spaceAbove : spaceBelow) - gap);
@@ -148,22 +154,25 @@ export function InlineDropdown({
       window.removeEventListener("resize", updateMenuLayout);
       window.removeEventListener("scroll", updateMenuLayout, true);
     };
-  }, [isOpen, options.length]);
+  }, [isOpen, itemHeight, options.length, rootRef, visibleItems]);
   return (
     <div
-      ref={rootRef}
-      className={`inline-dropdown ${isOpen ? "open" : ""} ${menuDirection === "up" ? "inline-dropdown-up" : ""}`}
+      {...appearanceProps}
+      className={`inline-dropdown ${compact ? "inline-dropdown--compact" : ""} ${isOpen ? "open" : ""} ${menuDirection === "up" ? "inline-dropdown-up" : ""}`}
     >
       <button
         type="button"
         className="inline-dropdown-trigger"
+        aria-label={label || "Select option"}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
         }}
       >
         <span className="inline-dropdown-trigger-inner">
-          <span className="inline-dropdown-label">{label}</span>
+          {settings.showLabel && <span className="inline-dropdown-label">{settings.label}</span>}
           <span className="inline-dropdown-trigger-row">
             <span className="inline-dropdown-value">{value}</span>
           </span>
@@ -180,46 +189,54 @@ export function InlineDropdown({
         </span>
       </button>
 
-      {isOpen && menuLayout && createPortal(
-        <div
-          className={`inline-dropdown-menu inline-dropdown-menu-portal ${menuDirection === "up" ? "inline-dropdown-menu-up" : ""}`}
-          style={{
-            top: menuLayout.top,
-            left: menuLayout.left,
-            width: menuLayout.width,
-          }}
-        >
-          <CustomScrollArea
-            onWheel={(e) => e.stopPropagation()}
-            style={{ maxHeight: menuLayout.maxHeight }}
+      {isOpen &&
+        menuLayout &&
+        createPortal(
+          <div
+            className={`inline-dropdown-menu inline-dropdown-menu-portal ${compact ? "inline-dropdown-menu--compact" : ""} ${menuDirection === "up" ? "inline-dropdown-menu-up" : ""}`}
+            role="listbox"
+            style={
+              {
+                top: menuLayout.top,
+                left: menuLayout.left,
+                width: menuLayout.width,
+                "--inline-dropdown-item-height": `${itemHeight}px`,
+              } as CSSProperties
+            }
           >
-            <div className="csa-content inline-dropdown-menu-content">
-              {options.map((opt) => {
-                const info = infoMap?.[opt];
-                return (
-                  <button
-                    key={opt}
-                    type="button"
-                    className={`inline-dropdown-item ${opt === value ? "selected" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelect(opt);
-                    }}
-                  >
-                    <span className="inline-dropdown-item-label">{opt}</span>
-                    {info && (
-                      <span className="inline-dropdown-item-badge">
-                        {getInstanceBadge(info, irisMap)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </CustomScrollArea>
-        </div>,
-        document.body,
-      )}
+            <CustomScrollArea
+              onWheel={(e) => e.stopPropagation()}
+              style={{ maxHeight: menuLayout.maxHeight }}
+            >
+              <div className="csa-content inline-dropdown-menu-content">
+                {options.map((opt) => {
+                  const info = infoMap?.[opt];
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      className={`inline-dropdown-item ${opt === value ? "selected" : ""}`}
+                      role="option"
+                      aria-selected={opt === value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect(opt);
+                      }}
+                    >
+                      <span className="inline-dropdown-item-label">{opt}</span>
+                      {info && (
+                        <span className="inline-dropdown-item-badge">
+                          {getInstanceBadge(info, irisMap)}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CustomScrollArea>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
