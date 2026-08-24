@@ -4,6 +4,10 @@ use std::{
     time::{Duration, Instant, UNIX_EPOCH},
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::{AppHandle, State};
 use tokio::fs;
 
@@ -20,6 +24,23 @@ use crate::{
     paths::{read_instances, read_settings, write_instances},
     plugins::obs_telemetry::{prepare_obs_telemetry_for_launch, ObsTelemetryState},
 };
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn background_command(program: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut command = Command::new(program);
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+    }
+
+    #[cfg(not(windows))]
+    {
+        Command::new(program)
+    }
+}
 
 fn screenshot_mime_for_path(path: &Path) -> Option<&'static str> {
     match path
@@ -79,16 +100,10 @@ fn task_output_text(output: &Output) -> String {
 }
 
 fn is_pid_alive(pid: u32) -> bool {
-    let output = Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-        .output();
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.contains(&format!("\"{pid}\""))
-        }
-        Err(_) => false,
-    }
+    let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+    system.process(pid).is_some()
 }
 
 async fn instance_game_dir(instance_id: &str) -> Result<PathBuf, String> {
@@ -213,7 +228,7 @@ pub async fn read_instance_launch_log(instance_id: String) -> Result<LaunchLogSn
 
 #[tauri::command]
 pub async fn stop_instance(pid: u32) -> Result<ActionResult, String> {
-    let graceful = Command::new("taskkill")
+    let graceful = background_command("taskkill")
         .args(["/T", "/PID", &pid.to_string()])
         .output()
         .map_err(|e| format!("taskkill error: {e}"))?;
@@ -227,7 +242,7 @@ pub async fn stop_instance(pid: u32) -> Result<ActionResult, String> {
 
     let forced = is_pid_alive(pid);
     if forced {
-        let output = Command::new("taskkill")
+        let output = background_command("taskkill")
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .output()
             .map_err(|e| format!("forced taskkill error: {e}"))?;
@@ -437,4 +452,14 @@ pub async fn open_instance_screenshots_folder(instance_id: String) -> Result<Act
         message: "Screenshots folder opened".to_string(),
         pid: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_pid_alive;
+
+    #[test]
+    fn process_liveness_detects_current_process() {
+        assert!(is_pid_alive(std::process::id()));
+    }
 }
