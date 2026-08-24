@@ -107,8 +107,9 @@
   pointer-events: none;
 }
 
-.appearance-drawing-cursor > span {
+.appearance-drawing-brush-dot {
   position: absolute;
+  box-sizing: border-box;
   width: var(--drawing-brush-size);
   height: var(--drawing-brush-size);
   border: 2px solid var(--drawing-brush-color);
@@ -118,21 +119,19 @@
   transform: translate(-50%, -50%);
 }
 
-.appearance-drawing-cursor > svg {
+.appearance-drawing-pencil-icon {
   position: absolute;
-  top: 8px;
-  left: 9px;
-  width: 23px;
-  height: 23px;
-  overflow: visible;
-  fill: var(--bg);
-  stroke: var(--drawing-brush-color);
-  stroke-linejoin: round;
-  stroke-width: 1.5;
+  top: 7px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  background: var(--drawing-brush-color);
   filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink) 35%, transparent));
+  mask: url("../assets/pencil.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/pencil.svg") center / contain no-repeat;
 }
 
-.appearance-drawing-cursor.eraser > span {
+.appearance-drawing-cursor.eraser .appearance-drawing-brush-dot {
   border-style: dashed;
   background: transparent;
 }
@@ -212,6 +211,15 @@
   :is([class*="card"], [class*="panel"], [class*="block"], [class*="field"]) {
   background-color: transparent !important;
   box-shadow: none !important;
+}
+
+/* Transparency is valid for ordinary cards, but modal surfaces must retain an
+   opaque reading layer. Doubling the modal classes also keeps this rule above
+   the broad legacy class-name selector without affecting element overrides. */
+[data-appearance-custom="true"][data-appearance-panels="transparent"]
+  .gallery-root
+  :is(.ep-popup.ep-popup--modal, .modal-card.modal-card, .modal-content.modal-content) {
+  background: var(--bg) !important;
 }
 
 [data-appearance-custom="true"][data-appearance-panels="transparent"]

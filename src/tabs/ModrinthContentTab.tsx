@@ -8,7 +8,10 @@ import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 import type { DropdownKey, InstanceItem } from "../types";
-import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
+import {
+  createPlaceholderAppearanceAttributes,
+  createPlaceholderValueAttributes,
+} from "../utils/placeholders";
 
 type ContentPresentation = {
   searchLabel: string;
@@ -357,7 +360,12 @@ export function ModrinthContentTab({
           )}
         </div>
 
-        <div className="panel-card install-sidebar-card">
+        <div
+          className="panel-card install-sidebar-card"
+          {...createPlaceholderValueAttributes((template) =>
+            resolveForTarget(template, selectedTarget),
+          )}
+        >
           <span className="panel-label">{copy.targetSectionLabel}</span>
 
           <div style={{ marginBottom: 24 }}>
@@ -396,7 +404,18 @@ export function ModrinthContentTab({
             </div>
             <div className="detail-block">
               <span className="detail-title">{copy.detailLabel}</span>
-              <span className="detail-value">{copy.detailValue(selectedTarget)}</span>
+              <span
+                className="detail-value"
+                {...(kind === "mods"
+                  ? createPlaceholderAppearanceAttributes("%build_loader%", (template) =>
+                      resolveForTarget(template, selectedTarget),
+                    )
+                  : {})}
+              >
+                {kind === "mods"
+                  ? resolveForTarget("%build_loader%", selectedTarget)
+                  : copy.detailValue(selectedTarget)}
+              </span>
             </div>
           </div>
 

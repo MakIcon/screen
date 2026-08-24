@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import "./ElementPopup.css";
 
 export type PopupPlacement = "top" | "bottom" | "left" | "right";
@@ -50,7 +51,7 @@ export function ElementPopup({
 
     const isModal = !triggerRef;
 
-    return (
+    const popup = (
         <>
             {/* backdrop — only in modal mode */}
             {open && isModal && (
@@ -94,4 +95,8 @@ export function ElementPopup({
             </div>
         </>
     );
+
+    if (!isModal) return popup;
+    const portalTarget = document.querySelector<HTMLElement>(".gallery-root") ?? document.body;
+    return createPortal(popup, portalTarget);
 }

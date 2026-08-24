@@ -351,6 +351,12 @@
   border-bottom-color: var(--line-strong);
 }
 
+.mockup-nickname-value {
+  display: block;
+  text-align: left;
+  cursor: text;
+}
+
 /* ── Dropdown block (legacy, используется в overview panel) ── */
 
 .dropdown-block {

@@ -593,37 +593,296 @@ button {
   line-height: 1.5;
 }
 
-.studio-placeholder-picker {
+.studio-template-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 10px;
-  border: 1px dashed var(--line-strong);
+  gap: 9px;
 }
 
-.studio-placeholder-picker > span,
-.studio-placeholder-picker > small {
+.studio-placeholder-case {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-card);
+}
+
+.studio-placeholder-case > span,
+.studio-placeholder-case > small {
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+}
+
+.studio-placeholder-case > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.studio-placeholder-case button {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-placeholder-case button:hover,
+.studio-placeholder-case button.active {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-field));
+  color: var(--ink);
+}
+
+.studio-placeholder-case code {
+  overflow: hidden;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-placeholder-case button span {
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.45px;
+}
+
+.studio-template-map {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line-strong));
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-field));
+}
+
+.studio-template-map-label,
+.studio-template-resolved > span,
+.studio-template-meta {
   color: var(--muted);
   font-size: 7px;
   font-weight: 750;
   letter-spacing: 0.55px;
 }
 
-.studio-placeholder-picker > div {
+.studio-template-code {
+  min-height: 31px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--ink);
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.studio-template-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.studio-template-token {
+  position: relative;
+  display: inline-block;
+  padding: 0 3px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  font-weight: 850;
+  line-height: 1.35;
+  outline: none;
+  cursor: help;
+}
+
+.studio-template-token.is-unknown {
+  border-color: color-mix(in srgb, #d97706 55%, var(--line));
+  background: color-mix(in srgb, #d97706 13%, transparent);
+  color: #d97706;
+}
+
+.studio-template-token.is-uppercase:not(.is-unknown) {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  background: color-mix(in srgb, var(--accent) 21%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.studio-template-token-tooltip {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 50;
   display: flex;
-  flex-wrap: wrap;
+  width: min(270px, calc(100vw - 84px));
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-overlay, var(--bg-panel-strong));
+  color: var(--ink);
+  font-family: var(--font-ui);
+  line-height: 1.35;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: var(--surface-shadow-soft);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0.14s;
+}
+
+.studio-template-token-tooltip strong {
+  font-size: 9px;
+  letter-spacing: 0.65px;
+}
+
+.studio-template-token-tooltip code {
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 8px;
+}
+
+.studio-template-token-tooltip span,
+.studio-template-token-tooltip em,
+.studio-template-token-tooltip small {
+  color: var(--muted);
+  font-size: 7px;
+  font-style: normal;
+  letter-spacing: 0.25px;
+}
+
+.studio-template-token-tooltip em {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.studio-template-token:hover .studio-template-token-tooltip,
+.studio-template-token:focus .studio-template-token-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.studio-template-resolved {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.studio-template-resolved strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 9px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.studio-placeholder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed var(--line-strong);
+}
+
+.studio-placeholder-picker > span,
+.studio-placeholder-picker > small,
+.studio-placeholder-group > small {
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.55px;
+}
+
+.studio-placeholder-picker > small code {
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: inherit;
+}
+
+.studio-placeholder-group {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+}
+
+.studio-placeholder-group > small {
+  padding-top: 7px;
+}
+
+.studio-placeholder-group > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
 }
 
 .studio-placeholder-picker button {
-  padding: 5px 7px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 7px;
   border: 1px solid var(--line);
   background: var(--bg-field);
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-placeholder-picker button:hover,
+.studio-placeholder-picker button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-field));
+}
+
+.studio-placeholder-picker button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.studio-placeholder-picker button code {
+  overflow: hidden;
   color: var(--accent);
   font-family: ui-monospace, monospace;
   font-size: 7px;
-  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-placeholder-picker button span,
+.studio-placeholder-picker button em {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 6px;
+  font-style: normal;
+  letter-spacing: 0.3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-placeholder-picker button em {
+  color: var(--muted);
+}
+
+.studio-template-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .studio-section + .studio-section {

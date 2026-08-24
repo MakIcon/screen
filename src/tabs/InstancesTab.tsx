@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import {
@@ -16,8 +16,10 @@ import {
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
 import { InfoPanel } from "../components/display/InfoPanel";
 import { LOADER_OPTIONS } from "../constants/tabs";
-import { formatPlaytime } from "../utils/playtime";
-import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
+import {
+  createPlaceholderAppearanceAttributes,
+  createPlaceholderValueAttributes,
+} from "../utils/placeholders";
 import type { DropdownKey, InstanceItem, InstallProgressPayload, LoaderType } from "../types";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 
@@ -154,6 +156,26 @@ export function InstancesTab({
   const sortedInstances = [...instances].reverse();
   const showCreator = createMode || instances.length === 0 || !selectedInstance;
   const buildInfoBottomSpace = 8;
+  const resolveSelectedTemplate = (template: string) =>
+    resolveForTarget(template, selectedInstance, {
+      buildState: selectedInstance && isRunning(selectedInstance.id) ? "RUNNING" : "",
+    });
+  const instancePlaceholderContexts = useMemo(
+    () =>
+      new Map(
+        instances.map((instance) => {
+          const resolve = (template: string) =>
+            resolveForTarget(template, instance, {
+              buildState: isRunning(instance.id) ? "RUNNING" : "",
+            });
+          return [
+            instance.id,
+            { resolve, attributes: createPlaceholderValueAttributes(resolve) },
+          ] as const;
+        }),
+      ),
+    [instances, isRunning, resolveForTarget],
+  );
 
   return (
     <section className="launcher-panel">
@@ -256,10 +278,8 @@ export function InstancesTab({
                 const resolvedContentTags = resolveBuildCardContentTags(cardAppearance, instance, {
                   buildState: isRunning(instance.id) ? "RUNNING" : "",
                 });
-                const resolveInstanceTemplate = (template: string) =>
-                  resolveForTarget(template, instance, {
-                    buildState: isRunning(instance.id) ? "RUNNING" : "",
-                  });
+                const placeholderContext = instancePlaceholderContexts.get(instance.id)!;
+                const resolveInstanceTemplate = placeholderContext.resolve;
                 const badgeTemplate = getBuildCardBadgeText(cardAppearance);
                 const resolveBadgeTemplate = (template: string) =>
                   resolveForTarget(template, instance, {
@@ -285,6 +305,7 @@ export function InstancesTab({
                     style={cardStyle}
                     data-instance-id={instance.id}
                     data-mascot-stealable
+                    {...placeholderContext.attributes}
                     onClick={() => {
                       setSelectedInstanceId(instance.id);
                       setCreateMode(false);
@@ -508,30 +529,50 @@ export function InstancesTab({
 
                   <InfoPanel
                     label="MC VERSION"
-                    value={selectedInstance?.version}
+                    value={
+                      selectedInstance ? resolveSelectedTemplate("%build_version%") : undefined
+                    }
                     placeholder="SELECT VERSION"
                     bottomSpace={buildInfoBottomSpace}
+                    valueAppearance={createPlaceholderAppearanceAttributes(
+                      "%build_version%",
+                      resolveSelectedTemplate,
+                    )}
                   />
 
                   <InfoPanel
                     label="LOADER"
                     value={
-                      selectedInstance?.loaderVersion
-                        ? selectedInstance.loader + " " + selectedInstance.loaderVersion
-                        : selectedInstance?.loader
+                      selectedInstance ? resolveSelectedTemplate("%build_full_loader%") : undefined
                     }
                     placeholder="SELECT LOADER"
                     bottomSpace={buildInfoBottomSpace}
+                    valueAppearance={createPlaceholderAppearanceAttributes(
+                      "%build_full_loader%",
+                      resolveSelectedTemplate,
+                    )}
                   />
 
-                  <InfoPanel label="SOURCE" value="OFFICIAL" bottomSpace={buildInfoBottomSpace} />
+                  <InfoPanel
+                    label="SOURCE"
+                    value={resolveSelectedTemplate("%build_source%")}
+                    bottomSpace={buildInfoBottomSpace}
+                    valueAppearance={createPlaceholderAppearanceAttributes(
+                      "%build_source%",
+                      resolveSelectedTemplate,
+                    )}
+                  />
 
                   <InfoPanel
                     className="info-panel--right-column"
                     label="TIME IN BUILD"
-                    value={formatPlaytime(selectedInstance?.playtimeSecs ?? 0)}
+                    value={resolveSelectedTemplate("%build_playtime%")}
                     placeholder="0 hrs on record"
                     bottomSpace={buildInfoBottomSpace}
+                    valueAppearance={createPlaceholderAppearanceAttributes(
+                      "%build_playtime%",
+                      resolveSelectedTemplate,
+                    )}
                   />
                 </div>
 

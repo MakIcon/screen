@@ -15,6 +15,7 @@ import {
   createPlaceholderAppearanceAttributes,
   type PlaceholderAppearanceAttributes,
 } from "../../utils/placeholders";
+import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
 
 function alphaColor(hex: string, opacity: number) {
   const normalizedOpacity = Math.max(0, Math.min(100, opacity));
@@ -49,11 +50,7 @@ function ContentTagRow({
   return (
     <div className="bce-tag-row">
       <div className="bce-tag-row-head">
-        <button
-          type="button"
-          className="bce-tag-toggle"
-          onClick={() => setOpen((prev) => !prev)}
-        >
+        <button type="button" className="bce-tag-toggle" onClick={() => setOpen((prev) => !prev)}>
           <span
             className={`bce-tag-preview ${mode === "text" ? "bce-tag-preview--text" : ""}`}
             {...previewAppearance}
@@ -95,12 +92,7 @@ function ContentTagRow({
           </svg>
         </button>
 
-        <button
-          type="button"
-          className="bce-tag-delete"
-          onClick={onDelete}
-          aria-label="Delete tag"
-        >
+        <button type="button" className="bce-tag-delete" onClick={onDelete} aria-label="Delete tag">
           <svg
             width="10"
             height="10"
@@ -120,13 +112,21 @@ function ContentTagRow({
       {open && (
         <div className="bce-tag-row-body">
           <EditorRow label="Text">
-            <input
-              className="bce-text-input"
-              type="text"
-              placeholder="^%build_version%"
-              value={tag.text}
-              onChange={(e) => onUpdate({ ...tag, text: e.target.value })}
-            />
+            <div className="bce-placeholder-field">
+              <input
+                className="bce-text-input"
+                type="text"
+                maxLength={160}
+                placeholder="^%build_version%"
+                value={tag.text}
+                onChange={(e) => onUpdate({ ...tag, text: e.target.value })}
+              />
+              <BuildPlaceholderCaseControl
+                value={tag.text}
+                maxLength={160}
+                onChange={(text) => onUpdate({ ...tag, text })}
+              />
+            </div>
           </EditorRow>
 
           <EditorRow label="Size">
@@ -239,11 +239,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
   }
 
   return (
-    <EditorSection
-      title="Content"
-      open={open}
-      onToggle={() => setOpen((prev) => !prev)}
-    >
+    <EditorSection title="Content" open={open} onToggle={() => setOpen((prev) => !prev)}>
       <EditorRow label="Enable">
         <div className="bce-mode-switch">
           <button
@@ -291,9 +287,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
                   key={align}
                   type="button"
                   className={`bce-mode-pill ${draft.contentTextAlign === align ? "bce-mode-pill--active" : ""}`}
-                  onClick={() =>
-                    onDraftChange((prev) => ({ ...prev, contentTextAlign: align }))
-                  }
+                  onClick={() => onDraftChange((prev) => ({ ...prev, contentTextAlign: align }))}
                 >
                   {align === "left" ? "Left" : align === "center" ? "Center" : "Right"}
                 </button>
@@ -360,8 +354,8 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
 
       <p className="bce-content-hint">
         Use placeholders like `%build_name%`, `%build_version%`, `%build_loader%`,
-        `%build_ram%`, `%build_last_played%` or `%build_state%`. Prefix with `^`
-        to force uppercase.
+        `%build_full_loader%`, `%build_ram%`, `%build_playtime%`, `%build_last_played%` or
+        `%build_state%`. Prefix with `^` to force uppercase.
       </p>
     </EditorSection>
   );

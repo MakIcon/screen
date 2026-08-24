@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
 import "./InfoPanel.css";
 
 type InfoPanelProps = {
@@ -7,6 +8,7 @@ type InfoPanelProps = {
   placeholder?: ReactNode;
   bottomSpace?: number | string;
   className?: string;
+  valueAppearance?: PlaceholderAppearanceAttributes;
 };
 
 export function InfoPanel({
@@ -15,6 +17,7 @@ export function InfoPanel({
   placeholder = "...",
   bottomSpace,
   className = "",
+  valueAppearance,
 }: InfoPanelProps) {
   const isEmpty = value === null || value === undefined || value === "";
   const resolvedValue = isEmpty ? placeholder : value;
@@ -29,7 +32,9 @@ export function InfoPanel({
   return (
     <div className={`info-panel ${className}`.trim()} style={style}>
       <span className="info-panel-label">{label}</span>
-      <strong className="info-panel-value">{resolvedValue}</strong>
+      <strong className="info-panel-value" {...valueAppearance}>
+        {resolvedValue}
+      </strong>
     </div>
   );
 }

@@ -470,12 +470,70 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.16em;
-  text-transform: uppercase;
 }
 
 .bce-badge-text-input::placeholder {
   letter-spacing: 0.16em;
-  text-transform: uppercase;
+}
+
+.bce-placeholder-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bce-placeholder-case {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.bce-placeholder-case button {
+  display: flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bce-placeholder-case button:hover:not(:disabled),
+.bce-placeholder-case button.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  color: var(--ink);
+}
+
+.bce-placeholder-case button:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+
+.bce-placeholder-case code {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 8px;
+}
+
+.bce-placeholder-case span,
+.bce-placeholder-case small {
+  overflow: hidden;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bce-placeholder-case small {
+  grid-column: 1 / -1;
+  color: var(--muted);
 }
 
 .bce-slider-field {

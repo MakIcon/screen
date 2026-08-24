@@ -1,0 +1,401 @@
+.gradient-graph-editor {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.gradient-graph-panel {
+  display: grid;
+  min-width: 0;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--bg-card) 74%, transparent);
+}
+
+.gradient-graph-panel__head {
+  display: flex;
+  min-height: 27px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gradient-graph-panel__head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.gradient-graph-panel__head span,
+.gradient-direction-presets > span,
+.gradient-radial-shape > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+
+.gradient-graph-panel__head small,
+.gradient-precision-hint {
+  color: color-mix(in srgb, var(--muted) 74%, transparent);
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: 0.065em;
+}
+
+.gradient-graph-panel__head > button {
+  min-height: 25px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--ui-radius) * 0.7);
+  background: var(--bg-field);
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.gradient-graph-panel__head > button:hover,
+.gradient-graph-panel__head > button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--accent);
+}
+
+.gradient-graph-types,
+.gradient-curve-presets,
+.gradient-radial-shape > div {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ui-radius);
+}
+
+.gradient-graph-types {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gradient-curve-presets {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gradient-radial-shape > div {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gradient-graph-types button,
+.gradient-curve-presets button,
+.gradient-radial-shape button {
+  min-height: 31px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--bg-field);
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  cursor: pointer;
+}
+
+.gradient-graph-types button:last-child,
+.gradient-curve-presets button:last-child,
+.gradient-radial-shape button:last-child {
+  border-right: 0;
+}
+
+.gradient-graph-types button.active,
+.gradient-curve-presets button.active,
+.gradient-radial-shape button.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-field));
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.gradient-geometry-layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(165px, 0.72fr) minmax(245px, 1.28fr);
+  align-items: start;
+  gap: 13px;
+}
+
+.gradient-geometry-visual,
+.gradient-geometry-controls,
+.gradient-origin-fields,
+.gradient-radial-shape,
+.gradient-direction-presets {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+}
+
+.gradient-geometry-pad {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ui-radius);
+  outline: none;
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 62%
+    ),
+    var(--bg-field);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.gradient-geometry-pad:focus-visible,
+.gradient-curve-canvas svg:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.gradient-geometry-pad svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.gradient-geometry-grid,
+.gradient-curve-grid {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 20%, transparent);
+  stroke-width: 0.65;
+}
+
+.gradient-geometry-ring {
+  fill: color-mix(in srgb, var(--accent) 2%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 2;
+}
+
+.gradient-geometry-ring--inner {
+  fill: none;
+  stroke-dasharray: 2 2;
+  opacity: 0.78;
+}
+
+.gradient-geometry-ring--conic {
+  fill: color-mix(in srgb, var(--accent) 3%, transparent);
+  stroke-dasharray: 1.5 2;
+}
+
+.gradient-geometry-ray {
+  stroke: color-mix(in srgb, var(--accent) 33%, transparent);
+  stroke-width: 0.7;
+}
+
+.gradient-geometry-vector {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.gradient-geometry-origin {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.gradient-geometry-tip {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+}
+
+.gradient-geometry-pad > small {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  padding: 3px 4px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  color: var(--muted);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.gradient-origin-preset-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.gradient-origin-preset-group > span {
+  color: var(--muted);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.gradient-origin-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  width: 52px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--ui-radius) * 0.75);
+  background: var(--bg-field);
+}
+
+.gradient-origin-presets button {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--muted) 48%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.gradient-origin-presets button:hover,
+.gradient-origin-presets button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.gradient-geometry-controls {
+  align-content: start;
+  gap: 11px;
+}
+
+.gradient-geometry-controls .studio-range-field,
+.gradient-curve-fields .studio-range-field {
+  margin-top: 0;
+}
+
+.gradient-origin-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gradient-direction-presets > div {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--ui-radius) * 0.7);
+}
+
+.gradient-direction-presets button {
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-field);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.gradient-direction-presets button:last-child {
+  border-right: 0;
+}
+
+.gradient-direction-presets button:hover,
+.gradient-direction-presets button.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-field));
+  color: var(--accent);
+}
+
+.gradient-precision-hint {
+  padding-top: 2px;
+  text-align: right;
+}
+
+.gradient-curve-canvas {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ui-radius);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 2%, transparent) 1px, transparent 1px) 0
+      0 / 25% 100%,
+    var(--bg-field);
+}
+
+.gradient-curve-canvas svg {
+  display: block;
+  width: 100%;
+  height: 170px;
+  outline: none;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.gradient-curve-midpoint {
+  stroke: color-mix(in srgb, var(--accent) 46%, transparent);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+}
+
+.gradient-curve-area {
+  fill: url("#gradient-curve-fill");
+}
+
+.gradient-curve-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-width: 2.35;
+  filter: drop-shadow(0 2px 3px color-mix(in srgb, var(--accent) 24%, transparent));
+}
+
+.gradient-curve-handle {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: all;
+  cursor: ew-resize;
+}
+
+.gradient-curve-handle--softness {
+  fill: color-mix(in srgb, var(--accent) 20%, var(--bg));
+  stroke-width: 1.5;
+  cursor: ns-resize;
+}
+
+.gradient-curve-canvas > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.gradient-curve-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+@container gradient-picker (max-width: 520px) {
+  .gradient-geometry-layout,
+  .gradient-origin-fields,
+  .gradient-curve-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .gradient-geometry-pad {
+    width: min(210px, 100%);
+  }
+
+  .gradient-origin-presets {
+    margin-top: -4px;
+  }
+}

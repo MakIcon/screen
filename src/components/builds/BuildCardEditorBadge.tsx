@@ -1,11 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { ColorPicker } from "../color-picker/ColorPicker";
-import {
-  getBuildCardBadgeVisibility,
-  type BuildCardAppearance,
-} from "./BuildCardSettingsPopup";
+import { getBuildCardBadgeVisibility, type BuildCardAppearance } from "./BuildCardSettingsPopup";
 import { EditorSection, EditorRow } from "./BuildCardEditorSection";
+import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
 
 type Props = {
   draft: BuildCardAppearance;
@@ -17,11 +15,7 @@ export function BadgeSection({ draft, onDraftChange }: Props) {
   const visibility = getBuildCardBadgeVisibility(draft);
 
   return (
-    <EditorSection
-      title="Badge"
-      open={open}
-      onToggle={() => setOpen((prev) => !prev)}
-    >
+    <EditorSection title="Badge" open={open} onToggle={() => setOpen((prev) => !prev)}>
       <EditorRow label="Enable">
         <div className="bce-mode-switch">
           <button
@@ -57,16 +51,21 @@ export function BadgeSection({ draft, onDraftChange }: Props) {
       </EditorRow>
 
       <EditorRow label="Text">
-        <input
-          className="bce-text-input bce-badge-text-input"
-          type="text"
-          maxLength={22}
-          placeholder="^%build_state%"
-          value={draft.badgeText}
-          onChange={(e) =>
-            onDraftChange((prev) => ({ ...prev, badgeText: e.target.value }))
-          }
-        />
+        <div className="bce-placeholder-field">
+          <input
+            className="bce-text-input bce-badge-text-input"
+            type="text"
+            maxLength={22}
+            placeholder="^%build_state%"
+            value={draft.badgeText}
+            onChange={(e) => onDraftChange((prev) => ({ ...prev, badgeText: e.target.value }))}
+          />
+          <BuildPlaceholderCaseControl
+            value={draft.badgeText}
+            maxLength={22}
+            onChange={(badgeText) => onDraftChange((prev) => ({ ...prev, badgeText }))}
+          />
+        </div>
       </EditorRow>
 
       <EditorRow label="Bg Color" alignTop>

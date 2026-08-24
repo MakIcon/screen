@@ -18,7 +18,10 @@ import { BackgroundSection } from "./BuildCardEditorBackground";
 import { BadgeSection } from "./BuildCardEditorBadge";
 import { ContentSection } from "./BuildCardEditorContent";
 import { BuildCardDrawingCanvas } from "./BuildCardDrawingCanvas";
-import { createPlaceholderAppearanceAttributes } from "../../utils/placeholders";
+import {
+  createPlaceholderAppearanceAttributes,
+  createPlaceholderValueAttributes,
+} from "../../utils/placeholders";
 
 type Props = {
   buildName: string;
@@ -39,11 +42,6 @@ type Props = {
 };
 
 export function BuildCardEditor({
-  buildName,
-  buildVersion,
-  buildLoader,
-  buildRamGb,
-  lastPlayedLabel,
   badgePreviewText,
   resolvePreviewText,
   previewCardSize,
@@ -78,7 +76,7 @@ export function BuildCardEditor({
       } satisfies CSSProperties);
 
   return (
-    <div className="bce-editor">
+    <div className="bce-editor" {...createPlaceholderValueAttributes(resolvePreviewText)}>
       {showHeader && (
         <div className="bce-header">
           <span className="bce-header-title">CARD APPEARANCE</span>
@@ -137,16 +135,13 @@ export function BuildCardEditor({
                     className="instance-name"
                     {...createPlaceholderAppearanceAttributes("%build_name%", resolvePreviewText)}
                   >
-                    {buildName}
+                    {resolvePreviewText("%build_name%")}
                   </span>
                   {shouldShowBuildCardBadge(draft, true) && (
                     <span
                       className="instance-running-badge"
                       style={getBuildCardBadgeStyle(draft)}
-                      {...createPlaceholderAppearanceAttributes(
-                        badgeTemplate,
-                        resolvePreviewText,
-                      )}
+                      {...createPlaceholderAppearanceAttributes(badgeTemplate, resolvePreviewText)}
                     >
                       {badgePreviewText}
                     </span>
@@ -170,7 +165,7 @@ export function BuildCardEditor({
                           resolvePreviewText,
                         )}
                       >
-                        {buildVersion}
+                        {resolvePreviewText("%build_version%")}
                       </span>
                       <span
                         {...createPlaceholderAppearanceAttributes(
@@ -178,7 +173,7 @@ export function BuildCardEditor({
                           resolvePreviewText,
                         )}
                       >
-                        {buildLoader}
+                        {resolvePreviewText("%build_loader%")}
                       </span>
                       <span
                         {...createPlaceholderAppearanceAttributes(
@@ -186,7 +181,7 @@ export function BuildCardEditor({
                           resolvePreviewText,
                         )}
                       >
-                        {buildRamGb} GB
+                        {resolvePreviewText("%build_ram%")}
                       </span>
                       <span
                         {...createPlaceholderAppearanceAttributes(
@@ -194,7 +189,7 @@ export function BuildCardEditor({
                           resolvePreviewText,
                         )}
                       >
-                        {lastPlayedLabel}
+                        {resolvePreviewText("%build_last_played%")}
                       </span>
                     </>
                   )}

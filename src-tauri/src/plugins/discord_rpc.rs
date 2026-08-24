@@ -463,33 +463,85 @@ fn format_playtime(secs: u64) -> String {
     }
 }
 
+fn format_last_played(raw: &str) -> String {
+    let Ok(timestamp) = raw.parse::<u64>() else {
+        return "Never played".to_string();
+    };
+    if timestamp == 0 {
+        return "Never played".to_string();
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(timestamp);
+    let days = now.saturating_sub(timestamp) / 86_400;
+    match days {
+        0 => "Today".to_string(),
+        1 => "Yesterday".to_string(),
+        value => format!("{value} days ago"),
+    }
+}
+
 fn placeholder_pairs(
     instances: &[InstanceItem],
     instance: &InstanceItem,
     account_type: &str,
+    player_name: &str,
 ) -> Vec<(&'static str, String)> {
     let total_playtime_secs = instances.iter().map(|item| item.playtime_secs).sum::<u64>();
+    let system_ram = format!("{} GB", detect_system_memory_gb());
+    let loader = to_friendly_value(&instance.loader);
+    let raw_loader_version = instance.loader_version.clone().unwrap_or_default();
+    let full_loader = if raw_loader_version.is_empty() {
+        loader.clone()
+    } else {
+        format!("{loader} {raw_loader_version}")
+    };
+    let loader_version = if raw_loader_version.is_empty() {
+        "—".to_string()
+    } else {
+        raw_loader_version
+    };
+    let total_vanilla_builds = instances
+        .iter()
+        .filter(|item| item.loader.eq_ignore_ascii_case("vanilla"))
+        .count();
+    let total_allocated_ram = instances.iter().map(|item| item.ram).sum::<u32>();
 
     vec![
-        ("system_ram", format!("{} GB", detect_system_memory_gb())),
-        (
-            "system_ram_max",
-            format!("{} GB", detect_system_memory_gb()),
-        ),
+        ("launcher_name", "ScreenLauncher".to_string()),
+        ("system_ram", system_ram.clone()),
+        ("system_ram_max", system_ram),
+        ("player_name", player_name.to_string()),
+        ("nickname", player_name.to_string()),
         ("build_name", instance.name.clone()),
         ("build_version", instance.version.clone()),
-        ("build_loader", to_friendly_value(&instance.loader)),
-        ("build_ram", format!("{}GB", instance.ram)),
+        ("minecraft_version", instance.version.clone()),
+        ("build_loader", loader),
+        ("build_loader_version", loader_version.clone()),
+        ("loader_version", loader_version),
+        ("build_full_loader", full_loader),
+        ("build_ram", format!("{} GB", instance.ram)),
         ("build_playtime", format_playtime(instance.playtime_secs)),
+        ("time_on_build", format_playtime(instance.playtime_secs)),
         (
             "build_last_played",
-            to_friendly_value(&instance.last_played),
+            format_last_played(&instance.last_played),
         ),
         ("build_status", to_friendly_value(&instance.status)),
         ("build_state", "Running".to_string()),
+        ("build_source", "Official".to_string()),
         ("account_type", to_friendly_value(account_type)),
         ("total_playtime", format_playtime(total_playtime_secs)),
+        ("total_time_in_game", format_playtime(total_playtime_secs)),
         ("total_builds", instances.len().to_string()),
+        (
+            "total_modded_builds",
+            (instances.len() - total_vanilla_builds).to_string(),
+        ),
+        ("total_vanilla_builds", total_vanilla_builds.to_string()),
+        ("total_allocated_ram", format!("{total_allocated_ram} GB")),
     ]
 }
 
@@ -498,10 +550,11 @@ fn resolve_rpc_template(
     instances: &[InstanceItem],
     instance: &InstanceItem,
     account_type: &str,
+    player_name: &str,
 ) -> String {
     let mut resolved = template.to_string();
 
-    for (key, value) in placeholder_pairs(instances, instance, account_type) {
+    for (key, value) in placeholder_pairs(instances, instance, account_type, player_name) {
         resolved = resolved.replace(&format!("^%{key}%"), &value.to_uppercase());
         resolved = resolved.replace(&format!("%{key}%"), &value);
     }
@@ -556,6 +609,7 @@ fn build_snapshot(
     instances: &[InstanceItem],
     instance: &InstanceItem,
     account_type: &str,
+    player_name: &str,
     application_id: String,
     session_id: String,
 ) -> PresenceSnapshot {
@@ -565,6 +619,7 @@ fn build_snapshot(
             instances,
             instance,
             account_type,
+            player_name,
         ),
         fallback_activity_name(mode),
     );
@@ -591,11 +646,23 @@ fn build_snapshot(
     };
 
     let details = clamp_activity_text(
-        resolve_rpc_template(details_template, instances, instance, account_type),
+        resolve_rpc_template(
+            details_template,
+            instances,
+            instance,
+            account_type,
+            player_name,
+        ),
         details_fallback,
     );
     let state = clamp_activity_text(
-        resolve_rpc_template(state_template, instances, instance, account_type),
+        resolve_rpc_template(
+            state_template,
+            instances,
+            instance,
+            account_type,
+            player_name,
+        ),
         state_fallback,
     );
 
@@ -608,6 +675,7 @@ fn build_snapshot(
                 instances,
                 instance,
                 account_type,
+                player_name,
             ),
             "ScreenLauncher",
         )
@@ -624,6 +692,7 @@ fn build_snapshot(
                 instances,
                 instance,
                 account_type,
+                player_name,
             ),
             "Minecraft",
         )
@@ -637,8 +706,15 @@ fn build_snapshot(
             instances,
             instance,
             account_type,
+            player_name,
         ));
-        let url = resolve_rpc_template(&plugin.button_url, instances, instance, account_type);
+        let url = resolve_rpc_template(
+            &plugin.button_url,
+            instances,
+            instance,
+            account_type,
+            player_name,
+        );
         if label.is_empty() || !is_discord_url(&url) {
             None
         } else {
@@ -669,6 +745,7 @@ fn build_snapshot(
 pub async fn start_discord_rpc_for_launcher(
     state: State<'_, DiscordRpcState>,
     account_type: String,
+    player_name: String,
 ) -> Result<(), String> {
     let settings = read_settings().await?;
     let plugin = settings.plugins.discord_rpc;
@@ -703,6 +780,7 @@ pub async fn start_discord_rpc_for_launcher(
         &instances,
         &instance,
         &account_type,
+        &player_name,
         application_id,
         LAUNCHER_RPC_SESSION_ID.to_string(),
     );
@@ -716,6 +794,7 @@ pub async fn start_discord_rpc_for_instance(
     state: State<'_, DiscordRpcState>,
     instance_id: String,
     account_type: String,
+    player_name: String,
 ) -> Result<(), String> {
     let settings = read_settings().await?;
     let plugin = settings.plugins.discord_rpc;
@@ -751,6 +830,7 @@ pub async fn start_discord_rpc_for_instance(
             &instances,
             &launcher_placeholder_instance(&instances),
             &account_type,
+            &player_name,
             application_id,
             LAUNCHER_RPC_SESSION_ID.to_string(),
         );
@@ -764,6 +844,7 @@ pub async fn start_discord_rpc_for_instance(
         &instances,
         &instance,
         &account_type,
+        &player_name,
         application_id,
         instance_id,
     );
@@ -778,4 +859,62 @@ pub fn stop_discord_rpc_for_instance(
 ) -> Result<(), String> {
     state.clear_target(instance_id.as_deref());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn instance(id: &str, loader: &str, loader_version: Option<&str>, ram: u32) -> InstanceItem {
+        InstanceItem {
+            id: id.to_string(),
+            name: format!("{loader} Pack"),
+            version: "1.21.1".to_string(),
+            loader: loader.to_string(),
+            loader_version: loader_version.map(str::to_string),
+            status: "READY".to_string(),
+            ram,
+            java_args: None,
+            java_path: None,
+            window_width: None,
+            window_height: None,
+            fullscreen: false,
+            last_played: "0".to_string(),
+            playtime_secs: 3_600,
+            created_at: "0".to_string(),
+            game_dir: String::new(),
+        }
+    }
+
+    #[test]
+    fn resolves_the_shared_launcher_placeholder_vocabulary() {
+        let fabric = instance("fabric", "fabric", Some("0.16.14"), 12);
+        let instances = vec![fabric.clone(), instance("vanilla", "vanilla", None, 4)];
+
+        let resolved = resolve_rpc_template(
+            "%player_name% · %build_full_loader% · %build_ram% · %total_modded_builds% · %total_allocated_ram%",
+            &instances,
+            &fabric,
+            "offline",
+            "Makar",
+        );
+
+        assert_eq!(resolved, "Makar · Fabric 0.16.14 · 12 GB · 1 · 16 GB");
+    }
+
+    #[test]
+    fn keeps_aliases_and_uppercase_templates_compatible() {
+        let fabric = instance("fabric", "fabric", Some("0.16.14"), 12);
+        let instances = vec![fabric.clone()];
+
+        let resolved = resolve_rpc_template(
+            "^%nickname% · %minecraft_version% · %loader_version% · %unknown%",
+            &instances,
+            &fabric,
+            "microsoft",
+            "Makar",
+        );
+
+        assert_eq!(resolved, "MAKAR · 1.21.1 · 0.16.14 · %unknown%");
+    }
 }

@@ -8,6 +8,14 @@ import type {
 
 export type Theme = "light" | "dark" | "void";
 export type AppearanceBackgroundKind = "solid" | "image" | "drawing";
+export type AppearanceElementBackgroundKind = "solid" | "gradient";
+export type AppearanceElementGradientType = "linear" | "radial" | "conic";
+export type AppearanceElementGradientRadialShape = "circle" | "ellipse";
+
+export type AppearanceElementGradientStop = {
+  color: string;
+  position: number;
+};
 
 export type AppearanceElementPathSegment = {
   tag: string;
@@ -21,6 +29,8 @@ export type AppearanceElementTextTarget = {
   original: string;
   /** Original unresolved template when the rendered text uses launcher placeholders. */
   template?: string;
+  /** Live values captured from the nearest placeholder context for the Studio preview. */
+  placeholderValues?: Record<string, string>;
 };
 
 export type AppearanceElementDefaults = {
@@ -28,6 +38,13 @@ export type AppearanceElementDefaults = {
   height: number;
   minWidth: number;
   minHeight: number;
+  backgroundColor?: string;
+  backgroundImage?: string;
+  backgroundBefore?: boolean;
+  backgroundAfter?: boolean;
+  beforeOpacity?: number;
+  afterOpacity?: number;
+  textColor?: string;
   widthAuto?: boolean;
   heightAuto?: boolean;
   minWidthAuto?: boolean;
@@ -133,7 +150,10 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
     height?: number;
     minWidth?: number;
     minHeight?: number;
+    /** Legacy whole-element opacity. New profiles use the two independent values below. */
     opacity?: number;
+    backgroundOpacity?: number;
+    contentOpacity?: number;
     radius?: number;
     fontFamily?: string;
     fontSize?: number;
@@ -141,7 +161,21 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
     letterSpacing?: number;
     lineHeight?: number;
     textAlign?: AppearanceElementTextAlign;
+    backgroundKind?: AppearanceElementBackgroundKind;
     backgroundColor?: string;
+    backgroundGradientStart?: string;
+    backgroundGradientEnd?: string;
+    backgroundGradientAngle?: number;
+    backgroundGradientType?: AppearanceElementGradientType;
+    backgroundGradientStops?: AppearanceElementGradientStop[];
+    backgroundGradientCenterX?: number;
+    backgroundGradientCenterY?: number;
+    backgroundGradientScale?: number;
+    backgroundGradientRadialShape?: AppearanceElementGradientRadialShape;
+    backgroundGradientRadialAspect?: number;
+    backgroundGradientStrength?: number;
+    backgroundGradientMidpoint?: number;
+    backgroundGradientSoftness?: number;
     textColor?: string;
     paddingX?: number;
     paddingY?: number;
@@ -157,7 +191,7 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
 };
 
 export type AppearanceProfile = {
-  version: 1;
+  version: 2;
   customized: boolean;
   baseTheme: Theme;
   colors: {

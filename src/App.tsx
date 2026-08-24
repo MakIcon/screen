@@ -77,7 +77,11 @@ import type {
 import { ToastStack } from "./components/notifications/ToastStack";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
-import { createPlaceholderAppearanceAttributes, resolvePlaceholders } from "./utils/placeholders";
+import {
+  createPlaceholderAppearanceAttributes,
+  createPlaceholderValueAttributes,
+  resolvePlaceholders,
+} from "./utils/placeholders";
 import {
   buildPlaceholderContext,
   type PlaceholderTarget,
@@ -245,6 +249,10 @@ export default function App() {
     activeRunning = runningInstances,
   ) => {
     const discordRpc = settings?.plugins.discordRpc;
+    const rpcPlayerName =
+      accountType === "MICROSOFT"
+        ? (msAccounts.find((account) => account.id === activeMsAccountId)?.username ?? nickname)
+        : nickname;
     if (!discordRpc?.enabled || !discordRpc.applicationId.trim()) {
       void invoke("stop_discord_rpc_for_instance", { instanceId: null }).catch((error) => {
         logger.error("stop_discord_rpc_for_instance failed", error);
@@ -261,6 +269,7 @@ export default function App() {
       void invoke("start_discord_rpc_for_instance", {
         instanceId: rpcTargetId,
         accountType,
+        playerName: rpcPlayerName,
       }).catch((error) => {
         logger.error("start_discord_rpc_for_instance failed", error);
       });
@@ -270,6 +279,7 @@ export default function App() {
     if (discordRpc.displayMode !== "minecraft") {
       void invoke("start_discord_rpc_for_launcher", {
         accountType,
+        playerName: rpcPlayerName,
       }).catch((error) => {
         logger.error("start_discord_rpc_for_launcher failed", error);
       });
@@ -686,7 +696,7 @@ export default function App() {
         setCreateRuntimeSettingsTouched(true);
       }
 
-      persistBuildCardAppearances(next);
+      await persistBuildCardAppearances(next);
       closeBuildCardSettings();
     } catch (error) {
       logger.error(error);
@@ -694,11 +704,11 @@ export default function App() {
     }
   };
 
-  const clearBuildCardSettings = () => {
+  const clearBuildCardSettings = async () => {
     const storageKey = buildSettingsTargetId ?? CREATE_BUILD_CARD_DRAFT_KEY;
     const next = { ...buildCardAppearances };
     delete next[storageKey];
-    persistBuildCardAppearances(next);
+    await persistBuildCardAppearances(next);
     setBuildCardSettingsDraft({ ...DEFAULT_BUILD_CARD_APPEARANCE });
   };
 
@@ -740,33 +750,42 @@ export default function App() {
     ? instances.find((instance) => instance.id === buildSettingsTargetId) || null
     : null;
   const selectedBuildState = selectedInstance && isRunning(selectedInstance.id) ? "RUNNING" : "";
+  const activePlayerName =
+    accountType === "MICROSOFT"
+      ? (msAccounts.find((account) => account.id === activeMsAccountId)?.username ?? nickname)
+      : nickname;
   const resolve = usePlaceholders(
     instances,
     selectedInstance,
     systemRamGb,
+    settingsRamDraft,
     accountType,
-    nickname,
+    activePlayerName,
     selectedBuildState,
   );
-  const resolveForTarget = (
-    template: string,
-    target: PlaceholderTarget,
-    overrides: {
-      accountType?: string;
-      buildState?: string;
-    } = {},
-  ) =>
-    resolvePlaceholders(
-      template,
-      buildPlaceholderContext({
-        instances,
-        target,
-        systemRamGb,
-        playerName: nickname,
-        accountType: overrides.accountType ?? accountType,
-        buildState: overrides.buildState ?? "",
-      }),
-    );
+  const resolveForTarget = useCallback(
+    (
+      template: string,
+      target: PlaceholderTarget,
+      overrides: {
+        accountType?: string;
+        buildState?: string;
+      } = {},
+    ) =>
+      resolvePlaceholders(
+        template,
+        buildPlaceholderContext({
+          instances,
+          target,
+          systemRamGb,
+          launcherRamGb: settingsRamDraft,
+          playerName: activePlayerName,
+          accountType: overrides.accountType ?? accountType,
+          buildState: overrides.buildState ?? "",
+        }),
+      ),
+    [accountType, activePlayerName, instances, settingsRamDraft, systemRamGb],
+  );
 
   const createPreviewName = createBuildName.trim() || "MY BUILD";
   const createPreviewVersion = createVersion || "1.21.1";
@@ -830,9 +849,11 @@ export default function App() {
         name: createPreviewName,
         version: createPreviewVersion,
         loader: createPreviewLoader,
+        loaderVersion: createLoaderVersion || null,
         ram: buildCardSettingsOpen ? buildRuntimeSettingsDraft.ram : createPreviewRam,
         playtimeSecs: 0,
         lastPlayed: "0",
+        createdAt: "0",
         status: "",
       };
   const buildCardPreviewBadgeText = resolveForTarget(
@@ -1209,7 +1230,15 @@ export default function App() {
     if (!launcherSettings) return;
     applyDiscordRpcPresence(launcherSettings, runningInstances);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- these are the real presence triggers; the helper is recreated each render
-  }, [launcherSettings, runningInstances, selectedInstanceId, accountType]);
+  }, [
+    launcherSettings,
+    runningInstances,
+    selectedInstanceId,
+    accountType,
+    nickname,
+    activeMsAccountId,
+    msAccounts,
+  ]);
 
   const tearPath = useMemo(createTearPath, []);
   const shredPaths = useMemo(createShredPaths, []);
@@ -1525,7 +1554,7 @@ export default function App() {
         [created.id]: draftAppearance,
       };
       delete nextAppearances[CREATE_BUILD_CARD_DRAFT_KEY];
-      persistBuildCardAppearances(nextAppearances);
+      await persistBuildCardAppearances(nextAppearances);
 
       await refreshInstances(created.id);
       setCreateMode(false);
@@ -1724,7 +1753,7 @@ export default function App() {
       if (buildCardAppearances[id]) {
         const nextAppearances = { ...buildCardAppearances };
         delete nextAppearances[id];
-        persistBuildCardAppearances(nextAppearances);
+        await persistBuildCardAppearances(nextAppearances);
       }
 
       pushToast("info", `Сборка ${deletedName} удалена`.trim(), { title: "Build deleted" });
@@ -1991,6 +2020,7 @@ export default function App() {
           <SettingsTab
             systemRamGb={systemRamGb}
             settingsRamDraft={settingsRamDraft}
+            resolve={resolve}
             setSettingsRamDraft={setSettingsRamDraft}
             saveSettingsRam={saveSettingsRam}
             optimizedJavaArgs={launcherSettings?.optimizedJavaArgs ?? true}
@@ -2150,6 +2180,7 @@ export default function App() {
         className={`gallery-root ${phase} ${
           renderedCloseEffect ? CLOSE_EFFECT_CLASS[renderedCloseEffect] : ""
         }`}
+        {...createPlaceholderValueAttributes(resolve)}
       >
         {drawingCursor && drawingCursorStyle && (
           <div
@@ -2157,11 +2188,8 @@ export default function App() {
             style={drawingCursorStyle}
             aria-hidden="true"
           >
-            <span />
-            <svg viewBox="0 0 24 24">
-              <path d="M14.7 3.2 20.8 9.3 10.5 19.6 4.4 13.5Z" />
-              <path d="m4.4 13.5-1.2 5.9 6.1-1Z" />
-            </svg>
+            <span className="appearance-drawing-brush-dot" />
+            {!drawingCursor.eraser && <span className="appearance-drawing-pencil-icon" />}
           </div>
         )}
         <ToastStack toasts={toasts} onDismiss={dismissToast} />

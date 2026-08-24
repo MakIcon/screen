@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /**
  * Tracks which instances are currently running (instance id → process id) plus
@@ -13,7 +13,7 @@ export function useRunningInstances() {
   // can skip the crash toast.
   const intentionalStops = useRef<Set<string>>(new Set());
 
-  const isRunning = (id: string) => runningInstances.has(id);
+  const isRunning = useCallback((id: string) => runningInstances.has(id), [runningInstances]);
 
   const addRunning = (id: string, pid: number) => {
     launchTimestamps.current.set(id, Math.floor(Date.now() / 1000));

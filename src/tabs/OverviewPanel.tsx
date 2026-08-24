@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { HoverRevealValue } from "../components/display/HoverRevealValue";
 import type { DropdownKey, MicrosoftAccount } from "../types";
@@ -29,6 +30,7 @@ export function OverviewPanel({
   onOpenMsModal,
 }: OverviewPanelProps) {
   const activeMs = msAccounts.find((a) => a.id === activeMsAccountId) ?? null;
+  const [editingNickname, setEditingNickname] = useState(false);
 
   return (
     <div className="image-mockup launcher-mockup">
@@ -54,12 +56,31 @@ export function OverviewPanel({
             <div className="mockup-block">
               <span className="mockup-label">NICKNAME</span>
               <HoverRevealValue value={nickname}>
-                <input
-                  className="mockup-input"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  spellCheck={false}
-                />
+                {editingNickname ? (
+                  <input
+                    className="mockup-input"
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    onBlur={() => setEditingNickname(false)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") {
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    spellCheck={false}
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    className="mockup-input mockup-nickname-value"
+                    type="button"
+                    onClick={() => setEditingNickname(true)}
+                  >
+                    <span {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}>
+                      {resolve("%player_name%")}
+                    </span>
+                  </button>
+                )}
               </HoverRevealValue>
             </div>
           )}
@@ -104,9 +125,7 @@ export function OverviewPanel({
               value={accountType}
               options={["OFFLINE", "MICROSOFT"]}
               isOpen={openDropdown === "account"}
-              onToggle={() =>
-                setOpenDropdown(openDropdown === "account" ? null : "account")
-              }
+              onToggle={() => setOpenDropdown(openDropdown === "account" ? null : "account")}
               onSelect={(value) => {
                 setAccountType(value);
                 setOpenDropdown(null);

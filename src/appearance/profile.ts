@@ -94,6 +94,7 @@ const MAX_EMBEDDED_IMAGE_LENGTH = 4_200_000;
 const SAFE_ELEMENT_ID = /^element-[a-z0-9-]{1,72}$/;
 const SAFE_ELEMENT_TAG = /^[a-z][a-z0-9-]{0,31}$/;
 const SAFE_ELEMENT_MARKER = /^(?:id|class):[a-z_][a-z0-9_-]{0,63}$/i;
+const SAFE_COMPUTED_COLOR = /^(?:#[0-9a-f]{6}|rgba?\([0-9.,% /]+\))$/i;
 const MAX_ELEMENT_OVERRIDES = 64;
 const MAX_ELEMENT_TEXT_LENGTH = 160;
 const MAX_TEXT_TARGET_DEPTH = 20;
@@ -108,6 +109,17 @@ function pickString(value: unknown, fallback: string) {
 
 function pickColor(value: unknown, fallback: string) {
   return typeof value === "string" && HEX_COLOR.test(value) ? value.toLowerCase() : fallback;
+}
+
+function pickComputedBackgroundImage(value: unknown) {
+  if (typeof value !== "string" || value.length > 1_200) return undefined;
+  const normalized = value.trim();
+  if (normalized === "none") return normalized;
+  if (!/^(?:linear|radial|conic)-gradient\(/i.test(normalized)) return undefined;
+  if (/url\s*\(/i.test(normalized) || !/^[a-z0-9#(),.%+\-/\s]+$/i.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
@@ -332,8 +344,25 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
     if (typeof rawStyle.minHeight === "number" && Number.isFinite(rawStyle.minHeight)) {
       style.minHeight = clampNumber(rawStyle.minHeight, 0, 0, 1_200);
     }
-    if (typeof rawStyle.opacity === "number" && Number.isFinite(rawStyle.opacity)) {
-      style.opacity = clampNumber(rawStyle.opacity, 1, 0, 1);
+    const legacyOpacity =
+      typeof rawStyle.opacity === "number" && Number.isFinite(rawStyle.opacity)
+        ? clampNumber(rawStyle.opacity, 1, 0, 1)
+        : undefined;
+    if (
+      typeof rawStyle.backgroundOpacity === "number" &&
+      Number.isFinite(rawStyle.backgroundOpacity)
+    ) {
+      style.backgroundOpacity = clampNumber(rawStyle.backgroundOpacity, 1, 0, 1);
+    }
+    if (typeof rawStyle.contentOpacity === "number" && Number.isFinite(rawStyle.contentOpacity)) {
+      style.contentOpacity = clampNumber(rawStyle.contentOpacity, 1, 0, 1);
+    }
+    if (
+      legacyOpacity !== undefined &&
+      style.backgroundOpacity === undefined &&
+      style.contentOpacity === undefined
+    ) {
+      style.opacity = legacyOpacity;
     }
     if (typeof rawStyle.radius === "number" && Number.isFinite(rawStyle.radius)) {
       style.radius = clampNumber(rawStyle.radius, 0, 0, 40);
@@ -356,8 +385,114 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
     if (["left", "center", "right"].includes(rawStyle.textAlign as string)) {
       style.textAlign = rawStyle.textAlign as NonNullable<typeof style.textAlign>;
     }
+    if (["solid", "gradient"].includes(rawStyle.backgroundKind as string)) {
+      style.backgroundKind = rawStyle.backgroundKind as NonNullable<typeof style.backgroundKind>;
+    }
     if (typeof rawStyle.backgroundColor === "string" && HEX_COLOR.test(rawStyle.backgroundColor)) {
       style.backgroundColor = rawStyle.backgroundColor.toLowerCase();
+    }
+    if (
+      typeof rawStyle.backgroundGradientStart === "string" &&
+      HEX_COLOR.test(rawStyle.backgroundGradientStart)
+    ) {
+      style.backgroundGradientStart = rawStyle.backgroundGradientStart.toLowerCase();
+    }
+    if (
+      typeof rawStyle.backgroundGradientEnd === "string" &&
+      HEX_COLOR.test(rawStyle.backgroundGradientEnd)
+    ) {
+      style.backgroundGradientEnd = rawStyle.backgroundGradientEnd.toLowerCase();
+    }
+    if (
+      typeof rawStyle.backgroundGradientAngle === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientAngle)
+    ) {
+      style.backgroundGradientAngle = clampNumber(rawStyle.backgroundGradientAngle, 135, 0, 360);
+    }
+    if (["linear", "radial", "conic"].includes(rawStyle.backgroundGradientType as string)) {
+      style.backgroundGradientType = rawStyle.backgroundGradientType as NonNullable<
+        typeof style.backgroundGradientType
+      >;
+    }
+    if (Array.isArray(rawStyle.backgroundGradientStops)) {
+      const stops = rawStyle.backgroundGradientStops
+        .slice(0, 8)
+        .flatMap((candidate) => {
+          if (
+            !isRecord(candidate) ||
+            typeof candidate.color !== "string" ||
+            !HEX_COLOR.test(candidate.color) ||
+            typeof candidate.position !== "number" ||
+            !Number.isFinite(candidate.position)
+          ) {
+            return [];
+          }
+          return [
+            {
+              color: candidate.color.toLowerCase(),
+              position: clampNumber(candidate.position, 0, 0, 100),
+            },
+          ];
+        })
+        .sort((left, right) => left.position - right.position);
+      if (stops.length >= 2) style.backgroundGradientStops = stops;
+    }
+    if (
+      typeof rawStyle.backgroundGradientCenterX === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientCenterX)
+    ) {
+      style.backgroundGradientCenterX = clampNumber(rawStyle.backgroundGradientCenterX, 50, 0, 100);
+    }
+    if (
+      typeof rawStyle.backgroundGradientCenterY === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientCenterY)
+    ) {
+      style.backgroundGradientCenterY = clampNumber(rawStyle.backgroundGradientCenterY, 50, 0, 100);
+    }
+    if (
+      typeof rawStyle.backgroundGradientScale === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientScale)
+    ) {
+      style.backgroundGradientScale = clampNumber(rawStyle.backgroundGradientScale, 100, 10, 200);
+    }
+    if (["circle", "ellipse"].includes(rawStyle.backgroundGradientRadialShape as string)) {
+      style.backgroundGradientRadialShape = rawStyle.backgroundGradientRadialShape as NonNullable<
+        typeof style.backgroundGradientRadialShape
+      >;
+    }
+    if (
+      typeof rawStyle.backgroundGradientRadialAspect === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientRadialAspect)
+    ) {
+      style.backgroundGradientRadialAspect = clampNumber(
+        rawStyle.backgroundGradientRadialAspect,
+        1,
+        0.25,
+        2,
+      );
+    }
+    if (
+      typeof rawStyle.backgroundGradientStrength === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientStrength)
+    ) {
+      style.backgroundGradientStrength = clampNumber(rawStyle.backgroundGradientStrength, 1, 0, 1);
+    }
+    if (
+      typeof rawStyle.backgroundGradientMidpoint === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientMidpoint)
+    ) {
+      style.backgroundGradientMidpoint = clampNumber(
+        rawStyle.backgroundGradientMidpoint,
+        0.5,
+        0.05,
+        0.95,
+      );
+    }
+    if (
+      typeof rawStyle.backgroundGradientSoftness === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientSoftness)
+    ) {
+      style.backgroundGradientSoftness = clampNumber(rawStyle.backgroundGradientSoftness, 1, 0, 1);
     }
     if (typeof rawStyle.textColor === "string" && HEX_COLOR.test(rawStyle.textColor)) {
       style.textColor = rawStyle.textColor.toLowerCase();
@@ -423,6 +558,31 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
           height: clampNumber(rawDefaults.height, 0, 0, 1_200),
           minWidth: clampNumber(rawDefaults.minWidth, 0, 0, 1_600),
           minHeight: clampNumber(rawDefaults.minHeight, 0, 0, 1_200),
+          ...(typeof rawDefaults.backgroundColor === "string" &&
+          SAFE_COMPUTED_COLOR.test(rawDefaults.backgroundColor)
+            ? { backgroundColor: rawDefaults.backgroundColor }
+            : {}),
+          ...(pickComputedBackgroundImage(rawDefaults.backgroundImage)
+            ? { backgroundImage: pickComputedBackgroundImage(rawDefaults.backgroundImage) }
+            : {}),
+          ...(typeof rawDefaults.backgroundBefore === "boolean"
+            ? { backgroundBefore: rawDefaults.backgroundBefore }
+            : {}),
+          ...(typeof rawDefaults.backgroundAfter === "boolean"
+            ? { backgroundAfter: rawDefaults.backgroundAfter }
+            : {}),
+          ...(typeof rawDefaults.beforeOpacity === "number" &&
+          Number.isFinite(rawDefaults.beforeOpacity)
+            ? { beforeOpacity: clampNumber(rawDefaults.beforeOpacity, 1, 0, 1) }
+            : {}),
+          ...(typeof rawDefaults.afterOpacity === "number" &&
+          Number.isFinite(rawDefaults.afterOpacity)
+            ? { afterOpacity: clampNumber(rawDefaults.afterOpacity, 1, 0, 1) }
+            : {}),
+          ...(typeof rawDefaults.textColor === "string" &&
+          SAFE_COMPUTED_COLOR.test(rawDefaults.textColor)
+            ? { textColor: rawDefaults.textColor }
+            : {}),
           ...(typeof rawDefaults.widthAuto === "boolean"
             ? { widthAuto: rawDefaults.widthAuto }
             : {}),
@@ -469,7 +629,7 @@ export function createDefaultAppearance(
 ): AppearanceProfile {
   const colors = THEME_COLORS[baseTheme];
   return {
-    version: 1,
+    version: 2,
     customized,
     baseTheme,
     colors: {
@@ -493,7 +653,7 @@ export function createDefaultAppearance(
     },
     opacity: {
       window: 1,
-      panels: 0,
+      panels: 1,
       controls: 1,
     },
     elementOverrides: [],
@@ -512,6 +672,7 @@ export function createDefaultAppearance(
 
 export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const record = isRecord(value) ? value : {};
+  const profileVersion = record.version === 2 ? 2 : 1;
   const baseTheme = pickEnum(record.baseTheme, ["light", "dark", "void"] as const, "light");
   const fallback = createDefaultAppearance(baseTheme, Boolean(record.customized));
   const colors = isRecord(record.colors) ? record.colors : {};
@@ -521,6 +682,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const opacity = isRecord(record.opacity) ? record.opacity : {};
   const motion = isRecord(record.motion) ? record.motion : {};
   const tabByTarget = isRecord(motion.tabByTarget) ? motion.tabByTarget : {};
+  const normalizedPanelOpacity = clampNumber(opacity.panels, fallback.opacity.panels, 0, 1);
 
   const tabAnimationIds = TAB_ANIMATIONS.map((option) => option.id);
   const openingIds = OPEN_ANIMATIONS.map((option) => option.id);
@@ -528,7 +690,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const uiMotionIds = UI_MOTION_STYLES.map((option) => option.id);
 
   return {
-    version: 1,
+    version: 2,
     customized: Boolean(record.customized),
     baseTheme,
     colors: {
@@ -566,7 +728,10 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
     },
     opacity: {
       window: clampNumber(opacity.window, fallback.opacity.window, 0.55, 1),
-      panels: clampNumber(opacity.panels, fallback.opacity.panels, 0, 1),
+      // Version 1 accidentally shipped customized profiles with PANELS = 0,
+      // making cards and Build Settings fully transparent. Migrate that exact
+      // legacy default once; version 2 still preserves an intentional zero.
+      panels: profileVersion === 1 && normalizedPanelOpacity <= 0.001 ? 1 : normalizedPanelOpacity,
       controls: clampNumber(opacity.controls, fallback.opacity.controls, 0.35, 1),
     },
     elementOverrides: normalizeElementOverrides(record.elementOverrides),

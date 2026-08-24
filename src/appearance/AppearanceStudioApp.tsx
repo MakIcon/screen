@@ -15,6 +15,7 @@ import {
   type UiMotionStyle,
 } from "./animations";
 import { DrawingCanvas } from "./DrawingCanvas";
+import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import { ElementInspector } from "./ElementInspector";
 import { refreshElementSizingTarget } from "./elementSizing";
 import { prepareBackgroundImage } from "./imageTools";
@@ -40,10 +41,12 @@ import {
   APPEARANCE_ELEMENT_PICK_CANCEL_EVENT,
   APPEARANCE_ELEMENT_PICKED_EVENT,
   APPEARANCE_ELEMENT_PICK_REQUEST_EVENT,
+  APPEARANCE_ELEMENT_PREVIEW_EVENT,
   APPEARANCE_ELEMENT_REVEAL_EVENT,
   APPEARANCE_DRAWING_CURSOR_EVENT,
   APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT,
   type WindowAnimationPreviewPayload,
+  type AppearanceElementPreviewPayload,
   type DrawingCursorPayload,
 } from "./elementOverrides";
 import "./AppearanceStudio.css";
@@ -67,7 +70,18 @@ function elementStyleBadges(override: AppearanceElementOverride) {
       value: override.text.trim() ? override.text.trim().slice(0, 22) : "HIDDEN",
     });
   }
-  if (override.style.opacity !== undefined) {
+  if (override.style.backgroundOpacity !== undefined) {
+    badges.push({
+      label: "BACKGROUND",
+      value: `${Math.round(override.style.backgroundOpacity * 100)}%`,
+    });
+  }
+  if (override.style.contentOpacity !== undefined) {
+    badges.push({
+      label: "CONTENT",
+      value: `${Math.round(override.style.contentOpacity * 100)}%`,
+    });
+  } else if (override.style.opacity !== undefined) {
     badges.push({ label: "OPACITY", value: `${Math.round(override.style.opacity * 100)}%` });
   }
   if (override.style.width !== undefined || override.style.height !== undefined) {
@@ -93,6 +107,9 @@ function elementStyleBadges(override: AppearanceElementOverride) {
       value: override.style.backgroundColor.toUpperCase(),
       color: override.style.backgroundColor,
     });
+  }
+  if (override.style.backgroundKind === "gradient") {
+    badges.push({ label: "FILL", value: "GRADIENT" });
   }
   if (override.style.textColor) {
     badges.push({
@@ -138,6 +155,7 @@ export function AppearanceStudioApp() {
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const originalAppearanceRef = useRef(readStoredAppearance());
   const closingRef = useRef(false);
+  const elementPreviewOnlyRef = useRef(false);
 
   const closeStudio = useCallback(async () => {
     if (closingRef.current) return;
@@ -161,8 +179,17 @@ export function AppearanceStudioApp() {
   }, [draft]);
 
   useEffect(() => {
+    const isElementPreview = elementPreviewOnlyRef.current;
+    elementPreviewOnlyRef.current = false;
     const frame = window.requestAnimationFrame(() => {
-      void emit(APPEARANCE_PREVIEW_EVENT, draft).catch(() => {});
+      if (isElementPreview) {
+        void emit(APPEARANCE_ELEMENT_PREVIEW_EVENT, {
+          customized: draft.customized,
+          elementOverrides: draft.elementOverrides,
+        } satisfies AppearanceElementPreviewPayload).catch(() => {});
+      } else {
+        void emit(APPEARANCE_PREVIEW_EVENT, draft).catch(() => {});
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [draft]);
@@ -213,18 +240,27 @@ export function AppearanceStudioApp() {
     [draft.elementOverrides, selectedTarget],
   );
 
-  const patchDraft = (updater: (current: AppearanceProfile) => AppearanceProfile) => {
+  const patchDraft = useCallback((updater: (current: AppearanceProfile) => AppearanceProfile) => {
     setDraft((current) => ({ ...updater(current), customized: true }));
     setMessage("");
-  };
+  }, []);
 
   const patchSelectedStyle = (style: Partial<AppearanceElementOverride["style"]>) => {
     if (!selectedTarget) return;
+    elementPreviewOnlyRef.current = true;
     patchDraft((current) => {
       const existing = current.elementOverrides.find(
         (override) => override.id === selectedTarget.id,
       );
       const nextStyle = { ...existing?.style, ...style };
+      if (
+        existing?.style.opacity !== undefined &&
+        (style.backgroundOpacity !== undefined || style.contentOpacity !== undefined)
+      ) {
+        nextStyle.backgroundOpacity ??= existing.style.opacity;
+        nextStyle.contentOpacity ??= existing.style.opacity;
+        delete nextStyle.opacity;
+      }
       for (const key of Object.keys(nextStyle) as (keyof typeof nextStyle)[]) {
         if (nextStyle[key] === undefined) delete nextStyle[key];
       }
@@ -253,40 +289,45 @@ export function AppearanceStudioApp() {
     });
   };
 
-  const patchSelectedText = (text: string | undefined) => {
-    if (!selectedTarget?.textTarget) return;
-    patchDraft((current) => {
-      const existing = current.elementOverrides.find(
-        (override) => override.id === selectedTarget.id,
-      );
-      const next: AppearanceElementOverride = {
-        ...existing,
-        ...selectedTarget,
-        style: existing?.style ?? {},
-        ...(text !== undefined ? { text } : {}),
-      };
-      if (text === undefined) delete next.text;
-      if (text === undefined && Object.keys(next.style).length === 0 && !next.componentSettings) {
+  const patchSelectedText = useCallback(
+    (text: string | undefined) => {
+      if (!selectedTarget?.textTarget) return;
+      elementPreviewOnlyRef.current = true;
+      patchDraft((current) => {
+        const existing = current.elementOverrides.find(
+          (override) => override.id === selectedTarget.id,
+        );
+        const next: AppearanceElementOverride = {
+          ...existing,
+          ...selectedTarget,
+          style: existing?.style ?? {},
+          ...(text !== undefined ? { text } : {}),
+        };
+        if (text === undefined) delete next.text;
+        if (text === undefined && Object.keys(next.style).length === 0 && !next.componentSettings) {
+          return {
+            ...current,
+            elementOverrides: current.elementOverrides.filter(
+              (override) => override.id !== selectedTarget.id,
+            ),
+          };
+        }
         return {
           ...current,
-          elementOverrides: current.elementOverrides.filter(
-            (override) => override.id !== selectedTarget.id,
-          ),
+          elementOverrides: [
+            ...current.elementOverrides.filter((override) => override.id !== selectedTarget.id),
+            next,
+          ],
         };
-      }
-      return {
-        ...current,
-        elementOverrides: [
-          ...current.elementOverrides.filter((override) => override.id !== selectedTarget.id),
-          next,
-        ],
-      };
-    });
-  };
+      });
+    },
+    [patchDraft, selectedTarget],
+  );
 
   const patchSelectedComponent = (componentSettings: AppearanceElementComponentOverride) => {
     if (!selectedTarget?.component || selectedTarget.component.kind !== componentSettings.kind)
       return;
+    elementPreviewOnlyRef.current = true;
     patchDraft((current) => {
       const existing = current.elementOverrides.find(
         (override) => override.id === selectedTarget.id,
@@ -329,6 +370,7 @@ export function AppearanceStudioApp() {
 
   const clearSelectedStyle = () => {
     if (!selectedTarget) return;
+    elementPreviewOnlyRef.current = true;
     const clearsLastOverride =
       draft.elementOverrides.length === 1 && draft.elementOverrides[0]?.id === selectedTarget.id;
     patchDraft((current) => ({
@@ -602,12 +644,13 @@ export function AppearanceStudioApp() {
               title="SELECTED ELEMENT COLORS"
               note={`Only ${selectedTarget.label} changes. Other launcher colors stay untouched.`}
             >
-              <div className="studio-color-grid">
-                <ColorField
-                  label="BACKGROUND"
-                  value={selectedOverride?.style.backgroundColor || draft.colors.surface}
-                  onChange={(backgroundColor) => patchSelectedStyle({ backgroundColor })}
-                />
+              <ElementBackgroundPicker
+                style={selectedOverride?.style}
+                fallbackColor={draft.colors.surface}
+                fallbackAccent={draft.colors.accent}
+                onChange={patchSelectedStyle}
+              />
+              <div className="studio-color-grid studio-color-grid--single">
                 <ColorField
                   label="TEXT"
                   value={selectedOverride?.style.textColor || draft.colors.text}
@@ -811,16 +854,29 @@ export function AppearanceStudioApp() {
           return (
             <Section
               title="SELECTED ELEMENT OPACITY"
-              note={`Only ${selectedTarget.label} changes. Zero makes it fully transparent.`}
+              note={`Background and content of ${selectedTarget.label} can be faded independently.`}
             >
               <RangeField
-                label="ELEMENT"
-                value={selectedOverride?.style.opacity ?? 1}
+                label="BACKGROUND"
+                value={
+                  selectedOverride?.style.backgroundOpacity ?? selectedOverride?.style.opacity ?? 1
+                }
                 min={0}
                 max={1}
                 step={0.05}
                 defaultValue={1}
-                onChange={(opacity) => patchSelectedStyle({ opacity })}
+                onChange={(backgroundOpacity) => patchSelectedStyle({ backgroundOpacity })}
+              />
+              <RangeField
+                label="CONTENT"
+                value={
+                  selectedOverride?.style.contentOpacity ?? selectedOverride?.style.opacity ?? 1
+                }
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={1}
+                onChange={(contentOpacity) => patchSelectedStyle({ contentOpacity })}
               />
             </Section>
           );

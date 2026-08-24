@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { DISPLAY_FONT_OPTIONS, FONT_OPTIONS } from "./profile";
 import { ColorField, RangeField, Section, SelectField } from "./StudioFields";
-import { AVAILABLE_PLACEHOLDERS } from "../utils/placeholders";
+import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
+import { PlaceholderTemplateEditor } from "./PlaceholderTemplateEditor";
 import type {
   AppearanceCheckboxSettings,
   AppearanceDropdownSettings,
@@ -291,43 +292,19 @@ export function ElementInspector({
           note="Changes the primary visible label without replacing the button or breaking its click behavior."
         >
           <>
-            <label className="studio-text-field">
+            <div className="studio-text-field">
               <span>
                 {target.textTarget?.template ? "TEXT / PLACEHOLDER TEMPLATE" : "ELEMENT LABEL"}
               </span>
-              <textarea
+              <PlaceholderTemplateEditor
                 value={displayedText}
                 maxLength={160}
-                rows={2}
-                spellCheck={false}
-                onChange={(event) => onTextChange(event.target.value)}
+                originalText={originalText ?? ""}
+                renderedOriginalText={renderedOriginalText ?? ""}
+                placeholderValues={target.textTarget?.placeholderValues}
+                onChange={onTextChange}
               />
-              <small>
-                ORIGINAL: {originalText} · RENDERED: {renderedOriginalText} · {displayedText.length}
-                /160
-              </small>
-            </label>
-            {target.textTarget?.template && (
-              <div className="studio-placeholder-picker">
-                <span>INSERT LIVE PLACEHOLDER</span>
-                <div>
-                  {AVAILABLE_PLACEHOLDERS.map((placeholder) => (
-                    <button
-                      type="button"
-                      key={placeholder.token}
-                      title={placeholder.label}
-                      onClick={() => {
-                        const separator = displayedText && !/\s$/.test(displayedText) ? " " : "";
-                        onTextChange(`${displayedText}${separator}${placeholder.token}`);
-                      }}
-                    >
-                      {placeholder.token}
-                    </button>
-                  ))}
-                </div>
-                <small>Prefix a token with ^ to force uppercase, for example ^%player_name%.</small>
-              </div>
-            )}
+            </div>
             <button
               type="button"
               className="studio-inline-action"
@@ -705,12 +682,13 @@ export function ElementInspector({
 
       {supportsSurface && (
         <Section title="SURFACE & BORDER">
-          <div className="studio-color-grid studio-color-grid--three">
-            <ColorField
-              label="BACKGROUND"
-              value={style?.backgroundColor ?? profile.colors.surface}
-              onChange={(backgroundColor) => onStyleChange({ backgroundColor })}
-            />
+          <ElementBackgroundPicker
+            style={style}
+            fallbackColor={profile.colors.surface}
+            fallbackAccent={profile.colors.accent}
+            onChange={onStyleChange}
+          />
+          <div className="studio-color-grid">
             <ColorField
               label="TEXT"
               value={style?.textColor ?? profile.colors.text}
@@ -740,12 +718,20 @@ export function ElementInspector({
             onChange={(borderWidth) => onStyleChange({ borderWidth })}
           />
           <RangeField
-            label="OPACITY"
-            value={style?.opacity ?? 1}
+            label="BACKGROUND OPACITY"
+            value={style?.backgroundOpacity ?? style?.opacity ?? 1}
             min={0}
             max={1}
             step={0.05}
-            onChange={(opacity) => onStyleChange({ opacity })}
+            onChange={(backgroundOpacity) => onStyleChange({ backgroundOpacity })}
+          />
+          <RangeField
+            label="CONTENT OPACITY"
+            value={style?.contentOpacity ?? style?.opacity ?? 1}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(contentOpacity) => onStyleChange({ contentOpacity })}
           />
         </Section>
       )}

@@ -8,6 +8,7 @@ import {
   normalizeLauncherPluginsSettings,
 } from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
+import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 import type { Theme } from "../appearance/types";
 import type { LauncherPluginsSettings, MicrosoftAccount, MirrorMode } from "../types";
 
@@ -160,6 +161,7 @@ const FlagUsIcon = () => (
 interface SettingsTabProps {
   systemRamGb: number;
   settingsRamDraft: number;
+  resolve: (template: string) => string;
   setSettingsRamDraft: (v: number) => void;
   saveSettingsRam: (value: number) => Promise<void>;
   optimizedJavaArgs: boolean;
@@ -193,6 +195,7 @@ interface SettingsTabProps {
 export function SettingsTab({
   systemRamGb,
   settingsRamDraft,
+  resolve,
   setSettingsRamDraft,
   saveSettingsRam,
   optimizedJavaArgs,
@@ -244,7 +247,12 @@ export function SettingsTab({
 
           <div className="settings-memory-block">
             <div className="memory-readout">
-              <span className="memory-number">{settingsRamDraft}</span>
+              <span
+                className="memory-number"
+                {...createPlaceholderAppearanceAttributes("%launcher_ram_value%", resolve)}
+              >
+                {resolve("%launcher_ram_value%")}
+              </span>
               <span className="memory-unit">GB</span>
             </div>
 

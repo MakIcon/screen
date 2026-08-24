@@ -10,19 +10,17 @@ import {
 } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomNumberInput } from "../inputs/CustomNumberInput";
-import {
-  JavaArgsEditor,
-  type JavaArgsTextEditRequest,
-} from "../inputs/JavaArgsEditor";
+import { JavaArgsEditor, type JavaArgsTextEditRequest } from "../inputs/JavaArgsEditor";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
 import { getDefaultJavaArgsText } from "../../utils/javaArgs";
 import { toErrorMessage } from "../../utils/errors";
 import { logger } from "../../utils/logger";
 import {
-  getTextSearchMatches,
-  replaceAllTextSearchMatches,
-} from "../../utils/textSearch";
+  createPlaceholderAppearanceAttributes,
+  createPlaceholderValueAttributes,
+} from "../../utils/placeholders";
+import { getTextSearchMatches, replaceAllTextSearchMatches } from "../../utils/textSearch";
 import { invoke } from "@tauri-apps/api/core";
 import type { BuildRuntimeSettingsDraft, JavaInstallation } from "../../types";
 
@@ -58,6 +56,7 @@ type Props = {
   systemRamGb: number;
   optimizedJavaArgs: boolean;
   draft: BuildRuntimeSettingsDraft;
+  resolvePreviewText: (template: string) => string;
   onDraftChange: Dispatch<SetStateAction<BuildRuntimeSettingsDraft>>;
   onOpenLogs?: () => void;
 };
@@ -66,6 +65,7 @@ export function BuildRuntimeSettingsEditor({
   systemRamGb,
   optimizedJavaArgs,
   draft,
+  resolvePreviewText,
   onDraftChange,
   onOpenLogs,
 }: Props) {
@@ -73,8 +73,7 @@ export function BuildRuntimeSettingsEditor({
   const [argsReplaceValue, setArgsReplaceValue] = useState("");
   const [activeSearchMatchIndex, setActiveSearchMatchIndex] = useState(0);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [textEditRequest, setTextEditRequest] =
-    useState<JavaArgsTextEditRequest | null>(null);
+  const [textEditRequest, setTextEditRequest] = useState<JavaArgsTextEditRequest | null>(null);
   const [argsImportError, setArgsImportError] = useState("");
   const [javaList, setJavaList] = useState<JavaInstallation[]>([]);
   const [javaScanning, setJavaScanning] = useState(false);
@@ -92,8 +91,7 @@ export function BuildRuntimeSettingsEditor({
     argsSearchMatches.length > 0
       ? Math.min(activeSearchMatchIndex, argsSearchMatches.length - 1)
       : -1;
-  const activeSearchMatch =
-    activeSearchIndex >= 0 ? argsSearchMatches[activeSearchIndex] : null;
+  const activeSearchMatch = activeSearchIndex >= 0 ? argsSearchMatches[activeSearchIndex] : null;
 
   useEffect(() => {
     setActiveSearchMatchIndex(0);
@@ -101,9 +99,7 @@ export function BuildRuntimeSettingsEditor({
 
   useEffect(() => {
     setActiveSearchMatchIndex((prev) =>
-      argsSearchMatches.length > 0
-        ? Math.min(prev, argsSearchMatches.length - 1)
-        : 0,
+      argsSearchMatches.length > 0 ? Math.min(prev, argsSearchMatches.length - 1) : 0,
     );
   }, [argsSearchMatches.length]);
 
@@ -165,10 +161,7 @@ export function BuildRuntimeSettingsEditor({
 
     setActiveSearchMatchIndex((prev) => {
       const normalizedPrev = Math.min(prev, argsSearchMatches.length - 1);
-      return (
-        (normalizedPrev + direction + argsSearchMatches.length) %
-        argsSearchMatches.length
-      );
+      return (normalizedPrev + direction + argsSearchMatches.length) % argsSearchMatches.length;
     });
     setSearchFocusToken((prev) => prev + 1);
   };
@@ -183,11 +176,7 @@ export function BuildRuntimeSettingsEditor({
     if (argsSearchMatches.length === 0) return;
 
     const normalizedArgs = normalizeNewlines(draft.javaArgs);
-    const nextArgs = replaceAllTextSearchMatches(
-      normalizedArgs,
-      argsSearchQuery,
-      argsReplaceValue,
-    );
+    const nextArgs = replaceAllTextSearchMatches(normalizedArgs, argsSearchQuery, argsReplaceValue);
     if (nextArgs === normalizedArgs) return;
 
     requestTextEdit(0, normalizedArgs.length, nextArgs);
@@ -257,7 +246,7 @@ export function BuildRuntimeSettingsEditor({
   };
 
   return (
-    <div className="brs-editor">
+    <div className="brs-editor" {...createPlaceholderValueAttributes(resolvePreviewText)}>
       <div className="brs-layout">
         <div className="brs-args-panel">
           <div className="brs-panel-head">
@@ -273,7 +262,13 @@ export function BuildRuntimeSettingsEditor({
                 onClick={exportJavaArgs}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M7 3.5L9.5 6M7 3.5L4.5 6M7 3.5V9.5M2.5 11.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M7 3.5L9.5 6M7 3.5L4.5 6M7 3.5V9.5M2.5 11.5h9"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </button>
               <button
@@ -283,7 +278,13 @@ export function BuildRuntimeSettingsEditor({
                 onClick={() => importArgsInputRef.current?.click()}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M7 10.5L9.5 8M7 10.5L4.5 8M7 10.5V4.5M2.5 2.5h9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M7 10.5L9.5 8M7 10.5L4.5 8M7 10.5V4.5M2.5 2.5h9"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </button>
               <input
@@ -322,7 +323,13 @@ export function BuildRuntimeSettingsEditor({
                   onClick={() => moveSearchMatch(-1)}
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                    <path d="M7 4L3.75 7.25M7 4l3.25 3.25M7 4v6.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path
+                      d="M7 4L3.75 7.25M7 4l3.25 3.25M7 4v6.5"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </button>
                 <button
@@ -333,7 +340,13 @@ export function BuildRuntimeSettingsEditor({
                   onClick={() => moveSearchMatch(1)}
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                    <path d="M7 10L3.75 6.75M7 10l3.25-3.25M7 10V3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path
+                      d="M7 10L3.75 6.75M7 10l3.25-3.25M7 10V3.5"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </button>
               </div>
@@ -365,9 +378,7 @@ export function BuildRuntimeSettingsEditor({
                 ALL
               </button>
             </div>
-            {argsImportError && (
-              <span className="brs-args-status">{argsImportError}</span>
-            )}
+            {argsImportError && <span className="brs-args-status">{argsImportError}</span>}
           </div>
           <JavaArgsEditor
             className="brs-args-editor"
@@ -388,11 +399,7 @@ export function BuildRuntimeSettingsEditor({
                   <span>LOGS</span>
                   <strong>MINECRAFT</strong>
                 </div>
-                <button
-                  className="brs-wide-action"
-                  type="button"
-                  onClick={onOpenLogs}
-                >
+                <button className="brs-wide-action" type="button" onClick={onOpenLogs}>
                   OPEN LOG WINDOW
                 </button>
               </section>
@@ -401,7 +408,11 @@ export function BuildRuntimeSettingsEditor({
             <section className="brs-section">
               <div className="brs-section-head">
                 <span>MEMORY</span>
-                <strong>{draft.ram} GB</strong>
+                <strong
+                  {...createPlaceholderAppearanceAttributes("%build_ram%", resolvePreviewText)}
+                >
+                  {resolvePreviewText("%build_ram%")}
+                </strong>
               </div>
               <div className="brs-slider">
                 <ElementSlider
@@ -462,8 +473,7 @@ export function BuildRuntimeSettingsEditor({
               {javaList.length > 0 && (
                 <div className="brs-java-list">
                   {javaList.map((java) => {
-                    const active =
-                      draft.javaPath.trim().toLowerCase() === java.path.toLowerCase();
+                    const active = draft.javaPath.trim().toLowerCase() === java.path.toLowerCase();
                     return (
                       <button
                         key={java.path}
@@ -532,9 +542,7 @@ export function BuildRuntimeSettingsEditor({
               <button
                 type="button"
                 className="brs-toggle-row"
-                onClick={() =>
-                  onDraftChange((prev) => ({ ...prev, fullscreen: !prev.fullscreen }))
-                }
+                onClick={() => onDraftChange((prev) => ({ ...prev, fullscreen: !prev.fullscreen }))}
               >
                 <span>FULLSCREEN</span>
                 <span className={`toggle-switch ${draft.fullscreen ? "enabled" : ""}`}>

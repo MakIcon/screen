@@ -15,15 +15,23 @@ import type { TabKey } from "../types";
 import {
   APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE,
   APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE,
+  parseAppearancePlaceholderValues,
   resolveAppearancePlaceholderTemplate,
 } from "../utils/placeholders";
+import { buildElementGradientImage } from "./elementGradient";
 
 export const APPEARANCE_ELEMENT_PICK_REQUEST_EVENT = "appearance-element-pick-request";
 export const APPEARANCE_ELEMENT_PICKED_EVENT = "appearance-element-picked";
 export const APPEARANCE_ELEMENT_PICK_CANCEL_EVENT = "appearance-element-pick-cancel";
 export const APPEARANCE_ELEMENT_REVEAL_EVENT = "appearance-element-reveal";
+export const APPEARANCE_ELEMENT_PREVIEW_EVENT = "appearance-element-preview";
 export const APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT = "appearance-window-animation-preview";
 export const APPEARANCE_DRAWING_CURSOR_EVENT = "appearance-drawing-cursor";
+
+export type AppearanceElementPreviewPayload = {
+  customized: boolean;
+  elementOverrides: AppearanceElementOverride[];
+};
 
 export type WindowAnimationPreviewPayload =
   | { kind: "opening"; animation: OpenAnimationId }
@@ -49,8 +57,28 @@ export function mapDrawingCursorToCover(
   return {
     x: payload.x * renderedWidth - (renderedWidth - viewportWidth) / 2,
     y: payload.y * renderedHeight - (renderedHeight - viewportHeight) / 2,
-    diameter: Math.max(5, payload.size * coverScale),
+    diameter: payload.size * coverScale,
   };
+}
+
+function opacityPercentage(opacity: number) {
+  return Math.round(opacity * 10_000) / 100;
+}
+
+function colorWithOpacity(color: string, opacity: number) {
+  return `color-mix(in srgb, ${color} ${opacityPercentage(opacity)}%, transparent)`;
+}
+
+function backgroundImageWithOpacity(backgroundImage: string, opacity: number) {
+  return backgroundImage.replace(/rgba?\([^()]*\)|#[0-9a-f]{3,8}|\btransparent\b/gi, (color) =>
+    colorWithOpacity(color, opacity),
+  );
+}
+
+function hasVisibleBackground(style: CSSStyleDeclaration) {
+  if (style.backgroundImage && style.backgroundImage !== "none") return true;
+  const color = style.backgroundColor.replace(/\s+/g, "").toLowerCase();
+  return Boolean(color) && color !== "transparent" && !/^rgba\([^)]*,0(?:\.0+)?\)$/.test(color);
 }
 
 const OVERRIDE_ATTRIBUTE = "data-appearance-override";
@@ -71,6 +99,26 @@ type ActiveTextOverride = {
 };
 
 const activeTextOverrides = new Map<Text, ActiveTextOverride>();
+
+type ActiveElementBindings = {
+  elements: Map<string, HTMLElement>;
+};
+
+const activeElementBindings = new WeakMap<HTMLElement, ActiveElementBindings>();
+
+function getActiveElementBindings(root: HTMLElement): ActiveElementBindings {
+  const existing = activeElementBindings.get(root);
+  if (existing) return existing;
+
+  const elements = new Map<string, HTMLElement>();
+  root.querySelectorAll<HTMLElement>(`[${OVERRIDE_ATTRIBUTE}]`).forEach((element) => {
+    const id = element.getAttribute(OVERRIDE_ATTRIBUTE);
+    if (id) elements.set(id, element);
+  });
+  const bindings = { elements };
+  activeElementBindings.set(root, bindings);
+  return bindings;
+}
 
 function pathSignature(path: AppearanceElementPathSegment[]) {
   return path.map((segment) => `${segment.tag}:${segment.index}:${segment.marker || ""}`).join("/");
@@ -114,6 +162,8 @@ function readElementDefaults(element: HTMLElement) {
   if (overrideId) element.removeAttribute(OVERRIDE_ATTRIBUTE);
   const rect = element.getBoundingClientRect();
   const computed = window.getComputedStyle(element);
+  const before = window.getComputedStyle(element, "::before");
+  const after = window.getComputedStyle(element, "::after");
   const computedMinWidth = computed.minWidth;
   const computedMinHeight = computed.minHeight;
 
@@ -152,6 +202,13 @@ function readElementDefaults(element: HTMLElement) {
     height: round(rect.height),
     minWidth: cssSize(computedMinWidth),
     minHeight: cssSize(computedMinHeight),
+    backgroundColor: computed.backgroundColor,
+    backgroundImage: computed.backgroundImage,
+    backgroundBefore: hasVisibleBackground(before),
+    backgroundAfter: hasVisibleBackground(after),
+    beforeOpacity: Number.parseFloat(before.opacity) || 0,
+    afterOpacity: Number.parseFloat(after.opacity) || 0,
+    textColor: computed.color,
     widthAuto,
     heightAuto,
     minWidthAuto: computedMinWidth === "auto",
@@ -238,10 +295,17 @@ function createTextTarget(element: HTMLElement, preferredSource?: HTMLElement | 
     ?.getAttribute(APPEARANCE_TEXT_TEMPLATE_ATTRIBUTE)
     ?.trim()
     .slice(0, 160);
+  const placeholderOwner = textNode.parentElement?.closest<HTMLElement>(
+    `[${APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE}]`,
+  );
+  const placeholderValues = parseAppearancePlaceholderValues(
+    placeholderOwner?.getAttribute(APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE),
+  );
   return {
     path,
     original: original.slice(0, 160),
     ...(template ? { template } : {}),
+    ...(Object.keys(placeholderValues).length > 0 ? { placeholderValues } : {}),
   };
 }
 
@@ -356,7 +420,11 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
         : `${override.style.minHeight}px`;
     declarations.push(`min-height: ${minHeight} !important`);
   }
-  if (override.style.opacity !== undefined) {
+  if (
+    override.style.opacity !== undefined &&
+    override.style.backgroundOpacity === undefined &&
+    override.style.contentOpacity === undefined
+  ) {
     declarations.push(`opacity: ${override.style.opacity} !important`);
   }
   if (override.style.radius !== undefined) {
@@ -380,10 +448,67 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
   if (override.style.textAlign) {
     declarations.push(`text-align: ${override.style.textAlign} !important`);
   }
-  if (override.style.backgroundColor) {
-    declarations.push(`background-color: ${override.style.backgroundColor} !important`);
+  const backgroundOpacity = override.style.backgroundOpacity ?? 1;
+  const backgroundColor = override.style.backgroundColor ?? override.defaults?.backgroundColor;
+  const backgroundImage = override.defaults?.backgroundImage;
+  const usesCustomGradient =
+    override.style.backgroundKind === "gradient" &&
+    ((override.style.backgroundGradientStops?.length ?? 0) >= 2 ||
+      Boolean(override.style.backgroundGradientStart && override.style.backgroundGradientEnd));
+  if (usesCustomGradient) {
+    const firstStop = override.style.backgroundGradientStops?.[0];
+    const lastStop =
+      override.style.backgroundGradientStops?.[override.style.backgroundGradientStops.length - 1];
+    const start =
+      override.style.backgroundGradientStart ?? firstStop?.color ?? backgroundColor ?? "#000000";
+    const end = override.style.backgroundGradientEnd ?? lastStop?.color ?? start;
+    declarations.push("background-color: transparent !important");
+    // Keep translucent borders visually independent from the gradient. Without
+    // this, CSS paints the background underneath the border and its color leaks
+    // through, making the outline look like a reflected copy of the gradient.
+    declarations.push("background-clip: padding-box !important");
+    declarations.push(
+      `background-image: ${buildElementGradientImage(override.style, start, end, {
+        baseColor: backgroundColor ?? start,
+        opacity: backgroundOpacity,
+      })} !important`,
+    );
+  } else {
+    if (override.style.backgroundKind === "solid") {
+      declarations.push("background-image: none !important");
+    }
+    if (
+      override.style.backgroundOpacity !== undefined &&
+      backgroundOpacity < 1 &&
+      backgroundColor
+    ) {
+      declarations.push(
+        `background-color: ${colorWithOpacity(backgroundColor, backgroundOpacity)} !important`,
+      );
+    } else if (override.style.backgroundColor) {
+      declarations.push(`background-color: ${override.style.backgroundColor} !important`);
+    }
+    if (
+      override.style.backgroundOpacity !== undefined &&
+      backgroundOpacity < 1 &&
+      backgroundImage &&
+      backgroundImage !== "none"
+    ) {
+      declarations.push(
+        `background-image: ${backgroundImageWithOpacity(backgroundImage, backgroundOpacity)} !important`,
+      );
+    }
   }
-  if (override.style.textColor) {
+  const textColor = override.style.textColor ?? override.defaults?.textColor;
+  if (
+    override.style.contentOpacity !== undefined &&
+    override.style.contentOpacity < 1 &&
+    textColor
+  ) {
+    declarations.push(
+      `color: ${colorWithOpacity(textColor, override.style.contentOpacity)} !important`,
+    );
+  } else if (override.style.textColor) {
     declarations.push(`color: ${override.style.textColor} !important`);
   }
   if (override.style.paddingX !== undefined) {
@@ -429,12 +554,48 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
   if (override.kind === "list" && override.style.gap !== undefined) {
     declarations.push(`gap: ${override.style.gap}px !important`);
   }
+  if (override.style.contentOpacity !== undefined && override.style.contentOpacity < 1) {
+    declarations.push(
+      `--appearance-element-content-opacity: ${override.style.contentOpacity} !important`,
+    );
+  }
   if (declarations.length === 0) return "";
   const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
   // Individual edits must outrank the global custom-appearance rules, which
   // intentionally use !important to cover the launcher's existing components.
   const selector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
   const rules = [`${selector} { ${declarations.join("; ")} }`];
+  const backgroundPseudos = [
+    override.defaults?.backgroundBefore
+      ? { selector: `${selector}::before`, opacity: override.defaults.beforeOpacity ?? 1 }
+      : null,
+    override.defaults?.backgroundAfter
+      ? { selector: `${selector}::after`, opacity: override.defaults.afterOpacity ?? 1 }
+      : null,
+  ].filter((entry): entry is { selector: string; opacity: number } => entry !== null);
+  if (override.style.backgroundKind && backgroundPseudos.length > 0) {
+    rules.push(
+      `${backgroundPseudos.map((entry) => entry.selector).join(", ")} { background: transparent !important; }`,
+    );
+  } else if (
+    override.style.backgroundOpacity !== undefined &&
+    backgroundOpacity < 1 &&
+    backgroundPseudos.length > 0
+  ) {
+    rules.push(
+      ...backgroundPseudos.map(
+        (entry) =>
+          `${entry.selector} { opacity: ${Math.round(entry.opacity * backgroundOpacity * 10_000) / 10_000} !important; }`,
+      ),
+    );
+  }
+  if (override.style.contentOpacity !== undefined && override.style.contentOpacity < 1) {
+    const contentOpacity = override.style.contentOpacity;
+    rules.push(
+      `${selector} > * { opacity: ${contentOpacity} !important; }`,
+      `${selector}::placeholder { opacity: ${contentOpacity} !important; }`,
+    );
+  }
   if (override.kind === "list" && override.style.layout === "grid") {
     rules.push(
       `${selector} > * { min-width: 0 !important; max-width: 100% !important; margin-bottom: 0 !important; box-sizing: border-box !important; }`,
@@ -452,19 +613,20 @@ export function applyElementAppearanceOverrides(
   root: HTMLElement,
   overrides: AppearanceElementOverride[],
 ) {
-  root.querySelectorAll<HTMLElement>(`[${OVERRIDE_ATTRIBUTE}]`).forEach((element) => {
-    element.removeAttribute(OVERRIDE_ATTRIBUTE);
-  });
-  root
-    .querySelectorAll<HTMLElement>(`[${APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE}]`)
-    .forEach((element) => element.removeAttribute(APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE));
-
+  const bindings = getActiveElementBindings(root);
+  const previousElements = bindings.elements;
+  const nextElements = new Map<string, HTMLElement>();
   const rules: string[] = [];
   const nextTextNodes = new Set<Text>();
   for (const override of overrides) {
-    const taggedElement = root.querySelector<HTMLElement>(`[${TARGET_ATTRIBUTE}="${override.id}"]`);
+    const previouslyBound = previousElements.get(override.id);
+    const taggedElement =
+      previouslyBound?.isConnected && root.contains(previouslyBound)
+        ? previouslyBound
+        : root.querySelector<HTMLElement>(`[${TARGET_ATTRIBUTE}="${override.id}"]`);
     const element = taggedElement || resolveElementTarget(root, override);
     if (!element) continue;
+    nextElements.set(override.id, element);
     element.setAttribute(TARGET_ATTRIBUTE, override.id);
     element.setAttribute(OVERRIDE_ATTRIBUTE, override.id);
     if (
@@ -475,6 +637,8 @@ export function applyElementAppearanceOverrides(
         APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE,
         JSON.stringify(override.componentSettings.settings),
       );
+    } else {
+      element.removeAttribute(APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE);
     }
     const rule = buildElementOverrideRule(override);
     if (rule) rules.push(rule);
@@ -503,6 +667,18 @@ export function applyElementAppearanceOverrides(
       }
     }
   }
+
+  const activeElements = new Set(nextElements.values());
+  for (const [id, element] of previousElements) {
+    if (nextElements.get(id) === element) continue;
+    if (element.getAttribute(OVERRIDE_ATTRIBUTE) === id) {
+      element.removeAttribute(OVERRIDE_ATTRIBUTE);
+    }
+    if (!activeElements.has(element)) {
+      element.removeAttribute(APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE);
+    }
+  }
+  bindings.elements = nextElements;
 
   for (const [textNode, active] of activeTextOverrides) {
     if (nextTextNodes.has(textNode)) continue;

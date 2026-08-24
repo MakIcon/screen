@@ -157,10 +157,11 @@ function DiscordRpcSettingsEditor({
       </div>
 
       <p className="drpc-hint">
-        Placeholders: <code>%build_name%</code> <code>%build_version%</code>{" "}
-        <code>%build_loader%</code> <code>%total_builds%</code>. Image fields take the{" "}
-        <em>asset name</em> you uploaded under Rich Presence → Art Assets in the Discord Developer
-        Portal.
+        Placeholders: <code>%player_name%</code> <code>%build_name%</code>{" "}
+        <code>%build_version%</code> <code>%build_loader%</code> <code>%build_full_loader%</code>{" "}
+        <code>%build_playtime%</code> <code>%total_playtime%</code> <code>%total_builds%</code>.
+        Prefix with <code>^</code> for uppercase. Image fields take the <em>asset name</em> you
+        uploaded under Rich Presence → Art Assets in the Discord Developer Portal.
       </p>
     </div>
   );

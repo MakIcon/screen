@@ -15,7 +15,7 @@ describe("appearance profile", () => {
     expect(profile.baseTheme).toBe("void");
     expect(profile.colors.background).toBe("#000000");
     expect(profile.shape.radius).toBe(0);
-    expect(profile.opacity.panels).toBe(0);
+    expect(profile.opacity.panels).toBe(1);
     expect(profile.motion.tabByTarget.instances).toBeTruthy();
     expect(profile.elementOverrides).toEqual([]);
     expect(profile.customized).toBe(false);
@@ -47,6 +47,23 @@ describe("appearance profile", () => {
     expect(profile.opacity).toEqual({ window: 0.55, panels: 1, controls: 0.35 });
     expect(profile.motion.opening).toBe("unfold");
     expect(profile.motion.closeButton).toBe("tear");
+  });
+
+  it("migrates the legacy transparent-panel default but preserves an intentional v2 zero", () => {
+    const migrated = normalizeAppearanceProfile({
+      version: 1,
+      customized: true,
+      opacity: { panels: 0 },
+    });
+    const explicit = normalizeAppearanceProfile({
+      version: 2,
+      customized: true,
+      opacity: { panels: 0 },
+    });
+
+    expect(migrated.version).toBe(2);
+    expect(migrated.opacity.panels).toBe(1);
+    expect(explicit.opacity.panels).toBe(0);
   });
 
   it("resolves global and per-target tab animations", () => {
@@ -165,6 +182,140 @@ describe("appearance profile", () => {
     expect(rule).toContain("border-style: solid !important");
     expect(rule).toContain("box-shadow:");
     expect(rule).toContain("transform: rotate(2deg) scale(1.08) !important");
+  });
+
+  it("controls an element background and its content opacity independently", () => {
+    const rule = buildElementOverrideRule({
+      id: "element-opacity-card",
+      label: "DIV · CARD",
+      path: [{ tag: "div", index: 0 }],
+      defaults: {
+        width: 320,
+        height: 180,
+        minWidth: 0,
+        minHeight: 0,
+        backgroundColor: "rgba(255, 255, 255, 0.65)",
+        backgroundImage: "linear-gradient(rgb(255, 255, 255), transparent)",
+        backgroundBefore: true,
+        beforeOpacity: 1,
+        textColor: "rgb(26, 26, 26)",
+      },
+      style: { backgroundOpacity: 0.25, contentOpacity: 0.7 },
+    });
+
+    expect(rule).toContain(
+      "background-color: color-mix(in srgb, rgba(255, 255, 255, 0.65) 25%, transparent) !important",
+    );
+    expect(rule).toContain(
+      "color: color-mix(in srgb, rgb(26, 26, 26) 70%, transparent) !important",
+    );
+    expect(rule).toContain("> * { opacity: 0.7 !important; }");
+    expect(rule).toContain("::before");
+    expect(rule).toContain("opacity: 0.25 !important");
+    expect(rule).toContain(
+      "linear-gradient(color-mix(in srgb, rgb(255, 255, 255) 25%, transparent), color-mix(in srgb, transparent 25%, transparent))",
+    );
+    expect(rule.split("\n")[0]).not.toMatch(/(?:^|; )opacity:/);
+  });
+
+  it("builds a custom gradient whose stops respect background opacity", () => {
+    const rule = buildElementOverrideRule({
+      id: "element-gradient-card",
+      label: "DIV · GRADIENT CARD",
+      path: [{ tag: "div", index: 0 }],
+      defaults: {
+        width: 320,
+        height: 180,
+        minWidth: 0,
+        minHeight: 0,
+        backgroundBefore: true,
+      },
+      style: {
+        backgroundKind: "gradient",
+        backgroundGradientStart: "#123456",
+        backgroundGradientEnd: "#abcdef",
+        backgroundGradientAngle: 42,
+        backgroundOpacity: 0.4,
+      },
+    });
+
+    expect(rule).toContain("background-image: linear-gradient(42deg in oklab");
+    expect(rule).toContain("color-mix(in oklab, #123456 40%, transparent) 0%");
+    expect(rule).toContain("color-mix(in oklab, #abcdef 40%, transparent) 100%");
+    expect(rule).toContain("background-clip: padding-box !important");
+    expect(rule).toContain("::before");
+    expect(rule).toContain("background: transparent !important");
+  });
+
+  it("keeps safe gradient settings and computed background data", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      elementOverrides: [
+        {
+          id: "element-gradient-safe",
+          label: "DIV · SAFE",
+          path: [{ tag: "div", index: 0 }],
+          defaults: {
+            width: 100,
+            height: 100,
+            minWidth: 0,
+            minHeight: 0,
+            backgroundColor: "rgba(255, 255, 255, 0.5)",
+            backgroundImage: "linear-gradient(rgb(255, 255, 255), transparent)",
+            textColor: "rgb(20, 20, 20)",
+          },
+          style: {
+            backgroundKind: "gradient",
+            backgroundGradientStart: "#ABCDEF",
+            backgroundGradientEnd: "#123456",
+            backgroundGradientAngle: 999,
+            backgroundGradientType: "radial",
+            backgroundGradientStops: [
+              { color: "#FF0000", position: 120 },
+              { color: "not-a-color", position: 50 },
+              { color: "#00FF00", position: 40 },
+              { color: "#0000FF", position: -20 },
+            ],
+            backgroundGradientCenterX: -10,
+            backgroundGradientCenterY: 150,
+            backgroundGradientScale: 999,
+            backgroundGradientRadialShape: "ellipse",
+            backgroundGradientRadialAspect: 9,
+            backgroundGradientStrength: -1,
+            backgroundGradientMidpoint: 2,
+            backgroundGradientSoftness: 4,
+            backgroundOpacity: -1,
+            contentOpacity: 2,
+          },
+        },
+      ],
+    });
+
+    expect(profile.elementOverrides[0].style).toMatchObject({
+      backgroundKind: "gradient",
+      backgroundGradientStart: "#abcdef",
+      backgroundGradientEnd: "#123456",
+      backgroundGradientAngle: 360,
+      backgroundGradientType: "radial",
+      backgroundGradientStops: [
+        { color: "#0000ff", position: 0 },
+        { color: "#00ff00", position: 40 },
+        { color: "#ff0000", position: 100 },
+      ],
+      backgroundGradientCenterX: 0,
+      backgroundGradientCenterY: 100,
+      backgroundGradientScale: 200,
+      backgroundGradientRadialShape: "ellipse",
+      backgroundGradientRadialAspect: 2,
+      backgroundGradientStrength: 0,
+      backgroundGradientMidpoint: 0.95,
+      backgroundGradientSoftness: 1,
+      backgroundOpacity: 0,
+      contentOpacity: 1,
+    });
+    expect(profile.elementOverrides[0].defaults?.backgroundImage).toBe(
+      "linear-gradient(rgb(255, 255, 255), transparent)",
+    );
   });
 
   it("uses zero as AUTO only for dimensions detected as flexible", () => {
@@ -516,6 +667,8 @@ describe("appearance profile", () => {
       y: 135,
       diameter: 12,
     });
+
+    expect(mapDrawingCursorToCover({ x: 0.5, y: 0.5, size: 2 }, 960, 540).diameter).toBe(2);
   });
 
   it("does not darken a solid background", () => {

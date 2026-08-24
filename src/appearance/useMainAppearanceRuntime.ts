@@ -4,11 +4,13 @@ import {
   APPEARANCE_ELEMENT_PICKED_EVENT,
   APPEARANCE_ELEMENT_PICK_CANCEL_EVENT,
   APPEARANCE_ELEMENT_PICK_REQUEST_EVENT,
+  APPEARANCE_ELEMENT_PREVIEW_EVENT,
   APPEARANCE_ELEMENT_REVEAL_EVENT,
   APPEARANCE_DRAWING_CURSOR_EVENT,
   APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT,
   applyElementAppearanceOverrides,
   beginElementPicker,
+  type AppearanceElementPreviewPayload,
   type DrawingCursorPayload,
   type WindowAnimationPreviewPayload,
 } from "./elementOverrides";
@@ -34,6 +36,43 @@ export function useMainAppearanceRuntime({
   onDrawingCursor,
 }: MainAppearanceRuntimeOptions) {
   const pickerCleanupRef = useRef<(() => void) | null>(null);
+  const appearanceRef = useRef(appearance);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    appearanceRef.current = appearance;
+    applyElementAppearanceOverrides(root, appearance.customized ? appearance.elementOverrides : []);
+  }, [appearance, rootRef]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<AppearanceElementPreviewPayload>(APPEARANCE_ELEMENT_PREVIEW_EVENT, (event) => {
+      const root = rootRef.current;
+      if (!root) return;
+      const current = appearanceRef.current;
+      const preview = {
+        ...current,
+        customized: event.payload.customized,
+        elementOverrides: event.payload.elementOverrides,
+      };
+      appearanceRef.current = preview;
+      applyElementAppearanceOverrides(root, preview.customized ? preview.elementOverrides : []);
+    })
+      .then((dispose) => {
+        if (disposed) dispose();
+        else unlisten = dispose;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [rootRef]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -43,15 +82,24 @@ export function useMainAppearanceRuntime({
     const sync = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
-        applyElementAppearanceOverrides(
-          root,
-          appearance.customized ? appearance.elementOverrides : [],
-        );
+        const current = appearanceRef.current;
+        applyElementAppearanceOverrides(root, current.customized ? current.elementOverrides : []);
       });
     };
 
-    sync();
-    const observer = new MutationObserver(sync);
+    const observer = new MutationObserver((mutations) => {
+      const current = appearanceRef.current;
+      const hasTextOverrides =
+        current.customized &&
+        current.elementOverrides.some((override) => override.text !== undefined);
+      const relevant = mutations.some(
+        (mutation) =>
+          mutation.type === "childList" ||
+          (hasTextOverrides &&
+            (mutation.type === "characterData" || mutation.type === "attributes")),
+      );
+      if (relevant) sync();
+    });
     observer.observe(root, {
       childList: true,
       characterData: true,
@@ -63,7 +111,7 @@ export function useMainAppearanceRuntime({
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-  }, [appearance.customized, appearance.elementOverrides, rootRef]);
+  }, [rootRef]);
 
   useEffect(() => {
     let disposed = false;

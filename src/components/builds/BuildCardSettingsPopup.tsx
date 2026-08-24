@@ -692,6 +692,7 @@ export function BuildCardSettingsPopup(props: Props) {
               systemRamGb={props.systemRamGb}
               optimizedJavaArgs={props.optimizedJavaArgs}
               draft={props.runtimeDraft}
+              resolvePreviewText={props.resolvePreviewText}
               onDraftChange={props.onRuntimeDraftChange}
               onOpenLogs={props.onOpenLogs}
             />
