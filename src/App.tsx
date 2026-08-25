@@ -13,7 +13,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import "./App.css";
-import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
+import { TAB_HINT, TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
 import { useRunningInstances } from "./hooks/useRunningInstances";
 import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
@@ -69,6 +69,7 @@ import type {
   LaunchLogSnapshot,
   LoaderType,
   MicrosoftAccount,
+  MascotSettings,
   MinecraftExitPayload,
   MinecraftManifest,
   TabKey,
@@ -104,6 +105,7 @@ import {
   MASCOT_FAKE_DELETE_EVENT,
   MASCOT_FAKE_RESTORE_EVENT,
 } from "./components/mascot/events";
+import { DEFAULT_MASCOT_SETTINGS } from "./components/mascot/mascotConfig";
 import {
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
@@ -1520,6 +1522,17 @@ export default function App() {
     }
   };
 
+  const saveMascotSettings = async (mascot: MascotSettings) => {
+    try {
+      const updated = await invoke<LauncherSettings>("set_mascot_settings", { mascot });
+      setLauncherSettings(updated);
+    } catch (error) {
+      logger.error(error);
+      setActionError(toErrorMessage(error));
+      pushToast("error", toErrorMessage(error), { title: "Couldn't save mascot settings" });
+    }
+  };
+
   const saveNetworkSettings = async (mirror: string) => {
     try {
       const updated = await invoke<LauncherSettings>("set_network_settings", {
@@ -2081,6 +2094,8 @@ export default function App() {
             saveAutoDownloadJava={saveAutoDownloadJava}
             mascotEnabled={launcherSettings?.mascotEnabled ?? true}
             saveMascotEnabled={saveMascotEnabled}
+            mascotSettings={launcherSettings?.mascot ?? DEFAULT_MASCOT_SETTINGS}
+            saveMascotSettings={saveMascotSettings}
             mirrorMode={launcherSettings?.network?.mirror ?? "auto"}
             saveNetworkSettings={saveNetworkSettings}
             wheelTabSwitching={wheelTabSwitching}
@@ -2137,20 +2152,57 @@ export default function App() {
 
       <main className="gallery-content">
         <aside className="sidebar">
-          <div className="index-number">{TAB_INDEX[activeTab]}</div>
+          <div className="sidebar-main">
+            <div className="sidebar-session-summary">
+              <div>
+                <small>PLAYER</small>
+                <strong
+                  title={resolve("%player_name%")}
+                  {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}
+                >
+                  {resolve("%player_name%")}
+                </strong>
+              </div>
+              <div>
+                <small>BUILD</small>
+                <strong
+                  title={resolve("%build_name%")}
+                  {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}
+                >
+                  {resolve("%build_name%")}
+                </strong>
+              </div>
+            </div>
 
-          <nav className="side-nav">
-            {TAB_ORDER.map((tab) => (
-              <button
-                key={tab}
-                className={activeTab === tab ? "active" : ""}
-                onClick={() => setTabAnimated(tab)}
-                type="button"
-              >
-                {TAB_TITLE[tab]}
-              </button>
-            ))}
-          </nav>
+            <nav
+              className={`side-nav${
+                appearance.customized &&
+                TAB_ORDER.every((tab) => appearance.navigation.legacyTabs.includes(tab))
+                  ? " legacy-layout"
+                  : ""
+              }`}
+              aria-label="Launcher sections"
+            >
+              {TAB_ORDER.map((tab) => (
+                <button
+                  key={tab}
+                  className={`${activeTab === tab ? "active" : ""}${
+                    appearance.customized && appearance.navigation.legacyTabs.includes(tab)
+                      ? " legacy"
+                      : ""
+                  }`.trim()}
+                  onClick={() => setTabAnimated(tab)}
+                  type="button"
+                  aria-current={activeTab === tab ? "page" : undefined}
+                  data-tab-key={tab}
+                  title={TAB_HINT[tab]}
+                >
+                  <span>{TAB_INDEX[tab].replace(".", "")}</span>
+                  <strong>{TAB_TITLE[tab]}</strong>
+                </button>
+              ))}
+            </nav>
+          </div>
         </aside>
 
         <section
@@ -2199,7 +2251,7 @@ export default function App() {
       </main>
 
       <footer className="gallery-footer">
-        <div className="footer-left">CORE: RUST_NATIVE / OFFLINE_VANILLA</div>
+        <div className="footer-left">SCREENLAUNCHER / {TAB_TITLE[activeTab]}</div>
         <div className="footer-right">CREATE / INSTALL / PLAY ↓</div>
       </footer>
 
@@ -2207,6 +2259,7 @@ export default function App() {
         <LauncherMascot
           activeIndex={TAB_ORDER.indexOf(activeTab)}
           enabled={launcherSettings?.mascotEnabled ?? true}
+          settings={launcherSettings?.mascot ?? DEFAULT_MASCOT_SETTINGS}
         />
       </Suspense>
     </div>

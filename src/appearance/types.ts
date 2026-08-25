@@ -241,6 +241,10 @@ export type AppearanceProfile = {
     panels: number;
     controls: number;
   };
+  navigation: {
+    /** Sidebar entries that use the original text-only launcher design. */
+    legacyTabs: TabKey[];
+  };
   elementOverrides: AppearanceElementOverride[];
   motion: {
     enabled: boolean;

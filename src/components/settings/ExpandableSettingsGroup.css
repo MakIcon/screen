@@ -1,0 +1,53 @@
+.expandable-settings-group {
+  min-width: 0;
+}
+
+.expandable-settings-group.expanded {
+  padding-bottom: 2px;
+}
+
+.expandable-settings-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 0;
+  background: none !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  animation: expandable-settings-reveal 180ms ease-out both;
+}
+
+.expandable-settings-panel::before,
+.expandable-settings-panel::after {
+  content: none !important;
+  display: none !important;
+}
+
+.expandable-settings-panel .settings-toggle-row {
+  gap: 14px;
+}
+
+.expandable-settings-panel .settings-toggle-title {
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 1.1px;
+}
+
+.expandable-settings-panel .settings-toggle-note {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@keyframes expandable-settings-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

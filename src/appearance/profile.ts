@@ -706,6 +706,9 @@ export function createDefaultAppearance(
       panels: 1,
       controls: 1,
     },
+    navigation: {
+      legacyTabs: [],
+    },
     elementOverrides: [],
     motion: {
       enabled: true,
@@ -730,6 +733,8 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const shape = isRecord(record.shape) ? record.shape : {};
   const typography = isRecord(record.typography) ? record.typography : {};
   const opacity = isRecord(record.opacity) ? record.opacity : {};
+  const navigation = isRecord(record.navigation) ? record.navigation : {};
+  const legacyNavigationTabs = Array.isArray(navigation.legacyTabs) ? navigation.legacyTabs : [];
   const motion = isRecord(record.motion) ? record.motion : {};
   const tabByTarget = isRecord(motion.tabByTarget) ? motion.tabByTarget : {};
   const normalizedPanelOpacity = clampNumber(opacity.panels, fallback.opacity.panels, 0, 1);
@@ -788,6 +793,9 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
       // legacy default once; version 2 still preserves an intentional zero.
       panels: profileVersion === 1 && normalizedPanelOpacity <= 0.001 ? 1 : normalizedPanelOpacity,
       controls: clampNumber(opacity.controls, fallback.opacity.controls, 0.35, 1),
+    },
+    navigation: {
+      legacyTabs: TAB_ORDER.filter((tab) => legacyNavigationTabs.includes(tab)),
     },
     elementOverrides: normalizeElementOverrides(record.elementOverrides),
     motion: {
@@ -877,6 +885,9 @@ export function applyAppearanceToElement(element: HTMLElement, profileValue: App
   element.dataset.appearanceBackground = profile.background.kind;
   element.dataset.appearanceBackgroundScope = profile.background.scope;
   element.dataset.appearancePanels = profile.opacity.panels <= 0.001 ? "transparent" : "tinted";
+  element.dataset.appearanceLegacySidebar = profile.customized
+    ? profile.navigation.legacyTabs.join(" ")
+    : "";
   element.dataset.motion = profile.motion.enabled ? profile.motion.uiStyle : "off";
   element.dataset.openAnimation = profile.motion.enabled ? profile.motion.opening : "none";
 

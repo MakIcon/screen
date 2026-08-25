@@ -56,15 +56,24 @@ import {
 } from "./elementOverrides";
 import "./AppearanceStudio.css";
 
-type StudioCategory = "background" | "colors" | "shape" | "type" | "opacity" | "motion" | "element";
+type StudioCategory =
+  | "background"
+  | "colors"
+  | "navigation"
+  | "shape"
+  | "type"
+  | "opacity"
+  | "motion"
+  | "element";
 
 const CATEGORIES: { id: StudioCategory; index: string; label: string; note: string }[] = [
-  { id: "background", index: "01", label: "BACKGROUND", note: "Image, color or canvas" },
-  { id: "colors", index: "02", label: "COLORS", note: "Palette and accent" },
-  { id: "shape", index: "03", label: "SHAPE", note: "Global corner radius" },
-  { id: "type", index: "04", label: "TYPOGRAPHY", note: "Interface and display" },
-  { id: "opacity", index: "05", label: "OPACITY", note: "Window, panels, controls" },
-  { id: "motion", index: "06", label: "MOTION", note: "Open, tabs and close" },
+  { id: "background", index: "01", label: "BACKGROUND", note: "Color, image or drawing" },
+  { id: "colors", index: "02", label: "COLORS", note: "Theme and custom palette" },
+  { id: "navigation", index: "03", label: "SIDEBAR", note: "New or original menu items" },
+  { id: "shape", index: "04", label: "SHAPE", note: "Corners and rounding" },
+  { id: "type", index: "05", label: "TYPOGRAPHY", note: "Interface and display fonts" },
+  { id: "opacity", index: "06", label: "OPACITY", note: "Window, panels and controls" },
+  { id: "motion", index: "07", label: "MOTION", note: "Transitions and effects" },
 ];
 
 function elementStyleBadges(override: AppearanceElementOverride) {
@@ -173,6 +182,12 @@ export function AppearanceStudioApp() {
   const originalAppearanceRef = useRef(readStoredAppearance());
   const closingRef = useRef(false);
   const elementPreviewOnlyRef = useRef(false);
+  const hasUnsavedChanges = useMemo(
+    () =>
+      JSON.stringify(draft) !==
+      JSON.stringify({ ...originalAppearanceRef.current, customized: true }),
+    [draft],
+  );
 
   const closeStudio = useCallback(async () => {
     if (closingRef.current) return;
@@ -612,13 +627,29 @@ export function AppearanceStudioApp() {
     }
   };
 
+  const setLegacySidebarTabs = (legacyTabs: TabKey[]) => {
+    patchDraft((current) => ({
+      ...current,
+      navigation: { legacyTabs },
+    }));
+  };
+
+  const toggleLegacySidebarTab = (tab: TabKey) => {
+    const legacyTabs = draft.navigation.legacyTabs.includes(tab)
+      ? draft.navigation.legacyTabs.filter((candidate) => candidate !== tab)
+      : TAB_ORDER.filter(
+          (candidate) => candidate === tab || draft.navigation.legacyTabs.includes(candidate),
+        );
+    setLegacySidebarTabs(legacyTabs);
+  };
+
   const save = () => {
     try {
       const saved = writeStoredAppearance({ ...draft, customized: true });
       originalAppearanceRef.current = saved;
       setDraft(saved);
       void emit(APPEARANCE_CHANGED_EVENT, saved).catch(() => {});
-      setMessage("APPEARANCE SAVED");
+      setMessage("SAVED AND APPLIED TO LAUNCHER");
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message.toUpperCase() : "COULD NOT SAVE APPEARANCE",
@@ -631,7 +662,15 @@ export function AppearanceStudioApp() {
     setSelectedTargets([]);
     setElementInteractionState("normal");
     setElementListOpen(false);
-    setMessage("DRAFT RESET");
+    setMessage("DEFAULTS PREVIEWED · SAVE TO APPLY");
+  };
+
+  const discard = () => {
+    setDraft({ ...originalAppearanceRef.current, customized: true });
+    setSelectedTargets([]);
+    setElementInteractionState("normal");
+    setElementListOpen(false);
+    setMessage("UNSAVED CHANGES DISCARDED");
   };
 
   const chooseImage = async (file: File | undefined) => {
@@ -909,6 +948,62 @@ export function AppearanceStudioApp() {
             </Section>
           </>
         );
+
+      case "navigation": {
+        const legacyTabs = draft.navigation.legacyTabs;
+        const allLegacy = TAB_ORDER.every((tab) => legacyTabs.includes(tab));
+        return (
+          <>
+            <Section
+              title="SIDEBAR DESIGN"
+              note="Use the current numbered layout or bring back the original minimal menu."
+            >
+              <div className="studio-sidebar-presets">
+                <button
+                  type="button"
+                  className={legacyTabs.length === 0 ? "active" : ""}
+                  onClick={() => setLegacySidebarTabs([])}
+                >
+                  <strong>CURRENT DESIGN</strong>
+                  <small>Numbers and active background</small>
+                </button>
+                <button
+                  type="button"
+                  className={allLegacy ? "active" : ""}
+                  onClick={() => setLegacySidebarTabs([...TAB_ORDER])}
+                >
+                  <strong>ORIGINAL DESIGN</strong>
+                  <small>Text-only menu for every item</small>
+                </button>
+              </div>
+            </Section>
+
+            <Section
+              title="ORIGINAL STYLE BY ITEM"
+              note="Choose only the entries that should look like the old launcher menu."
+            >
+              <div className="studio-sidebar-tab-grid">
+                {TAB_ORDER.map((tab) => {
+                  const legacy = legacyTabs.includes(tab);
+                  return (
+                    <button
+                      type="button"
+                      key={tab}
+                      className={legacy ? "active" : ""}
+                      aria-pressed={legacy}
+                      onClick={() => toggleLegacySidebarTab(tab)}
+                    >
+                      <span>{legacy ? "ORIGINAL" : "CURRENT"}</span>
+                      <strong>{TAB_TITLE[tab]}</strong>
+                      <small>{legacy ? "TEXT ONLY" : "NUMBERED"}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          </>
+        );
+      }
 
       case "shape":
         if (selectedTarget) {
@@ -1302,6 +1397,22 @@ export function AppearanceStudioApp() {
     }
   };
 
+  const activeEditorContext = elementListOpen
+    ? {
+        index: "09",
+        label: "EDITED ELEMENTS",
+        note: "Review every element with its own style and jump back to it in the launcher.",
+      }
+    : category === "element"
+      ? {
+          index: "08",
+          label: selectedTarget ? "ELEMENT SETTINGS" : "PICK AN ELEMENT",
+          note: selectedTarget
+            ? `Fine-tune ${selectedTarget.label} without changing the rest of the launcher.`
+            : "Use Pick from launcher, then click the button, card or text you want to change.",
+        }
+      : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
+
   return (
     <div className="appearance-studio-window">
       <header
@@ -1311,28 +1422,44 @@ export function AppearanceStudioApp() {
           if (studioWindow) void studioWindow.startDragging();
         }}
       >
-        <div>
-          <span>SCREENLAUNCHER / SYSTEM</span>
+        <div className="appearance-studio-titlebar-brand">
+          <span>SCREENLAUNCHER / DESIGN TOOLS</span>
           <strong>APPEARANCE STUDIO</strong>
         </div>
-        <div className="appearance-studio-window-actions">
-          <button type="button" onClick={() => void studioWindow?.minimize()}>
-            MINIMIZE
-          </button>
-          <button type="button" onClick={() => void closeStudio()}>
-            CLOSE
-          </button>
+        <div className="appearance-studio-titlebar-tools">
+          <div className="appearance-live-status">
+            <i aria-hidden="true" />
+            <div>
+              <strong>LIVE PREVIEW</strong>
+              <span>Changes appear in the launcher</span>
+            </div>
+          </div>
+          <div className="appearance-studio-window-actions">
+            <button type="button" onClick={() => void studioWindow?.minimize()}>
+              MINIMIZE
+            </button>
+            <button type="button" onClick={() => void closeStudio()}>
+              CLOSE
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="appearance-studio-body">
-        <nav className="appearance-studio-categories">
+        <nav className="appearance-studio-categories" aria-label="Appearance editor sections">
+          <div className="appearance-studio-nav-intro">
+            <span>WORKFLOW</span>
+            <strong>Design your launcher</strong>
+            <p>Choose a section, adjust it and save when the preview feels right.</p>
+          </div>
+          <span className="appearance-studio-nav-group">GLOBAL STYLE</span>
           {CATEGORIES.map((item) => (
             <button
               type="button"
               key={item.id}
               className={!elementListOpen && category === item.id ? "active" : ""}
               onClick={() => selectCategory(item.id)}
+              aria-current={!elementListOpen && category === item.id ? "step" : undefined}
             >
               <span>{item.index}</span>
               <div>
@@ -1341,16 +1468,20 @@ export function AppearanceStudioApp() {
               </div>
             </button>
           ))}
+          <span className="appearance-studio-nav-group appearance-studio-nav-group--tools">
+            ELEMENT TOOLS
+          </span>
           <button
             type="button"
             className={`appearance-element-nav${!elementListOpen && category === "element" ? " active" : ""}`}
             onClick={() => selectCategory("element")}
+            aria-current={!elementListOpen && category === "element" ? "step" : undefined}
           >
-            <span>07</span>
+            <span>08</span>
             <div>
-              <strong>ELEMENT</strong>
+              <strong>PICK ELEMENT</strong>
               <small>
-                {selectedTarget ? "Text, layout and effects" : "Pick and inspect an object"}
+                {selectedTarget ? "Edit the current selection" : "Choose anything on screen"}
               </small>
             </div>
           </button>
@@ -1359,62 +1490,66 @@ export function AppearanceStudioApp() {
               type="button"
               className={`appearance-customized-nav${elementListOpen ? " active" : ""}`}
               onClick={openElementList}
+              aria-current={elementListOpen ? "step" : undefined}
             >
-              <span>08</span>
+              <span>09</span>
               <div>
                 <strong>
-                  CUSTOMIZED <em>{draft.elementOverrides.length}</em>
+                  EDITED ELEMENTS <em>{draft.elementOverrides.length}</em>
                 </strong>
-                <small>Individual element styles</small>
+                <small>Review individual styles</small>
               </div>
             </button>
           )}
         </nav>
 
         <main className="appearance-studio-editor">
-          <div className="appearance-live-link">
-            <span>LIVE LINK</span>
-            <div>
-              <strong>MAIN LAUNCHER WINDOW</strong>
-              <small>Every change is applied to the real window immediately.</small>
+          <section className="appearance-target-bar">
+            <div className="appearance-target-heading">
+              <span>STEP 1</span>
+              <div>
+                <strong>CHOOSE WHAT TO EDIT</strong>
+                <small>Start globally or select one item from the launcher window.</small>
+              </div>
             </div>
-            <i aria-hidden="true" />
-          </div>
-          <div className="appearance-target-bar">
-            <span>EDIT TARGET</span>
-            <div>
+            <div className="appearance-target-choices">
               <button
                 type="button"
                 className={!selectedTarget ? "active" : ""}
                 onClick={selectWholeLauncher}
               >
-                WHOLE LAUNCHER
+                <strong>WHOLE LAUNCHER</strong>
+                <small>Theme every screen</small>
               </button>
               <button
                 type="button"
-                className={selectedTarget ? "active" : ""}
+                className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
                 onClick={requestElementPick}
               >
-                {pickingElement
-                  ? "SHIFT+CLICK · CLICK ONCE TO FINISH"
-                  : "PICK ELEMENT · SHIFT MULTI"}
+                <strong>{pickingElement ? "CLICK IN LAUNCHER…" : "PICK FROM LAUNCHER"}</strong>
+                <small>
+                  {pickingElement ? "Hold Shift for several" : "Button, card, text or field"}
+                </small>
               </button>
             </div>
-            <strong title={selectedTargets.map((target) => target.label).join(", ")}>
-              {selectedTargets.length > 1
-                ? `${selectedTargets.length} ELEMENTS SELECTED`
-                : selectedTarget?.label || "GLOBAL SETTINGS"}
-            </strong>
-            {selectedTarget && (
-              <button
-                type="button"
-                className="appearance-target-clear"
-                onClick={clearSelectedStyle}
-                disabled={!selectedOverride}
-              >
-                {selectedTargets.length > 1 ? "RESET ELEMENTS" : "RESET ELEMENT"}
-              </button>
-            )}
+            <div className="appearance-target-current">
+              <span>CURRENT TARGET</span>
+              <strong title={selectedTargets.map((target) => target.label).join(", ")}>
+                {selectedTargets.length > 1
+                  ? `${selectedTargets.length} ELEMENTS SELECTED`
+                  : selectedTarget?.label || "GLOBAL SETTINGS"}
+              </strong>
+              {selectedTarget && (
+                <button
+                  type="button"
+                  className="appearance-target-clear"
+                  onClick={clearSelectedStyle}
+                  disabled={!selectedOverride}
+                >
+                  {selectedTargets.length > 1 ? "RESET ELEMENTS" : "RESET ELEMENT"}
+                </button>
+              )}
+            </div>
             {selectedTarget && (
               <section className="appearance-interaction-state">
                 <span>VISUAL STATE</span>
@@ -1424,20 +1559,20 @@ export function AppearanceStudioApp() {
                     className={elementInteractionState === "normal" ? "active" : ""}
                     onClick={() => setElementInteractionState("normal")}
                   >
-                    NORMAL · BEFORE HOVER
+                    NORMAL
                   </button>
                   <button
                     type="button"
                     className={elementInteractionState === "hover" ? "active" : ""}
                     onClick={() => setElementInteractionState("hover")}
                   >
-                    HOVER · POINTER OVER
+                    HOVER
                   </button>
                 </div>
                 <small>
                   {elementInteractionState === "hover"
-                    ? "The selected launcher element is pinned in hover preview."
-                    : "These values define the element before the pointer enters it."}
+                    ? "Preview while the pointer is over the element."
+                    : "Preview before the pointer enters the element."}
                 </small>
                 <button
                   type="button"
@@ -1449,7 +1584,14 @@ export function AppearanceStudioApp() {
                 </button>
               </section>
             )}
-          </div>
+          </section>
+
+          <header className="appearance-editor-heading">
+            <span>STEP 2 / {activeEditorContext.index}</span>
+            <strong>{activeEditorContext.label}</strong>
+            <p>{activeEditorContext.note}</p>
+          </header>
+
           {elementListOpen ? (
             <CustomScrollArea className="appearance-element-list-scroll">
               <div className="appearance-element-list">
@@ -1498,13 +1640,32 @@ export function AppearanceStudioApp() {
           )}
 
           <footer className="appearance-studio-actions">
-            <span className={message.includes("COULD NOT") ? "error" : ""}>{message}</span>
-            <div>
-              <button type="button" onClick={reset}>
-                RESET DRAFT
+            <div className="appearance-save-state">
+              <i className={hasUnsavedChanges ? "unsaved" : ""} aria-hidden="true" />
+              <div>
+                <strong>{hasUnsavedChanges ? "UNSAVED CHANGES" : "ALL CHANGES SAVED"}</strong>
+                <small className={message.includes("COULD NOT") ? "error" : ""}>
+                  {message ||
+                    (hasUnsavedChanges
+                      ? "Preview is live. Save to keep it."
+                      : "Your launcher appearance is up to date.")}
+                </small>
+              </div>
+            </div>
+            <div className="appearance-studio-action-buttons">
+              <button type="button" onClick={discard} disabled={!hasUnsavedChanges}>
+                DISCARD
               </button>
-              <button type="button" className="primary" onClick={save}>
-                SAVE APPEARANCE
+              <button type="button" className="restore" onClick={reset}>
+                DEFAULTS
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={save}
+                disabled={!hasUnsavedChanges}
+              >
+                SAVE & APPLY
               </button>
             </div>
           </footer>

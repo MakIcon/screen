@@ -1,6 +1,6 @@
 use crate::{
     minecraft::{mirrors, normalized_ram},
-    models::{LauncherPluginsSettings, LauncherSettings},
+    models::{LauncherPluginsSettings, LauncherSettings, MascotSettings},
     paths::{read_settings, write_settings},
 };
 use serde::Serialize;
@@ -50,6 +50,14 @@ pub async fn set_auto_download_java(enabled: bool) -> Result<LauncherSettings, S
 pub async fn set_mascot_enabled(enabled: bool) -> Result<LauncherSettings, String> {
     let mut settings = read_settings().await?;
     settings.mascot_enabled = enabled;
+    write_settings(&settings).await?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub async fn set_mascot_settings(mascot: MascotSettings) -> Result<LauncherSettings, String> {
+    let mut settings = read_settings().await?;
+    settings.mascot = mascot.normalize();
     write_settings(&settings).await?;
     Ok(settings)
 }

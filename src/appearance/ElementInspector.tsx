@@ -154,7 +154,7 @@ export function ElementInspector({
   if (!target) {
     return (
       <div className="appearance-element-empty">
-        <span>07 / ELEMENT INSPECTOR</span>
+        <span>08 / ELEMENT INSPECTOR</span>
         <strong>PICK ANY OBJECT IN THE LAUNCHER</strong>
         <p>
           Select a button, title, card or control. Its text and visual settings will appear here and

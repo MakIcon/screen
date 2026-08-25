@@ -1,3 +1,5 @@
+import type { MascotSettings } from "../../types";
+
 export type MascotEmotion =
   | "angry"
   | "confused"
@@ -27,6 +29,8 @@ export type MascotPhase =
   | "chaos"
   | "trick"
   | "eating"
+  | "drinking"
+  | "sulking"
   | "typing"
   | "yawn"
   | "stretch"
@@ -38,6 +42,33 @@ export type MascotPosition = { x: number; y: number };
 export type PointerSample = MascotPosition & { time: number };
 export type LooseButtonTransform = MascotPosition & { rotation: number };
 export type PiskelAsset = { width: number; height: number; src: string };
+export type BowlStatus = "full" | "empty" | "hidden";
+export type BowlDrop = MascotPosition & {
+  id: number;
+  kind: "normal" | "small";
+  rotation: number;
+  scale: number;
+  opacity: number;
+};
+export type BowlSpill = MascotPosition & {
+  id: number;
+  puddleVisible: boolean;
+  puddleX: number;
+  floorY: number;
+  drops: BowlDrop[];
+};
+
+export type BowlDragState = {
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+  lastDirection: number;
+  lastSplashAt: number;
+  samples: PointerSample[];
+};
 
 export type CarriedElement = {
   element: HTMLElement;
@@ -73,4 +104,5 @@ export type ChaosSnapshot = {
 export interface LauncherMascotProps {
   activeIndex: number;
   enabled: boolean;
+  settings: MascotSettings;
 }

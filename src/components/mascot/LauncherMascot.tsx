@@ -12,11 +12,21 @@ import {
   MASCOT_FAKE_RESTORE_EVENT,
 } from "./events";
 import {
+  addMascotRage,
+  BOWL_EMPTY_LIFETIME_MS,
+  BOWL_HOME_POSITION,
+  BOWL_RESPAWN_DELAY_MS,
+  BOWL_SIZE,
   CHAOS_SPEED,
+  isBowlSpillThrow,
+  isHardMascotThrow,
   MAX_CHAOS_DEBRIS,
   MASCOT_SIZE,
   MIN_STEAL_DELAY_MS,
   MISCHIEF_DECAY_MS,
+  PUDDLE_LIFETIME_MS,
+  RAGE_PER_BOWL_SPILL,
+  RAGE_PER_HARD_THROW,
   ROAMING_EMOTIONS,
   ROAM_INTERVAL_MS,
   RUN_SPEED,
@@ -25,9 +35,8 @@ import {
   STEALABLE_SELECTOR,
   STEAL_DELAY_VARIANCE_MS,
   STEAL_REACH_PX,
+  shouldSplashBowl,
   THROWS_TO_CHAOS,
-  THROW_HISTORY_MS,
-  THROW_THRESHOLD,
   UNFOCUSED_SLEEP_DELAY_MS,
   WALK_SPEED,
 } from "./mascotConfig";
@@ -54,6 +63,10 @@ import {
 } from "./mascotDom";
 import type {
   CarriedElement,
+  BowlDragState,
+  BowlDrop,
+  BowlSpill,
+  BowlStatus,
   ChaosDebris,
   ChaosSnapshot,
   DragState,
@@ -66,7 +79,38 @@ import type {
 } from "./mascotTypes";
 import "./LauncherMascot.css";
 
-export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
+type BowlDropParticle = BowlDrop & {
+  vx: number;
+  vy: number;
+  spin: number;
+  age: number;
+  delay: number;
+  baseScale: number;
+  bounces: number;
+  landedAt: number | null;
+};
+
+const BOWL_DROP_KINDS = [
+  "normal",
+  "small",
+  "normal",
+  "small",
+  "normal",
+  "small",
+  "normal",
+] as const;
+
+export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMascotProps) {
+  const mascotName = settings.name.trim() || "PIXEL";
+  const {
+    showName,
+    rageEnabled,
+    bowlEnabled,
+    movementEnabled,
+    interactionsEnabled,
+    carryElementsEnabled,
+    scrollListsEnabled,
+  } = settings;
   const layerRef = useRef<HTMLDivElement | null>(null);
   const characterRef = useRef<HTMLDivElement | null>(null);
   const positionRef = useRef<MascotPosition>({ x: 118, y: 86 });
@@ -77,7 +121,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const motionFinishRef = useRef<((completed: boolean) => void) | null>(null);
   const emotionTimerRef = useRef<number | null>(null);
   const mischiefDecayTimerRef = useRef<number | null>(null);
-  const throwTimesRef = useRef<number[]>([]);
+  const ragePointsRef = useRef(0);
   const ignoreClickRef = useRef(false);
   const chaosTokenRef = useRef(0);
   const chaosActiveRef = useRef(false);
@@ -100,10 +144,21 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const replicaRef = useRef<HTMLDivElement | null>(null);
   const looseButtonReplicaRef = useRef<HTMLDivElement | null>(null);
   const eatReplicaRef = useRef<HTMLDivElement | null>(null);
-  const pendingRageRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const smokeTokenRef = useRef(0);
+  const bowlPositionRef = useRef<MascotPosition>({ ...BOWL_HOME_POSITION });
+  const bowlStatusRef = useRef<BowlStatus>(bowlEnabled ? "full" : "hidden");
+  const bowlDragRef = useRef<BowlDragState | null>(null);
+  const bowlFrameRef = useRef<number | null>(null);
+  const bowlDropFrameRef = useRef<number | null>(null);
+  const bowlEmptyTimerRef = useRef<number | null>(null);
+  const bowlRespawnTimerRef = useRef<number | null>(null);
+  const puddleRemoveTimerRef = useRef<number | null>(null);
+  const bowlRageTimerRef = useRef<number | null>(null);
+  const bowlMoodTimerRef = useRef<number | null>(null);
+  const bowlReactionTokenRef = useRef(0);
+  const nextDrinkAtRef = useRef(Date.now() + 5_500);
 
   const [position, setPositionState] = useState(positionRef.current);
   const [phase, setPhaseState] = useState<MascotPhase>("idle");
@@ -117,12 +172,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   });
   const [ragePress, setRagePress] = useState<MascotPosition | null>(null);
   const [scrollHand, setScrollHand] = useState<MascotPosition | null>(null);
-  const [chaosActive, setChaosActive] = useState(false);
+  const [undoAvailable, setUndoAvailable] = useState(false);
   const [modalForeground, setModalForeground] = useState(false);
   const [throwProgress, setThrowProgress] = useState(0);
   const [smoke, setSmoke] = useState<{ x: number; y: number; frame: number } | null>(null);
   const [mouthFrame, setMouthFrame] = useState<number | null>(null);
   const [speech, setSpeech] = useState<string | null>(null);
+  const [bowlPosition, setBowlPositionState] = useState<MascotPosition>(bowlPositionRef.current);
+  const [bowlStatus, setBowlStatusState] = useState<BowlStatus>(bowlStatusRef.current);
+  const [bowlDragging, setBowlDragging] = useState(false);
+  const [bowlRotation, setBowlRotation] = useState(0);
+  const [bowlSpill, setBowlSpill] = useState<BowlSpill | null>(null);
 
   activeIndexRef.current = activeIndex;
 
@@ -134,6 +194,16 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const setPhase = useCallback((next: MascotPhase) => {
     phaseRef.current = next;
     setPhaseState(next);
+  }, []);
+
+  const setBowlPosition = useCallback((next: MascotPosition) => {
+    bowlPositionRef.current = next;
+    setBowlPositionState(next);
+  }, []);
+
+  const setBowlStatus = useCallback((next: BowlStatus) => {
+    bowlStatusRef.current = next;
+    setBowlStatusState(next);
   }, []);
 
   // Puff of landing dust at (x, y) that cycles through the four smoke frames.
@@ -189,6 +259,56 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       };
     },
     [getBounds],
+  );
+
+  const clampBowlPosition = useCallback(
+    (next: MascotPosition) => {
+      const root = getRoot();
+      if (!root) return next;
+      return {
+        x: clamp(next.x, 4, Math.max(4, root.clientWidth - BOWL_SIZE - 4)),
+        y: clamp(next.y, 4, Math.max(4, root.clientHeight - BOWL_SIZE - 4)),
+      };
+    },
+    [getRoot],
+  );
+
+  const clearBowlTimers = useCallback(() => {
+    const timerRefs = [
+      bowlEmptyTimerRef,
+      bowlRespawnTimerRef,
+      puddleRemoveTimerRef,
+      bowlRageTimerRef,
+      bowlMoodTimerRef,
+    ];
+    timerRefs.forEach((timerRef) => {
+      if (timerRef.current === null) return;
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    });
+  }, []);
+
+  const resetBowl = useCallback(
+    (visible: boolean) => {
+      bowlReactionTokenRef.current += 1;
+      bowlDragRef.current = null;
+      setBowlDragging(false);
+      if (bowlFrameRef.current !== null) {
+        window.cancelAnimationFrame(bowlFrameRef.current);
+        bowlFrameRef.current = null;
+      }
+      if (bowlDropFrameRef.current !== null) {
+        window.cancelAnimationFrame(bowlDropFrameRef.current);
+        bowlDropFrameRef.current = null;
+      }
+      clearBowlTimers();
+      setBowlSpill(null);
+      setBowlRotation(0);
+      setBowlPosition(clampBowlPosition({ ...BOWL_HOME_POSITION }));
+      setBowlStatus(visible ? "full" : "hidden");
+      nextDrinkAtRef.current = Date.now() + 5_500;
+    },
+    [clampBowlPosition, clearBowlTimers, setBowlPosition, setBowlStatus],
   );
 
   const cancelMotion = useCallback(() => {
@@ -302,10 +422,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   const scheduleMischiefDecay = useCallback(() => {
     clearMischiefDecayTimer();
-    if (throwTimesRef.current.length === 0) return;
+    if (ragePointsRef.current === 0) return;
     mischiefDecayTimerRef.current = window.setTimeout(() => {
       mischiefDecayTimerRef.current = null;
-      throwTimesRef.current = [];
+      ragePointsRef.current = 0;
       setThrowProgress(0);
     }, MISCHIEF_DECAY_MS);
   }, [clearMischiefDecayTimer]);
@@ -632,6 +752,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     async (target: HTMLElement, isAlive: () => boolean) => {
       const scrollable = getScrollableAncestor(target);
       if (!scrollable) return true;
+      if (!scrollListsEnabled) return isVisibleInsideScroller(target, scrollable);
 
       const scrollRect = scrollable.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
@@ -662,7 +783,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setScrollHand(null);
       }
     },
-    [animateListScroll, animatePath, buildScrollbarApproachPath],
+    [animateListScroll, animatePath, buildScrollbarApproachPath, scrollListsEnabled],
   );
 
   useEffect(() => {
@@ -685,6 +806,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
 
   const stealRandomButton = useCallback(async () => {
     if (
+      !movementEnabled ||
+      !carryElementsEnabled ||
       chaosActiveRef.current ||
       modalOpenRef.current ||
       dragRef.current ||
@@ -706,6 +829,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     ).filter((element) => {
       if (!isStealableElement(element) || !isRenderedStealTarget(element)) return false;
       if (isVisible(element, rootRect)) return true;
+      if (!scrollListsEnabled) return false;
       const scrollable = getScrollableAncestor(element);
       return !!scrollable && isVisible(scrollable, rootRect);
     });
@@ -791,13 +915,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     getRoot,
     getSceneRoot,
     isNearElement,
+    carryElementsEnabled,
+    movementEnabled,
     resetStealClock,
+    scrollListsEnabled,
     scrollTargetIntoView,
     setPhase,
   ]);
 
   const roam = useCallback(async () => {
     if (
+      !movementEnabled ||
       dragRef.current ||
       chaosActiveRef.current ||
       carriedButtonRef.current ||
@@ -812,10 +940,65 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     setEmotion(randomItem(ROAMING_EMOTIONS) ?? "neutral");
     const completed = await animatePath(buildContourPath(target), WALK_SPEED, "walking");
     if (completed && !chaosActiveRef.current) setPhase("idle");
-  }, [animatePath, buildContourPath, collectContours, setPhase]);
+  }, [animatePath, buildContourPath, collectContours, movementEnabled, setPhase]);
+
+  const drinkFromBowl = useCallback(async () => {
+    if (
+      !bowlEnabled ||
+      !movementEnabled ||
+      bowlStatusRef.current !== "full" ||
+      bowlDragRef.current ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current ||
+      chaosActiveRef.current ||
+      modalOpenRef.current
+    )
+      return false;
+
+    activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
+    const targetBowl = bowlPositionRef.current;
+    const approachFromLeft = positionRef.current.x < targetBowl.x;
+    const destination = clampPosition({
+      x: targetBowl.x + (approachFromLeft ? -34 : 34),
+      y: targetBowl.y - 31,
+    });
+    const alive = () =>
+      activityToken === activityTokenRef.current &&
+      bowlStatusRef.current === "full" &&
+      !bowlDragRef.current &&
+      !chaosActiveRef.current;
+
+    try {
+      setEmotion("happy");
+      const arrived = await animatePath(
+        [{ x: destination.x, y: positionRef.current.y }, destination],
+        WALK_SPEED,
+        "walking",
+      );
+      if (!arrived || !alive()) return false;
+      setPhase("drinking");
+      setEmotion("neutral");
+      await wait(1_900);
+      if (!alive()) return false;
+      setEmotion("happy");
+      await wait(260);
+      return alive();
+    } finally {
+      activityBusyRef.current = false;
+      nextDrinkAtRef.current = Date.now() + 9_000 + Math.random() * 7_000;
+      if ((phaseRef.current as MascotPhase) === "drinking") setPhase("idle");
+    }
+  }, [animatePath, bowlEnabled, clampPosition, movementEnabled, setPhase]);
 
   const jumpOnRandomButton = useCallback(async () => {
-    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    if (
+      !movementEnabled ||
+      !interactionsEnabled ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current
+    )
+      return false;
     const root = getRoot();
     const stage = getActiveStage();
     if (!root || !stage) return false;
@@ -857,10 +1040,25 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
+  }, [
+    animatePath,
+    buildContourPath,
+    getActiveStage,
+    getRoot,
+    interactionsEnabled,
+    isNearElement,
+    movementEnabled,
+    setPhase,
+  ]);
 
   const scrollActiveList = useCallback(async () => {
-    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    if (
+      !movementEnabled ||
+      !scrollListsEnabled ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current
+    )
+      return false;
     const root = getRoot();
     const stage = getActiveStage();
     if (!root || !stage) return false;
@@ -933,11 +1131,19 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     getActiveStage,
     getRoot,
     isNearElement,
+    movementEnabled,
+    scrollListsEnabled,
     setPhase,
   ]);
 
   const teaseSlider = useCallback(async () => {
-    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    if (
+      !movementEnabled ||
+      !interactionsEnabled ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current
+    )
+      return false;
     const root = getRoot();
     const stage = getActiveStage();
     if (!root || !stage) return false;
@@ -979,7 +1185,16 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [animatePath, buildContourPath, getActiveStage, getRoot, isNearElement, setPhase]);
+  }, [
+    animatePath,
+    buildContourPath,
+    getActiveStage,
+    getRoot,
+    interactionsEnabled,
+    isNearElement,
+    movementEnabled,
+    setPhase,
+  ]);
 
   // Takes the stolen element in its paws and stuffs it in its mouth: the mouth
   // sprite opens (frames 0→3) with the button composited half-in, then closes
@@ -1066,7 +1281,13 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   // Waddles up to a field, a little keyboard appears, and it "types" gibberish
   // into a speech bubble (same style as the hover hint), then wipes it.
   const typeNonsense = useCallback(async () => {
-    if (phaseRef.current !== "idle" || activityBusyRef.current) return false;
+    if (
+      !movementEnabled ||
+      !interactionsEnabled ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current
+    )
+      return false;
     const root = getRoot();
     const stage = getActiveStage();
     if (!root || !stage) return false;
@@ -1124,10 +1345,19 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setPhase("idle");
       }
     }
-  }, [animatePath, buildContourPath, getActiveStage, getRoot, setPhase]);
+  }, [
+    animatePath,
+    buildContourPath,
+    getActiveStage,
+    getRoot,
+    interactionsEnabled,
+    movementEnabled,
+    setPhase,
+  ]);
 
   const runAutonomousAction = useCallback(async () => {
     if (
+      !movementEnabled ||
       activityBusyRef.current ||
       dragRef.current ||
       chaosActiveRef.current ||
@@ -1138,23 +1368,39 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     )
       return;
 
+    if (
+      bowlEnabled &&
+      bowlStatusRef.current === "full" &&
+      Date.now() >= nextDrinkAtRef.current &&
+      (await drinkFromBowl())
+    )
+      return;
+
     // Calm mode: the mascot only shows off — hops on buttons, scrolls, teases
     // sliders, does little idle bits and types nonsense. It never clicks/toggles
     // controls; that mischief is rage-only.
     if (Math.random() < 0.68) {
-      const actions = shuffled([
-        scrollActiveList,
-        jumpOnRandomButton,
-        teaseSlider,
-        microLife,
-        typeNonsense,
-      ]);
-      for (const action of actions) {
+      const actions = [microLife];
+      if (interactionsEnabled) actions.push(jumpOnRandomButton, teaseSlider, typeNonsense);
+      if (scrollListsEnabled) actions.push(scrollActiveList);
+      for (const action of shuffled(actions)) {
         if (await action()) return;
       }
     }
     await roam();
-  }, [jumpOnRandomButton, microLife, roam, scrollActiveList, teaseSlider, typeNonsense]);
+  }, [
+    bowlEnabled,
+    drinkFromBowl,
+    interactionsEnabled,
+    jumpOnRandomButton,
+    microLife,
+    movementEnabled,
+    roam,
+    scrollActiveList,
+    scrollListsEnabled,
+    teaseSlider,
+    typeNonsense,
+  ]);
 
   // Leap onto an open modal and keep busy on it. In calm mode the mascot only
   // shows off — teases sliders and poses on the controls — but never clicks or
@@ -1163,7 +1409,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     async (fresh = false) => {
       const root = getRoot();
       const modal = activeModalRef.current;
-      if (!root || !modal || modalBusyRef.current) return;
+      if (!movementEnabled || !interactionsEnabled || !root || !modal || modalBusyRef.current)
+        return;
       if (chaosActiveRef.current || dragRef.current || carriedButtonRef.current) return;
       const token = modalClimbTokenRef.current;
       modalBusyRef.current = true;
@@ -1338,8 +1585,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       buildContourPath,
       clampPosition,
       getRoot,
+      interactionsEnabled,
       isNearElement,
       leapTo,
+      movementEnabled,
       setPhase,
       setPosition,
     ],
@@ -1693,7 +1942,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   );
 
   const startChaos = useCallback(async () => {
-    if (chaosActiveRef.current) return;
+    if (!rageEnabled || chaosActiveRef.current) return;
     const root = getRoot();
     if (!root) return;
 
@@ -1701,7 +1950,6 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     if (looseButtonRef.current) clearLooseButton();
     clearChaosDebris();
     clearMischiefDecayTimer();
-    pendingRageRef.current = false;
     setMouthFrame(null);
     setSpeech(null);
     activityTokenRef.current += 1;
@@ -1710,9 +1958,9 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     const token = chaosTokenRef.current + 1;
     chaosTokenRef.current = token;
     chaosActiveRef.current = true;
-    setChaosActive(true);
+    setUndoAvailable(false);
     setThrowProgress(0);
-    throwTimesRef.current = [];
+    ragePointsRef.current = 0;
     chaosSnapshotRef.current = { originalTabIndex: activeIndexRef.current, toggles: [] };
     setEmotion("angry");
     setPhase("chaos");
@@ -1844,6 +2092,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         setRagePress(null);
         setEmotion("cool");
         setPhase("idle");
+        setUndoAvailable(true);
       }
     }
   }, [
@@ -1859,29 +2108,367 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     ragePressWindowControls,
     rageRummageCurrentTab,
     rageScatterCurrentTab,
+    rageEnabled,
     restoreCarriedButton,
     setPhase,
   ]);
 
-  const registerHardThrow = useCallback(
-    (speed: number) => {
-      if (speed < THROW_THRESHOLD || chaosActiveRef.current) return;
+  const registerRage = useCallback(
+    (amount: number) => {
+      if (!rageEnabled || chaosActiveRef.current) return false;
       clearMischiefDecayTimer();
-      const now = Date.now();
-      throwTimesRef.current = [
-        ...throwTimesRef.current.filter((time) => now - time < THROW_HISTORY_MS),
-        now,
-      ];
-      setThrowProgress(throwTimesRef.current.length);
-      if (throwTimesRef.current.length >= THROWS_TO_CHAOS) {
-        // Don't snap to rage — let this throw splat against a wall and slide
-        // down first (handled by rageThrow), then chaos kicks in.
-        pendingRageRef.current = true;
+      const nextRage = addMascotRage(ragePointsRef.current, amount);
+      ragePointsRef.current = nextRage;
+      setThrowProgress(nextRage);
+      if (nextRage >= THROWS_TO_CHAOS) {
+        return true;
       } else {
         scheduleMischiefDecay();
+        return false;
       }
     },
-    [clearMischiefDecayTimer, scheduleMischiefDecay],
+    [clearMischiefDecayTimer, rageEnabled, scheduleMischiefDecay],
+  );
+
+  const registerHardThrow = useCallback(
+    (speed: number) => {
+      if (!isHardMascotThrow(speed)) return false;
+      return registerRage(RAGE_PER_HARD_THROW);
+    },
+    [registerRage],
+  );
+
+  const animateEmptyBowl = useCallback(
+    (velocity: MascotPosition) => {
+      const root = getRoot();
+      if (!root) return;
+      if (bowlFrameRef.current !== null) window.cancelAnimationFrame(bowlFrameRef.current);
+
+      const maxX = Math.max(4, root.clientWidth - BOWL_SIZE - 4);
+      const maxY = Math.max(4, root.clientHeight - BOWL_SIZE - 4);
+      let current = bowlPositionRef.current;
+      let rotation = 0;
+      let vx = clamp(velocity.x * 0.46, -2.7, 2.7);
+      let vy = clamp(velocity.y * 0.22 - 0.8, -2.5, 1.8);
+      let spin = clamp(vx * 0.55 + (Math.random() - 0.5) * 0.8, -1.45, 1.45);
+      if (Math.abs(spin) < 0.28) spin = spin < 0 ? -0.28 : 0.28;
+      let previousTime = performance.now();
+      let settledFrames = 0;
+
+      const step = (now: number) => {
+        if (bowlStatusRef.current !== "empty") {
+          bowlFrameRef.current = null;
+          return;
+        }
+        const dt = Math.min(28, now - previousTime);
+        previousTime = now;
+        const next = {
+          x: current.x + vx * dt,
+          y: current.y + vy * dt,
+        };
+        rotation += spin * dt;
+        vy += 0.0024 * dt;
+        vx *= Math.pow(0.99, dt / 16.67);
+        spin *= Math.pow(0.993, dt / 16.67);
+
+        if (next.x <= 4 || next.x >= maxX) {
+          next.x = clamp(next.x, 4, maxX);
+          vx *= -0.66;
+          spin *= -0.8;
+        }
+        if (next.y <= 4 || next.y >= maxY) {
+          next.y = clamp(next.y, 4, maxY);
+          vy *= -0.5;
+          spin *= 0.78;
+        }
+        if (next.y >= maxY - 0.5 && Math.abs(vy) < 0.16) {
+          vy = 0;
+          vx *= 0.8;
+          spin *= 0.78;
+          settledFrames += 1;
+        } else {
+          settledFrames = 0;
+        }
+
+        current = next;
+        setBowlPosition(next);
+        setBowlRotation(rotation);
+        if (settledFrames > 10 && Math.abs(vx) < 0.05 && Math.abs(spin) < 0.05) {
+          bowlFrameRef.current = null;
+          return;
+        }
+        bowlFrameRef.current = window.requestAnimationFrame(step);
+      };
+
+      bowlFrameRef.current = window.requestAnimationFrame(step);
+    },
+    [getRoot, setBowlPosition],
+  );
+
+  const spawnBowlDrops = useCallback(
+    (
+      spillPosition: MascotPosition,
+      velocity: MascotPosition,
+      kinds: readonly BowlDrop["kind"][],
+      createsPuddle: boolean,
+    ) => {
+      const spillId = Date.now();
+      const root = getRoot();
+      if (!root) return;
+      const spillTop = spillPosition.y + 6;
+      const floorY = Math.max(24, root.clientHeight - spillTop - 28);
+      const minDropX = 4 - spillPosition.x;
+      const maxDropX = Math.max(minDropX, root.clientWidth - spillPosition.x - 68);
+      const minDropY = 4 - spillTop;
+      const horizontalDirection = Math.abs(velocity.x) > 0.08 ? Math.sign(velocity.x) : 1;
+
+      if (bowlDropFrameRef.current !== null) {
+        window.cancelAnimationFrame(bowlDropFrameRef.current);
+        bowlDropFrameRef.current = null;
+      }
+      const particles: BowlDropParticle[] = kinds.map((kind, index) => {
+        const spread = (index - (kinds.length - 1) / 2) / Math.max(1, (kinds.length - 1) / 2);
+        const baseScale = kind === "normal" ? 0.98 : 0.78;
+        const vx = clamp(
+          velocity.x * 0.78 + spread * 0.36 + horizontalDirection * (0.08 + Math.random() * 0.18),
+          -3.4,
+          3.4,
+        );
+        return {
+          id: index,
+          kind,
+          x: spread * 2,
+          y: 0,
+          vx,
+          vy: clamp(
+            velocity.y * 0.58 - 0.25 - Math.random() * 0.55 + Math.abs(spread) * 0.08,
+            -3,
+            1.8,
+          ),
+          spin: clamp(spread * 0.18 + vx * 0.16 + (Math.random() - 0.5) * 0.12, -0.62, 0.62),
+          age: 0,
+          delay: index * 11 + Math.random() * 28,
+          rotation: spread * 9,
+          baseScale,
+          scale: baseScale,
+          opacity: 0,
+          bounces: 0,
+          landedAt: null,
+        };
+      });
+      let previousDropTime = performance.now();
+      let puddleVisible = false;
+      let puddleX = 0;
+      const landingXs: number[] = [];
+
+      setBowlSpill({
+        id: spillId,
+        x: spillPosition.x,
+        y: spillTop,
+        puddleVisible: false,
+        puddleX: 0,
+        floorY,
+        drops: particles.map(({ id, kind, x, y, rotation, scale, opacity }) => ({
+          id,
+          kind,
+          x,
+          y,
+          rotation,
+          scale,
+          opacity,
+        })),
+      });
+
+      const animateDrops = (now: number) => {
+        const dt = Math.min(28, now - previousDropTime);
+        previousDropTime = now;
+        let hasVisibleDrop = false;
+
+        particles.forEach((particle) => {
+          particle.age += dt;
+          if (particle.age < particle.delay) {
+            hasVisibleDrop = true;
+            return;
+          }
+
+          if (particle.landedAt !== null) {
+            const fadeProgress = clamp((now - particle.landedAt) / 190, 0, 1);
+            particle.opacity = 1 - fadeProgress;
+            particle.scale = particle.baseScale * (1 - fadeProgress * 0.28);
+            hasVisibleDrop ||= fadeProgress < 1;
+            return;
+          }
+
+          particle.opacity = 1;
+          particle.x += particle.vx * dt;
+          particle.y += particle.vy * dt;
+          particle.rotation += particle.spin * dt;
+          particle.vy += 0.00255 * dt;
+          particle.vx *= Math.pow(0.995, dt / 16.67);
+          particle.spin *= Math.pow(0.997, dt / 16.67);
+
+          if (particle.x <= minDropX || particle.x >= maxDropX) {
+            particle.x = clamp(particle.x, minDropX, maxDropX);
+            particle.vx *= -0.48;
+            particle.spin *= -0.74;
+          }
+          if (particle.y <= minDropY) {
+            particle.y = minDropY;
+            particle.vy = Math.abs(particle.vy) * 0.42;
+          }
+          if (particle.y >= floorY) {
+            particle.y = floorY;
+            if (particle.bounces === 0) {
+              landingXs.push(particle.x);
+              puddleX = landingXs.reduce((sum, x) => sum + x, 0) / landingXs.length;
+              puddleVisible = createsPuddle;
+            }
+            if (particle.bounces === 0 && Math.abs(particle.vy) > 0.5) {
+              particle.vy *= -0.2;
+              particle.vx *= 0.64;
+              particle.spin *= 0.62;
+              particle.scale = particle.baseScale * 0.88;
+              particle.bounces += 1;
+            } else {
+              particle.landedAt = now;
+              particle.vy = 0;
+            }
+          }
+          if (particle.age > 3_400 && particle.landedAt === null) {
+            particle.landedAt = now;
+          }
+          hasVisibleDrop = true;
+        });
+
+        setBowlSpill((current) =>
+          current?.id === spillId
+            ? {
+                ...current,
+                puddleVisible,
+                puddleX,
+                drops: particles.map(({ id, kind, x, y, rotation, scale, opacity }) => ({
+                  id,
+                  kind,
+                  x,
+                  y,
+                  rotation,
+                  scale,
+                  opacity,
+                })),
+              }
+            : current,
+        );
+
+        if (hasVisibleDrop) {
+          bowlDropFrameRef.current = window.requestAnimationFrame(animateDrops);
+        } else {
+          bowlDropFrameRef.current = null;
+          if (!createsPuddle) {
+            setBowlSpill((current) => (current?.id === spillId ? null : current));
+          }
+        }
+      };
+      bowlDropFrameRef.current = window.requestAnimationFrame(animateDrops);
+
+      if (createsPuddle) {
+        puddleRemoveTimerRef.current = window.setTimeout(() => {
+          puddleRemoveTimerRef.current = null;
+          setBowlSpill((current) => (current?.id === spillId ? null : current));
+        }, PUDDLE_LIFETIME_MS);
+      }
+    },
+    [getRoot],
+  );
+
+  const splashBowl = useCallback(
+    (velocity: MascotPosition) => {
+      if (bowlStatusRef.current !== "full" || chaosActiveRef.current) return;
+      spawnBowlDrops(
+        bowlPositionRef.current,
+        {
+          x: velocity.x * 0.82,
+          y: Math.min(-0.35, velocity.y * 0.45 - 0.45),
+        },
+        ["small", "normal", "small"],
+        false,
+      );
+    },
+    [spawnBowlDrops],
+  );
+
+  const spillBowl = useCallback(
+    (velocity: MascotPosition) => {
+      if (bowlStatusRef.current !== "full") return;
+      const reactionToken = bowlReactionTokenRef.current + 1;
+      bowlReactionTokenRef.current = reactionToken;
+      const spillPosition = bowlPositionRef.current;
+
+      bowlDragRef.current = null;
+      setBowlDragging(false);
+      setBowlStatus("empty");
+      spawnBowlDrops(spillPosition, velocity, BOWL_DROP_KINDS, true);
+      animateEmptyBowl(velocity);
+
+      activityTokenRef.current += 1;
+      activityBusyRef.current = false;
+      cancelMotion();
+      if (!chaosActiveRef.current && phaseRef.current !== "sleeping") {
+        setEmotion("sad");
+        setPhase("sulking");
+      }
+
+      bowlRageTimerRef.current = window.setTimeout(() => {
+        bowlRageTimerRef.current = null;
+        if (bowlReactionTokenRef.current !== reactionToken || chaosActiveRef.current) return;
+        if (!rageEnabled) return;
+        if (registerRage(RAGE_PER_BOWL_SPILL)) void startChaos();
+      }, 720);
+
+      bowlMoodTimerRef.current = window.setTimeout(() => {
+        bowlMoodTimerRef.current = null;
+        if (
+          bowlReactionTokenRef.current === reactionToken &&
+          !chaosActiveRef.current &&
+          !dragRef.current &&
+          phaseRef.current === "sulking"
+        ) {
+          setEmotion("neutral");
+          setPhase("idle");
+        }
+      }, 2_450);
+
+      bowlEmptyTimerRef.current = window.setTimeout(() => {
+        bowlEmptyTimerRef.current = null;
+        if (bowlStatusRef.current !== "empty") return;
+        if (bowlFrameRef.current !== null) {
+          window.cancelAnimationFrame(bowlFrameRef.current);
+          bowlFrameRef.current = null;
+        }
+        setBowlStatus("hidden");
+        bowlRespawnTimerRef.current = window.setTimeout(() => {
+          bowlRespawnTimerRef.current = null;
+          if (!enabled || !bowlEnabled) return;
+          setBowlRotation(0);
+          setBowlPosition(clampBowlPosition({ ...BOWL_HOME_POSITION }));
+          setBowlStatus("full");
+          nextDrinkAtRef.current = Date.now() + 3_800;
+        }, BOWL_RESPAWN_DELAY_MS);
+      }, BOWL_EMPTY_LIFETIME_MS);
+    },
+    [
+      animateEmptyBowl,
+      bowlEnabled,
+      cancelMotion,
+      clampBowlPosition,
+      enabled,
+      rageEnabled,
+      registerRage,
+      setBowlPosition,
+      setBowlStatus,
+      setPhase,
+      spawnBowlDrops,
+      startChaos,
+    ],
   );
 
   const ejectCarriedButton = useCallback(
@@ -1971,7 +2558,6 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       cancelMotion();
       const bounds = getBounds();
       if (!bounds) {
-        pendingRageRef.current = false;
         void startChaos();
         return;
       }
@@ -2029,7 +2615,6 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           setPosition(next);
           spawnSmoke(next.x, next.y);
           motionFrameRef.current = null;
-          pendingRageRef.current = false;
           window.setTimeout(() => void startChaos(), 150);
           return;
         }
@@ -2048,8 +2633,10 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       const bounds = getBounds();
       if (!bounds) return;
       ejectCarriedButton(velocity);
-      registerHardThrow(Math.hypot(velocity.x, velocity.y));
-      if (pendingRageRef.current) {
+      const startsChaos = registerHardThrow(Math.hypot(velocity.x, velocity.y));
+      if (startsChaos) {
+        // Keep the fifth warning visible while this throw hits the wall; chaos
+        // starts as soon as the impact animation finishes.
         rageThrow(velocity);
         return;
       }
@@ -2128,6 +2715,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   const undoChaos = useCallback(async () => {
     const snapshot = chaosSnapshotRef.current;
     if (!snapshot) return;
+    setUndoAvailable(false);
     chaosTokenRef.current += 1;
     cancelMotion();
     const root = getRoot();
@@ -2152,10 +2740,17 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     chaosSnapshotRef.current = null;
     chaosActiveRef.current = false;
     setRagePress(null);
-    setChaosActive(false);
     setEmotion("shy");
     setPhase("idle");
   }, [cancelMotion, clearChaosDebris, getRoot, setPhase]);
+
+  useEffect(() => {
+    if (rageEnabled) return;
+    ragePointsRef.current = 0;
+    clearMischiefDecayTimer();
+    setThrowProgress(0);
+    if (chaosActiveRef.current) void undoChaos();
+  }, [clearMischiefDecayTimer, rageEnabled, undoChaos]);
 
   const petMascot = useCallback(() => {
     if (chaosActiveRef.current || dragRef.current) return;
@@ -2385,6 +2980,112 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     completeDrag(event.pointerId, event.currentTarget);
   };
 
+  const handleBowlPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (bowlStatusRef.current !== "full" || chaosActiveRef.current) return;
+    const root = getRoot();
+    if (!root) return;
+    const rootRect = root.getBoundingClientRect();
+    const current = bowlPositionRef.current;
+    const now = performance.now();
+
+    activityTokenRef.current += 1;
+    activityBusyRef.current = false;
+    if (phaseRef.current === "drinking" || phaseRef.current === "walking") {
+      cancelMotion();
+      setEmotion("surprised");
+      setPhase("idle");
+    }
+    bowlDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rootRect.left - current.x,
+      offsetY: event.clientY - rootRect.top - current.y,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      lastDirection: 0,
+      lastSplashAt: Number.NEGATIVE_INFINITY,
+      samples: [{ x: event.clientX, y: event.clientY, time: now }],
+    };
+    setBowlDragging(true);
+    setBowlRotation(0);
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleBowlPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = bowlDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const root = getRoot();
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    const now = performance.now();
+    const previous = drag.samples[drag.samples.length - 1];
+    const segmentElapsed = previous ? Math.max(4, now - previous.time) : 16;
+    const segmentVelocity = previous
+      ? {
+          x: (event.clientX - previous.x) / segmentElapsed,
+          y: (event.clientY - previous.y) / segmentElapsed,
+        }
+      : { x: 0, y: 0 };
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 5) {
+      drag.moved = true;
+    }
+    drag.samples.push({ x: event.clientX, y: event.clientY, time: now });
+    drag.samples = drag.samples.filter((sample) => now - sample.time <= 110).slice(-7);
+    setBowlPosition(
+      clampBowlPosition({
+        x: event.clientX - rect.left - drag.offsetX,
+        y: event.clientY - rect.top - drag.offsetY,
+      }),
+    );
+
+    if (Math.abs(segmentVelocity.x) >= 0.12) {
+      const direction = Math.sign(segmentVelocity.x);
+      const changedDirection = drag.lastDirection !== 0 && direction !== drag.lastDirection;
+      if (shouldSplashBowl(segmentVelocity.x, changedDirection, now - drag.lastSplashAt)) {
+        drag.lastSplashAt = now;
+        splashBowl(segmentVelocity);
+      }
+      drag.lastDirection = direction;
+    }
+  };
+
+  const completeBowlDrag = useCallback(
+    (pointerId?: number, captureTarget?: HTMLDivElement) => {
+      const drag = bowlDragRef.current;
+      if (!drag || (pointerId !== undefined && drag.pointerId !== pointerId)) return;
+      bowlDragRef.current = null;
+      setBowlDragging(false);
+      if (captureTarget?.hasPointerCapture(drag.pointerId)) {
+        captureTarget.releasePointerCapture(drag.pointerId);
+      }
+      if (!drag.moved) return;
+
+      const latest = drag.samples[drag.samples.length - 1];
+      const oldest = drag.samples[0];
+      const elapsed = latest && oldest ? Math.max(16, latest.time - oldest.time) : 16;
+      const velocity =
+        latest && oldest
+          ? { x: (latest.x - oldest.x) / elapsed, y: (latest.y - oldest.y) / elapsed }
+          : { x: 0, y: 0 };
+      if (isBowlSpillThrow(Math.hypot(velocity.x, velocity.y))) {
+        spillBowl(velocity);
+      }
+    },
+    [spillBowl],
+  );
+
+  const finishBowlDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    completeBowlDrag(event.pointerId, event.currentTarget);
+  };
+
+  const handleBowlKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    spillBowl({ x: 0.9, y: -1.1 });
+  };
+
   const wakeMascot = useCallback(() => {
     if (phaseRef.current !== "sleeping") return;
     activityTokenRef.current += 1;
@@ -2507,7 +3208,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   }, [cancelMotion, clearEmotionTimer, clearLooseButton, enabled, restoreCarriedButton, setPhase]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !movementEnabled || !interactionsEnabled) return;
     const scene = getSceneRoot();
     const root = getRoot();
     if (!scene || !root) return;
@@ -2595,10 +3296,19 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       activeModalRef.current = null;
       modalOpenRef.current = false;
     };
-  }, [attendModal, cancelMotion, enabled, getRoot, getSceneRoot, setPhase]);
+  }, [
+    attendModal,
+    cancelMotion,
+    enabled,
+    getRoot,
+    getSceneRoot,
+    interactionsEnabled,
+    movementEnabled,
+    setPhase,
+  ]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !movementEnabled) return;
     const firstRoam = window.setTimeout(() => void runAutonomousAction(), 450);
     const interval = window.setInterval(() => {
       if (phaseRef.current === "sleeping") return;
@@ -2608,6 +3318,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
           void attendModal();
         }
       } else if (
+        carryElementsEnabled &&
         carriedButtonRef.current &&
         phaseRef.current === "carrying" &&
         !dragRef.current &&
@@ -2616,6 +3327,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
         // Snack on the loot instead of just parading it around.
         if (Math.random() < 0.55) void eatCarriedButton();
       } else if (
+        carryElementsEnabled &&
         Date.now() >= nextStealAtRef.current &&
         !carriedButtonRef.current &&
         !looseButtonRef.current
@@ -2629,10 +3341,18 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       window.clearTimeout(firstRoam);
       window.clearInterval(interval);
     };
-  }, [attendModal, eatCarriedButton, enabled, runAutonomousAction, stealRandomButton]);
+  }, [
+    attendModal,
+    carryElementsEnabled,
+    eatCarriedButton,
+    enabled,
+    movementEnabled,
+    runAutonomousAction,
+    stealRandomButton,
+  ]);
 
   useEffect(() => {
-    if (!enabled || chaosActiveRef.current || dragRef.current) return;
+    if (!enabled || !movementEnabled || chaosActiveRef.current || dragRef.current) return;
     const wasSleeping = phaseRef.current === "sleeping";
     activityTokenRef.current += 1;
     activityBusyRef.current = false;
@@ -2654,8 +3374,60 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
     cancelMotion,
     clearLooseButton,
     enabled,
+    movementEnabled,
     restoreCarriedButton,
     runAutonomousAction,
+    setPhase,
+  ]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    if (!carryElementsEnabled) {
+      if (carriedButtonRef.current) restoreCarriedButton(false);
+      if (looseButtonRef.current) clearLooseButton();
+    }
+
+    const currentPhase = phaseRef.current;
+    const stopForMovement =
+      !movementEnabled &&
+      [
+        "walking",
+        "running",
+        "carrying",
+        "climbing",
+        "jumping",
+        "playing",
+        "scrolling",
+        "drinking",
+        "typing",
+      ].includes(currentPhase);
+    const stopForInteractions =
+      !interactionsEnabled && ["climbing", "jumping", "playing", "typing"].includes(currentPhase);
+    const stopForScrolling = !scrollListsEnabled && currentPhase === "scrolling";
+    if (!stopForMovement && !stopForInteractions && !stopForScrolling) return;
+
+    activityTokenRef.current += 1;
+    modalClimbTokenRef.current += 1;
+    activityBusyRef.current = false;
+    modalBusyRef.current = false;
+    cancelMotion();
+    setScrollHand(null);
+    setSpeech(null);
+    setModalForeground(false);
+    if (!chaosActiveRef.current && !dragRef.current && phaseRef.current !== "sleeping") {
+      setEmotion("neutral");
+      setPhase(carriedButtonRef.current ? "carrying" : "idle");
+    }
+  }, [
+    cancelMotion,
+    carryElementsEnabled,
+    clearLooseButton,
+    enabled,
+    interactionsEnabled,
+    movementEnabled,
+    restoreCarriedButton,
+    scrollListsEnabled,
     setPhase,
   ]);
 
@@ -2678,11 +3450,33 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   }, [completeDrag, phase]);
 
   useEffect(() => {
+    if (!bowlDragging) return;
+    const handlePointerEnd = (event: PointerEvent) => completeBowlDrag(event.pointerId, undefined);
+    const handleMouseUp = () => completeBowlDrag(undefined, undefined);
+    const handleBlur = () => completeBowlDrag(undefined, undefined);
+    window.addEventListener("pointerup", handlePointerEnd);
+    window.addEventListener("pointercancel", handlePointerEnd);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerEnd);
+      window.removeEventListener("pointercancel", handlePointerEnd);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [bowlDragging, completeBowlDrag]);
+
+  useEffect(() => {
+    resetBowl(enabled && bowlEnabled);
+  }, [bowlEnabled, enabled, resetBowl]);
+
+  useEffect(() => {
     if (!enabled) {
       chaosTokenRef.current += 1;
       activityTokenRef.current += 1;
       chaosActiveRef.current = false;
-      pendingRageRef.current = false;
+      ragePointsRef.current = 0;
+      setUndoAvailable(false);
       cancelMotion();
       clearEmotionTimer();
       clearMischiefDecayTimer();
@@ -2698,6 +3492,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       setModalForeground(false);
       setMouthFrame(null);
       setSpeech(null);
+      setThrowProgress(0);
       smokeTokenRef.current += 1;
       setSmoke(null);
       clearChaosDebris();
@@ -2716,20 +3511,29 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
   ]);
 
   useEffect(() => {
-    const handleResize = () => setPosition(clampPosition(positionRef.current));
+    const handleResize = () => {
+      setPosition(clampPosition(positionRef.current));
+      if (bowlStatusRef.current !== "hidden") {
+        setBowlPosition(clampBowlPosition(bowlPositionRef.current));
+      }
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [clampPosition, setPosition]);
+  }, [clampBowlPosition, clampPosition, setBowlPosition, setPosition]);
 
   useEffect(
     () => () => {
       chaosTokenRef.current += 1;
       activityTokenRef.current += 1;
       smokeTokenRef.current += 1;
+      bowlReactionTokenRef.current += 1;
       cancelMotion();
       clearEmotionTimer();
       clearMischiefDecayTimer();
+      clearBowlTimers();
       clearChaosDebris();
+      if (bowlFrameRef.current !== null) window.cancelAnimationFrame(bowlFrameRef.current);
+      if (bowlDropFrameRef.current !== null) window.cancelAnimationFrame(bowlDropFrameRef.current);
       if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current);
       if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
       if (looseButtonFrameRef.current !== null)
@@ -2741,7 +3545,7 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       if (carried) restoreCarriedElement(carried);
       if (loose) restoreCarriedElement(loose);
     },
-    [cancelMotion, clearChaosDebris, clearEmotionTimer, clearMischiefDecayTimer],
+    [cancelMotion, clearBowlTimers, clearChaosDebris, clearEmotionTimer, clearMischiefDecayTimer],
   );
 
   if (!enabled) return null;
@@ -2754,6 +3558,8 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       looseButtonReplicaRef={looseButtonReplicaRef}
       eatReplicaRef={eatReplicaRef}
       position={position}
+      name={mascotName}
+      showName={showName}
       phase={phase}
       emotion={emotion}
       carriedButton={carriedButton}
@@ -2761,18 +3567,27 @@ export function LauncherMascot({ activeIndex, enabled }: LauncherMascotProps) {
       looseButtonTransform={looseButtonTransform}
       ragePress={ragePress}
       scrollHand={scrollHand}
-      chaosActive={chaosActive}
+      undoAvailable={undoAvailable}
       modalForeground={modalForeground}
       throwProgress={throwProgress}
       smoke={smoke}
       mouthFrame={mouthFrame}
       speech={speech}
+      bowlStatus={bowlStatus}
+      bowlPosition={bowlPosition}
+      bowlDragging={bowlDragging}
+      bowlRotation={bowlRotation}
+      bowlSpill={bowlSpill}
       onUndoChaos={() => void undoChaos()}
       onClick={handleClick}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerFinish={finishDrag}
       onKeyDown={handleKeyDown}
+      onBowlPointerDown={handleBowlPointerDown}
+      onBowlPointerMove={handleBowlPointerMove}
+      onBowlPointerFinish={finishBowlDrag}
+      onBowlKeyDown={handleBowlKeyDown}
     />
   );
 }

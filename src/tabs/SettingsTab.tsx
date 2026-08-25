@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
+import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { LauncherPluginsModal } from "../components/plugins/LauncherPluginsModal";
 import { PluginIcon } from "../components/plugins/PluginIcon";
+import { ExpandableSettingsGroup } from "../components/settings/ExpandableSettingsGroup";
 import {
   PLUGIN_DEFINITIONS,
   normalizeLauncherPluginsSettings,
@@ -10,7 +12,12 @@ import {
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 import type { Theme } from "../appearance/types";
-import type { LauncherPluginsSettings, MicrosoftAccount, MirrorMode } from "../types";
+import type {
+  LauncherPluginsSettings,
+  MascotSettings,
+  MicrosoftAccount,
+  MirrorMode,
+} from "../types";
 
 const MIRROR_OPTIONS: { value: MirrorMode; label: string }[] = [
   { value: "official", label: "OFFICIAL" },
@@ -170,6 +177,8 @@ interface SettingsTabProps {
   saveAutoDownloadJava: (enabled: boolean) => Promise<void>;
   mascotEnabled: boolean;
   saveMascotEnabled: (enabled: boolean) => Promise<void>;
+  mascotSettings: MascotSettings;
+  saveMascotSettings: (settings: MascotSettings) => Promise<void>;
   mirrorMode: MirrorMode;
   saveNetworkSettings: (mirror: string) => Promise<void>;
   wheelTabSwitching: boolean;
@@ -204,6 +213,8 @@ export function SettingsTab({
   saveAutoDownloadJava,
   mascotEnabled,
   saveMascotEnabled,
+  mascotSettings,
+  saveMascotSettings,
   mirrorMode,
   saveNetworkSettings,
   wheelTabSwitching,
@@ -228,6 +239,12 @@ export function SettingsTab({
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
+  const [mascotSettingsOpen, setMascotSettingsOpen] = useState(false);
+  const [mascotNameDraft, setMascotNameDraft] = useState(mascotSettings.name);
+
+  useEffect(() => {
+    setMascotNameDraft(mascotSettings.name);
+  }, [mascotSettings.name]);
 
   const commitMirrorMode = (mode: MirrorMode) => {
     if (mode === mirrorMode) return;
@@ -238,6 +255,20 @@ export function SettingsTab({
   const activePluginDefinitions = PLUGIN_DEFINITIONS.filter((definition) =>
     definition.getEnabled(normalizedPlugins),
   );
+
+  const updateMascotFlag = (key: Exclude<keyof MascotSettings, "name">, enabled: boolean) => {
+    if (mascotSettings[key] === enabled) return;
+    void saveMascotSettings({ ...mascotSettings, [key]: enabled });
+  };
+
+  const commitMascotName = () => {
+    const trimmed = Array.from(mascotNameDraft.trim()).slice(0, 24).join("");
+    const name = trimmed || "PIXEL";
+    setMascotNameDraft(name);
+    if (name !== mascotSettings.name) {
+      void saveMascotSettings({ ...mascotSettings, name });
+    }
+  };
 
   return (
     <section className="launcher-panel">
@@ -304,17 +335,22 @@ export function SettingsTab({
                 <VoidIcon />
                 VOID
               </button>
-              {advancedSettingsEnabled && (
-                <button
-                  className={`theme-switch-btn theme-customize-btn${appearanceCustomized ? " active" : ""}`}
-                  type="button"
-                  onClick={onCustomizeAppearance}
-                >
-                  CUSTOMIZE
-                </button>
-              )}
             </div>
           </div>
+
+          {advancedSettingsEnabled && (
+            <div className="theme-switch-row">
+              <span className="theme-switch-label">APPEARANCE STUDIO</span>
+              <div className="theme-switch">
+                <button className="theme-switch-btn" type="button" onClick={onCustomizeAppearance}>
+                  EDIT DESIGN
+                  <svg width="13" height="9" viewBox="0 0 13 9" fill="none" aria-hidden="true">
+                    <path d="M1 4.5h10M8 1.5l3 3-3 3" stroke="currentColor" strokeWidth="1.2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="theme-switch-row">
             <span className="theme-switch-label">DOWNLOAD SOURCE</span>
@@ -368,77 +404,169 @@ export function SettingsTab({
           </div>
         </div>
 
-        <div className="panel-card">
-          <span className="panel-label">PREFERENCES</span>
+        <div className="panel-card settings-preferences-card">
+          <CustomScrollArea className="settings-preferences-scroll">
+            <div className="settings-preferences-content">
+              <span className="panel-label">PREFERENCES</span>
 
-          <div className="settings-toggle-block settings-toggle-block--bare">
-            <ElementToggle
-              title="OPTIMIZED JAVA ARGUMENTS"
-              note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
-              enabled={optimizedJavaArgs}
-              onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
-            />
+              <div className="settings-toggle-block settings-toggle-block--bare">
+                <ElementToggle
+                  title="OPTIMIZED JAVA ARGUMENTS"
+                  note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
+                  enabled={optimizedJavaArgs}
+                  onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
+                />
 
-            <ElementToggle
-              title="WHEEL TAB SWITCHING"
-              note="Переключение вкладок движением колеса мыши."
-              enabled={wheelTabSwitching}
-              onToggle={() => setWheelTabSwitching((prev) => !prev)}
-            />
+                <ElementToggle
+                  title="WHEEL TAB SWITCHING"
+                  note="Переключение вкладок движением колеса мыши."
+                  enabled={wheelTabSwitching}
+                  onToggle={() => setWheelTabSwitching((prev) => !prev)}
+                />
 
-            <ElementToggle
-              title="LAUNCHER MASCOT"
-              note="Маскот гуляет по меню, меняет эмоции и иногда засыпает на кнопках."
-              enabled={mascotEnabled}
-              onToggle={() => void saveMascotEnabled(!mascotEnabled)}
-              mascotOffSwitch
-            />
+                <ExpandableSettingsGroup
+                  title="LAUNCHER MASCOT"
+                  note="Маскот гуляет по меню. Нажми стрелку, чтобы настроить его характер и возможности."
+                  enabled={mascotEnabled}
+                  expanded={mascotSettingsOpen}
+                  onToggle={() => void saveMascotEnabled(!mascotEnabled)}
+                  onToggleExpanded={() => setMascotSettingsOpen((open) => !open)}
+                  mascotOffSwitch
+                >
+                  <label className="mascot-name-field">
+                    <span>MASCOT NAME</span>
+                    <input
+                      type="text"
+                      value={mascotNameDraft}
+                      maxLength={24}
+                      spellCheck={false}
+                      placeholder="PIXEL"
+                      aria-label="Имя маскота"
+                      onChange={(event) => setMascotNameDraft(event.target.value)}
+                      onBlur={commitMascotName}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                        if (event.key === "Escape") {
+                          setMascotNameDraft(mascotSettings.name);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </label>
 
-            <ElementToggle
-              title="SHOW SNAPSHOTS"
-              note="Показывать snapshot версии в списке доступных установок."
-              enabled={showSnapshots}
-              onToggle={() => setShowSnapshots((prev) => !prev)}
-            />
+                  <ElementToggle
+                    title="SHOW MASCOT NAME"
+                    note="Показывать имя маскота в плашке при наведении."
+                    enabled={mascotSettings.showName}
+                    onToggle={() => updateMascotFlag("showName", !mascotSettings.showName)}
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="RAGE MODE"
+                    note="Сильные броски копят предупреждения и могут вызвать ярость."
+                    enabled={mascotSettings.rageEnabled}
+                    onToggle={() => updateMascotFlag("rageEnabled", !mascotSettings.rageEnabled)}
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="WATER BOWL"
+                    note="Показывать миску: маскот сможет пить, а миску можно взять и бросить."
+                    enabled={mascotSettings.bowlEnabled}
+                    onToggle={() => updateMascotFlag("bowlEnabled", !mascotSettings.bowlEnabled)}
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="AUTONOMOUS MOVEMENT"
+                    note="Разрешить маскоту самостоятельно гулять по лаунчеру."
+                    enabled={mascotSettings.movementEnabled}
+                    onToggle={() =>
+                      updateMascotFlag("movementEnabled", !mascotSettings.movementEnabled)
+                    }
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="PLAY WITH CONTROLS"
+                    note="Прыгать на кнопки, поля и ползунки в спокойном режиме."
+                    enabled={mascotSettings.interactionsEnabled}
+                    onToggle={() =>
+                      updateMascotFlag("interactionsEnabled", !mascotSettings.interactionsEnabled)
+                    }
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="CARRY UI ELEMENTS"
+                    note="Брать элементы интерфейса в руки и уносить их."
+                    enabled={mascotSettings.carryElementsEnabled}
+                    onToggle={() =>
+                      updateMascotFlag("carryElementsEnabled", !mascotSettings.carryElementsEnabled)
+                    }
+                    size="small"
+                    mascotOffSwitch
+                  />
+                  <ElementToggle
+                    title="SCROLL LISTS"
+                    note="Подходить к спискам и самостоятельно листать их."
+                    enabled={mascotSettings.scrollListsEnabled}
+                    onToggle={() =>
+                      updateMascotFlag("scrollListsEnabled", !mascotSettings.scrollListsEnabled)
+                    }
+                    size="small"
+                    mascotOffSwitch
+                  />
+                </ExpandableSettingsGroup>
 
-            <ElementToggle
-              title="SHOW PRE-RELEASES"
-              note="Показывать pre-release и release candidate версии."
-              enabled={showPreReleases}
-              onToggle={() => setShowPreReleases((prev) => !prev)}
-            />
+                <ElementToggle
+                  title="SHOW SNAPSHOTS"
+                  note="Показывать snapshot версии в списке доступных установок."
+                  enabled={showSnapshots}
+                  onToggle={() => setShowSnapshots((prev) => !prev)}
+                />
 
-            <ElementToggle
-              title="ADVANCED SETTINGS"
-              note="Включает кнопку SETTINGS у сборок и в режиме создания для кастомного фона карточки версии."
-              enabled={advancedSettingsEnabled}
-              onToggle={onToggleAdvanced}
-            />
-          </div>
+                <ElementToggle
+                  title="SHOW PRE-RELEASES"
+                  note="Показывать pre-release и release candidate версии."
+                  enabled={showPreReleases}
+                  onToggle={() => setShowPreReleases((prev) => !prev)}
+                />
 
-          {advancedSettingsEnabled && (
-            <div className="runtime-advanced-zone">
-              <button
-                className="runtime-extension-button"
-                type="button"
-                onClick={() => setPluginsModalOpen(true)}
-              >
-                <span>EXTENSIONS</span>
-                <strong>MANAGE</strong>
-                {activePluginDefinitions.length > 0 && (
-                  <span className="runtime-extension-icons" aria-hidden="true">
-                    {activePluginDefinitions.slice(0, 4).map((definition) => (
-                      <PluginIcon
-                        key={definition.id}
-                        definition={definition}
-                        className="runtime-extension-icon"
-                      />
-                    ))}
-                  </span>
-                )}
-              </button>
+                <ElementToggle
+                  title="ADVANCED SETTINGS"
+                  note="Включает кнопку SETTINGS у сборок и в режиме создания для кастомного фона карточки версии."
+                  enabled={advancedSettingsEnabled}
+                  onToggle={onToggleAdvanced}
+                />
+              </div>
+
+              {advancedSettingsEnabled && (
+                <div className="runtime-advanced-zone">
+                  <button
+                    className="runtime-extension-button"
+                    type="button"
+                    onClick={() => setPluginsModalOpen(true)}
+                  >
+                    <span>EXTENSIONS</span>
+                    <strong>MANAGE</strong>
+                    {activePluginDefinitions.length > 0 && (
+                      <span className="runtime-extension-icons" aria-hidden="true">
+                        {activePluginDefinitions.slice(0, 4).map((definition) => (
+                          <PluginIcon
+                            key={definition.id}
+                            definition={definition}
+                            className="runtime-extension-icon"
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </CustomScrollArea>
         </div>
       </div>
 

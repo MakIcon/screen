@@ -22,6 +22,11 @@ import mouth1Piskel from "../../assets/mascot/mouth/mouth1.piskel?raw";
 import mouth2Piskel from "../../assets/mascot/mouth/mouth2.piskel?raw";
 import mouth3Piskel from "../../assets/mascot/mouth/mouth3.piskel?raw";
 import mouth4Piskel from "../../assets/mascot/mouth/mouth4.piskel?raw";
+import bowlFullPiskel from "../../assets/mascot/bowl/bowl-full.piskel?raw";
+import bowlEmptyPiskel from "../../assets/mascot/bowl/bowl-empty.piskel?raw";
+import dropNormalPiskel from "../../assets/mascot/bowl/drop-normal.piskel?raw";
+import dropSmallPiskel from "../../assets/mascot/bowl/drop-small.piskel?raw";
+import puddlePiskel from "../../assets/mascot/bowl/puddle.piskel?raw";
 import type { MascotEmotion, PiskelAsset } from "./mascotTypes";
 
 export const MASCOT_SPRITES: Record<MascotEmotion, string> = {
@@ -65,6 +70,13 @@ export const SMOKE_FRAMES = [smoke1Piskel, smoke2Piskel, smoke3Piskel, smoke4Pis
 export const MOUTH_FRAMES = [mouth1Piskel, mouth2Piskel, mouth3Piskel, mouth4Piskel].map(
   parsePiskelAsset,
 );
+export const BOWL_ASSETS = {
+  full: parsePiskelAsset(bowlFullPiskel),
+  empty: parsePiskelAsset(bowlEmptyPiskel),
+  dropNormal: parsePiskelAsset(dropNormalPiskel),
+  dropSmall: parsePiskelAsset(dropSmallPiskel),
+  puddle: parsePiskelAsset(puddlePiskel),
+} as const;
 export const TYPED_SNIPPETS = [
   "hello world",
   "sudo rm -rf /",

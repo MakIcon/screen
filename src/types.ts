@@ -210,11 +210,23 @@ export type NetworkSettings = {
   mirror: MirrorMode;
 };
 
+export type MascotSettings = {
+  name: string;
+  showName: boolean;
+  rageEnabled: boolean;
+  bowlEnabled: boolean;
+  movementEnabled: boolean;
+  interactionsEnabled: boolean;
+  carryElementsEnabled: boolean;
+  scrollListsEnabled: boolean;
+};
+
 export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
   autoDownloadJava: boolean;
   mascotEnabled: boolean;
+  mascot: MascotSettings;
   network: NetworkSettings;
   plugins: LauncherPluginsSettings;
 };

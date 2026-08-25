@@ -27,5 +27,14 @@ export const TAB_TITLE: Record<TabKey, string> = {
   settings: "SETTINGS",
 };
 
+export const TAB_HINT: Record<TabKey, string> = {
+  overview: "Choose a build, check your account, then press Play.",
+  instances: "Create, import and manage your Minecraft builds.",
+  mods: "Find mods on Modrinth and install them into the selected build.",
+  resourcepacks: "Browse resource packs and add them to the selected build.",
+  shaders: "Browse shaders and install them into an Iris-compatible build.",
+  settings: "Configure the launcher, Java, extensions and appearance.",
+};
+
 export const LOADER_OPTIONS: LoaderType[] = ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"];
 export const SOURCE_OPTIONS = ["OFFICIAL"];

@@ -77,6 +77,7 @@ pub fn run() {
             commands::settings::set_optimized_java_args,
             commands::settings::set_auto_download_java,
             commands::settings::set_mascot_enabled,
+            commands::settings::set_mascot_settings,
             commands::settings::set_launcher_plugins,
             commands::settings::set_network_settings,
             commands::settings::test_proxy_connection,

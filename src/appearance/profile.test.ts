@@ -17,6 +17,7 @@ describe("appearance profile", () => {
     expect(profile.background.scope).toBe("launcher");
     expect(profile.shape.radius).toBe(0);
     expect(profile.opacity.panels).toBe(1);
+    expect(profile.navigation.legacyTabs).toEqual([]);
     expect(profile.motion.tabByTarget.instances).toBeTruthy();
     expect(profile.elementOverrides).toEqual([]);
     expect(profile.customized).toBe(false);
@@ -79,6 +80,17 @@ describe("appearance profile", () => {
     expect(profile.background.scope).toBe("content");
     expect(style["--appearance-background-color"]).toBe("#123456");
     expect(style["--bg"]).toBe("#111110");
+  });
+
+  it("keeps only known sidebar entries in the original-design list", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      navigation: {
+        legacyTabs: ["shaders", "unknown", "instances", "shaders"],
+      },
+    });
+
+    expect(profile.navigation.legacyTabs).toEqual(["instances", "shaders"]);
   });
 
   it("resolves global and per-target tab animations", () => {
@@ -763,11 +775,15 @@ describe("appearance profile", () => {
       },
     } as unknown as HTMLElement;
 
-    applyAppearanceToElement(element, createDefaultAppearance("dark", true));
+    const customized = createDefaultAppearance("dark", true);
+    customized.navigation.legacyTabs = ["instances", "shaders"];
+    applyAppearanceToElement(element, customized);
     expect(properties.size).toBeGreaterThan(0);
+    expect(element.dataset.appearanceLegacySidebar).toBe("instances shaders");
 
     applyAppearanceToElement(element, createDefaultAppearance("light"));
     expect(properties.size).toBe(0);
     expect(element.dataset.appearanceCustom).toBe("false");
+    expect(element.dataset.appearanceLegacySidebar).toBe("");
   });
 });

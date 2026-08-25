@@ -364,10 +364,61 @@ pub struct LauncherSettings {
     /// Show the interactive mascot in the launcher sidebar.
     #[serde(default = "default_mascot_enabled")]
     pub mascot_enabled: bool,
+    /// Behaviour and permissions for the interactive launcher mascot.
+    #[serde(default)]
+    pub mascot: MascotSettings,
     #[serde(default)]
     pub network: NetworkSettings,
     #[serde(default)]
     pub plugins: LauncherPluginsSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MascotSettings {
+    #[serde(default = "default_mascot_name")]
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub show_name: bool,
+    #[serde(default = "default_true")]
+    pub rage_enabled: bool,
+    #[serde(default = "default_true")]
+    pub bowl_enabled: bool,
+    #[serde(default = "default_true")]
+    pub movement_enabled: bool,
+    #[serde(default = "default_true")]
+    pub interactions_enabled: bool,
+    #[serde(default = "default_true")]
+    pub carry_elements_enabled: bool,
+    #[serde(default = "default_true")]
+    pub scroll_lists_enabled: bool,
+}
+
+impl Default for MascotSettings {
+    fn default() -> Self {
+        Self {
+            name: default_mascot_name(),
+            show_name: true,
+            rage_enabled: true,
+            bowl_enabled: true,
+            movement_enabled: true,
+            interactions_enabled: true,
+            carry_elements_enabled: true,
+            scroll_lists_enabled: true,
+        }
+    }
+}
+
+impl MascotSettings {
+    pub fn normalize(mut self) -> Self {
+        let normalized_name = self.name.trim().chars().take(24).collect::<String>();
+        self.name = if normalized_name.is_empty() {
+            default_mascot_name()
+        } else {
+            normalized_name
+        };
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -756,6 +807,7 @@ impl Default for LauncherSettings {
             optimized_java_args: default_optimized_java_args(),
             auto_download_java: default_auto_download_java(),
             mascot_enabled: default_mascot_enabled(),
+            mascot: MascotSettings::default(),
             network: NetworkSettings::default(),
             plugins: LauncherPluginsSettings::default(),
         }
@@ -865,6 +917,10 @@ fn default_auto_download_java() -> bool {
 
 fn default_mascot_enabled() -> bool {
     true
+}
+
+fn default_mascot_name() -> String {
+    "PIXEL".to_string()
 }
 
 fn default_mirror_mode() -> String {
@@ -1054,7 +1110,9 @@ pub struct ImportInstancePayload {
 
 #[cfg(test)]
 mod loader_schema_tests {
-    use super::{InstanceExportData, MineflayerBotPluginSettings};
+    use super::{
+        InstanceExportData, LauncherSettings, MascotSettings, MineflayerBotPluginSettings,
+    };
 
     #[test]
     fn reads_legacy_fabric_loader_version_and_writes_loader_version() {
@@ -1090,5 +1148,42 @@ mod loader_schema_tests {
         assert!(!parsed.can_dig);
         assert_eq!(parsed.command_source, "both");
         assert_eq!(parsed.command_cooldown_ms, 500);
+    }
+
+    #[test]
+    fn legacy_launcher_settings_receive_mascot_defaults() {
+        let legacy = serde_json::json!({
+            "defaultRamGb": 4,
+            "optimizedJavaArgs": true,
+            "autoDownloadJava": true,
+            "mascotEnabled": true
+        });
+        let parsed: LauncherSettings = serde_json::from_value(legacy).unwrap();
+
+        assert_eq!(parsed.mascot.name, "PIXEL");
+        assert!(parsed.mascot.show_name);
+        assert!(parsed.mascot.rage_enabled);
+        assert!(parsed.mascot.bowl_enabled);
+        assert!(parsed.mascot.movement_enabled);
+        assert!(parsed.mascot.interactions_enabled);
+        assert!(parsed.mascot.carry_elements_enabled);
+        assert!(parsed.mascot.scroll_lists_enabled);
+    }
+
+    #[test]
+    fn mascot_name_is_trimmed_limited_and_never_empty() {
+        let normalized = MascotSettings {
+            name: "  123456789012345678901234567890  ".to_string(),
+            ..MascotSettings::default()
+        }
+        .normalize();
+        assert_eq!(normalized.name.chars().count(), 24);
+
+        let fallback = MascotSettings {
+            name: "   ".to_string(),
+            ..MascotSettings::default()
+        }
+        .normalize();
+        assert_eq!(fallback.name, "PIXEL");
     }
 }
