@@ -14,6 +14,7 @@ describe("appearance profile", () => {
 
     expect(profile.baseTheme).toBe("void");
     expect(profile.colors.background).toBe("#000000");
+    expect(profile.background.scope).toBe("launcher");
     expect(profile.shape.radius).toBe(0);
     expect(profile.opacity.panels).toBe(1);
     expect(profile.motion.tabByTarget.instances).toBeTruthy();
@@ -64,6 +65,20 @@ describe("appearance profile", () => {
     expect(migrated.version).toBe(2);
     expect(migrated.opacity.panels).toBe(1);
     expect(explicit.opacity.panels).toBe(0);
+  });
+
+  it("normalizes the content-only background scope", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      baseTheme: "dark",
+      colors: { background: "#123456" },
+      background: { scope: "content" },
+    });
+    const style = buildAppearanceStyle(profile) as Record<string, string>;
+
+    expect(profile.background.scope).toBe("content");
+    expect(style["--appearance-background-color"]).toBe("#123456");
+    expect(style["--bg"]).toBe("#111110");
   });
 
   it("resolves global and per-target tab animations", () => {
@@ -158,6 +173,7 @@ describe("appearance profile", () => {
         minHeight: 32,
         radius: 40,
         opacity: 0.5,
+        fontFamily: '"Monocraft", monospace',
         fontSize: 18,
         paddingX: 24,
         borderWidth: 2,
@@ -178,10 +194,70 @@ describe("appearance profile", () => {
     expect(rule).toContain("gap: 12px !important");
     expect(rule).toContain("opacity: 0.5 !important");
     expect(rule).toContain("font-size: 18px !important");
+    expect(rule).toContain(
+      '[data-appearance-override="element-play"][data-appearance-override="element-play"][data-appearance-override="element-play"] * { font-family: "Monocraft", monospace !important; font-size: 18px !important',
+    );
     expect(rule).toContain("padding-left: 24px !important");
     expect(rule).toContain("border-style: solid !important");
     expect(rule).toContain("box-shadow:");
     expect(rule).toContain("transform: rotate(2deg) scale(1.08) !important");
+  });
+
+  it("normalizes independent normal and hover element appearances", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      elementOverrides: [
+        {
+          id: "element-sidebar-item",
+          label: "BUTTON · OVERVIEW",
+          path: [{ tag: "button", index: 0, marker: "class:side-nav-item" }],
+          defaults: {
+            width: 80,
+            height: 20,
+            minWidth: 0,
+            minHeight: 0,
+            elementOpacity: -2,
+            hoverElementOpacity: 5,
+          },
+          style: { elementOpacity: -1 },
+          hoverStyle: { elementOpacity: 4, scale: 3, rotate: -500 },
+          hoverTransitionMs: 9_000,
+          hoverEasing: "ease-out",
+        },
+      ],
+    });
+
+    expect(profile.elementOverrides[0]).toMatchObject({
+      style: { elementOpacity: 0 },
+      hoverStyle: { elementOpacity: 1, scale: 1.5, rotate: -180 },
+      hoverTransitionMs: 2_000,
+      hoverEasing: "ease-out",
+      defaults: { elementOpacity: 0, hoverElementOpacity: 1 },
+    });
+  });
+
+  it("builds real and pinned hover rules with a configurable transition", () => {
+    const rule = buildElementOverrideRule({
+      id: "element-sidebar-item",
+      label: "BUTTON · OVERVIEW",
+      path: [{ tag: "button", index: 0 }],
+      kind: "button",
+      style: { elementOpacity: 0.3, contentOpacity: 0.4 },
+      hoverStyle: { elementOpacity: 0.85, contentOpacity: 1, scale: 1.06 },
+      hoverTransitionMs: 350,
+      hoverEasing: "ease-out",
+    });
+
+    expect(rule).toContain("opacity: 0.3 !important");
+    expect(rule).toContain(":hover");
+    expect(rule).toContain(".appearance-hover-preview");
+    expect(rule).toContain("transition-duration: 350ms !important");
+    expect(rule).toContain("transition-timing-function: ease-out !important");
+    expect(rule).toContain('[data-appearance-override="element-sidebar-item"]::before');
+    expect(rule).toContain('[data-appearance-override="element-sidebar-item"] *');
+    expect(rule).toContain("opacity: 0.85 !important");
+    expect(rule).toContain("transform: rotate(0deg) scale(1.06) !important");
+    expect(rule).toContain("> * { opacity: 1 !important; }");
   });
 
   it("controls an element background and its content opacity independently", () => {

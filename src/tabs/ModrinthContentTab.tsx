@@ -8,6 +8,7 @@ import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 import type { DropdownKey, InstanceItem } from "../types";
+import type { ModDownloadProgressPayload } from "../types";
 import {
   createPlaceholderAppearanceAttributes,
   createPlaceholderValueAttributes,
@@ -145,6 +146,39 @@ function truncateDescription(description: string) {
   return description.length > 160 ? `${description.slice(0, 160)}...` : description;
 }
 
+function ModDownloadControls({
+  progress,
+  onPause,
+  onCancel,
+}: {
+  progress: ModDownloadProgressPayload;
+  onPause: (paused: boolean) => Promise<void>;
+  onCancel: () => Promise<void>;
+}) {
+  const paused = progress.state === "paused";
+  const percent = Math.round(progress.percent);
+  return (
+    <div className="mod-download-progress" onClick={(event) => event.stopPropagation()}>
+      <div className="mod-download-progress-head">
+        <strong>{paused ? "PAUSED" : "DOWNLOADING"}</strong>
+        <span>{percent}%</span>
+      </div>
+      <div className="mod-download-progress-track" aria-label={`Download ${percent}%`}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mod-download-progress-actions">
+        <span title={progress.filename}>{progress.filename || "Resolving dependencies…"}</span>
+        <button type="button" onClick={() => void onPause(!paused)}>
+          {paused ? "RESUME" : "PAUSE"}
+        </button>
+        <button className="danger" type="button" onClick={() => void onCancel()}>
+          CANCEL
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ModrinthContentTab({
   kind,
   controller,
@@ -168,9 +202,12 @@ export function ModrinthContentTab({
     busyProjectId,
     installedItems,
     installedLoading,
+    downloadProgress,
     loadMore,
     install,
     uninstall,
+    setDownloadPaused,
+    cancelDownload,
   } = controller;
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const hiddenProjectIds = new Set(mascotHiddenProjectIds);
@@ -248,6 +285,7 @@ export function ModrinthContentTab({
                       item.categories?.[0] ||
                       copy.fallbackCategory(selectedTarget);
                     const busy = busyProjectId === item.projectId;
+                    const contentBusy = busyProjectId !== null;
 
                     return (
                       <div
@@ -297,7 +335,7 @@ export function ModrinthContentTab({
                                   <button
                                     className="ghost-action danger catalog-action"
                                     type="button"
-                                    disabled={busy}
+                                    disabled={contentBusy}
                                     onClick={() => void uninstall(item.projectId)}
                                   >
                                     {busy ? "REMOVING..." : "DELETE"}
@@ -308,7 +346,7 @@ export function ModrinthContentTab({
                                   <button
                                     className="ghost-action danger catalog-action"
                                     type="button"
-                                    disabled={busy}
+                                    disabled={contentBusy}
                                     onClick={() => void uninstall(item.projectId)}
                                   >
                                     {busy ? "..." : "REMOVE"}
@@ -316,7 +354,7 @@ export function ModrinthContentTab({
                                   <button
                                     className="ghost-action installed catalog-action"
                                     type="button"
-                                    disabled={busy}
+                                    disabled={contentBusy}
                                     onClick={() => void install(item.projectId)}
                                     data-mascot-stealable
                                     data-mascot-label="UPDATE"
@@ -329,7 +367,7 @@ export function ModrinthContentTab({
                               <button
                                 className="catalog-action install"
                                 type="button"
-                                disabled={busy}
+                                disabled={contentBusy}
                                 onClick={() => void install(item.projectId)}
                                 data-mascot-stealable
                                 data-mascot-label="INSTALL"
@@ -339,6 +377,15 @@ export function ModrinthContentTab({
                             )}
                           </div>
                         </div>
+                        {kind === "mods" &&
+                          busy &&
+                          downloadProgress?.projectId === item.projectId && (
+                            <ModDownloadControls
+                              progress={downloadProgress}
+                              onPause={setDownloadPaused}
+                              onCancel={cancelDownload}
+                            />
+                          )}
                         <p className="mod-description">{truncateDescription(item.description)}</p>
                         <div className="mod-meta-strip">
                           <span>BY {item.author.toUpperCase()}</span>
@@ -438,7 +485,6 @@ export function ModrinthContentTab({
                 </div>
               ) : (
                 visibleInstalledItems.map((item) => {
-                  const busy = busyProjectId === item.projectId;
                   return (
                     <div
                       className="installed-mod-swipe"
@@ -452,7 +498,7 @@ export function ModrinthContentTab({
                           className="installed-mod-delete-btn"
                           type="button"
                           title={copy.deleteTitle}
-                          disabled={!item.projectId || busy}
+                          disabled={!item.projectId || busyProjectId !== null}
                           onClick={() => item.projectId && void uninstall(item.projectId)}
                         >
                           <TrashIcon />
@@ -477,7 +523,7 @@ export function ModrinthContentTab({
       <ModrinthProjectModal
         kind={kind}
         project={selectedProject}
-        busy={busyProjectId === selectedProject?.projectId}
+        busy={busyProjectId !== null}
         onClose={() => setSelectedProjectId(null)}
         onInstall={() => {
           if (selectedProject) void install(selectedProject.projectId);
@@ -485,6 +531,13 @@ export function ModrinthContentTab({
         onUninstall={() => {
           if (selectedProject) void uninstall(selectedProject.projectId);
         }}
+        downloadProgress={
+          kind === "mods" && downloadProgress?.projectId === selectedProject?.projectId
+            ? downloadProgress
+            : null
+        }
+        onDownloadPause={setDownloadPaused}
+        onDownloadCancel={cancelDownload}
       />
     </section>
   );

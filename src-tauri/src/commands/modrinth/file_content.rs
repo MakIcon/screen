@@ -196,6 +196,7 @@ pub(super) async fn install_file_content(
         &target_dir,
         &[],
         &mut install_batch,
+        None,
     )
     .await?;
     merge_state(&instance, config, &install_batch).await?;

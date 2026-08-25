@@ -59,6 +59,8 @@ pub fn run() {
             commands::modrinth::get_modrinth_project_details,
             commands::modrinth::search_modrinth_mods,
             commands::modrinth::install_modrinth_project,
+            commands::modrinth::set_modrinth_download_paused,
+            commands::modrinth::cancel_modrinth_download,
             commands::modrinth::list_installed_mods,
             commands::modrinth::uninstall_modrinth_mod,
             commands::modrinth::set_mod_enabled,

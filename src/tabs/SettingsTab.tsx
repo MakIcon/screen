@@ -304,13 +304,15 @@ export function SettingsTab({
                 <VoidIcon />
                 VOID
               </button>
-              <button
-                className={`theme-switch-btn theme-customize-btn${appearanceCustomized ? " active" : ""}`}
-                type="button"
-                onClick={onCustomizeAppearance}
-              >
-                CUSTOMIZE
-              </button>
+              {advancedSettingsEnabled && (
+                <button
+                  className={`theme-switch-btn theme-customize-btn${appearanceCustomized ? " active" : ""}`}
+                  type="button"
+                  onClick={onCustomizeAppearance}
+                >
+                  CUSTOMIZE
+                </button>
+              )}
             </div>
           </div>
 

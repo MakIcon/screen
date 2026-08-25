@@ -746,6 +746,7 @@ mod tests {
         InstanceItem {
             id: "inst-test".to_string(),
             name: "Test".to_string(),
+            pinned: false,
             version: "1.21.1".to_string(),
             loader: loader.to_string(),
             loader_version: Some("21.1.235".to_string()),

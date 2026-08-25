@@ -585,6 +585,7 @@ fn launcher_placeholder_instance(instances: &[InstanceItem]) -> InstanceItem {
     instances.last().cloned().unwrap_or_else(|| InstanceItem {
         id: LAUNCHER_RPC_SESSION_ID.to_string(),
         name: "ScreenLauncher".to_string(),
+        pinned: false,
         version: "Launcher".to_string(),
         loader: "Ready".to_string(),
         loader_version: None,
@@ -869,6 +870,7 @@ mod tests {
         InstanceItem {
             id: id.to_string(),
             name: format!("{loader} Pack"),
+            pinned: false,
             version: "1.21.1".to_string(),
             loader: loader.to_string(),
             loader_version: loader_version.map(str::to_string),

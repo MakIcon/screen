@@ -153,6 +153,92 @@
   box-shadow: var(--surface-shadow);
 }
 
+.mod-download-progress {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.mod-download-progress-head,
+.mod-download-progress-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.mod-download-progress-head span {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.mod-download-progress-track,
+.modrinth-detail-download-progress > i {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.mod-download-progress-track span,
+.modrinth-detail-download-progress > i span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.mod-download-progress-actions > span {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-download-progress-actions button,
+.modrinth-detail-download-progress button {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.mod-download-progress-actions button.danger,
+.modrinth-detail-download-progress button:last-child {
+  color: var(--accent);
+}
+
+.modrinth-detail-download-progress {
+  display: grid;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line);
+}
+
+.modrinth-detail-download-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 1px;
+}
+
+.modrinth-detail-download-progress > div:last-child {
+  justify-content: flex-end;
+}
+
 .mod-card.modrinth-card::before {
   content: "";
   position: absolute;
@@ -294,7 +380,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  transition: transform 0.22s ease, background 0.2s ease;
+  transition:
+    transform 0.22s ease,
+    background 0.2s ease;
 }
 
 .installed-mod-swipe:hover .installed-mod-row {
@@ -485,7 +573,10 @@
   background: var(--bg-card);
   color: var(--muted);
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
 }
 
 .modrinth-detail-close span {
@@ -712,7 +803,10 @@
   font-weight: 850;
   letter-spacing: 0.12em;
   cursor: pointer;
-  transition: transform 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease,
+    background 0.16s ease;
 }
 
 .modrinth-detail-primary {

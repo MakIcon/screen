@@ -294,7 +294,10 @@ function normalizeComponentOverride(
   return { kind: target.kind, settings } as AppearanceElementComponentOverride;
 }
 
-function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOverrides"] {
+function normalizeElementOverrides(
+  value: unknown,
+  includeHoverState = true,
+): AppearanceProfile["elementOverrides"] {
   if (!Array.isArray(value)) return [];
 
   const fontFamilies = [
@@ -363,6 +366,9 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
       style.contentOpacity === undefined
     ) {
       style.opacity = legacyOpacity;
+    }
+    if (typeof rawStyle.elementOpacity === "number" && Number.isFinite(rawStyle.elementOpacity)) {
+      style.elementOpacity = clampNumber(rawStyle.elementOpacity, 1, 0, 1);
     }
     if (typeof rawStyle.radius === "number" && Number.isFinite(rawStyle.radius)) {
       style.radius = clampNumber(rawStyle.radius, 0, 0, 40);
@@ -579,6 +585,14 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
           Number.isFinite(rawDefaults.afterOpacity)
             ? { afterOpacity: clampNumber(rawDefaults.afterOpacity, 1, 0, 1) }
             : {}),
+          ...(typeof rawDefaults.elementOpacity === "number" &&
+          Number.isFinite(rawDefaults.elementOpacity)
+            ? { elementOpacity: clampNumber(rawDefaults.elementOpacity, 1, 0, 1) }
+            : {}),
+          ...(typeof rawDefaults.hoverElementOpacity === "number" &&
+          Number.isFinite(rawDefaults.hoverElementOpacity)
+            ? { hoverElementOpacity: clampNumber(rawDefaults.hoverElementOpacity, 1, 0, 1) }
+            : {}),
           ...(typeof rawDefaults.textColor === "string" &&
           SAFE_COMPUTED_COLOR.test(rawDefaults.textColor)
             ? { textColor: rawDefaults.textColor }
@@ -599,7 +613,39 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
       : undefined;
     const component = normalizeComponentTarget(candidate.component);
     const componentSettings = normalizeComponentOverride(candidate.componentSettings, component);
-    if (Object.keys(style).length === 0 && !hasTextOverride && !componentSettings) return [];
+    const hoverStyle =
+      includeHoverState && isRecord(candidate.hoverStyle)
+        ? normalizeElementOverrides(
+            [
+              {
+                ...candidate,
+                style: candidate.hoverStyle,
+                hoverStyle: undefined,
+                text: undefined,
+                componentSettings: undefined,
+              },
+            ],
+            false,
+          )[0]?.style
+        : undefined;
+    const hoverTransitionMs =
+      includeHoverState &&
+      typeof candidate.hoverTransitionMs === "number" &&
+      Number.isFinite(candidate.hoverTransitionMs)
+        ? Math.round(clampNumber(candidate.hoverTransitionMs, 200, 0, 2_000))
+        : undefined;
+    const hoverEasing =
+      includeHoverState &&
+      ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].includes(
+        candidate.hoverEasing as string,
+      )
+        ? (candidate.hoverEasing as NonNullable<
+            AppearanceProfile["elementOverrides"][number]["hoverEasing"]
+          >)
+        : undefined;
+    if (Object.keys(style).length === 0 && !hoverStyle && !hasTextOverride && !componentSettings) {
+      return [];
+    }
 
     return [
       {
@@ -617,6 +663,9 @@ function normalizeElementOverrides(value: unknown): AppearanceProfile["elementOv
           ? { text: (candidate.text as string).slice(0, MAX_ELEMENT_TEXT_LENGTH) }
           : {}),
         ...(componentSettings ? { componentSettings } : {}),
+        ...(hoverStyle ? { hoverStyle } : {}),
+        ...(hoverTransitionMs !== undefined ? { hoverTransitionMs } : {}),
+        ...(hoverEasing ? { hoverEasing } : {}),
         style,
       },
     ];
@@ -640,6 +689,7 @@ export function createDefaultAppearance(
     },
     background: {
       kind: "solid",
+      scope: "launcher",
       imageDataUrl: "",
       imageName: "",
       drawingDataUrl: "",
@@ -704,6 +754,11 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
         background.kind,
         ["solid", "image", "drawing"],
         fallback.background.kind,
+      ),
+      scope: pickEnum(
+        background.scope,
+        ["launcher", "content"] as const,
+        fallback.background.scope,
       ),
       imageDataUrl: pickImageDataUrl(background.imageDataUrl),
       imageName: pickString(background.imageName, "").slice(0, 180),
@@ -791,7 +846,7 @@ export function buildAppearanceStyle(profileValue: AppearanceProfile): CSSProper
   const backgroundDim = backgroundImage ? profile.background.dim : 0;
 
   return {
-    "--bg": profile.colors.background,
+    "--bg": profile.background.scope === "content" ? theme.background : profile.colors.background,
     "--ink": profile.colors.text,
     "--accent": profile.colors.accent,
     "--line": hexToRgba(profile.colors.text, 0.1),
@@ -820,6 +875,7 @@ export function applyAppearanceToElement(element: HTMLElement, profileValue: App
   element.dataset.theme = profile.baseTheme === "light" ? "" : profile.baseTheme;
   element.dataset.appearanceCustom = profile.customized ? "true" : "false";
   element.dataset.appearanceBackground = profile.background.kind;
+  element.dataset.appearanceBackgroundScope = profile.background.scope;
   element.dataset.appearancePanels = profile.opacity.panels <= 0.001 ? "transparent" : "tinted";
   element.dataset.motion = profile.motion.enabled ? profile.motion.uiStyle : "off";
   element.dataset.openAnimation = profile.motion.enabled ? profile.motion.opening : "none";

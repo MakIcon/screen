@@ -287,6 +287,82 @@ button {
   cursor: default;
 }
 
+.appearance-interaction-state {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.appearance-interaction-state > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+
+.appearance-interaction-state > div {
+  display: flex;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+}
+
+.appearance-interaction-state > div button {
+  min-width: 0;
+  height: 28px;
+  flex: 1;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+  cursor: pointer;
+}
+
+.appearance-interaction-state > div button:last-child {
+  border-right: 0;
+}
+
+.appearance-interaction-state > div button.active {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.appearance-interaction-state > small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appearance-interaction-reset {
+  grid-column: 3;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.appearance-interaction-reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .appearance-element-list {
   min-height: 0;
   padding: 20px;

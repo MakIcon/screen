@@ -44,6 +44,10 @@ export type AppearanceElementDefaults = {
   backgroundAfter?: boolean;
   beforeOpacity?: number;
   afterOpacity?: number;
+  /** Computed opacity with the element outside of :hover. */
+  elementOpacity?: number;
+  /** Computed opacity captured while the picker pointer is over the element. */
+  hoverElementOpacity?: number;
   textColor?: string;
   widthAuto?: boolean;
   heightAuto?: boolean;
@@ -140,54 +144,70 @@ export type AppearanceElementTarget = {
 export type AppearanceElementShadow = "none" | "soft" | "strong" | "glow";
 export type AppearanceElementTextAlign = "left" | "center" | "right";
 export type AppearanceElementLayout = "default" | "row" | "column" | "grid";
+export type AppearanceElementInteractionState = "normal" | "hover";
+export type AppearanceElementHoverEasing =
+  | "linear"
+  | "ease"
+  | "ease-in"
+  | "ease-out"
+  | "ease-in-out";
+
+export type AppearanceElementStyle = {
+  width?: number;
+  height?: number;
+  minWidth?: number;
+  minHeight?: number;
+  /** Legacy whole-element opacity. New profiles use the two independent values below. */
+  opacity?: number;
+  /** Opacity of the complete element, independent from its surface and content controls. */
+  elementOpacity?: number;
+  backgroundOpacity?: number;
+  contentOpacity?: number;
+  radius?: number;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  letterSpacing?: number;
+  lineHeight?: number;
+  textAlign?: AppearanceElementTextAlign;
+  backgroundKind?: AppearanceElementBackgroundKind;
+  backgroundColor?: string;
+  backgroundGradientStart?: string;
+  backgroundGradientEnd?: string;
+  backgroundGradientAngle?: number;
+  backgroundGradientType?: AppearanceElementGradientType;
+  backgroundGradientStops?: AppearanceElementGradientStop[];
+  backgroundGradientCenterX?: number;
+  backgroundGradientCenterY?: number;
+  backgroundGradientScale?: number;
+  backgroundGradientRadialShape?: AppearanceElementGradientRadialShape;
+  backgroundGradientRadialAspect?: number;
+  backgroundGradientStrength?: number;
+  backgroundGradientMidpoint?: number;
+  backgroundGradientSoftness?: number;
+  textColor?: string;
+  paddingX?: number;
+  paddingY?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  shadow?: AppearanceElementShadow;
+  scale?: number;
+  rotate?: number;
+  layout?: AppearanceElementLayout;
+  columns?: number;
+  gap?: number;
+};
 
 export type AppearanceElementOverride = AppearanceElementTarget & {
   /** An empty string is a valid override and intentionally hides the original text. */
   text?: string;
   componentSettings?: AppearanceElementComponentOverride;
-  style: {
-    width?: number;
-    height?: number;
-    minWidth?: number;
-    minHeight?: number;
-    /** Legacy whole-element opacity. New profiles use the two independent values below. */
-    opacity?: number;
-    backgroundOpacity?: number;
-    contentOpacity?: number;
-    radius?: number;
-    fontFamily?: string;
-    fontSize?: number;
-    fontWeight?: number;
-    letterSpacing?: number;
-    lineHeight?: number;
-    textAlign?: AppearanceElementTextAlign;
-    backgroundKind?: AppearanceElementBackgroundKind;
-    backgroundColor?: string;
-    backgroundGradientStart?: string;
-    backgroundGradientEnd?: string;
-    backgroundGradientAngle?: number;
-    backgroundGradientType?: AppearanceElementGradientType;
-    backgroundGradientStops?: AppearanceElementGradientStop[];
-    backgroundGradientCenterX?: number;
-    backgroundGradientCenterY?: number;
-    backgroundGradientScale?: number;
-    backgroundGradientRadialShape?: AppearanceElementGradientRadialShape;
-    backgroundGradientRadialAspect?: number;
-    backgroundGradientStrength?: number;
-    backgroundGradientMidpoint?: number;
-    backgroundGradientSoftness?: number;
-    textColor?: string;
-    paddingX?: number;
-    paddingY?: number;
-    borderWidth?: number;
-    borderColor?: string;
-    shadow?: AppearanceElementShadow;
-    scale?: number;
-    rotate?: number;
-    layout?: AppearanceElementLayout;
-    columns?: number;
-    gap?: number;
-  };
+  /** Appearance before the pointer enters the element. */
+  style: AppearanceElementStyle;
+  /** Properties that replace the normal style while the pointer is over the element. */
+  hoverStyle?: AppearanceElementStyle;
+  hoverTransitionMs?: number;
+  hoverEasing?: AppearanceElementHoverEasing;
 };
 
 export type AppearanceProfile = {
@@ -202,6 +222,7 @@ export type AppearanceProfile = {
   };
   background: {
     kind: AppearanceBackgroundKind;
+    scope: "launcher" | "content";
     imageDataUrl: string;
     imageName: string;
     drawingDataUrl: string;

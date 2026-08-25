@@ -668,6 +668,7 @@ export default function App() {
           payload: {
             id: target.id,
             name: target.name,
+            pinned: target.pinned,
             version: target.version,
             loader: target.loader,
             loaderVersion: target.loaderVersion ?? null,
@@ -745,6 +746,55 @@ export default function App() {
     () => instances.find((x) => x.id === selectedInstanceId) || null,
     [instances, selectedInstanceId],
   );
+
+  const updateInstanceIdentity = async (
+    id: string,
+    changes: { name?: string; pinned?: boolean },
+  ) => {
+    const target = instances.find((instance) => instance.id === id);
+    if (!target) return false;
+
+    const nextName = (changes.name ?? target.name).trim();
+    if (!nextName) {
+      setActionError("Build name is empty");
+      return false;
+    }
+    if (changes.name !== undefined && isRunning(id)) {
+      setActionError("Stop the build before renaming it");
+      return false;
+    }
+
+    try {
+      setWorking(true);
+      setActionError("");
+      const updated = await invoke<InstanceItem>("update_instance", {
+        payload: {
+          id: target.id,
+          name: nextName,
+          pinned: changes.pinned ?? target.pinned,
+          version: target.version,
+          loader: target.loader,
+          loaderVersion: target.loaderVersion ?? null,
+          ram: target.ram,
+          javaArgs: target.javaArgs ?? null,
+          javaPath: target.javaPath ?? null,
+          windowWidth: target.windowWidth ?? null,
+          windowHeight: target.windowHeight ?? null,
+          fullscreen: target.fullscreen ?? false,
+        } satisfies UpdateInstancePayload,
+      });
+      setInstances((current) =>
+        current.map((instance) => (instance.id === updated.id ? updated : instance)),
+      );
+      setSelectedInstanceId(updated.id);
+      return true;
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+      return false;
+    } finally {
+      setWorking(false);
+    }
+  };
 
   const buildSettingsTargetInstance = buildSettingsTargetId
     ? instances.find((instance) => instance.id === buildSettingsTargetId) || null
@@ -1968,6 +2018,8 @@ export default function App() {
             handleExportInstance={handleExportInstance}
             handleImportBuild={handleImportBuild}
             handleOpenFolder={handleOpenFolder}
+            handleRenameInstance={(id, name) => updateInstanceIdentity(id, { name })}
+            handleTogglePin={(id, pinned) => updateInstanceIdentity(id, { pinned })}
             setStatsInstanceId={setStatsInstanceId}
             setScreenshotsInstanceId={setScreenshotsInstanceId}
             openBuildCardSettings={openBuildCardSettings}

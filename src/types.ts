@@ -5,6 +5,7 @@ export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "Forge" | "NeoForge";
 export type InstanceItem = {
   id: string;
   name: string;
+  pinned: boolean;
   version: string;
   loader: LoaderType | string;
   loaderVersion?: string | null;
@@ -134,6 +135,7 @@ export type CreateInstancePayload = {
 export type UpdateInstancePayload = {
   id: string;
   name: string;
+  pinned: boolean;
   version: string;
   loader: LoaderType | string;
   loaderVersion?: string | null;
@@ -190,6 +192,16 @@ export type InstallProgressPayload = {
   total: number;
   percent: number;
   detail: string;
+};
+
+export type ModDownloadProgressPayload = {
+  instanceId: string;
+  projectId: string;
+  filename: string;
+  receivedBytes: number;
+  totalBytes: number;
+  percent: number;
+  state: "downloading" | "paused" | "completed" | "cancelled";
 };
 
 export type MirrorMode = "official" | "auto" | "mirror";

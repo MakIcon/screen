@@ -96,6 +96,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
     let item = InstanceItem {
         id: id.clone(),
         name: clean_name.to_uppercase(),
+        pinned: false,
         version: payload.version.clone(),
         loader: loader_kind.canonical_name().to_string(),
         loader_version,
@@ -130,6 +131,16 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
 pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceItem, String> {
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
+
+    if clean_name.is_empty() {
+        return Err("Build name is empty".into());
+    }
+    if items
+        .iter()
+        .any(|item| item.id != payload.id && item.name.eq_ignore_ascii_case(&clean_name))
+    {
+        return Err("Build with this name already exists".into());
+    }
 
     let Some(index) = items.iter().position(|i| i.id == payload.id) else {
         return Err("Instance not found".into());
@@ -166,6 +177,7 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
     let updated_item = InstanceItem {
         id: old_item.id.clone(),
         name: clean_name.to_uppercase(),
+        pinned: payload.pinned,
         version: payload.version.clone(),
         loader: loader_kind.canonical_name().to_string(),
         loader_version,
@@ -314,6 +326,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
     let item = InstanceItem {
         id: id.clone(),
         name: clean_name.to_uppercase(),
+        pinned: false,
         version: payload.version.clone(),
         loader: loader_kind.canonical_name().to_string(),
         loader_version,
@@ -353,7 +366,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
                 if mod_item.source == "modrinth" {
                     if let Some(ref pid) = mod_item.project_id {
                         let _ = install_project_to_dir(
-                            &client, &item, pid, &mods_dir, &loaders, &mut state,
+                            &client, &item, pid, &mods_dir, &loaders, &mut state, None,
                         )
                         .await;
                     }
@@ -384,6 +397,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
                             &shaders_dir,
                             &[],
                             &mut state,
+                            None,
                         )
                         .await;
                     }
@@ -414,6 +428,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
                             &packs_dir,
                             &[],
                             &mut state,
+                            None,
                         )
                         .await;
                     }

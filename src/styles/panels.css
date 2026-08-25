@@ -272,8 +272,27 @@
   color: var(--ink);
   padding: 16px;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    background 0.2s;
   flex-shrink: 0;
+}
+
+.instance-pin-badge {
+  align-self: center;
+  margin-left: auto;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.pin-icon {
+  display: block;
+  width: 15px;
+  height: 15px;
+  background: currentColor;
+  -webkit-mask: var(--pin-icon-url) center / contain no-repeat;
+  mask: var(--pin-icon-url) center / contain no-repeat;
 }
 
 .instance-card:hover {

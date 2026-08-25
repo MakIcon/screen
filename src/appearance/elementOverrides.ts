@@ -25,12 +25,22 @@ export const APPEARANCE_ELEMENT_PICKED_EVENT = "appearance-element-picked";
 export const APPEARANCE_ELEMENT_PICK_CANCEL_EVENT = "appearance-element-pick-cancel";
 export const APPEARANCE_ELEMENT_REVEAL_EVENT = "appearance-element-reveal";
 export const APPEARANCE_ELEMENT_PREVIEW_EVENT = "appearance-element-preview";
+export const APPEARANCE_ELEMENT_SELECTION_EVENT = "appearance-element-selection";
 export const APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT = "appearance-window-animation-preview";
 export const APPEARANCE_DRAWING_CURSOR_EVENT = "appearance-drawing-cursor";
 
 export type AppearanceElementPreviewPayload = {
   customized: boolean;
   elementOverrides: AppearanceElementOverride[];
+};
+
+export type AppearanceElementPickedPayload =
+  | AppearanceElementTarget
+  | { target: AppearanceElementTarget; additive: boolean; continuing?: boolean };
+
+export type AppearanceElementSelectionPayload = {
+  targets: AppearanceElementTarget[];
+  previewHover?: boolean;
 };
 
 export type WindowAnimationPreviewPayload =
@@ -157,7 +167,49 @@ function describeElement(element: HTMLElement) {
   return `${element.tagName}${text ? ` · ${text}` : className ? ` · ${className}` : ""}`;
 }
 
-function readElementDefaults(element: HTMLElement) {
+function readNormalElementOpacity(
+  root: HTMLElement,
+  path: AppearanceElementPathSegment[],
+): number | undefined {
+  const rootRect = root.getBoundingClientRect();
+  const clone = root.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) return undefined;
+
+  clone
+    .querySelectorAll<HTMLElement>(`.appearance-hover-preview, .appearance-pick-selected`)
+    .forEach((candidate) =>
+      candidate.classList.remove("appearance-hover-preview", "appearance-pick-selected"),
+    );
+  clone.style.setProperty("position", "fixed", "important");
+  clone.style.setProperty(
+    "left",
+    `${-Math.max(2_000, Math.ceil(rootRect.width) + 100)}px`,
+    "important",
+  );
+  clone.style.setProperty("top", "0", "important");
+  clone.style.setProperty("width", `${rootRect.width}px`, "important");
+  clone.style.setProperty("height", `${rootRect.height}px`, "important");
+  clone.style.setProperty("visibility", "hidden", "important");
+  clone.style.setProperty("pointer-events", "none", "important");
+  clone.setAttribute("aria-hidden", "true");
+  clone.inert = true;
+
+  document.body.appendChild(clone);
+  try {
+    const clonedElement = resolveElementTarget(clone, { path });
+    if (!clonedElement) return undefined;
+    const opacity = Number.parseFloat(window.getComputedStyle(clonedElement).opacity);
+    return Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : undefined;
+  } finally {
+    clone.remove();
+  }
+}
+
+function readElementDefaults(
+  element: HTMLElement,
+  root: HTMLElement,
+  path: AppearanceElementPathSegment[],
+) {
   const overrideId = element.getAttribute(OVERRIDE_ATTRIBUTE);
   if (overrideId) element.removeAttribute(OVERRIDE_ATTRIBUTE);
   const rect = element.getBoundingClientRect();
@@ -170,6 +222,8 @@ function readElementDefaults(element: HTMLElement) {
   const originalTransition = element.style.getPropertyValue("transition");
   const originalTransitionPriority = element.style.getPropertyPriority("transition");
   element.style.setProperty("transition", "none", "important");
+  const hoveredElementOpacity = Number.parseFloat(window.getComputedStyle(element).opacity);
+  const normalElementOpacity = readNormalElementOpacity(root, path);
 
   const matchesAutoSize = (property: "width" | "height", measuredSize: number) => {
     const originalValue = element.style.getPropertyValue(property);
@@ -208,6 +262,10 @@ function readElementDefaults(element: HTMLElement) {
     backgroundAfter: hasVisibleBackground(after),
     beforeOpacity: Number.parseFloat(before.opacity) || 0,
     afterOpacity: Number.parseFloat(after.opacity) || 0,
+    ...(normalElementOpacity !== undefined ? { elementOpacity: normalElementOpacity } : {}),
+    ...(Number.isFinite(hoveredElementOpacity)
+      ? { hoverElementOpacity: Math.min(1, Math.max(0, hoveredElementOpacity)) }
+      : {}),
     textColor: computed.color,
     widthAuto,
     heightAuto,
@@ -337,7 +395,7 @@ export function createElementTarget(
 
   if (current !== root || path.length === 0 || path.length > 24) return null;
   const component = readComponentTarget(element);
-  const defaults = readElementDefaults(element);
+  const defaults = readElementDefaults(element, root, path);
   // Component roots expose their editable copy through typed props. A raw text-node
   // replacement would be overwritten by React (and could accidentally target a slider tick).
   const textTarget = component ? undefined : createTextTarget(element, preferredTextSource);
@@ -387,8 +445,14 @@ export function resolveElementTextTarget(
   return current instanceof Text ? current : null;
 }
 
-export function buildElementOverrideRule(override: AppearanceElementOverride) {
+function buildElementOverrideStateRule(
+  sourceOverride: AppearanceElementOverride,
+  style: AppearanceElementOverride["style"],
+  interactionState: "normal" | "hover",
+) {
+  const override: AppearanceElementOverride = { ...sourceOverride, style };
   const declarations: string[] = [];
+  const descendantTypographyDeclarations: string[] = [];
   const legacyWidthZero = override.style.width === 0 && override.defaults?.widthAuto === undefined;
   const legacyHeightZero =
     override.style.height === 0 && override.defaults?.heightAuto === undefined;
@@ -420,7 +484,9 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
         : `${override.style.minHeight}px`;
     declarations.push(`min-height: ${minHeight} !important`);
   }
-  if (
+  if (override.style.elementOpacity !== undefined) {
+    declarations.push(`opacity: ${override.style.elementOpacity} !important`);
+  } else if (
     override.style.opacity !== undefined &&
     override.style.backgroundOpacity === undefined &&
     override.style.contentOpacity === undefined
@@ -432,18 +498,25 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
   }
   if (override.style.fontFamily) {
     declarations.push(`font-family: ${override.style.fontFamily} !important`);
+    descendantTypographyDeclarations.push(`font-family: ${override.style.fontFamily} !important`);
   }
   if (override.style.fontSize !== undefined) {
     declarations.push(`font-size: ${override.style.fontSize}px !important`);
+    descendantTypographyDeclarations.push(`font-size: ${override.style.fontSize}px !important`);
   }
   if (override.style.fontWeight !== undefined) {
     declarations.push(`font-weight: ${override.style.fontWeight} !important`);
+    descendantTypographyDeclarations.push(`font-weight: ${override.style.fontWeight} !important`);
   }
   if (override.style.letterSpacing !== undefined) {
     declarations.push(`letter-spacing: ${override.style.letterSpacing}px !important`);
+    descendantTypographyDeclarations.push(
+      `letter-spacing: ${override.style.letterSpacing}px !important`,
+    );
   }
   if (override.style.lineHeight !== undefined) {
     declarations.push(`line-height: ${override.style.lineHeight} !important`);
+    descendantTypographyDeclarations.push(`line-height: ${override.style.lineHeight} !important`);
   }
   if (override.style.textAlign) {
     declarations.push(`text-align: ${override.style.textAlign} !important`);
@@ -477,11 +550,7 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
     if (override.style.backgroundKind === "solid") {
       declarations.push("background-image: none !important");
     }
-    if (
-      override.style.backgroundOpacity !== undefined &&
-      backgroundOpacity < 1 &&
-      backgroundColor
-    ) {
+    if (override.style.backgroundOpacity !== undefined && backgroundColor) {
       declarations.push(
         `background-color: ${colorWithOpacity(backgroundColor, backgroundOpacity)} !important`,
       );
@@ -490,7 +559,6 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
     }
     if (
       override.style.backgroundOpacity !== undefined &&
-      backgroundOpacity < 1 &&
       backgroundImage &&
       backgroundImage !== "none"
     ) {
@@ -500,11 +568,7 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
     }
   }
   const textColor = override.style.textColor ?? override.defaults?.textColor;
-  if (
-    override.style.contentOpacity !== undefined &&
-    override.style.contentOpacity < 1 &&
-    textColor
-  ) {
+  if (override.style.contentOpacity !== undefined && textColor) {
     declarations.push(
       `color: ${colorWithOpacity(textColor, override.style.contentOpacity)} !important`,
     );
@@ -554,7 +618,7 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
   if (override.kind === "list" && override.style.gap !== undefined) {
     declarations.push(`gap: ${override.style.gap}px !important`);
   }
-  if (override.style.contentOpacity !== undefined && override.style.contentOpacity < 1) {
+  if (override.style.contentOpacity !== undefined) {
     declarations.push(
       `--appearance-element-content-opacity: ${override.style.contentOpacity} !important`,
     );
@@ -563,25 +627,34 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
   const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
   // Individual edits must outrank the global custom-appearance rules, which
   // intentionally use !important to cover the launcher's existing components.
-  const selector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
+  const baseSelector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
+  const selectors =
+    interactionState === "hover"
+      ? [`${baseSelector}:hover`, `${baseSelector}.appearance-hover-preview`]
+      : [baseSelector];
+  const selector = selectors.join(", ");
   const rules = [`${selector} { ${declarations.join("; ")} }`];
-  const backgroundPseudos = [
+  if (descendantTypographyDeclarations.length > 0) {
+    rules.push(
+      `${selectors.map((item) => `${item} *`).join(", ")} { ${descendantTypographyDeclarations.join("; ")} }`,
+    );
+  }
+  const backgroundPseudoStates = [
     override.defaults?.backgroundBefore
-      ? { selector: `${selector}::before`, opacity: override.defaults.beforeOpacity ?? 1 }
+      ? { pseudo: "::before", opacity: override.defaults.beforeOpacity ?? 1 }
       : null,
     override.defaults?.backgroundAfter
-      ? { selector: `${selector}::after`, opacity: override.defaults.afterOpacity ?? 1 }
+      ? { pseudo: "::after", opacity: override.defaults.afterOpacity ?? 1 }
       : null,
-  ].filter((entry): entry is { selector: string; opacity: number } => entry !== null);
+  ].filter((entry): entry is { pseudo: string; opacity: number } => entry !== null);
+  const backgroundPseudos = backgroundPseudoStates.flatMap((entry) =>
+    selectors.map((item) => ({ selector: `${item}${entry.pseudo}`, opacity: entry.opacity })),
+  );
   if (override.style.backgroundKind && backgroundPseudos.length > 0) {
     rules.push(
       `${backgroundPseudos.map((entry) => entry.selector).join(", ")} { background: transparent !important; }`,
     );
-  } else if (
-    override.style.backgroundOpacity !== undefined &&
-    backgroundOpacity < 1 &&
-    backgroundPseudos.length > 0
-  ) {
+  } else if (override.style.backgroundOpacity !== undefined && backgroundPseudos.length > 0) {
     rules.push(
       ...backgroundPseudos.map(
         (entry) =>
@@ -589,24 +662,47 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
       ),
     );
   }
-  if (override.style.contentOpacity !== undefined && override.style.contentOpacity < 1) {
+  if (override.style.contentOpacity !== undefined) {
     const contentOpacity = override.style.contentOpacity;
     rules.push(
-      `${selector} > * { opacity: ${contentOpacity} !important; }`,
-      `${selector}::placeholder { opacity: ${contentOpacity} !important; }`,
+      `${selectors.map((item) => `${item} > *`).join(", ")} { opacity: ${contentOpacity} !important; }`,
+      `${selectors.map((item) => `${item}::placeholder`).join(", ")} { opacity: ${contentOpacity} !important; }`,
     );
   }
   if (override.kind === "list" && override.style.layout === "grid") {
     rules.push(
-      `${selector} > * { min-width: 0 !important; max-width: 100% !important; margin-bottom: 0 !important; box-sizing: border-box !important; }`,
-      `${selector} .mod-card-head { flex-wrap: wrap !important; }`,
-      `${selector} .mod-card-head > div:last-child { max-width: 100% !important; flex-wrap: wrap !important; }`,
-      `${selector} .mod-card-project { min-width: 0 !important; flex: 1 1 180px !important; }`,
-      `${selector} .mod-meta-strip { min-width: 0 !important; flex-wrap: wrap !important; }`,
-      `${selector} > [data-appearance-grid-ignore="true"] { position: absolute !important; width: 100% !important; visibility: hidden !important; pointer-events: none !important; }`,
+      `${selectors.map((item) => `${item} > *`).join(", ")} { min-width: 0 !important; max-width: 100% !important; margin-bottom: 0 !important; box-sizing: border-box !important; }`,
+      `${selectors.map((item) => `${item} .mod-card-head`).join(", ")} { flex-wrap: wrap !important; }`,
+      `${selectors.map((item) => `${item} .mod-card-head > div:last-child`).join(", ")} { max-width: 100% !important; flex-wrap: wrap !important; }`,
+      `${selectors.map((item) => `${item} .mod-card-project`).join(", ")} { min-width: 0 !important; flex: 1 1 180px !important; }`,
+      `${selectors.map((item) => `${item} .mod-meta-strip`).join(", ")} { min-width: 0 !important; flex-wrap: wrap !important; }`,
+      `${selectors.map((item) => `${item} > [data-appearance-grid-ignore="true"]`).join(", ")} { position: absolute !important; width: 100% !important; visibility: hidden !important; pointer-events: none !important; }`,
     );
   }
   return rules.join("\n");
+}
+
+export function buildElementOverrideRule(override: AppearanceElementOverride) {
+  const normalRule = buildElementOverrideStateRule(override, override.style, "normal");
+  if (!override.hoverStyle || Object.keys(override.hoverStyle).length === 0) return normalRule;
+
+  const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
+  const selector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
+  const transitionSelectors = [
+    selector,
+    `${selector}::before`,
+    `${selector}::after`,
+    `${selector}::placeholder`,
+    `${selector} > *`,
+    `${selector} *`,
+  ].join(", ");
+  const transitionRule = `${transitionSelectors} { transition-property: all !important; transition-duration: ${override.hoverTransitionMs ?? 200}ms !important; transition-timing-function: ${override.hoverEasing ?? "ease"} !important; transition-delay: 0ms !important; }`;
+  const hoverRule = buildElementOverrideStateRule(
+    override,
+    { ...override.style, ...override.hoverStyle },
+    "hover",
+  );
+  return [normalRule, transitionRule, hoverRule].filter(Boolean).join("\n");
 }
 
 export function applyElementAppearanceOverrides(
@@ -744,11 +840,12 @@ function eventElement(event: Event, root: HTMLElement) {
 
 export function beginElementPicker(
   root: HTMLElement,
-  onPicked: (target: AppearanceElementTarget) => void,
+  onPicked: (target: AppearanceElementTarget, additive: boolean, continuing: boolean) => void,
   onCancelled?: () => void,
   tab?: TabKey,
 ) {
   let highlighted: HTMLElement | null = null;
+  let additivePicks = 0;
 
   const highlight = (element: HTMLElement | null) => {
     if (highlighted === element) return;
@@ -782,14 +879,21 @@ export function beginElementPicker(
     window.setTimeout(() => document.removeEventListener("click", suppressClick, true), 500);
     const target = createElementTarget(root, element, tab, textSource);
     if (target) element.setAttribute(TARGET_ATTRIBUTE, target.id);
-    cleanup();
-    if (target) onPicked(target);
+    if (!target) return;
+    const additive = event.shiftKey || additivePicks > 0;
+    onPicked(target, additive, event.shiftKey);
+    if (event.shiftKey) {
+      additivePicks += 1;
+      highlight(null);
+    } else {
+      cleanup();
+    }
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     cleanup();
-    onCancelled?.();
+    if (additivePicks === 0) onCancelled?.();
   };
 
   root.classList.add("appearance-picking");

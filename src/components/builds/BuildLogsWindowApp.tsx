@@ -50,6 +50,7 @@ function createLogWindowInstance(instanceId: string, instanceName: string): Inst
   return {
     id: instanceId,
     name: instanceName || "Build logs",
+    pinned: false,
     version: "",
     loader: "",
     status: "READY",

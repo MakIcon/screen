@@ -1,4 +1,5 @@
-import { useMemo, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import pinIconUrl from "../assets/pin.svg";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import {
@@ -95,9 +96,47 @@ interface InstancesTabProps {
   handleExportInstance: (id: string) => void;
   handleImportBuild: () => void;
   handleOpenFolder: () => Promise<void>;
+  handleRenameInstance: (id: string, name: string) => Promise<boolean>;
+  handleTogglePin: (id: string, pinned: boolean) => Promise<boolean>;
   setStatsInstanceId: (id: string | null) => void;
   setScreenshotsInstanceId: (id: string | null) => void;
   openBuildCardSettings: (targetId?: string | null) => void;
+}
+
+function PinIcon({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`pin-icon ${className}`.trim()}
+      style={{ "--pin-icon-url": `url("${pinIconUrl}")` } as CSSProperties}
+      aria-hidden="true"
+    />
+  );
+}
+
+function RenameIcon() {
+  return <span className="build-rename-icon" aria-hidden="true" />;
+}
+
+function ConfirmIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="m2.8 8.2 3.2 3.2 7.2-7.2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="square"
+        strokeLinejoin="miter"
+      />
+    </svg>
+  );
+}
+
+function CancelIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+      <path d="m3 3 9 9M12 3l-9 9" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
 }
 
 export function InstancesTab({
@@ -149,11 +188,33 @@ export function InstancesTab({
   handleExportInstance,
   handleImportBuild,
   handleOpenFolder,
+  handleRenameInstance,
+  handleTogglePin,
   setStatsInstanceId,
   setScreenshotsInstanceId,
   openBuildCardSettings,
 }: InstancesTabProps) {
-  const sortedInstances = [...instances].reverse();
+  const [buildNameDraft, setBuildNameDraft] = useState(selectedInstance?.name ?? "");
+  const [renamingBuild, setRenamingBuild] = useState(false);
+  useEffect(() => {
+    setBuildNameDraft(selectedInstance?.name ?? "");
+    setRenamingBuild(false);
+  }, [selectedInstance?.id, selectedInstance?.name]);
+
+  const cancelBuildRename = () => {
+    setBuildNameDraft(selectedInstance?.name ?? "");
+    setRenamingBuild(false);
+  };
+
+  const commitBuildRename = async () => {
+    if (!selectedInstance || !buildNameDraft.trim()) return;
+    const renamed = await handleRenameInstance(selectedInstance.id, buildNameDraft);
+    if (renamed) setRenamingBuild(false);
+  };
+
+  const sortedInstances = [...instances]
+    .reverse()
+    .sort((left, right) => Number(right.pinned) - Number(left.pinned));
   const showCreator = createMode || instances.length === 0 || !selectedInstance;
   const buildInfoBottomSpace = 8;
   const resolveSelectedTemplate = (template: string) =>
@@ -323,6 +384,15 @@ export function InstancesTab({
                       >
                         {resolveInstanceTemplate("%build_name%")}
                       </span>
+                      {instance.pinned && (
+                        <span
+                          className="instance-pin-badge"
+                          title="Закреплённая сборка"
+                          aria-label="Закреплённая сборка"
+                        >
+                          <PinIcon />
+                        </span>
+                      )}
                       {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
                         <span
                           className="instance-running-badge"
@@ -510,6 +580,88 @@ export function InstancesTab({
             ) : (
               <>
                 <span className="panel-label">BUILD CONFIGURATION</span>
+
+                {selectedInstance && (
+                  <div className="build-identity-row">
+                    {renamingBuild ? (
+                      <>
+                        <label className="field build-name-field">
+                          <span>RENAME BUILD</span>
+                          <input
+                            autoFocus
+                            value={buildNameDraft}
+                            onChange={(event) => setBuildNameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") void commitBuildRename();
+                              if (event.key === "Escape") cancelBuildRename();
+                            }}
+                            disabled={working}
+                          />
+                        </label>
+                        <button
+                          className="ghost-action build-identity-action build-confirm-action"
+                          type="button"
+                          disabled={
+                            working ||
+                            !buildNameDraft.trim() ||
+                            buildNameDraft.trim() === selectedInstance.name
+                          }
+                          aria-label="Сохранить новое имя"
+                          title="Сохранить новое имя"
+                          onClick={() => void commitBuildRename()}
+                        >
+                          <ConfirmIcon />
+                        </button>
+                        <button
+                          className="ghost-action build-identity-action"
+                          type="button"
+                          disabled={working}
+                          aria-label="Отменить переименование"
+                          title="Отменить переименование"
+                          onClick={cancelBuildRename}
+                        >
+                          <CancelIcon />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="field build-name-field">
+                          <span>BUILD NAME</span>
+                          <div className="build-name-value">{selectedInstance.name}</div>
+                        </div>
+                        <button
+                          className="ghost-action build-identity-action"
+                          type="button"
+                          disabled={working || isRunning(selectedInstance.id)}
+                          aria-label="Переименовать сборку"
+                          title={
+                            isRunning(selectedInstance.id)
+                              ? "Останови сборку перед переименованием"
+                              : "Переименовать сборку"
+                          }
+                          onClick={() => setRenamingBuild(true)}
+                        >
+                          <RenameIcon />
+                        </button>
+                        <button
+                          className={`ghost-action build-identity-action build-pin-action${selectedInstance.pinned ? " active" : ""}`}
+                          type="button"
+                          disabled={working}
+                          aria-pressed={selectedInstance.pinned}
+                          aria-label={
+                            selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"
+                          }
+                          title={selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"}
+                          onClick={() =>
+                            void handleTogglePin(selectedInstance.id, !selectedInstance.pinned)
+                          }
+                        >
+                          <PinIcon />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className="inline-dropdown-grid">
                   <InlineDropdown

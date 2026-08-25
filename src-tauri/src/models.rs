@@ -49,6 +49,8 @@ pub struct ManifestVersion {
 pub struct InstanceItem {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub pinned: bool,
     pub version: String,
     pub loader: String,
     #[serde(default, alias = "fabricLoaderVersion")]
@@ -113,6 +115,8 @@ pub struct CreateInstancePayload {
 pub struct UpdateInstancePayload {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub pinned: bool,
     pub version: String,
     pub loader: String,
     #[serde(default, alias = "fabricLoaderVersion")]

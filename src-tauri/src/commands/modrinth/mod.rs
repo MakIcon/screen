@@ -6,7 +6,8 @@ use std::{
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::fs;
+use tauri::{AppHandle, Emitter};
+use tokio::{fs, sync::watch};
 
 use crate::models::InstanceItem;
 
@@ -25,6 +26,112 @@ pub(crate) const SEARCH_PAGE_SIZE_MAX: usize = 100;
 /// installed projects doesn't fire one Modrinth request each all at once.
 const MAX_CONCURRENT_METADATA_REQUESTS: usize = 8;
 pub(crate) const MODRINTH_SEARCH_INDEX: &str = "relevance";
+pub(crate) const MOD_DOWNLOAD_CANCELLED: &str = "MOD_DOWNLOAD_CANCELLED";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModDownloadControlState {
+    Downloading,
+    Paused,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModDownloadProgressPayload {
+    instance_id: String,
+    project_id: String,
+    filename: String,
+    received_bytes: u64,
+    total_bytes: u64,
+    percent: f64,
+    state: &'static str,
+}
+
+#[derive(Clone)]
+pub(crate) struct ModDownloadContext {
+    app: AppHandle,
+    instance_id: String,
+    project_id: String,
+    control: watch::Receiver<ModDownloadControlState>,
+}
+
+impl ModDownloadContext {
+    pub(crate) fn new(
+        app: AppHandle,
+        instance_id: String,
+        project_id: String,
+        control: watch::Receiver<ModDownloadControlState>,
+    ) -> Self {
+        Self {
+            app,
+            instance_id,
+            project_id,
+            control,
+        }
+    }
+
+    pub(crate) fn emit(
+        &self,
+        filename: &str,
+        received_bytes: u64,
+        total_bytes: u64,
+        state: &'static str,
+    ) {
+        let percent = if state == "completed" {
+            100.0
+        } else if total_bytes == 0 {
+            0.0
+        } else {
+            (received_bytes as f64 / total_bytes as f64 * 100.0).clamp(0.0, 100.0)
+        };
+        let _ = self.app.emit(
+            "mod-download-progress",
+            ModDownloadProgressPayload {
+                instance_id: self.instance_id.clone(),
+                project_id: self.project_id.clone(),
+                filename: filename.to_string(),
+                received_bytes,
+                total_bytes,
+                percent,
+                state,
+            },
+        );
+    }
+
+    async fn wait_until_running(
+        &self,
+        filename: &str,
+        received_bytes: u64,
+        total_bytes: u64,
+    ) -> Result<(), String> {
+        let mut control = self.control.clone();
+        let mut pause_announced = false;
+        loop {
+            match *control.borrow() {
+                ModDownloadControlState::Downloading => {
+                    if pause_announced {
+                        self.emit(filename, received_bytes, total_bytes, "downloading");
+                    }
+                    return Ok(());
+                }
+                ModDownloadControlState::Paused => {
+                    if !pause_announced {
+                        self.emit(filename, received_bytes, total_bytes, "paused");
+                        pause_announced = true;
+                    }
+                }
+                ModDownloadControlState::Cancelled => {
+                    self.emit(filename, received_bytes, total_bytes, "cancelled");
+                    return Err(MOD_DOWNLOAD_CANCELLED.to_string());
+                }
+            }
+            control
+                .changed()
+                .await
+                .map_err(|_| MOD_DOWNLOAD_CANCELLED.to_string())?;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -526,6 +633,66 @@ pub async fn get_modrinth_project_authors(
     Ok(result)
 }
 
+async fn download_file_with_control(
+    client: &Client,
+    url: &str,
+    path: &Path,
+    expected_size: Option<u64>,
+    context: &ModDownloadContext,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("create parent dir error: {e}"))?;
+    }
+
+    let filename = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "mod file".to_string());
+    context
+        .wait_until_running(&filename, 0, expected_size.unwrap_or(0))
+        .await?;
+
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("download request error: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "download http error {} for {url}",
+            response.status()
+        ));
+    }
+
+    let total_bytes = response.content_length().or(expected_size).unwrap_or(0);
+    let mut received_bytes = 0_u64;
+    let mut bytes = Vec::new();
+    context.emit(&filename, 0, total_bytes, "downloading");
+
+    loop {
+        context
+            .wait_until_running(&filename, received_bytes, total_bytes)
+            .await?;
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|e| format!("read download bytes error: {e}"))?;
+        let Some(chunk) = chunk else { break };
+        received_bytes = received_bytes.saturating_add(chunk.len() as u64);
+        bytes.extend_from_slice(&chunk);
+        context.emit(&filename, received_bytes, total_bytes, "downloading");
+    }
+
+    context
+        .wait_until_running(&filename, received_bytes, total_bytes)
+        .await?;
+    fs::write(path, bytes)
+        .await
+        .map_err(|e| format!("write file error: {e}"))
+}
+
 #[tauri::command]
 pub async fn get_modrinth_project_details(
     project_id: String,
@@ -697,6 +864,7 @@ pub(crate) async fn install_project_to_dir(
     target_dir: &Path,
     loaders: &[&str],
     state: &mut HashMap<String, InstalledModEntry>,
+    download_context: Option<&ModDownloadContext>,
 ) -> Result<(), String> {
     fs::create_dir_all(target_dir)
         .await
@@ -732,7 +900,11 @@ pub(crate) async fn install_project_to_dir(
             .clone();
 
         let target_path = target_dir.join(&file.filename);
-        download_file(client, &file.url, &target_path).await?;
+        if let Some(context) = download_context {
+            download_file_with_control(client, &file.url, &target_path, file.size, context).await?;
+        } else {
+            download_file(client, &file.url, &target_path).await?;
+        }
 
         state.insert(
             file.filename.clone(),

@@ -2,7 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
-import type { ModrinthProject, ModrinthProjectDetails } from "../../types";
+import type {
+  ModDownloadProgressPayload,
+  ModrinthProject,
+  ModrinthProjectDetails,
+} from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 
 type ModrinthProjectIconProps = {
@@ -35,6 +39,9 @@ type ModrinthProjectModalProps = {
   onClose: () => void;
   onInstall: () => void;
   onUninstall: () => void;
+  downloadProgress?: ModDownloadProgressPayload | null;
+  onDownloadPause?: (paused: boolean) => Promise<void>;
+  onDownloadCancel?: () => Promise<void>;
 };
 
 const CONTENT_LABEL: Record<ModrinthContentKind, string> = {
@@ -154,7 +161,9 @@ function renderMarkdownText(text: string, keyPrefix: string) {
   let index = 0;
 
   while ((match = markdownLinkPattern.exec(text)) !== null) {
-    nodes.push(...appendTextWithLinks(text.slice(cursor, match.index), `${keyPrefix}-text-${index}`));
+    nodes.push(
+      ...appendTextWithLinks(text.slice(cursor, match.index), `${keyPrefix}-text-${index}`),
+    );
     const url = match[2];
     nodes.push(
       <ProjectLink key={`${keyPrefix}-markdown-${index}`} url={url}>
@@ -196,6 +205,9 @@ export function ModrinthProjectModal({
   onClose,
   onInstall,
   onUninstall,
+  downloadProgress,
+  onDownloadPause,
+  onDownloadCancel,
 }: ModrinthProjectModalProps) {
   const [details, setDetails] = useState<ModrinthProjectDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -269,7 +281,12 @@ export function ModrinthProjectModal({
         aria-labelledby="modrinth-detail-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="modrinth-detail-close" type="button" onClick={onClose} aria-label="Close">
+        <button
+          className="modrinth-detail-close"
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+        >
           <span />
           <span />
         </button>
@@ -283,7 +300,9 @@ export function ModrinthProjectModal({
           <div className="modrinth-detail-heading">
             <span className="modrinth-detail-kicker">{CONTENT_LABEL[kind]} / MODRINTH</span>
             <h2 id="modrinth-detail-title">{fullProject.title}</h2>
-            <p>BY {fullProject.author.toUpperCase()} · {category.toUpperCase()}</p>
+            <p>
+              BY {fullProject.author.toUpperCase()} · {category.toUpperCase()}
+            </p>
           </div>
         </header>
 
@@ -331,8 +350,34 @@ export function ModrinthProjectModal({
             </section>
           )}
 
-          <DetailChips label="CATEGORIES" values={projectDetails?.categories ?? project.categories} />
+          <DetailChips
+            label="CATEGORIES"
+            values={projectDetails?.categories ?? project.categories}
+          />
         </div>
+
+        {busy && downloadProgress && (
+          <div className="modrinth-detail-download-progress">
+            <div>
+              <strong>{downloadProgress.state === "paused" ? "PAUSED" : "DOWNLOADING"}</strong>
+              <span>{Math.round(downloadProgress.percent)}%</span>
+            </div>
+            <i>
+              <span style={{ width: `${Math.round(downloadProgress.percent)}%` }} />
+            </i>
+            <div>
+              <button
+                type="button"
+                onClick={() => void onDownloadPause?.(downloadProgress.state !== "paused")}
+              >
+                {downloadProgress.state === "paused" ? "RESUME" : "PAUSE"}
+              </button>
+              <button type="button" onClick={() => void onDownloadCancel?.()}>
+                CANCEL
+              </button>
+            </div>
+          </div>
+        )}
 
         <footer className="modrinth-detail-actions">
           {showRemove && (

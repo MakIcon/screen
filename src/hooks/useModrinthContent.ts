@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   InstalledModView,
   InstanceItem,
+  ModDownloadProgressPayload,
   ModrinthProject,
   ModrinthSearchResponse,
   TabKey,
@@ -95,9 +97,12 @@ export type ModrinthContentController = {
   busyProjectId: string | null;
   installedItems: InstalledModView[];
   installedLoading: boolean;
+  downloadProgress: ModDownloadProgressPayload | null;
   loadMore: () => Promise<void>;
   install: (projectId: string) => Promise<void>;
   uninstall: (projectId: string) => Promise<void>;
+  setDownloadPaused: (paused: boolean) => Promise<void>;
+  cancelDownload: () => Promise<void>;
 };
 
 export function useModrinthContent({
@@ -118,6 +123,7 @@ export function useModrinthContent({
   const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
   const [installedItems, setInstalledItems] = useState<InstalledModView[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<ModDownloadProgressPayload | null>(null);
   const clearBusyTimer = useRef<number | null>(null);
 
   const buildSearchArguments = (offset: number, limit: number) => ({
@@ -163,6 +169,25 @@ export function useModrinthContent({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (kind !== "mods") return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<ModDownloadProgressPayload>("mod-download-progress", (event) => {
+      if (event.payload.instanceId !== target?.id) return;
+      setDownloadProgress(event.payload);
+    })
+      .then((dispose) => {
+        if (disposed) dispose();
+        else unlisten = dispose;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [kind, target?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,11 +274,22 @@ export function useModrinthContent({
   };
 
   const install = async (projectId: string) => {
-    if (!target) return;
+    if (!target || busyProjectId) return;
     const projectName = items.find((item) => item.projectId === projectId)?.title ?? projectId;
 
     try {
       setBusyProjectId(projectId);
+      if (kind === "mods") {
+        setDownloadProgress({
+          instanceId: target.id,
+          projectId,
+          filename: projectName,
+          receivedBytes: 0,
+          totalBytes: 0,
+          percent: 0,
+          state: "downloading",
+        });
+      }
       setActionError("");
       setBusyMessage(commands.installingMessage);
       await invoke(commands.install, { instanceId: target.id, projectId });
@@ -262,11 +298,46 @@ export function useModrinthContent({
       pushToast("info", `${projectName} → ${target.name}`, { title: commands.installedTitle });
     } catch (caught) {
       const message = toErrorMessage(caught);
+      if (message.includes("MOD_DOWNLOAD_CANCELLED")) {
+        setBusyMessage("");
+        pushToast("info", `${projectName}: загрузка отменена`, { title: "Download cancelled" });
+        return;
+      }
       setActionError(message);
       pushToast("error", message, { title: commands.installFailedTitle });
     } finally {
       setBusyProjectId(null);
+      if (kind === "mods") setDownloadProgress(null);
       scheduleBusyMessageClear();
+    }
+  };
+
+  const setDownloadPaused = async (paused: boolean) => {
+    if (kind !== "mods" || !target || !busyProjectId) return;
+    setDownloadProgress((current) =>
+      current ? { ...current, state: paused ? "paused" : "downloading" } : current,
+    );
+    try {
+      await invoke("set_modrinth_download_paused", {
+        instanceId: target.id,
+        projectId: busyProjectId,
+        paused,
+      });
+    } catch (caught) {
+      setActionError(toErrorMessage(caught));
+    }
+  };
+
+  const cancelDownload = async () => {
+    if (kind !== "mods" || !target || !busyProjectId) return;
+    setDownloadProgress((current) => (current ? { ...current, state: "cancelled" } : current));
+    try {
+      await invoke("cancel_modrinth_download", {
+        instanceId: target.id,
+        projectId: busyProjectId,
+      });
+    } catch (caught) {
+      setActionError(toErrorMessage(caught));
     }
   };
 
@@ -308,8 +379,11 @@ export function useModrinthContent({
     busyProjectId,
     installedItems,
     installedLoading,
+    downloadProgress,
     loadMore,
     install,
     uninstall,
+    setDownloadPaused,
+    cancelDownload,
   };
 }

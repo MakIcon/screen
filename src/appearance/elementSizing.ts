@@ -22,7 +22,12 @@ export function refreshElementSizingTarget(
   }
 
   const hasTextOverride = Object.prototype.hasOwnProperty.call(existing, "text");
-  if (Object.keys(style).length === 0 && !hasTextOverride && !existing.componentSettings) {
+  if (
+    Object.keys(style).length === 0 &&
+    !existing.hoverStyle &&
+    !hasTextOverride &&
+    !existing.componentSettings
+  ) {
     return {
       ...profile,
       elementOverrides: profile.elementOverrides.filter((override) => override.id !== target.id),

@@ -4,6 +4,70 @@
 
 /* ── Instance actions bar ── */
 
+.build-identity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px 46px;
+  gap: 8px;
+  align-items: end;
+  margin: 18px 0 20px;
+}
+
+.build-identity-row .build-name-field {
+  min-width: 0;
+}
+
+.build-identity-action {
+  display: inline-flex;
+  width: 46px;
+  min-width: 46px;
+  max-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.build-identity-action.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.build-name-value {
+  display: flex;
+  height: 46px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  padding: 0 14px;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-pin-action .pin-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.build-rename-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  background: currentColor;
+  -webkit-mask: url("../assets/pencil.svg") center / contain no-repeat;
+  mask: url("../assets/pencil.svg") center / contain no-repeat;
+}
+
+.build-confirm-action {
+  border-color: color-mix(in srgb, var(--success) 48%, var(--line));
+  color: var(--success);
+}
+
 .instance-actions {
   display: flex;
   gap: 12px;

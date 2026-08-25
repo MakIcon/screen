@@ -7,6 +7,8 @@ import type {
   AppearanceCheckboxSettings,
   AppearanceDropdownSettings,
   AppearanceElementComponentOverride,
+  AppearanceElementHoverEasing,
+  AppearanceElementInteractionState,
   AppearanceElementLayout,
   AppearanceElementOverride,
   AppearanceElementShadow,
@@ -35,6 +37,14 @@ const LAYOUTS: readonly { id: AppearanceElementLayout; label: string }[] = [
   { id: "row", label: "FLEX ROW" },
   { id: "column", label: "FLEX COLUMN" },
   { id: "grid", label: "GRID" },
+];
+
+const HOVER_EASINGS: readonly { id: AppearanceElementHoverEasing; label: string }[] = [
+  { id: "linear", label: "LINEAR" },
+  { id: "ease", label: "EASE" },
+  { id: "ease-in", label: "EASE IN" },
+  { id: "ease-out", label: "EASE OUT" },
+  { id: "ease-in-out", label: "EASE IN / OUT" },
 ];
 
 const BOOLEAN_OPTIONS = [
@@ -112,21 +122,34 @@ function NumberListField({
 type ElementInspectorProps = {
   target: AppearanceElementTarget | null;
   override?: AppearanceElementOverride;
+  visualStyle?: AppearanceElementOverride["style"];
+  interactionState: AppearanceElementInteractionState;
+  hoverTransitionMs: number;
+  hoverEasing: AppearanceElementHoverEasing;
   profile: AppearanceProfile;
   onPick: () => void;
   onStyleChange: (style: Partial<AppearanceElementOverride["style"]>) => void;
   onTextChange: (text: string | undefined) => void;
   onComponentChange: (settings: AppearanceElementComponentOverride) => void;
+  onHoverTransitionChange: (patch: {
+    hoverTransitionMs?: number;
+    hoverEasing?: AppearanceElementHoverEasing;
+  }) => void;
 };
 
 export function ElementInspector({
   target,
   override,
+  visualStyle,
+  interactionState,
+  hoverTransitionMs,
+  hoverEasing,
   profile,
   onPick,
   onStyleChange,
   onTextChange,
   onComponentChange,
+  onHoverTransitionChange,
 }: ElementInspectorProps) {
   if (!target) {
     return (
@@ -144,7 +167,23 @@ export function ElementInspector({
     );
   }
 
-  const style = override?.style;
+  const style = visualStyle;
+  const activeInteractionStyle =
+    interactionState === "hover" ? override?.hoverStyle : override?.style;
+  const inheritedElementOpacity =
+    interactionState === "hover"
+      ? (target.defaults?.hoverElementOpacity ?? target.defaults?.elementOpacity ?? 1)
+      : (target.defaults?.elementOpacity ?? 1);
+  const effectiveElementOpacity =
+    style?.elementOpacity ?? style?.opacity ?? inheritedElementOpacity;
+  const elementOpacitySource =
+    activeInteractionStyle?.elementOpacity !== undefined ||
+    activeInteractionStyle?.opacity !== undefined
+      ? ""
+      : interactionState === "hover" &&
+          (override?.style.elementOpacity !== undefined || override?.style.opacity !== undefined)
+        ? " · FROM NORMAL"
+        : " · LAUNCHER DEFAULT";
   const renderedOriginalText = target.textTarget?.original;
   const originalText = target.textTarget?.template ?? renderedOriginalText;
   const hasTextOverride = override && Object.prototype.hasOwnProperty.call(override, "text");
@@ -280,13 +319,37 @@ export function ElementInspector({
       <div className="appearance-element-summary">
         <span>
           {target.tab ? target.tab.toUpperCase() : "ALL TABS"} ·{" "}
-          {(target.kind ?? "element").toUpperCase()}
+          {(target.kind ?? "element").toUpperCase()} · {interactionState.toUpperCase()}
         </span>
         <strong>{target.label}</strong>
         <small>{target.id}</small>
       </div>
 
-      {supportsVisibleText && (
+      {interactionState === "hover" && (
+        <Section
+          title="HOVER TRANSITION"
+          note="The launcher pins this state on the selected element while you edit it. Zero milliseconds makes the change instant."
+        >
+          <RangeField
+            label="DURATION"
+            value={hoverTransitionMs}
+            min={0}
+            max={2_000}
+            step={25}
+            suffix=" MS"
+            defaultValue={200}
+            onChange={(hoverTransitionMs) => onHoverTransitionChange({ hoverTransitionMs })}
+          />
+          <SelectField
+            label="EASING"
+            value={hoverEasing}
+            options={HOVER_EASINGS}
+            onChange={(hoverEasing) => onHoverTransitionChange({ hoverEasing })}
+          />
+        </Section>
+      )}
+
+      {interactionState === "normal" && supportsVisibleText && (
         <Section
           title="VISIBLE TEXT"
           note="Changes the primary visible label without replacing the button or breaking its click behavior."
@@ -329,7 +392,11 @@ export function ElementInspector({
           defaultValue={defaultWidth}
           suffix=" PX"
           zeroSuffix={widthAuto ? " AUTO" : undefined}
-          onChange={(width) => onStyleChange({ width: width === initialWidth ? undefined : width })}
+          onChange={(width) =>
+            onStyleChange({
+              width: interactionState === "normal" && width === initialWidth ? undefined : width,
+            })
+          }
         />
         <RangeField
           label="HEIGHT"
@@ -340,7 +407,10 @@ export function ElementInspector({
           suffix=" PX"
           zeroSuffix={heightAuto ? " AUTO" : undefined}
           onChange={(height) =>
-            onStyleChange({ height: height === initialHeight ? undefined : height })
+            onStyleChange({
+              height:
+                interactionState === "normal" && height === initialHeight ? undefined : height,
+            })
           }
         />
         <RangeField
@@ -352,7 +422,12 @@ export function ElementInspector({
           suffix=" PX"
           zeroSuffix={minWidthAuto ? " AUTO" : undefined}
           onChange={(minWidth) =>
-            onStyleChange({ minWidth: minWidth === initialMinWidth ? undefined : minWidth })
+            onStyleChange({
+              minWidth:
+                interactionState === "normal" && minWidth === initialMinWidth
+                  ? undefined
+                  : minWidth,
+            })
           }
         />
         <RangeField
@@ -364,12 +439,17 @@ export function ElementInspector({
           suffix=" PX"
           zeroSuffix={minHeightAuto ? " AUTO" : undefined}
           onChange={(minHeight) =>
-            onStyleChange({ minHeight: minHeight === initialMinHeight ? undefined : minHeight })
+            onStyleChange({
+              minHeight:
+                interactionState === "normal" && minHeight === initialMinHeight
+                  ? undefined
+                  : minHeight,
+            })
           }
         />
       </Section>
 
-      {sliderSettings && (
+      {interactionState === "normal" && sliderSettings && (
         <Section
           title="SLIDER PROPS"
           note="These are live component props: the selected ElementSlider is rebuilt with the new range, step, header and ticks."
@@ -507,7 +587,7 @@ export function ElementInspector({
         </Section>
       )}
 
-      {toggleSettings && (
+      {interactionState === "normal" && toggleSettings && (
         <Section
           title="TOGGLE PROPS"
           note="Controls the selected ElementToggle structure and switch size."
@@ -555,7 +635,7 @@ export function ElementInspector({
         </Section>
       )}
 
-      {checkboxSettings && (
+      {interactionState === "normal" && checkboxSettings && (
         <Section
           title="CHECKBOX PROPS"
           note="Fine-tune the indicator independently from its label."
@@ -590,7 +670,7 @@ export function ElementInspector({
         </Section>
       )}
 
-      {dropdownSettings && (
+      {interactionState === "normal" && dropdownSettings && (
         <Section
           title="DROPDOWN PROPS"
           note="Changes the selected InlineDropdown and its option list."
@@ -718,6 +798,15 @@ export function ElementInspector({
             onChange={(borderWidth) => onStyleChange({ borderWidth })}
           />
           <RangeField
+            label={`WHOLE ELEMENT OPACITY${elementOpacitySource}`}
+            value={effectiveElementOpacity}
+            min={0}
+            max={1}
+            step={0.05}
+            defaultValue={inheritedElementOpacity}
+            onChange={(elementOpacity) => onStyleChange({ elementOpacity })}
+          />
+          <RangeField
             label="BACKGROUND OPACITY"
             value={style?.backgroundOpacity ?? style?.opacity ?? 1}
             min={0}
@@ -791,7 +880,7 @@ export function ElementInspector({
         </Section>
       )}
 
-      <Section title="EFFECTS" note="Transform and shadow are composed into one safe element rule.">
+      <Section title="EFFECTS" note="Transform and shadow use the selected NORMAL or HOVER state.">
         <SelectField
           label="SHADOW"
           value={style?.shadow ?? "none"}

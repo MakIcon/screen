@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   APPEARANCE_ELEMENT_PICKED_EVENT,
@@ -6,15 +6,20 @@ import {
   APPEARANCE_ELEMENT_PICK_REQUEST_EVENT,
   APPEARANCE_ELEMENT_PREVIEW_EVENT,
   APPEARANCE_ELEMENT_REVEAL_EVENT,
+  APPEARANCE_ELEMENT_SELECTION_EVENT,
   APPEARANCE_DRAWING_CURSOR_EVENT,
   APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT,
   applyElementAppearanceOverrides,
   beginElementPicker,
+  resolveElementTarget,
   type AppearanceElementPreviewPayload,
+  type AppearanceElementSelectionPayload,
   type DrawingCursorPayload,
   type WindowAnimationPreviewPayload,
 } from "./elementOverrides";
 import type { AppearanceElementTarget, AppearanceProfile } from "./types";
+
+const HOVER_PREVIEW_OPACITY_PROPERTY = "--appearance-preview-element-opacity";
 import type { TabKey } from "../types";
 import { APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE } from "../utils/placeholders";
 
@@ -37,6 +42,43 @@ export function useMainAppearanceRuntime({
 }: MainAppearanceRuntimeOptions) {
   const pickerCleanupRef = useRef<(() => void) | null>(null);
   const appearanceRef = useRef(appearance);
+  const selectionTargetsRef = useRef<AppearanceElementTarget[]>([]);
+  const selectionPreviewHoverRef = useRef(false);
+  const selectedElementsRef = useRef<HTMLElement[]>([]);
+
+  const applySelectedElements = useCallback(
+    (targets: AppearanceElementTarget[], previewHover = selectionPreviewHoverRef.current) => {
+      selectedElementsRef.current.forEach((element) => {
+        element.classList.remove("appearance-pick-selected", "appearance-hover-preview");
+        element.style.removeProperty(HOVER_PREVIEW_OPACITY_PROPERTY);
+      });
+      const root = rootRef.current;
+      if (!root) {
+        selectedElementsRef.current = [];
+        return;
+      }
+
+      selectedElementsRef.current = targets.flatMap((target) => {
+        if (target.tab && target.tab !== activeTab) return [];
+        const element = resolveElementTarget(root, target);
+        if (!element) return [];
+        element.classList.add("appearance-pick-selected");
+        if (previewHover) {
+          element.classList.add("appearance-hover-preview");
+          const inheritedHoverOpacity =
+            target.defaults?.hoverElementOpacity ?? target.defaults?.elementOpacity;
+          if (inheritedHoverOpacity !== undefined) {
+            element.style.setProperty(
+              HOVER_PREVIEW_OPACITY_PROPERTY,
+              String(inheritedHoverOpacity),
+            );
+          }
+        }
+        return [element];
+      });
+    },
+    [activeTab, rootRef],
+  );
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -84,6 +126,7 @@ export function useMainAppearanceRuntime({
       frame = window.requestAnimationFrame(() => {
         const current = appearanceRef.current;
         applyElementAppearanceOverrides(root, current.customized ? current.elementOverrides : []);
+        applySelectedElements(selectionTargetsRef.current);
       });
     };
 
@@ -111,7 +154,14 @@ export function useMainAppearanceRuntime({
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-  }, [rootRef]);
+  }, [applySelectedElements, rootRef]);
+
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      applySelectedElements(selectionTargetsRef.current);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, applySelectedElements]);
 
   useEffect(() => {
     let disposed = false;
@@ -124,9 +174,11 @@ export function useMainAppearanceRuntime({
         pickerCleanupRef.current?.();
         pickerCleanupRef.current = beginElementPicker(
           root,
-          (target: AppearanceElementTarget) => {
-            pickerCleanupRef.current = null;
-            void emit(APPEARANCE_ELEMENT_PICKED_EVENT, target).catch(() => {});
+          (target: AppearanceElementTarget, additive: boolean, continuing: boolean) => {
+            if (!continuing) pickerCleanupRef.current = null;
+            void emit(APPEARANCE_ELEMENT_PICKED_EVENT, { target, additive, continuing }).catch(
+              () => {},
+            );
           },
           () => {
             pickerCleanupRef.current = null;
@@ -145,6 +197,11 @@ export function useMainAppearanceRuntime({
       listen<AppearanceElementTarget>(APPEARANCE_ELEMENT_REVEAL_EVENT, (event) =>
         onRevealTarget(event.payload),
       ),
+      listen<AppearanceElementSelectionPayload>(APPEARANCE_ELEMENT_SELECTION_EVENT, (event) => {
+        selectionTargetsRef.current = event.payload.targets;
+        selectionPreviewHoverRef.current = event.payload.previewHover === true;
+        applySelectedElements(event.payload.targets, selectionPreviewHoverRef.current);
+      }),
       listen<DrawingCursorPayload>(APPEARANCE_DRAWING_CURSOR_EVENT, (event) =>
         onDrawingCursor(event.payload),
       ),
@@ -163,6 +220,18 @@ export function useMainAppearanceRuntime({
       unlisten?.();
       pickerCleanupRef.current?.();
       pickerCleanupRef.current = null;
+      selectedElementsRef.current.forEach((element) => {
+        element.classList.remove("appearance-pick-selected", "appearance-hover-preview");
+        element.style.removeProperty(HOVER_PREVIEW_OPACITY_PROPERTY);
+      });
+      selectedElementsRef.current = [];
     };
-  }, [activeTab, onAnimationPreview, onDrawingCursor, onRevealTarget, rootRef]);
+  }, [
+    activeTab,
+    applySelectedElements,
+    onAnimationPreview,
+    onDrawingCursor,
+    onRevealTarget,
+    rootRef,
+  ]);
 }

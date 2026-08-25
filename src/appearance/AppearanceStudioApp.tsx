@@ -34,6 +34,8 @@ import {
 import type { AppearanceBackgroundKind, AppearanceProfile, Theme } from "./types";
 import type {
   AppearanceElementComponentOverride,
+  AppearanceElementHoverEasing,
+  AppearanceElementInteractionState,
   AppearanceElementOverride,
   AppearanceElementTarget,
 } from "./types";
@@ -43,8 +45,11 @@ import {
   APPEARANCE_ELEMENT_PICK_REQUEST_EVENT,
   APPEARANCE_ELEMENT_PREVIEW_EVENT,
   APPEARANCE_ELEMENT_REVEAL_EVENT,
+  APPEARANCE_ELEMENT_SELECTION_EVENT,
   APPEARANCE_DRAWING_CURSOR_EVENT,
   APPEARANCE_WINDOW_ANIMATION_PREVIEW_EVENT,
+  type AppearanceElementPickedPayload,
+  type AppearanceElementSelectionPayload,
   type WindowAnimationPreviewPayload,
   type AppearanceElementPreviewPayload,
   type DrawingCursorPayload,
@@ -83,6 +88,12 @@ function elementStyleBadges(override: AppearanceElementOverride) {
     });
   } else if (override.style.opacity !== undefined) {
     badges.push({ label: "OPACITY", value: `${Math.round(override.style.opacity * 100)}%` });
+  }
+  if (override.style.elementOpacity !== undefined) {
+    badges.push({
+      label: "ELEMENT",
+      value: `${Math.round(override.style.elementOpacity * 100)}%`,
+    });
   }
   if (override.style.width !== undefined || override.style.height !== undefined) {
     const boxValue = (value: number | undefined) =>
@@ -133,6 +144,9 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   if (override.componentSettings) {
     badges.push({ label: "PROPS", value: override.componentSettings.kind.toUpperCase() });
   }
+  if (override.hoverStyle && Object.keys(override.hoverStyle).length > 0) {
+    badges.push({ label: "HOVER", value: `${override.hoverTransitionMs ?? 200} MS` });
+  }
   return badges;
 }
 
@@ -145,7 +159,10 @@ export function AppearanceStudioApp() {
   }));
   const [message, setMessage] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState<AppearanceElementTarget | null>(null);
+  const [selectedTargets, setSelectedTargets] = useState<AppearanceElementTarget[]>([]);
+  const selectedTarget = selectedTargets[selectedTargets.length - 1] ?? null;
+  const [elementInteractionState, setElementInteractionState] =
+    useState<AppearanceElementInteractionState>("normal");
   const [pickingElement, setPickingElement] = useState(false);
   const [elementListOpen, setElementListOpen] = useState(false);
   const baseDefaults = useMemo(
@@ -169,6 +186,9 @@ export function AppearanceStudioApp() {
       eraser: false,
     } satisfies DrawingCursorPayload).catch(() => {});
     await emit(APPEARANCE_ELEMENT_PICK_CANCEL_EVENT).catch(() => {});
+    await emit(APPEARANCE_ELEMENT_SELECTION_EVENT, {
+      targets: [],
+    } satisfies AppearanceElementSelectionPayload).catch(() => {});
     await emit(APPEARANCE_CHANGED_EVENT, originalAppearanceRef.current).catch(() => {});
     // destroy() closes immediately and does not re-enter onCloseRequested.
     await studioWindow?.destroy();
@@ -195,19 +215,43 @@ export function AppearanceStudioApp() {
   }, [draft]);
 
   useEffect(() => {
+    void emit(APPEARANCE_ELEMENT_SELECTION_EVENT, {
+      targets: selectedTargets,
+      previewHover: elementInteractionState === "hover",
+    } satisfies AppearanceElementSelectionPayload).catch(() => {});
+  }, [elementInteractionState, selectedTargets]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<AppearanceElementTarget | null>(APPEARANCE_ELEMENT_PICKED_EVENT, (event) => {
+    void listen<AppearanceElementPickedPayload | null>(APPEARANCE_ELEMENT_PICKED_EVENT, (event) => {
       setPickingElement(false);
-      const target = event.payload;
-      if (!target) {
+      const payload = event.payload;
+      if (!payload) {
         setMessage("ELEMENT PICK CANCELLED");
         return;
       }
+      const wrapped = "target" in payload;
+      const target = wrapped ? payload.target : payload;
+      const additive = wrapped && payload.additive;
+      const continuing = wrapped && Boolean(payload.continuing);
       setDraft((current) => refreshElementSizingTarget(current, target));
-      setSelectedTarget(target);
+      setSelectedTargets((current) => {
+        if (!additive) return [target];
+        return current.some((candidate) => candidate.id === target.id)
+          ? current
+          : [...current, target];
+      });
+      if (!additive) setElementInteractionState("normal");
+      setPickingElement(continuing);
       setCategory("element");
       setElementListOpen(false);
-      setMessage(`SELECTED: ${target.label}`);
+      setMessage(
+        continuing
+          ? "ELEMENT ADDED · KEEP SHIFT HELD OR CLICK ONCE TO FINISH"
+          : additive
+            ? "MULTI-SELECTION FINISHED"
+            : `SELECTED: ${target.label}`,
+      );
     })
       .then((dispose) => {
         unlisten = dispose;
@@ -239,6 +283,43 @@ export function AppearanceStudioApp() {
         : undefined,
     [draft.elementOverrides, selectedTarget],
   );
+  const selectedVisualStyle = useMemo(
+    () =>
+      elementInteractionState === "hover"
+        ? { ...selectedOverride?.style, ...selectedOverride?.hoverStyle }
+        : selectedOverride?.style,
+    [elementInteractionState, selectedOverride],
+  );
+  const selectedActiveInteractionStyle =
+    elementInteractionState === "hover" ? selectedOverride?.hoverStyle : selectedOverride?.style;
+  const selectedInheritedElementOpacity =
+    elementInteractionState === "hover"
+      ? (selectedTarget?.defaults?.hoverElementOpacity ??
+        selectedTarget?.defaults?.elementOpacity ??
+        1)
+      : (selectedTarget?.defaults?.elementOpacity ?? 1);
+  const selectedEffectiveElementOpacity =
+    selectedVisualStyle?.elementOpacity ??
+    selectedVisualStyle?.opacity ??
+    selectedInheritedElementOpacity;
+  const selectedElementOpacitySource =
+    selectedActiveInteractionStyle?.elementOpacity !== undefined ||
+    selectedActiveInteractionStyle?.opacity !== undefined
+      ? ""
+      : elementInteractionState === "hover" &&
+          (selectedOverride?.style.elementOpacity !== undefined ||
+            selectedOverride?.style.opacity !== undefined)
+        ? " · FROM NORMAL"
+        : " · LAUNCHER DEFAULT";
+  const selectedInteractionCustomized = useMemo(
+    () =>
+      selectedTargets.some((target) => {
+        const override = draft.elementOverrides.find((candidate) => candidate.id === target.id);
+        const style = elementInteractionState === "hover" ? override?.hoverStyle : override?.style;
+        return Boolean(style && Object.keys(style).length > 0);
+      }),
+    [draft.elementOverrides, elementInteractionState, selectedTargets],
+  );
 
   const patchDraft = useCallback((updater: (current: AppearanceProfile) => AppearanceProfile) => {
     setDraft((current) => ({ ...updater(current), customized: true }));
@@ -246,46 +327,83 @@ export function AppearanceStudioApp() {
   }, []);
 
   const patchSelectedStyle = (style: Partial<AppearanceElementOverride["style"]>) => {
-    if (!selectedTarget) return;
+    if (selectedTargets.length === 0) return;
     elementPreviewOnlyRef.current = true;
     patchDraft((current) => {
-      const existing = current.elementOverrides.find(
-        (override) => override.id === selectedTarget.id,
+      const selectedIds = new Set(selectedTargets.map((target) => target.id));
+      const nextOverrides = current.elementOverrides.filter(
+        (override) => !selectedIds.has(override.id),
       );
-      const nextStyle = { ...existing?.style, ...style };
-      if (
-        existing?.style.opacity !== undefined &&
-        (style.backgroundOpacity !== undefined || style.contentOpacity !== undefined)
-      ) {
-        nextStyle.backgroundOpacity ??= existing.style.opacity;
-        nextStyle.contentOpacity ??= existing.style.opacity;
-        delete nextStyle.opacity;
-      }
-      for (const key of Object.keys(nextStyle) as (keyof typeof nextStyle)[]) {
-        if (nextStyle[key] === undefined) delete nextStyle[key];
-      }
-      const hasTextOverride =
-        existing !== undefined && Object.prototype.hasOwnProperty.call(existing, "text");
-      if (Object.keys(nextStyle).length === 0 && !hasTextOverride && !existing?.componentSettings) {
-        return {
-          ...current,
-          elementOverrides: current.elementOverrides.filter(
-            (override) => override.id !== selectedTarget.id,
-          ),
+      for (const target of selectedTargets) {
+        const existing = current.elementOverrides.find((override) => override.id === target.id);
+        const normalStyle = { ...existing?.style };
+        const interactionStyle =
+          elementInteractionState === "hover"
+            ? { ...existing?.hoverStyle, ...style }
+            : { ...normalStyle, ...style };
+        if (
+          elementInteractionState === "normal" &&
+          existing?.style.opacity !== undefined &&
+          (style.backgroundOpacity !== undefined || style.contentOpacity !== undefined)
+        ) {
+          interactionStyle.backgroundOpacity ??= existing.style.opacity;
+          interactionStyle.contentOpacity ??= existing.style.opacity;
+          delete interactionStyle.opacity;
+        }
+        for (const key of Object.keys(interactionStyle) as (keyof typeof interactionStyle)[]) {
+          if (interactionStyle[key] === undefined) delete interactionStyle[key];
+        }
+        const next: AppearanceElementOverride = {
+          ...existing,
+          ...target,
+          style: elementInteractionState === "normal" ? interactionStyle : normalStyle,
         };
+        if (elementInteractionState === "hover") {
+          if (Object.keys(interactionStyle).length > 0) next.hoverStyle = interactionStyle;
+          else delete next.hoverStyle;
+        }
+        const hasTextOverride =
+          existing !== undefined && Object.prototype.hasOwnProperty.call(existing, "text");
+        if (
+          Object.keys(next.style).length > 0 ||
+          next.hoverStyle ||
+          hasTextOverride ||
+          existing?.componentSettings
+        ) {
+          nextOverrides.push(next);
+        }
       }
-      const next: AppearanceElementOverride = {
-        ...existing,
-        ...selectedTarget,
-        style: nextStyle,
-      };
       return {
         ...current,
-        elementOverrides: [
-          ...current.elementOverrides.filter((override) => override.id !== selectedTarget.id),
-          next,
-        ],
+        elementOverrides: nextOverrides,
       };
+    });
+  };
+
+  const patchSelectedHoverTransition = (patch: {
+    hoverTransitionMs?: number;
+    hoverEasing?: AppearanceElementHoverEasing;
+  }) => {
+    if (selectedTargets.length === 0) return;
+    elementPreviewOnlyRef.current = true;
+    patchDraft((current) => {
+      const selectedIds = new Set(selectedTargets.map((target) => target.id));
+      const nextOverrides = current.elementOverrides.filter(
+        (override) => !selectedIds.has(override.id),
+      );
+      for (const target of selectedTargets) {
+        const existing = current.elementOverrides.find((override) => override.id === target.id);
+        nextOverrides.push({
+          ...existing,
+          ...target,
+          style: existing?.style ?? {},
+          ...(patch.hoverTransitionMs !== undefined
+            ? { hoverTransitionMs: patch.hoverTransitionMs }
+            : {}),
+          ...(patch.hoverEasing ? { hoverEasing: patch.hoverEasing } : {}),
+        });
+      }
+      return { ...current, elementOverrides: nextOverrides };
     });
   };
 
@@ -304,7 +422,12 @@ export function AppearanceStudioApp() {
           ...(text !== undefined ? { text } : {}),
         };
         if (text === undefined) delete next.text;
-        if (text === undefined && Object.keys(next.style).length === 0 && !next.componentSettings) {
+        if (
+          text === undefined &&
+          Object.keys(next.style).length === 0 &&
+          !next.hoverStyle &&
+          !next.componentSettings
+        ) {
           return {
             ...current,
             elementOverrides: current.elementOverrides.filter(
@@ -361,7 +484,8 @@ export function AppearanceStudioApp() {
 
   const selectWholeLauncher = () => {
     setElementListOpen(false);
-    setSelectedTarget(null);
+    setSelectedTargets([]);
+    setElementInteractionState("normal");
     if (category === "element") setCategory("background");
     setPickingElement(false);
     setMessage("");
@@ -369,18 +493,48 @@ export function AppearanceStudioApp() {
   };
 
   const clearSelectedStyle = () => {
-    if (!selectedTarget) return;
+    if (selectedTargets.length === 0) return;
     elementPreviewOnlyRef.current = true;
-    const clearsLastOverride =
-      draft.elementOverrides.length === 1 && draft.elementOverrides[0]?.id === selectedTarget.id;
+    const selectedIds = new Set(selectedTargets.map((target) => target.id));
+    const clearsLastOverride = draft.elementOverrides.every((override) =>
+      selectedIds.has(override.id),
+    );
     patchDraft((current) => ({
       ...current,
       elementOverrides: current.elementOverrides.filter(
-        (override) => override.id !== selectedTarget.id,
+        (override) => !selectedIds.has(override.id),
       ),
     }));
     if (clearsLastOverride) setElementListOpen(false);
     setMessage("ELEMENT STYLE CLEARED");
+  };
+
+  const clearSelectedInteractionStyle = () => {
+    if (selectedTargets.length === 0) return;
+    elementPreviewOnlyRef.current = true;
+    const selectedIds = new Set(selectedTargets.map((target) => target.id));
+    patchDraft((current) => ({
+      ...current,
+      elementOverrides: current.elementOverrides.flatMap((override) => {
+        if (!selectedIds.has(override.id)) return [override];
+        const next: AppearanceElementOverride = { ...override };
+        if (elementInteractionState === "hover") {
+          delete next.hoverStyle;
+          delete next.hoverTransitionMs;
+          delete next.hoverEasing;
+        } else {
+          next.style = {};
+        }
+        const hasTextOverride = Object.prototype.hasOwnProperty.call(next, "text");
+        return Object.keys(next.style).length > 0 ||
+          next.hoverStyle ||
+          hasTextOverride ||
+          next.componentSettings
+          ? [next]
+          : [];
+      }),
+    }));
+    setMessage(`${elementInteractionState.toUpperCase()} STYLE CLEARED`);
   };
 
   const previewWindowAnimation = (payload: WindowAnimationPreviewPayload) => {
@@ -406,7 +560,8 @@ export function AppearanceStudioApp() {
   };
 
   const revealElement = (override: AppearanceElementOverride) => {
-    setSelectedTarget(override);
+    setSelectedTargets([override]);
+    setElementInteractionState("normal");
     setCategory("element");
     setElementListOpen(false);
     setMessage(`LOCATING: ${override.label}`);
@@ -473,7 +628,8 @@ export function AppearanceStudioApp() {
 
   const reset = () => {
     setDraft(createDefaultAppearance(draft.baseTheme, true));
-    setSelectedTarget(null);
+    setSelectedTargets([]);
+    setElementInteractionState("normal");
     setElementListOpen(false);
     setMessage("DRAFT RESET");
   };
@@ -507,11 +663,16 @@ export function AppearanceStudioApp() {
           <ElementInspector
             target={selectedTarget}
             override={selectedOverride}
+            visualStyle={selectedVisualStyle}
+            interactionState={elementInteractionState}
+            hoverTransitionMs={selectedOverride?.hoverTransitionMs ?? 200}
+            hoverEasing={selectedOverride?.hoverEasing ?? "ease"}
             profile={draft}
             onPick={requestElementPick}
             onStyleChange={patchSelectedStyle}
             onTextChange={patchSelectedText}
             onComponentChange={patchSelectedComponent}
+            onHoverTransitionChange={patchSelectedHoverTransition}
           />
         );
 
@@ -531,6 +692,29 @@ export function AppearanceStudioApp() {
                     onClick={() => selectBackgroundKind(kind)}
                   >
                     {kind.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </Section>
+
+            <Section
+              title="BACKGROUND AREA"
+              note="Keep the title bar and left navigation clean, or cover the complete launcher."
+            >
+              <div className="studio-segmented">
+                {(["launcher", "content"] as const).map((scope) => (
+                  <button
+                    type="button"
+                    key={scope}
+                    className={draft.background.scope === scope ? "active" : ""}
+                    onClick={() =>
+                      patchDraft((current) => ({
+                        ...current,
+                        background: { ...current.background, scope },
+                      }))
+                    }
+                  >
+                    {scope === "launcher" ? "WHOLE LAUNCHER" : "CONTENT ONLY"}
                   </button>
                 ))}
               </div>
@@ -645,7 +829,7 @@ export function AppearanceStudioApp() {
               note={`Only ${selectedTarget.label} changes. Other launcher colors stay untouched.`}
             >
               <ElementBackgroundPicker
-                style={selectedOverride?.style}
+                style={selectedVisualStyle}
                 fallbackColor={draft.colors.surface}
                 fallbackAccent={draft.colors.accent}
                 onChange={patchSelectedStyle}
@@ -653,7 +837,7 @@ export function AppearanceStudioApp() {
               <div className="studio-color-grid studio-color-grid--single">
                 <ColorField
                   label="TEXT"
-                  value={selectedOverride?.style.textColor || draft.colors.text}
+                  value={selectedVisualStyle?.textColor || draft.colors.text}
                   onChange={(textColor) => patchSelectedStyle({ textColor })}
                 />
               </div>
@@ -728,7 +912,7 @@ export function AppearanceStudioApp() {
 
       case "shape":
         if (selectedTarget) {
-          const radius = selectedOverride?.style.radius ?? draft.shape.radius;
+          const radius = selectedVisualStyle?.radius ?? draft.shape.radius;
           return (
             <Section
               title="SELECTED ELEMENT RADIUS"
@@ -775,7 +959,7 @@ export function AppearanceStudioApp() {
 
       case "type":
         if (selectedTarget) {
-          const currentFont = selectedOverride?.style.fontFamily ?? draft.typography.uiFont;
+          const currentFont = selectedVisualStyle?.fontFamily ?? draft.typography.uiFont;
           const elementFonts = [...FONT_OPTIONS, ...DISPLAY_FONT_OPTIONS].filter(
             (font, index, fonts) =>
               fonts.findIndex((candidate) => candidate.value === font.value) === index,
@@ -854,13 +1038,20 @@ export function AppearanceStudioApp() {
           return (
             <Section
               title="SELECTED ELEMENT OPACITY"
-              note={`Background and content of ${selectedTarget.label} can be faded independently.`}
+              note={`Whole element opacity is the final multiplier. Background and content of ${selectedTarget.label} are applied inside it.`}
             >
               <RangeField
+                label={`WHOLE ELEMENT${selectedElementOpacitySource}`}
+                value={selectedEffectiveElementOpacity}
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={selectedInheritedElementOpacity}
+                onChange={(elementOpacity) => patchSelectedStyle({ elementOpacity })}
+              />
+              <RangeField
                 label="BACKGROUND"
-                value={
-                  selectedOverride?.style.backgroundOpacity ?? selectedOverride?.style.opacity ?? 1
-                }
+                value={selectedVisualStyle?.backgroundOpacity ?? selectedVisualStyle?.opacity ?? 1}
                 min={0}
                 max={1}
                 step={0.05}
@@ -869,9 +1060,7 @@ export function AppearanceStudioApp() {
               />
               <RangeField
                 label="CONTENT"
-                value={
-                  selectedOverride?.style.contentOpacity ?? selectedOverride?.style.opacity ?? 1
-                }
+                value={selectedVisualStyle?.contentOpacity ?? selectedVisualStyle?.opacity ?? 1}
                 min={0}
                 max={1}
                 step={0.05}
@@ -1206,11 +1395,15 @@ export function AppearanceStudioApp() {
                 className={selectedTarget ? "active" : ""}
                 onClick={requestElementPick}
               >
-                {pickingElement ? "CLICK IN LAUNCHER…" : "PICK ELEMENT"}
+                {pickingElement
+                  ? "SHIFT+CLICK · CLICK ONCE TO FINISH"
+                  : "PICK ELEMENT · SHIFT MULTI"}
               </button>
             </div>
-            <strong title={selectedTarget?.label}>
-              {selectedTarget?.label || "GLOBAL SETTINGS"}
+            <strong title={selectedTargets.map((target) => target.label).join(", ")}>
+              {selectedTargets.length > 1
+                ? `${selectedTargets.length} ELEMENTS SELECTED`
+                : selectedTarget?.label || "GLOBAL SETTINGS"}
             </strong>
             {selectedTarget && (
               <button
@@ -1219,8 +1412,42 @@ export function AppearanceStudioApp() {
                 onClick={clearSelectedStyle}
                 disabled={!selectedOverride}
               >
-                RESET ELEMENT
+                {selectedTargets.length > 1 ? "RESET ELEMENTS" : "RESET ELEMENT"}
               </button>
+            )}
+            {selectedTarget && (
+              <section className="appearance-interaction-state">
+                <span>VISUAL STATE</span>
+                <div>
+                  <button
+                    type="button"
+                    className={elementInteractionState === "normal" ? "active" : ""}
+                    onClick={() => setElementInteractionState("normal")}
+                  >
+                    NORMAL · BEFORE HOVER
+                  </button>
+                  <button
+                    type="button"
+                    className={elementInteractionState === "hover" ? "active" : ""}
+                    onClick={() => setElementInteractionState("hover")}
+                  >
+                    HOVER · POINTER OVER
+                  </button>
+                </div>
+                <small>
+                  {elementInteractionState === "hover"
+                    ? "The selected launcher element is pinned in hover preview."
+                    : "These values define the element before the pointer enters it."}
+                </small>
+                <button
+                  type="button"
+                  className="appearance-interaction-reset"
+                  disabled={!selectedInteractionCustomized}
+                  onClick={clearSelectedInteractionStyle}
+                >
+                  RESET {elementInteractionState.toUpperCase()}
+                </button>
+              </section>
             )}
           </div>
           {elementListOpen ? (

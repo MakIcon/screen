@@ -1,6 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 
-use tokio::fs;
+use tauri::AppHandle;
+use tokio::{
+    fs,
+    sync::{watch, Mutex},
+};
 
 use crate::{minecraft::LoaderKind, models::ActionResult};
 
@@ -10,10 +17,22 @@ use super::file_content::{
 };
 use super::{
     build_client, fetch_modrinth_search, install_project_to_dir, InstalledModView,
-    ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
+    ModDownloadContext, ModDownloadControlState, ModrinthSearchResponse, MOD_DOWNLOAD_CANCELLED,
+    SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODS_STATE_FILE: &str = ".screenlauncher-modrinth.json";
+
+type ActiveModDownloads = Mutex<HashMap<String, watch::Sender<ModDownloadControlState>>>;
+static ACTIVE_MOD_DOWNLOADS: OnceLock<ActiveModDownloads> = OnceLock::new();
+
+fn active_mod_downloads() -> &'static ActiveModDownloads {
+    ACTIVE_MOD_DOWNLOADS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn download_key(instance_id: &str, project_id: &str) -> String {
+    format!("{instance_id}\0{project_id}")
+}
 
 // Mods share the generic content state layer, but keep their own command
 // surface because installs are loader-aware and resolve dependencies.
@@ -60,6 +79,7 @@ pub async fn search_modrinth_mods(
 
 #[tauri::command]
 pub async fn install_modrinth_project(
+    app: AppHandle,
     instance_id: String,
     project_id: String,
 ) -> Result<ActionResult, String> {
@@ -69,22 +89,81 @@ pub async fn install_modrinth_project(
 
     let target_dir = ensure_content_dir(&instance, MODS).await?;
     let mut install_batch = HashMap::new();
-    install_project_to_dir(
+    let key = download_key(&instance_id, &project_id);
+    let (control_sender, control_receiver) = watch::channel(ModDownloadControlState::Downloading);
+    {
+        let mut active = active_mod_downloads().lock().await;
+        if active.contains_key(&key) {
+            return Err("This mod download is already running".to_string());
+        }
+        active.insert(key.clone(), control_sender);
+    }
+    let context = ModDownloadContext::new(
+        app,
+        instance_id.clone(),
+        project_id.clone(),
+        control_receiver,
+    );
+
+    let install_result = install_project_to_dir(
         &client,
         &instance,
         &project_id,
         &target_dir,
         &[loader],
         &mut install_batch,
+        Some(&context),
     )
-    .await?;
+    .await;
+    active_mod_downloads().lock().await.remove(&key);
+
+    if let Err(error) = install_result {
+        if error == MOD_DOWNLOAD_CANCELLED {
+            context.emit("", 0, 0, "cancelled");
+        }
+        return Err(error);
+    }
     merge_state(&instance, MODS, &install_batch).await?;
+    context.emit("", 0, 0, "completed");
 
     Ok(ActionResult {
         ok: true,
         message: "Installed".into(),
         pid: None,
     })
+}
+
+#[tauri::command]
+pub async fn set_modrinth_download_paused(
+    instance_id: String,
+    project_id: String,
+    paused: bool,
+) -> Result<(), String> {
+    let active = active_mod_downloads().lock().await;
+    let control = active
+        .get(&download_key(&instance_id, &project_id))
+        .ok_or_else(|| "Mod download is no longer active".to_string())?;
+    control
+        .send(if paused {
+            ModDownloadControlState::Paused
+        } else {
+            ModDownloadControlState::Downloading
+        })
+        .map_err(|_| "Mod download is no longer active".to_string())
+}
+
+#[tauri::command]
+pub async fn cancel_modrinth_download(
+    instance_id: String,
+    project_id: String,
+) -> Result<(), String> {
+    let active = active_mod_downloads().lock().await;
+    let control = active
+        .get(&download_key(&instance_id, &project_id))
+        .ok_or_else(|| "Mod download is no longer active".to_string())?;
+    control
+        .send(ModDownloadControlState::Cancelled)
+        .map_err(|_| "Mod download is no longer active".to_string())
 }
 
 #[tauri::command]
