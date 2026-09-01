@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import type {
   ModDownloadProgressPayload,
@@ -272,7 +273,7 @@ export function ModrinthProjectModal({
   const showRemove = project.installed;
   const isShader = kind === "shaders";
 
-  return (
+  const modal = (
     <div className="modrinth-detail-overlay" onMouseDown={onClose}>
       <article
         className="modrinth-detail-modal"
@@ -409,4 +410,10 @@ export function ModrinthProjectModal({
       </article>
     </div>
   );
+
+  // The project sheet is opened from inside the animated, overflow-hidden tab
+  // content. Portal it to the launcher root so its fixed backdrop covers the
+  // complete window (header, sidebar, content and footer) for every content kind.
+  const launcherRoot = document.querySelector<HTMLElement>(".gallery-root");
+  return launcherRoot ? createPortal(modal, launcherRoot) : modal;
 }

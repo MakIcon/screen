@@ -15,7 +15,7 @@ import {
   type BuildCardPreviewSize,
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
-import { InfoPanel } from "../components/display/InfoPanel";
+import { BuildConfigurationGrid } from "../components/builds/BuildConfigurationGrid";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import {
   createPlaceholderAppearanceAttributes,
@@ -242,10 +242,13 @@ export function InstancesTab({
     <section className="launcher-panel">
       <div className="panel-grid panel-grid-instances-fixed">
         {/* ── Instance list ── */}
-        <div className="panel-card instances-list-card">
+        <div className="panel-card instances-list-card" data-guide-target="build-library">
           <div className="card-topline">
             <span className="panel-label">INSTANCE LIBRARY</span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div
+              style={{ display: "flex", gap: 8, alignItems: "center" }}
+              data-guide-target="build-library-actions"
+            >
               <button
                 className="ghost-action icon-square-action"
                 type="button"
@@ -462,7 +465,7 @@ export function InstancesTab({
 
         {/* ── Details / Creator panel ── */}
         <div className="instance-details-column">
-          <div className="panel-card instance-details-card">
+          <div className="panel-card instance-details-card" data-guide-target="build-details">
             {showCreator ? (
               <>
                 <span className="panel-label">CREATE NEW BUILD</span>
@@ -477,7 +480,11 @@ export function InstancesTab({
                   </label>
                 </div>
 
-                <div className="inline-dropdown-grid" style={{ marginTop: 24 }}>
+                <div
+                  className="inline-dropdown-grid"
+                  style={{ marginTop: 24 }}
+                  data-guide-target="build-create-fields"
+                >
                   <InlineDropdown
                     label="MC VERSION"
                     value={createVersion || "SELECT VERSION"}
@@ -549,7 +556,7 @@ export function InstancesTab({
                   </p>
                 )}
 
-                <div className="instance-actions">
+                <div className="instance-actions" data-guide-target="build-create-actions">
                   <button
                     className="primary-action"
                     type="button"
@@ -663,72 +670,49 @@ export function InstancesTab({
                   </div>
                 )}
 
-                <div className="inline-dropdown-grid">
-                  <InlineDropdown
-                    label="SELECT BUILD"
-                    value={selectedInstance?.name || "NO BUILD"}
-                    options={instances.map((i) => i.name)}
-                    isOpen={openDropdown === "build"}
-                    onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
-                    onSelect={(value) => {
-                      const found = instances.find((i) => i.name === value);
-                      if (found) {
-                        setSelectedInstanceId(found.id);
-                      }
-                      setOpenDropdown(null);
-                    }}
-                  />
-
-                  <InfoPanel
-                    label="MC VERSION"
-                    value={
-                      selectedInstance ? resolveSelectedTemplate("%build_version%") : undefined
-                    }
-                    placeholder="SELECT VERSION"
-                    bottomSpace={buildInfoBottomSpace}
-                    valueAppearance={createPlaceholderAppearanceAttributes(
+                <BuildConfigurationGrid
+                  buildName={selectedInstance?.name || "NO BUILD"}
+                  buildOptions={instances.map((instance) => instance.name)}
+                  isOpen={openDropdown === "build"}
+                  onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
+                  onSelect={(value) => {
+                    const found = instances.find((instance) => instance.name === value);
+                    if (found) setSelectedInstanceId(found.id);
+                    setOpenDropdown(null);
+                  }}
+                  version={
+                    selectedInstance ? resolveSelectedTemplate("%build_version%") : undefined
+                  }
+                  loader={
+                    selectedInstance ? resolveSelectedTemplate("%build_full_loader%") : undefined
+                  }
+                  source={resolveSelectedTemplate("%build_source%")}
+                  playtime={resolveSelectedTemplate("%build_playtime%")}
+                  bottomSpace={buildInfoBottomSpace}
+                  valueAppearances={{
+                    version: createPlaceholderAppearanceAttributes(
                       "%build_version%",
                       resolveSelectedTemplate,
-                    )}
-                  />
-
-                  <InfoPanel
-                    label="LOADER"
-                    value={
-                      selectedInstance ? resolveSelectedTemplate("%build_full_loader%") : undefined
-                    }
-                    placeholder="SELECT LOADER"
-                    bottomSpace={buildInfoBottomSpace}
-                    valueAppearance={createPlaceholderAppearanceAttributes(
+                    ),
+                    loader: createPlaceholderAppearanceAttributes(
                       "%build_full_loader%",
                       resolveSelectedTemplate,
-                    )}
-                  />
-
-                  <InfoPanel
-                    label="SOURCE"
-                    value={resolveSelectedTemplate("%build_source%")}
-                    bottomSpace={buildInfoBottomSpace}
-                    valueAppearance={createPlaceholderAppearanceAttributes(
+                    ),
+                    source: createPlaceholderAppearanceAttributes(
                       "%build_source%",
                       resolveSelectedTemplate,
-                    )}
-                  />
-
-                  <InfoPanel
-                    className="info-panel--right-column"
-                    label="TIME IN BUILD"
-                    value={resolveSelectedTemplate("%build_playtime%")}
-                    placeholder="0 hrs on record"
-                    bottomSpace={buildInfoBottomSpace}
-                    valueAppearance={createPlaceholderAppearanceAttributes(
+                    ),
+                    playtime: createPlaceholderAppearanceAttributes(
                       "%build_playtime%",
                       resolveSelectedTemplate,
-                    )}
-                  />
-                </div>
+                    ),
+                  }}
+                />
 
-                <div className="instance-actions instance-actions-build">
+                <div
+                  className="instance-actions instance-actions-build"
+                  data-guide-target="build-actions"
+                >
                   {selectedInstance && isRunning(selectedInstance.id) ? (
                     <button
                       className="primary-action kill-action build-play-action"

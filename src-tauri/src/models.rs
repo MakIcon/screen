@@ -916,7 +916,7 @@ fn default_auto_download_java() -> bool {
 }
 
 fn default_mascot_enabled() -> bool {
-    true
+    false
 }
 
 fn default_mascot_name() -> String {

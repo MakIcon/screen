@@ -76,6 +76,59 @@ button {
   gap: 20px;
 }
 
+.appearance-history-controls {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ui-radius);
+  background: var(--bg-card);
+}
+
+.appearance-history-controls button {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.appearance-history-controls button:last-child {
+  border-right: 0;
+}
+
+.appearance-history-controls button:hover:not(:disabled) {
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.appearance-history-controls button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.appearance-history-controls button:disabled {
+  color: var(--muted-soft);
+  cursor: default;
+  opacity: 0.38;
+}
+
+.appearance-history-controls svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .appearance-live-status {
   display: flex;
   align-items: center;
@@ -1524,14 +1577,102 @@ button {
   color: var(--accent);
 }
 
-.drawing-canvas {
+.drawing-canvas-frame {
+  --drawing-guide-header: 12.963%;
+  --drawing-guide-sidebar: 18.75%;
+  --drawing-guide-footer: 11.111%;
+  position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
+}
+
+.drawing-canvas {
+  width: 100%;
+  height: 100%;
   display: block;
   border: 1px solid var(--line-strong);
   border-radius: var(--ui-radius);
   touch-action: none;
   cursor: crosshair;
+}
+
+.drawing-layout-guides {
+  position: absolute;
+  inset: 1px;
+  overflow: hidden;
+  border-radius: var(--ui-radius);
+  pointer-events: none;
+}
+
+.drawing-layout-zone,
+.drawing-layout-line {
+  position: absolute;
+  display: block;
+}
+
+.drawing-layout-zone {
+  z-index: 1;
+  box-sizing: border-box;
+  color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  opacity: 0.5;
+}
+
+.drawing-layout-zone--header {
+  inset: 0 0 auto 0;
+  height: var(--drawing-guide-header);
+  padding: 7px 9px;
+}
+
+.drawing-layout-zone--sidebar {
+  inset: var(--drawing-guide-header) auto var(--drawing-guide-footer) 0;
+  width: var(--drawing-guide-sidebar);
+  padding: 8px 7px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.drawing-layout-zone--footer {
+  inset: auto 0 0 0;
+  height: var(--drawing-guide-footer);
+  padding: 7px 9px;
+  text-align: right;
+}
+
+.drawing-canvas-frame--content .drawing-layout-zone {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  opacity: 0.9;
+}
+
+.drawing-layout-line {
+  z-index: 2;
+  border-color: color-mix(in srgb, var(--accent) 74%, transparent);
+  border-style: dashed;
+  filter: drop-shadow(0 0 2px var(--bg));
+}
+
+.drawing-layout-line--header {
+  top: var(--drawing-guide-header);
+  right: 0;
+  left: 0;
+  border-top-width: 1px;
+}
+
+.drawing-layout-line--sidebar {
+  top: var(--drawing-guide-header);
+  bottom: var(--drawing-guide-footer);
+  left: var(--drawing-guide-sidebar);
+  border-left-width: 1px;
+}
+
+.drawing-layout-line--footer {
+  right: 0;
+  bottom: var(--drawing-guide-footer);
+  left: 0;
+  border-top-width: 1px;
 }
 
 .drawing-text-row {

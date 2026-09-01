@@ -24,7 +24,10 @@ export function OverviewTab({
     return (
       <section className="launcher-panel">
         <div className="panel-grid panel-grid-overview-minimal">
-          <div className="panel-card hero-card overview-minimal-card">
+          <div
+            className="panel-card hero-card overview-minimal-card"
+            data-guide-target="overview-hero"
+          >
             <span className="panel-label">NO BUILDS</span>
 
             <h2>
@@ -34,8 +37,8 @@ export function OverviewTab({
             </h2>
 
             <p className="panel-text">
-              BUILDS теперь создают реальные инстансы, скачивают official files и могут запускаться в
-              offline mode.
+              BUILDS теперь создают реальные инстансы, скачивают official files и могут запускаться
+              в offline mode.
             </p>
 
             <div className="action-row">
@@ -58,7 +61,10 @@ export function OverviewTab({
   return (
     <section className="launcher-panel">
       <div className="panel-grid panel-grid-overview-minimal">
-        <div className="panel-card hero-card overview-minimal-card">
+        <div
+          className="panel-card hero-card overview-minimal-card"
+          data-guide-target="overview-hero"
+        >
           <span className="panel-label">LAST SESSION</span>
 
           <h2>
@@ -116,7 +122,9 @@ export function OverviewTab({
               >
                 <span className="bpa-stack">
                   <span className="bpa-label">■ STOP GAME</span>
-                  <span className="bpa-sizer" aria-hidden="true">■ STOP GAME</span>
+                  <span className="bpa-sizer" aria-hidden="true">
+                    ■ STOP GAME
+                  </span>
                 </span>
               </button>
             ) : (
@@ -130,7 +138,9 @@ export function OverviewTab({
               >
                 <span className="bpa-stack">
                   <span className="bpa-label">{working ? "WORKING..." : "PLAY LAST"}</span>
-                  <span className="bpa-sizer" aria-hidden="true">■ STOP GAME</span>
+                  <span className="bpa-sizer" aria-hidden="true">
+                    ■ STOP GAME
+                  </span>
                 </span>
               </button>
             )}

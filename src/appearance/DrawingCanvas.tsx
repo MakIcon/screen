@@ -5,6 +5,7 @@ import type { DrawingCursorPayload } from "./elementOverrides";
 type DrawingCanvasProps = {
   value: string;
   backgroundColor: string;
+  scope: "launcher" | "content";
   onChange: (dataUrl: string) => void;
   onCursorChange?: (payload: DrawingCursorPayload) => void;
 };
@@ -24,6 +25,7 @@ function loadCanvasImage(source: string) {
 export function DrawingCanvas({
   value,
   backgroundColor,
+  scope,
   onChange,
   onCursorChange,
 }: DrawingCanvasProps) {
@@ -186,22 +188,32 @@ export function DrawingCanvas({
         </button>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        className="drawing-canvas"
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        style={{ backgroundColor }}
-        onPointerDown={beginStroke}
-        onPointerMove={continueStroke}
-        onPointerUp={commitDrawing}
-        onPointerEnter={publishCursor}
-        onPointerLeave={hideCursor}
-        onPointerCancel={(event) => {
-          commitDrawing(event);
-          hideCursor();
-        }}
-      />
+      <div className={`drawing-canvas-frame drawing-canvas-frame--${scope}`}>
+        <canvas
+          ref={canvasRef}
+          className="drawing-canvas"
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          style={{ backgroundColor }}
+          onPointerDown={beginStroke}
+          onPointerMove={continueStroke}
+          onPointerUp={commitDrawing}
+          onPointerEnter={publishCursor}
+          onPointerLeave={hideCursor}
+          onPointerCancel={(event) => {
+            commitDrawing(event);
+            hideCursor();
+          }}
+        />
+        <div className="drawing-layout-guides" aria-hidden="true">
+          <span className="drawing-layout-zone drawing-layout-zone--header">TITLE BAR</span>
+          <span className="drawing-layout-zone drawing-layout-zone--sidebar">LEFT PANEL</span>
+          <span className="drawing-layout-zone drawing-layout-zone--footer">FOOTER</span>
+          <i className="drawing-layout-line drawing-layout-line--header" />
+          <i className="drawing-layout-line drawing-layout-line--sidebar" />
+          <i className="drawing-layout-line drawing-layout-line--footer" />
+        </div>
+      </div>
 
       <div className="drawing-text-row">
         <input

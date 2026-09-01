@@ -273,10 +273,10 @@ export function SettingsTab({
   return (
     <section className="launcher-panel">
       <div className="panel-grid simple-two-col-fixed settings-panel-grid">
-        <div className="panel-card">
+        <div className="panel-card" data-guide-target="settings-main">
           <span className="panel-label">LAUNCHER SETTINGS</span>
 
-          <div className="settings-memory-block">
+          <div className="settings-memory-block" data-guide-target="settings-ram">
             <div className="memory-readout">
               <span
                 className="memory-number"
@@ -308,7 +308,7 @@ export function SettingsTab({
             </div>
           </div>
 
-          <div className="theme-switch-row">
+          <div className="theme-switch-row" data-guide-target="settings-appearance">
             <span className="theme-switch-label">APPEARANCE</span>
             <div className="theme-switch">
               <button
@@ -352,7 +352,7 @@ export function SettingsTab({
             </div>
           )}
 
-          <div className="theme-switch-row">
+          <div className="theme-switch-row" data-guide-target="settings-source">
             <span className="theme-switch-label">DOWNLOAD SOURCE</span>
             <div className="theme-switch">
               {MIRROR_OPTIONS.map((option) => (
@@ -368,7 +368,7 @@ export function SettingsTab({
             </div>
           </div>
 
-          <div className="theme-switch-row">
+          <div className="theme-switch-row" data-guide-target="settings-auto-java">
             <span className="theme-switch-label">AUTO-DOWNLOAD JAVA</span>
             <div className="theme-switch">
               <button
@@ -389,7 +389,7 @@ export function SettingsTab({
             </div>
           </div>
 
-          <div className="theme-switch-row">
+          <div className="theme-switch-row" data-guide-target="settings-language">
             <span className="theme-switch-label">LANGUAGE</span>
             <div className="theme-switch">
               <button className="theme-switch-btn active" type="button">
@@ -404,7 +404,10 @@ export function SettingsTab({
           </div>
         </div>
 
-        <div className="panel-card settings-preferences-card">
+        <div
+          className="panel-card settings-preferences-card"
+          data-guide-target="settings-preferences"
+        >
           <CustomScrollArea className="settings-preferences-scroll">
             <div className="settings-preferences-content">
               <span className="panel-label">PREFERENCES</span>
@@ -415,6 +418,7 @@ export function SettingsTab({
                   note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
                   enabled={optimizedJavaArgs}
                   onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
+                  guideTarget="settings-optimized"
                 />
 
                 <ElementToggle
@@ -422,6 +426,7 @@ export function SettingsTab({
                   note="Переключение вкладок движением колеса мыши."
                   enabled={wheelTabSwitching}
                   onToggle={() => setWheelTabSwitching((prev) => !prev)}
+                  guideTarget="settings-wheel"
                 />
 
                 <ExpandableSettingsGroup
@@ -432,6 +437,7 @@ export function SettingsTab({
                   onToggle={() => void saveMascotEnabled(!mascotEnabled)}
                   onToggleExpanded={() => setMascotSettingsOpen((open) => !open)}
                   mascotOffSwitch
+                  guideTarget="settings-mascot"
                 >
                   <label className="mascot-name-field">
                     <span>MASCOT NAME</span>
@@ -525,6 +531,7 @@ export function SettingsTab({
                   note="Показывать snapshot версии в списке доступных установок."
                   enabled={showSnapshots}
                   onToggle={() => setShowSnapshots((prev) => !prev)}
+                  guideTarget="settings-snapshots"
                 />
 
                 <ElementToggle
@@ -532,6 +539,7 @@ export function SettingsTab({
                   note="Показывать pre-release и release candidate версии."
                   enabled={showPreReleases}
                   onToggle={() => setShowPreReleases((prev) => !prev)}
+                  guideTarget="settings-prereleases"
                 />
 
                 <ElementToggle
@@ -539,6 +547,7 @@ export function SettingsTab({
                   note="Включает кнопку SETTINGS у сборок и в режиме создания для кастомного фона карточки версии."
                   enabled={advancedSettingsEnabled}
                   onToggle={onToggleAdvanced}
+                  guideTarget="settings-advanced"
                 />
               </div>
 

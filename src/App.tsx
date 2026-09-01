@@ -76,6 +76,8 @@ import type {
   UpdateInstancePayload,
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
+import { LauncherGuide } from "./components/guide/LauncherGuide";
+import { LAUNCHER_GUIDE_STEPS } from "./components/guide/launcherGuideSteps";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
 import {
@@ -145,6 +147,9 @@ const LauncherMascot = lazy(() =>
 );
 const ADVANCED_SETTINGS_STORAGE_KEY = "screenlauncher-advanced-settings-enabled";
 const SELECTED_INSTANCE_STORAGE_KEY = "screenlauncher-selected-instance-id";
+const FIRST_LAUNCH_GUIDE_STORAGE_KEY = "screenlauncher-first-launch-guide-completed";
+const FORCE_FIRST_LAUNCH_GUIDE_PREVIEW =
+  import.meta.env.DEV && import.meta.env.VITE_GUIDE_PREVIEW === "1";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
 const CLOSE_EFFECT_CLASS: Record<CloseAnimationId, string> = {
   tear: "tearing",
@@ -381,6 +386,12 @@ export default function App() {
   const [advancedSettingsEnabled, setAdvancedSettingsEnabled] = useLocalStorageBoolean(
     ADVANCED_SETTINGS_STORAGE_KEY,
   );
+  const [firstLaunchGuideCompleted, setFirstLaunchGuideCompleted] = useLocalStorageBoolean(
+    FIRST_LAUNCH_GUIDE_STORAGE_KEY,
+  );
+  const [guidePreviewDismissed, setGuidePreviewDismissed] = useState(false);
+  const [guideRunRequested, setGuideRunRequested] = useState(false);
+  const [guideNicknameEntered, setGuideNicknameEntered] = useState(false);
   const {
     appearances: buildCardAppearances,
     persistAppearances: persistBuildCardAppearances,
@@ -2092,7 +2103,7 @@ export default function App() {
             saveOptimizedJavaArgs={saveOptimizedJavaArgs}
             autoDownloadJava={launcherSettings?.autoDownloadJava ?? true}
             saveAutoDownloadJava={saveAutoDownloadJava}
-            mascotEnabled={launcherSettings?.mascotEnabled ?? true}
+            mascotEnabled={launcherSettings?.mascotEnabled ?? false}
             saveMascotEnabled={saveMascotEnabled}
             mascotSettings={launcherSettings?.mascot ?? DEFAULT_MASCOT_SETTINGS}
             saveMascotSettings={saveMascotSettings}
@@ -2123,9 +2134,39 @@ export default function App() {
     }
   };
 
+  const mascotEnabled = launcherSettings?.mascotEnabled ?? false;
+  const firstLaunchGuideActive =
+    phase === "ready" &&
+    launcherSettings !== null &&
+    !guidePreviewDismissed &&
+    (FORCE_FIRST_LAUNCH_GUIDE_PREVIEW || guideRunRequested || !firstLaunchGuideCompleted) &&
+    !showMsModal &&
+    !buildCardSettingsOpen;
+
+  const finishFirstLaunchGuide = () => {
+    setFirstLaunchGuideCompleted(true);
+    setGuidePreviewDismissed(true);
+    setGuideRunRequested(false);
+  };
+
+  const startLauncherGuide = () => {
+    setOpenDropdown(null);
+    setGuidePreviewDismissed(false);
+    setGuideRunRequested(true);
+  };
+
+  const handleGuideNicknameEdit = (value: string) => {
+    if (firstLaunchGuideActive) setGuideNicknameEntered(value.trim().length > 0);
+  };
+
+  const handleGuideStepChange = useCallback((step: (typeof LAUNCHER_GUIDE_STEPS)[number]) => {
+    setOpenDropdown(null);
+    if (step.tab) setActiveTab(step.tab);
+  }, []);
+
   const mainUI = (
     <div className="ui-container" onWheel={onWheelTabs}>
-      <div className="appearance-background" />
+      <div className="appearance-background appearance-background--launcher" />
       <div className="paper-texture" />
 
       <header
@@ -2138,6 +2179,14 @@ export default function App() {
       >
         <div className="nav-brand">ARCHIVE // MINECRAFT LAUNCHER</div>
         <div className="nav-controls">
+          <button
+            onClick={startLauncherGuide}
+            type="button"
+            data-guide-target="guide-replay"
+            aria-label="Запустить тур по лаунчеру"
+          >
+            GUIDE
+          </button>
           <button onClick={() => void win.minimize()} type="button">
             MINIMIZE
           </button>
@@ -2154,10 +2203,11 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-main">
             <div className="sidebar-session-summary">
-              <div>
+              <div data-guide-target="player-summary">
                 <small>PLAYER</small>
                 <strong
                   title={resolve("%player_name%")}
+                  data-guide-value
                   {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}
                 >
                   {resolve("%player_name%")}
@@ -2182,6 +2232,7 @@ export default function App() {
                   : ""
               }`}
               aria-label="Launcher sections"
+              data-guide-target="navigation"
             >
               {TAB_ORDER.map((tab) => (
                 <button
@@ -2220,6 +2271,7 @@ export default function App() {
               resolve={resolve}
               nickname={nickname}
               setNickname={setNickname}
+              onNicknameEdit={handleGuideNicknameEdit}
               accountType={accountType}
               setAccountType={setAccountType}
               openDropdown={openDropdown}
@@ -2258,10 +2310,20 @@ export default function App() {
       <Suspense fallback={null}>
         <LauncherMascot
           activeIndex={TAB_ORDER.indexOf(activeTab)}
-          enabled={launcherSettings?.mascotEnabled ?? true}
+          enabled={mascotEnabled && !firstLaunchGuideActive}
           settings={launcherSettings?.mascot ?? DEFAULT_MASCOT_SETTINGS}
         />
       </Suspense>
+
+      <LauncherGuide
+        active={firstLaunchGuideActive}
+        containerRef={galleryRootRef}
+        steps={LAUNCHER_GUIDE_STEPS}
+        onComplete={finishFirstLaunchGuide}
+        onSkip={finishFirstLaunchGuide}
+        onStepChange={handleGuideStepChange}
+        stepCompletion={{ nickname: guideNicknameEntered || nickname.trim().length > 0 }}
+      />
     </div>
   );
   const renderedCloseEffect = closeEffect ?? previewCloseEffect;

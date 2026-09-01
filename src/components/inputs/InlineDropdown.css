@@ -170,6 +170,10 @@
   z-index: 1000;
 }
 
+.inline-dropdown-menu-inline {
+  z-index: 50;
+}
+
 .inline-dropdown-menu-portal.inline-dropdown-menu-up {
   bottom: auto;
 }

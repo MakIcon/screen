@@ -166,7 +166,6 @@
   position: absolute;
   z-index: 0;
   inset: var(--appearance-background-bleed);
-  display: block;
   pointer-events: none;
   background-color: var(--appearance-background-color);
   background-image:
@@ -178,9 +177,22 @@
   filter: blur(var(--appearance-background-blur));
 }
 
-[data-appearance-custom="true"][data-appearance-background-scope="content"] .appearance-background {
-  inset: 70px 0 0 150px;
-  clip-path: inset(0);
+[data-appearance-custom="true"] .appearance-background--launcher {
+  display: block;
+}
+
+/* CONTENT ONLY keeps the very same full-window image transform and merely masks
+   the title bar, sidebar and footer. Switching scope therefore never stretches
+   or re-crops an uploaded image or drawing. The bleed compensation keeps the
+   mask aligned even when background blur expands the painted layer. */
+[data-appearance-custom="true"][data-appearance-background-scope="content"]
+  .appearance-background--launcher {
+  clip-path: inset(
+    calc(var(--launcher-header-height) - var(--appearance-background-bleed))
+      calc(0px - var(--appearance-background-bleed))
+      calc(var(--launcher-footer-height) - var(--appearance-background-bleed))
+      calc(var(--launcher-sidebar-width) - var(--appearance-background-bleed))
+  );
 }
 
 [data-appearance-custom="true"] :is(.gallery-header, .gallery-content, .gallery-footer) {

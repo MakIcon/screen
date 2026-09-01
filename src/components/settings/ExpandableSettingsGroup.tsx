@@ -12,6 +12,7 @@ interface ExpandableSettingsGroupProps {
   children: ReactNode;
   mascotOffSwitch?: boolean;
   className?: string;
+  guideTarget?: string;
 }
 
 export function ExpandableSettingsGroup({
@@ -24,6 +25,7 @@ export function ExpandableSettingsGroup({
   children,
   mascotOffSwitch = false,
   className = "",
+  guideTarget,
 }: ExpandableSettingsGroupProps) {
   return (
     <div
@@ -37,6 +39,7 @@ export function ExpandableSettingsGroup({
         mascotOffSwitch={mascotOffSwitch}
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}
+        guideTarget={guideTarget}
       />
 
       {expanded && <div className="expandable-settings-panel">{children}</div>}

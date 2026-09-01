@@ -3,6 +3,7 @@ import {
   ModrinthProjectIcon,
   ModrinthProjectModal,
 } from "../components/modrinth/ModrinthProjectModal";
+import { CatalogSearchField } from "../components/modrinth/CatalogSearchField";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
@@ -224,20 +225,18 @@ export function ModrinthContentTab({
   return (
     <section className="launcher-panel">
       <div className="panel-grid panel-grid-catalog-fixed">
-        <div className="panel-card catalog-toolbar-card">
+        <div className="panel-card catalog-toolbar-card" data-guide-target={`${kind}-search`}>
           <div className="toolbar-row toolbar-row-single modrinth-toolbar-grid">
-            <label className="field compact-field search-field">
-              <span>{copy.searchLabel}</span>
-              <input
-                placeholder={copy.searchPlaceholder}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
+            <CatalogSearchField
+              label={copy.searchLabel}
+              placeholder={copy.searchPlaceholder}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
         </div>
 
-        <div className="panel-card mod-list-card">
+        <div className="panel-card mod-list-card" data-guide-target={`${kind}-catalog`}>
           <div className="card-topline">
             <span className="panel-label">{copy.catalogLabel}</span>
             <span className="status-code">
@@ -409,6 +408,7 @@ export function ModrinthContentTab({
 
         <div
           className="panel-card install-sidebar-card"
+          data-guide-target={`${kind}-target`}
           {...createPlaceholderValueAttributes((template) =>
             resolveForTarget(template, selectedTarget),
           )}
@@ -466,7 +466,7 @@ export function ModrinthContentTab({
             </div>
           </div>
 
-          <div className="installed-mods-block">
+          <div className="installed-mods-block" data-guide-target={`${kind}-installed`}>
             <div className="card-topline installed-mods-head">
               <span className="panel-label">{copy.installedLabel}</span>
               <span className="status-code">{visibleInstalledItems.length}</span>

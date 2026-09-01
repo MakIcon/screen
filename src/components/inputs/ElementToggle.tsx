@@ -11,6 +11,7 @@ interface ElementToggleProps {
   mascotOffSwitch?: boolean;
   expanded?: boolean;
   onToggleExpanded?: () => void;
+  guideTarget?: string;
 }
 
 const TOGGLE_SIZE_SCALE = {
@@ -34,6 +35,7 @@ export function ElementToggle({
   mascotOffSwitch = false,
   expanded,
   onToggleExpanded,
+  guideTarget,
 }: ElementToggleProps) {
   const { settings, appearanceProps } = useAppearanceComponentSettings("toggle", {
     title,
@@ -51,6 +53,7 @@ export function ElementToggle({
     <div
       {...appearanceProps}
       className={`settings-toggle-row settings-toggle-row--${sizeClass}${settings.compact ? " settings-toggle-row--compact" : ""}`}
+      data-guide-target={guideTarget}
       style={style}
     >
       <div className="settings-toggle-copy">

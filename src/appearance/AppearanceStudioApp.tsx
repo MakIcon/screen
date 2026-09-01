@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -18,6 +26,11 @@ import { DrawingCanvas } from "./DrawingCanvas";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import { ElementInspector } from "./ElementInspector";
 import { refreshElementSizingTarget } from "./elementSizing";
+import {
+  appearanceHistoryReducer,
+  createAppearanceHistory,
+  getAppearanceHistoryShortcut,
+} from "./history";
 import { prepareBackgroundImage } from "./imageTools";
 import { ColorField, RangeField, Section, SelectField } from "./StudioFields";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
@@ -162,10 +175,15 @@ function elementStyleBadges(override: AppearanceElementOverride) {
 export function AppearanceStudioApp() {
   const studioWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), []);
   const [category, setCategory] = useState<StudioCategory>("background");
-  const [draft, setDraft] = useState<AppearanceProfile>(() => ({
-    ...readStoredAppearance(),
-    customized: true,
-  }));
+  const [draftHistory, dispatchDraftHistory] = useReducer(appearanceHistoryReducer, undefined, () =>
+    createAppearanceHistory({
+      ...readStoredAppearance(),
+      customized: true,
+    }),
+  );
+  const draft = draftHistory.present;
+  const canUndo = draftHistory.past.length > 0;
+  const canRedo = draftHistory.future.length > 0;
   const [message, setMessage] = useState("");
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AppearanceElementTarget[]>([]);
@@ -182,6 +200,7 @@ export function AppearanceStudioApp() {
   const originalAppearanceRef = useRef(readStoredAppearance());
   const closingRef = useRef(false);
   const elementPreviewOnlyRef = useRef(false);
+  const historyTransactionRef = useRef<{ recorded: boolean } | null>(null);
   const hasUnsavedChanges = useMemo(
     () =>
       JSON.stringify(draft) !==
@@ -208,6 +227,51 @@ export function AppearanceStudioApp() {
     // destroy() closes immediately and does not re-enter onCloseRequested.
     await studioWindow?.destroy();
   }, [studioWindow]);
+
+  const undo = useCallback(() => {
+    if (!canUndo) return;
+    historyTransactionRef.current = null;
+    dispatchDraftHistory({ type: "undo" });
+    setMessage("UNDID LAST CHANGE");
+  }, [canUndo]);
+
+  const redo = useCallback(() => {
+    if (!canRedo) return;
+    historyTransactionRef.current = null;
+    dispatchDraftHistory({ type: "redo" });
+    setMessage("REDID LAST CHANGE");
+  }, [canRedo]);
+
+  useEffect(() => {
+    const handleHistoryShortcut = (event: KeyboardEvent) => {
+      const shortcut = getAppearanceHistoryShortcut(event);
+      if (!shortcut) return;
+
+      event.preventDefault();
+      if (shortcut === "redo") redo();
+      else undo();
+    };
+
+    window.addEventListener("keydown", handleHistoryShortcut, true);
+    return () => window.removeEventListener("keydown", handleHistoryShortcut, true);
+  }, [redo, undo]);
+
+  useEffect(() => {
+    const finishHistoryTransaction = () => {
+      queueMicrotask(() => {
+        historyTransactionRef.current = null;
+      });
+    };
+
+    window.addEventListener("pointerup", finishHistoryTransaction, true);
+    window.addEventListener("pointercancel", finishHistoryTransaction, true);
+    window.addEventListener("blur", finishHistoryTransaction);
+    return () => {
+      window.removeEventListener("pointerup", finishHistoryTransaction, true);
+      window.removeEventListener("pointercancel", finishHistoryTransaction, true);
+      window.removeEventListener("blur", finishHistoryTransaction);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     applyAppearanceToElement(document.documentElement, draft);
@@ -249,7 +313,10 @@ export function AppearanceStudioApp() {
       const target = wrapped ? payload.target : payload;
       const additive = wrapped && payload.additive;
       const continuing = wrapped && Boolean(payload.continuing);
-      setDraft((current) => refreshElementSizingTarget(current, target));
+      dispatchDraftHistory({
+        type: "replace",
+        update: (current) => refreshElementSizingTarget(current, target),
+      });
       setSelectedTargets((current) => {
         if (!additive) return [target];
         return current.some((candidate) => candidate.id === target.id)
@@ -337,7 +404,13 @@ export function AppearanceStudioApp() {
   );
 
   const patchDraft = useCallback((updater: (current: AppearanceProfile) => AppearanceProfile) => {
-    setDraft((current) => ({ ...updater(current), customized: true }));
+    const transaction = historyTransactionRef.current;
+    dispatchDraftHistory({
+      type: "apply",
+      update: (current) => ({ ...updater(current), customized: true }),
+      record: !transaction?.recorded,
+    });
+    if (transaction) transaction.recorded = true;
     setMessage("");
   }, []);
 
@@ -647,7 +720,7 @@ export function AppearanceStudioApp() {
     try {
       const saved = writeStoredAppearance({ ...draft, customized: true });
       originalAppearanceRef.current = saved;
-      setDraft(saved);
+      dispatchDraftHistory({ type: "replace", update: () => saved });
       void emit(APPEARANCE_CHANGED_EVENT, saved).catch(() => {});
       setMessage("SAVED AND APPLIED TO LAUNCHER");
     } catch (error) {
@@ -658,7 +731,10 @@ export function AppearanceStudioApp() {
   };
 
   const reset = () => {
-    setDraft(createDefaultAppearance(draft.baseTheme, true));
+    dispatchDraftHistory({
+      type: "apply",
+      update: () => createDefaultAppearance(draft.baseTheme, true),
+    });
     setSelectedTargets([]);
     setElementInteractionState("normal");
     setElementListOpen(false);
@@ -666,7 +742,10 @@ export function AppearanceStudioApp() {
   };
 
   const discard = () => {
-    setDraft({ ...originalAppearanceRef.current, customized: true });
+    dispatchDraftHistory({
+      type: "apply",
+      update: () => ({ ...originalAppearanceRef.current, customized: true }),
+    });
     setSelectedTargets([]);
     setElementInteractionState("normal");
     setElementListOpen(false);
@@ -720,7 +799,7 @@ export function AppearanceStudioApp() {
           <>
             <Section
               title="BACKGROUND SOURCE"
-              note="Choose one layer for the whole launcher window."
+              note="Choose one layer, then decide below which launcher area reveals it."
             >
               <div className="studio-segmented">
                 {(["solid", "image", "drawing"] as AppearanceBackgroundKind[]).map((kind) => (
@@ -738,7 +817,7 @@ export function AppearanceStudioApp() {
 
             <Section
               title="BACKGROUND AREA"
-              note="Keep the title bar and left navigation clean, or cover the complete launcher."
+              note="Use the full launcher, or mask the title bar, left navigation and footer without rescaling the image."
             >
               <div className="studio-segmented">
                 {(["launcher", "content"] as const).map((scope) => (
@@ -809,11 +888,12 @@ export function AppearanceStudioApp() {
             {draft.background.kind === "drawing" && (
               <Section
                 title="CANVAS"
-                note="Draw with the pointer or place a short line of text in the center."
+                note="The title bar, left panel and footer guides are preview-only and are not saved into the drawing."
               >
                 <DrawingCanvas
                   value={draft.background.drawingDataUrl}
                   backgroundColor={draft.colors.background}
+                  scope={draft.background.scope}
                   onChange={(drawingDataUrl) =>
                     patchDraft((current) => ({
                       ...current,
@@ -1414,7 +1494,12 @@ export function AppearanceStudioApp() {
       : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
 
   return (
-    <div className="appearance-studio-window">
+    <div
+      className="appearance-studio-window"
+      onPointerDownCapture={() => {
+        historyTransactionRef.current = { recorded: false };
+      }}
+    >
       <header
         className="appearance-studio-titlebar"
         onMouseDown={(event) => {
@@ -1427,6 +1512,32 @@ export function AppearanceStudioApp() {
           <strong>APPEARANCE STUDIO</strong>
         </div>
         <div className="appearance-studio-titlebar-tools">
+          <div className="appearance-history-controls" role="group" aria-label="Edit history">
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo last appearance change"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M8 5 3.5 9 8 13" />
+                <path d="M4 9h7.1a5.4 5.4 0 0 1 5.4 5.4V15" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+              aria-label="Redo last appearance change"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="m12 5 4.5 4-4.5 4" />
+                <path d="M16 9H8.9a5.4 5.4 0 0 0-5.4 5.4V15" />
+              </svg>
+            </button>
+          </div>
           <div className="appearance-live-status">
             <i aria-hidden="true" />
             <div>

@@ -8,6 +8,7 @@ interface OverviewPanelProps {
   resolve: (template: string) => string;
   nickname: string;
   setNickname: (v: string) => void;
+  onNicknameEdit?: (value: string) => void;
   accountType: string;
   setAccountType: (v: string) => void;
   openDropdown: DropdownKey;
@@ -21,6 +22,7 @@ export function OverviewPanel({
   resolve,
   nickname,
   setNickname,
+  onNicknameEdit,
   accountType,
   setAccountType,
   openDropdown,
@@ -33,7 +35,7 @@ export function OverviewPanel({
   const [editingNickname, setEditingNickname] = useState(false);
 
   return (
-    <div className="image-mockup launcher-mockup">
+    <div className="image-mockup launcher-mockup" data-guide-target="overview-profile">
       <div className="lines-pattern" />
       <div className="mockup-overlay">
         <div className="mockup-block">
@@ -53,14 +55,18 @@ export function OverviewPanel({
         <div className="mockup-split-row">
           {/* Nickname (only visible for offline) */}
           {accountType === "OFFLINE" && (
-            <div className="mockup-block">
+            <div className="mockup-block" data-guide-target="nickname">
               <span className="mockup-label">NICKNAME</span>
               <HoverRevealValue value={nickname}>
                 {editingNickname ? (
                   <input
                     className="mockup-input"
                     value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setNickname(value);
+                      onNicknameEdit?.(value);
+                    }}
                     onBlur={() => setEditingNickname(false)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === "Escape") {
@@ -76,7 +82,10 @@ export function OverviewPanel({
                     type="button"
                     onClick={() => setEditingNickname(true)}
                   >
-                    <span {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}>
+                    <span
+                      data-guide-value
+                      {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}
+                    >
                       {resolve("%player_name%")}
                     </span>
                   </button>
@@ -119,7 +128,7 @@ export function OverviewPanel({
             </div>
           )}
 
-          <div className="mockup-block mockup-account-dropdown">
+          <div className="mockup-block mockup-account-dropdown" data-guide-target="account-type">
             <InlineDropdown
               label="ACCOUNT"
               value={accountType}
