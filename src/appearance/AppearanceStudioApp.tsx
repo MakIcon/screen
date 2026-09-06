@@ -44,7 +44,13 @@ import {
   readStoredAppearance,
   writeStoredAppearance,
 } from "./profile";
-import type { AppearanceBackgroundKind, AppearanceProfile, Theme } from "./types";
+import type {
+  AppearanceBackgroundKind,
+  AppearanceProfile,
+  CanvasUiEffectConfig,
+  CanvasUiEffectId,
+  Theme,
+} from "./types";
 import type {
   AppearanceElementComponentOverride,
   AppearanceElementHoverEasing,
@@ -67,6 +73,14 @@ import {
   type AppearanceElementPreviewPayload,
   type DrawingCursorPayload,
 } from "./elementOverrides";
+import {
+  ELEMENT_INTERACTION_STATES,
+  getElementStateStyle,
+  hasElementStateStyles,
+  mergeElementStateStyle,
+  setElementStateStyle,
+} from "./elementState";
+import { CANVAS_UI_EFFECTS, getCanvasUiEffect } from "./canvasUiCatalog";
 import "./AppearanceStudio.css";
 
 type StudioCategory =
@@ -77,6 +91,7 @@ type StudioCategory =
   | "type"
   | "opacity"
   | "motion"
+  | "canvas-ui"
   | "element";
 
 const CATEGORIES: { id: StudioCategory; index: string; label: string; note: string }[] = [
@@ -87,10 +102,14 @@ const CATEGORIES: { id: StudioCategory; index: string; label: string; note: stri
   { id: "type", index: "05", label: "TYPOGRAPHY", note: "Interface and display fonts" },
   { id: "opacity", index: "06", label: "OPACITY", note: "Window, panels and controls" },
   { id: "motion", index: "07", label: "MOTION", note: "Transitions and effects" },
+  { id: "canvas-ui", index: "08", label: "CANVAS UI", note: "35 GPU canvas components" },
 ];
 
 function elementStyleBadges(override: AppearanceElementOverride) {
   const badges: { label: string; value: string; color?: string }[] = [];
+  if (override.canvasUi?.enabled) {
+    badges.push({ label: "CANVAS UI", value: getCanvasUiEffect(override.canvasUi.effect).name });
+  }
   if (override.text !== undefined) {
     badges.push({
       label: "LABEL",
@@ -166,9 +185,17 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   if (override.componentSettings) {
     badges.push({ label: "PROPS", value: override.componentSettings.kind.toUpperCase() });
   }
-  if (override.hoverStyle && Object.keys(override.hoverStyle).length > 0) {
-    badges.push({ label: "HOVER", value: `${override.hoverTransitionMs ?? 200} MS` });
-  }
+  const customizedStates = ELEMENT_INTERACTION_STATES.filter(
+    (state) =>
+      state.id !== "normal" &&
+      Object.keys(getElementStateStyle(override, state.id) ?? {}).length > 0,
+  );
+  customizedStates.forEach((state) =>
+    badges.push({
+      label: state.label,
+      value: `${override.stateTransitionMs ?? override.hoverTransitionMs ?? 200} MS`,
+    }),
+  );
   return badges;
 }
 
@@ -296,7 +323,7 @@ export function AppearanceStudioApp() {
   useEffect(() => {
     void emit(APPEARANCE_ELEMENT_SELECTION_EVENT, {
       targets: selectedTargets,
-      previewHover: elementInteractionState === "hover",
+      previewState: elementInteractionState,
     } satisfies AppearanceElementSelectionPayload).catch(() => {});
   }, [elementInteractionState, selectedTargets]);
 
@@ -366,14 +393,13 @@ export function AppearanceStudioApp() {
     [draft.elementOverrides, selectedTarget],
   );
   const selectedVisualStyle = useMemo(
-    () =>
-      elementInteractionState === "hover"
-        ? { ...selectedOverride?.style, ...selectedOverride?.hoverStyle }
-        : selectedOverride?.style,
+    () => mergeElementStateStyle(selectedOverride, elementInteractionState),
     [elementInteractionState, selectedOverride],
   );
-  const selectedActiveInteractionStyle =
-    elementInteractionState === "hover" ? selectedOverride?.hoverStyle : selectedOverride?.style;
+  const selectedActiveInteractionStyle = getElementStateStyle(
+    selectedOverride,
+    elementInteractionState,
+  );
   const selectedInheritedElementOpacity =
     elementInteractionState === "hover"
       ? (selectedTarget?.defaults?.hoverElementOpacity ??
@@ -388,7 +414,7 @@ export function AppearanceStudioApp() {
     selectedActiveInteractionStyle?.elementOpacity !== undefined ||
     selectedActiveInteractionStyle?.opacity !== undefined
       ? ""
-      : elementInteractionState === "hover" &&
+      : elementInteractionState !== "normal" &&
           (selectedOverride?.style.elementOpacity !== undefined ||
             selectedOverride?.style.opacity !== undefined)
         ? " · FROM NORMAL"
@@ -397,11 +423,18 @@ export function AppearanceStudioApp() {
     () =>
       selectedTargets.some((target) => {
         const override = draft.elementOverrides.find((candidate) => candidate.id === target.id);
-        const style = elementInteractionState === "hover" ? override?.hoverStyle : override?.style;
+        const style = getElementStateStyle(override, elementInteractionState);
         return Boolean(style && Object.keys(style).length > 0);
       }),
     [draft.elementOverrides, elementInteractionState, selectedTargets],
   );
+  const activeCanvasUi: CanvasUiEffectConfig = selectedTarget
+    ? (selectedOverride?.canvasUi ?? {
+        ...draft.canvasUi,
+        enabled: false,
+        settings: {},
+      })
+    : draft.canvasUi;
 
   const patchDraft = useCallback((updater: (current: AppearanceProfile) => AppearanceProfile) => {
     const transaction = historyTransactionRef.current;
@@ -425,10 +458,12 @@ export function AppearanceStudioApp() {
       for (const target of selectedTargets) {
         const existing = current.elementOverrides.find((override) => override.id === target.id);
         const normalStyle = { ...existing?.style };
-        const interactionStyle =
-          elementInteractionState === "hover"
-            ? { ...existing?.hoverStyle, ...style }
-            : { ...normalStyle, ...style };
+        const interactionStyle = {
+          ...(elementInteractionState === "normal"
+            ? normalStyle
+            : getElementStateStyle(existing, elementInteractionState)),
+          ...style,
+        };
         if (
           elementInteractionState === "normal" &&
           existing?.style.opacity !== undefined &&
@@ -444,19 +479,17 @@ export function AppearanceStudioApp() {
         const next: AppearanceElementOverride = {
           ...existing,
           ...target,
-          style: elementInteractionState === "normal" ? interactionStyle : normalStyle,
+          style: normalStyle,
         };
-        if (elementInteractionState === "hover") {
-          if (Object.keys(interactionStyle).length > 0) next.hoverStyle = interactionStyle;
-          else delete next.hoverStyle;
-        }
+        setElementStateStyle(next, elementInteractionState, interactionStyle);
         const hasTextOverride =
           existing !== undefined && Object.prototype.hasOwnProperty.call(existing, "text");
         if (
           Object.keys(next.style).length > 0 ||
-          next.hoverStyle ||
+          hasElementStateStyles(next) ||
           hasTextOverride ||
-          existing?.componentSettings
+          existing?.componentSettings ||
+          existing?.canvasUi
         ) {
           nextOverrides.push(next);
         }
@@ -468,9 +501,9 @@ export function AppearanceStudioApp() {
     });
   };
 
-  const patchSelectedHoverTransition = (patch: {
-    hoverTransitionMs?: number;
-    hoverEasing?: AppearanceElementHoverEasing;
+  const patchSelectedStateTransition = (patch: {
+    stateTransitionMs?: number;
+    stateEasing?: AppearanceElementHoverEasing;
   }) => {
     if (selectedTargets.length === 0) return;
     elementPreviewOnlyRef.current = true;
@@ -485,10 +518,10 @@ export function AppearanceStudioApp() {
           ...existing,
           ...target,
           style: existing?.style ?? {},
-          ...(patch.hoverTransitionMs !== undefined
-            ? { hoverTransitionMs: patch.hoverTransitionMs }
+          ...(patch.stateTransitionMs !== undefined
+            ? { stateTransitionMs: patch.stateTransitionMs }
             : {}),
-          ...(patch.hoverEasing ? { hoverEasing: patch.hoverEasing } : {}),
+          ...(patch.stateEasing ? { stateEasing: patch.stateEasing } : {}),
         });
       }
       return { ...current, elementOverrides: nextOverrides };
@@ -513,8 +546,9 @@ export function AppearanceStudioApp() {
         if (
           text === undefined &&
           Object.keys(next.style).length === 0 &&
-          !next.hoverStyle &&
-          !next.componentSettings
+          !hasElementStateStyles(next) &&
+          !next.componentSettings &&
+          !next.canvasUi
         ) {
           return {
             ...current,
@@ -556,6 +590,35 @@ export function AppearanceStudioApp() {
           next,
         ],
       };
+    });
+  };
+
+  const patchCanvasUi = (updater: (config: CanvasUiEffectConfig) => CanvasUiEffectConfig) => {
+    if (selectedTargets.length === 0) {
+      patchDraft((current) => ({ ...current, canvasUi: updater(current.canvasUi) }));
+      return;
+    }
+    elementPreviewOnlyRef.current = true;
+    patchDraft((current) => {
+      const selectedIds = new Set(selectedTargets.map((target) => target.id));
+      const nextOverrides = current.elementOverrides.filter(
+        (override) => !selectedIds.has(override.id),
+      );
+      for (const target of selectedTargets) {
+        const existing = current.elementOverrides.find((override) => override.id === target.id);
+        const base = existing?.canvasUi ?? {
+          ...current.canvasUi,
+          enabled: false,
+          settings: {},
+        };
+        nextOverrides.push({
+          ...existing,
+          ...target,
+          style: existing?.style ?? {},
+          canvasUi: updater(base),
+        });
+      }
+      return { ...current, elementOverrides: nextOverrides };
     });
   };
 
@@ -606,18 +669,13 @@ export function AppearanceStudioApp() {
       elementOverrides: current.elementOverrides.flatMap((override) => {
         if (!selectedIds.has(override.id)) return [override];
         const next: AppearanceElementOverride = { ...override };
-        if (elementInteractionState === "hover") {
-          delete next.hoverStyle;
-          delete next.hoverTransitionMs;
-          delete next.hoverEasing;
-        } else {
-          next.style = {};
-        }
+        setElementStateStyle(next, elementInteractionState, undefined);
         const hasTextOverride = Object.prototype.hasOwnProperty.call(next, "text");
         return Object.keys(next.style).length > 0 ||
-          next.hoverStyle ||
+          hasElementStateStyles(next) ||
           hasTextOverride ||
-          next.componentSettings
+          next.componentSettings ||
+          next.canvasUi
           ? [next]
           : [];
       }),
@@ -776,6 +834,266 @@ export function AppearanceStudioApp() {
 
   const renderEditor = () => {
     switch (category) {
+      case "canvas-ui": {
+        const activeEffect = getCanvasUiEffect(activeCanvasUi.effect);
+        const categories = ["surface", "motion", "atmosphere", "retro", "object"] as const;
+        const chooseEffect = (effect: CanvasUiEffectId) =>
+          patchCanvasUi((current) => ({
+            ...current,
+            enabled: true,
+            effect,
+            renderer:
+              current.renderer === "webgpu" && effect !== "liquid" ? "webgl" : current.renderer,
+          }));
+        const activeSettings = activeCanvasUi.settings[activeCanvasUi.effect] ?? {};
+        const setEffectSetting = (key: string, value: number | boolean | string) =>
+          patchCanvasUi((current) => ({
+            ...current,
+            settings: {
+              ...current.settings,
+              [activeCanvasUi.effect]: {
+                ...current.settings[activeCanvasUi.effect],
+                [key]: value,
+              },
+            },
+          }));
+
+        return (
+          <>
+            <Section
+              title="CANVAS UI ENGINE"
+              note="Every effect is scoped to the current target. Picked elements get their own renderer and settings; WHOLE LAUNCHER remains a separate global layer."
+            >
+              <div className="canvas-ui-target-chip">
+                <span>{selectedTarget ? "ELEMENT TARGET" : "GLOBAL TARGET"}</span>
+                <strong>
+                  {selectedTargets.length > 1
+                    ? `${selectedTargets.length} ELEMENTS`
+                    : selectedTarget?.label || "WHOLE LAUNCHER"}
+                </strong>
+              </div>
+              <div className="studio-segmented">
+                <button
+                  type="button"
+                  className={activeCanvasUi.enabled ? "active" : ""}
+                  onClick={() =>
+                    patchCanvasUi((current) => ({
+                      ...current,
+                      enabled: true,
+                    }))
+                  }
+                >
+                  ENABLED
+                </button>
+                <button
+                  type="button"
+                  className={!activeCanvasUi.enabled ? "active" : ""}
+                  onClick={() =>
+                    patchCanvasUi((current) => ({
+                      ...current,
+                      enabled: false,
+                    }))
+                  }
+                >
+                  DISABLED
+                </button>
+              </div>
+              <div className="studio-segmented">
+                <button
+                  type="button"
+                  className={activeCanvasUi.renderer === "webgl" ? "active" : ""}
+                  onClick={() =>
+                    patchCanvasUi((current) => ({
+                      ...current,
+                      renderer: "webgl",
+                    }))
+                  }
+                >
+                  WEBGL · COMPATIBLE
+                </button>
+                <button
+                  type="button"
+                  disabled={activeCanvasUi.effect !== "liquid"}
+                  className={activeCanvasUi.renderer === "webgpu" ? "active" : ""}
+                  onClick={() =>
+                    patchCanvasUi((current) => ({
+                      ...current,
+                      renderer: "webgpu",
+                    }))
+                  }
+                >
+                  WEBGPU · LIQUID
+                </button>
+              </div>
+              <div className="canvas-ui-active-effect">
+                <span>ACTIVE COMPONENT</span>
+                <strong>{activeEffect.name}</strong>
+                <p>{activeEffect.description}</p>
+                <small>{activeEffect.interaction}</small>
+              </div>
+            </Section>
+
+            <Section
+              title={`${activeEffect.name.toUpperCase()} CONTROLS`}
+              note="The ranges and defaults come from the component API. Changes update the current target live and are retained when you switch components."
+            >
+              <div className="canvas-ui-controls-heading">
+                <span>{activeEffect.controls.length} PARAMETERS</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    patchCanvasUi((current) => ({
+                      ...current,
+                      settings: { ...current.settings, [activeEffect.id]: {} },
+                    }))
+                  }
+                >
+                  RESET EFFECT
+                </button>
+              </div>
+              <div className="canvas-ui-control-grid">
+                {activeEffect.controls.map((control) => {
+                  const value = activeSettings[control.key] ?? control.defaultValue;
+                  if (control.kind === "range") {
+                    return (
+                      <div className="canvas-ui-control-card" key={control.key}>
+                        <span>{control.group.toUpperCase()}</span>
+                        <RangeField
+                          label={control.label}
+                          value={Number(value)}
+                          min={control.min}
+                          max={control.max}
+                          step={control.step}
+                          suffix={control.suffix}
+                          defaultValue={control.defaultValue}
+                          onChange={(next) => setEffectSetting(control.key, next)}
+                        />
+                        {control.hint && <small>{control.hint}</small>}
+                      </div>
+                    );
+                  }
+                  if (control.kind === "color") {
+                    return (
+                      <div
+                        className="canvas-ui-control-card canvas-ui-control-card--color"
+                        key={control.key}
+                      >
+                        <span>{control.group.toUpperCase()}</span>
+                        <ColorField
+                          label={control.label}
+                          value={String(value)}
+                          onChange={(next) => setEffectSetting(control.key, next)}
+                        />
+                      </div>
+                    );
+                  }
+                  if (control.kind === "select") {
+                    return (
+                      <div
+                        className="canvas-ui-control-card canvas-ui-control-card--select"
+                        key={control.key}
+                      >
+                        <span>{control.group.toUpperCase()}</span>
+                        <SelectField
+                          label={control.label}
+                          value={String(value)}
+                          options={control.options}
+                          onChange={(next) => setEffectSetting(control.key, next)}
+                        />
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      className="canvas-ui-control-card canvas-ui-control-card--toggle"
+                      key={control.key}
+                    >
+                      <span>{control.group.toUpperCase()}</span>
+                      <strong>{control.label}</strong>
+                      <div className="studio-segmented">
+                        <button
+                          type="button"
+                          className={value === true ? "active" : ""}
+                          onClick={() => setEffectSetting(control.key, true)}
+                        >
+                          ON
+                        </button>
+                        <button
+                          type="button"
+                          className={value === false ? "active" : ""}
+                          onClick={() => setEffectSetting(control.key, false)}
+                        >
+                          OFF
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+
+            {categories.map((effectCategory) => {
+              const effects = CANVAS_UI_EFFECTS.filter(
+                (effect) => effect.category === effectCategory,
+              );
+              return (
+                <Section
+                  key={effectCategory}
+                  title={
+                    effectCategory === "object"
+                      ? "OBJECT COMPONENTS"
+                      : `${effectCategory.toUpperCase()} EFFECTS`
+                  }
+                  note={
+                    effectCategory === "object"
+                      ? "Object components overlay an image, SVG, GLB or glTF asset without replacing launcher controls."
+                      : undefined
+                  }
+                >
+                  <div className="canvas-ui-effect-grid">
+                    {effects.map((effect) => (
+                      <button
+                        type="button"
+                        key={effect.id}
+                        className={activeCanvasUi.effect === effect.id ? "active" : ""}
+                        onClick={() => chooseEffect(effect.id)}
+                      >
+                        <span>{effect.objectEffect ? "3D / ASSET" : "LIVE HTML"}</span>
+                        <strong>{effect.name}</strong>
+                        <small>{effect.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+              );
+            })}
+
+            {activeEffect.objectEffect && (
+              <Section
+                title="OBJECT SOURCE"
+                note="Paste an HTTPS URL to an SVG, image, GLB or glTF file. With an empty value the launcher uses its bundled icon as a safe preview asset."
+              >
+                <label className="studio-text-field studio-text-field--single-line">
+                  <span>ASSET URL</span>
+                  <input
+                    value={activeCanvasUi.assetUrl}
+                    maxLength={2048}
+                    spellCheck={false}
+                    placeholder="https://example.com/model.glb"
+                    onChange={(event) =>
+                      patchCanvasUi((current) => ({
+                        ...current,
+                        assetUrl: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </Section>
+            )}
+          </>
+        );
+      }
+
       case "element":
         return (
           <ElementInspector
@@ -783,14 +1101,16 @@ export function AppearanceStudioApp() {
             override={selectedOverride}
             visualStyle={selectedVisualStyle}
             interactionState={elementInteractionState}
-            hoverTransitionMs={selectedOverride?.hoverTransitionMs ?? 200}
-            hoverEasing={selectedOverride?.hoverEasing ?? "ease"}
+            stateTransitionMs={
+              selectedOverride?.stateTransitionMs ?? selectedOverride?.hoverTransitionMs ?? 200
+            }
+            stateEasing={selectedOverride?.stateEasing ?? selectedOverride?.hoverEasing ?? "ease"}
             profile={draft}
             onPick={requestElementPick}
             onStyleChange={patchSelectedStyle}
             onTextChange={patchSelectedText}
             onComponentChange={patchSelectedComponent}
-            onHoverTransitionChange={patchSelectedHoverTransition}
+            onStateTransitionChange={patchSelectedStateTransition}
           />
         );
 
@@ -1479,19 +1799,25 @@ export function AppearanceStudioApp() {
 
   const activeEditorContext = elementListOpen
     ? {
-        index: "09",
+        index: "10",
         label: "EDITED ELEMENTS",
         note: "Review every element with its own style and jump back to it in the launcher.",
       }
     : category === "element"
       ? {
-          index: "08",
+          index: "09",
           label: selectedTarget ? "ELEMENT SETTINGS" : "PICK AN ELEMENT",
           note: selectedTarget
             ? `Fine-tune ${selectedTarget.label} without changing the rest of the launcher.`
             : "Use Pick from launcher, then click the button, card or text you want to change.",
         }
-      : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
+      : category === "canvas-ui" && selectedTarget
+        ? {
+            index: "08",
+            label: "CANVAS UI · ELEMENT",
+            note: `The selected effect is isolated to ${selectedTargets.length > 1 ? `${selectedTargets.length} picked elements` : selectedTarget.label}.`,
+          }
+        : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
 
   return (
     <div
@@ -1588,7 +1914,7 @@ export function AppearanceStudioApp() {
             onClick={() => selectCategory("element")}
             aria-current={!elementListOpen && category === "element" ? "step" : undefined}
           >
-            <span>08</span>
+            <span>09</span>
             <div>
               <strong>PICK ELEMENT</strong>
               <small>
@@ -1603,7 +1929,7 @@ export function AppearanceStudioApp() {
               onClick={openElementList}
               aria-current={elementListOpen ? "step" : undefined}
             >
-              <span>09</span>
+              <span>10</span>
               <div>
                 <strong>
                   EDITED ELEMENTS <em>{draft.elementOverrides.length}</em>
@@ -1665,25 +1991,22 @@ export function AppearanceStudioApp() {
               <section className="appearance-interaction-state">
                 <span>VISUAL STATE</span>
                 <div>
-                  <button
-                    type="button"
-                    className={elementInteractionState === "normal" ? "active" : ""}
-                    onClick={() => setElementInteractionState("normal")}
-                  >
-                    NORMAL
-                  </button>
-                  <button
-                    type="button"
-                    className={elementInteractionState === "hover" ? "active" : ""}
-                    onClick={() => setElementInteractionState("hover")}
-                  >
-                    HOVER
-                  </button>
+                  {ELEMENT_INTERACTION_STATES.map((state) => (
+                    <button
+                      type="button"
+                      key={state.id}
+                      className={elementInteractionState === state.id ? "active" : ""}
+                      onClick={() => setElementInteractionState(state.id)}
+                    >
+                      {state.label}
+                    </button>
+                  ))}
                 </div>
                 <small>
-                  {elementInteractionState === "hover"
-                    ? "Preview while the pointer is over the element."
-                    : "Preview before the pointer enters the element."}
+                  {
+                    ELEMENT_INTERACTION_STATES.find((state) => state.id === elementInteractionState)
+                      ?.note
+                  }
                 </small>
                 <button
                   type="button"

@@ -144,7 +144,14 @@ export type AppearanceElementTarget = {
 export type AppearanceElementShadow = "none" | "soft" | "strong" | "glow";
 export type AppearanceElementTextAlign = "left" | "center" | "right";
 export type AppearanceElementLayout = "default" | "row" | "column" | "grid";
-export type AppearanceElementInteractionState = "normal" | "hover";
+export type AppearanceElementAlignment = "auto" | "start" | "center" | "end" | "stretch";
+export type AppearanceElementInteractionState =
+  | "normal"
+  | "hover"
+  | "pressed"
+  | "focus"
+  | "disabled"
+  | "selected";
 export type AppearanceElementHoverEasing =
   | "linear"
   | "ease"
@@ -188,9 +195,36 @@ export type AppearanceElementStyle = {
   textColor?: string;
   paddingX?: number;
   paddingY?: number;
+  offsetX?: number;
+  offsetY?: number;
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
+  order?: number;
+  alignSelf?: AppearanceElementAlignment;
+  justifySelf?: AppearanceElementAlignment;
+  zIndex?: number;
   borderWidth?: number;
   borderColor?: string;
   shadow?: AppearanceElementShadow;
+  shadowColor?: string;
+  shadowX?: number;
+  shadowY?: number;
+  shadowBlur?: number;
+  shadowSpread?: number;
+  glowColor?: string;
+  glowBlur?: number;
+  glowIntensity?: number;
+  backdropBlur?: number;
+  outlineWidth?: number;
+  outlineColor?: string;
+  outlineOffset?: number;
+  grainOpacity?: number;
+  glassEffect?: boolean;
+  glassTint?: string;
+  glassOpacity?: number;
+  glassSaturation?: number;
   scale?: number;
   rotate?: number;
   layout?: AppearanceElementLayout;
@@ -206,8 +240,70 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
   style: AppearanceElementStyle;
   /** Properties that replace the normal style while the pointer is over the element. */
   hoverStyle?: AppearanceElementStyle;
+  pressedStyle?: AppearanceElementStyle;
+  focusStyle?: AppearanceElementStyle;
+  disabledStyle?: AppearanceElementStyle;
+  selectedStyle?: AppearanceElementStyle;
+  /** Shared transition used when entering or leaving any non-normal visual state. */
+  stateTransitionMs?: number;
+  stateEasing?: AppearanceElementHoverEasing;
+  /** Legacy hover-only transition fields retained for stored v2 profiles. */
   hoverTransitionMs?: number;
   hoverEasing?: AppearanceElementHoverEasing;
+  /** Optional Canvas UI effect scoped to this exact picked launcher element. */
+  canvasUi?: CanvasUiEffectConfig;
+};
+
+export type CanvasUiEffectId =
+  | "ascii-object"
+  | "ascii-sweep"
+  | "asciify"
+  | "bend"
+  | "blaze"
+  | "bubble"
+  | "canvas"
+  | "cloth"
+  | "clouds"
+  | "decrypt-reveal"
+  | "displacement"
+  | "dithered-object"
+  | "droplets"
+  | "flame-wrap"
+  | "force-field"
+  | "frost"
+  | "glass"
+  | "glass-object"
+  | "glitch"
+  | "glyph-rain"
+  | "grid"
+  | "hex-float"
+  | "ink-object"
+  | "laser"
+  | "liquid"
+  | "liquid-object"
+  | "magnify"
+  | "particle-object"
+  | "particle-reveal"
+  | "particle-scroll"
+  | "peel"
+  | "retro-dither"
+  | "ripple"
+  | "shatter"
+  | "vhs";
+
+export type CanvasUiRenderer = "webgl" | "webgpu";
+
+export type CanvasUiSettingValue = number | boolean | string;
+
+export type CanvasUiEffectSettings = Record<string, CanvasUiSettingValue>;
+
+export type CanvasUiEffectConfig = {
+  enabled: boolean;
+  effect: CanvasUiEffectId;
+  renderer: CanvasUiRenderer;
+  assetUrl: string;
+  /** Settings are retained per component so switching effects never loses tuning. */
+  settings: Partial<Record<CanvasUiEffectId, CanvasUiEffectSettings>>;
 };
 
 export type AppearanceProfile = {
@@ -245,6 +341,7 @@ export type AppearanceProfile = {
     /** Sidebar entries that use the original text-only launcher design. */
     legacyTabs: TabKey[];
   };
+  canvasUi: CanvasUiEffectConfig;
   elementOverrides: AppearanceElementOverride[];
   motion: {
     enabled: boolean;

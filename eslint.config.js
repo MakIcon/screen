@@ -4,7 +4,17 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist", "dist-extensions", "src-tauri", "node_modules"] },
+  {
+    ignores: [
+      "dist",
+      "dist-extensions",
+      "src-tauri",
+      "node_modules",
+      // Source-copied third-party registry components are checked by TypeScript
+      // and kept byte-for-byte close to upstream for easier future refreshes.
+      "src/components/canvasui",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -1,6 +1,7 @@
 import type {
   AppearanceElementComponentTarget,
   AppearanceElementKind,
+  AppearanceElementInteractionState,
   AppearanceElementOverride,
   AppearanceElementPathSegment,
   AppearanceElementTarget,
@@ -40,6 +41,8 @@ export type AppearanceElementPickedPayload =
 
 export type AppearanceElementSelectionPayload = {
   targets: AppearanceElementTarget[];
+  previewState?: AppearanceElementInteractionState;
+  /** Legacy payload field used by older Studio windows. */
   previewHover?: boolean;
 };
 
@@ -83,6 +86,11 @@ function backgroundImageWithOpacity(backgroundImage: string, opacity: number) {
   return backgroundImage.replace(/rgba?\([^()]*\)|#[0-9a-f]{3,8}|\btransparent\b/gi, (color) =>
     colorWithOpacity(color, opacity),
   );
+}
+
+function grainTexture(opacity: number) {
+  const alpha = Math.round(Math.max(0, Math.min(0.6, opacity)) * 100) / 100;
+  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 ${alpha} 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 }
 
 function hasVisibleBackground(style: CSSStyleDeclaration) {
@@ -378,12 +386,19 @@ export function createElementTarget(
   const path: AppearanceElementPathSegment[] = [];
   let current: HTMLElement | null = element;
   while (current && current !== root) {
-    const parent: HTMLElement | null = current.parentElement;
+    // Canvas UI can wrap/remount the launcher when its global effect changes.
+    // Keep saved element paths independent of those rendering-only wrappers.
+    const launcherRoot = current.classList.contains("ui-container");
+    const parent: HTMLElement | null = launcherRoot ? root : current.parentElement;
     if (!parent) return null;
     const tag = current.tagName.toLowerCase();
-    const siblings = Array.from(parent.children).filter(
-      (candidate) => candidate.tagName.toLowerCase() === tag,
-    );
+    const siblings = Array.from(parent.children)
+      .map((candidate) =>
+        launcherRoot && candidate.matches(".canvas-ui-effect-viewport, .canvas-ui-composite")
+          ? (candidate.querySelector(".ui-container") ?? candidate)
+          : candidate,
+      )
+      .filter((candidate) => candidate.tagName.toLowerCase() === tag);
     const marker = elementMarker(current);
     path.unshift({
       tag,
@@ -415,20 +430,31 @@ export function resolveElementTarget(
   root: HTMLElement,
   target: Pick<AppearanceElementTarget, "path">,
 ) {
-  let current: HTMLElement = root;
-  for (const segment of target.path) {
-    const next = Array.from(current.children).filter(
-      (candidate) => candidate.tagName.toLowerCase() === segment.tag,
-    )[segment.index];
-    if (!(next instanceof HTMLElement)) return null;
-    if (segment.marker) {
-      const [kind, marker] = segment.marker.split(":", 2);
-      if (kind === "id" && next.id !== marker) return null;
-      if (kind === "class" && !next.classList.contains(marker)) return null;
+  const follow = (start: HTMLElement, path: AppearanceElementPathSegment[]) => {
+    let current = start;
+    for (const segment of path) {
+      const next = Array.from(current.children).filter(
+        (candidate) => candidate.tagName.toLowerCase() === segment.tag,
+      )[segment.index];
+      if (!(next instanceof HTMLElement)) return null;
+      if (segment.marker) {
+        const [kind, marker] = segment.marker.split(":", 2);
+        if (kind === "id" && next.id !== marker) return null;
+        if (kind === "class" && !next.classList.contains(marker)) return null;
+      }
+      current = next;
     }
-    current = next;
+    return current;
+  };
+  const direct = follow(root, target.path);
+  if (direct) return direct;
+  // Also resolve profiles saved with an older Canvas UI wrapper structure.
+  const anchor = target.path.findIndex((segment) => segment.marker === "class:ui-container");
+  if (anchor >= 0) {
+    const launchers = root.querySelectorAll<HTMLElement>(".ui-container");
+    if (launchers.length === 1) return follow(launchers[0], target.path.slice(anchor + 1));
   }
-  return current;
+  return null;
 }
 
 export function resolveElementTextTarget(
@@ -448,7 +474,7 @@ export function resolveElementTextTarget(
 function buildElementOverrideStateRule(
   sourceOverride: AppearanceElementOverride,
   style: AppearanceElementOverride["style"],
-  interactionState: "normal" | "hover",
+  interactionState: AppearanceElementInteractionState,
 ) {
   const override: AppearanceElementOverride = { ...sourceOverride, style };
   const declarations: string[] = [];
@@ -524,6 +550,8 @@ function buildElementOverrideStateRule(
   const backgroundOpacity = override.style.backgroundOpacity ?? 1;
   const backgroundColor = override.style.backgroundColor ?? override.defaults?.backgroundColor;
   const backgroundImage = override.defaults?.backgroundImage;
+  let resolvedBackgroundImage =
+    backgroundImage && backgroundImage !== "none" ? backgroundImage : undefined;
   const usesCustomGradient =
     override.style.backgroundKind === "gradient" &&
     ((override.style.backgroundGradientStops?.length ?? 0) >= 2 ||
@@ -540,15 +568,15 @@ function buildElementOverrideStateRule(
     // this, CSS paints the background underneath the border and its color leaks
     // through, making the outline look like a reflected copy of the gradient.
     declarations.push("background-clip: padding-box !important");
-    declarations.push(
-      `background-image: ${buildElementGradientImage(override.style, start, end, {
-        baseColor: backgroundColor ?? start,
-        opacity: backgroundOpacity,
-      })} !important`,
-    );
+    resolvedBackgroundImage = buildElementGradientImage(override.style, start, end, {
+      baseColor: backgroundColor ?? start,
+      opacity: backgroundOpacity,
+    });
+    declarations.push(`background-image: ${resolvedBackgroundImage} !important`);
   } else {
     if (override.style.backgroundKind === "solid") {
       declarations.push("background-image: none !important");
+      resolvedBackgroundImage = undefined;
     }
     if (override.style.backgroundOpacity !== undefined && backgroundColor) {
       declarations.push(
@@ -562,10 +590,24 @@ function buildElementOverrideStateRule(
       backgroundImage &&
       backgroundImage !== "none"
     ) {
-      declarations.push(
-        `background-image: ${backgroundImageWithOpacity(backgroundImage, backgroundOpacity)} !important`,
-      );
+      resolvedBackgroundImage = backgroundImageWithOpacity(backgroundImage, backgroundOpacity);
+      declarations.push(`background-image: ${resolvedBackgroundImage} !important`);
     }
+  }
+  if (override.style.glassEffect) {
+    const tint = override.style.glassTint ?? backgroundColor ?? "#ffffff";
+    declarations.push(
+      `background-color: ${colorWithOpacity(tint, override.style.glassOpacity ?? 0.18)} !important`,
+    );
+    declarations.push("background-clip: padding-box !important");
+  }
+  if ((override.style.grainOpacity ?? 0) > 0) {
+    const layers = [grainTexture(override.style.grainOpacity ?? 0), resolvedBackgroundImage]
+      .filter(Boolean)
+      .join(", ");
+    declarations.push(`background-image: ${layers} !important`);
+    declarations.push("background-size: 128px 128px, auto !important");
+    declarations.push("background-blend-mode: soft-light, normal !important");
   }
   const textColor = override.style.textColor ?? override.defaults?.textColor;
   if (override.style.contentOpacity !== undefined && textColor) {
@@ -583,6 +625,31 @@ function buildElementOverrideStateRule(
     declarations.push(`padding-top: ${override.style.paddingY}px !important`);
     declarations.push(`padding-bottom: ${override.style.paddingY}px !important`);
   }
+  if (override.style.marginTop !== undefined) {
+    declarations.push(`margin-top: ${override.style.marginTop}px !important`);
+  }
+  if (override.style.marginRight !== undefined) {
+    declarations.push(`margin-right: ${override.style.marginRight}px !important`);
+  }
+  if (override.style.marginBottom !== undefined) {
+    declarations.push(`margin-bottom: ${override.style.marginBottom}px !important`);
+  }
+  if (override.style.marginLeft !== undefined) {
+    declarations.push(`margin-left: ${override.style.marginLeft}px !important`);
+  }
+  if (override.style.order !== undefined) {
+    declarations.push(`order: ${override.style.order} !important`);
+  }
+  if (override.style.alignSelf) {
+    declarations.push(`align-self: ${override.style.alignSelf} !important`);
+  }
+  if (override.style.justifySelf) {
+    declarations.push(`justify-self: ${override.style.justifySelf} !important`);
+  }
+  if (override.style.zIndex !== undefined) {
+    declarations.push(`z-index: ${override.style.zIndex} !important`);
+    declarations.push("position: relative !important");
+  }
   if (override.style.borderWidth !== undefined) {
     declarations.push(`border-width: ${override.style.borderWidth}px !important`);
     declarations.push(`border-style: solid !important`);
@@ -590,12 +657,67 @@ function buildElementOverrideStateRule(
   if (override.style.borderColor) {
     declarations.push(`border-color: ${override.style.borderColor} !important`);
   }
-  if (override.style.shadow) {
-    declarations.push(`box-shadow: ${ELEMENT_SHADOWS[override.style.shadow]} !important`);
+  const shadows: string[] = [];
+  if (override.style.shadow && override.style.shadow !== "none") {
+    shadows.push(ELEMENT_SHADOWS[override.style.shadow]);
   }
-  if (override.style.scale !== undefined || override.style.rotate !== undefined) {
+  const hasCustomShadow =
+    override.style.shadowColor !== undefined ||
+    override.style.shadowX !== undefined ||
+    override.style.shadowY !== undefined ||
+    override.style.shadowBlur !== undefined ||
+    override.style.shadowSpread !== undefined;
+  if (hasCustomShadow) {
+    shadows.push(
+      `${override.style.shadowX ?? 0}px ${override.style.shadowY ?? 8}px ${override.style.shadowBlur ?? 24}px ${override.style.shadowSpread ?? 0}px ${override.style.shadowColor ?? "rgba(0, 0, 0, 0.28)"}`,
+    );
+  }
+  if ((override.style.glowIntensity ?? 0) > 0) {
+    const glowColor = override.style.glowColor ?? "var(--accent)";
+    const glowAlpha = opacityPercentage(override.style.glowIntensity ?? 0);
+    shadows.push(
+      `0 0 ${override.style.glowBlur ?? 24}px color-mix(in srgb, ${glowColor} ${glowAlpha}%, transparent)`,
+    );
+  }
+  if (override.style.glassEffect) {
+    shadows.push("inset 0 1px 0 rgba(255, 255, 255, 0.42)");
+    shadows.push("inset 0 -1px 0 rgba(255, 255, 255, 0.08)");
+  }
+  if (shadows.length > 0) {
+    declarations.push(`box-shadow: ${shadows.join(", ")} !important`);
+  } else if (override.style.shadow === "none") {
+    declarations.push("box-shadow: none !important");
+  }
+  if (override.style.outlineWidth !== undefined) {
+    declarations.push(`outline-width: ${override.style.outlineWidth}px !important`);
+    declarations.push("outline-style: solid !important");
+  }
+  if (override.style.outlineColor) {
+    declarations.push(`outline-color: ${override.style.outlineColor} !important`);
+  }
+  if (override.style.outlineOffset !== undefined) {
+    declarations.push(`outline-offset: ${override.style.outlineOffset}px !important`);
+  }
+  if (override.style.backdropBlur !== undefined || override.style.glassEffect) {
+    const blur = override.style.backdropBlur ?? (override.style.glassEffect ? 18 : 0);
+    const saturation = override.style.glassEffect ? (override.style.glassSaturation ?? 1.35) : 1;
+    declarations.push(`backdrop-filter: blur(${blur}px) saturate(${saturation}) !important`);
     declarations.push(
-      `transform: rotate(${override.style.rotate ?? 0}deg) scale(${override.style.scale ?? 1}) !important`,
+      `-webkit-backdrop-filter: blur(${blur}px) saturate(${saturation}) !important`,
+    );
+  }
+  if (
+    override.style.offsetX !== undefined ||
+    override.style.offsetY !== undefined ||
+    override.style.scale !== undefined ||
+    override.style.rotate !== undefined
+  ) {
+    const translate =
+      override.style.offsetX !== undefined || override.style.offsetY !== undefined
+        ? `translate(${override.style.offsetX ?? 0}px, ${override.style.offsetY ?? 0}px) `
+        : "";
+    declarations.push(
+      `transform: ${translate}rotate(${override.style.rotate ?? 0}deg) scale(${override.style.scale ?? 1}) !important`,
     );
     declarations.push("transform-origin: center !important");
   }
@@ -628,10 +750,37 @@ function buildElementOverrideStateRule(
   // Individual edits must outrank the global custom-appearance rules, which
   // intentionally use !important to cover the launcher's existing components.
   const baseSelector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
-  const selectors =
-    interactionState === "hover"
-      ? [`${baseSelector}:hover`, `${baseSelector}.appearance-hover-preview`]
-      : [baseSelector];
+  const selectors = (() => {
+    switch (interactionState) {
+      case "hover":
+        return [`${baseSelector}:hover`, `${baseSelector}.appearance-hover-preview`];
+      case "pressed":
+        return [`${baseSelector}:active`, `${baseSelector}.appearance-pressed-preview`];
+      case "focus":
+        return [
+          `${baseSelector}:focus`,
+          `${baseSelector}:focus-visible`,
+          `${baseSelector}.appearance-focus-preview`,
+        ];
+      case "disabled":
+        return [
+          `${baseSelector}:disabled`,
+          `${baseSelector}[aria-disabled="true"]`,
+          `${baseSelector}[data-disabled="true"]`,
+          `${baseSelector}.appearance-disabled-preview`,
+        ];
+      case "selected":
+        return [
+          `${baseSelector}.active`,
+          `${baseSelector}[aria-selected="true"]`,
+          `${baseSelector}[aria-pressed="true"]`,
+          `${baseSelector}[data-selected="true"]`,
+          `${baseSelector}.appearance-selected-preview`,
+        ];
+      default:
+        return [baseSelector];
+    }
+  })();
   const selector = selectors.join(", ");
   const rules = [`${selector} { ${declarations.join("; ")} }`];
   if (descendantTypographyDeclarations.length > 0) {
@@ -650,7 +799,12 @@ function buildElementOverrideStateRule(
   const backgroundPseudos = backgroundPseudoStates.flatMap((entry) =>
     selectors.map((item) => ({ selector: `${item}${entry.pseudo}`, opacity: entry.opacity })),
   );
-  if (override.style.backgroundKind && backgroundPseudos.length > 0) {
+  if (
+    (override.style.backgroundKind ||
+      override.style.glassEffect ||
+      (override.style.grainOpacity ?? 0) > 0) &&
+    backgroundPseudos.length > 0
+  ) {
     rules.push(
       `${backgroundPseudos.map((entry) => entry.selector).join(", ")} { background: transparent !important; }`,
     );
@@ -684,7 +838,17 @@ function buildElementOverrideStateRule(
 
 export function buildElementOverrideRule(override: AppearanceElementOverride) {
   const normalRule = buildElementOverrideStateRule(override, override.style, "normal");
-  if (!override.hoverStyle || Object.keys(override.hoverStyle).length === 0) return normalRule;
+  const stateStyles = [
+    ["hover", override.hoverStyle],
+    ["pressed", override.pressedStyle],
+    ["focus", override.focusStyle],
+    ["disabled", override.disabledStyle],
+    ["selected", override.selectedStyle],
+  ] as const;
+  const activeStateStyles = stateStyles.filter(
+    ([, style]) => style && Object.keys(style).length > 0,
+  );
+  if (activeStateStyles.length === 0) return normalRule;
 
   const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
   const selector = `html[data-appearance-custom="true"] .gallery-root ${target}${target}${target}`;
@@ -696,13 +860,11 @@ export function buildElementOverrideRule(override: AppearanceElementOverride) {
     `${selector} > *`,
     `${selector} *`,
   ].join(", ");
-  const transitionRule = `${transitionSelectors} { transition-property: all !important; transition-duration: ${override.hoverTransitionMs ?? 200}ms !important; transition-timing-function: ${override.hoverEasing ?? "ease"} !important; transition-delay: 0ms !important; }`;
-  const hoverRule = buildElementOverrideStateRule(
-    override,
-    { ...override.style, ...override.hoverStyle },
-    "hover",
+  const transitionRule = `${transitionSelectors} { transition-property: all !important; transition-duration: ${override.stateTransitionMs ?? override.hoverTransitionMs ?? 200}ms !important; transition-timing-function: ${override.stateEasing ?? override.hoverEasing ?? "ease"} !important; transition-delay: 0ms !important; }`;
+  const interactionRules = activeStateStyles.map(([state, style]) =>
+    buildElementOverrideStateRule(override, { ...override.style, ...style }, state),
   );
-  return [normalRule, transitionRule, hoverRule].filter(Boolean).join("\n");
+  return [normalRule, transitionRule, ...interactionRules].filter(Boolean).join("\n");
 }
 
 export function applyElementAppearanceOverrides(

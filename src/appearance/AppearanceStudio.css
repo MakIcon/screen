@@ -537,7 +537,8 @@ button {
 }
 
 .appearance-interaction-state > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   min-width: 0;
   border: 1px solid var(--line-strong);
 }
@@ -545,10 +546,10 @@ button {
 .appearance-interaction-state > div button {
   min-width: 0;
   height: 28px;
-  flex: 1;
   padding: 0 8px;
   border: 0;
   border-right: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
   border-radius: 0;
   background: transparent;
   color: var(--muted);
@@ -558,8 +559,12 @@ button {
   cursor: pointer;
 }
 
-.appearance-interaction-state > div button:last-child {
+.appearance-interaction-state > div button:nth-child(3n) {
   border-right: 0;
+}
+
+.appearance-interaction-state > div button:nth-last-child(-n + 3) {
+  border-bottom: 0;
 }
 
 .appearance-interaction-state > div button.active {
@@ -1276,6 +1281,199 @@ button {
   gap: 11px;
 }
 
+.studio-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+
+.canvas-ui-active-effect {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line-strong));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
+    var(--bg-field);
+}
+
+.canvas-ui-active-effect > span,
+.canvas-ui-effect-grid button > span {
+  display: block;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.75px;
+}
+
+.canvas-ui-active-effect > strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  font: 700 18px/1 var(--font-display);
+  letter-spacing: 0.25px;
+}
+
+.canvas-ui-active-effect > p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.canvas-ui-active-effect > small {
+  display: block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+}
+
+.canvas-ui-target-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line-strong));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-field));
+}
+
+.canvas-ui-target-chip span,
+.canvas-ui-controls-heading span {
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+
+.canvas-ui-target-chip strong {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 8px;
+  letter-spacing: 0.55px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-ui-controls-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.canvas-ui-controls-heading button {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.55px;
+  cursor: pointer;
+}
+
+.canvas-ui-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-ui-control-card {
+  min-width: 0;
+  padding: 11px 12px 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-field);
+}
+
+.canvas-ui-control-card > span {
+  display: block;
+  margin-bottom: -7px;
+  color: color-mix(in srgb, var(--accent) 75%, var(--muted));
+  font-size: 6px;
+  font-weight: 850;
+  letter-spacing: 0.8px;
+}
+
+.canvas-ui-control-card > small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.canvas-ui-control-card .studio-range-field {
+  margin-top: 13px;
+}
+
+.canvas-ui-control-card--color .studio-color-field,
+.canvas-ui-control-card--select .studio-select-field {
+  margin-top: 15px;
+}
+
+.canvas-ui-control-card--toggle > strong {
+  display: block;
+  margin: 15px 0 9px;
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.8px;
+}
+
+.canvas-ui-control-card--toggle .studio-segmented button {
+  padding-block: 8px;
+}
+
+.canvas-ui-effect-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-ui-effect-grid button {
+  min-height: 90px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--bg-field);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.canvas-ui-effect-grid button:hover {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line-strong));
+  transform: translateY(-1px);
+}
+
+.canvas-ui-effect-grid button.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-field));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.canvas-ui-effect-grid button > strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  letter-spacing: 0.35px;
+}
+
+.canvas-ui-effect-grid button > small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
 .studio-color-grid--three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1973,7 +2171,10 @@ button {
   }
 
   .studio-color-grid,
-  .studio-font-grid {
+  .studio-font-grid,
+  .studio-field-grid,
+  .canvas-ui-effect-grid,
+  .canvas-ui-control-grid {
     grid-template-columns: 1fr;
   }
 }

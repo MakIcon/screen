@@ -18,8 +18,10 @@ import type {
   AppearanceElementComponentTarget,
   AppearanceElementKind,
   AppearanceProfile,
+  CanvasUiEffectConfig,
   Theme,
 } from "./types";
+import { CANVAS_UI_EFFECT_IDS, normalizeCanvasUiEffectSettings } from "./canvasUiCatalog";
 
 export const APPEARANCE_STORAGE_KEY = "screenlauncher-appearance-v2";
 export const LEGACY_THEME_STORAGE_KEY = "screenlauncher-theme";
@@ -138,6 +140,49 @@ function pickImageDataUrl(value: unknown) {
     SAFE_IMAGE_DATA_URL.test(value)
     ? value
     : "";
+}
+
+function pickCanvasAssetUrl(value: unknown) {
+  if (typeof value !== "string" || value.length > MAX_EMBEDDED_IMAGE_LENGTH) return "";
+  const normalized = value.trim();
+  if (/^https?:\/\/[^\s]+$/i.test(normalized)) return normalized.slice(0, 2_048);
+  return SAFE_IMAGE_DATA_URL.test(normalized) ? normalized : "";
+}
+
+function createDefaultCanvasUiConfig(): CanvasUiEffectConfig {
+  return {
+    enabled: false,
+    effect: "liquid",
+    renderer: "webgl",
+    assetUrl: "",
+    settings: {},
+  };
+}
+
+function normalizeCanvasUiConfig(
+  value: unknown,
+  fallback: CanvasUiEffectConfig = createDefaultCanvasUiConfig(),
+): CanvasUiEffectConfig {
+  const record = isRecord(value) ? value : {};
+  const effect = pickEnum(record.effect, CANVAS_UI_EFFECT_IDS, fallback.effect);
+  const rawSettings = isRecord(record.settings) ? record.settings : {};
+  const settings = Object.fromEntries(
+    CANVAS_UI_EFFECT_IDS.flatMap((effectId) => {
+      const normalized = normalizeCanvasUiEffectSettings(effectId, rawSettings[effectId]);
+      return Object.keys(normalized).length > 0 ? [[effectId, normalized]] : [];
+    }),
+  ) as CanvasUiEffectConfig["settings"];
+
+  return {
+    enabled: typeof record.enabled === "boolean" ? record.enabled : fallback.enabled,
+    effect,
+    renderer:
+      effect === "liquid"
+        ? pickEnum(record.renderer, ["webgl", "webgpu"] as const, fallback.renderer)
+        : "webgl",
+    assetUrl: pickCanvasAssetUrl(record.assetUrl),
+    settings,
+  };
 }
 
 const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
@@ -509,6 +554,29 @@ function normalizeElementOverrides(
     if (typeof rawStyle.paddingY === "number" && Number.isFinite(rawStyle.paddingY)) {
       style.paddingY = clampNumber(rawStyle.paddingY, 0, 0, 48);
     }
+    if (typeof rawStyle.offsetX === "number" && Number.isFinite(rawStyle.offsetX)) {
+      style.offsetX = clampNumber(rawStyle.offsetX, 0, -800, 800);
+    }
+    if (typeof rawStyle.offsetY === "number" && Number.isFinite(rawStyle.offsetY)) {
+      style.offsetY = clampNumber(rawStyle.offsetY, 0, -600, 600);
+    }
+    for (const key of ["marginTop", "marginRight", "marginBottom", "marginLeft"] as const) {
+      if (typeof rawStyle[key] === "number" && Number.isFinite(rawStyle[key])) {
+        style[key] = clampNumber(rawStyle[key], 0, -200, 400);
+      }
+    }
+    if (typeof rawStyle.order === "number" && Number.isFinite(rawStyle.order)) {
+      style.order = Math.round(clampNumber(rawStyle.order, 0, -100, 100));
+    }
+    if (["auto", "start", "center", "end", "stretch"].includes(rawStyle.alignSelf as string)) {
+      style.alignSelf = rawStyle.alignSelf as NonNullable<typeof style.alignSelf>;
+    }
+    if (["auto", "start", "center", "end", "stretch"].includes(rawStyle.justifySelf as string)) {
+      style.justifySelf = rawStyle.justifySelf as NonNullable<typeof style.justifySelf>;
+    }
+    if (typeof rawStyle.zIndex === "number" && Number.isFinite(rawStyle.zIndex)) {
+      style.zIndex = Math.round(clampNumber(rawStyle.zIndex, 0, -100, 1_000));
+    }
     if (typeof rawStyle.borderWidth === "number" && Number.isFinite(rawStyle.borderWidth)) {
       style.borderWidth = clampNumber(rawStyle.borderWidth, 0, 0, 8);
     }
@@ -517,6 +585,48 @@ function normalizeElementOverrides(
     }
     if (["none", "soft", "strong", "glow"].includes(rawStyle.shadow as string)) {
       style.shadow = rawStyle.shadow as NonNullable<typeof style.shadow>;
+    }
+    for (const key of ["shadowColor", "glowColor", "outlineColor", "glassTint"] as const) {
+      if (typeof rawStyle[key] === "string" && HEX_COLOR.test(rawStyle[key])) {
+        style[key] = rawStyle[key].toLowerCase();
+      }
+    }
+    if (typeof rawStyle.shadowX === "number" && Number.isFinite(rawStyle.shadowX)) {
+      style.shadowX = clampNumber(rawStyle.shadowX, 0, -100, 100);
+    }
+    if (typeof rawStyle.shadowY === "number" && Number.isFinite(rawStyle.shadowY)) {
+      style.shadowY = clampNumber(rawStyle.shadowY, 8, -100, 100);
+    }
+    if (typeof rawStyle.shadowBlur === "number" && Number.isFinite(rawStyle.shadowBlur)) {
+      style.shadowBlur = clampNumber(rawStyle.shadowBlur, 24, 0, 160);
+    }
+    if (typeof rawStyle.shadowSpread === "number" && Number.isFinite(rawStyle.shadowSpread)) {
+      style.shadowSpread = clampNumber(rawStyle.shadowSpread, 0, -40, 80);
+    }
+    if (typeof rawStyle.glowBlur === "number" && Number.isFinite(rawStyle.glowBlur)) {
+      style.glowBlur = clampNumber(rawStyle.glowBlur, 24, 0, 160);
+    }
+    if (typeof rawStyle.glowIntensity === "number" && Number.isFinite(rawStyle.glowIntensity)) {
+      style.glowIntensity = clampNumber(rawStyle.glowIntensity, 0, 0, 1);
+    }
+    if (typeof rawStyle.backdropBlur === "number" && Number.isFinite(rawStyle.backdropBlur)) {
+      style.backdropBlur = clampNumber(rawStyle.backdropBlur, 0, 0, 80);
+    }
+    if (typeof rawStyle.outlineWidth === "number" && Number.isFinite(rawStyle.outlineWidth)) {
+      style.outlineWidth = clampNumber(rawStyle.outlineWidth, 0, 0, 12);
+    }
+    if (typeof rawStyle.outlineOffset === "number" && Number.isFinite(rawStyle.outlineOffset)) {
+      style.outlineOffset = clampNumber(rawStyle.outlineOffset, 0, -20, 40);
+    }
+    if (typeof rawStyle.grainOpacity === "number" && Number.isFinite(rawStyle.grainOpacity)) {
+      style.grainOpacity = clampNumber(rawStyle.grainOpacity, 0, 0, 0.6);
+    }
+    if (typeof rawStyle.glassEffect === "boolean") style.glassEffect = rawStyle.glassEffect;
+    if (typeof rawStyle.glassOpacity === "number" && Number.isFinite(rawStyle.glassOpacity)) {
+      style.glassOpacity = clampNumber(rawStyle.glassOpacity, 0.18, 0, 1);
+    }
+    if (typeof rawStyle.glassSaturation === "number" && Number.isFinite(rawStyle.glassSaturation)) {
+      style.glassSaturation = clampNumber(rawStyle.glassSaturation, 1.35, 0, 3);
     }
     if (typeof rawStyle.scale === "number" && Number.isFinite(rawStyle.scale)) {
       style.scale = clampNumber(rawStyle.scale, 1, 0.5, 1.5);
@@ -613,21 +723,34 @@ function normalizeElementOverrides(
       : undefined;
     const component = normalizeComponentTarget(candidate.component);
     const componentSettings = normalizeComponentOverride(candidate.componentSettings, component);
-    const hoverStyle =
-      includeHoverState && isRecord(candidate.hoverStyle)
+    const normalizeStateStyle = (key: string) =>
+      includeHoverState && isRecord(candidate[key])
         ? normalizeElementOverrides(
             [
               {
                 ...candidate,
-                style: candidate.hoverStyle,
+                style: candidate[key],
                 hoverStyle: undefined,
+                pressedStyle: undefined,
+                focusStyle: undefined,
+                disabledStyle: undefined,
+                selectedStyle: undefined,
                 text: undefined,
                 componentSettings: undefined,
+                canvasUi: undefined,
               },
             ],
             false,
           )[0]?.style
         : undefined;
+    const hoverStyle = normalizeStateStyle("hoverStyle");
+    const pressedStyle = normalizeStateStyle("pressedStyle");
+    const focusStyle = normalizeStateStyle("focusStyle");
+    const disabledStyle = normalizeStateStyle("disabledStyle");
+    const selectedStyle = normalizeStateStyle("selectedStyle");
+    const canvasUi = isRecord(candidate.canvasUi)
+      ? normalizeCanvasUiConfig(candidate.canvasUi)
+      : undefined;
     const hoverTransitionMs =
       includeHoverState &&
       typeof candidate.hoverTransitionMs === "number" &&
@@ -643,7 +766,32 @@ function normalizeElementOverrides(
             AppearanceProfile["elementOverrides"][number]["hoverEasing"]
           >)
         : undefined;
-    if (Object.keys(style).length === 0 && !hoverStyle && !hasTextOverride && !componentSettings) {
+    const stateTransitionMs =
+      includeHoverState &&
+      typeof candidate.stateTransitionMs === "number" &&
+      Number.isFinite(candidate.stateTransitionMs)
+        ? Math.round(clampNumber(candidate.stateTransitionMs, 200, 0, 2_000))
+        : undefined;
+    const stateEasing =
+      includeHoverState &&
+      ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].includes(
+        candidate.stateEasing as string,
+      )
+        ? (candidate.stateEasing as NonNullable<
+            AppearanceProfile["elementOverrides"][number]["stateEasing"]
+          >)
+        : undefined;
+    if (
+      Object.keys(style).length === 0 &&
+      !hoverStyle &&
+      !pressedStyle &&
+      !focusStyle &&
+      !disabledStyle &&
+      !selectedStyle &&
+      !hasTextOverride &&
+      !componentSettings &&
+      !canvasUi
+    ) {
       return [];
     }
 
@@ -663,7 +811,14 @@ function normalizeElementOverrides(
           ? { text: (candidate.text as string).slice(0, MAX_ELEMENT_TEXT_LENGTH) }
           : {}),
         ...(componentSettings ? { componentSettings } : {}),
+        ...(canvasUi ? { canvasUi } : {}),
         ...(hoverStyle ? { hoverStyle } : {}),
+        ...(pressedStyle ? { pressedStyle } : {}),
+        ...(focusStyle ? { focusStyle } : {}),
+        ...(disabledStyle ? { disabledStyle } : {}),
+        ...(selectedStyle ? { selectedStyle } : {}),
+        ...(stateTransitionMs !== undefined ? { stateTransitionMs } : {}),
+        ...(stateEasing ? { stateEasing } : {}),
         ...(hoverTransitionMs !== undefined ? { hoverTransitionMs } : {}),
         ...(hoverEasing ? { hoverEasing } : {}),
         style,
@@ -709,6 +864,7 @@ export function createDefaultAppearance(
     navigation: {
       legacyTabs: [],
     },
+    canvasUi: createDefaultCanvasUiConfig(),
     elementOverrides: [],
     motion: {
       enabled: true,
@@ -734,6 +890,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const typography = isRecord(record.typography) ? record.typography : {};
   const opacity = isRecord(record.opacity) ? record.opacity : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
+  const canvasUi = isRecord(record.canvasUi) ? record.canvasUi : {};
   const legacyNavigationTabs = Array.isArray(navigation.legacyTabs) ? navigation.legacyTabs : [];
   const motion = isRecord(record.motion) ? record.motion : {};
   const tabByTarget = isRecord(motion.tabByTarget) ? motion.tabByTarget : {};
@@ -797,6 +954,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
     navigation: {
       legacyTabs: TAB_ORDER.filter((tab) => legacyNavigationTabs.includes(tab)),
     },
+    canvasUi: normalizeCanvasUiConfig(canvasUi, fallback.canvasUi),
     elementOverrides: normalizeElementOverrides(record.elementOverrides),
     motion: {
       enabled: typeof motion.enabled === "boolean" ? motion.enabled : fallback.motion.enabled,

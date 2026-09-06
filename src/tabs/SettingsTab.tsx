@@ -342,7 +342,13 @@ export function SettingsTab({
             <div className="theme-switch-row">
               <span className="theme-switch-label">APPEARANCE STUDIO</span>
               <div className="theme-switch">
-                <button className="theme-switch-btn" type="button" onClick={onCustomizeAppearance}>
+                <button
+                  className="theme-switch-btn"
+                  type="button"
+                  title="Ctrl+Shift+A"
+                  aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
+                  onClick={onCustomizeAppearance}
+                >
                   EDIT DESIGN
                   <svg width="13" height="9" viewBox="0 0 13 9" fill="none" aria-hidden="true">
                     <path d="M1 4.5h10M8 1.5l3 3-3 3" stroke="currentColor" strokeWidth="1.2" />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   APPEARANCE_ELEMENT_PICKED_EVENT,
@@ -17,7 +17,11 @@ import {
   type DrawingCursorPayload,
   type WindowAnimationPreviewPayload,
 } from "./elementOverrides";
-import type { AppearanceElementTarget, AppearanceProfile } from "./types";
+import type {
+  AppearanceElementInteractionState,
+  AppearanceElementTarget,
+  AppearanceProfile,
+} from "./types";
 
 const HOVER_PREVIEW_OPACITY_PROPERTY = "--appearance-preview-element-opacity";
 import type { TabKey } from "../types";
@@ -43,13 +47,21 @@ export function useMainAppearanceRuntime({
   const pickerCleanupRef = useRef<(() => void) | null>(null);
   const appearanceRef = useRef(appearance);
   const selectionTargetsRef = useRef<AppearanceElementTarget[]>([]);
-  const selectionPreviewHoverRef = useRef(false);
+  const selectionPreviewStateRef = useRef<AppearanceElementInteractionState>("normal");
   const selectedElementsRef = useRef<HTMLElement[]>([]);
+  const [liveElementOverrides, setLiveElementOverrides] = useState(appearance.elementOverrides);
 
   const applySelectedElements = useCallback(
-    (targets: AppearanceElementTarget[], previewHover = selectionPreviewHoverRef.current) => {
+    (targets: AppearanceElementTarget[], previewState = selectionPreviewStateRef.current) => {
       selectedElementsRef.current.forEach((element) => {
-        element.classList.remove("appearance-pick-selected", "appearance-hover-preview");
+        element.classList.remove(
+          "appearance-pick-selected",
+          "appearance-hover-preview",
+          "appearance-pressed-preview",
+          "appearance-focus-preview",
+          "appearance-disabled-preview",
+          "appearance-selected-preview",
+        );
         element.style.removeProperty(HOVER_PREVIEW_OPACITY_PROPERTY);
       });
       const root = rootRef.current;
@@ -63,8 +75,10 @@ export function useMainAppearanceRuntime({
         const element = resolveElementTarget(root, target);
         if (!element) return [];
         element.classList.add("appearance-pick-selected");
-        if (previewHover) {
-          element.classList.add("appearance-hover-preview");
+        if (previewState !== "normal") {
+          element.classList.add(`appearance-${previewState}-preview`);
+        }
+        if (previewState === "hover") {
           const inheritedHoverOpacity =
             target.defaults?.hoverElementOpacity ?? target.defaults?.elementOpacity;
           if (inheritedHoverOpacity !== undefined) {
@@ -85,6 +99,7 @@ export function useMainAppearanceRuntime({
     if (!root) return;
 
     appearanceRef.current = appearance;
+    setLiveElementOverrides(appearance.elementOverrides);
     applyElementAppearanceOverrides(root, appearance.customized ? appearance.elementOverrides : []);
   }, [appearance, rootRef]);
 
@@ -102,6 +117,7 @@ export function useMainAppearanceRuntime({
         elementOverrides: event.payload.elementOverrides,
       };
       appearanceRef.current = preview;
+      setLiveElementOverrides(preview.elementOverrides);
       applyElementAppearanceOverrides(root, preview.customized ? preview.elementOverrides : []);
     })
       .then((dispose) => {
@@ -199,8 +215,9 @@ export function useMainAppearanceRuntime({
       ),
       listen<AppearanceElementSelectionPayload>(APPEARANCE_ELEMENT_SELECTION_EVENT, (event) => {
         selectionTargetsRef.current = event.payload.targets;
-        selectionPreviewHoverRef.current = event.payload.previewHover === true;
-        applySelectedElements(event.payload.targets, selectionPreviewHoverRef.current);
+        selectionPreviewStateRef.current =
+          event.payload.previewState ?? (event.payload.previewHover ? "hover" : "normal");
+        applySelectedElements(event.payload.targets, selectionPreviewStateRef.current);
       }),
       listen<DrawingCursorPayload>(APPEARANCE_DRAWING_CURSOR_EVENT, (event) =>
         onDrawingCursor(event.payload),
@@ -221,7 +238,14 @@ export function useMainAppearanceRuntime({
       pickerCleanupRef.current?.();
       pickerCleanupRef.current = null;
       selectedElementsRef.current.forEach((element) => {
-        element.classList.remove("appearance-pick-selected", "appearance-hover-preview");
+        element.classList.remove(
+          "appearance-pick-selected",
+          "appearance-hover-preview",
+          "appearance-pressed-preview",
+          "appearance-focus-preview",
+          "appearance-disabled-preview",
+          "appearance-selected-preview",
+        );
         element.style.removeProperty(HOVER_PREVIEW_OPACITY_PROPERTY);
       });
       selectedElementsRef.current = [];
@@ -234,4 +258,6 @@ export function useMainAppearanceRuntime({
     onRevealTarget,
     rootRef,
   ]);
+
+  return liveElementOverrides;
 }

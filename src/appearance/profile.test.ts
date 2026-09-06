@@ -18,6 +18,13 @@ describe("appearance profile", () => {
     expect(profile.shape.radius).toBe(0);
     expect(profile.opacity.panels).toBe(1);
     expect(profile.navigation.legacyTabs).toEqual([]);
+    expect(profile.canvasUi).toEqual({
+      enabled: false,
+      effect: "liquid",
+      renderer: "webgl",
+      assetUrl: "",
+      settings: {},
+    });
     expect(profile.motion.tabByTarget.instances).toBeTruthy();
     expect(profile.elementOverrides).toEqual([]);
     expect(profile.customized).toBe(false);
@@ -270,6 +277,174 @@ describe("appearance profile", () => {
     expect(rule).toContain("opacity: 0.85 !important");
     expect(rule).toContain("transform: rotate(0deg) scale(1.06) !important");
     expect(rule).toContain("> * { opacity: 1 !important; }");
+  });
+
+  it("normalizes and builds pressed, focus, disabled and selected visual states", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      elementOverrides: [
+        {
+          id: "element-stateful-button",
+          label: "BUTTON · STATEFUL",
+          path: [{ tag: "button", index: 0 }],
+          kind: "button",
+          style: { scale: 1 },
+          pressedStyle: { scale: 0.94 },
+          focusStyle: { outlineWidth: 3, outlineColor: "#ABCDEF" },
+          disabledStyle: { elementOpacity: 0.2 },
+          selectedStyle: { glowIntensity: 4, glowColor: "#FF5500" },
+          stateTransitionMs: 275,
+          stateEasing: "ease-in-out",
+        },
+      ],
+    });
+    const override = profile.elementOverrides[0];
+    const rule = buildElementOverrideRule(override);
+
+    expect(override).toMatchObject({
+      pressedStyle: { scale: 0.94 },
+      focusStyle: { outlineWidth: 3, outlineColor: "#abcdef" },
+      disabledStyle: { elementOpacity: 0.2 },
+      selectedStyle: { glowIntensity: 1, glowColor: "#ff5500" },
+      stateTransitionMs: 275,
+      stateEasing: "ease-in-out",
+    });
+    expect(rule).toContain(":active");
+    expect(rule).toContain(".appearance-pressed-preview");
+    expect(rule).toContain(":focus-visible");
+    expect(rule).toContain('[aria-disabled="true"]');
+    expect(rule).toContain('[aria-selected="true"]');
+    expect(rule).toContain(".appearance-selected-preview");
+    expect(rule).toContain("transition-duration: 275ms !important");
+  });
+
+  it("applies positioning, stacking and advanced material effects", () => {
+    const rule = buildElementOverrideRule({
+      id: "element-glass-card",
+      label: "DIV · GLASS",
+      path: [{ tag: "div", index: 0 }],
+      style: {
+        offsetX: 28,
+        offsetY: -12,
+        marginTop: 14,
+        marginLeft: -6,
+        order: 3,
+        alignSelf: "center",
+        justifySelf: "end",
+        zIndex: 24,
+        shadowColor: "#112233",
+        shadowX: 4,
+        shadowY: 12,
+        shadowBlur: 36,
+        shadowSpread: 2,
+        glowColor: "#55aaff",
+        glowBlur: 42,
+        glowIntensity: 0.65,
+        backdropBlur: 22,
+        outlineWidth: 2,
+        outlineColor: "#ffffff",
+        outlineOffset: 4,
+        grainOpacity: 0.18,
+        glassEffect: true,
+        glassTint: "#dcecff",
+        glassOpacity: 0.16,
+        glassSaturation: 1.5,
+      },
+    });
+
+    expect(rule).toContain("transform: translate(28px, -12px)");
+    expect(rule).toContain("margin-top: 14px !important");
+    expect(rule).toContain("margin-left: -6px !important");
+    expect(rule).toContain("order: 3 !important");
+    expect(rule).toContain("align-self: center !important");
+    expect(rule).toContain("justify-self: end !important");
+    expect(rule).toContain("z-index: 24 !important");
+    expect(rule).toContain("4px 12px 36px 2px #112233");
+    expect(rule).toContain("backdrop-filter: blur(22px) saturate(1.5) !important");
+    expect(rule).toContain("outline-width: 2px !important");
+    expect(rule).toContain("fractalNoise");
+  });
+
+  it("keeps a safe Canvas UI selection and rejects unsafe object URLs", () => {
+    const valid = normalizeAppearanceProfile({
+      canvasUi: {
+        enabled: true,
+        effect: "ascii-object",
+        renderer: "webgpu",
+        assetUrl: "https://assets.example.com/duck.glb",
+      },
+    });
+    const invalid = normalizeAppearanceProfile({
+      canvasUi: {
+        enabled: true,
+        effect: "unknown-shader",
+        renderer: "cpu",
+        assetUrl: "javascript:alert(1)",
+      },
+    });
+
+    expect(valid.canvasUi).toEqual({
+      enabled: true,
+      effect: "ascii-object",
+      renderer: "webgl",
+      assetUrl: "https://assets.example.com/duck.glb",
+      settings: {},
+    });
+    expect(invalid.canvasUi).toEqual({
+      enabled: true,
+      effect: "liquid",
+      renderer: "webgl",
+      assetUrl: "",
+      settings: {},
+    });
+  });
+
+  it("keeps tuned Canvas UI settings per effect and scopes them to picked elements", () => {
+    const profile = normalizeAppearanceProfile({
+      canvasUi: {
+        enabled: true,
+        effect: "displacement",
+        renderer: "webgpu",
+        settings: {
+          displacement: { strength: 9, threshold: -10, shift: 2.25, unknown: 42 },
+          bubble: { size: 72, follow: 0.35 },
+        },
+      },
+      elementOverrides: [
+        {
+          id: "element-canvas-card",
+          label: "DIV · LAUNCHER SETTINGS",
+          path: [{ tag: "div", index: 0 }],
+          style: {},
+          canvasUi: {
+            enabled: true,
+            effect: "bubble",
+            renderer: "webgl",
+            assetUrl: "",
+            settings: { bubble: { size: 999, follow: 0.2 } },
+          },
+        },
+      ],
+    });
+
+    expect(profile.canvasUi).toMatchObject({
+      effect: "displacement",
+      renderer: "webgl",
+      settings: {
+        displacement: { strength: 1, threshold: 0, shift: 2.25 },
+        bubble: { size: 72, follow: 0.35 },
+      },
+    });
+    expect(profile.canvasUi.settings.displacement).not.toHaveProperty("unknown");
+    expect(profile.elementOverrides[0]).toMatchObject({
+      id: "element-canvas-card",
+      style: {},
+      canvasUi: {
+        enabled: true,
+        effect: "bubble",
+        settings: { bubble: { size: 180, follow: 0.2 } },
+      },
+    });
   });
 
   it("controls an element background and its content opacity independently", () => {

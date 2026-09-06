@@ -117,6 +117,7 @@ import {
 } from "./utils/javaArgs";
 import { useAppearance } from "./appearance/useAppearance";
 import { openAppearanceStudioWindow } from "./appearance/window";
+import { isAppearanceStudioShortcut } from "./appearance/shortcut";
 import {
   getCloseAnimationDuration,
   playWindowOpeningPreview,
@@ -134,6 +135,8 @@ import {
 } from "./appearance/elementOverrides";
 import type { AppearanceElementTarget } from "./appearance/types";
 import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
+import { CanvasUiEffectHost } from "./appearance/CanvasUiEffectHost";
+import { CanvasUiElementEffects } from "./appearance/CanvasUiElementEffects";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -509,7 +512,7 @@ export default function App() {
     });
   }, []);
 
-  useMainAppearanceRuntime({
+  const liveElementOverrides = useMainAppearanceRuntime({
     rootRef: galleryRootRef,
     appearance,
     activeTab,
@@ -1405,11 +1408,22 @@ export default function App() {
     beginClose(appearance.motion.closeButton);
   };
 
-  const handleCustomizeAppearance = () => {
+  const handleCustomizeAppearance = useCallback(() => {
     void openAppearanceStudioWindow().catch((error) => {
       pushToast("error", toErrorMessage(error), { title: "Couldn't open Appearance Studio" });
     });
-  };
+  }, [pushToast]);
+
+  useEffect(() => {
+    const openStudioFromShortcut = (event: KeyboardEvent) => {
+      if (event.repeat || !isAppearanceStudioShortcut(event)) return;
+      event.preventDefault();
+      handleCustomizeAppearance();
+    };
+
+    window.addEventListener("keydown", openStudioFromShortcut);
+    return () => window.removeEventListener("keydown", openStudioFromShortcut);
+  }, [handleCustomizeAppearance]);
 
   const handleMaximize = async () => {
     const isMax = await win.isMaximized();
@@ -2339,6 +2353,16 @@ export default function App() {
       "--drawing-brush-color": drawingCursor.color,
     } as CSSProperties;
   }
+  const canvasMainUI = (
+    <CanvasUiEffectHost
+      config={{
+        ...appearance.canvasUi,
+        enabled: appearance.customized && appearance.canvasUi.enabled,
+      }}
+    >
+      {mainUI}
+    </CanvasUiEffectHost>
+  );
 
   return (
     <RuntimeMonitorScope controller={runtimeMonitor}>
@@ -2404,7 +2428,7 @@ export default function App() {
             );
           })()}
         {!renderedCloseEffect ? (
-          mainUI
+          canvasMainUI
         ) : renderedCloseEffect === "tear" ? (
           <>
             <div
@@ -2444,6 +2468,14 @@ export default function App() {
           </div>
         ) : (
           mainUI
+        )}
+
+        {appearance.customized && (
+          <CanvasUiElementEffects
+            rootRef={galleryRootRef}
+            overrides={liveElementOverrides}
+            activeTab={activeTab}
+          />
         )}
 
         {buildCardSettingsOpen && (

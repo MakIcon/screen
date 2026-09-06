@@ -6,6 +6,7 @@ import { PlaceholderTemplateEditor } from "./PlaceholderTemplateEditor";
 import type {
   AppearanceCheckboxSettings,
   AppearanceDropdownSettings,
+  AppearanceElementAlignment,
   AppearanceElementComponentOverride,
   AppearanceElementHoverEasing,
   AppearanceElementInteractionState,
@@ -18,6 +19,7 @@ import type {
   AppearanceSliderSettings,
   AppearanceToggleSettings,
 } from "./types";
+import { getElementStateStyle } from "./elementState";
 
 const TEXT_ALIGNMENTS: readonly { id: AppearanceElementTextAlign; label: string }[] = [
   { id: "left", label: "LEFT" },
@@ -37,6 +39,14 @@ const LAYOUTS: readonly { id: AppearanceElementLayout; label: string }[] = [
   { id: "row", label: "FLEX ROW" },
   { id: "column", label: "FLEX COLUMN" },
   { id: "grid", label: "GRID" },
+];
+
+const ALIGNMENTS: readonly { id: AppearanceElementAlignment; label: string }[] = [
+  { id: "auto", label: "AUTO / PARENT DEFAULT" },
+  { id: "start", label: "START" },
+  { id: "center", label: "CENTER" },
+  { id: "end", label: "END" },
+  { id: "stretch", label: "STRETCH" },
 ];
 
 const HOVER_EASINGS: readonly { id: AppearanceElementHoverEasing; label: string }[] = [
@@ -124,16 +134,16 @@ type ElementInspectorProps = {
   override?: AppearanceElementOverride;
   visualStyle?: AppearanceElementOverride["style"];
   interactionState: AppearanceElementInteractionState;
-  hoverTransitionMs: number;
-  hoverEasing: AppearanceElementHoverEasing;
+  stateTransitionMs: number;
+  stateEasing: AppearanceElementHoverEasing;
   profile: AppearanceProfile;
   onPick: () => void;
   onStyleChange: (style: Partial<AppearanceElementOverride["style"]>) => void;
   onTextChange: (text: string | undefined) => void;
   onComponentChange: (settings: AppearanceElementComponentOverride) => void;
-  onHoverTransitionChange: (patch: {
-    hoverTransitionMs?: number;
-    hoverEasing?: AppearanceElementHoverEasing;
+  onStateTransitionChange: (patch: {
+    stateTransitionMs?: number;
+    stateEasing?: AppearanceElementHoverEasing;
   }) => void;
 };
 
@@ -142,19 +152,19 @@ export function ElementInspector({
   override,
   visualStyle,
   interactionState,
-  hoverTransitionMs,
-  hoverEasing,
+  stateTransitionMs,
+  stateEasing,
   profile,
   onPick,
   onStyleChange,
   onTextChange,
   onComponentChange,
-  onHoverTransitionChange,
+  onStateTransitionChange,
 }: ElementInspectorProps) {
   if (!target) {
     return (
       <div className="appearance-element-empty">
-        <span>08 / ELEMENT INSPECTOR</span>
+        <span>09 / ELEMENT INSPECTOR</span>
         <strong>PICK ANY OBJECT IN THE LAUNCHER</strong>
         <p>
           Select a button, title, card or control. Its text and visual settings will appear here and
@@ -168,8 +178,7 @@ export function ElementInspector({
   }
 
   const style = visualStyle;
-  const activeInteractionStyle =
-    interactionState === "hover" ? override?.hoverStyle : override?.style;
+  const activeInteractionStyle = getElementStateStyle(override, interactionState);
   const inheritedElementOpacity =
     interactionState === "hover"
       ? (target.defaults?.hoverElementOpacity ?? target.defaults?.elementOpacity ?? 1)
@@ -180,7 +189,7 @@ export function ElementInspector({
     activeInteractionStyle?.elementOpacity !== undefined ||
     activeInteractionStyle?.opacity !== undefined
       ? ""
-      : interactionState === "hover" &&
+      : interactionState !== "normal" &&
           (override?.style.elementOpacity !== undefined || override?.style.opacity !== undefined)
         ? " · FROM NORMAL"
         : " · LAUNCHER DEFAULT";
@@ -325,26 +334,26 @@ export function ElementInspector({
         <small>{target.id}</small>
       </div>
 
-      {interactionState === "hover" && (
+      {interactionState !== "normal" && (
         <Section
-          title="HOVER TRANSITION"
+          title={`${interactionState.toUpperCase()} TRANSITION`}
           note="The launcher pins this state on the selected element while you edit it. Zero milliseconds makes the change instant."
         >
           <RangeField
             label="DURATION"
-            value={hoverTransitionMs}
+            value={stateTransitionMs}
             min={0}
             max={2_000}
             step={25}
             suffix=" MS"
             defaultValue={200}
-            onChange={(hoverTransitionMs) => onHoverTransitionChange({ hoverTransitionMs })}
+            onChange={(stateTransitionMs) => onStateTransitionChange({ stateTransitionMs })}
           />
           <SelectField
             label="EASING"
-            value={hoverEasing}
+            value={stateEasing}
             options={HOVER_EASINGS}
-            onChange={(hoverEasing) => onHoverTransitionChange({ hoverEasing })}
+            onChange={(stateEasing) => onStateTransitionChange({ stateEasing })}
           />
         </Section>
       )}
@@ -849,6 +858,98 @@ export function ElementInspector({
         </Section>
       )}
 
+      <Section
+        title="POSITION & STACKING"
+        note="Offsets move the element visually without removing it from layout. Margins, order and alignment participate in the parent layout."
+      >
+        <div className="studio-field-grid">
+          <RangeField
+            label="X OFFSET"
+            value={style?.offsetX ?? 0}
+            min={-800}
+            max={800}
+            step={1}
+            suffix=" PX"
+            onChange={(offsetX) => onStyleChange({ offsetX })}
+          />
+          <RangeField
+            label="Y OFFSET"
+            value={style?.offsetY ?? 0}
+            min={-600}
+            max={600}
+            step={1}
+            suffix=" PX"
+            onChange={(offsetY) => onStyleChange({ offsetY })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <RangeField
+            label="MARGIN TOP"
+            value={style?.marginTop ?? 0}
+            min={-200}
+            max={400}
+            suffix=" PX"
+            onChange={(marginTop) => onStyleChange({ marginTop })}
+          />
+          <RangeField
+            label="MARGIN RIGHT"
+            value={style?.marginRight ?? 0}
+            min={-200}
+            max={400}
+            suffix=" PX"
+            onChange={(marginRight) => onStyleChange({ marginRight })}
+          />
+          <RangeField
+            label="MARGIN BOTTOM"
+            value={style?.marginBottom ?? 0}
+            min={-200}
+            max={400}
+            suffix=" PX"
+            onChange={(marginBottom) => onStyleChange({ marginBottom })}
+          />
+          <RangeField
+            label="MARGIN LEFT"
+            value={style?.marginLeft ?? 0}
+            min={-200}
+            max={400}
+            suffix=" PX"
+            onChange={(marginLeft) => onStyleChange({ marginLeft })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <RangeField
+            label="ORDER"
+            value={style?.order ?? 0}
+            min={-100}
+            max={100}
+            step={1}
+            onChange={(order) => onStyleChange({ order })}
+          />
+          <RangeField
+            label="Z-INDEX"
+            value={style?.zIndex ?? 0}
+            min={-100}
+            max={1000}
+            step={1}
+            onChange={(zIndex) => onStyleChange({ zIndex })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <SelectField
+            label="ALIGN SELF"
+            value={style?.alignSelf ?? "auto"}
+            options={ALIGNMENTS}
+            onChange={(alignSelf) => onStyleChange({ alignSelf })}
+          />
+          <SelectField
+            label="JUSTIFY SELF"
+            value={style?.justifySelf ?? "auto"}
+            options={ALIGNMENTS}
+            onChange={(justifySelf) => onStyleChange({ justifySelf })}
+          />
+        </div>
+      </Section>
+
       {target.kind === "list" && (
         <Section
           title="CHILD LAYOUT"
@@ -880,13 +981,153 @@ export function ElementInspector({
         </Section>
       )}
 
-      <Section title="EFFECTS" note="Transform and shadow use the selected NORMAL or HOVER state.">
+      <Section
+        title="ADVANCED EFFECTS"
+        note={`Every value belongs to the selected ${interactionState.toUpperCase()} state.`}
+      >
         <SelectField
-          label="SHADOW"
+          label="SHADOW PRESET"
           value={style?.shadow ?? "none"}
           options={SHADOWS}
           onChange={(shadow) => onStyleChange({ shadow })}
         />
+        <div className="studio-color-grid">
+          <ColorField
+            label="CUSTOM SHADOW"
+            value={style?.shadowColor ?? "#000000"}
+            onChange={(shadowColor) => onStyleChange({ shadowColor })}
+          />
+          <ColorField
+            label="GLOW"
+            value={style?.glowColor ?? profile.colors.accent}
+            onChange={(glowColor) => onStyleChange({ glowColor })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <RangeField
+            label="SHADOW X"
+            value={style?.shadowX ?? 0}
+            min={-100}
+            max={100}
+            suffix=" PX"
+            onChange={(shadowX) => onStyleChange({ shadowX })}
+          />
+          <RangeField
+            label="SHADOW Y"
+            value={style?.shadowY ?? 8}
+            min={-100}
+            max={100}
+            suffix=" PX"
+            onChange={(shadowY) => onStyleChange({ shadowY })}
+          />
+          <RangeField
+            label="SHADOW BLUR"
+            value={style?.shadowBlur ?? 24}
+            min={0}
+            max={160}
+            suffix=" PX"
+            onChange={(shadowBlur) => onStyleChange({ shadowBlur })}
+          />
+          <RangeField
+            label="SHADOW SPREAD"
+            value={style?.shadowSpread ?? 0}
+            min={-40}
+            max={80}
+            suffix=" PX"
+            onChange={(shadowSpread) => onStyleChange({ shadowSpread })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <RangeField
+            label="GLOW INTENSITY"
+            value={style?.glowIntensity ?? 0}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(glowIntensity) => onStyleChange({ glowIntensity })}
+          />
+          <RangeField
+            label="GLOW BLUR"
+            value={style?.glowBlur ?? 24}
+            min={0}
+            max={160}
+            suffix=" PX"
+            onChange={(glowBlur) => onStyleChange({ glowBlur })}
+          />
+        </div>
+        <div className="studio-color-grid">
+          <ColorField
+            label="OUTLINE"
+            value={style?.outlineColor ?? profile.colors.accent}
+            onChange={(outlineColor) => onStyleChange({ outlineColor })}
+          />
+          <ColorField
+            label="GLASS TINT"
+            value={style?.glassTint ?? profile.colors.surface}
+            onChange={(glassTint) => onStyleChange({ glassTint })}
+          />
+        </div>
+        <div className="studio-field-grid">
+          <RangeField
+            label="OUTLINE WIDTH"
+            value={style?.outlineWidth ?? 0}
+            min={0}
+            max={12}
+            step={0.5}
+            suffix=" PX"
+            onChange={(outlineWidth) => onStyleChange({ outlineWidth })}
+          />
+          <RangeField
+            label="OUTLINE OFFSET"
+            value={style?.outlineOffset ?? 0}
+            min={-20}
+            max={40}
+            suffix=" PX"
+            onChange={(outlineOffset) => onStyleChange({ outlineOffset })}
+          />
+          <RangeField
+            label="BACKDROP BLUR"
+            value={style?.backdropBlur ?? 0}
+            min={0}
+            max={80}
+            suffix=" PX"
+            onChange={(backdropBlur) => onStyleChange({ backdropBlur })}
+          />
+          <RangeField
+            label="GRAIN / NOISE"
+            value={style?.grainOpacity ?? 0}
+            min={0}
+            max={0.6}
+            step={0.01}
+            onChange={(grainOpacity) => onStyleChange({ grainOpacity })}
+          />
+        </div>
+        <SelectField
+          label="GLASS EFFECT"
+          value={style?.glassEffect ? "on" : "off"}
+          options={BOOLEAN_OPTIONS}
+          onChange={(value) => onStyleChange({ glassEffect: value === "on" })}
+        />
+        {style?.glassEffect && (
+          <div className="studio-field-grid">
+            <RangeField
+              label="GLASS OPACITY"
+              value={style.glassOpacity ?? 0.18}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={(glassOpacity) => onStyleChange({ glassOpacity })}
+            />
+            <RangeField
+              label="GLASS SATURATION"
+              value={style.glassSaturation ?? 1.35}
+              min={0}
+              max={3}
+              step={0.05}
+              onChange={(glassSaturation) => onStyleChange({ glassSaturation })}
+            />
+          </div>
+        )}
         <RangeField
           label="SCALE"
           value={style?.scale ?? 1}
