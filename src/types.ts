@@ -486,6 +486,25 @@ export type ImportInstancePayload = {
   resourcePacks: ExportedItem[];
 };
 
+export type ImportContentResult = {
+  category: "mods" | "shaders" | "resourcePacks";
+  item: ExportedItem;
+  success: boolean;
+  message: string;
+};
+
+export type ImportInstanceResult = {
+  instance: InstanceItem;
+  items: ImportContentResult[];
+};
+
+export type WorldBackupInfo = {
+  id: string;
+  instanceId: string;
+  createdAt: string;
+  worldCount: number;
+};
+
 export type BuildRuntimeSettingsDraft = {
   ram: number;
   javaArgs: string;

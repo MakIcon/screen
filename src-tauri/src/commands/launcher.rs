@@ -185,27 +185,46 @@ pub async fn launch_instance(
     };
 
     update_instance_status(&instance.id, "UPDATING").await?;
-    install_instance_files(&app, &instance).await?;
-    let settings = read_settings().await?;
-    crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java)
+    let launch_result = async {
+        install_instance_files(&app, &instance).await?;
+        let settings = read_settings().await?;
+        crate::minecraft::ensure_java_for_instance(&app, &instance, settings.auto_download_java)
+            .await?;
+        let obs_jvm_args = prepare_obs_telemetry_for_launch(
+            &app,
+            &obs_telemetry_state,
+            &settings.plugins.obs_telemetry,
+            &instance,
+        )
         .await?;
-    let obs_jvm_args = prepare_obs_telemetry_for_launch(
-        &app,
-        &obs_telemetry_state,
-        &settings.plugins.obs_telemetry,
-        &instance,
-    )
-    .await?;
-    let (java_bin, args) = build_launch_command(
-        &app,
-        &instance,
-        &nickname,
-        ms_account.as_ref(),
-        settings.optimized_java_args,
-        &obs_jvm_args,
-    )
-    .await?;
-    let pid = spawn_minecraft_and_persist(app, &instance, java_bin, args).await?;
+        let (java_bin, args) = build_launch_command(
+            &app,
+            &instance,
+            &nickname,
+            ms_account.as_ref(),
+            settings.optimized_java_args,
+            &obs_jvm_args,
+        )
+        .await?;
+        spawn_minecraft_and_persist(app, &instance, java_bin, args).await
+    }
+    .await;
+    let pid = match launch_result {
+        Ok(pid) => pid,
+        Err(error) => {
+            let previous_status = if instance.status == "UPDATING" {
+                "EMPTY"
+            } else {
+                &instance.status
+            };
+            if let Err(status_error) = update_instance_status(&instance.id, previous_status).await {
+                return Err(format!(
+                    "{error}; could not reset build status: {status_error}"
+                ));
+            }
+            return Err(error);
+        }
+    };
 
     Ok(ActionResult {
         ok: true,

@@ -1,5 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { ExportedItem, InstanceExportData, InstanceItem } from "../../types";
+import type {
+  ExportedItem,
+  ImportInstanceResult,
+  InstanceExportData,
+  InstanceItem,
+} from "../../types";
 import {
   formatJavaArgsMeta,
   formatWindowSettingsMeta,
@@ -40,6 +45,7 @@ type InstanceTransferModalsProps = CommonPreviewProps & {
   setImportCustomName: Dispatch<SetStateAction<string>>;
   importWorking: boolean;
   importError: string;
+  importResult: ImportInstanceResult | null;
   setImportError: Dispatch<SetStateAction<string>>;
   setImportSourcePath: Dispatch<SetStateAction<string>>;
   importSourceFormat: "slbuild" | "mrpack";
@@ -277,50 +283,82 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
         <p className="confirm-title">{props.importData?.name || "НОВАЯ СБОРКА"}</p>
         {props.importData ? (
           <>
-            <div className="eximp-options">
-              {rows.map(({ key, label, meta, disabled, items }) => {
-                const ownerId = `import-${key}`;
-                return (
-                  <div key={key}>
-                    <div
-                      className={`eximp-option${disabled ? " disabled" : ""}`}
-                      data-list-preview-owner={ownerId}
-                      onClick={() => !disabled && toggle(key)}
-                      onMouseEnter={(event) =>
-                        attachPreview(event, items, label, ownerId, props.previewProps)
-                      }
-                      onMouseLeave={(event) => detachPreview(event, ownerId, props.previewProps)}
-                    >
-                      <OptionToggle
-                        enabled={props.importOptions[key] && !disabled}
-                        onToggle={() => !disabled && toggle(key)}
-                        disabled={disabled}
-                      />
-                      <span className="eximp-option-label">{label}</span>
-                      <span className="eximp-option-meta">
-                        {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
-                        {meta}
-                      </span>
-                    </div>
-                    {key === "name" && !props.importOptions.name && (
-                      <div className="eximp-name-input-wrap">
-                        <input
-                          placeholder="Введите название сборки"
-                          value={props.importCustomName}
-                          onChange={(event) => props.setImportCustomName(event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
+            {!props.importResult && (
+              <div className="eximp-options">
+                {rows.map(({ key, label, meta, disabled, items }) => {
+                  const ownerId = `import-${key}`;
+                  return (
+                    <div key={key}>
+                      <div
+                        className={`eximp-option${disabled ? " disabled" : ""}`}
+                        data-list-preview-owner={ownerId}
+                        onClick={() => !disabled && toggle(key)}
+                        onMouseEnter={(event) =>
+                          attachPreview(event, items, label, ownerId, props.previewProps)
+                        }
+                        onMouseLeave={(event) => detachPreview(event, ownerId, props.previewProps)}
+                      >
+                        <OptionToggle
+                          enabled={props.importOptions[key] && !disabled}
+                          onToggle={() => !disabled && toggle(key)}
+                          disabled={disabled}
                         />
+                        <span className="eximp-option-label">{label}</span>
+                        <span className="eximp-option-meta">
+                          {items && items.length > 0 && (
+                            <span className="eximp-alt-hint">alt </span>
+                          )}
+                          {meta}
+                        </span>
                       </div>
-                    )}
+                      {key === "name" && !props.importOptions.name && (
+                        <div className="eximp-name-input-wrap">
+                          <input
+                            placeholder="Введите название сборки"
+                            value={props.importCustomName}
+                            onChange={(event) => props.setImportCustomName(event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!props.importResult && (
+              <p className="eximp-notice">
+                {props.importSourceFormat === "mrpack"
+                  ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
+                  : "Version and loader come from the file. Modrinth projects will be downloaded again."}
+              </p>
+            )}
+            {props.importResult && (
+              <div className="eximp-import-results" role="status">
+                <p className="eximp-notice">
+                  Сборка создана. Установлено{" "}
+                  {props.importResult.items.filter((item) => item.success).length}
+                  {" / "}
+                  {props.importResult.items.length} компонентов.
+                </p>
+                {props.importResult.items.map((result, index) => (
+                  <div
+                    className={`eximp-import-result ${result.success ? "success" : "error"}`}
+                    key={`${result.category}-${result.item.projectId ?? result.item.title}-${index}`}
+                  >
+                    <strong>
+                      {result.success ? "✓" : "!"} {result.item.title}
+                    </strong>
+                    <span>
+                      {result.category === "resourcePacks"
+                        ? "PACKS"
+                        : result.category.toUpperCase()}{" "}
+                      · {result.success ? "Установлено" : result.message}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-            <p className="eximp-notice">
-              {props.importSourceFormat === "mrpack"
-                ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
-                : "Version and loader come from the file. Modrinth projects will be downloaded again."}
-            </p>
+                ))}
+              </div>
+            )}
             {props.importError && (
               <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
                 {props.importError}
@@ -333,11 +371,22 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 type="button"
                 disabled={
                   props.importWorking ||
-                  (!props.importOptions.name && !props.importCustomName.trim())
+                  (!props.importResult &&
+                    !props.importOptions.name &&
+                    !props.importCustomName.trim())
                 }
                 onClick={props.onImportConfirm}
               >
-                {props.importWorking ? "WORKING..." : "IMPORT"}
+                {props.importWorking
+                  ? "WORKING..."
+                  : props.importResult
+                    ? props.importResult.items.some(
+                        (item) =>
+                          !item.success && item.item.source === "modrinth" && !!item.item.projectId,
+                      )
+                      ? "RETRY FAILED"
+                      : "DONE"
+                    : "IMPORT"}
               </button>
               <button
                 className="ghost-action"

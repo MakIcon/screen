@@ -1108,6 +1108,22 @@ pub struct ImportInstancePayload {
     pub resource_packs: Vec<ExportedItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportContentResult {
+    pub category: String,
+    pub item: ExportedItem,
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportInstanceResult {
+    pub instance: InstanceItem,
+    pub items: Vec<ImportContentResult>,
+}
+
 #[cfg(test)]
 mod loader_schema_tests {
     use super::{

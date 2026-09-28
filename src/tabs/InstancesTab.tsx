@@ -58,6 +58,7 @@ interface InstancesTabProps {
   working: boolean;
   busyMessage: string;
   actionError: string;
+  failedBuildAction: { id: string; action: "install" | "launch" } | null;
   installProgress: InstallProgressPayload | null;
   dragOverInstanceId: string | null;
   dragContentActive: boolean;
@@ -95,6 +96,8 @@ interface InstancesTabProps {
   handleDeleteInstance: (id: string) => void;
   handleExportInstance: (id: string) => void;
   handleImportBuild: () => void;
+  onOpenTrash: () => void;
+  onOpenWorldBackups: (id: string) => void;
   handleOpenFolder: () => Promise<void>;
   handleRenameInstance: (id: string, name: string) => Promise<boolean>;
   handleTogglePin: (id: string, pinned: boolean) => Promise<boolean>;
@@ -166,6 +169,7 @@ export function InstancesTab({
   working,
   busyMessage,
   actionError,
+  failedBuildAction,
   installProgress,
   dragOverInstanceId,
   dragContentActive,
@@ -187,6 +191,8 @@ export function InstancesTab({
   handleDeleteInstance,
   handleExportInstance,
   handleImportBuild,
+  onOpenTrash,
+  onOpenWorldBackups,
   handleOpenFolder,
   handleRenameInstance,
   handleTogglePin,
@@ -249,6 +255,22 @@ export function InstancesTab({
               style={{ display: "flex", gap: 8, alignItems: "center" }}
               data-guide-target="build-library-actions"
             >
+              <button
+                className="ghost-action icon-square-action"
+                type="button"
+                title="Корзина сборок"
+                aria-label="Корзина сборок"
+                onClick={onOpenTrash}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
               <button
                 className="ghost-action icon-square-action"
                 type="button"
@@ -586,7 +608,18 @@ export function InstancesTab({
               </>
             ) : (
               <>
-                <span className="panel-label">BUILD CONFIGURATION</span>
+                <div className="card-topline">
+                  <span className="panel-label">BUILD CONFIGURATION</span>
+                  {selectedInstance && (
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={() => onOpenWorldBackups(selectedInstance.id)}
+                    >
+                      WORLD BACKUPS
+                    </button>
+                  )}
+                </div>
 
                 {selectedInstance && (
                   <div className="build-identity-row">
@@ -824,6 +857,9 @@ export function InstancesTab({
                       className="ghost-action icon-square-action trash-action"
                       type="button"
                       title="Удалить сборку"
+                      disabled={
+                        working || (selectedInstance ? isRunning(selectedInstance.id) : false)
+                      }
                       data-mascot-instance-id={selectedInstance?.id}
                       data-mascot-instance-name={selectedInstance?.name}
                       onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
@@ -858,6 +894,21 @@ export function InstancesTab({
                   <p className="panel-text" style={{ color: "var(--accent)" }}>
                     {actionError}
                   </p>
+                )}
+                {actionError && failedBuildAction && failedBuildAction.id === selectedInstance?.id && !working && (
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() =>
+                      void (failedBuildAction.action === "install"
+                        ? handleInstallSelected()
+                        : handleLaunchSelected())
+                    }
+                  >
+                    {failedBuildAction.action === "install"
+                      ? "ПОВТОРИТЬ УСТАНОВКУ"
+                      : "ПОВТОРИТЬ ЗАПУСК"}
+                  </button>
                 )}
               </div>
             </div>

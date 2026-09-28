@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod backups;
 pub mod content;
 pub mod instances;
 pub mod launcher;

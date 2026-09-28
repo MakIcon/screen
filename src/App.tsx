@@ -74,6 +74,7 @@ import type {
   MinecraftManifest,
   TabKey,
   UpdateInstancePayload,
+  WorldBackupInfo,
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
 import { LauncherGuide } from "./components/guide/LauncherGuide";
@@ -99,6 +100,7 @@ import { useModrinthContent, type ModrinthContentKind } from "./hooks/useModrint
 import { RuntimeMonitorScope, useRuntimeMonitorController } from "./hooks/useRuntimeMonitor";
 import { useInstanceTransfers } from "./hooks/useInstanceTransfers";
 import { InstanceTransferModals } from "./components/transfer/InstanceTransferModals";
+import { DeletedBuildsModal, WorldBackupsModal } from "./components/builds/BuildSafetyModals";
 import type { TransferHoverTarget, TransferListPreview } from "./components/transfer/types";
 import { pickPreferredInstance } from "./utils/instances";
 import { createShredPaths, createTearPath } from "./utils/closeEffects";
@@ -206,6 +208,10 @@ export default function App() {
 
   const [busyMessage, setBusyMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [failedBuildAction, setFailedBuildAction] = useState<{
+    id: string;
+    action: "install" | "launch";
+  } | null>(null);
   // Drag-and-drop overlay state: "build" → whole-launcher drop hint,
   // "content" → per-card hint on the build under the cursor.
   const [dragKind, setDragKind] = useState<null | "build" | "content">(null);
@@ -368,6 +374,14 @@ export default function App() {
 
   const [confirmPendingId, setConfirmPendingId] = useState<string | null>(null);
   const [confirmPendingName, setConfirmPendingName] = useState("");
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [deletedInstances, setDeletedInstances] = useState<InstanceItem[]>([]);
+  const [trashWorking, setTrashWorking] = useState(false);
+  const [trashError, setTrashError] = useState("");
+  const [backupsInstanceId, setBackupsInstanceId] = useState<string | null>(null);
+  const [worldBackups, setWorldBackups] = useState<WorldBackupInfo[]>([]);
+  const [backupsWorking, setBackupsWorking] = useState(false);
+  const [backupsError, setBackupsError] = useState("");
   const [mascotConfirmPendingId, setMascotConfirmPendingId] = useState<string | null>(null);
   const [mascotConfirmPendingName, setMascotConfirmPendingName] = useState("");
   const [mascotHiddenInstanceIds, setMascotHiddenInstanceIds] = useState<string[]>([]);
@@ -1346,6 +1360,7 @@ export default function App() {
     setImportCustomName,
     importWorking,
     importError,
+    importResult,
     setImportError,
     setImportSourcePath,
     importSourceFormat,
@@ -1675,6 +1690,7 @@ export default function App() {
     try {
       setWorking(true);
       setActionError("");
+      setFailedBuildAction(null);
       setInstallProgress({
         phase: "prepare",
         current: 0,
@@ -1700,8 +1716,12 @@ export default function App() {
       });
     } catch (error) {
       logger.error(error);
+      setFailedBuildAction({ id: selectedInstance.id, action: "install" });
       setActionError(toErrorMessage(error));
       pushToast("error", toErrorMessage(error), { title: "Install failed" });
+      await refreshInstances(selectedInstance.id).catch((refreshError) =>
+        logger.error(refreshError),
+      );
     } finally {
       setWorking(false);
       window.setTimeout(() => {
@@ -1725,6 +1745,7 @@ export default function App() {
     try {
       setWorking(true);
       setActionError("");
+      setFailedBuildAction(null);
       setInstallProgress({
         phase: "prepare",
         current: 0,
@@ -1757,8 +1778,10 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       const message = toErrorMessage(error);
+      setFailedBuildAction({ id: target.id, action: "launch" });
       setActionError(message);
       pushToast("error", message, { title: `${target.name} failed to start` });
+      await refreshInstances(target.id).catch((refreshError) => logger.error(refreshError));
       void openBuildLogs(target.id, {
         instanceId: target.id,
         instanceName: target.name,
@@ -1823,6 +1846,13 @@ export default function App() {
   };
 
   const handleDeleteInstance = async (instanceId: string) => {
+    if (working) return;
+    if (isRunning(instanceId)) {
+      pushToast("warning", "Сначала останови игру, затем перемести сборку в корзину.", {
+        title: "Build is running",
+      });
+      return;
+    }
     const inst = instances.find((i) => i.id === instanceId);
     setConfirmPendingId(instanceId);
     setConfirmPendingName(inst?.name ?? instanceId);
@@ -1837,19 +1867,105 @@ export default function App() {
     try {
       await invoke("delete_instance", { instanceId: id });
       removeRunning(id);
-
-      if (buildCardAppearances[id]) {
-        const nextAppearances = { ...buildCardAppearances };
-        delete nextAppearances[id];
-        await persistBuildCardAppearances(nextAppearances);
-      }
-
-      pushToast("info", `Сборка ${deletedName} удалена`.trim(), { title: "Build deleted" });
+      pushToast("info", `Сборка ${deletedName} перемещена в корзину`.trim(), {
+        title: "Build moved to trash",
+      });
       await refreshInstances();
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
       pushToast("error", toErrorMessage(error), { title: "Delete failed" });
+    }
+  };
+
+  const openTrash = async () => {
+    setTrashOpen(true);
+    setTrashError("");
+    try {
+      setDeletedInstances(await invoke<InstanceItem[]>("list_deleted_instances"));
+    } catch (error) {
+      setTrashError(toErrorMessage(error));
+    }
+  };
+
+  const restoreDeleted = async (id: string) => {
+    setTrashWorking(true);
+    setTrashError("");
+    try {
+      const restored = await invoke<InstanceItem>("restore_instance", { instanceId: id });
+      setDeletedInstances(await invoke<InstanceItem[]>("list_deleted_instances"));
+      await refreshInstances(restored.id);
+      pushToast("info", `Сборка ${restored.name} восстановлена`, { title: "Build restored" });
+    } catch (error) {
+      setTrashError(toErrorMessage(error));
+    } finally {
+      setTrashWorking(false);
+    }
+  };
+
+  const purgeDeleted = async (id: string) => {
+    setTrashWorking(true);
+    setTrashError("");
+    try {
+      await invoke("purge_deleted_instance", { instanceId: id });
+      setDeletedInstances(await invoke<InstanceItem[]>("list_deleted_instances"));
+      if (buildCardAppearances[id]) {
+        const nextAppearances = { ...buildCardAppearances };
+        delete nextAppearances[id];
+        await persistBuildCardAppearances(nextAppearances);
+      }
+      pushToast("info", "Сборка удалена окончательно", { title: "Build deleted" });
+    } catch (error) {
+      setTrashError(toErrorMessage(error));
+    } finally {
+      setTrashWorking(false);
+    }
+  };
+
+  const openWorldBackups = async (id: string) => {
+    setBackupsInstanceId(id);
+    setBackupsError("");
+    setWorldBackups([]);
+    try {
+      setWorldBackups(await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: id }));
+    } catch (error) {
+      setBackupsError(toErrorMessage(error));
+    }
+  };
+
+  const createWorldBackup = async () => {
+    if (!backupsInstanceId || isRunning(backupsInstanceId)) return;
+    setBackupsWorking(true);
+    setBackupsError("");
+    try {
+      await invoke<WorldBackupInfo>("create_world_backup", { instanceId: backupsInstanceId });
+      setWorldBackups(
+        await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: backupsInstanceId }),
+      );
+      pushToast("info", "Резервная копия миров создана", { title: "World backup" });
+    } catch (error) {
+      setBackupsError(toErrorMessage(error));
+    } finally {
+      setBackupsWorking(false);
+    }
+  };
+
+  const restoreWorldBackup = async (backupId: string) => {
+    if (!backupsInstanceId || isRunning(backupsInstanceId)) return;
+    setBackupsWorking(true);
+    setBackupsError("");
+    try {
+      await invoke("restore_world_backup", { instanceId: backupsInstanceId, backupId });
+      setWorldBackups(
+        await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: backupsInstanceId }),
+      );
+      pushToast("info", "Миры восстановлены; предыдущие миры сохранены отдельной копией", {
+        title: "Worlds restored",
+      });
+    } catch (error) {
+      setBackupsError(toErrorMessage(error));
+    } finally {
+      setBackupsWorking(false);
     }
   };
 
@@ -2030,6 +2146,7 @@ export default function App() {
             working={working}
             busyMessage={busyMessage}
             actionError={actionError}
+            failedBuildAction={failedBuildAction}
             installProgress={installProgress}
             dragOverInstanceId={dragOverInstanceId}
             dragContentActive={dragKind === "content"}
@@ -2055,6 +2172,8 @@ export default function App() {
             handleDeleteInstance={handleDeleteInstance}
             handleExportInstance={handleExportInstance}
             handleImportBuild={handleImportBuild}
+            onOpenTrash={() => void openTrash()}
+            onOpenWorldBackups={(id) => void openWorldBackups(id)}
             handleOpenFolder={handleOpenFolder}
             handleRenameInstance={(id, name) => updateInstanceIdentity(id, { name })}
             handleTogglePin={(id, pinned) => updateInstanceIdentity(id, { pinned })}
@@ -2551,14 +2670,17 @@ export default function App() {
             <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
               <span className="confirm-label">DELETE BUILD</span>
               <p className="confirm-title">{confirmPendingName}</p>
-              <p className="confirm-body">Все файлы сборки будут удалены с диска безвозвратно.</p>
+              <p className="confirm-body">
+                Сборка будет скрыта из списка. Файлы останутся на диске, и сборку можно будет
+                восстановить из корзины.
+              </p>
               <div className="confirm-actions">
                 <button
                   className="primary-action kill-action confirm-btn-delete"
                   type="button"
                   onClick={handleDeleteConfirmed}
                 >
-                  DELETE
+                  MOVE TO TRASH
                 </button>
                 <button
                   className="ghost-action"
@@ -2574,6 +2696,33 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {trashOpen && (
+          <DeletedBuildsModal
+            items={deletedInstances}
+            working={trashWorking}
+            error={trashError}
+            onClose={() => setTrashOpen(false)}
+            onRestore={(id) => void restoreDeleted(id)}
+            onPurge={(id) => void purgeDeleted(id)}
+          />
+        )}
+        {backupsInstanceId &&
+          (() => {
+            const instance = instances.find((item) => item.id === backupsInstanceId);
+            return instance ? (
+              <WorldBackupsModal
+                instance={instance}
+                backups={worldBackups}
+                working={backupsWorking}
+                running={isRunning(instance.id)}
+                error={backupsError}
+                onClose={() => setBackupsInstanceId(null)}
+                onCreate={() => void createWorldBackup()}
+                onRestore={(id) => void restoreWorldBackup(id)}
+              />
+            ) : null;
+          })()}
 
         {/* ── Export modal ── */}
         {mascotConfirmPendingId && (
@@ -2633,6 +2782,7 @@ export default function App() {
           setImportCustomName={setImportCustomName}
           importWorking={importWorking}
           importError={importError}
+          importResult={importResult}
           setImportError={setImportError}
           setImportSourcePath={setImportSourcePath}
           importSourceFormat={importSourceFormat}

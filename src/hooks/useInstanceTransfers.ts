@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { ExportedItem, InstanceExportData, InstanceItem } from "../types";
+import type {
+  ExportedItem,
+  ImportContentResult,
+  ImportInstanceResult,
+  InstanceExportData,
+  InstanceItem,
+} from "../types";
 import type { InstanceTransferOptions } from "../components/transfer/types";
 import type { PushToast } from "./useToasts";
 import { hasJavaArgsData, hasJavaPathData, hasWindowSettingsData } from "../utils/instanceTransfer";
@@ -52,6 +58,7 @@ export function useInstanceTransfers({
   const [importError, setImportError] = useState("");
   const [importSourcePath, setImportSourcePath] = useState("");
   const [importSourceFormat, setImportSourceFormat] = useState<"slbuild" | "mrpack">("slbuild");
+  const [importResult, setImportResult] = useState<ImportInstanceResult | null>(null);
 
   const handleExportInstance = async (instanceId: string) => {
     setExportInstanceId(instanceId);
@@ -172,6 +179,7 @@ export function useInstanceTransfers({
       resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
     });
     setImportError("");
+    setImportResult(null);
     setImportModalOpen(true);
   };
 
@@ -216,47 +224,89 @@ export function useInstanceTransfers({
     const name = importOptions.name ? importData.name : importCustomName;
     const ram = importOptions.ram && importData.ram ? importData.ram : defaultRamGb;
     try {
-      const newInstance =
-        importSourceFormat === "mrpack"
-          ? await invoke<InstanceItem>("import_mrpack", {
-              path: importSourcePath,
-              options: {
-                name,
-                ram,
-                javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
-                javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
-                windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
-                windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
-                fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
-                includeMods: importOptions.mods,
-                includeShaders: importOptions.shaders,
-                includeResourcePacks: importOptions.resourcePacks,
-              },
-            })
-          : await invoke<InstanceItem>("import_instance", {
-              payload: {
-                name,
-                version: importData.version,
-                loader: importData.loader,
-                loaderVersion: importData.loaderVersion ?? null,
-                ram,
-                javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
-                javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
-                windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
-                windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
-                fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
-                mods: importOptions.mods ? (importData.mods ?? []) : [],
-                shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
-                resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
-              },
-            });
-      await refreshInstances(newInstance.id);
-      setImportModalOpen(false);
-      setImportData(null);
-      setImportSourcePath("");
-      pushToast("info", `Сборка ${newInstance.name} импортирована`, {
-        title: "Build imported",
-      });
+      if (importResult) {
+        const retryable = (entry: ImportContentResult) =>
+          !entry.success && entry.item.source === "modrinth" && !!entry.item.projectId;
+        const failed = importResult.items.filter(retryable);
+        if (failed.length === 0) {
+          setImportModalOpen(false);
+          setImportData(null);
+          setImportSourcePath("");
+          return;
+        }
+        const retried = await invoke<ImportContentResult[]>("retry_import_content", {
+          instanceId: importResult.instance.id,
+          mods: failed.filter((entry) => entry.category === "mods").map((entry) => entry.item),
+          shaders: failed
+            .filter((entry) => entry.category === "shaders")
+            .map((entry) => entry.item),
+          resourcePacks: failed
+            .filter((entry) => entry.category === "resourcePacks")
+            .map((entry) => entry.item),
+        });
+        let index = 0;
+        const nextItems = importResult.items.map((entry) =>
+          retryable(entry) ? (retried[index++] ?? entry) : entry,
+        );
+        setImportResult({ ...importResult, items: nextItems });
+        await refreshInstances(importResult.instance.id);
+        if (nextItems.every((entry) => entry.success)) {
+          pushToast("info", "Все компоненты сборки установлены", { title: "Import complete" });
+        }
+        return;
+      }
+      if (importSourceFormat === "mrpack") {
+        const newInstance = await invoke<InstanceItem>("import_mrpack", {
+          path: importSourcePath,
+          options: {
+            name,
+            ram,
+            javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+            javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+            windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+            windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+            fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+            includeMods: importOptions.mods,
+            includeShaders: importOptions.shaders,
+            includeResourcePacks: importOptions.resourcePacks,
+          },
+        });
+        await refreshInstances(newInstance.id);
+        setImportModalOpen(false);
+        setImportData(null);
+        setImportSourcePath("");
+        pushToast("info", `Сборка ${newInstance.name} импортирована`, { title: "Build imported" });
+      } else {
+        const result = await invoke<ImportInstanceResult>("import_instance", {
+          payload: {
+            name,
+            version: importData.version,
+            loader: importData.loader,
+            loaderVersion: importData.loaderVersion ?? null,
+            ram,
+            javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
+            javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+            windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
+            windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
+            fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
+            mods: importOptions.mods ? (importData.mods ?? []) : [],
+            shaders: importOptions.shaders ? (importData.shaders ?? []) : [],
+            resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
+          },
+        });
+        await refreshInstances(result.instance.id);
+        setImportResult(result);
+        const failedCount = result.items.filter((entry) => !entry.success).length;
+        pushToast(
+          failedCount ? "warning" : "info",
+          failedCount
+            ? `Сборка создана, не удалось установить ${failedCount} компонентов`
+            : `Сборка ${result.instance.name} импортирована`,
+          {
+            title: failedCount ? "Import incomplete" : "Build imported",
+          },
+        );
+      }
     } catch (caught) {
       setImportError(toErrorMessage(caught));
       pushToast("error", toErrorMessage(caught), { title: "Import failed" });
@@ -289,6 +339,7 @@ export function useInstanceTransfers({
     setImportError,
     setImportSourcePath,
     importSourceFormat,
+    importResult,
     importBuildFromPath,
     handleImportBuild,
     handleImportConfirm,

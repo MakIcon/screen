@@ -1,0 +1,55 @@
+.build-safety-dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-width: 540px;
+}
+.build-safety-dialog .confirm-body {
+  margin-bottom: 16px;
+}
+.build-safety-list {
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  margin: 16px 0;
+}
+.build-safety-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+.build-safety-row > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.build-safety-row strong,
+.build-safety-row span {
+  display: block;
+}
+.build-safety-row strong {
+  font-size: 12px;
+}
+.build-safety-row span {
+  font-size: 11px;
+  color: var(--muted-strong);
+  margin-top: 4px;
+}
+.build-safety-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.build-safety-actions .ghost-action {
+  font-size: 10px;
+  padding: 8px;
+  white-space: nowrap;
+}
+.build-safety-danger {
+  color: var(--accent);
+}
+.build-safety-error {
+  color: var(--accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

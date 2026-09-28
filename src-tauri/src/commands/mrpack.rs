@@ -835,7 +835,8 @@ pub async fn import_mrpack(
         shaders: Vec::new(),
         resource_packs: Vec::new(),
     })
-    .await?;
+    .await?
+    .instance;
 
     let game_dir = PathBuf::from(&item.game_dir);
     let result = async {
@@ -933,7 +934,18 @@ pub async fn import_mrpack(
     .await;
 
     if let Err(error) = result {
-        let _ = delete_instance(item.id.clone()).await;
+        if let Err(cleanup_error) = delete_instance(item.id.clone()).await {
+            return Err(format!(
+                "{error}; failed to discard incomplete build: {cleanup_error}"
+            ));
+        }
+        if let Err(cleanup_error) =
+            crate::commands::instances::purge_deleted_instance(item.id.clone()).await
+        {
+            return Err(format!(
+                "{error}; failed to remove incomplete build from trash: {cleanup_error}"
+            ));
+        }
         return Err(error);
     }
 

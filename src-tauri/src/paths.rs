@@ -189,15 +189,27 @@ pub async fn write_instances(items: &[InstanceItem]) -> Result<(), String> {
     ensure_layout().await?;
     let raw = serde_json::to_string_pretty(items)
         .map_err(|e| format!("serialize instances error: {e}"))?;
-    fs::write(instances_index_path()?, raw)
+    atomic_write_path(&instances_index_path()?, raw.as_bytes()).await
+}
+
+async fn atomic_write_path(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let temp = path.with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4()));
+    fs::write(&temp, bytes)
         .await
-        .map_err(|e| format!("write instances error: {e}"))
+        .map_err(|e| format!("write temporary index error: {e}"))?;
+    let result = fs::rename(&temp, path)
+        .await
+        .map_err(|e| format!("replace instances index error: {e}"));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp).await;
+    }
+    result
 }
 
 pub fn sanitize_name(name: &str) -> String {
     let filtered: String = name
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
         .collect();
 
     filtered.trim().to_string()
@@ -250,4 +262,25 @@ pub fn offline_uuid(name: &str) -> String {
             0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
         ])
     )
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::{atomic_write_path, sanitize_name, slugify_name};
+
+    #[test]
+    fn keeps_cyrillic_build_names() {
+        assert_eq!(sanitize_name("  Моя сборка 1  "), "Моя сборка 1");
+        assert_eq!(slugify_name("Моя сборка 1"), "моя-сборка-1");
+        assert_eq!(sanitize_name("../Мир: тест"), "Мир тест");
+    }
+
+    #[tokio::test]
+    async fn replaces_existing_index_atomically() {
+        let path = std::env::temp_dir().join(format!("screen-index-{}.json", uuid::Uuid::new_v4()));
+        tokio::fs::write(&path, b"old").await.unwrap();
+        atomic_write_path(&path, b"new").await.unwrap();
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), b"new");
+        tokio::fs::remove_file(path).await.unwrap();
+    }
 }

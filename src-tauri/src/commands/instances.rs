@@ -9,12 +9,12 @@ use crate::{
     commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
     minecraft::{normalized_loader_and_version, normalized_ram},
     models::{
-        CreateInstancePayload, ExportedItem, ImportInstancePayload, InstanceExportData,
-        InstanceItem, UpdateInstancePayload,
+        CreateInstancePayload, ExportedItem, ImportContentResult, ImportInstancePayload,
+        ImportInstanceResult, InstanceExportData, InstanceItem, UpdateInstancePayload,
     },
     paths::{
-        instances_root, make_instance_dir_name, now_string, read_instances, sanitize_name,
-        unique_instance_dir, write_instances,
+        instances_root, launcher_root, make_instance_dir_name, now_string, read_instances,
+        sanitize_name, unique_instance_dir, write_instances,
     },
 };
 
@@ -36,34 +36,123 @@ fn normalize_window_height(value: Option<u32>) -> Option<u32> {
     value.map(|dimension| dimension.clamp(240, 4320))
 }
 
+const TRASH_PREFIX: &str = "TRASHED:";
+
+pub(crate) fn is_trashed(instance: &InstanceItem) -> bool {
+    instance.status.starts_with(TRASH_PREFIX)
+}
+
 #[tauri::command]
 pub async fn delete_instance(instance_id: String) -> Result<(), String> {
     let mut items = read_instances().await?;
     let Some(index) = items.iter().position(|i| i.id == instance_id) else {
         return Err("Instance not found".into());
     };
-
-    let instance = items[index].clone();
-    let instance_dir = PathBuf::from(&instance.game_dir)
-        .parent()
-        .ok_or_else(|| "instance dir missing".to_string())?
-        .to_path_buf();
-
-    items.remove(index);
-    write_instances(&items).await?;
-
-    if instance_dir.exists() {
-        fs::remove_dir_all(&instance_dir)
-            .await
-            .map_err(|e| format!("delete instance dir error: {e}"))?;
+    if is_trashed(&items[index]) {
+        return Err("Build is already in the trash".into());
     }
-
-    Ok(())
+    items[index].status = format!("{TRASH_PREFIX}{}", items[index].status);
+    write_instances(&items).await
 }
 
 #[tauri::command]
 pub async fn list_instances() -> Result<Vec<InstanceItem>, String> {
-    read_instances().await
+    Ok(read_instances()
+        .await?
+        .into_iter()
+        .filter(|item| !is_trashed(item))
+        .collect())
+}
+
+#[tauri::command]
+pub async fn list_deleted_instances() -> Result<Vec<InstanceItem>, String> {
+    Ok(read_instances()
+        .await?
+        .into_iter()
+        .filter(is_trashed)
+        .collect())
+}
+
+#[tauri::command]
+pub async fn restore_instance(instance_id: String) -> Result<InstanceItem, String> {
+    let mut items = read_instances().await?;
+    let index = items
+        .iter()
+        .position(|item| item.id == instance_id && is_trashed(item))
+        .ok_or_else(|| "Build is not in the trash".to_string())?;
+    if items
+        .iter()
+        .any(|item| !is_trashed(item) && item.name.eq_ignore_ascii_case(&items[index].name))
+    {
+        return Err("An active build already has this name".into());
+    }
+    if !PathBuf::from(&items[index].game_dir).exists() {
+        return Err("Build files are missing; cannot restore".into());
+    }
+    items[index].status = items[index]
+        .status
+        .strip_prefix(TRASH_PREFIX)
+        .filter(|status| !status.is_empty() && *status != "UPDATING")
+        .unwrap_or("EMPTY")
+        .to_string();
+    let restored = items[index].clone();
+    write_instances(&items).await?;
+    Ok(restored)
+}
+
+#[tauri::command]
+pub async fn purge_deleted_instance(instance_id: String) -> Result<(), String> {
+    let mut items = read_instances().await?;
+    let index = items
+        .iter()
+        .position(|item| item.id == instance_id && is_trashed(item))
+        .ok_or_else(|| "Build is not in the trash".to_string())?;
+    let instance_dir = PathBuf::from(&items[index].game_dir)
+        .parent()
+        .ok_or_else(|| "Instance directory is missing".to_string())?
+        .to_path_buf();
+    if instance_dir.exists() {
+        let root = fs::canonicalize(instances_root()?)
+            .await
+            .map_err(|e| format!("resolve instances root error: {e}"))?;
+        let target = fs::canonicalize(&instance_dir)
+            .await
+            .map_err(|e| format!("resolve instance directory error: {e}"))?;
+        if target == root || !target.starts_with(&root) {
+            return Err("Build directory is outside the instances folder".into());
+        }
+        for other in items
+            .iter()
+            .enumerate()
+            .filter_map(|(other_index, item)| (other_index != index).then_some(item))
+        {
+            let Some(other_dir) = PathBuf::from(&other.game_dir)
+                .parent()
+                .map(|path| path.to_path_buf())
+            else {
+                continue;
+            };
+            if other_dir.exists()
+                && fs::canonicalize(&other_dir)
+                    .await
+                    .map_err(|e| format!("resolve another build directory error: {e}"))?
+                    == target
+            {
+                return Err("Another build uses the same directory".into());
+            }
+        }
+        fs::remove_dir_all(&instance_dir)
+            .await
+            .map_err(|e| format!("delete instance dir error: {e}"))?;
+    }
+    let backups_dir = launcher_root()?.join("world-backups").join(&instance_id);
+    if backups_dir.exists() {
+        fs::remove_dir_all(&backups_dir)
+            .await
+            .map_err(|e| format!("delete world backups error: {e}"))?;
+    }
+    items.remove(index);
+    write_instances(&items).await
 }
 
 #[tauri::command]
@@ -77,7 +166,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
 
     if items
         .iter()
-        .any(|i| i.name.eq_ignore_ascii_case(&clean_name))
+        .any(|i| !is_trashed(i) && i.name.eq_ignore_ascii_case(&clean_name))
     {
         return Err("Build with this name already exists".into());
     }
@@ -135,10 +224,9 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
     if clean_name.is_empty() {
         return Err("Build name is empty".into());
     }
-    if items
-        .iter()
-        .any(|item| item.id != payload.id && item.name.eq_ignore_ascii_case(&clean_name))
-    {
+    if items.iter().any(|item| {
+        !is_trashed(item) && item.id != payload.id && item.name.eq_ignore_ascii_case(&clean_name)
+    }) {
         return Err("Build with this name already exists".into());
     }
 
@@ -296,8 +384,119 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
     })
 }
 
+async fn install_import_content(
+    item: &InstanceItem,
+    mods: &[ExportedItem],
+    shaders: &[ExportedItem],
+    resource_packs: &[ExportedItem],
+) -> Vec<ImportContentResult> {
+    let client = build_client();
+    let game_dir = PathBuf::from(&item.game_dir);
+    let loader = item.loader.to_lowercase();
+    let mod_loaders = if loader == "vanilla" {
+        Vec::new()
+    } else {
+        vec![loader.as_str()]
+    };
+    let mut results = Vec::new();
+    for (category, directory, state_file, entries, loaders) in [
+        (
+            "mods",
+            "mods",
+            ".screenlauncher-modrinth.json",
+            mods,
+            mod_loaders.as_slice(),
+        ),
+        (
+            "shaders",
+            "shaderpacks",
+            ".screenlauncher-modrinth-shaderpacks.json",
+            shaders,
+            &[][..],
+        ),
+        (
+            "resourcePacks",
+            "resourcepacks",
+            ".screenlauncher-modrinth-resourcepacks.json",
+            resource_packs,
+            &[][..],
+        ),
+    ] {
+        if entries.is_empty() {
+            continue;
+        }
+        let target_dir = game_dir.join(directory);
+        let state_path = target_dir.join(state_file);
+        let mut state: HashMap<String, InstalledModEntry> = match fs::read(&state_path).await {
+            Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
+            Err(_) => HashMap::new(),
+        };
+        for exported in entries {
+            let result = async {
+                if exported.source != "modrinth" {
+                    return Err(
+                        "Local files are not embedded in .slbuild; copy this file manually"
+                            .to_string(),
+                    );
+                }
+                let project_id = exported
+                    .project_id
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "Missing Modrinth project id".to_string())?;
+                if category == "mods" && loaders.is_empty() {
+                    return Err("Vanilla builds cannot install mods".to_string());
+                }
+                let client = client.as_ref().map_err(|error| error.clone())?;
+                fs::create_dir_all(&target_dir)
+                    .await
+                    .map_err(|error| format!("create content folder error: {error}"))?;
+                install_project_to_dir(
+                    client,
+                    item,
+                    project_id,
+                    &target_dir,
+                    loaders,
+                    &mut state,
+                    None,
+                )
+                .await?;
+                let raw = serde_json::to_vec_pretty(&state).map_err(|error| error.to_string())?;
+                fs::write(&state_path, raw)
+                    .await
+                    .map_err(|error| format!("save installed content state error: {error}"))
+            }
+            .await;
+            results.push(ImportContentResult {
+                category: category.to_string(),
+                item: exported.clone(),
+                success: result.is_ok(),
+                message: result.err().unwrap_or_else(|| "Installed".to_string()),
+            });
+        }
+    }
+    results
+}
+
 #[tauri::command]
-pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceItem, String> {
+pub async fn retry_import_content(
+    instance_id: String,
+    mods: Vec<ExportedItem>,
+    shaders: Vec<ExportedItem>,
+    resource_packs: Vec<ExportedItem>,
+) -> Result<Vec<ImportContentResult>, String> {
+    let item = read_instances()
+        .await?
+        .into_iter()
+        .find(|item| item.id == instance_id && !is_trashed(item))
+        .ok_or_else(|| "Build not found".to_string())?;
+    Ok(install_import_content(&item, &mods, &shaders, &resource_packs).await)
+}
+
+#[tauri::command]
+pub async fn import_instance(
+    payload: ImportInstancePayload,
+) -> Result<ImportInstanceResult, String> {
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -307,7 +506,7 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
 
     if items
         .iter()
-        .any(|i| i.name.eq_ignore_ascii_case(&clean_name))
+        .any(|i| !is_trashed(i) && i.name.eq_ignore_ascii_case(&clean_name))
     {
         return Err("Build with this name already exists".into());
     }
@@ -354,94 +553,54 @@ pub async fn import_instance(payload: ImportInstancePayload) -> Result<InstanceI
     items.push(item.clone());
     write_instances(&items).await?;
 
-    let loaders: Vec<&str> = loader_kind.modrinth_id().into_iter().collect();
+    let results = install_import_content(
+        &item,
+        &payload.mods,
+        &payload.shaders,
+        &payload.resource_packs,
+    )
+    .await;
+    Ok(ImportInstanceResult {
+        instance: item,
+        items: results,
+    })
+}
 
-    // Install mods
-    if !payload.mods.is_empty() {
-        if let Ok(client) = build_client() {
-            let mods_dir = game_dir.join("mods");
-            let _ = fs::create_dir_all(&mods_dir).await;
-            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
-            for mod_item in &payload.mods {
-                if mod_item.source == "modrinth" {
-                    if let Some(ref pid) = mod_item.project_id {
-                        let _ = install_project_to_dir(
-                            &client, &item, pid, &mods_dir, &loaders, &mut state, None,
-                        )
-                        .await;
-                    }
-                }
-            }
-            if !state.is_empty() {
-                let p = mods_dir.join(".screenlauncher-modrinth.json");
-                if let Ok(s) = serde_json::to_string_pretty(&state) {
-                    let _ = fs::write(p, s).await;
-                }
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::install_import_content;
+    use crate::models::{ExportedItem, InstanceItem};
+
+    #[tokio::test]
+    async fn import_reports_local_files_that_slbuild_cannot_supply() {
+        let instance = InstanceItem {
+            id: "inst-test".into(),
+            name: "TEST".into(),
+            pinned: false,
+            version: "1.21.1".into(),
+            loader: "Fabric".into(),
+            loader_version: Some("0.16.0".into()),
+            status: "EMPTY".into(),
+            ram: 4,
+            java_args: None,
+            java_path: None,
+            window_width: None,
+            window_height: None,
+            fullscreen: false,
+            last_played: "NEVER".into(),
+            playtime_secs: 0,
+            created_at: "0".into(),
+            game_dir: String::new(),
+        };
+        let local = ExportedItem {
+            project_id: None,
+            title: "local.jar".into(),
+            source: "local".into(),
+            icon_url: None,
+        };
+        let results = install_import_content(&instance, &[local], &[], &[]).await;
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].success);
+        assert!(results[0].message.contains("not embedded"));
     }
-
-    // Install shaders
-    if !payload.shaders.is_empty() {
-        if let Ok(client) = build_client() {
-            let shaders_dir = game_dir.join("shaderpacks");
-            let _ = fs::create_dir_all(&shaders_dir).await;
-            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
-            for shader in &payload.shaders {
-                if shader.source == "modrinth" {
-                    if let Some(ref pid) = shader.project_id {
-                        let _ = install_project_to_dir(
-                            &client,
-                            &item,
-                            pid,
-                            &shaders_dir,
-                            &[],
-                            &mut state,
-                            None,
-                        )
-                        .await;
-                    }
-                }
-            }
-            if !state.is_empty() {
-                let p = shaders_dir.join(".screenlauncher-modrinth-shaderpacks.json");
-                if let Ok(s) = serde_json::to_string_pretty(&state) {
-                    let _ = fs::write(p, s).await;
-                }
-            }
-        }
-    }
-
-    // Install resource packs
-    if !payload.resource_packs.is_empty() {
-        if let Ok(client) = build_client() {
-            let packs_dir = game_dir.join("resourcepacks");
-            let _ = fs::create_dir_all(&packs_dir).await;
-            let mut state: HashMap<String, InstalledModEntry> = HashMap::new();
-            for pack in &payload.resource_packs {
-                if pack.source == "modrinth" {
-                    if let Some(ref pid) = pack.project_id {
-                        let _ = install_project_to_dir(
-                            &client,
-                            &item,
-                            pid,
-                            &packs_dir,
-                            &[],
-                            &mut state,
-                            None,
-                        )
-                        .await;
-                    }
-                }
-            }
-            if !state.is_empty() {
-                let p = packs_dir.join(".screenlauncher-modrinth-resourcepacks.json");
-                if let Ok(s) = serde_json::to_string_pretty(&state) {
-                    let _ = fs::write(p, s).await;
-                }
-            }
-        }
-    }
-
-    Ok(item)
 }
