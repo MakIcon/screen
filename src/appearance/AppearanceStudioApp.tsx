@@ -24,7 +24,9 @@ import {
 } from "./animations";
 import { DrawingCanvas } from "./DrawingCanvas";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
+import { ElementTextColorPicker } from "./ElementTextColorPicker";
 import { ElementInspector } from "./ElementInspector";
+import { CustomFontManager } from "./CustomFontManager";
 import { refreshElementSizingTarget } from "./elementSizing";
 import {
   appearanceHistoryReducer,
@@ -41,6 +43,7 @@ import {
   FONT_OPTIONS,
   applyAppearanceToElement,
   createDefaultAppearance,
+  customFontStack,
   readStoredAppearance,
   writeStoredAppearance,
 } from "./profile";
@@ -163,7 +166,9 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   if (override.style.backgroundKind === "gradient") {
     badges.push({ label: "FILL", value: "GRADIENT" });
   }
-  if (override.style.textColor) {
+  if (override.style.textKind === "gradient") {
+    badges.push({ label: "TEXT", value: "GRADIENT" });
+  } else if (override.style.textColor) {
     badges.push({
       label: "TEXT",
       value: override.style.textColor.toUpperCase(),
@@ -1273,13 +1278,12 @@ export function AppearanceStudioApp() {
                 fallbackAccent={draft.colors.accent}
                 onChange={patchSelectedStyle}
               />
-              <div className="studio-color-grid studio-color-grid--single">
-                <ColorField
-                  label="TEXT"
-                  value={selectedVisualStyle?.textColor || draft.colors.text}
-                  onChange={(textColor) => patchSelectedStyle({ textColor })}
-                />
-              </div>
+              <ElementTextColorPicker
+                style={selectedVisualStyle}
+                fallbackColor={draft.colors.text}
+                fallbackAccent={draft.colors.accent}
+                onChange={patchSelectedStyle}
+              />
             </Section>
           );
         }
@@ -1452,40 +1456,110 @@ export function AppearanceStudioApp() {
           </Section>
         );
 
-      case "type":
+      case "type": {
+        const customFontOptions = draft.typography.customFonts.map((font) => ({
+          id: font.id,
+          label: font.name.toUpperCase(),
+          value: customFontStack(font),
+        }));
+        const addCustomFont = (font: AppearanceProfile["typography"]["customFonts"][number]) =>
+          patchDraft((current) => ({
+            ...current,
+            typography: {
+              ...current.typography,
+              customFonts: [...current.typography.customFonts, font].slice(-8),
+            },
+          }));
+        const removeCustomFont = (font: AppearanceProfile["typography"]["customFonts"][number]) => {
+          const removedStack = customFontStack(font);
+          patchDraft((current) => {
+            const clearFont = (style: AppearanceElementOverride["style"] | undefined) => {
+              if (!style || style.fontFamily !== removedStack) return style;
+              const next = { ...style };
+              delete next.fontFamily;
+              return next;
+            };
+            return {
+              ...current,
+              typography: {
+                ...current.typography,
+                uiFont:
+                  current.typography.uiFont === removedStack
+                    ? FONT_OPTIONS[0].value
+                    : current.typography.uiFont,
+                displayFont:
+                  current.typography.displayFont === removedStack
+                    ? DISPLAY_FONT_OPTIONS[0].value
+                    : current.typography.displayFont,
+                customFonts: current.typography.customFonts.filter(
+                  (candidate) => candidate.id !== font.id,
+                ),
+              },
+              elementOverrides: current.elementOverrides.map((override) => ({
+                ...override,
+                style: clearFont(override.style) ?? {},
+                hoverStyle: clearFont(override.hoverStyle),
+                pressedStyle: clearFont(override.pressedStyle),
+                focusStyle: clearFont(override.focusStyle),
+                disabledStyle: clearFont(override.disabledStyle),
+                selectedStyle: clearFont(override.selectedStyle),
+              })),
+            };
+          });
+        };
+        const customFontManager = (
+          <Section
+            title="CUSTOM FONTS"
+            note="Fonts stay on this device and are saved inside the appearance profile."
+          >
+            <CustomFontManager
+              fonts={draft.typography.customFonts}
+              onAdd={addCustomFont}
+              onRemove={removeCustomFont}
+            />
+          </Section>
+        );
         if (selectedTarget) {
           const currentFont = selectedVisualStyle?.fontFamily ?? draft.typography.uiFont;
-          const elementFonts = [...FONT_OPTIONS, ...DISPLAY_FONT_OPTIONS].filter(
+          const elementFonts = [
+            ...FONT_OPTIONS,
+            ...DISPLAY_FONT_OPTIONS,
+            ...customFontOptions,
+          ].filter(
             (font, index, fonts) =>
               fonts.findIndex((candidate) => candidate.value === font.value) === index,
           );
           return (
-            <Section
-              title="SELECTED ELEMENT FONT"
-              note={`Only ${selectedTarget.label} and its inherited text change.`}
-            >
-              <div className="studio-font-grid">
-                {elementFonts.map((font) => (
-                  <button
-                    type="button"
-                    key={font.id + font.value}
-                    className={currentFont === font.value ? "active" : ""}
-                    style={{ fontFamily: font.value }}
-                    onClick={() => patchSelectedStyle({ fontFamily: font.value })}
-                  >
-                    <span>{font.label}</span>
-                    <small>Selected element / Aa</small>
-                  </button>
-                ))}
-              </div>
-            </Section>
+            <>
+              {customFontManager}
+              <Section
+                title="SELECTED ELEMENT FONT"
+                note={`Only ${selectedTarget.label} and its inherited text change.`}
+              >
+                <div className="studio-font-grid">
+                  {elementFonts.map((font) => (
+                    <button
+                      type="button"
+                      key={font.id + font.value}
+                      className={currentFont === font.value ? "active" : ""}
+                      style={{ fontFamily: font.value }}
+                      onClick={() => patchSelectedStyle({ fontFamily: font.value })}
+                    >
+                      <span>{font.label}</span>
+                      <small>Selected element / Aa</small>
+                    </button>
+                  ))}
+                </div>
+              </Section>
+            </>
           );
         }
         return (
           <>
+            {customFontManager}
             <Section title="INTERFACE FONT" note="Controls, metadata and navigation.">
               <div className="studio-font-grid">
-                {FONT_OPTIONS.map((font) => (
+                {[...FONT_OPTIONS, ...customFontOptions].map((font) => (
                   <button
                     type="button"
                     key={font.id}
@@ -1506,7 +1580,7 @@ export function AppearanceStudioApp() {
             </Section>
             <Section title="DISPLAY FONT" note="Large headings and index numbers.">
               <div className="studio-font-grid">
-                {DISPLAY_FONT_OPTIONS.map((font) => (
+                {[...DISPLAY_FONT_OPTIONS, ...customFontOptions].map((font) => (
                   <button
                     type="button"
                     key={font.id}
@@ -1527,6 +1601,7 @@ export function AppearanceStudioApp() {
             </Section>
           </>
         );
+      }
 
       case "opacity":
         if (selectedTarget) {

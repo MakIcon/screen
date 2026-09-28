@@ -19,7 +19,8 @@ import {
   parseAppearancePlaceholderValues,
   resolveAppearancePlaceholderTemplate,
 } from "../utils/placeholders";
-import { buildElementGradientImage } from "./elementGradient";
+import { buildElementGradientImage, buildElementTextGradientImage } from "./elementGradient";
+import { buildGradientAnimationKeyframes, resolveGradientAnimation } from "./gradientAnimation";
 
 export const APPEARANCE_ELEMENT_PICK_REQUEST_EVENT = "appearance-element-pick-request";
 export const APPEARANCE_ELEMENT_PICKED_EVENT = "appearance-element-picked";
@@ -101,6 +102,7 @@ function hasVisibleBackground(style: CSSStyleDeclaration) {
 
 const OVERRIDE_ATTRIBUTE = "data-appearance-override";
 const TARGET_ATTRIBUTE = "data-appearance-target-id";
+export const LIQUID_GLASS_ATTRIBUTE = "data-appearance-liquid-glass";
 const OVERRIDE_STYLE_ID = "appearance-element-overrides";
 const MAX_TEXT_TARGET_DEPTH = 20;
 
@@ -464,7 +466,11 @@ export function resolveElementTextTarget(
   if (!target.textTarget) return null;
   let current: Node = element;
   for (const index of target.textTarget.path) {
-    const next = current.childNodes[index];
+    const stableChildren = Array.from(current.childNodes).filter(
+      (node) =>
+        !(node instanceof HTMLCanvasElement) || node.dataset.appearanceLiquidGlassCanvas !== "true",
+    );
+    const next = stableChildren[index];
     if (!next) return null;
     current = next;
   }
@@ -479,6 +485,7 @@ function buildElementOverrideStateRule(
   const override: AppearanceElementOverride = { ...sourceOverride, style };
   const declarations: string[] = [];
   const descendantTypographyDeclarations: string[] = [];
+  const generatedRules: string[] = [];
   const legacyWidthZero = override.style.width === 0 && override.defaults?.widthAuto === undefined;
   const legacyHeightZero =
     override.style.height === 0 && override.defaults?.heightAuto === undefined;
@@ -547,9 +554,45 @@ function buildElementOverrideStateRule(
   if (override.style.textAlign) {
     declarations.push(`text-align: ${override.style.textAlign} !important`);
   }
+  if (override.style.textDecoration) {
+    declarations.push(`text-decoration-line: ${override.style.textDecoration} !important`);
+  }
+  if (override.style.textDecorationStyle) {
+    declarations.push(`text-decoration-style: ${override.style.textDecorationStyle} !important`);
+  }
+  if (override.style.textDecorationColor) {
+    declarations.push(`text-decoration-color: ${override.style.textDecorationColor} !important`);
+  }
+  if (override.style.textDecorationThickness !== undefined) {
+    declarations.push(
+      `text-decoration-thickness: ${override.style.textDecorationThickness}px !important`,
+    );
+  }
+  if (override.style.textUnderlineOffset !== undefined) {
+    declarations.push(`text-underline-offset: ${override.style.textUnderlineOffset}px !important`);
+  }
+  if (override.style.textTransform) {
+    declarations.push(`text-transform: ${override.style.textTransform} !important`);
+  }
+  const hasTextShadow =
+    override.style.textShadowColor !== undefined ||
+    override.style.textShadowX !== undefined ||
+    override.style.textShadowY !== undefined ||
+    override.style.textShadowBlur !== undefined;
+  if (hasTextShadow) {
+    declarations.push(
+      `text-shadow: ${override.style.textShadowX ?? 0}px ${override.style.textShadowY ?? 2}px ${override.style.textShadowBlur ?? 0}px ${override.style.textShadowColor ?? "rgba(0, 0, 0, 0.35)"} !important`,
+    );
+  }
+  if (override.style.textStrokeWidth !== undefined) {
+    declarations.push(
+      `-webkit-text-stroke: ${override.style.textStrokeWidth}px ${override.style.textStrokeColor ?? "currentColor"} !important`,
+    );
+  }
   const backgroundOpacity = override.style.backgroundOpacity ?? 1;
   const backgroundColor = override.style.backgroundColor ?? override.defaults?.backgroundColor;
   const backgroundImage = override.defaults?.backgroundImage;
+  let resolvedSurfaceColor = backgroundColor;
   let resolvedBackgroundImage =
     backgroundImage && backgroundImage !== "none" ? backgroundImage : undefined;
   const usesCustomGradient =
@@ -579,9 +622,8 @@ function buildElementOverrideStateRule(
       resolvedBackgroundImage = undefined;
     }
     if (override.style.backgroundOpacity !== undefined && backgroundColor) {
-      declarations.push(
-        `background-color: ${colorWithOpacity(backgroundColor, backgroundOpacity)} !important`,
-      );
+      resolvedSurfaceColor = colorWithOpacity(backgroundColor, backgroundOpacity);
+      declarations.push(`background-color: ${resolvedSurfaceColor} !important`);
     } else if (override.style.backgroundColor) {
       declarations.push(`background-color: ${override.style.backgroundColor} !important`);
     }
@@ -596,15 +638,19 @@ function buildElementOverrideStateRule(
   }
   if (override.style.glassEffect) {
     const tint = override.style.glassTint ?? backgroundColor ?? "#ffffff";
-    declarations.push(
-      `background-color: ${colorWithOpacity(tint, override.style.glassOpacity ?? 0.18)} !important`,
-    );
+    resolvedSurfaceColor = colorWithOpacity(tint, override.style.glassOpacity ?? 0.18);
+    declarations.push(`background-color: ${resolvedSurfaceColor} !important`);
     declarations.push("background-clip: padding-box !important");
+  }
+  if (override.style.liquidGlass) {
+    declarations.push("isolation: isolate !important");
+    declarations.push("overflow: visible !important");
   }
   if ((override.style.grainOpacity ?? 0) > 0) {
     const layers = [grainTexture(override.style.grainOpacity ?? 0), resolvedBackgroundImage]
       .filter(Boolean)
       .join(", ");
+    resolvedBackgroundImage = layers;
     declarations.push(`background-image: ${layers} !important`);
     declarations.push("background-size: 128px 128px, auto !important");
     declarations.push("background-blend-mode: soft-light, normal !important");
@@ -616,6 +662,50 @@ function buildElementOverrideStateRule(
     );
   } else if (override.style.textColor) {
     declarations.push(`color: ${override.style.textColor} !important`);
+  }
+  const usesTextGradient =
+    override.style.textKind === "gradient" &&
+    ((override.style.textGradientStops?.length ?? 0) >= 2 ||
+      Boolean(override.style.textGradientStart && override.style.textGradientEnd));
+  if (usesTextGradient) {
+    const firstStop = override.style.textGradientStops?.[0];
+    const lastStop =
+      override.style.textGradientStops?.[override.style.textGradientStops.length - 1];
+    const start = override.style.textGradientStart ?? firstStop?.color ?? textColor ?? "#000000";
+    const end = override.style.textGradientEnd ?? lastStop?.color ?? start;
+    const textGradient = buildElementTextGradientImage(override.style, start, end, {
+      baseColor: textColor ?? start,
+      opacity: override.style.contentOpacity ?? 1,
+    });
+    const surfaceColor = resolvedSurfaceColor ?? "transparent";
+    const surfaceImage =
+      resolvedBackgroundImage ?? `linear-gradient(${surfaceColor}, ${surfaceColor})`;
+    declarations.push("background-color: transparent !important");
+    declarations.push(`background-image: ${textGradient}, ${surfaceImage} !important`);
+    // Extra padding-box values are intentionally harmless when the surface has
+    // one layer, and keep every existing multi-layer background out of the text clip.
+    const textClips = `text, ${Array.from({ length: 8 }, () => "padding-box").join(", ")}`;
+    declarations.push(`background-clip: ${textClips} !important`);
+    declarations.push(`-webkit-background-clip: ${textClips} !important`);
+    declarations.push("-webkit-text-fill-color: transparent !important");
+    if (textColor) declarations.push(`caret-color: ${textColor} !important`);
+    if ((override.style.grainOpacity ?? 0) > 0) {
+      declarations.push("background-size: auto, 128px 128px, auto !important");
+      declarations.push("background-blend-mode: normal, soft-light, normal !important");
+    }
+  } else if (override.style.textKind === "solid") {
+    // This also restores a solid text fill when an interaction state replaces
+    // a normal-state gradient.
+    declarations.push("-webkit-text-fill-color: currentColor !important");
+    declarations.push(`background-image: ${resolvedBackgroundImage ?? "none"} !important`);
+    const surfaceClip =
+      override.style.backgroundKind === "gradient" ||
+      override.style.glassEffect ||
+      (override.style.grainOpacity ?? 0) > 0
+        ? "padding-box"
+        : "border-box";
+    declarations.push(`background-clip: ${surfaceClip} !important`);
+    declarations.push(`-webkit-background-clip: ${surfaceClip} !important`);
   }
   if (override.style.paddingX !== undefined) {
     declarations.push(`padding-left: ${override.style.paddingX}px !important`);
@@ -745,6 +835,127 @@ function buildElementOverrideStateRule(
       `--appearance-element-content-opacity: ${override.style.contentOpacity} !important`,
     );
   }
+  const textMotion = usesTextGradient ? (override.style.textGradientAnimation ?? "none") : "none";
+  const backgroundMotion = usesCustomGradient
+    ? (override.style.backgroundGradientAnimation ?? "none")
+    : "none";
+  const gradientMotion = textMotion !== "none" ? textMotion : backgroundMotion;
+  const animationNames: string[] = [];
+  const animationDurations: string[] = [];
+  const animationEasings: string[] = [];
+  const animationIterations: string[] = [];
+  const animationDirections: string[] = [];
+  const animationFillModes: string[] = [];
+  const animationDelays: string[] = [];
+  if (gradientMotion !== "none") {
+    const animationScope = `${override.id}-${interactionState}`.replace(/[^a-z0-9-]/gi, "-");
+    const gradientName = `appearance-gradient-${gradientMotion}-${animationScope}`;
+    const duration =
+      textMotion !== "none"
+        ? (override.style.textGradientAnimationDuration ?? 6_000)
+        : (override.style.backgroundGradientAnimationDuration ?? 6_000);
+    const direction =
+      textMotion !== "none"
+        ? (override.style.textGradientAnimationDirection ?? "alternate")
+        : (override.style.backgroundGradientAnimationDirection ?? "alternate");
+    const definition = resolveGradientAnimation(gradientMotion, {
+      easing:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationEasing
+          : override.style.backgroundGradientAnimationEasing,
+      startX:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationStartX
+          : override.style.backgroundGradientAnimationStartX,
+      startY:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationStartY
+          : override.style.backgroundGradientAnimationStartY,
+      endX:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationEndX
+          : override.style.backgroundGradientAnimationEndX,
+      endY:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationEndY
+          : override.style.backgroundGradientAnimationEndY,
+      scale:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationScale
+          : override.style.backgroundGradientAnimationScale,
+      hue:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationHue
+          : override.style.backgroundGradientAnimationHue,
+      saturation:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationSaturation
+          : override.style.backgroundGradientAnimationSaturation,
+      brightness:
+        textMotion !== "none"
+          ? override.style.textGradientAnimationBrightness
+          : override.style.backgroundGradientAnimationBrightness,
+    });
+    if (!definition) return "";
+    declarations.push(`background-size: ${definition.backgroundSize} !important`);
+    animationNames.push(gradientName);
+    animationDurations.push(`${duration}ms`);
+    animationEasings.push(definition.easing);
+    animationIterations.push("infinite");
+    animationDirections.push(direction);
+    animationFillModes.push("both");
+    animationDelays.push("0ms");
+    generatedRules.push(buildGradientAnimationKeyframes(gradientName, definition));
+  }
+  if (
+    interactionState === "normal" &&
+    override.style.entranceAnimation &&
+    override.style.entranceAnimation !== "none"
+  ) {
+    const animationScope = override.id.replace(/[^a-z0-9-]/gi, "-");
+    const entranceName = `appearance-entrance-${override.style.entranceAnimation}-${animationScope}`;
+    const targetOpacity = override.style.elementOpacity ?? 1;
+    const animatesBlur =
+      override.style.entranceAnimation === "blur" ||
+      (override.style.entranceAnimation === "custom" &&
+        (override.style.entranceFromBlur ?? 0) > 0);
+    const end = `opacity: ${targetOpacity}; translate: 0 0; scale: 1; rotate: 0deg;${animatesBlur ? " filter: blur(0);" : ""}`;
+    const start = (() => {
+      switch (override.style.entranceAnimation) {
+        case "rise":
+          return "opacity: 0; translate: 0 24px;";
+        case "slide-left":
+          return "opacity: 0; translate: -32px 0;";
+        case "slide-right":
+          return "opacity: 0; translate: 32px 0;";
+        case "zoom":
+          return "opacity: 0; scale: 0.9;";
+        case "blur":
+          return "opacity: 0; filter: blur(12px);";
+        case "custom":
+          return `opacity: ${override.style.entranceFromOpacity ?? 0}; translate: ${override.style.entranceFromX ?? 0}px ${override.style.entranceFromY ?? 24}px; scale: ${override.style.entranceFromScale ?? 0.9}; rotate: ${override.style.entranceFromRotate ?? 0}deg;${animatesBlur ? ` filter: blur(${override.style.entranceFromBlur ?? 0}px);` : ""}`;
+        default:
+          return "opacity: 0;";
+      }
+    })();
+    animationNames.push(entranceName);
+    animationDurations.push(`${override.style.entranceDuration ?? 600}ms`);
+    animationEasings.push(override.style.entranceEasing ?? "ease-out");
+    animationIterations.push("1");
+    animationDirections.push("normal");
+    animationFillModes.push("both");
+    animationDelays.push(`${override.style.entranceDelay ?? 0}ms`);
+    generatedRules.push(`@keyframes ${entranceName} { from { ${start} } to { ${end} } }`);
+  }
+  if (animationNames.length > 0) {
+    declarations.push(`animation-name: ${animationNames.join(", ")} !important`);
+    declarations.push(`animation-duration: ${animationDurations.join(", ")} !important`);
+    declarations.push(`animation-timing-function: ${animationEasings.join(", ")} !important`);
+    declarations.push(`animation-iteration-count: ${animationIterations.join(", ")} !important`);
+    declarations.push(`animation-direction: ${animationDirections.join(", ")} !important`);
+    declarations.push(`animation-fill-mode: ${animationFillModes.join(", ")} !important`);
+    declarations.push(`animation-delay: ${animationDelays.join(", ")} !important`);
+  }
   if (declarations.length === 0) return "";
   const target = `[${OVERRIDE_ATTRIBUTE}="${override.id}"]`;
   // Individual edits must outrank the global custom-appearance rules, which
@@ -833,7 +1044,7 @@ function buildElementOverrideStateRule(
       `${selectors.map((item) => `${item} > [data-appearance-grid-ignore="true"]`).join(", ")} { position: absolute !important; width: 100% !important; visibility: hidden !important; pointer-events: none !important; }`,
     );
   }
-  return rules.join("\n");
+  return [...rules, ...generatedRules].join("\n");
 }
 
 export function buildElementOverrideRule(override: AppearanceElementOverride) {
@@ -887,6 +1098,22 @@ export function applyElementAppearanceOverrides(
     nextElements.set(override.id, element);
     element.setAttribute(TARGET_ATTRIBUTE, override.id);
     element.setAttribute(OVERRIDE_ATTRIBUTE, override.id);
+    if (override.style.liquidGlass) {
+      element.setAttribute(LIQUID_GLASS_ATTRIBUTE, "true");
+      element.dataset.config = JSON.stringify({
+        blurAmount: override.style.liquidGlassBlur ?? 0.25,
+        refraction: override.style.liquidGlassRefraction ?? 0.69,
+        chromAberration: override.style.liquidGlassChromaticAberration ?? 0.05,
+        edgeHighlight: override.style.liquidGlassEdgeHighlight ?? 0.12,
+        specular: override.style.liquidGlassSpecular ?? 0.2,
+        cornerRadius: override.style.radius ?? 24,
+        opacity: override.style.elementOpacity ?? 1,
+        button: override.kind === "button",
+      });
+    } else {
+      element.removeAttribute(LIQUID_GLASS_ATTRIBUTE);
+      element.removeAttribute("data-config");
+    }
     if (
       override.componentSettings &&
       element.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE) === override.componentSettings.kind
@@ -935,6 +1162,8 @@ export function applyElementAppearanceOverrides(
     if (!activeElements.has(element)) {
       element.removeAttribute(APPEARANCE_COMPONENT_SETTINGS_ATTRIBUTE);
     }
+    element.removeAttribute(LIQUID_GLASS_ATTRIBUTE);
+    element.removeAttribute("data-config");
   }
   bindings.elements = nextElements;
 

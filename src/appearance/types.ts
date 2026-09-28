@@ -11,6 +11,34 @@ export type AppearanceBackgroundKind = "solid" | "image" | "drawing";
 export type AppearanceElementBackgroundKind = "solid" | "gradient";
 export type AppearanceElementGradientType = "linear" | "radial" | "conic";
 export type AppearanceElementGradientRadialShape = "circle" | "ellipse";
+export type AppearanceElementGradientAnimation =
+  | "none"
+  | "flow"
+  | "pulse"
+  | "drift"
+  | "orbit"
+  | "shimmer"
+  | "spectrum"
+  | "custom";
+export type AppearanceElementGradientAnimationDirection = "normal" | "reverse" | "alternate";
+export type AppearanceElementEntranceAnimation =
+  | "none"
+  | "fade"
+  | "rise"
+  | "slide-left"
+  | "slide-right"
+  | "zoom"
+  | "blur"
+  | "custom";
+export type AppearanceElementTextDecoration = "none" | "underline" | "overline" | "line-through";
+export type AppearanceElementTextDecorationStyle =
+  | "solid"
+  | "double"
+  | "dotted"
+  | "dashed"
+  | "wavy";
+export type AppearanceElementTextTransform = "none" | "uppercase" | "lowercase" | "capitalize";
+export type AppearanceElementMaterialPreset = "ice" | "gold" | "glass" | "liquid-glass";
 
 export type AppearanceElementGradientStop = {
   color: string;
@@ -160,6 +188,7 @@ export type AppearanceElementHoverEasing =
   | "ease-in-out";
 
 export type AppearanceElementStyle = {
+  materialPreset?: AppearanceElementMaterialPreset;
   width?: number;
   height?: number;
   minWidth?: number;
@@ -192,7 +221,57 @@ export type AppearanceElementStyle = {
   backgroundGradientStrength?: number;
   backgroundGradientMidpoint?: number;
   backgroundGradientSoftness?: number;
+  backgroundGradientAnimation?: AppearanceElementGradientAnimation;
+  backgroundGradientAnimationDuration?: number;
+  backgroundGradientAnimationDirection?: AppearanceElementGradientAnimationDirection;
+  backgroundGradientAnimationEasing?: AppearanceElementHoverEasing;
+  backgroundGradientAnimationStartX?: number;
+  backgroundGradientAnimationStartY?: number;
+  backgroundGradientAnimationEndX?: number;
+  backgroundGradientAnimationEndY?: number;
+  backgroundGradientAnimationScale?: number;
+  backgroundGradientAnimationHue?: number;
+  backgroundGradientAnimationSaturation?: number;
+  backgroundGradientAnimationBrightness?: number;
+  textKind?: AppearanceElementBackgroundKind;
   textColor?: string;
+  textGradientStart?: string;
+  textGradientEnd?: string;
+  textGradientAngle?: number;
+  textGradientType?: AppearanceElementGradientType;
+  textGradientStops?: AppearanceElementGradientStop[];
+  textGradientCenterX?: number;
+  textGradientCenterY?: number;
+  textGradientScale?: number;
+  textGradientRadialShape?: AppearanceElementGradientRadialShape;
+  textGradientRadialAspect?: number;
+  textGradientStrength?: number;
+  textGradientMidpoint?: number;
+  textGradientSoftness?: number;
+  textGradientAnimation?: AppearanceElementGradientAnimation;
+  textGradientAnimationDuration?: number;
+  textGradientAnimationDirection?: AppearanceElementGradientAnimationDirection;
+  textGradientAnimationEasing?: AppearanceElementHoverEasing;
+  textGradientAnimationStartX?: number;
+  textGradientAnimationStartY?: number;
+  textGradientAnimationEndX?: number;
+  textGradientAnimationEndY?: number;
+  textGradientAnimationScale?: number;
+  textGradientAnimationHue?: number;
+  textGradientAnimationSaturation?: number;
+  textGradientAnimationBrightness?: number;
+  textDecoration?: AppearanceElementTextDecoration;
+  textDecorationStyle?: AppearanceElementTextDecorationStyle;
+  textDecorationColor?: string;
+  textDecorationThickness?: number;
+  textUnderlineOffset?: number;
+  textTransform?: AppearanceElementTextTransform;
+  textShadowColor?: string;
+  textShadowX?: number;
+  textShadowY?: number;
+  textShadowBlur?: number;
+  textStrokeColor?: string;
+  textStrokeWidth?: number;
   paddingX?: number;
   paddingY?: number;
   offsetX?: number;
@@ -225,6 +304,23 @@ export type AppearanceElementStyle = {
   glassTint?: string;
   glassOpacity?: number;
   glassSaturation?: number;
+  /** Enables the shader-backed @ybouane/liquidglass treatment for this picked element. */
+  liquidGlass?: boolean;
+  liquidGlassBlur?: number;
+  liquidGlassRefraction?: number;
+  liquidGlassChromaticAberration?: number;
+  liquidGlassEdgeHighlight?: number;
+  liquidGlassSpecular?: number;
+  entranceAnimation?: AppearanceElementEntranceAnimation;
+  entranceDuration?: number;
+  entranceDelay?: number;
+  entranceEasing?: AppearanceElementHoverEasing;
+  entranceFromOpacity?: number;
+  entranceFromX?: number;
+  entranceFromY?: number;
+  entranceFromScale?: number;
+  entranceFromRotate?: number;
+  entranceFromBlur?: number;
   scale?: number;
   rotate?: number;
   layout?: AppearanceElementLayout;
@@ -331,6 +427,7 @@ export type AppearanceProfile = {
   typography: {
     uiFont: string;
     displayFont: string;
+    customFonts: AppearanceCustomFont[];
   };
   opacity: {
     window: number;
@@ -353,4 +450,12 @@ export type AppearanceProfile = {
     closeButton: CloseAnimationId;
     closeSystem: CloseAnimationId;
   };
+};
+
+export type AppearanceCustomFont = {
+  id: string;
+  name: string;
+  family: string;
+  dataUrl: string;
+  format: "woff2" | "woff" | "truetype" | "opentype";
 };

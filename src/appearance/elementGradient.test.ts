@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildElementGradientImage,
+  buildElementTextGradientImage,
   gradientCurveValue,
   interpolateGradientStopColor,
   resolveElementGradientStops,
@@ -105,5 +106,20 @@ describe("element gradient", () => {
     );
 
     expect(image.match(/color-mix\(in oklab/g)).toHaveLength(23);
+  });
+
+  it("maps text gradient controls to the shared gradient renderer", () => {
+    const image = buildElementTextGradientImage(
+      {
+        textGradientStart: "#fb7185",
+        textGradientEnd: "#8b5cf6",
+        textGradientAngle: 315,
+        textGradientSoftness: 1,
+      },
+      "#ffffff",
+      "#000000",
+    );
+
+    expect(image).toBe("linear-gradient(315deg in oklab, #fb7185, #8b5cf6)");
   });
 });

@@ -17,6 +17,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.3
+      '@ybouane/liquidglass':
+        specifier: ^1.0.3
+        version: 1.0.3
       html2canvas-pro:
         specifier: ^2.4.1
         version: 2.4.1
@@ -849,6 +852,9 @@ packages:
   '@xboxreplay/xboxlive-auth@5.1.0':
     resolution: {integrity: sha512-UngHHsehZbiTjyyNmo8HvdoUDKMID1U9uVfrpFWUK/2UxPuVTKy5n+CzZQ3S488sW5vOhgh0lHqqynT8ouwgvw==}
     engines: {node: '>=16.0.0'}
+
+  '@ybouane/liquidglass@1.0.3':
+    resolution: {integrity: sha512-Ro/Q3vaEduvj1yUp/TVz9AYmxY+cYhnBj76eJ/Y9VQoPlRA0DWrKPQufEzrDSYzAWXL3qxiFibi5XQVW/egTnA==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -2375,6 +2381,8 @@ snapshots:
   '@webgpu/types@0.1.72': {}
 
   '@xboxreplay/xboxlive-auth@5.1.0': {}
+
+  '@ybouane/liquidglass@1.0.3': {}
 
   abort-controller@3.0.0:
     dependencies:

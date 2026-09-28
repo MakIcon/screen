@@ -58,6 +58,71 @@ describe("appearance profile", () => {
     expect(profile.motion.closeButton).toBe("tear");
   });
 
+  it("keeps safe embedded custom fonts and makes them available to element overrides", () => {
+    const fontStack = '"AppearanceCustom-demo", sans-serif';
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      typography: {
+        uiFont: fontStack,
+        customFonts: [
+          {
+            id: "font-demo",
+            name: "Demo Sans",
+            family: "AppearanceCustom-demo",
+            dataUrl: "data:font/woff2;base64,d09GMg==",
+            format: "woff2",
+          },
+          {
+            id: "../unsafe",
+            name: "Unsafe",
+            family: "bad;family",
+            dataUrl: "data:text/html;base64,PHNjcmlwdD4=",
+            format: "woff2",
+          },
+        ],
+      },
+      elementOverrides: [
+        {
+          id: "element-custom-font",
+          label: "SPAN · CUSTOM FONT",
+          path: [{ tag: "span", index: 0 }],
+          style: { fontFamily: fontStack },
+        },
+      ],
+    });
+
+    expect(profile.typography.uiFont).toBe(fontStack);
+    expect(profile.typography.customFonts).toHaveLength(1);
+    expect(profile.typography.customFonts[0].name).toBe("Demo Sans");
+    expect(profile.elementOverrides[0].style.fontFamily).toBe(fontStack);
+  });
+
+  it("persists known element material presets and rejects unknown preset ids", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      elementOverrides: [
+        {
+          id: "element-material-card",
+          label: "DIV · MATERIAL",
+          path: [{ tag: "div", index: 0 }],
+          style: { materialPreset: "liquid-glass", liquidGlass: true },
+        },
+        {
+          id: "element-material-unsafe",
+          label: "DIV · UNKNOWN",
+          path: [{ tag: "div", index: 1 }],
+          style: { materialPreset: "javascript:gold", backgroundColor: "#ABCDEF" },
+        },
+      ],
+    });
+
+    expect(profile.elementOverrides[0].style).toMatchObject({
+      materialPreset: "liquid-glass",
+      liquidGlass: true,
+    });
+    expect(profile.elementOverrides[1].style).toEqual({ backgroundColor: "#abcdef" });
+  });
+
   it("migrates the legacy transparent-panel default but preserves an intentional v2 zero", () => {
     const migrated = normalizeAppearanceProfile({
       version: 1,
@@ -508,6 +573,160 @@ describe("appearance profile", () => {
     expect(rule).toContain("background-clip: padding-box !important");
     expect(rule).toContain("::before");
     expect(rule).toContain("background: transparent !important");
+  });
+
+  it("layers a text gradient over the existing element surface", () => {
+    const rule = buildElementOverrideRule({
+      id: "element-gradient-title",
+      label: "BUTTON · GRADIENT TITLE",
+      path: [{ tag: "button", index: 0 }],
+      defaults: {
+        width: 220,
+        height: 48,
+        minWidth: 0,
+        minHeight: 0,
+        backgroundColor: "#111827",
+        textColor: "#f8fafc",
+      },
+      style: {
+        backgroundKind: "solid",
+        backgroundColor: "#111827",
+        textKind: "gradient",
+        textColor: "#f8fafc",
+        textGradientAngle: 90,
+        textGradientStops: [
+          { color: "#f97316", position: 0 },
+          { color: "#ec4899", position: 100 },
+        ],
+        contentOpacity: 0.6,
+      },
+    });
+
+    expect(rule).toContain("background-image: linear-gradient(90deg in oklab");
+    expect(rule).toContain("color-mix(in oklab, #f97316 60%, transparent) 0%");
+    expect(rule).toContain(", linear-gradient(#111827, #111827) !important");
+    expect(rule).toContain("background-clip: text, padding-box");
+    expect(rule).toContain("-webkit-text-fill-color: transparent !important");
+    expect(rule).toContain("caret-color: #f8fafc !important");
+  });
+
+  it("builds animated gradients, text decoration and an entrance effect", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      elementOverrides: [
+        {
+          id: "element-animated-title",
+          label: "H1 · ANIMATED",
+          path: [{ tag: "h1", index: 0 }],
+          style: {
+            textKind: "gradient",
+            textGradientStart: "#FFFFFF",
+            textGradientEnd: "#00AAFF",
+            textGradientAnimation: "flow",
+            textGradientAnimationDuration: 99_000,
+            textGradientAnimationDirection: "reverse",
+            textDecoration: "underline",
+            textDecorationStyle: "wavy",
+            textDecorationColor: "#AABBCC",
+            textDecorationThickness: 99,
+            textShadowColor: "#112233",
+            textShadowX: -99,
+            textShadowY: 99,
+            textShadowBlur: 99,
+            textStrokeColor: "#FFFFFF",
+            textStrokeWidth: 99,
+            entranceAnimation: "rise",
+            entranceDuration: 99_000,
+            entranceDelay: -50,
+            entranceEasing: "ease-out",
+            liquidGlass: true,
+            liquidGlassRefraction: 9,
+          },
+        },
+      ],
+    });
+    const style = profile.elementOverrides[0].style;
+    const rule = buildElementOverrideRule(profile.elementOverrides[0]);
+
+    expect(style).toMatchObject({
+      textGradientAnimation: "flow",
+      textGradientAnimationDuration: 30_000,
+      textGradientAnimationDirection: "reverse",
+      textDecoration: "underline",
+      textDecorationStyle: "wavy",
+      textDecorationColor: "#aabbcc",
+      textDecorationThickness: 12,
+      textShadowColor: "#112233",
+      textShadowX: -40,
+      textShadowY: 40,
+      textShadowBlur: 80,
+      textStrokeWidth: 8,
+      entranceAnimation: "rise",
+      entranceDuration: 5_000,
+      entranceDelay: 0,
+      entranceEasing: "ease-out",
+      liquidGlass: true,
+      liquidGlassRefraction: 1,
+    });
+    expect(rule).toContain("text-decoration-line: underline !important");
+    expect(rule).toContain("text-shadow: -40px 40px 80px #112233 !important");
+    expect(rule).toContain("animation-name: appearance-gradient-flow-");
+    expect(rule).toContain("appearance-entrance-rise-");
+    expect(rule).toContain("@keyframes appearance-gradient-flow-");
+  });
+
+  it("keeps safe text gradient settings", () => {
+    const profile = normalizeAppearanceProfile({
+      elementOverrides: [
+        {
+          id: "element-text-gradient-safe",
+          label: "SPAN · SAFE",
+          path: [{ tag: "span", index: 0 }],
+          style: {
+            textKind: "gradient",
+            textColor: "#ABCDEF",
+            textGradientStart: "#FF0000",
+            textGradientEnd: "#0000FF",
+            textGradientAngle: 999,
+            textGradientType: "radial",
+            textGradientStops: [
+              { color: "#FFFFFF", position: 120 },
+              { color: "invalid", position: 50 },
+              { color: "#000000", position: -20 },
+            ],
+            textGradientCenterX: -10,
+            textGradientCenterY: 150,
+            textGradientScale: 999,
+            textGradientRadialShape: "ellipse",
+            textGradientRadialAspect: 9,
+            textGradientStrength: -1,
+            textGradientMidpoint: 2,
+            textGradientSoftness: 4,
+          },
+        },
+      ],
+    });
+
+    expect(profile.elementOverrides[0].style).toMatchObject({
+      textKind: "gradient",
+      textColor: "#abcdef",
+      textGradientStart: "#ff0000",
+      textGradientEnd: "#0000ff",
+      textGradientAngle: 360,
+      textGradientType: "radial",
+      textGradientStops: [
+        { color: "#000000", position: 0 },
+        { color: "#ffffff", position: 100 },
+      ],
+      textGradientCenterX: 0,
+      textGradientCenterY: 100,
+      textGradientScale: 200,
+      textGradientRadialShape: "ellipse",
+      textGradientRadialAspect: 2,
+      textGradientStrength: 0,
+      textGradientMidpoint: 0.95,
+      textGradientSoftness: 1,
+    });
   });
 
   it("keeps safe gradient settings and computed background data", () => {

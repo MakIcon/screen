@@ -188,6 +188,34 @@ export function buildElementGradientImage(
   return `linear-gradient(${formatNumber(angle)}deg in ${GRADIENT_COLOR_SPACE}, ${colorStops})`;
 }
 
+export function buildElementTextGradientImage(
+  style: BackgroundStyle | undefined,
+  fallbackStart: string,
+  fallbackEnd: string,
+  options?: { baseColor?: string; opacity?: number },
+) {
+  const textAsBackground: BackgroundStyle | undefined = style
+    ? {
+        backgroundKind: style.textKind,
+        backgroundColor: style.textColor,
+        backgroundGradientStart: style.textGradientStart,
+        backgroundGradientEnd: style.textGradientEnd,
+        backgroundGradientAngle: style.textGradientAngle,
+        backgroundGradientType: style.textGradientType,
+        backgroundGradientStops: style.textGradientStops,
+        backgroundGradientCenterX: style.textGradientCenterX,
+        backgroundGradientCenterY: style.textGradientCenterY,
+        backgroundGradientScale: style.textGradientScale,
+        backgroundGradientRadialShape: style.textGradientRadialShape,
+        backgroundGradientRadialAspect: style.textGradientRadialAspect,
+        backgroundGradientStrength: style.textGradientStrength,
+        backgroundGradientMidpoint: style.textGradientMidpoint,
+        backgroundGradientSoftness: style.textGradientSoftness,
+      }
+    : undefined;
+  return buildElementGradientImage(textAsBackground, fallbackStart, fallbackEnd, options);
+}
+
 function hexToOklab(color: string) {
   const raw = color.replace("#", "");
   const normalized =

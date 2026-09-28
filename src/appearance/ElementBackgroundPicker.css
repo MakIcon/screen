@@ -67,6 +67,52 @@
   background-repeat: no-repeat;
 }
 
+.element-background-picker--text .element-background-picker__preview {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--line) 42%, transparent) 25%, transparent 25%) 0
+      0 / 12px 12px,
+    linear-gradient(-45deg, color-mix(in srgb, var(--line) 42%, transparent) 25%, transparent 25%) 0
+      6px / 12px 12px,
+    var(--bg-card);
+  transition:
+    height 160ms ease,
+    border-color 160ms ease,
+    border-radius 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.element-background-picker--text .element-background-picker__preview.is-stuck {
+  height: 42px;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line-strong));
+  border-radius: 0 0 var(--ui-radius) var(--ui-radius);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent),
+    0 10px 24px color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.element-background-picker--text .element-background-picker__preview strong {
+  max-width: calc(100% - 120px);
+  overflow: hidden;
+  background-repeat: no-repeat;
+  color: var(--ink);
+  font-size: clamp(15px, 5cqi, 26px);
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: font-size 160ms ease;
+}
+
+.element-background-picker--text .element-background-picker__preview.is-stuck strong {
+  font-size: clamp(12px, 3.5cqi, 18px);
+}
+
 .element-background-picker__preview span {
   position: absolute;
   right: 7px;
@@ -112,6 +158,13 @@
 .element-gradient-editor__section-head > div {
   display: flex;
   gap: 5px;
+}
+
+.element-gradient-editor__section-head > small {
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
 }
 
 .element-gradient-editor__section-head button,
@@ -210,8 +263,17 @@
 }
 
 .element-gradient-stop-editor .studio-range-field,
-.element-gradient-editor > .studio-range-field {
+.element-gradient-editor > .studio-range-field,
+.element-gradient-editor__custom-motion .studio-range-field {
   margin-top: 0;
+}
+
+.element-gradient-editor__custom-motion {
+  gap: 12px;
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 56%),
+    color-mix(in srgb, var(--bg-card) 74%, transparent);
 }
 
 .element-gradient-stop-editor__remove {

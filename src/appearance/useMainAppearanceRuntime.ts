@@ -26,6 +26,7 @@ import type {
 const HOVER_PREVIEW_OPACITY_PROPERTY = "--appearance-preview-element-opacity";
 import type { TabKey } from "../types";
 import { APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE } from "../utils/placeholders";
+import { useLiquidGlassEffects } from "./useLiquidGlassEffects";
 
 type MainAppearanceRuntimeOptions = {
   rootRef: RefObject<HTMLElement | null>;
@@ -50,6 +51,7 @@ export function useMainAppearanceRuntime({
   const selectionPreviewStateRef = useRef<AppearanceElementInteractionState>("normal");
   const selectedElementsRef = useRef<HTMLElement[]>([]);
   const [liveElementOverrides, setLiveElementOverrides] = useState(appearance.elementOverrides);
+  useLiquidGlassEffects(rootRef, appearanceRef.current.customized ? liveElementOverrides : []);
 
   const applySelectedElements = useCallback(
     (targets: AppearanceElementTarget[], previewState = selectionPreviewStateRef.current) => {

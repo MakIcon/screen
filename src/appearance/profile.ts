@@ -17,6 +17,7 @@ import type {
   AppearanceElementComponentOverride,
   AppearanceElementComponentTarget,
   AppearanceElementKind,
+  AppearanceCustomFont,
   AppearanceProfile,
   CanvasUiEffectConfig,
   Theme,
@@ -27,6 +28,7 @@ export const APPEARANCE_STORAGE_KEY = "screenlauncher-appearance-v2";
 export const LEGACY_THEME_STORAGE_KEY = "screenlauncher-theme";
 export const APPEARANCE_CHANGED_EVENT = "appearance-profile-changed";
 export const APPEARANCE_PREVIEW_EVENT = "appearance-profile-preview";
+const CUSTOM_FONT_STYLE_ID = "appearance-custom-fonts";
 
 export const FONT_OPTIONS = [
   { id: "inter", label: "INTER", value: '"Inter", sans-serif' },
@@ -92,7 +94,12 @@ const DEFAULT_TAB_ANIMATIONS: Record<TabKey, TabAnimationId> = {
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const SAFE_IMAGE_DATA_URL = /^data:image\/(?:png|jpe?g|webp);base64,/i;
+const SAFE_FONT_DATA_URL = /^data:font\/(?:woff2?|ttf|otf);base64,/i;
 const MAX_EMBEDDED_IMAGE_LENGTH = 4_200_000;
+const MAX_EMBEDDED_FONT_LENGTH = 6_300_000;
+const MAX_CUSTOM_FONTS = 8;
+const SAFE_CUSTOM_FONT_ID = /^font-[a-z0-9-]{1,48}$/;
+const SAFE_CUSTOM_FONT_FAMILY = /^AppearanceCustom-[a-z0-9-]{1,48}$/;
 const SAFE_ELEMENT_ID = /^element-[a-z0-9-]{1,72}$/;
 const SAFE_ELEMENT_TAG = /^[a-z][a-z0-9-]{0,31}$/;
 const SAFE_ELEMENT_MARKER = /^(?:id|class):[a-z_][a-z0-9_-]{0,63}$/i;
@@ -107,6 +114,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function pickString(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback;
+}
+
+export function customFontStack(font: Pick<AppearanceCustomFont, "family">) {
+  return `"${font.family}", sans-serif`;
+}
+
+function normalizeCustomFonts(value: unknown): AppearanceCustomFont[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_CUSTOM_FONTS).flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    const id = pickString(candidate.id, "");
+    const family = pickString(candidate.family, "");
+    const name = pickString(candidate.name, "").trim().slice(0, 80);
+    const dataUrl = pickString(candidate.dataUrl, "");
+    const format = candidate.format;
+    if (
+      !SAFE_CUSTOM_FONT_ID.test(id) ||
+      !SAFE_CUSTOM_FONT_FAMILY.test(family) ||
+      !name ||
+      dataUrl.length > MAX_EMBEDDED_FONT_LENGTH ||
+      !SAFE_FONT_DATA_URL.test(dataUrl) ||
+      !["woff2", "woff", "truetype", "opentype"].includes(format as string)
+    ) {
+      return [];
+    }
+    return [{ id, family, name, dataUrl, format: format as AppearanceCustomFont["format"] }];
+  });
 }
 
 function pickColor(value: unknown, fallback: string) {
@@ -342,12 +376,14 @@ function normalizeComponentOverride(
 function normalizeElementOverrides(
   value: unknown,
   includeHoverState = true,
+  customFontValues: readonly string[] = [],
 ): AppearanceProfile["elementOverrides"] {
   if (!Array.isArray(value)) return [];
 
   const fontFamilies = [
     ...FONT_OPTIONS.map((option) => option.value),
     ...DISPLAY_FONT_OPTIONS.map((option) => option.value),
+    ...customFontValues,
   ];
 
   return value.slice(0, MAX_ELEMENT_OVERRIDES).flatMap((candidate) => {
@@ -380,6 +416,9 @@ function normalizeElementOverrides(
 
     const rawStyle = isRecord(candidate.style) ? candidate.style : {};
     const style: AppearanceProfile["elementOverrides"][number]["style"] = {};
+    if (["ice", "gold", "glass", "liquid-glass"].includes(rawStyle.materialPreset as string)) {
+      style.materialPreset = rawStyle.materialPreset as NonNullable<typeof style.materialPreset>;
+    }
     if (typeof rawStyle.width === "number" && Number.isFinite(rawStyle.width)) {
       style.width = clampNumber(rawStyle.width, 0, 0, 1_600);
     }
@@ -545,8 +584,296 @@ function normalizeElementOverrides(
     ) {
       style.backgroundGradientSoftness = clampNumber(rawStyle.backgroundGradientSoftness, 1, 0, 1);
     }
+    if (
+      ["none", "flow", "pulse", "drift", "orbit", "shimmer", "spectrum", "custom"].includes(
+        rawStyle.backgroundGradientAnimation as string,
+      )
+    ) {
+      style.backgroundGradientAnimation = rawStyle.backgroundGradientAnimation as NonNullable<
+        typeof style.backgroundGradientAnimation
+      >;
+    }
+    if (
+      typeof rawStyle.backgroundGradientAnimationDuration === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientAnimationDuration)
+    ) {
+      style.backgroundGradientAnimationDuration = Math.round(
+        clampNumber(rawStyle.backgroundGradientAnimationDuration, 6_000, 500, 30_000),
+      );
+    }
+    if (
+      ["normal", "reverse", "alternate"].includes(
+        rawStyle.backgroundGradientAnimationDirection as string,
+      )
+    ) {
+      style.backgroundGradientAnimationDirection =
+        rawStyle.backgroundGradientAnimationDirection as NonNullable<
+          typeof style.backgroundGradientAnimationDirection
+        >;
+    }
+    if (
+      ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].includes(
+        rawStyle.backgroundGradientAnimationEasing as string,
+      )
+    ) {
+      style.backgroundGradientAnimationEasing =
+        rawStyle.backgroundGradientAnimationEasing as NonNullable<
+          typeof style.backgroundGradientAnimationEasing
+        >;
+    }
+    for (const key of [
+      "backgroundGradientAnimationStartX",
+      "backgroundGradientAnimationStartY",
+      "backgroundGradientAnimationEndX",
+      "backgroundGradientAnimationEndY",
+    ] as const) {
+      if (typeof rawStyle[key] === "number" && Number.isFinite(rawStyle[key])) {
+        const fallbackValue = key.endsWith("StartX") ? 0 : key.endsWith("EndX") ? 100 : 50;
+        style[key] = clampNumber(rawStyle[key], fallbackValue, -100, 200);
+      }
+    }
+    if (
+      typeof rawStyle.backgroundGradientAnimationScale === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientAnimationScale)
+    ) {
+      style.backgroundGradientAnimationScale = clampNumber(
+        rawStyle.backgroundGradientAnimationScale,
+        240,
+        100,
+        500,
+      );
+    }
+    if (
+      typeof rawStyle.backgroundGradientAnimationHue === "number" &&
+      Number.isFinite(rawStyle.backgroundGradientAnimationHue)
+    ) {
+      style.backgroundGradientAnimationHue = clampNumber(
+        rawStyle.backgroundGradientAnimationHue,
+        0,
+        -360,
+        360,
+      );
+    }
+    for (const key of [
+      "backgroundGradientAnimationSaturation",
+      "backgroundGradientAnimationBrightness",
+    ] as const) {
+      if (typeof rawStyle[key] === "number" && Number.isFinite(rawStyle[key])) {
+        style[key] = clampNumber(rawStyle[key], 1, 0.25, 2.5);
+      }
+    }
     if (typeof rawStyle.textColor === "string" && HEX_COLOR.test(rawStyle.textColor)) {
       style.textColor = rawStyle.textColor.toLowerCase();
+    }
+    if (["solid", "gradient"].includes(rawStyle.textKind as string)) {
+      style.textKind = rawStyle.textKind as NonNullable<typeof style.textKind>;
+    }
+    if (
+      typeof rawStyle.textGradientStart === "string" &&
+      HEX_COLOR.test(rawStyle.textGradientStart)
+    ) {
+      style.textGradientStart = rawStyle.textGradientStart.toLowerCase();
+    }
+    if (typeof rawStyle.textGradientEnd === "string" && HEX_COLOR.test(rawStyle.textGradientEnd)) {
+      style.textGradientEnd = rawStyle.textGradientEnd.toLowerCase();
+    }
+    if (
+      typeof rawStyle.textGradientAngle === "number" &&
+      Number.isFinite(rawStyle.textGradientAngle)
+    ) {
+      style.textGradientAngle = clampNumber(rawStyle.textGradientAngle, 135, 0, 360);
+    }
+    if (["linear", "radial", "conic"].includes(rawStyle.textGradientType as string)) {
+      style.textGradientType = rawStyle.textGradientType as NonNullable<
+        typeof style.textGradientType
+      >;
+    }
+    if (Array.isArray(rawStyle.textGradientStops)) {
+      const stops = rawStyle.textGradientStops
+        .slice(0, 8)
+        .flatMap((candidate) => {
+          if (
+            !isRecord(candidate) ||
+            typeof candidate.color !== "string" ||
+            !HEX_COLOR.test(candidate.color) ||
+            typeof candidate.position !== "number" ||
+            !Number.isFinite(candidate.position)
+          ) {
+            return [];
+          }
+          return [
+            {
+              color: candidate.color.toLowerCase(),
+              position: clampNumber(candidate.position, 0, 0, 100),
+            },
+          ];
+        })
+        .sort((left, right) => left.position - right.position);
+      if (stops.length >= 2) style.textGradientStops = stops;
+    }
+    if (
+      typeof rawStyle.textGradientCenterX === "number" &&
+      Number.isFinite(rawStyle.textGradientCenterX)
+    ) {
+      style.textGradientCenterX = clampNumber(rawStyle.textGradientCenterX, 50, 0, 100);
+    }
+    if (
+      typeof rawStyle.textGradientCenterY === "number" &&
+      Number.isFinite(rawStyle.textGradientCenterY)
+    ) {
+      style.textGradientCenterY = clampNumber(rawStyle.textGradientCenterY, 50, 0, 100);
+    }
+    if (
+      typeof rawStyle.textGradientScale === "number" &&
+      Number.isFinite(rawStyle.textGradientScale)
+    ) {
+      style.textGradientScale = clampNumber(rawStyle.textGradientScale, 100, 10, 200);
+    }
+    if (["circle", "ellipse"].includes(rawStyle.textGradientRadialShape as string)) {
+      style.textGradientRadialShape = rawStyle.textGradientRadialShape as NonNullable<
+        typeof style.textGradientRadialShape
+      >;
+    }
+    if (
+      typeof rawStyle.textGradientRadialAspect === "number" &&
+      Number.isFinite(rawStyle.textGradientRadialAspect)
+    ) {
+      style.textGradientRadialAspect = clampNumber(rawStyle.textGradientRadialAspect, 1, 0.25, 2);
+    }
+    if (
+      typeof rawStyle.textGradientStrength === "number" &&
+      Number.isFinite(rawStyle.textGradientStrength)
+    ) {
+      style.textGradientStrength = clampNumber(rawStyle.textGradientStrength, 1, 0, 1);
+    }
+    if (
+      typeof rawStyle.textGradientMidpoint === "number" &&
+      Number.isFinite(rawStyle.textGradientMidpoint)
+    ) {
+      style.textGradientMidpoint = clampNumber(rawStyle.textGradientMidpoint, 0.5, 0.05, 0.95);
+    }
+    if (
+      typeof rawStyle.textGradientSoftness === "number" &&
+      Number.isFinite(rawStyle.textGradientSoftness)
+    ) {
+      style.textGradientSoftness = clampNumber(rawStyle.textGradientSoftness, 1, 0, 1);
+    }
+    if (
+      ["none", "flow", "pulse", "drift", "orbit", "shimmer", "spectrum", "custom"].includes(
+        rawStyle.textGradientAnimation as string,
+      )
+    ) {
+      style.textGradientAnimation = rawStyle.textGradientAnimation as NonNullable<
+        typeof style.textGradientAnimation
+      >;
+    }
+    if (
+      typeof rawStyle.textGradientAnimationDuration === "number" &&
+      Number.isFinite(rawStyle.textGradientAnimationDuration)
+    ) {
+      style.textGradientAnimationDuration = Math.round(
+        clampNumber(rawStyle.textGradientAnimationDuration, 6_000, 500, 30_000),
+      );
+    }
+    if (
+      ["normal", "reverse", "alternate"].includes(rawStyle.textGradientAnimationDirection as string)
+    ) {
+      style.textGradientAnimationDirection = rawStyle.textGradientAnimationDirection as NonNullable<
+        typeof style.textGradientAnimationDirection
+      >;
+    }
+    if (
+      ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].includes(
+        rawStyle.textGradientAnimationEasing as string,
+      )
+    ) {
+      style.textGradientAnimationEasing = rawStyle.textGradientAnimationEasing as NonNullable<
+        typeof style.textGradientAnimationEasing
+      >;
+    }
+    for (const key of [
+      "textGradientAnimationStartX",
+      "textGradientAnimationStartY",
+      "textGradientAnimationEndX",
+      "textGradientAnimationEndY",
+    ] as const) {
+      if (typeof rawStyle[key] === "number" && Number.isFinite(rawStyle[key])) {
+        const fallbackValue = key.endsWith("StartX") ? 0 : key.endsWith("EndX") ? 100 : 50;
+        style[key] = clampNumber(rawStyle[key], fallbackValue, -100, 200);
+      }
+    }
+    if (
+      typeof rawStyle.textGradientAnimationScale === "number" &&
+      Number.isFinite(rawStyle.textGradientAnimationScale)
+    ) {
+      style.textGradientAnimationScale = clampNumber(
+        rawStyle.textGradientAnimationScale,
+        240,
+        100,
+        500,
+      );
+    }
+    if (
+      typeof rawStyle.textGradientAnimationHue === "number" &&
+      Number.isFinite(rawStyle.textGradientAnimationHue)
+    ) {
+      style.textGradientAnimationHue = clampNumber(rawStyle.textGradientAnimationHue, 0, -360, 360);
+    }
+    for (const key of [
+      "textGradientAnimationSaturation",
+      "textGradientAnimationBrightness",
+    ] as const) {
+      if (typeof rawStyle[key] === "number" && Number.isFinite(rawStyle[key])) {
+        style[key] = clampNumber(rawStyle[key], 1, 0.25, 2.5);
+      }
+    }
+    if (
+      ["none", "underline", "overline", "line-through"].includes(rawStyle.textDecoration as string)
+    ) {
+      style.textDecoration = rawStyle.textDecoration as NonNullable<typeof style.textDecoration>;
+    }
+    if (
+      ["solid", "double", "dotted", "dashed", "wavy"].includes(
+        rawStyle.textDecorationStyle as string,
+      )
+    ) {
+      style.textDecorationStyle = rawStyle.textDecorationStyle as NonNullable<
+        typeof style.textDecorationStyle
+      >;
+    }
+    if (
+      ["none", "uppercase", "lowercase", "capitalize"].includes(rawStyle.textTransform as string)
+    ) {
+      style.textTransform = rawStyle.textTransform as NonNullable<typeof style.textTransform>;
+    }
+    for (const key of ["textDecorationColor", "textShadowColor", "textStrokeColor"] as const) {
+      if (typeof rawStyle[key] === "string" && HEX_COLOR.test(rawStyle[key])) {
+        style[key] = rawStyle[key].toLowerCase();
+      }
+    }
+    if (
+      typeof rawStyle.textDecorationThickness === "number" &&
+      Number.isFinite(rawStyle.textDecorationThickness)
+    ) {
+      style.textDecorationThickness = clampNumber(rawStyle.textDecorationThickness, 1, 0, 12);
+    }
+    if (
+      typeof rawStyle.textUnderlineOffset === "number" &&
+      Number.isFinite(rawStyle.textUnderlineOffset)
+    ) {
+      style.textUnderlineOffset = clampNumber(rawStyle.textUnderlineOffset, 2, -8, 24);
+    }
+    if (typeof rawStyle.textShadowX === "number" && Number.isFinite(rawStyle.textShadowX)) {
+      style.textShadowX = clampNumber(rawStyle.textShadowX, 0, -40, 40);
+    }
+    if (typeof rawStyle.textShadowY === "number" && Number.isFinite(rawStyle.textShadowY)) {
+      style.textShadowY = clampNumber(rawStyle.textShadowY, 2, -40, 40);
+    }
+    if (typeof rawStyle.textShadowBlur === "number" && Number.isFinite(rawStyle.textShadowBlur)) {
+      style.textShadowBlur = clampNumber(rawStyle.textShadowBlur, 0, 0, 80);
+    }
+    if (typeof rawStyle.textStrokeWidth === "number" && Number.isFinite(rawStyle.textStrokeWidth)) {
+      style.textStrokeWidth = clampNumber(rawStyle.textStrokeWidth, 0, 0, 8);
     }
     if (typeof rawStyle.paddingX === "number" && Number.isFinite(rawStyle.paddingX)) {
       style.paddingX = clampNumber(rawStyle.paddingX, 0, 0, 64);
@@ -627,6 +954,94 @@ function normalizeElementOverrides(
     }
     if (typeof rawStyle.glassSaturation === "number" && Number.isFinite(rawStyle.glassSaturation)) {
       style.glassSaturation = clampNumber(rawStyle.glassSaturation, 1.35, 0, 3);
+    }
+    if (typeof rawStyle.liquidGlass === "boolean") style.liquidGlass = rawStyle.liquidGlass;
+    if (typeof rawStyle.liquidGlassBlur === "number" && Number.isFinite(rawStyle.liquidGlassBlur)) {
+      style.liquidGlassBlur = clampNumber(rawStyle.liquidGlassBlur, 0.25, 0, 1);
+    }
+    if (
+      typeof rawStyle.liquidGlassRefraction === "number" &&
+      Number.isFinite(rawStyle.liquidGlassRefraction)
+    ) {
+      style.liquidGlassRefraction = clampNumber(rawStyle.liquidGlassRefraction, 0.69, 0, 1);
+    }
+    if (
+      typeof rawStyle.liquidGlassChromaticAberration === "number" &&
+      Number.isFinite(rawStyle.liquidGlassChromaticAberration)
+    ) {
+      style.liquidGlassChromaticAberration = clampNumber(
+        rawStyle.liquidGlassChromaticAberration,
+        0.05,
+        0,
+        0.35,
+      );
+    }
+    if (
+      typeof rawStyle.liquidGlassEdgeHighlight === "number" &&
+      Number.isFinite(rawStyle.liquidGlassEdgeHighlight)
+    ) {
+      style.liquidGlassEdgeHighlight = clampNumber(rawStyle.liquidGlassEdgeHighlight, 0.12, 0, 1);
+    }
+    if (
+      typeof rawStyle.liquidGlassSpecular === "number" &&
+      Number.isFinite(rawStyle.liquidGlassSpecular)
+    ) {
+      style.liquidGlassSpecular = clampNumber(rawStyle.liquidGlassSpecular, 0.2, 0, 1);
+    }
+    if (
+      ["none", "fade", "rise", "slide-left", "slide-right", "zoom", "blur", "custom"].includes(
+        rawStyle.entranceAnimation as string,
+      )
+    ) {
+      style.entranceAnimation = rawStyle.entranceAnimation as NonNullable<
+        typeof style.entranceAnimation
+      >;
+    }
+    if (
+      typeof rawStyle.entranceDuration === "number" &&
+      Number.isFinite(rawStyle.entranceDuration)
+    ) {
+      style.entranceDuration = Math.round(clampNumber(rawStyle.entranceDuration, 600, 100, 5_000));
+    }
+    if (typeof rawStyle.entranceDelay === "number" && Number.isFinite(rawStyle.entranceDelay)) {
+      style.entranceDelay = Math.round(clampNumber(rawStyle.entranceDelay, 0, 0, 5_000));
+    }
+    if (
+      ["linear", "ease", "ease-in", "ease-out", "ease-in-out"].includes(
+        rawStyle.entranceEasing as string,
+      )
+    ) {
+      style.entranceEasing = rawStyle.entranceEasing as NonNullable<typeof style.entranceEasing>;
+    }
+    if (
+      typeof rawStyle.entranceFromOpacity === "number" &&
+      Number.isFinite(rawStyle.entranceFromOpacity)
+    ) {
+      style.entranceFromOpacity = clampNumber(rawStyle.entranceFromOpacity, 0, 0, 1);
+    }
+    if (typeof rawStyle.entranceFromX === "number" && Number.isFinite(rawStyle.entranceFromX)) {
+      style.entranceFromX = clampNumber(rawStyle.entranceFromX, 0, -800, 800);
+    }
+    if (typeof rawStyle.entranceFromY === "number" && Number.isFinite(rawStyle.entranceFromY)) {
+      style.entranceFromY = clampNumber(rawStyle.entranceFromY, 24, -600, 600);
+    }
+    if (
+      typeof rawStyle.entranceFromScale === "number" &&
+      Number.isFinite(rawStyle.entranceFromScale)
+    ) {
+      style.entranceFromScale = clampNumber(rawStyle.entranceFromScale, 0.9, 0.25, 2);
+    }
+    if (
+      typeof rawStyle.entranceFromRotate === "number" &&
+      Number.isFinite(rawStyle.entranceFromRotate)
+    ) {
+      style.entranceFromRotate = clampNumber(rawStyle.entranceFromRotate, 0, -360, 360);
+    }
+    if (
+      typeof rawStyle.entranceFromBlur === "number" &&
+      Number.isFinite(rawStyle.entranceFromBlur)
+    ) {
+      style.entranceFromBlur = clampNumber(rawStyle.entranceFromBlur, 0, 0, 80);
     }
     if (typeof rawStyle.scale === "number" && Number.isFinite(rawStyle.scale)) {
       style.scale = clampNumber(rawStyle.scale, 1, 0.5, 1.5);
@@ -741,6 +1156,7 @@ function normalizeElementOverrides(
               },
             ],
             false,
+            customFontValues,
           )[0]?.style
         : undefined;
     const hoverStyle = normalizeStateStyle("hoverStyle");
@@ -855,6 +1271,7 @@ export function createDefaultAppearance(
     typography: {
       uiFont: FONT_OPTIONS[0].value,
       displayFont: DISPLAY_FONT_OPTIONS[0].value,
+      customFonts: [],
     },
     opacity: {
       window: 1,
@@ -888,6 +1305,8 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const background = isRecord(record.background) ? record.background : {};
   const shape = isRecord(record.shape) ? record.shape : {};
   const typography = isRecord(record.typography) ? record.typography : {};
+  const customFonts = normalizeCustomFonts(typography.customFonts);
+  const customFontValues = customFonts.map(customFontStack);
   const opacity = isRecord(record.opacity) ? record.opacity : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
   const canvasUi = isRecord(record.canvasUi) ? record.canvasUi : {};
@@ -934,14 +1353,15 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
     typography: {
       uiFont: pickEnum(
         typography.uiFont,
-        FONT_OPTIONS.map((option) => option.value),
+        [...FONT_OPTIONS.map((option) => option.value), ...customFontValues],
         fallback.typography.uiFont,
       ),
       displayFont: pickEnum(
         typography.displayFont,
-        DISPLAY_FONT_OPTIONS.map((option) => option.value),
+        [...DISPLAY_FONT_OPTIONS.map((option) => option.value), ...customFontValues],
         fallback.typography.displayFont,
       ),
+      customFonts,
     },
     opacity: {
       window: clampNumber(opacity.window, fallback.opacity.window, 0.55, 1),
@@ -955,7 +1375,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
       legacyTabs: TAB_ORDER.filter((tab) => legacyNavigationTabs.includes(tab)),
     },
     canvasUi: normalizeCanvasUiConfig(canvasUi, fallback.canvasUi),
-    elementOverrides: normalizeElementOverrides(record.elementOverrides),
+    elementOverrides: normalizeElementOverrides(record.elementOverrides, true, customFontValues),
     motion: {
       enabled: typeof motion.enabled === "boolean" ? motion.enabled : fallback.motion.enabled,
       uiStyle: pickEnum<UiMotionStyle>(motion.uiStyle, uiMotionIds, fallback.motion.uiStyle),
@@ -1038,6 +1458,27 @@ export function buildAppearanceStyle(profileValue: AppearanceProfile): CSSProper
 
 export function applyAppearanceToElement(element: HTMLElement, profileValue: AppearanceProfile) {
   const profile = normalizeAppearanceProfile(profileValue);
+  const ownerDocument = element.ownerDocument;
+  if (ownerDocument?.head) {
+    let customFontStyle = ownerDocument.getElementById(
+      CUSTOM_FONT_STYLE_ID,
+    ) as HTMLStyleElement | null;
+    if (profile.typography.customFonts.length > 0) {
+      if (!customFontStyle) {
+        customFontStyle = ownerDocument.createElement("style");
+        customFontStyle.id = CUSTOM_FONT_STYLE_ID;
+        ownerDocument.head.append(customFontStyle);
+      }
+      customFontStyle.textContent = profile.typography.customFonts
+        .map(
+          (font) =>
+            `@font-face { font-family: "${font.family}"; src: url("${font.dataUrl}") format("${font.format}"); font-display: swap; }`,
+        )
+        .join("\n");
+    } else {
+      customFontStyle?.remove();
+    }
+  }
   element.dataset.theme = profile.baseTheme === "light" ? "" : profile.baseTheme;
   element.dataset.appearanceCustom = profile.customized ? "true" : "false";
   element.dataset.appearanceBackground = profile.background.kind;
