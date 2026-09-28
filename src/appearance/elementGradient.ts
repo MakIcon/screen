@@ -12,7 +12,8 @@ export const DEFAULT_GRADIENT_SOFTNESS = 0.72;
 export const MAX_GRADIENT_STOPS = 8;
 
 const GRADIENT_COLOR_SPACE = "oklab";
-const GRADIENT_CURVE_SAMPLES = 24;
+const CURVE_SAMPLE_TOLERANCE = 0.006;
+const MAX_CURVE_SUBDIVISIONS = 8;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -76,6 +77,44 @@ export function gradientCurveValue(
   return curvedOdds / (1 + curvedOdds);
 }
 
+/** Approximate a shaped color blend only where its curvature needs extra stops. */
+export function sampleGradientCurve(
+  midpoint = DEFAULT_GRADIENT_MIDPOINT,
+  softness = DEFAULT_GRADIENT_SOFTNESS,
+) {
+  const points = [{ position: 0, blend: 0 }];
+  if (Math.abs(midpoint - 0.5) < 0.0001 && softness >= 0.9999) {
+    points.push({ position: 1, blend: 1 });
+    return points;
+  }
+
+  const sample = (
+    start: number,
+    startBlend: number,
+    end: number,
+    endBlend: number,
+    depth: number,
+  ) => {
+    const span = end - start;
+    const blendSpan = endBlend - startBlend;
+    const error = [0.25, 0.5, 0.75].reduce((largest, fraction) => {
+      const actual = gradientCurveValue(start + span * fraction, midpoint, softness);
+      return Math.max(largest, Math.abs(actual - (startBlend + blendSpan * fraction)));
+    }, 0);
+    if (error > CURVE_SAMPLE_TOLERANCE && depth < MAX_CURVE_SUBDIVISIONS) {
+      const center = (start + end) / 2;
+      const centerBlend = gradientCurveValue(center, midpoint, softness);
+      sample(start, startBlend, center, centerBlend, depth + 1);
+      sample(center, centerBlend, end, endBlend, depth + 1);
+      return;
+    }
+    points.push({ position: end, blend: endBlend });
+  };
+
+  sample(0, 0, 1, 1, 0);
+  return points;
+}
+
 function sampledGradientStops(
   stops: AppearanceElementGradientStop[],
   midpoint: number,
@@ -89,7 +128,8 @@ function sampledGradientStops(
   const applyColor = (color: string) =>
     colorWithOpacity(colorWithStrength(color, baseColor, strength), opacity);
 
-  if (Math.abs(midpoint - 0.5) < 0.0001 && softness >= 0.9999) {
+  const curvePoints = sampleGradientCurve(midpoint, softness);
+  if (curvePoints.length === 2) {
     if (
       positionScale === 1 &&
       stops.length === 2 &&
@@ -114,9 +154,9 @@ function sampledGradientStops(
     result.push(`${applyColor(left.color)} ${formatNumber(left.position * positionScale)}%`);
     if (span <= 0.01) return;
 
-    for (let sample = 1; sample < GRADIENT_CURVE_SAMPLES; sample += 1) {
-      const spatialProgress = sample / GRADIENT_CURVE_SAMPLES;
-      const colorProgress = gradientCurveValue(spatialProgress, midpoint, softness);
+    for (let sample = 1; sample < curvePoints.length - 1; sample += 1) {
+      const spatialProgress = curvePoints[sample].position;
+      const colorProgress = curvePoints[sample].blend;
       const mixedColor = `color-mix(in ${GRADIENT_COLOR_SPACE}, ${right.color} ${formatNumber(
         colorProgress * 100,
       )}%, ${left.color})`;
@@ -268,11 +308,17 @@ export function interpolateGradientStopColor(
   left: AppearanceElementGradientStop,
   right: AppearanceElementGradientStop,
   position: number,
+  midpoint = DEFAULT_GRADIENT_MIDPOINT,
+  softness = 1,
 ) {
   const leftOklab = hexToOklab(left.color);
   const rightOklab = hexToOklab(right.color);
   const span = Math.max(0.0001, right.position - left.position);
-  const progress = clamp((position - left.position) / span, 0, 1);
+  const progress = gradientCurveValue(
+    clamp((position - left.position) / span, 0, 1),
+    midpoint,
+    softness,
+  );
   return oklabToHex(
     leftOklab.lightness + (rightOklab.lightness - leftOklab.lightness) * progress,
     leftOklab.a + (rightOklab.a - leftOklab.a) * progress,

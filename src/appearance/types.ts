@@ -7,7 +7,7 @@ import type {
 } from "./animations";
 
 export type Theme = "light" | "dark" | "void";
-export type AppearanceBackgroundKind = "solid" | "image" | "drawing";
+export type AppearanceBackgroundKind = "solid" | "gradient" | "image" | "drawing";
 export type AppearanceElementBackgroundKind = "solid" | "gradient";
 export type AppearanceElementGradientType = "linear" | "radial" | "conic";
 export type AppearanceElementGradientRadialShape = "circle" | "ellipse";
@@ -415,6 +415,7 @@ export type AppearanceProfile = {
   background: {
     kind: AppearanceBackgroundKind;
     scope: "launcher" | "content";
+    gradient: AppearanceElementStyle;
     imageDataUrl: string;
     imageName: string;
     drawingDataUrl: string;

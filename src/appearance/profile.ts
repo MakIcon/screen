@@ -17,12 +17,15 @@ import type {
   AppearanceElementComponentOverride,
   AppearanceElementComponentTarget,
   AppearanceElementKind,
+  AppearanceElementStyle,
   AppearanceCustomFont,
   AppearanceProfile,
   CanvasUiEffectConfig,
   Theme,
 } from "./types";
 import { CANVAS_UI_EFFECT_IDS, normalizeCanvasUiEffectSettings } from "./canvasUiCatalog";
+import { buildElementGradientImage } from "./elementGradient";
+import { GRADIENT_PRESETS, gradientPresetStyle } from "./gradientPresets";
 
 export const APPEARANCE_STORAGE_KEY = "screenlauncher-appearance-v2";
 export const LEGACY_THEME_STORAGE_KEY = "screenlauncher-theme";
@@ -174,6 +177,74 @@ function pickImageDataUrl(value: unknown) {
     SAFE_IMAGE_DATA_URL.test(value)
     ? value
     : "";
+}
+
+function normalizeWindowGradient(value: unknown, fallbackColor: string): AppearanceElementStyle {
+  const raw = isRecord(value) ? value : {};
+  const defaultStyle = gradientPresetStyle(GRADIENT_PRESETS[0]);
+  const validStops = Array.isArray(raw.backgroundGradientStops)
+    ? raw.backgroundGradientStops
+        .slice(0, 8)
+        .flatMap((candidate) => {
+          if (
+            !isRecord(candidate) ||
+            typeof candidate.color !== "string" ||
+            !HEX_COLOR.test(candidate.color) ||
+            typeof candidate.position !== "number" ||
+            !Number.isFinite(candidate.position)
+          ) {
+            return [];
+          }
+          return [
+            {
+              color: candidate.color.toLowerCase(),
+              position: clampNumber(candidate.position, 0, 0, 100),
+            },
+          ];
+        })
+        .sort((left, right) => left.position - right.position)
+    : [];
+  const stops = validStops.length >= 2 ? validStops : (defaultStyle.backgroundGradientStops ?? []);
+  return {
+    backgroundKind: "gradient",
+    backgroundColor: pickColor(raw.backgroundColor, fallbackColor),
+    backgroundGradientType: pickEnum(
+      raw.backgroundGradientType,
+      ["linear", "radial", "conic"] as const,
+      defaultStyle.backgroundGradientType ?? "linear",
+    ),
+    backgroundGradientAngle: clampNumber(
+      raw.backgroundGradientAngle,
+      defaultStyle.backgroundGradientAngle ?? 135,
+      0,
+      360,
+    ),
+    backgroundGradientStops: stops,
+    backgroundGradientStart: stops[0].color,
+    backgroundGradientEnd: stops[stops.length - 1].color,
+    backgroundGradientCenterX: clampNumber(raw.backgroundGradientCenterX, 50, 0, 100),
+    backgroundGradientCenterY: clampNumber(raw.backgroundGradientCenterY, 50, 0, 100),
+    backgroundGradientScale: clampNumber(raw.backgroundGradientScale, 100, 10, 200),
+    backgroundGradientRadialShape: pickEnum(
+      raw.backgroundGradientRadialShape,
+      ["circle", "ellipse"] as const,
+      "circle",
+    ),
+    backgroundGradientRadialAspect: clampNumber(raw.backgroundGradientRadialAspect, 1, 0.25, 2),
+    backgroundGradientStrength: clampNumber(raw.backgroundGradientStrength, 1, 0, 1),
+    backgroundGradientMidpoint: clampNumber(
+      raw.backgroundGradientMidpoint,
+      defaultStyle.backgroundGradientMidpoint ?? 0.5,
+      0.05,
+      0.95,
+    ),
+    backgroundGradientSoftness: clampNumber(
+      raw.backgroundGradientSoftness,
+      defaultStyle.backgroundGradientSoftness ?? 0.72,
+      0,
+      1,
+    ),
+  };
 }
 
 function pickCanvasAssetUrl(value: unknown) {
@@ -1261,6 +1332,7 @@ export function createDefaultAppearance(
     background: {
       kind: "solid",
       scope: "launcher",
+      gradient: normalizeWindowGradient(undefined, colors.background),
       imageDataUrl: "",
       imageName: "",
       drawingDataUrl: "",
@@ -1333,7 +1405,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
     background: {
       kind: pickEnum<AppearanceBackgroundKind>(
         background.kind,
-        ["solid", "image", "drawing"],
+        ["solid", "gradient", "image", "drawing"],
         fallback.background.kind,
       ),
       scope: pickEnum(
@@ -1341,6 +1413,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
         ["launcher", "content"] as const,
         fallback.background.scope,
       ),
+      gradient: normalizeWindowGradient(background.gradient, fallback.colors.background),
       imageDataUrl: pickImageDataUrl(background.imageDataUrl),
       imageName: pickString(background.imageName, "").slice(0, 180),
       drawingDataUrl: pickImageDataUrl(background.drawingDataUrl),
@@ -1429,6 +1502,15 @@ export function buildAppearanceStyle(profileValue: AppearanceProfile): CSSProper
   const cardAlpha = theme.cardAlpha * profile.opacity.panels;
   const panelAlpha = theme.panelAlpha * profile.opacity.panels;
   const backgroundImage = selectedBackgroundImage(profile);
+  const windowGradient =
+    profile.background.kind === "gradient"
+      ? buildElementGradientImage(
+          profile.background.gradient,
+          profile.background.gradient.backgroundGradientStart ?? profile.colors.background,
+          profile.background.gradient.backgroundGradientEnd ?? profile.colors.accent,
+          { baseColor: profile.colors.background, opacity: 1 },
+        )
+      : "";
   const backgroundDim = backgroundImage ? profile.background.dim : 0;
 
   return {
@@ -1443,7 +1525,8 @@ export function buildAppearanceStyle(profileValue: AppearanceProfile): CSSProper
     "--bg-panel": hexToRgba(profile.colors.background, panelAlpha),
     "--bg-panel-strong": hexToRgba(profile.colors.background, Math.min(1, panelAlpha * 1.2)),
     "--appearance-background-color": profile.colors.background,
-    "--appearance-background-image": backgroundImage ? `url("${backgroundImage}")` : "none",
+    "--appearance-background-image":
+      windowGradient || (backgroundImage ? `url("${backgroundImage}")` : "none"),
     "--appearance-background-dim": hexToRgba("#000000", backgroundDim),
     "--appearance-background-blur": `${profile.background.blur}px`,
     "--appearance-background-bleed": `${-(profile.background.blur + 2)}px`,

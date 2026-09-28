@@ -5,6 +5,7 @@ import {
   gradientCurveValue,
   interpolateGradientStopColor,
   resolveElementGradientStops,
+  sampleGradientCurve,
 } from "./elementGradient";
 
 describe("element gradient", () => {
@@ -94,7 +95,8 @@ describe("element gradient", () => {
     ).toBe("#636363");
   });
 
-  it("samples shaped curves densely enough to avoid visible stepping", () => {
+  it("adapts CSS stops to the curve instead of always generating 24 samples", () => {
+    const points = sampleGradientCurve(0.5, 0.5);
     const image = buildElementGradientImage(
       {
         backgroundGradientStart: "#fff7ed",
@@ -105,7 +107,38 @@ describe("element gradient", () => {
       "#ea580c",
     );
 
-    expect(image.match(/color-mix\(in oklab/g)).toHaveLength(23);
+    expect(points.length).toBeLessThan(24);
+    expect(points.length).toBeGreaterThan(5);
+    expect(image.match(/color-mix\(in oklab/g)).toHaveLength(points.length - 2);
+
+    for (const [midpoint, softness] of [
+      [0.5, 0.5],
+      [0.3, 0.2],
+      [0.05, 0],
+      [0.95, 0],
+    ]) {
+      const samples = sampleGradientCurve(midpoint, softness);
+      for (let index = 0; index < samples.length - 1; index += 1) {
+        const left = samples[index];
+        const right = samples[index + 1];
+        for (const fraction of [0.25, 0.5, 0.75]) {
+          const position = left.position + (right.position - left.position) * fraction;
+          const approximate = left.blend + (right.blend - left.blend) * fraction;
+          expect(
+            Math.abs(gradientCurveValue(position, midpoint, softness) - approximate),
+          ).toBeLessThan(0.015);
+        }
+      }
+    }
+  });
+
+  it("inserts a stop at the color produced by the current blend curve", () => {
+    const dark = { color: "#000000", position: 0 };
+    const light = { color: "#ffffff", position: 100 };
+    expect(interpolateGradientStopColor(dark, light, 30, 0.3, 0.2)).toBe("#636363");
+    expect(interpolateGradientStopColor(dark, light, 25, 0.5, 0)).not.toBe(
+      interpolateGradientStopColor(dark, light, 25, 0.5, 1),
+    );
   });
 
   it("maps text gradient controls to the shared gradient renderer", () => {

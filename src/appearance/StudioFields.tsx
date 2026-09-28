@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ColorPicker } from "../components/color-picker/ColorPicker";
 import { CustomNumberInput } from "../components/inputs/CustomNumberInput";
 import { ElementSlider } from "../components/inputs/ElementSlider";
@@ -147,18 +147,36 @@ export function Section({
   title,
   note,
   children,
+  defaultOpen = true,
 }: {
   title: string;
   note?: string;
   children: ReactNode;
+  defaultOpen?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(defaultOpen);
+  const contentId = useId();
+  useEffect(() => setExpanded(defaultOpen), [title, defaultOpen]);
   return (
-    <section className="studio-section">
-      <div className="studio-section-heading">
-        <span>{title}</span>
-        {note && <p>{note}</p>}
+    <section className={`studio-section${expanded ? "" : " is-collapsed"}`}>
+      <button
+        className="studio-section-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="studio-section-heading">
+          <span>{title}</span>
+          {note && <span className="studio-section-note">{note}</span>}
+        </span>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m4 6 4 4 4-4" />
+        </svg>
+      </button>
+      <div className="studio-section-content" id={contentId} hidden={!expanded}>
+        {children}
       </div>
-      {children}
     </section>
   );
 }

@@ -1159,6 +1159,38 @@ describe("appearance profile", () => {
     expect(style["--appearance-background-dim"]).toBe("rgba(0, 0, 0, 0.000)");
   });
 
+  it("saves a safe full-window gradient and renders it without image darkening", () => {
+    const profile = normalizeAppearanceProfile({
+      customized: true,
+      background: {
+        kind: "gradient",
+        scope: "content",
+        gradient: {
+          backgroundGradientType: "radial",
+          backgroundGradientStops: [
+            { color: "#112233", position: -10 },
+            { color: "url(javascript:alert(1))", position: 45 },
+            { color: "#AABBCC", position: 110 },
+          ],
+          backgroundGradientCenterX: 120,
+          backgroundGradientStrength: 0.8,
+        },
+      },
+    });
+    const style = buildAppearanceStyle(profile) as Record<string, string>;
+
+    expect(profile.background.kind).toBe("gradient");
+    expect(profile.background.scope).toBe("content");
+    expect(profile.background.gradient.backgroundGradientStops).toEqual([
+      { color: "#112233", position: 0 },
+      { color: "#aabbcc", position: 100 },
+    ]);
+    expect(profile.background.gradient.backgroundGradientCenterX).toBe(100);
+    expect(style["--appearance-background-image"]).toMatch(/^radial-gradient\(/);
+    expect(style["--appearance-background-image"]).not.toContain("javascript");
+    expect(style["--appearance-background-dim"]).toBe("rgba(0, 0, 0, 0.000)");
+  });
+
   it("removes every live override when returning to the original appearance", () => {
     const properties = new Map<string, string>();
     const element = {

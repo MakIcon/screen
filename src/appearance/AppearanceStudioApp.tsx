@@ -98,7 +98,7 @@ type StudioCategory =
   | "element";
 
 const CATEGORIES: { id: StudioCategory; index: string; label: string; note: string }[] = [
-  { id: "background", index: "01", label: "BACKGROUND", note: "Color, image or drawing" },
+  { id: "background", index: "01", label: "BACKGROUND", note: "Color, gradient, image or drawing" },
   { id: "colors", index: "02", label: "COLORS", note: "Theme and custom palette" },
   { id: "navigation", index: "03", label: "SIDEBAR", note: "New or original menu items" },
   { id: "shape", index: "04", label: "SHAPE", note: "Corners and rounding" },
@@ -107,6 +107,17 @@ const CATEGORIES: { id: StudioCategory; index: string; label: string; note: stri
   { id: "motion", index: "07", label: "MOTION", note: "Transitions and effects" },
   { id: "canvas-ui", index: "08", label: "CANVAS UI", note: "35 GPU canvas components" },
 ];
+
+const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
+  background: "wallpaper picture drawing image gradient",
+  colors: "color theme palette accent gradient",
+  navigation: "menu tabs navigation",
+  shape: "radius corners rounding",
+  type: "fonts text typography",
+  opacity: "transparency window panels controls",
+  motion: "animation transitions effects",
+  "canvas-ui": "gpu canvas components effects",
+};
 
 function elementStyleBadges(override: AppearanceElementOverride) {
   const badges: { label: string; value: string; color?: string }[] = [];
@@ -207,6 +218,7 @@ function elementStyleBadges(override: AppearanceElementOverride) {
 export function AppearanceStudioApp() {
   const studioWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), []);
   const [category, setCategory] = useState<StudioCategory>("background");
+  const [categoryQuery, setCategoryQuery] = useState("");
   const [draftHistory, dispatchDraftHistory] = useReducer(appearanceHistoryReducer, undefined, () =>
     createAppearanceHistory({
       ...readStoredAppearance(),
@@ -1127,22 +1139,25 @@ export function AppearanceStudioApp() {
               note="Choose one layer, then decide below which launcher area reveals it."
             >
               <div className="studio-segmented">
-                {(["solid", "image", "drawing"] as AppearanceBackgroundKind[]).map((kind) => (
-                  <button
-                    type="button"
-                    key={kind}
-                    className={draft.background.kind === kind ? "active" : ""}
-                    onClick={() => selectBackgroundKind(kind)}
-                  >
-                    {kind.toUpperCase()}
-                  </button>
-                ))}
+                {(["solid", "gradient", "image", "drawing"] as AppearanceBackgroundKind[]).map(
+                  (kind) => (
+                    <button
+                      type="button"
+                      key={kind}
+                      className={draft.background.kind === kind ? "active" : ""}
+                      onClick={() => selectBackgroundKind(kind)}
+                    >
+                      {kind.toUpperCase()}
+                    </button>
+                  ),
+                )}
               </div>
             </Section>
 
             <Section
               title="BACKGROUND AREA"
               note="Use the full launcher, or mask the title bar, left navigation and footer without rescaling the image."
+              defaultOpen={false}
             >
               <div className="studio-segmented">
                 {(["launcher", "content"] as const).map((scope) => (
@@ -1172,6 +1187,30 @@ export function AppearanceStudioApp() {
                     patchDraft((current) => ({
                       ...current,
                       colors: { ...current.colors, background },
+                    }))
+                  }
+                />
+              </Section>
+            )}
+
+            {draft.background.kind === "gradient" && (
+              <Section
+                title="WINDOW GRADIENT"
+                note="Build a full-window gradient with palettes, color stops and precise direction controls."
+              >
+                <ElementBackgroundPicker
+                  style={{ ...draft.background.gradient, backgroundColor: draft.colors.background }}
+                  fallbackColor={draft.colors.background}
+                  fallbackAccent={draft.colors.accent}
+                  gradientOnly
+                  enableMotion={false}
+                  onChange={(patch) =>
+                    patchDraft((current) => ({
+                      ...current,
+                      background: {
+                        ...current.background,
+                        gradient: { ...current.background.gradient, ...patch },
+                      },
                     }))
                   }
                 />
@@ -1230,7 +1269,7 @@ export function AppearanceStudioApp() {
               </Section>
             )}
 
-            {draft.background.kind !== "solid" && (
+            {(draft.background.kind === "image" || draft.background.kind === "drawing") && (
               <Section title="IMAGE TREATMENT">
                 <RangeField
                   label="DARKEN"
@@ -1385,6 +1424,7 @@ export function AppearanceStudioApp() {
             <Section
               title="ORIGINAL STYLE BY ITEM"
               note="Choose only the entries that should look like the old launcher menu."
+              defaultOpen={false}
             >
               <div className="studio-sidebar-tab-grid">
                 {TAB_ORDER.map((tab) => {
@@ -1511,6 +1551,7 @@ export function AppearanceStudioApp() {
           <Section
             title="CUSTOM FONTS"
             note="Fonts stay on this device and are saved inside the appearance profile."
+            defaultOpen={false}
           >
             <CustomFontManager
               fonts={draft.typography.customFonts}
@@ -1748,6 +1789,7 @@ export function AppearanceStudioApp() {
             <Section
               title="TAB TRANSITIONS"
               note="A transition belongs to the tab being entered, regardless of where you came from."
+              defaultOpen={false}
             >
               <div className="studio-segmented">
                 <button
@@ -1817,6 +1859,7 @@ export function AppearanceStudioApp() {
             <Section
               title="CLOSE BEHAVIOR"
               note="The window button and Alt+F4 can use different effects."
+              defaultOpen={false}
             >
               <SelectField<CloseAnimationId>
                 label="CLOSE BUTTON"
@@ -1894,6 +1937,18 @@ export function AppearanceStudioApp() {
           }
         : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
 
+  const searchQuery = categoryQuery.trim().toLocaleLowerCase();
+  const visibleCategories = CATEGORIES.filter((item) =>
+    `${item.label} ${item.note} ${CATEGORY_SEARCH_TERMS[item.id] ?? ""}`
+      .toLocaleLowerCase()
+      .includes(searchQuery),
+  );
+  const showElementPicker =
+    "pick element choose anything on screen edit current selection".includes(searchQuery);
+  const showEditedElements =
+    draft.elementOverrides.length > 0 &&
+    "edited elements review individual styles customized".includes(searchQuery);
+
   return (
     <div
       className="appearance-studio-window"
@@ -1962,10 +2017,24 @@ export function AppearanceStudioApp() {
           <div className="appearance-studio-nav-intro">
             <span>WORKFLOW</span>
             <strong>Design your launcher</strong>
-            <p>Choose a section, adjust it and save when the preview feels right.</p>
+            <label className="appearance-studio-nav-search">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="m10.5 10.5 3 3" />
+              </svg>
+              <input
+                type="search"
+                value={categoryQuery}
+                onChange={(event) => setCategoryQuery(event.target.value)}
+                placeholder="Search sections"
+                aria-label="Search appearance sections"
+              />
+            </label>
           </div>
-          <span className="appearance-studio-nav-group">GLOBAL STYLE</span>
-          {CATEGORIES.map((item) => (
+          {visibleCategories.length > 0 && (
+            <span className="appearance-studio-nav-group">GLOBAL STYLE</span>
+          )}
+          {visibleCategories.map((item) => (
             <button
               type="button"
               key={item.id}
@@ -1980,24 +2049,28 @@ export function AppearanceStudioApp() {
               </div>
             </button>
           ))}
-          <span className="appearance-studio-nav-group appearance-studio-nav-group--tools">
-            ELEMENT TOOLS
-          </span>
-          <button
-            type="button"
-            className={`appearance-element-nav${!elementListOpen && category === "element" ? " active" : ""}`}
-            onClick={() => selectCategory("element")}
-            aria-current={!elementListOpen && category === "element" ? "step" : undefined}
-          >
-            <span>09</span>
-            <div>
-              <strong>PICK ELEMENT</strong>
-              <small>
-                {selectedTarget ? "Edit the current selection" : "Choose anything on screen"}
-              </small>
-            </div>
-          </button>
-          {draft.elementOverrides.length > 0 && (
+          {(showElementPicker || showEditedElements) && (
+            <span className="appearance-studio-nav-group appearance-studio-nav-group--tools">
+              ELEMENT TOOLS
+            </span>
+          )}
+          {showElementPicker && (
+            <button
+              type="button"
+              className={`appearance-element-nav${!elementListOpen && category === "element" ? " active" : ""}`}
+              onClick={() => selectCategory("element")}
+              aria-current={!elementListOpen && category === "element" ? "step" : undefined}
+            >
+              <span>09</span>
+              <div>
+                <strong>PICK ELEMENT</strong>
+                <small>
+                  {selectedTarget ? "Edit the current selection" : "Choose anything on screen"}
+                </small>
+              </div>
+            </button>
+          )}
+          {showEditedElements && (
             <button
               type="button"
               className={`appearance-customized-nav${elementListOpen ? " active" : ""}`}
@@ -2013,43 +2086,25 @@ export function AppearanceStudioApp() {
               </div>
             </button>
           )}
+          {visibleCategories.length === 0 && !showElementPicker && !showEditedElements && (
+            <p className="appearance-studio-nav-empty">No matching sections</p>
+          )}
         </nav>
 
         <main className="appearance-studio-editor">
+          <header className="appearance-editor-heading">
+            <span>SECTION {activeEditorContext.index}</span>
+            <strong>{activeEditorContext.label}</strong>
+            <p>{activeEditorContext.note}</p>
+          </header>
+
           <section className="appearance-target-bar">
-            <div className="appearance-target-heading">
-              <span>STEP 1</span>
-              <div>
-                <strong>CHOOSE WHAT TO EDIT</strong>
-                <small>Start globally or select one item from the launcher window.</small>
-              </div>
-            </div>
-            <div className="appearance-target-choices">
-              <button
-                type="button"
-                className={!selectedTarget ? "active" : ""}
-                onClick={selectWholeLauncher}
-              >
-                <strong>WHOLE LAUNCHER</strong>
-                <small>Theme every screen</small>
-              </button>
-              <button
-                type="button"
-                className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
-                onClick={requestElementPick}
-              >
-                <strong>{pickingElement ? "CLICK IN LAUNCHER…" : "PICK FROM LAUNCHER"}</strong>
-                <small>
-                  {pickingElement ? "Hold Shift for several" : "Button, card, text or field"}
-                </small>
-              </button>
-            </div>
             <div className="appearance-target-current">
               <span>CURRENT TARGET</span>
               <strong title={selectedTargets.map((target) => target.label).join(", ")}>
                 {selectedTargets.length > 1
                   ? `${selectedTargets.length} ELEMENTS SELECTED`
-                  : selectedTarget?.label || "GLOBAL SETTINGS"}
+                  : selectedTarget?.label || "WHOLE LAUNCHER"}
               </strong>
               {selectedTarget && (
                 <button
@@ -2061,6 +2116,24 @@ export function AppearanceStudioApp() {
                   {selectedTargets.length > 1 ? "RESET ELEMENTS" : "RESET ELEMENT"}
                 </button>
               )}
+            </div>
+            <div className="appearance-target-choices">
+              <button
+                type="button"
+                className={!selectedTarget ? "active" : ""}
+                onClick={selectWholeLauncher}
+              >
+                <strong>GLOBAL STYLE</strong>
+                <small>Entire launcher</small>
+              </button>
+              <button
+                type="button"
+                className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
+                onClick={requestElementPick}
+              >
+                <strong>{pickingElement ? "CLICK IN LAUNCHER…" : "PICK ELEMENT"}</strong>
+                <small>{pickingElement ? "Hold Shift for several" : "Button, card or text"}</small>
+              </button>
             </div>
             {selectedTarget && (
               <section className="appearance-interaction-state">
@@ -2094,12 +2167,6 @@ export function AppearanceStudioApp() {
               </section>
             )}
           </section>
-
-          <header className="appearance-editor-heading">
-            <span>STEP 2 / {activeEditorContext.index}</span>
-            <strong>{activeEditorContext.label}</strong>
-            <p>{activeEditorContext.note}</p>
-          </header>
 
           {elementListOpen ? (
             <CustomScrollArea className="appearance-element-list-scroll">
@@ -2142,7 +2209,11 @@ export function AppearanceStudioApp() {
             </CustomScrollArea>
           ) : (
             <CustomScrollArea className="appearance-studio-controls-scroll">
-              <div ref={controlsRef} className="appearance-studio-controls">
+              <div
+                key={`${category}-${selectedTarget?.id ?? "global"}`}
+                ref={controlsRef}
+                className="appearance-studio-controls"
+              >
                 {renderEditor()}
               </div>
             </CustomScrollArea>

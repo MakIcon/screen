@@ -11,11 +11,14 @@ import { RangeField, SelectField } from "./StudioFields";
 import { GradientGraphEditor } from "../components/gradient-editor/GradientGraphEditor";
 import {
   buildElementGradientImage,
+  DEFAULT_GRADIENT_MIDPOINT,
+  DEFAULT_GRADIENT_SOFTNESS,
   DEFAULT_GRADIENT_STRENGTH,
   interpolateGradientStopColor,
   MAX_GRADIENT_STOPS,
   resolveElementGradientStops,
 } from "./elementGradient";
+import { GRADIENT_PRESETS, gradientPresetStyle, isGradientPresetActive } from "./gradientPresets";
 import {
   DEFAULT_CUSTOM_GRADIENT_ANIMATION,
   GRADIENT_ANIMATIONS,
@@ -36,11 +39,24 @@ type ElementBackgroundPickerProps = {
   title?: string;
   colorLabel?: string;
   previewMode?: "surface" | "text";
+  gradientOnly?: boolean;
+  enableMotion?: boolean;
 };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
+
+const PRESET_PREVIEWS = GRADIENT_PRESETS.map((preset) => ({
+  ...preset,
+  // Small palette thumbnails need only the source stops; the full curve is
+  // generated for the selected gradient and its live preview.
+  image: `${
+    preset.type === "radial"
+      ? "radial-gradient(circle at center in oklab"
+      : `linear-gradient(${preset.angle}deg in oklab`
+  }, ${preset.stops.map((stop) => `${stop.color} ${stop.position}%`).join(", ")})`,
+}));
 
 export function ElementBackgroundPicker({
   style,
@@ -50,21 +66,27 @@ export function ElementBackgroundPicker({
   title = "BACKGROUND",
   colorLabel = "Background color",
   previewMode = "surface",
+  gradientOnly = false,
+  enableMotion = true,
 }: ElementBackgroundPickerProps) {
   const [selectedStopIndex, setSelectedStopIndex] = useState(0);
+  const [textPreviewTone, setTextPreviewTone] = useState<"light" | "dark">("dark");
   const [previewStuck, setPreviewStuck] = useState(false);
   const headRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const textPreviewRef = useRef<HTMLElement>(null);
   const motionPreviewRef = useRef<Animation | null>(null);
   const stopRailRef = useRef<HTMLDivElement>(null);
-  const kind = style?.backgroundKind ?? "solid";
+  const stopDragFrameRef = useRef<number | null>(null);
+  const kind = gradientOnly ? "gradient" : (style?.backgroundKind ?? "solid");
   const solidColor = style?.backgroundColor ?? fallbackColor;
   const stops = resolveElementGradientStops(style, solidColor, fallbackAccent);
   const activeStopIndex = clamp(selectedStopIndex, 0, stops.length - 1);
   const activeStop = stops[activeStopIndex];
   const gradientType = style?.backgroundGradientType ?? "linear";
   const gradientStrength = style?.backgroundGradientStrength ?? DEFAULT_GRADIENT_STRENGTH;
+  const gradientMidpoint = style?.backgroundGradientMidpoint ?? DEFAULT_GRADIENT_MIDPOINT;
+  const gradientSoftness = style?.backgroundGradientSoftness ?? DEFAULT_GRADIENT_SOFTNESS;
   const gradientAnimation = style?.backgroundGradientAnimation ?? "none";
   const gradientAnimationDuration = style?.backgroundGradientAnimationDuration ?? 6_000;
   const gradientAnimationDirection = style?.backgroundGradientAnimationDirection ?? "alternate";
@@ -96,15 +118,30 @@ export function ElementBackgroundPicker({
       style?.backgroundGradientAnimationStartY,
     ],
   );
-  const gradientImage = buildElementGradientImage(style, solidColor, fallbackAccent, {
-    baseColor: solidColor,
-    opacity: 1,
-  });
-  const stopRailImage = buildElementGradientImage(
-    { ...style, backgroundGradientType: "linear", backgroundGradientAngle: 90 },
-    solidColor,
-    fallbackAccent,
-    { baseColor: solidColor, opacity: 1 },
+  const gradientImage = useMemo(
+    () =>
+      buildElementGradientImage(style, solidColor, fallbackAccent, {
+        baseColor: solidColor,
+        opacity: 1,
+      }),
+    [style, solidColor, fallbackAccent],
+  );
+  const stopRailImage = useMemo(
+    () =>
+      buildElementGradientImage(
+        { ...style, backgroundGradientType: "linear", backgroundGradientAngle: 90 },
+        solidColor,
+        fallbackAccent,
+        { baseColor: solidColor, opacity: 1 },
+      ),
+    [style, solidColor, fallbackAccent],
+  );
+
+  useEffect(
+    () => () => {
+      if (stopDragFrameRef.current !== null) cancelAnimationFrame(stopDragFrameRef.current);
+    },
+    [],
   );
 
   useEffect(() => {
@@ -184,6 +221,8 @@ export function ElementBackgroundPicker({
       orderedStops[rightIndex - 1],
       orderedStops[rightIndex],
       position,
+      gradientMidpoint,
+      gradientSoftness,
     );
   };
 
@@ -231,10 +270,27 @@ export function ElementBackgroundPicker({
     if (event.type === "pointerdown") {
       event.currentTarget.setPointerCapture(event.pointerId);
       setSelectedStopIndex(index);
-    } else if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
       return;
     }
-    updateStop(index, { position: Math.round(pointerPositionIn(event, stopRailRef.current)) });
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+    if (stopDragFrameRef.current !== null) cancelAnimationFrame(stopDragFrameRef.current);
+    const position = Math.round(pointerPositionIn(event, stopRailRef.current));
+    if (event.type === "pointerup") {
+      stopDragFrameRef.current = null;
+      updateStop(index, { position });
+      return;
+    }
+    stopDragFrameRef.current = requestAnimationFrame(() => {
+      stopDragFrameRef.current = null;
+      updateStop(index, { position });
+    });
+  };
+
+  const applyPreset = (preset: (typeof GRADIENT_PRESETS)[number]) => {
+    onChange(gradientPresetStyle(preset));
+    setSelectedStopIndex(0);
   };
 
   const selectKind = (nextKind: "solid" | "gradient") => {
@@ -258,25 +314,29 @@ export function ElementBackgroundPicker({
         previewMode === "text" ? " element-background-picker--text" : ""
       }`}
     >
-      <div ref={headRef} className="element-background-picker__head">
-        <span>{title}</span>
-        <div className="element-background-picker__modes">
-          {(["solid", "gradient"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={kind === option ? "active" : ""}
-              onClick={() => selectKind(option)}
-            >
-              {option.toUpperCase()}
-            </button>
-          ))}
+      {!gradientOnly && (
+        <div ref={headRef} className="element-background-picker__head">
+          <span>{title}</span>
+          <div className="element-background-picker__modes">
+            {(["solid", "gradient"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={kind === option ? "active" : ""}
+                onClick={() => selectKind(option)}
+              >
+                {option.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div
         ref={previewRef}
-        className={`element-background-picker__preview${previewStuck ? " is-stuck" : ""}`}
+        className={`element-background-picker__preview${previewStuck ? " is-stuck" : ""}${
+          previewMode === "text" ? ` is-${textPreviewTone}` : ""
+        }`}
         style={{
           backgroundColor: previewMode === "surface" ? solidColor : undefined,
           backgroundImage:
@@ -302,6 +362,17 @@ export function ElementBackgroundPicker({
             ? `${gradientType.toUpperCase()} · ${stops.length} STOPS`
             : solidColor.toUpperCase()}
         </span>
+        {previewMode === "text" && (
+          <button
+            type="button"
+            className="element-background-picker__contrast"
+            onClick={() => setTextPreviewTone((tone) => (tone === "dark" ? "light" : "dark"))}
+            title="Switch text preview background"
+            aria-label={`Preview text on ${textPreviewTone === "dark" ? "light" : "dark"} background`}
+          >
+            {textPreviewTone === "dark" ? "☀ LIGHT" : "● DARK"}
+          </button>
+        )}
       </div>
 
       {kind === "solid" ? (
@@ -312,6 +383,28 @@ export function ElementBackgroundPicker({
         />
       ) : (
         <div className="element-gradient-editor">
+          <div className="element-gradient-editor__section element-gradient-editor__presets">
+            <div className="element-gradient-editor__section-head">
+              <span>GRADIENT PALETTES</span>
+              <small>ONE CLICK, THEN MAKE IT YOURS</small>
+            </div>
+            <div className="element-gradient-presets">
+              {PRESET_PREVIEWS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={isGradientPresetActive(style, preset) ? "active" : ""}
+                  onClick={() => applyPreset(preset)}
+                  aria-label={`Apply ${preset.name.toLowerCase()} gradient`}
+                >
+                  <i style={{ backgroundImage: preset.image }} aria-hidden="true" />
+                  <strong>{preset.name}</strong>
+                  <small>{preset.detail}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="element-gradient-editor__section element-gradient-editor__stops-section">
             <div className="element-gradient-editor__section-head">
               <span>COLOR STOPS</span>
@@ -352,6 +445,7 @@ export function ElementBackgroundPicker({
                     dragStop(event, index);
                   }}
                   onPointerMove={(event) => dragStop(event, index)}
+                  onPointerUp={(event) => dragStop(event, index)}
                   onClick={() => setSelectedStopIndex(index)}
                   onKeyDown={(event) => {
                     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -408,161 +502,168 @@ export function ElementBackgroundPicker({
             suffix=" %"
             onChange={(value) => onChange({ backgroundGradientStrength: value / 100 })}
           />
-          <SelectField
-            label="GRADIENT MOTION"
-            value={gradientAnimation}
-            options={GRADIENT_ANIMATIONS}
-            onChange={(backgroundGradientAnimation) => onChange({ backgroundGradientAnimation })}
-          />
-          {gradientAnimation !== "none" && (
+          {enableMotion && (
             <>
-              <RangeField
-                label="MOTION DURATION"
-                value={gradientAnimationDuration}
-                min={500}
-                max={30_000}
-                step={250}
-                suffix=" MS"
-                onChange={(backgroundGradientAnimationDuration) =>
-                  onChange({ backgroundGradientAnimationDuration })
-                }
-              />
               <SelectField
-                label="MOTION DIRECTION"
-                value={gradientAnimationDirection}
-                options={GRADIENT_DIRECTIONS}
-                onChange={(backgroundGradientAnimationDirection) =>
-                  onChange({ backgroundGradientAnimationDirection })
+                label="GRADIENT MOTION"
+                value={gradientAnimation}
+                options={GRADIENT_ANIMATIONS}
+                onChange={(backgroundGradientAnimation) =>
+                  onChange({ backgroundGradientAnimation })
                 }
               />
-              <SelectField
-                label="MOTION EASING"
-                value={gradientAnimationEasing}
-                options={GRADIENT_EASINGS}
-                onChange={(backgroundGradientAnimationEasing) =>
-                  onChange({ backgroundGradientAnimationEasing })
-                }
-              />
-              {gradientAnimation === "custom" && (
-                <div className="element-gradient-editor__section element-gradient-editor__custom-motion">
-                  <div className="element-gradient-editor__section-head">
-                    <span>CUSTOM KEYFRAMES</span>
-                    <small>FROM → TO</small>
-                  </div>
-                  <div className="studio-field-grid">
-                    <RangeField
-                      label="START X"
-                      value={
-                        style?.backgroundGradientAnimationStartX ??
-                        DEFAULT_CUSTOM_GRADIENT_ANIMATION.startX
-                      }
-                      min={-100}
-                      max={200}
-                      suffix=" %"
-                      onChange={(backgroundGradientAnimationStartX) =>
-                        onChange({ backgroundGradientAnimationStartX })
-                      }
-                    />
-                    <RangeField
-                      label="START Y"
-                      value={
-                        style?.backgroundGradientAnimationStartY ??
-                        DEFAULT_CUSTOM_GRADIENT_ANIMATION.startY
-                      }
-                      min={-100}
-                      max={200}
-                      suffix=" %"
-                      onChange={(backgroundGradientAnimationStartY) =>
-                        onChange({ backgroundGradientAnimationStartY })
-                      }
-                    />
-                  </div>
-                  <div className="studio-field-grid">
-                    <RangeField
-                      label="END X"
-                      value={
-                        style?.backgroundGradientAnimationEndX ??
-                        DEFAULT_CUSTOM_GRADIENT_ANIMATION.endX
-                      }
-                      min={-100}
-                      max={200}
-                      suffix=" %"
-                      onChange={(backgroundGradientAnimationEndX) =>
-                        onChange({ backgroundGradientAnimationEndX })
-                      }
-                    />
-                    <RangeField
-                      label="END Y"
-                      value={
-                        style?.backgroundGradientAnimationEndY ??
-                        DEFAULT_CUSTOM_GRADIENT_ANIMATION.endY
-                      }
-                      min={-100}
-                      max={200}
-                      suffix=" %"
-                      onChange={(backgroundGradientAnimationEndY) =>
-                        onChange({ backgroundGradientAnimationEndY })
-                      }
-                    />
-                  </div>
+              {gradientAnimation !== "none" && (
+                <>
                   <RangeField
-                    label="GRADIENT ZOOM"
-                    value={
-                      style?.backgroundGradientAnimationScale ??
-                      DEFAULT_CUSTOM_GRADIENT_ANIMATION.scale
-                    }
-                    min={100}
-                    max={500}
-                    step={5}
-                    suffix=" %"
-                    onChange={(backgroundGradientAnimationScale) =>
-                      onChange({ backgroundGradientAnimationScale })
+                    label="MOTION DURATION"
+                    value={gradientAnimationDuration}
+                    min={500}
+                    max={30_000}
+                    step={250}
+                    suffix=" MS"
+                    onChange={(backgroundGradientAnimationDuration) =>
+                      onChange({ backgroundGradientAnimationDuration })
                     }
                   />
-                  <RangeField
-                    label="HUE SHIFT"
-                    value={
-                      style?.backgroundGradientAnimationHue ?? DEFAULT_CUSTOM_GRADIENT_ANIMATION.hue
-                    }
-                    min={-360}
-                    max={360}
-                    step={5}
-                    suffix=" DEG"
-                    onChange={(backgroundGradientAnimationHue) =>
-                      onChange({ backgroundGradientAnimationHue })
+                  <SelectField
+                    label="MOTION DIRECTION"
+                    value={gradientAnimationDirection}
+                    options={GRADIENT_DIRECTIONS}
+                    onChange={(backgroundGradientAnimationDirection) =>
+                      onChange({ backgroundGradientAnimationDirection })
                     }
                   />
-                  <div className="studio-field-grid">
-                    <RangeField
-                      label="END SATURATION"
-                      value={Math.round(
-                        (style?.backgroundGradientAnimationSaturation ??
-                          DEFAULT_CUSTOM_GRADIENT_ANIMATION.saturation) * 100,
-                      )}
-                      min={25}
-                      max={250}
-                      step={5}
-                      suffix=" %"
-                      onChange={(value) =>
-                        onChange({ backgroundGradientAnimationSaturation: value / 100 })
-                      }
-                    />
-                    <RangeField
-                      label="END BRIGHTNESS"
-                      value={Math.round(
-                        (style?.backgroundGradientAnimationBrightness ??
-                          DEFAULT_CUSTOM_GRADIENT_ANIMATION.brightness) * 100,
-                      )}
-                      min={25}
-                      max={250}
-                      step={5}
-                      suffix=" %"
-                      onChange={(value) =>
-                        onChange({ backgroundGradientAnimationBrightness: value / 100 })
-                      }
-                    />
-                  </div>
-                </div>
+                  <SelectField
+                    label="MOTION EASING"
+                    value={gradientAnimationEasing}
+                    options={GRADIENT_EASINGS}
+                    onChange={(backgroundGradientAnimationEasing) =>
+                      onChange({ backgroundGradientAnimationEasing })
+                    }
+                  />
+                  {gradientAnimation === "custom" && (
+                    <div className="element-gradient-editor__section element-gradient-editor__custom-motion">
+                      <div className="element-gradient-editor__section-head">
+                        <span>CUSTOM KEYFRAMES</span>
+                        <small>FROM → TO</small>
+                      </div>
+                      <div className="studio-field-grid">
+                        <RangeField
+                          label="START X"
+                          value={
+                            style?.backgroundGradientAnimationStartX ??
+                            DEFAULT_CUSTOM_GRADIENT_ANIMATION.startX
+                          }
+                          min={-100}
+                          max={200}
+                          suffix=" %"
+                          onChange={(backgroundGradientAnimationStartX) =>
+                            onChange({ backgroundGradientAnimationStartX })
+                          }
+                        />
+                        <RangeField
+                          label="START Y"
+                          value={
+                            style?.backgroundGradientAnimationStartY ??
+                            DEFAULT_CUSTOM_GRADIENT_ANIMATION.startY
+                          }
+                          min={-100}
+                          max={200}
+                          suffix=" %"
+                          onChange={(backgroundGradientAnimationStartY) =>
+                            onChange({ backgroundGradientAnimationStartY })
+                          }
+                        />
+                      </div>
+                      <div className="studio-field-grid">
+                        <RangeField
+                          label="END X"
+                          value={
+                            style?.backgroundGradientAnimationEndX ??
+                            DEFAULT_CUSTOM_GRADIENT_ANIMATION.endX
+                          }
+                          min={-100}
+                          max={200}
+                          suffix=" %"
+                          onChange={(backgroundGradientAnimationEndX) =>
+                            onChange({ backgroundGradientAnimationEndX })
+                          }
+                        />
+                        <RangeField
+                          label="END Y"
+                          value={
+                            style?.backgroundGradientAnimationEndY ??
+                            DEFAULT_CUSTOM_GRADIENT_ANIMATION.endY
+                          }
+                          min={-100}
+                          max={200}
+                          suffix=" %"
+                          onChange={(backgroundGradientAnimationEndY) =>
+                            onChange({ backgroundGradientAnimationEndY })
+                          }
+                        />
+                      </div>
+                      <RangeField
+                        label="GRADIENT ZOOM"
+                        value={
+                          style?.backgroundGradientAnimationScale ??
+                          DEFAULT_CUSTOM_GRADIENT_ANIMATION.scale
+                        }
+                        min={100}
+                        max={500}
+                        step={5}
+                        suffix=" %"
+                        onChange={(backgroundGradientAnimationScale) =>
+                          onChange({ backgroundGradientAnimationScale })
+                        }
+                      />
+                      <RangeField
+                        label="HUE SHIFT"
+                        value={
+                          style?.backgroundGradientAnimationHue ??
+                          DEFAULT_CUSTOM_GRADIENT_ANIMATION.hue
+                        }
+                        min={-360}
+                        max={360}
+                        step={5}
+                        suffix=" DEG"
+                        onChange={(backgroundGradientAnimationHue) =>
+                          onChange({ backgroundGradientAnimationHue })
+                        }
+                      />
+                      <div className="studio-field-grid">
+                        <RangeField
+                          label="END SATURATION"
+                          value={Math.round(
+                            (style?.backgroundGradientAnimationSaturation ??
+                              DEFAULT_CUSTOM_GRADIENT_ANIMATION.saturation) * 100,
+                          )}
+                          min={25}
+                          max={250}
+                          step={5}
+                          suffix=" %"
+                          onChange={(value) =>
+                            onChange({ backgroundGradientAnimationSaturation: value / 100 })
+                          }
+                        />
+                        <RangeField
+                          label="END BRIGHTNESS"
+                          value={Math.round(
+                            (style?.backgroundGradientAnimationBrightness ??
+                              DEFAULT_CUSTOM_GRADIENT_ANIMATION.brightness) * 100,
+                          )}
+                          min={25}
+                          max={250}
+                          step={5}
+                          suffix=" %"
+                          onChange={(value) =>
+                            onChange({ backgroundGradientAnimationBrightness: value / 100 })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
