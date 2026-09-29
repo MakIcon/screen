@@ -3,11 +3,13 @@ import pinIconUrl from "../assets/pin.svg";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import {
+  BUILD_CARD_DEFAULT_META,
   SettingsGearIcon,
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
   getBuildCardBadgeVisibility,
+  getBuildCardElementOffsetStyle,
   hasBuildCardBackgroundImage,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
@@ -15,6 +17,7 @@ import {
   type BuildCardPreviewSize,
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
+import { BuildCardVerticalBody } from "../components/builds/BuildCardVerticalBody";
 import { BuildConfigurationGrid } from "../components/builds/BuildConfigurationGrid";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import {
@@ -398,85 +401,73 @@ export function InstancesTab({
                     type="button"
                   >
                     {isDropTarget && <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>}
-                    <div className="instance-card-top">
-                      <span
-                        className="instance-name"
-                        {...createPlaceholderAppearanceAttributes(
-                          "%build_name%",
-                          resolveInstanceTemplate,
-                        )}
-                      >
-                        {resolveInstanceTemplate("%build_name%")}
-                      </span>
-                      {instance.pinned && (
+                    <BuildCardVerticalBody appearance={cardAppearance}>
+                      <div className="instance-card-top">
                         <span
-                          className="instance-pin-badge"
-                          title="Закреплённая сборка"
-                          aria-label="Закреплённая сборка"
-                        >
-                          <PinIcon />
-                        </span>
-                      )}
-                      {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
-                        <span
-                          className="instance-running-badge"
-                          style={getBuildCardBadgeStyle(cardAppearance)}
+                          className="instance-name"
+                          data-card-layout-element
+                          style={getBuildCardElementOffsetStyle(cardAppearance, "title")}
                           {...createPlaceholderAppearanceAttributes(
-                            badgeTemplate,
-                            resolveBadgeTemplate,
+                            "%build_name%",
+                            resolveInstanceTemplate,
                           )}
                         >
-                          {resolveBadgeTemplate(badgeTemplate)}
+                          {resolveInstanceTemplate("%build_name%")}
                         </span>
-                      )}
-                    </div>
-                    <div
-                      className={`instance-card-meta ${cardAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
-                    >
-                      {cardAppearance.contentEnabled ? (
-                        <BuildCardContentView
-                          mode={cardAppearance.contentMode}
-                          align={cardAppearance.contentTextAlign}
-                          strokeEnabled={cardAppearance.contentTextStrokeEnabled}
-                          tags={resolvedContentTags}
-                        />
-                      ) : (
-                        <>
+                        {instance.pinned && (
                           <span
+                            className="instance-pin-badge"
+                            title="Закреплённая сборка"
+                            aria-label="Закреплённая сборка"
+                          >
+                            <PinIcon />
+                          </span>
+                        )}
+                        {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
+                          <span
+                            className="instance-running-badge"
+                            data-card-layout-element
+                            style={{
+                              ...getBuildCardBadgeStyle(cardAppearance),
+                              ...getBuildCardElementOffsetStyle(cardAppearance, "badge"),
+                            }}
                             {...createPlaceholderAppearanceAttributes(
-                              "%build_version%",
-                              resolveInstanceTemplate,
+                              badgeTemplate,
+                              resolveBadgeTemplate,
                             )}
                           >
-                            {resolveInstanceTemplate("%build_version%")}
+                            {resolveBadgeTemplate(badgeTemplate)}
                           </span>
-                          <span
-                            {...createPlaceholderAppearanceAttributes(
-                              "%build_loader%",
-                              resolveInstanceTemplate,
-                            )}
-                          >
-                            {resolveInstanceTemplate("%build_loader%")}
-                          </span>
-                          <span
-                            {...createPlaceholderAppearanceAttributes(
-                              "%build_ram%",
-                              resolveInstanceTemplate,
-                            )}
-                          >
-                            {resolveInstanceTemplate("%build_ram%")}
-                          </span>
-                          <span
-                            {...createPlaceholderAppearanceAttributes(
-                              "%build_last_played%",
-                              resolveInstanceTemplate,
-                            )}
-                          >
-                            {resolveInstanceTemplate("%build_last_played%")}
-                          </span>
-                        </>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                      <div
+                        className={`instance-card-meta ${cardAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
+                      >
+                        {cardAppearance.contentEnabled ? (
+                          <BuildCardContentView
+                            mode={cardAppearance.contentMode}
+                            align={cardAppearance.contentTextAlign}
+                            strokeEnabled={cardAppearance.contentTextStrokeEnabled}
+                            appearance={cardAppearance}
+                            tags={resolvedContentTags}
+                          />
+                        ) : (
+                          BUILD_CARD_DEFAULT_META.map(({ id, template }) => (
+                            <span
+                              key={id}
+                              data-card-layout-element
+                              style={getBuildCardElementOffsetStyle(cardAppearance, id)}
+                              {...createPlaceholderAppearanceAttributes(
+                                template,
+                                resolveInstanceTemplate,
+                              )}
+                            >
+                              {resolveInstanceTemplate(template)}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </BuildCardVerticalBody>
                   </button>
                 );
               })

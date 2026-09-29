@@ -1,9 +1,11 @@
 import type { CSSProperties } from "react";
 import type {
+  BuildCardAppearance,
   BuildCardContentMode,
   BuildCardContentTag,
   BuildCardTextAlign,
 } from "./BuildCardSettingsPopup";
+import { getBuildCardElementOffsetStyle } from "./BuildCardSettingsPopup";
 import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
 
 export type ResolvedBuildCardContentTag = BuildCardContentTag & {
@@ -15,6 +17,8 @@ type Props = {
   align: BuildCardTextAlign;
   tags: ResolvedBuildCardContentTag[];
   strokeEnabled?: boolean;
+  appearance?: BuildCardAppearance;
+  movable?: boolean;
 };
 
 function alphaColor(hex: string, opacity: number) {
@@ -36,17 +40,24 @@ export function BuildCardContentView({
   align,
   tags,
   strokeEnabled = true,
+  appearance,
+  movable = false,
 }: Props) {
   const visibleTags = tags.filter((tag) => tag.text.trim().length > 0);
   if (visibleTags.length === 0) return null;
 
   if (mode === "text") {
     return (
-      <div
-        className={`build-card-content build-card-content--text build-card-content--${align}`}
-      >
+      <div className={`build-card-content build-card-content--text build-card-content--${align}`}>
         {visibleTags.map((tag, index) => (
-          <span className="build-card-content-inline" key={tag.id}>
+          <span
+            className={`build-card-content-inline ${movable ? "build-card-movable" : ""}`}
+            data-card-layout-element
+            key={tag.id}
+            data-card-move-id={movable ? tag.id : undefined}
+            tabIndex={movable ? 0 : undefined}
+            style={appearance ? getBuildCardElementOffsetStyle(appearance, tag.id) : undefined}
+          >
             {index > 0 && <span className="build-card-content-separator">|</span>}
             <span
               className="build-card-inline-tag"
@@ -68,16 +79,20 @@ export function BuildCardContentView({
   }
 
   return (
-      <div
-        className={`build-card-content build-card-content--tags build-card-content--${align}`}
-        style={{ justifyContent: getJustifyContent(align) }}
+    <div
+      className={`build-card-content build-card-content--tags build-card-content--${align}`}
+      style={{ justifyContent: getJustifyContent(align) }}
     >
       {visibleTags.map((tag) => (
         <span
-          className="build-card-tag"
+          className={`build-card-tag ${movable ? "build-card-movable" : ""}`}
+          data-card-layout-element
           key={tag.id}
+          data-card-move-id={movable ? tag.id : undefined}
+          tabIndex={movable ? 0 : undefined}
           {...tag.appearance}
           style={{
+            ...(appearance ? getBuildCardElementOffsetStyle(appearance, tag.id) : undefined),
             borderColor: tag.borderColor,
             backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),
             color: tag.textColor,

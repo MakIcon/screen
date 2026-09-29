@@ -265,6 +265,10 @@
 
 .instance-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   width: 100%;
   text-align: left;
   border: 1px solid var(--line);
@@ -277,6 +281,12 @@
     transform 0.2s,
     background 0.2s;
   flex-shrink: 0;
+}
+
+.build-card-vertical-body {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .instance-pin-badge {

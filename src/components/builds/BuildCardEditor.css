@@ -128,6 +128,60 @@
   pointer-events: auto;
 }
 
+.bce-preview-card--grid {
+  touch-action: none;
+}
+
+.bce-preview-card--grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--accent) 35%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--accent) 35%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 12px 12px;
+  background-position: 17px 17px;
+}
+
+.bce-preview-card--grid > .build-card-vertical-body {
+  position: relative;
+  z-index: 1;
+}
+
+.bce-preview-card--grid .build-card-movable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.bce-preview-card--grid .build-card-movable:hover,
+.bce-preview-card--grid .build-card-movable:focus-visible {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+.bce-preview-card--dragging .build-card-movable {
+  cursor: grabbing;
+}
+
+.bce-grid-hint {
+  margin: 8px 0 0;
+  color: var(--muted-soft);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .bce-canvas-stack {
   display: flex;
   flex-direction: column;

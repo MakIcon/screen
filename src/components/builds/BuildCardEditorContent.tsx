@@ -220,6 +220,9 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
       contentTagPositions: Object.fromEntries(
         Object.entries(prev.contentTagPositions).filter(([id]) => id !== tagId),
       ),
+      layoutOffsets: Object.fromEntries(
+        Object.entries(prev.layoutOffsets).filter(([id]) => id !== tagId),
+      ),
     }));
   }
 

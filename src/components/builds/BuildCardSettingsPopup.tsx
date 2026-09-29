@@ -15,11 +15,17 @@ export type BuildCardPreviewSize = {
   height: number;
 };
 export type BuildCardTextAlign = "left" | "center" | "right";
+export type BuildCardVerticalAlign = "top" | "center" | "bottom";
 export type BuildCardContentMode = "tags" | "text";
 export type BuildCardElementPosition = {
   x: number;
   y: number;
 };
+export type BuildCardElementOffset = {
+  x: number;
+  y: number;
+};
+export const BUILD_CARD_GRID_SIZE = 12;
 export type BuildCardContentTag = {
   id: string;
   text: string;
@@ -34,6 +40,12 @@ let buildCardTagSeed = 0;
 
 export const BUILD_CARD_TITLE_ELEMENT_ID = "title";
 export const BUILD_CARD_BADGE_ELEMENT_ID = "badge";
+export const BUILD_CARD_DEFAULT_META = [
+  { id: "meta-version", template: "%build_version%" },
+  { id: "meta-loader", template: "%build_loader%" },
+  { id: "meta-ram", template: "%build_ram%" },
+  { id: "meta-last-played", template: "%build_last_played%" },
+] as const;
 
 const DEFAULT_TITLE_POSITION: BuildCardElementPosition = { x: 0, y: 0 };
 const DEFAULT_BADGE_POSITION: BuildCardElementPosition = { x: 0.76, y: 0 };
@@ -64,6 +76,7 @@ export type BuildCardAppearance = {
   drawingImage: string;
   drawingOpacity: number;
   cardHeight: number;
+  contentVerticalAlign: BuildCardVerticalAlign;
   backgroundColor: string;
   backgroundOpacity: number;
   titleText: string;
@@ -82,6 +95,7 @@ export type BuildCardAppearance = {
   contentTextStrokeEnabled: boolean;
   contentTags: BuildCardContentTag[];
   contentTagPositions: Record<string, BuildCardElementPosition>;
+  layoutOffsets: Record<string, BuildCardElementOffset>;
 };
 
 function clampPercent(value: number, fallback: number) {
@@ -231,6 +245,7 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   drawingImage: "",
   drawingOpacity: 1,
   cardHeight: 0,
+  contentVerticalAlign: "top",
   backgroundColor: "#1a1a1a",
   backgroundOpacity: 0,
   titleText: "%build_name%",
@@ -249,6 +264,7 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   contentTextStrokeEnabled: true,
   contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
   contentTagPositions: createDefaultBuildCardTagPositions(DEFAULT_BUILD_CARD_CONTENT_TAGS),
+  layoutOffsets: {},
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -266,6 +282,41 @@ function normalizeHexColor(
     return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`;
   }
   return fallback;
+}
+
+function normalizeBuildCardLayoutOffsets(value: unknown): Record<string, BuildCardElementOffset> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(([id, rawOffset]) => {
+      if (!rawOffset || typeof rawOffset !== "object") return [];
+      const offset = rawOffset as Partial<BuildCardElementOffset>;
+      if (typeof offset.x !== "number" || typeof offset.y !== "number") return [];
+      if (!Number.isFinite(offset.x) || !Number.isFinite(offset.y)) return [];
+      return [
+        [
+          id,
+          {
+            x: Math.max(-1200, Math.min(1200, Math.round(offset.x))),
+            y: Math.max(-1200, Math.min(1200, Math.round(offset.y))),
+          },
+        ],
+      ];
+    }),
+  );
+}
+
+export function getBuildCardElementOffsetStyle(
+  appearance: BuildCardAppearance,
+  id: string,
+): CSSProperties | undefined {
+  const offset = appearance.layoutOffsets[id];
+  if (!offset || (!offset.x && !offset.y)) return undefined;
+  return {
+    position: "relative",
+    left: `${offset.x}px`,
+    top: `${offset.y}px`,
+  };
 }
 
 function normalizeBuildCardContentTag(
@@ -442,6 +493,10 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.cardHeight,
       DEFAULT_BUILD_CARD_APPEARANCE.cardHeight,
     ),
+    contentVerticalAlign:
+      draft.contentVerticalAlign === "center" || draft.contentVerticalAlign === "bottom"
+        ? draft.contentVerticalAlign
+        : "top",
     backgroundColor: normalizeHexColor(
       draft.backgroundColor,
       DEFAULT_BUILD_CARD_APPEARANCE.backgroundColor,
@@ -491,6 +546,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.contentTextStrokeEnabled,
     contentTags,
     contentTagPositions: normalizeBuildCardTagPositions(draft.contentTagPositions, contentTags),
+    layoutOffsets: normalizeBuildCardLayoutOffsets(draft.layoutOffsets),
   };
 }
 

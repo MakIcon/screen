@@ -897,7 +897,12 @@ export default function App() {
     }
 
     const syncPreviewSize = () => {
-      setBuildCardPreviewSize(measureBuildCardPreviewElement(sourceElement));
+      const measured = measureBuildCardPreviewElement(sourceElement);
+      setBuildCardPreviewSize((previous) =>
+        previous?.width === measured?.width && previous?.height === measured?.height
+          ? previous
+          : measured,
+      );
     };
 
     syncPreviewSize();
@@ -918,7 +923,6 @@ export default function App() {
     createPreviewVersion,
     createPreviewLoader,
     createPreviewRam,
-    buildCardSettingsDraft,
   ]);
 
   const moddedInstances = useMemo(
