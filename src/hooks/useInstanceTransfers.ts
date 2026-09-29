@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type {
   ExportedItem,
@@ -23,6 +24,14 @@ const DEFAULT_OPTIONS: InstanceTransferOptions = {
   mods: true,
   shaders: true,
   resourcePacks: true,
+};
+
+export type ImportProgress = {
+  operationId: string;
+  stage: "preparing" | "installing" | "downloading" | "extracting" | "complete";
+  processed: number;
+  total: number;
+  filename: string;
 };
 
 function exportSlug(name: string) {
@@ -59,6 +68,30 @@ export function useInstanceTransfers({
   const [importSourcePath, setImportSourcePath] = useState("");
   const [importSourceFormat, setImportSourceFormat] = useState<"slbuild" | "mrpack">("slbuild");
   const [importResult, setImportResult] = useState<ImportInstanceResult | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [importCancelRequested, setImportCancelRequested] = useState(false);
+  const importOperationIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void listen<ImportProgress>("build-import-progress", (event) => {
+      if (event.payload.operationId === importOperationIdRef.current) {
+        setImportProgress(event.payload);
+      }
+    })
+      .then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch((error) => {
+        logger.error("build-import-progress listener failed", error);
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const handleExportInstance = async (instanceId: string) => {
     setExportInstanceId(instanceId);
@@ -180,6 +213,8 @@ export function useInstanceTransfers({
     });
     setImportError("");
     setImportResult(null);
+    setImportProgress(null);
+    setImportCancelRequested(false);
     setImportModalOpen(true);
   };
 
@@ -221,6 +256,10 @@ export function useInstanceTransfers({
     if (!importData) return;
     setImportWorking(true);
     setImportError("");
+    setImportCancelRequested(false);
+    const operationId = crypto.randomUUID();
+    importOperationIdRef.current = operationId;
+    setImportProgress({ operationId, stage: "preparing", processed: 0, total: 0, filename: "" });
     const name = importOptions.name ? importData.name : importCustomName;
     const ram = importOptions.ram && importData.ram ? importData.ram : defaultRamGb;
     try {
@@ -235,6 +274,7 @@ export function useInstanceTransfers({
           return;
         }
         const retried = await invoke<ImportContentResult[]>("retry_import_content", {
+          operationId,
           instanceId: importResult.instance.id,
           mods: failed.filter((entry) => entry.category === "mods").map((entry) => entry.item),
           shaders: failed
@@ -257,6 +297,7 @@ export function useInstanceTransfers({
       }
       if (importSourceFormat === "mrpack") {
         const newInstance = await invoke<InstanceItem>("import_mrpack", {
+          operationId,
           path: importSourcePath,
           options: {
             name,
@@ -278,6 +319,7 @@ export function useInstanceTransfers({
         pushToast("info", `Сборка ${newInstance.name} импортирована`, { title: "Build imported" });
       } else {
         const result = await invoke<ImportInstanceResult>("import_instance", {
+          operationId,
           payload: {
             name,
             version: importData.version,
@@ -308,10 +350,36 @@ export function useInstanceTransfers({
         );
       }
     } catch (caught) {
+      if (toErrorMessage(caught).includes("IMPORT_CANCELLED")) {
+        await refreshInstances();
+        setImportError(
+          importResult
+            ? "Повторная установка отменена. Уже установленные файлы сохранены."
+            : "Импорт отменён. Можно изменить параметры и повторить.",
+        );
+        pushToast("info", "Импорт сборки отменён", { title: "Import cancelled" });
+        return;
+      }
       setImportError(toErrorMessage(caught));
       pushToast("error", toErrorMessage(caught), { title: "Import failed" });
     } finally {
+      importOperationIdRef.current = null;
+      setImportProgress(null);
+      setImportCancelRequested(false);
       setImportWorking(false);
+    }
+  };
+
+  const handleImportCancel = async () => {
+    const operationId = importOperationIdRef.current;
+    if (!operationId || importCancelRequested) return;
+    setImportCancelRequested(true);
+    try {
+      await invoke("cancel_import", { operationId });
+    } catch (caught) {
+      // The backend may have completed while the button was clicked.
+      logger.error("cancel_import failed", caught);
+      setImportCancelRequested(false);
     }
   };
 
@@ -340,8 +408,11 @@ export function useInstanceTransfers({
     setImportSourcePath,
     importSourceFormat,
     importResult,
+    importProgress,
+    importCancelRequested,
     importBuildFromPath,
     handleImportBuild,
     handleImportConfirm,
+    handleImportCancel,
   };
 }

@@ -4,6 +4,9 @@ import {
   ModrinthProjectModal,
 } from "../components/modrinth/ModrinthProjectModal";
 import { CatalogSearchField } from "../components/modrinth/CatalogSearchField";
+import { ExportedItemIcon } from "../components/transfer/ExportedItemIcon";
+import type { ContentIconCandidate } from "../hooks/useContentIcons";
+import type { ExportedItem } from "../types";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
@@ -127,6 +130,10 @@ type ModrinthContentTabProps = {
     overrides?: { accountType?: string; buildState?: string },
   ) => string;
   mascotHiddenProjectIds?: string[];
+  requestLocalIcons: (items: ContentIconCandidate[]) => Promise<void>;
+  getLocalIconUrl: (item: ContentIconCandidate) => string | null;
+  projectIcons: Record<string, string | null>;
+  requestProjectIcons: (items: ExportedItem[]) => Promise<void>;
 };
 
 function TrashIcon() {
@@ -190,8 +197,13 @@ export function ModrinthContentTab({
   setOpenDropdown,
   resolveForTarget,
   mascotHiddenProjectIds = [],
+  requestLocalIcons,
+  getLocalIconUrl,
+  projectIcons,
+  requestProjectIcons,
 }: ModrinthContentTabProps) {
   const copy = CONTENT_PRESENTATION[kind];
+  const iconKind = kind === "resourcepacks" ? "resourcePacks" : kind;
   const {
     search,
     setSearch,
@@ -221,6 +233,25 @@ export function ModrinthContentTab({
   useEffect(() => {
     setSelectedProjectId(null);
   }, [kind, selectedTarget?.id]);
+
+  useEffect(() => {
+    void requestLocalIcons(
+      installedItems
+        .filter((item) => item.source === "local")
+        .map((item) => ({ title: item.filename, kind: iconKind })),
+    );
+    void requestProjectIcons(
+      installedItems
+        .filter((item) => item.projectId && !item.iconUrl)
+        .map((item) => ({
+          projectId: item.projectId ?? null,
+          title: item.title,
+          source: "modrinth",
+        })),
+    );
+    // Fetch artwork only when the installed file list or section changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installedItems, iconKind]);
 
   return (
     <section className="launcher-panel">
@@ -505,7 +536,17 @@ export function ModrinthContentTab({
                         </button>
                       </div>
                       <div className="installed-mod-row">
-                        <div>
+                        <ExportedItemIcon
+                          src={
+                            item.iconUrl ||
+                            (item.projectId
+                              ? projectIcons[item.projectId]
+                              : getLocalIconUrl({ title: item.filename, kind: iconKind }))
+                          }
+                          title={item.filename}
+                          source={item.source}
+                        />
+                        <div className="installed-mod-copy">
                           <strong>{item.title}</strong>
                           <span>{item.versionNumber || item.filename}</span>
                         </div>

@@ -380,9 +380,29 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   transition:
     transform 0.22s ease,
     background 0.2s ease;
+}
+
+.installed-mod-row .eximp-list-preview-icon,
+.installed-mod-row .eximp-list-preview-icon-fallback {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.installed-mod-copy {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.installed-mod-copy strong,
+.installed-mod-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .installed-mod-swipe:hover .installed-mod-row {

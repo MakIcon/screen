@@ -572,6 +572,120 @@ pub async fn get_modrinth_project_icons(
     Ok(result)
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentIconRequest {
+    key: String,
+    title: String,
+    kind: String,
+}
+
+fn icon_query(title: &str) -> Option<String> {
+    let basename = title.rsplit(['/', '\\']).next()?;
+    let mut filename = String::new();
+    let mut previous_lowercase = false;
+    for character in basename.chars() {
+        if character.is_uppercase() && previous_lowercase {
+            filename.push(' ');
+        }
+        filename.extend(character.to_lowercase());
+        previous_lowercase = character.is_lowercase();
+    }
+    let filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
+    let (stem, is_file) = match filename.rsplit_once('.') {
+        Some((stem, "jar" | "zip")) => (stem, true),
+        _ => (filename, false),
+    };
+    if !is_file {
+        return None;
+    }
+    let mut words = Vec::new();
+    for word in stem
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+    {
+        if word.chars().all(|ch| ch.is_ascii_digit()) && words.is_empty() {
+            continue;
+        }
+        if word.chars().all(|ch| ch.is_ascii_digit())
+            || word
+                .strip_prefix('v')
+                .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()))
+            || matches!(word, "fabric" | "forge" | "neoforge" | "quilt") && !words.is_empty()
+        {
+            break;
+        }
+        words.push(word);
+    }
+    let query = words.join(" ");
+    (query.len() >= 5).then_some(query)
+}
+
+fn icon_name_matches(query: &str, candidate: &str) -> bool {
+    let lower = candidate.to_lowercase();
+    let normalized = lower
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    normalized == query
+        || normalized.starts_with(&format!("{query} "))
+        || normalized.replace(' ', "") == query.replace(' ', "")
+}
+
+async fn find_content_icon(client: &Client, request: &ContentIconRequest) -> Option<String> {
+    let project_type = match request.kind.as_str() {
+        "mods" => "mod",
+        "shaders" => "shader",
+        "resourcePacks" => "resourcepack",
+        _ => return None,
+    };
+    let query = icon_query(&request.title)?;
+    let facets = format!("[[\"project_type:{project_type}\"]]");
+    let mut url = reqwest::Url::parse(&format!("{MODRINTH_API_BASE}/search")).ok()?;
+    url.query_pairs_mut()
+        .append_pair("query", &query)
+        .append_pair("facets", &facets)
+        .append_pair("index", MODRINTH_SEARCH_INDEX)
+        .append_pair("limit", "10");
+    let body = http_text(client, url.as_str()).await.ok()?;
+    let response: Value = serde_json::from_str(&body).ok()?;
+    response.get("hits")?.as_array()?.iter().find_map(|hit| {
+        let project = parse_project_hit(hit);
+        (icon_name_matches(&query, &project.title) || icon_name_matches(&query, &project.slug))
+            .then_some(project.icon_url)
+            .flatten()
+    })
+}
+
+/// Looks up artwork only. A local file remains local; this never changes its
+/// project id, installation state, or export behavior.
+#[tauri::command]
+pub async fn resolve_modrinth_content_icons(
+    requests: Vec<ContentIconRequest>,
+) -> Result<HashMap<String, Option<String>>, String> {
+    let client = build_client()?;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+        MAX_CONCURRENT_METADATA_REQUESTS,
+    ));
+    let mut tasks = tokio::task::JoinSet::new();
+    for request in requests.into_iter().take(100) {
+        let client = client.clone();
+        let semaphore = semaphore.clone();
+        tasks.spawn(async move {
+            let _permit = semaphore.acquire_owned().await;
+            let icon = find_content_icon(&client, &request).await;
+            (request.key, icon)
+        });
+    }
+    let mut result = HashMap::new();
+    while let Some(joined) = tasks.join_next().await {
+        let (key, icon) = joined.map_err(|error| format!("content icon task error: {error}"))?;
+        result.insert(key, icon);
+    }
+    Ok(result)
+}
+
 async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Option<String>, String> {
     let members: Value = http_json(
         client,
@@ -957,4 +1071,37 @@ pub(crate) async fn install_project_to_dir(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod icon_lookup_tests {
+    use super::{icon_name_matches, icon_query};
+
+    #[test]
+    fn extracts_project_names_without_versions_or_paths() {
+        assert_eq!(
+            icon_query("mods/architectury-9.2.14-fabric.jar"),
+            Some("architectury".into())
+        );
+        assert_eq!(
+            icon_query("cloth-config-11.1.136-fabric.jar.disabled"),
+            Some("cloth config".into())
+        );
+        assert_eq!(
+            icon_query("mods/ComplementaryShaders_v4.6.zip"),
+            Some("complementary shaders".into())
+        );
+        assert_eq!(icon_query("mods/client.json"), None);
+    }
+
+    #[test]
+    fn requires_a_name_match_before_using_search_artwork() {
+        assert!(icon_name_matches("architectury", "Architectury API"));
+        assert!(icon_name_matches("cloth config", "cloth-config-api"));
+        assert!(icon_name_matches("fancy menu", "FancyMenu"));
+        assert!(!icon_name_matches(
+            "architectury",
+            "The Mighty Architectury"
+        ));
+    }
 }

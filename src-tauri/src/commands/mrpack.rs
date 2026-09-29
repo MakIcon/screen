@@ -8,12 +8,14 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use sha2::Sha512;
+use tauri::AppHandle;
 use tokio::fs;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::{
     commands::{
-        instances::{delete_instance, get_instance_export_data, import_instance},
+        import_progress::ImportContext,
+        instances::{create_imported_instance, delete_instance, get_instance_export_data},
         modrinth::{
             build_client, download_file, http_json, InstalledModEntry, ModrinthVersion,
             MODRINTH_API_BASE,
@@ -306,10 +308,7 @@ fn read_bundle(path: &Path) -> Result<MrpackBundle, String> {
 }
 
 fn item_from_path(path: &str) -> ExportedItem {
-    let title = Path::new(path)
-        .file_name()
-        .map(|value| value.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string());
+    let title = path.replace('\\', "/");
     ExportedItem {
         project_id: None,
         title,
@@ -729,15 +728,21 @@ fn modrinth_ids(downloads: &[String]) -> Option<(String, String)> {
     }
     None
 }
-fn extract_override_layer(
+fn extract_override_layer_with_progress(
     archive_path: &Path,
     game_dir: &Path,
     prefix: &str,
     options: &MrpackImportOptions,
+    context: Option<&ImportContext>,
+    processed: &mut usize,
+    total: usize,
 ) -> Result<(), String> {
     let file = File::open(archive_path).map_err(|e| format!("open mrpack error: {e}"))?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("invalid mrpack archive: {e}"))?;
     for index in 0..archive.len() {
+        if let Some(context) = context {
+            context.check()?;
+        }
         let mut entry = archive
             .by_index(index)
             .map_err(|e| format!("read mrpack override error: {e}"))?;
@@ -768,10 +773,37 @@ fn extract_override_layer(
         }
         let mut output = File::create(&destination)
             .map_err(|e| format!("create mrpack override file error: {e}"))?;
-        std::io::copy(&mut entry, &mut output)
-            .map_err(|e| format!("extract mrpack override error: {e}"))?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            if let Some(context) = context {
+                context.check()?;
+            }
+            let read = entry
+                .read(&mut buffer)
+                .map_err(|e| format!("read mrpack override error: {e}"))?;
+            if read == 0 {
+                break;
+            }
+            output
+                .write_all(&buffer[..read])
+                .map_err(|e| format!("extract mrpack override error: {e}"))?;
+        }
+        *processed += 1;
+        if let Some(context) = context {
+            context.emit("extracting", *processed, total, relative);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn extract_override_layer(
+    archive_path: &Path,
+    game_dir: &Path,
+    prefix: &str,
+    options: &MrpackImportOptions,
+) -> Result<(), String> {
+    extract_override_layer_with_progress(archive_path, game_dir, prefix, options, None, &mut 0, 0)
 }
 
 async fn write_import_state(
@@ -801,9 +833,23 @@ async fn write_import_state(
 
 #[tauri::command]
 pub async fn import_mrpack(
+    app: AppHandle,
+    operation_id: String,
     path: String,
     options: MrpackImportOptions,
 ) -> Result<InstanceItem, String> {
+    let context = ImportContext::start(app, operation_id).await?;
+    let result = import_mrpack_inner(path, options, &context).await;
+    context.finish().await;
+    result
+}
+
+async fn import_mrpack_inner(
+    path: String,
+    options: MrpackImportOptions,
+    context: &ImportContext,
+) -> Result<InstanceItem, String> {
+    context.check()?;
     let archive_path = PathBuf::from(&path);
     let bundle = tokio::task::spawn_blocking({
         let archive_path = archive_path.clone();
@@ -811,6 +857,7 @@ pub async fn import_mrpack(
     })
     .await
     .map_err(|e| format!("mrpack read task failed: {e}"))??;
+    context.check()?;
 
     let (loader, loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
     let minecraft_version = bundle
@@ -820,7 +867,7 @@ pub async fn import_mrpack(
         .cloned()
         .ok_or_else(|| "mrpack does not declare a Minecraft version".to_string())?;
 
-    let item = import_instance(ImportInstancePayload {
+    let item = create_imported_instance(ImportInstancePayload {
         name: options.name.clone(),
         version: minecraft_version,
         loader,
@@ -835,14 +882,44 @@ pub async fn import_mrpack(
         shaders: Vec::new(),
         resource_packs: Vec::new(),
     })
-    .await?
-    .instance;
+    .await?;
+
+    let download_count = bundle
+        .index
+        .files
+        .iter()
+        .filter(|file| {
+            should_install_on_client(file)
+                && category_enabled(
+                    &file.path,
+                    options.include_mods,
+                    options.include_shaders,
+                    options.include_resource_packs,
+                )
+        })
+        .count();
+    let override_count = bundle
+        .override_paths
+        .iter()
+        .filter(|path| {
+            category_enabled(
+                path,
+                options.include_mods,
+                options.include_shaders,
+                options.include_resource_packs,
+            )
+        })
+        .count();
+    let total = download_count + override_count;
+    let mut processed = 0usize;
+    context.emit("downloading", processed, total, "");
 
     let game_dir = PathBuf::from(&item.game_dir);
     let result = async {
         let client = build_client()?;
         let mut import_state: HashMap<String, HashMap<String, InstalledModEntry>> = HashMap::new();
         for file in &bundle.index.files {
+            context.check()?;
             if !should_install_on_client(file)
                 || !category_enabled(
                     &file.path,
@@ -855,10 +932,14 @@ pub async fn import_mrpack(
             }
             let safe_path = safe_relative_path(&file.path)?;
             let destination = game_dir.join(&safe_path);
+            context.emit("downloading", processed, total, &file.path);
             let mut last_error = None;
             let mut downloaded = false;
             for url in &file.downloads {
-                match download_file(&client, url, &destination).await {
+                match context.run(download_file(&client, url, &destination)).await {
+                    Err(error) if error == crate::commands::import_progress::IMPORT_CANCELLED => {
+                        return Err(error)
+                    }
                     Ok(()) => match verify_download(&destination, &file.hashes).await {
                         Ok(()) => {
                             downloaded = true;
@@ -872,6 +953,8 @@ pub async fn import_mrpack(
             if !downloaded {
                 return Err(last_error.unwrap_or_else(|| format!("download failed: {}", file.path)));
             }
+            processed += 1;
+            context.emit("downloading", processed, total, &file.path);
 
             if let Some((project_id, version_id)) = modrinth_ids(&file.downloads) {
                 let directory =
@@ -911,27 +994,38 @@ pub async fn import_mrpack(
         let archive_for_extract = archive_path.clone();
         let game_for_extract = game_dir.clone();
         let options_for_extract = options.clone();
-        tokio::task::spawn_blocking(move || {
-            extract_override_layer(
+        let context_for_extract = context.clone();
+        processed = tokio::task::spawn_blocking(move || {
+            let mut extracted = processed;
+            extract_override_layer_with_progress(
                 &archive_for_extract,
                 &game_for_extract,
                 OVERRIDES_PREFIX,
                 &options_for_extract,
+                Some(&context_for_extract),
+                &mut extracted,
+                total,
             )?;
-            extract_override_layer(
+            extract_override_layer_with_progress(
                 &archive_for_extract,
                 &game_for_extract,
                 CLIENT_OVERRIDES_PREFIX,
                 &options_for_extract,
-            )
+                Some(&context_for_extract),
+                &mut extracted,
+                total,
+            )?;
+            Ok::<usize, String>(extracted)
         })
         .await
         .map_err(|e| format!("mrpack extraction task failed: {e}"))??;
 
+        context.check()?;
         write_import_state(&game_dir, import_state).await;
         Ok::<(), String>(())
     }
-    .await;
+    .await
+    .and_then(|_| context.check());
 
     if let Err(error) = result {
         if let Err(cleanup_error) = delete_instance(item.id.clone()).await {
@@ -949,6 +1043,7 @@ pub async fn import_mrpack(
         return Err(error);
     }
 
+    context.emit("complete", processed, total, "");
     Ok(item)
 }
 #[cfg(test)]

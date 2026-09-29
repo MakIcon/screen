@@ -249,14 +249,11 @@ export function InstancesTab({
       <div className="panel-grid panel-grid-instances-fixed">
         {/* ── Instance list ── */}
         <div className="panel-card instances-list-card" data-guide-target="build-library">
-          <div className="card-topline">
+          <div className="card-topline build-library-heading">
             <span className="panel-label">INSTANCE LIBRARY</span>
-            <div
-              style={{ display: "flex", gap: 8, alignItems: "center" }}
-              data-guide-target="build-library-actions"
-            >
+            <div className="build-library-actions" data-guide-target="build-library-actions">
               <button
-                className="ghost-action icon-square-action"
+                className="ghost-action build-library-trash-action"
                 type="button"
                 title="Корзина сборок"
                 aria-label="Корзина сборок"
@@ -270,11 +267,13 @@ export function InstancesTab({
                     strokeLinejoin="round"
                   />
                 </svg>
+                <span>TRASH</span>
               </button>
               <button
                 className="ghost-action icon-square-action"
                 type="button"
                 title="Импортировать сборку из файла"
+                aria-label="Импортировать сборку из файла"
                 onClick={handleImportBuild}
               >
                 <svg
@@ -895,21 +894,24 @@ export function InstancesTab({
                     {actionError}
                   </p>
                 )}
-                {actionError && failedBuildAction && failedBuildAction.id === selectedInstance?.id && !working && (
-                  <button
-                    className="ghost-action"
-                    type="button"
-                    onClick={() =>
-                      void (failedBuildAction.action === "install"
-                        ? handleInstallSelected()
-                        : handleLaunchSelected())
-                    }
-                  >
-                    {failedBuildAction.action === "install"
-                      ? "ПОВТОРИТЬ УСТАНОВКУ"
-                      : "ПОВТОРИТЬ ЗАПУСК"}
-                  </button>
-                )}
+                {actionError &&
+                  failedBuildAction &&
+                  failedBuildAction.id === selectedInstance?.id &&
+                  !working && (
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={() =>
+                        void (failedBuildAction.action === "install"
+                          ? handleInstallSelected()
+                          : handleLaunchSelected())
+                      }
+                    >
+                      {failedBuildAction.action === "install"
+                        ? "ПОВТОРИТЬ УСТАНОВКУ"
+                        : "ПОВТОРИТЬ ЗАПУСК"}
+                    </button>
+                  )}
               </div>
             </div>
           )}

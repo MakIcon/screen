@@ -99,6 +99,7 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { useModrinthContent, type ModrinthContentKind } from "./hooks/useModrinthContent";
 import { RuntimeMonitorScope, useRuntimeMonitorController } from "./hooks/useRuntimeMonitor";
 import { useInstanceTransfers } from "./hooks/useInstanceTransfers";
+import { useContentIcons, type ContentIconKind } from "./hooks/useContentIcons";
 import { InstanceTransferModals } from "./components/transfer/InstanceTransferModals";
 import { DeletedBuildsModal, WorldBackupsModal } from "./components/builds/BuildSafetyModals";
 import type { TransferHoverTarget, TransferListPreview } from "./components/transfer/types";
@@ -156,6 +157,12 @@ const FIRST_LAUNCH_GUIDE_STORAGE_KEY = "screenlauncher-first-launch-guide-comple
 const FORCE_FIRST_LAUNCH_GUIDE_PREVIEW =
   import.meta.env.DEV && import.meta.env.VITE_GUIDE_PREVIEW === "1";
 const CREATE_BUILD_CARD_DRAFT_KEY = "__create__";
+function previewContentKind(label: string): ContentIconKind | null {
+  if (label === "MODS") return "mods";
+  if (label === "SHADERS") return "shaders";
+  if (label === "RESOURCE PACKS") return "resourcePacks";
+  return null;
+}
 const CLOSE_EFFECT_CLASS: Record<CloseAnimationId, string> = {
   tear: "tearing",
   shred: "shredding",
@@ -397,6 +404,7 @@ export default function App() {
     {},
   );
   const requestedModrinthProjectIconIdsRef = useRef<Set<string>>(new Set());
+  const contentIcons = useContentIcons();
 
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
 
@@ -1182,13 +1190,23 @@ export default function App() {
   useEffect(() => {
     if (!listPreview) return;
     void requestModrinthProjectIcons(listPreview.items);
+    const kind = previewContentKind(listPreview.label);
+    if (kind) {
+      void contentIcons.requestIcons(
+        listPreview.items
+          .filter((item) => item.source !== "modrinth")
+          .map((item) => ({ title: item.title, kind })),
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch only when the hovered preview changes
   }, [listPreview]);
 
-  const getExportedItemIconUrl = (item: ExportedItem) => {
+  const getExportedItemIconUrl = (item: ExportedItem, kind: ContentIconKind | null) => {
     if (item.iconUrl) return item.iconUrl;
-    if (item.source !== "modrinth" || !item.projectId) return null;
-    return modrinthProjectIcons[item.projectId] ?? null;
+    if (item.source === "modrinth" && item.projectId) {
+      return modrinthProjectIcons[item.projectId] ?? null;
+    }
+    return kind ? contentIcons.getIconUrl({ title: item.title, kind }) : null;
   };
 
   useEffect(() => {
@@ -1361,12 +1379,15 @@ export default function App() {
     importWorking,
     importError,
     importResult,
+    importProgress,
+    importCancelRequested,
     setImportError,
     setImportSourcePath,
     importSourceFormat,
     importBuildFromPath,
     handleImportBuild,
     handleImportConfirm,
+    handleImportCancel,
   } = useInstanceTransfers({
     defaultRamGb: launcherSettings?.defaultRamGb ?? 4,
     refreshInstances,
@@ -2194,6 +2215,10 @@ export default function App() {
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
             mascotHiddenProjectIds={mascotHiddenContentIds.mods}
+            requestLocalIcons={contentIcons.requestIcons}
+            getLocalIconUrl={contentIcons.getIconUrl}
+            projectIcons={modrinthProjectIcons}
+            requestProjectIcons={requestModrinthProjectIcons}
           />
         );
       case "resourcepacks":
@@ -2208,6 +2233,10 @@ export default function App() {
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
             mascotHiddenProjectIds={mascotHiddenContentIds.resourcepacks}
+            requestLocalIcons={contentIcons.requestIcons}
+            getLocalIconUrl={contentIcons.getIconUrl}
+            projectIcons={modrinthProjectIcons}
+            requestProjectIcons={requestModrinthProjectIcons}
           />
         );
       case "shaders":
@@ -2222,6 +2251,10 @@ export default function App() {
             setOpenDropdown={setOpenDropdown}
             resolveForTarget={resolveForTarget}
             mascotHiddenProjectIds={mascotHiddenContentIds.shaders}
+            requestLocalIcons={contentIcons.requestIcons}
+            getLocalIconUrl={contentIcons.getIconUrl}
+            projectIcons={modrinthProjectIcons}
+            requestProjectIcons={requestModrinthProjectIcons}
           />
         );
       case "settings":
@@ -2783,10 +2816,13 @@ export default function App() {
           importWorking={importWorking}
           importError={importError}
           importResult={importResult}
+          importProgress={importProgress}
+          importCancelRequested={importCancelRequested}
           setImportError={setImportError}
           setImportSourcePath={setImportSourcePath}
           importSourceFormat={importSourceFormat}
           onImportConfirm={() => void handleImportConfirm()}
+          onImportCancel={() => void handleImportCancel()}
           altHoverRef={altHoverRef}
           altSourceHoveredRef={altSourceHoveredRef}
           listPreview={listPreview}

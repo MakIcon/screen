@@ -13,7 +13,9 @@ import {
   hasWindowSettingsData,
 } from "../../utils/instanceTransfer";
 import { OptionToggle } from "../inputs/OptionToggle";
-import { ExportedItemIcon } from "./ExportedItemIcon";
+import { ExportedItemIcon, fileTypeLabel } from "./ExportedItemIcon";
+import type { ContentIconKind } from "../../hooks/useContentIcons";
+import type { ImportProgress } from "../../hooks/useInstanceTransfers";
 import type { InstanceTransferOptions, TransferHoverTarget, TransferListPreview } from "./types";
 
 type CommonPreviewProps = {
@@ -21,7 +23,7 @@ type CommonPreviewProps = {
   altSourceHoveredRef: MutableRefObject<boolean>;
   listPreview: TransferListPreview | null;
   setListPreview: Dispatch<SetStateAction<TransferListPreview | null>>;
-  getItemIconUrl: (item: ExportedItem) => string | null;
+  getItemIconUrl: (item: ExportedItem, kind: ContentIconKind | null) => string | null;
 };
 
 type InstanceTransferModalsProps = CommonPreviewProps & {
@@ -44,13 +46,16 @@ type InstanceTransferModalsProps = CommonPreviewProps & {
   importCustomName: string;
   setImportCustomName: Dispatch<SetStateAction<string>>;
   importWorking: boolean;
+  importProgress: ImportProgress | null;
+  importCancelRequested: boolean;
   importError: string;
   importResult: ImportInstanceResult | null;
   setImportError: Dispatch<SetStateAction<string>>;
   setImportSourcePath: Dispatch<SetStateAction<string>>;
   importSourceFormat: "slbuild" | "mrpack";
   onImportConfirm: () => void;
-  getItemIconUrl: (item: ExportedItem) => string | null;
+  onImportCancel: () => void;
+  getItemIconUrl: (item: ExportedItem, kind: ContentIconKind | null) => string | null;
 };
 
 function attachPreview(
@@ -364,7 +369,55 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 {props.importError}
               </p>
             )}
-            {props.importWorking && <p className="eximp-working">ИМПОРТ...</p>}
+            {props.importWorking && props.importProgress ? (
+              <div className="eximp-progress" role="status" aria-live="polite">
+                <div className="eximp-progress-label">
+                  <strong>
+                    {
+                      (
+                        {
+                          preparing: "ПОДГОТОВКА",
+                          installing: "УСТАНОВКА",
+                          downloading: "ЗАГРУЗКА",
+                          extracting: "РАСПАКОВКА",
+                          complete: "ГОТОВО",
+                        } as const
+                      )[props.importProgress.stage]
+                    }
+                  </strong>
+                  <span>
+                    {props.importProgress.total > 0
+                      ? `${props.importProgress.processed} / ${props.importProgress.total}`
+                      : "…"}
+                  </span>
+                </div>
+                <div
+                  className={`eximp-progress-track${props.importProgress.total === 0 ? " indeterminate" : ""}`}
+                  role="progressbar"
+                  aria-label="Прогресс импорта сборки"
+                  aria-valuemin={0}
+                  aria-valuemax={props.importProgress.total || undefined}
+                  aria-valuenow={
+                    props.importProgress.total ? props.importProgress.processed : undefined
+                  }
+                >
+                  <span
+                    style={{
+                      width: props.importProgress.total
+                        ? `${Math.min(100, (props.importProgress.processed / props.importProgress.total) * 100)}%`
+                        : "35%",
+                    }}
+                  />
+                </div>
+                <small title={props.importProgress.filename}>
+                  {props.importCancelRequested
+                    ? "Останавливаю и очищаю незавершённую сборку…"
+                    : props.importProgress.filename || "Подготовка файлов…"}
+                </small>
+              </div>
+            ) : props.importWorking ? (
+              <p className="eximp-working">ИМПОРТ...</p>
+            ) : null}
             <div className="confirm-actions" style={{ marginTop: 24 }}>
               <button
                 className="primary-action"
@@ -391,10 +444,16 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
               <button
                 className="ghost-action"
                 type="button"
-                onClick={close}
-                disabled={props.importWorking}
+                onClick={props.importWorking ? props.onImportCancel : close}
+                disabled={
+                  props.importWorking && (!props.importProgress || props.importCancelRequested)
+                }
               >
-                CANCEL
+                {props.importWorking
+                  ? props.importCancelRequested
+                    ? "ОТМЕНА…"
+                    : "ОТМЕНИТЬ ИМПОРТ"
+                  : "CANCEL"}
               </button>
             </div>
           </>
@@ -418,6 +477,14 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
 function TransferPreview(props: CommonPreviewProps) {
   const { listPreview } = props;
   if (!listPreview?.items.length) return null;
+  const kind: ContentIconKind | null =
+    listPreview.label === "MODS"
+      ? "mods"
+      : listPreview.label === "SHADERS"
+        ? "shaders"
+        : listPreview.label === "RESOURCE PACKS"
+          ? "resourcePacks"
+          : null;
   const gap = 10;
   const bridgeOverlap = 2;
   const previewWidth = 280;
@@ -469,12 +536,14 @@ function TransferPreview(props: CommonPreviewProps) {
         {listPreview.items.map((item, index) => (
           <div key={`${item.projectId ?? item.title}-${index}`} className="eximp-list-preview-item">
             <ExportedItemIcon
-              src={props.getItemIconUrl(item)}
+              src={props.getItemIconUrl(item, kind)}
               title={item.title}
               source={item.source}
             />
-            <span className="eximp-list-preview-title">{item.title}</span>
-            <span className="eximp-list-preview-src">{item.source}</span>
+            <span className="eximp-list-preview-title" title={item.title}>
+              {item.title}
+            </span>
+            <span className="eximp-list-preview-src">{fileTypeLabel(item.title, item.source)}</span>
           </div>
         ))}
       </div>

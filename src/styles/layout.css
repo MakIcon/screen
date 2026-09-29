@@ -401,6 +401,26 @@
   overflow: hidden;
 }
 
+.build-library-heading {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.build-library-heading .panel-label {
+  margin-bottom: 0;
+}
+
+.build-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.build-library-actions > :last-child {
+  margin-left: auto;
+}
+
 .panel-grid-catalog-fixed {
   grid-template-columns: minmax(0, 1.08fr) minmax(270px, 0.92fr);
   grid-template-rows: auto minmax(0, 1fr);

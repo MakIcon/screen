@@ -132,6 +132,43 @@
   letter-spacing: 0.8px;
 }
 
+.eximp-list-preview-icon-fallback.file-kind-json {
+  color: #7b4ca1;
+  background: #7b4ca119;
+  border-color: #7b4ca14d;
+}
+.eximp-list-preview-icon-fallback.file-kind-js {
+  color: #8b6900;
+  background: #d7ad171f;
+  border-color: #b18a254d;
+}
+.eximp-list-preview-icon-fallback.file-kind-text {
+  color: #3b6d85;
+  background: #3b6d851a;
+  border-color: #3b6d854d;
+}
+.eximp-list-preview-icon-fallback.file-kind-image {
+  color: #a34965;
+  background: #a349651a;
+  border-color: #a349654d;
+  font-size: 7px;
+  letter-spacing: 0;
+}
+.eximp-list-preview-icon-fallback.file-kind-config {
+  color: #53744a;
+  background: #53744a1a;
+  border-color: #53744a4d;
+  font-size: 7px;
+  letter-spacing: 0;
+}
+.eximp-list-preview-icon-fallback.file-kind-archive {
+  color: #916133;
+  background: #9161331a;
+  border-color: #9161334d;
+  font-size: 7px;
+  letter-spacing: 0;
+}
+
 .eximp-list-preview-title {
   font-size: 11px;
   font-weight: 600;
@@ -222,6 +259,75 @@
   font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--muted-strong);
+}
+
+.eximp-progress {
+  margin-top: 16px;
+}
+.eximp-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.eximp-progress-track {
+  position: relative;
+  height: 8px;
+  margin: 8px 0 5px;
+  overflow: hidden;
+  background: var(--bg-hover-strong);
+  border: 1px solid var(--line);
+}
+.eximp-progress-track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  animation: eximp-progress-glide 1.5s linear infinite;
+  pointer-events: none;
+}
+.eximp-progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+.eximp-progress-track.indeterminate > span {
+  animation: eximp-progress-scan 1.2s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eximp-progress-track::after,
+  .eximp-progress-track.indeterminate > span {
+    animation: none;
+  }
+}
+@keyframes eximp-progress-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(285%);
+  }
+}
+@keyframes eximp-progress-glide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(460%);
+  }
+}
+.eximp-progress small {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted-strong);
+  font-size: 10px;
 }
 
 /* Auth loading */

@@ -4,8 +4,10 @@ use tokio::fs;
 use uuid::Uuid;
 
 use std::collections::HashMap;
+use tauri::AppHandle;
 
 use crate::{
+    commands::import_progress::{ImportContext, IMPORT_CANCELLED},
     commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
     minecraft::{normalized_loader_and_version, normalized_ram},
     models::{
@@ -318,15 +320,22 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
             HashMap::new()
         };
 
-        let mut result = state
-            .values()
-            .map(|entry| ExportedItem {
+        let mut tracked_filenames = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for (filename, entry) in &state {
+            if !directory.join(filename).is_file()
+                && !directory.join(format!("{filename}.disabled")).is_file()
+            {
+                continue;
+            }
+            tracked_filenames.insert(filename.to_lowercase());
+            result.push(ExportedItem {
                 project_id: Some(entry.project_id.clone()),
                 title: entry.title.clone(),
                 source: "modrinth".to_string(),
                 icon_url: entry.icon_url.clone(),
-            })
-            .collect::<Vec<_>>();
+            });
+        }
 
         if let Ok(mut entries) = fs::read_dir(&directory).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
@@ -337,7 +346,10 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
                     continue;
                 }
                 let filename = entry.file_name().to_string_lossy().to_string();
-                if filename == state_file || state.contains_key(&filename) {
+                let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
+                if filename == state_file
+                    || tracked_filenames.contains(&base_filename.to_lowercase())
+                {
                     continue;
                 }
                 result.push(ExportedItem {
@@ -389,7 +401,8 @@ async fn install_import_content(
     mods: &[ExportedItem],
     shaders: &[ExportedItem],
     resource_packs: &[ExportedItem],
-) -> Vec<ImportContentResult> {
+    context: Option<&ImportContext>,
+) -> Result<Vec<ImportContentResult>, String> {
     let client = build_client();
     let game_dir = PathBuf::from(&item.game_dir);
     let loader = item.loader.to_lowercase();
@@ -399,6 +412,10 @@ async fn install_import_content(
         vec![loader.as_str()]
     };
     let mut results = Vec::new();
+    let total = mods.len() + shaders.len() + resource_packs.len();
+    if let Some(context) = context {
+        context.emit("installing", 0, total, "");
+    }
     for (category, directory, state_file, entries, loaders) in [
         (
             "mods",
@@ -432,6 +449,10 @@ async fn install_import_content(
             Err(_) => HashMap::new(),
         };
         for exported in entries {
+            if let Some(context) = context {
+                context.check()?;
+                context.emit("installing", results.len(), total, &exported.title);
+            }
             let result = async {
                 if exported.source != "modrinth" {
                     return Err(
@@ -451,7 +472,7 @@ async fn install_import_content(
                 fs::create_dir_all(&target_dir)
                     .await
                     .map_err(|error| format!("create content folder error: {error}"))?;
-                install_project_to_dir(
+                let installation = install_project_to_dir(
                     client,
                     item,
                     project_id,
@@ -459,44 +480,115 @@ async fn install_import_content(
                     loaders,
                     &mut state,
                     None,
-                )
-                .await?;
+                );
+                if let Some(context) = context {
+                    context.run(installation).await?;
+                } else {
+                    installation.await?;
+                }
                 let raw = serde_json::to_vec_pretty(&state).map_err(|error| error.to_string())?;
                 fs::write(&state_path, raw)
                     .await
                     .map_err(|error| format!("save installed content state error: {error}"))
             }
             .await;
+            if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
+                return Err(IMPORT_CANCELLED.to_string());
+            }
             results.push(ImportContentResult {
                 category: category.to_string(),
                 item: exported.clone(),
                 success: result.is_ok(),
                 message: result.err().unwrap_or_else(|| "Installed".to_string()),
             });
+            if let Some(context) = context {
+                context.emit("installing", results.len(), total, &exported.title);
+            }
         }
     }
-    results
+    Ok(results)
 }
 
 #[tauri::command]
 pub async fn retry_import_content(
+    app: AppHandle,
+    operation_id: String,
     instance_id: String,
     mods: Vec<ExportedItem>,
     shaders: Vec<ExportedItem>,
     resource_packs: Vec<ExportedItem>,
+) -> Result<Vec<ImportContentResult>, String> {
+    let context = ImportContext::start(app, operation_id).await?;
+    let result =
+        retry_import_content_inner(instance_id, mods, shaders, resource_packs, &context).await;
+    context.finish().await;
+    result
+}
+
+async fn retry_import_content_inner(
+    instance_id: String,
+    mods: Vec<ExportedItem>,
+    shaders: Vec<ExportedItem>,
+    resource_packs: Vec<ExportedItem>,
+    context: &ImportContext,
 ) -> Result<Vec<ImportContentResult>, String> {
     let item = read_instances()
         .await?
         .into_iter()
         .find(|item| item.id == instance_id && !is_trashed(item))
         .ok_or_else(|| "Build not found".to_string())?;
-    Ok(install_import_content(&item, &mods, &shaders, &resource_packs).await)
+    install_import_content(&item, &mods, &shaders, &resource_packs, Some(context)).await
 }
 
 #[tauri::command]
 pub async fn import_instance(
+    app: AppHandle,
+    operation_id: String,
     payload: ImportInstancePayload,
 ) -> Result<ImportInstanceResult, String> {
+    let context = ImportContext::start(app, operation_id).await?;
+    let result = import_instance_inner(payload, &context).await;
+    context.finish().await;
+    result
+}
+
+async fn import_instance_inner(
+    payload: ImportInstancePayload,
+    context: &ImportContext,
+) -> Result<ImportInstanceResult, String> {
+    context.check()?;
+    let item = create_imported_instance(payload.clone()).await?;
+    let result = install_import_content(
+        &item,
+        &payload.mods,
+        &payload.shaders,
+        &payload.resource_packs,
+        Some(context),
+    )
+    .await;
+    if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
+        discard_imported_instance(&item).await?;
+    }
+    let items = result?;
+    if let Err(error) = context.check() {
+        discard_imported_instance(&item).await?;
+        return Err(error);
+    }
+    context.emit("complete", items.len(), items.len(), "");
+    Ok(ImportInstanceResult {
+        instance: item,
+        items,
+    })
+}
+
+pub(crate) async fn discard_imported_instance(item: &InstanceItem) -> Result<(), String> {
+    delete_instance(item.id.clone()).await?;
+    purge_deleted_instance(item.id.clone()).await
+}
+
+pub(crate) async fn create_imported_instance(
+    payload: ImportInstancePayload,
+) -> Result<InstanceItem, String> {
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -553,17 +645,7 @@ pub async fn import_instance(
     items.push(item.clone());
     write_instances(&items).await?;
 
-    let results = install_import_content(
-        &item,
-        &payload.mods,
-        &payload.shaders,
-        &payload.resource_packs,
-    )
-    .await;
-    Ok(ImportInstanceResult {
-        instance: item,
-        items: results,
-    })
+    Ok(item)
 }
 
 #[cfg(test)]
@@ -598,7 +680,9 @@ mod tests {
             source: "local".into(),
             icon_url: None,
         };
-        let results = install_import_content(&instance, &[local], &[], &[]).await;
+        let results = install_import_content(&instance, &[local], &[], &[], None)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].success);
         assert!(results[0].message.contains("not embedded"));
