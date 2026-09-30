@@ -120,6 +120,17 @@ const VoidIcon = () => (
   </svg>
 );
 
+const StudioIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+    <path
+      d="M5.5 0.8 6.8 4.2 10.2 5.5 6.8 6.8 5.5 10.2 4.2 6.8 0.8 5.5 4.2 4.2Z"
+      stroke="currentColor"
+      strokeWidth="1.1"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const JavaIcon = () => (
   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
     <path
@@ -308,12 +319,16 @@ export function SettingsTab({
             </div>
           </div>
 
-          <div className="theme-switch-row" data-guide-target="settings-appearance">
+          <div
+            className="theme-switch-row theme-switch-row--appearance"
+            data-guide-target="settings-appearance"
+          >
             <span className="theme-switch-label">APPEARANCE</span>
-            <div className="theme-switch">
+            <div className="theme-switch theme-switch--appearance">
               <button
                 className={`theme-switch-btn${!appearanceCustomized && theme === "light" ? " active" : ""}`}
                 type="button"
+                aria-pressed={!appearanceCustomized && theme === "light"}
                 onClick={() => (appearanceCustomized || theme !== "light") && setTheme("light")}
               >
                 <SunIcon />
@@ -322,6 +337,7 @@ export function SettingsTab({
               <button
                 className={`theme-switch-btn${!appearanceCustomized && theme === "dark" ? " active" : ""}`}
                 type="button"
+                aria-pressed={!appearanceCustomized && theme === "dark"}
                 onClick={() => (appearanceCustomized || theme !== "dark") && setTheme("dark")}
               >
                 <MoonIcon />
@@ -330,33 +346,31 @@ export function SettingsTab({
               <button
                 className={`theme-switch-btn${!appearanceCustomized && theme === "void" ? " active" : ""}`}
                 type="button"
+                aria-pressed={!appearanceCustomized && theme === "void"}
                 onClick={() => (appearanceCustomized || theme !== "void") && setTheme("void")}
               >
                 <VoidIcon />
                 VOID
               </button>
-            </div>
-          </div>
-
-          {advancedSettingsEnabled && (
-            <div className="theme-switch-row">
-              <span className="theme-switch-label">APPEARANCE STUDIO</span>
-              <div className="theme-switch">
+              {(advancedSettingsEnabled || appearanceCustomized) && (
                 <button
-                  className="theme-switch-btn"
+                  className={`theme-switch-btn theme-switch-btn--studio${appearanceCustomized ? " active" : ""}`}
                   type="button"
-                  title="Ctrl+Shift+A"
+                  aria-pressed={appearanceCustomized}
+                  title={
+                    appearanceCustomized
+                      ? "Custom design active · edit in Appearance Studio (Ctrl+Shift+A)"
+                      : "Edit design in Appearance Studio (Ctrl+Shift+A)"
+                  }
                   aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
                   onClick={onCustomizeAppearance}
                 >
-                  EDIT DESIGN
-                  <svg width="13" height="9" viewBox="0 0 13 9" fill="none" aria-hidden="true">
-                    <path d="M1 4.5h10M8 1.5l3 3-3 3" stroke="currentColor" strokeWidth="1.2" />
-                  </svg>
+                  <StudioIcon />
+                  STUDIO
                 </button>
-              </div>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="theme-switch-row" data-guide-target="settings-source">
             <span className="theme-switch-label">DOWNLOAD SOURCE</span>

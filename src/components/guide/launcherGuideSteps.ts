@@ -323,7 +323,7 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
     eyebrow: "SETTINGS / ВНЕШНИЙ ВИД",
     title: "ТЕМА ЛАУНЧЕРА",
     description:
-      "LIGHT, DARK и VOID мгновенно меняют тему. При включённых advanced-настройках рядом появится Appearance Studio для полного редизайна.",
+      "LIGHT, DARK и VOID мгновенно меняют тему. При включённых advanced-настройках STUDIO открывает редактор и подсвечивается после применения собственного дизайна.",
     targets: [target("settings-appearance")],
     showPreview: true,
     previewTargetSelector: ".theme-switch",
