@@ -18,7 +18,7 @@ export async function openBuildPlaceholdersWindow(): Promise<void> {
     const popup = window.open(
       getBuildPlaceholdersWindowUrl(),
       BUILD_PLACEHOLDERS_WINDOW_LABEL,
-      "popup,width=780,height=800",
+      "popup,width=892,height=848",
     );
     if (!popup) throw new Error("Не удалось открыть окно плейсхолдеров.");
     popup.focus();
@@ -32,8 +32,8 @@ export async function openBuildPlaceholdersWindow(): Promise<void> {
       guide = new WebviewWindow(BUILD_PLACEHOLDERS_WINDOW_LABEL, {
         url: getBuildPlaceholdersWindowUrl(),
         title: "ScreenLauncher — Плейсхолдеры",
-        width: 780,
-        height: 800,
+        width: 892,
+        height: 848,
         minWidth: 600,
         minHeight: 480,
         center: true,

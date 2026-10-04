@@ -1,0 +1,66 @@
+.placeholder-guide {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.placeholder-guide-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 13px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-field);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color 150ms,
+    background 150ms,
+    color 150ms;
+}
+
+.placeholder-guide-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+  color: var(--accent);
+}
+
+.placeholder-guide-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.placeholder-guide-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.placeholder-guide-arrow {
+  margin-left: auto;
+}
+
+.placeholder-guide--compact {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+}
+
+.placeholder-guide--compact .placeholder-guide-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  gap: 7px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.placeholder-guide-error {
+  margin: 8px 0 0;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.5;
+}

@@ -5,6 +5,7 @@ import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
 import { normalizeMineflayerBotSettings } from "../pluginSettings";
 import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
+import { PlaceholderGuideButton } from "../../placeholders/PlaceholderGuideButton";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
@@ -510,15 +511,18 @@ function MineflayerBotSettingsEditor({
             </div>
 
             {settings.announceOnSpawn && (
-              <label className="mineflayer-bot-field mineflayer-bot-field--full">
-                <span>MESSAGE · %OWNER% %BOT% %SERVER%</span>
-                <input
-                  value={settings.spawnMessage}
-                  maxLength={200}
-                  placeholder="Ready, %owner%!"
-                  onChange={(event) => update({ spawnMessage: event.target.value })}
-                />
-              </label>
+              <div>
+                <label className="mineflayer-bot-field mineflayer-bot-field--full">
+                  <span>MESSAGE</span>
+                  <input
+                    value={settings.spawnMessage}
+                    maxLength={200}
+                    placeholder="Ready, %owner%!"
+                    onChange={(event) => update({ spawnMessage: event.target.value })}
+                  />
+                </label>
+                <PlaceholderGuideButton compact />
+              </div>
             )}
           </>
         )}

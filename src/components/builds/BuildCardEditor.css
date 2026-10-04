@@ -220,48 +220,6 @@
   line-height: 1.5;
 }
 
-.bce-placeholder-guide-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  margin-top: 14px;
-  padding: 10px 13px;
-  border: 1px solid var(--line-strong);
-  background: var(--bg-field);
-  color: var(--muted-strong);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition:
-    border-color 150ms,
-    background 150ms,
-    color 150ms;
-}
-
-.bce-placeholder-guide-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--bg-hover-strong);
-  color: var(--accent);
-}
-
-.bce-placeholder-guide-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.bce-placeholder-guide-btn:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.bce-placeholder-guide-arrow {
-  margin-left: auto;
-}
-
 .bce-canvas-stack {
   display: flex;
   flex-direction: column;

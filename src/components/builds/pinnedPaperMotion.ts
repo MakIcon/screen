@@ -11,7 +11,33 @@ export function createPinnedPaperMotion(): PinnedPaperMotion {
 
 export function getPinnedPaperTilt(horizontalVelocity: number): number {
   // A positive rotation around the top pin moves the bottom of the sheet left.
-  return Math.max(-2, Math.min(2, horizontalVelocity * 0.006));
+  return Math.max(-6, Math.min(6, horizontalVelocity * 0.018));
+}
+
+export function getPinnedPaperSwingLimit(
+  width: number,
+  height: number,
+  horizontalGutter: number,
+  verticalGutter: number,
+): number {
+  const halfWidth = width / 2;
+  const belowPin = Math.max(0, height - 8);
+  let min = 0;
+  let max = 6.4;
+  // Keep all four corners inside the transparent window at the original scale.
+  for (let step = 0; step < 16; step += 1) {
+    const angle = (min + max) / 2;
+    const radians = (angle * Math.PI) / 180;
+    const sin = Math.sin(radians);
+    const cos = Math.cos(radians);
+    const fits =
+      halfWidth * cos + belowPin * sin <= halfWidth + horizontalGutter &&
+      halfWidth * sin + belowPin * cos <= belowPin + verticalGutter &&
+      halfWidth * sin + 8 * cos <= 8 + verticalGutter;
+    if (fits) min = angle;
+    else max = angle;
+  }
+  return min;
 }
 
 export function advancePinnedPaperMotion(
@@ -24,14 +50,14 @@ export function advancePinnedPaperMotion(
   const duration = Math.max(0, Math.min(0.064, elapsedSeconds));
   const steps = Math.max(1, Math.ceil(duration * 120));
   const dt = duration / steps;
-  const angleTarget = Math.max(-2, Math.min(2, targetAngle));
+  const angleTarget = Math.max(-6, Math.min(6, targetAngle));
   const liftTarget = lifted ? 1 : 0;
 
   for (let step = 0; step < steps; step += 1) {
     next.angularVelocity += ((angleTarget - next.angle) * 90 - next.angularVelocity * 13) * dt;
     next.angle += next.angularVelocity * dt;
-    if (Math.abs(next.angle) > 2.2) {
-      next.angle = Math.sign(next.angle) * 2.2;
+    if (Math.abs(next.angle) > 6.4) {
+      next.angle = Math.sign(next.angle) * 6.4;
       if (next.angle * next.angularVelocity > 0) next.angularVelocity = 0;
     }
 

@@ -17,6 +17,7 @@ import {
   type PlaceholderAppearanceValues,
   type PlaceholderGroup,
 } from "../utils/placeholders";
+import { PlaceholderGuideButton } from "../components/placeholders/PlaceholderGuideButton";
 
 const PLACEHOLDER_GROUPS: readonly { id: PlaceholderGroup; label: string }[] = [
   { id: "build", label: "BUILD" },
@@ -121,6 +122,8 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
         onClick={rememberSelection}
         onKeyUp={rememberSelection}
       />
+
+      <PlaceholderGuideButton compact />
 
       <div className="studio-placeholder-case" aria-label="Placeholder output case">
         <span>PLACEHOLDER OUTPUT CASE</span>

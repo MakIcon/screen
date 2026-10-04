@@ -7,7 +7,7 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 28px;
+  padding: 52px clamp(20px, calc((100vw - 560px) / 2), 84px);
   overflow: hidden;
   color: var(--bpg-ink);
   background: transparent;
@@ -42,7 +42,7 @@
   color: var(--accent);
 }
 
-.bpg-window-actions .bpg-tilt-toggle {
+.bpg-window-actions .bpg-preference-toggle {
   width: auto;
   gap: 7px;
   margin-right: 6px;
@@ -51,13 +51,13 @@
   font-size: 11px;
 }
 
-.bpg-tilt-toggle[aria-pressed="true"] {
+.bpg-preference-toggle[aria-pressed="true"] {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 25%, transparent);
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
-.bpg-tilt-state {
+.bpg-preference-state {
   min-width: 28px;
   font-size: 10px;
   font-weight: 700;
@@ -458,12 +458,18 @@
   }
 }
 
+@media (max-width: 760px) {
+  .bpg-header {
+    padding-top: 56px;
+  }
+}
+
 @media (max-width: 620px) {
   .bpg-surface {
     padding: 24px 20px 22px;
   }
   .bpg-header {
-    padding: 28px 25px 16px;
+    padding: 56px 25px 16px;
   }
   .bpg-header h1 {
     font-size: 30px;

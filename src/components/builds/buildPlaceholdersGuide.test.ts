@@ -8,7 +8,9 @@ import {
 
 describe("placeholder guide catalogue", () => {
   it("includes every supported placeholder with a short Russian description", () => {
-    expect(findGuidePlaceholders("", "all")).toEqual(AVAILABLE_PLACEHOLDERS);
+    expect(findGuidePlaceholders("", "all")).toEqual(
+      expect.arrayContaining([...AVAILABLE_PLACEHOLDERS]),
+    );
     for (const placeholder of AVAILABLE_PLACEHOLDERS) {
       expect(getPlaceholderGuideDescription(placeholder)).toMatch(/[а-яё]/i);
       expect(PLACEHOLDER_GUIDE_GROUPS.map((group) => group.id)).toContain(placeholder.group);
@@ -37,5 +39,21 @@ describe("placeholder guide catalogue", () => {
       "build_ram_value",
     ]);
     expect(findGuidePlaceholders("несуществующий плейсхолдер", "all")).toEqual([]);
+  });
+
+  it("documents the separate Mineflayer message vocabulary without adding it to launcher templates", () => {
+    const tokens = findGuidePlaceholders("", "bot");
+    expect(tokens.map((placeholder) => placeholder.token)).toEqual([
+      "%owner%",
+      "%bot%",
+      "%server%",
+    ]);
+    expect(
+      tokens.every((placeholder) =>
+        getPlaceholderGuideDescription(placeholder).includes("Только в сообщении Mineflayer-бота"),
+      ),
+    ).toBe(true);
+    expect(findGuidePlaceholders("%owner%", "all")).toEqual([tokens[0]]);
+    expect(AVAILABLE_PLACEHOLDERS.some((placeholder) => placeholder.key === "owner")).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { ColorPicker } from "../color-picker/ColorPicker";
 import { getBuildCardBadgeVisibility, type BuildCardAppearance } from "./BuildCardSettingsPopup";
 import { EditorSection, EditorRow } from "./BuildCardEditorSection";
 import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
+import { PlaceholderGuideButton } from "../placeholders/PlaceholderGuideButton";
 
 type Props = {
   draft: BuildCardAppearance;
@@ -65,6 +66,7 @@ export function BadgeSection({ draft, onDraftChange }: Props) {
             maxLength={22}
             onChange={(badgeText) => onDraftChange((prev) => ({ ...prev, badgeText }))}
           />
+          <PlaceholderGuideButton compact />
         </div>
       </EditorRow>
 

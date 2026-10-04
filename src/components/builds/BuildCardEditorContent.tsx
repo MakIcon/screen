@@ -17,8 +17,7 @@ import {
 } from "../../utils/placeholders";
 import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
 import { getBuildCardPlainContentStyle, resolveBuildCardTags } from "./BuildCardContentView";
-import { openBuildPlaceholdersWindow } from "./buildPlaceholdersWindow";
-import { logger } from "../../utils/logger";
+import { PlaceholderGuideButton } from "../placeholders/PlaceholderGuideButton";
 
 function alphaColor(hex: string, opacity: number) {
   const normalizedOpacity = Math.max(0, Math.min(100, opacity));
@@ -206,21 +205,6 @@ type Props = {
 
 export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Props) {
   const [open, setOpen] = useState(true);
-  const [guideOpening, setGuideOpening] = useState(false);
-  const [guideError, setGuideError] = useState("");
-
-  async function openPlaceholderGuide() {
-    setGuideOpening(true);
-    setGuideError("");
-    try {
-      await openBuildPlaceholdersWindow();
-    } catch (error) {
-      logger.error(error);
-      setGuideError("Не удалось открыть справочник плейсхолдеров. Попробуй ещё раз.");
-    } finally {
-      setGuideOpening(false);
-    }
-  }
 
   const previewContentTags = resolveBuildCardTags(draft, resolvePreviewText);
 
@@ -376,39 +360,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
         Add tag
       </button>
 
-      <button
-        type="button"
-        className="bce-placeholder-guide-btn"
-        disabled={guideOpening}
-        aria-busy={guideOpening}
-        onClick={() => void openPlaceholderGuide()}
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-          <path d="M4 2h7l3 3v11H4zM11 2v4h3" stroke="currentColor" strokeWidth="1.2" />
-          <path
-            d="m7 12 4-4M6.5 8h1M10.5 12h1"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinecap="round"
-          />
-        </svg>
-        <span>Плейсхолдеры</span>
-        <svg
-          className="bce-placeholder-guide-arrow"
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path d="M4 3h7v7M11 3l-8 8" stroke="currentColor" strokeWidth="1.3" />
-        </svg>
-      </button>
-      {guideError && (
-        <p className="bce-content-hint" role="alert">
-          {guideError}
-        </p>
-      )}
+      <PlaceholderGuideButton />
     </EditorSection>
   );
 }

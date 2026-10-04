@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../appearance/useAppearance";
-import type { PlaceholderGroup } from "../../utils/placeholders";
 import { logger } from "../../utils/logger";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { usePinnedPaperDrag } from "./usePinnedPaperDrag";
@@ -10,17 +9,27 @@ import {
   findGuidePlaceholders,
   getPlaceholderGuideDescription,
   PLACEHOLDER_GUIDE_GROUPS,
+  type GuidePlaceholderGroup,
 } from "./buildPlaceholdersGuide";
 import "../../App.css";
 import "./BuildPlaceholdersWindowApp.css";
 
 const REST_TILT_STORAGE_KEY = "screenlauncher:placeholders:rest-tilt";
+const DRAG_ANIMATION_STORAGE_KEY = "screenlauncher:placeholders:drag-animation";
 
-function readRestTiltEnabled() {
+function readPreferenceEnabled(key: string) {
   try {
-    return window.localStorage.getItem(REST_TILT_STORAGE_KEY) !== "false";
+    return window.localStorage.getItem(key) !== "false";
   } catch {
     return true;
+  }
+}
+
+function savePreference(key: string, enabled: boolean) {
+  try {
+    window.localStorage.setItem(key, String(enabled));
+  } catch (error) {
+    logger.error(error);
   }
 }
 
@@ -47,13 +56,18 @@ function CopyIcon({ copied }: { copied: boolean }) {
 export function BuildPlaceholdersWindowApp() {
   useAppearance();
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState<PlaceholderGroup | "all">("all");
+  const [group, setGroup] = useState<GuidePlaceholderGroup | "all">("all");
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
-  const [restTiltEnabled, setRestTiltEnabled] = useState(readRestTiltEnabled);
+  const [restTiltEnabled, setRestTiltEnabled] = useState(() =>
+    readPreferenceEnabled(REST_TILT_STORAGE_KEY),
+  );
+  const [dragAnimationEnabled, setDragAnimationEnabled] = useState(() =>
+    readPreferenceEnabled(DRAG_ANIMATION_STORAGE_KEY),
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLElement>(null);
-  const startDrag = usePinnedPaperDrag(paperRef);
+  const startDrag = usePinnedPaperDrag(paperRef, dragAnimationEnabled);
   const placeholders = findGuidePlaceholders(query, group);
 
   useEffect(() => {
@@ -82,11 +96,13 @@ export function BuildPlaceholdersWindowApp() {
   function toggleRestTilt() {
     const enabled = !restTiltEnabled;
     setRestTiltEnabled(enabled);
-    try {
-      window.localStorage.setItem(REST_TILT_STORAGE_KEY, String(enabled));
-    } catch (error) {
-      logger.error(error);
-    }
+    savePreference(REST_TILT_STORAGE_KEY, enabled);
+  }
+
+  function toggleDragAnimation() {
+    const enabled = !dragAnimationEnabled;
+    setDragAnimationEnabled(enabled);
+    savePreference(DRAG_ANIMATION_STORAGE_KEY, enabled);
   }
 
   return (
@@ -103,7 +119,7 @@ export function BuildPlaceholdersWindowApp() {
         <div className="bpg-window-actions" onMouseDown={(event) => event.stopPropagation()}>
           <button
             type="button"
-            className="bpg-tilt-toggle"
+            className="bpg-preference-toggle"
             aria-label="Наклон листа в покое"
             aria-pressed={restTiltEnabled}
             title="Лёгкий наклон листа в покое"
@@ -121,7 +137,22 @@ export function BuildPlaceholdersWindowApp() {
               />
             </svg>
             <span>Наклон</span>
-            <span className="bpg-tilt-state">{restTiltEnabled ? "Вкл" : "Выкл"}</span>
+            <span className="bpg-preference-state">{restTiltEnabled ? "Вкл" : "Выкл"}</span>
+          </button>
+          <button
+            type="button"
+            className="bpg-preference-toggle"
+            aria-label="Анимация при перетаскивании"
+            aria-pressed={dragAnimationEnabled}
+            title="Качание листа и подъём пина при перетаскивании"
+            onClick={toggleDragAnimation}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <rect x="5" y="2" width="7" height="10" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M1 4h2M0 7h3M1 10h2" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            <span>Анимация</span>
+            <span className="bpg-preference-state">{dragAnimationEnabled ? "Вкл" : "Выкл"}</span>
           </button>
           {isTauri() && (
             <button
@@ -179,12 +210,18 @@ export function BuildPlaceholdersWindowApp() {
             ))}
           </nav>
           <div className="bpg-case-note">
-            <code>^%build_loader%</code>
-            <span>→</span>
-            <strong>FABRIC</strong>
-            <span>
-              Знак <code>^</code> делает буквы заглавными.
-            </span>
+            {group === "bot" ? (
+              <span>Эти плейсхолдеры работают только в сообщении Mineflayer-бота при входе.</span>
+            ) : (
+              <>
+                <code>^%build_loader%</code>
+                <span>→</span>
+                <strong>FABRIC</strong>
+                <span>
+                  Знак <code>^</code> делает буквы заглавными.
+                </span>
+              </>
+            )}
           </div>
           {copyError && (
             <p className="bpg-copy-error" role="alert">

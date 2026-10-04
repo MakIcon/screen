@@ -4,6 +4,7 @@ import {
   createPaperPositionWriter,
   createPinnedPaperMotion,
   getPinnedPaperTilt,
+  getPinnedPaperSwingLimit,
   isPinnedPaperSettled,
 } from "./pinnedPaperMotion";
 
@@ -20,6 +21,7 @@ describe("pinned paper physics", () => {
         );
       const bottomOffset = -Math.sin((motion.angle * Math.PI) / 180);
       expect(bottomOffset * direction).toBeLessThan(0);
+      expect(Math.abs(motion.angle)).toBeGreaterThan(4);
       expect(motion.lift).toBeGreaterThan(0.95);
     }
   });
@@ -51,7 +53,7 @@ describe("pinned paper physics", () => {
     for (let frame = 0; frame < 300; frame += 1) {
       const velocity = (frame % 50 < 25 ? 1 : -1) * 100_000;
       motion = advancePinnedPaperMotion(motion, getPinnedPaperTilt(velocity), true, 1);
-      expect(Math.abs(motion.angle)).toBeLessThanOrEqual(2.2);
+      expect(Math.abs(motion.angle)).toBeLessThanOrEqual(6.4);
       expect(Number.isFinite(motion.angularVelocity)).toBe(true);
     }
   });
@@ -67,6 +69,32 @@ describe("pinned paper physics", () => {
     const fast = simulate(144);
     expect(Math.abs(normal.angle - fast.angle)).toBeLessThan(0.01);
     expect(Math.abs(normal.lift - fast.lift)).toBeLessThan(0.01);
+  });
+
+  it("allows a stronger swing in the default window and keeps resized windows within bounds", () => {
+    expect(getPinnedPaperSwingLimit(724, 744, 82, 50)).toBeGreaterThan(6);
+    for (const [width, height, horizontal, vertical] of [
+      [724, 744, 82, 50],
+      [560, 754, 18, 20],
+      [1200, 376, 82, 50],
+    ]) {
+      const radians =
+        (getPinnedPaperSwingLimit(width, height, horizontal, vertical) * Math.PI) / 180;
+      for (const direction of [-1, 1]) {
+        for (const [x, y] of [
+          [-width / 2, -8],
+          [width / 2, -8],
+          [-width / 2, height - 8],
+          [width / 2, height - 8],
+        ]) {
+          const rotatedX = x * Math.cos(radians) - y * Math.sin(radians) * direction;
+          const rotatedY = x * Math.sin(radians) * direction + y * Math.cos(radians);
+          expect(Math.abs(rotatedX)).toBeLessThanOrEqual(width / 2 + horizontal);
+          expect(rotatedY).toBeGreaterThanOrEqual(-8 - vertical);
+          expect(rotatedY).toBeLessThanOrEqual(height - 8 + vertical);
+        }
+      }
+    }
   });
 });
 

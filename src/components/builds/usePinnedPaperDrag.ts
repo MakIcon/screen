@@ -8,6 +8,7 @@ import {
   createPaperPositionWriter,
   createPinnedPaperMotion,
   getPinnedPaperTilt,
+  getPinnedPaperSwingLimit,
   isPinnedPaperSettled,
   type PaperWindowPosition,
 } from "./pinnedPaperMotion";
@@ -25,8 +26,18 @@ type DragSession = {
   scale: number;
 };
 
-export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
+export function usePinnedPaperDrag(
+  paperRef: RefObject<HTMLElement | null>,
+  animationEnabled: boolean,
+) {
   const startRef = useRef<((event: PointerEvent<HTMLElement>) => void) | null>(null);
+  const animationEnabledRef = useRef(animationEnabled);
+  const updateAnimationRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    animationEnabledRef.current = animationEnabled;
+    updateAnimationRef.current?.();
+  }, [animationEnabled]);
 
   useEffect(() => {
     const paper = paperRef.current;
@@ -41,12 +52,20 @@ export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
     let lastFrameTime = 0;
     let frame = 0;
     let disposed = false;
-    let maxAngle = 2.65;
+    let maxAngle = 6.4;
+    const canAnimate = () => animationEnabledRef.current && !reducedMotion.matches;
 
     const updateBounds = () => {
       const width = paper.parentElement?.clientWidth ?? paper.offsetWidth;
+      const height = paper.parentElement?.clientHeight ?? paper.offsetHeight;
       const gutter = Math.max(0, (width - paper.offsetWidth) / 2 - 2);
-      maxAngle = (Math.atan2(gutter, Math.max(1, paper.offsetHeight - 8)) * 180) / Math.PI;
+      const verticalGutter = Math.max(0, (height - paper.offsetHeight) / 2 - 2);
+      maxAngle = getPinnedPaperSwingLimit(
+        paper.offsetWidth,
+        paper.offsetHeight,
+        gutter,
+        verticalGutter,
+      );
     };
     updateBounds();
 
@@ -67,19 +86,16 @@ export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
       lastFrameTime = now;
       if (!session || now - lastMovementTime > 50) horizontalVelocity *= Math.exp(-10 * dt);
       if (Math.abs(horizontalVelocity) < 0.1) horizontalVelocity = 0;
-      motion = reducedMotion.matches
-        ? createPinnedPaperMotion()
-        : advancePinnedPaperMotion(
+      motion = canAnimate()
+        ? advancePinnedPaperMotion(
             motion,
             getPinnedPaperTilt(horizontalVelocity),
             session !== null,
             dt,
-          );
+          )
+        : createPinnedPaperMotion();
       render();
-      if (
-        !reducedMotion.matches &&
-        (!isPinnedPaperSettled(motion, session !== null) || horizontalVelocity)
-      ) {
+      if (canAnimate() && (!isPinnedPaperSettled(motion, session !== null) || horizontalVelocity)) {
         frame = requestAnimationFrame(tick);
       } else {
         lastFrameTime = 0;
@@ -87,7 +103,7 @@ export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
     };
 
     const wake = () => {
-      if (!frame && !disposed) frame = requestAnimationFrame(tick);
+      if (!frame && !disposed && canAnimate()) frame = requestAnimationFrame(tick);
     };
 
     const boundsObserver = new ResizeObserver(() => {
@@ -192,24 +208,31 @@ export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
       }
     };
 
-    const onReducedMotion = () => {
-      if (reducedMotion.matches) {
+    const onAnimationPreferenceChange = () => {
+      if (!canAnimate()) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        lastFrameTime = 0;
+        horizontalVelocity = 0;
         motion = createPinnedPaperMotion();
         render();
       }
       wake();
     };
+    updateAnimationRef.current = onAnimationPreferenceChange;
+    onAnimationPreferenceChange();
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onEnd);
     window.addEventListener("pointercancel", onEnd);
     window.addEventListener("lostpointercapture", onEnd);
     window.addEventListener("blur", finish);
-    reducedMotion.addEventListener("change", onReducedMotion);
+    reducedMotion.addEventListener("change", onAnimationPreferenceChange);
 
     return () => {
       disposed = true;
       startRef.current = null;
+      updateAnimationRef.current = null;
       finish();
       writer.dispose();
       boundsObserver.disconnect();
@@ -219,7 +242,7 @@ export function usePinnedPaperDrag(paperRef: RefObject<HTMLElement | null>) {
       window.removeEventListener("pointercancel", onEnd);
       window.removeEventListener("lostpointercapture", onEnd);
       window.removeEventListener("blur", finish);
-      reducedMotion.removeEventListener("change", onReducedMotion);
+      reducedMotion.removeEventListener("change", onAnimationPreferenceChange);
       paper.style.removeProperty("--bpg-swing");
       paper.style.removeProperty("--bpg-pin-lift");
     };
