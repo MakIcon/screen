@@ -104,6 +104,7 @@ type BackupsProps = {
   onClose: () => void;
   onCreate: () => void;
   onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
 };
 
 export function WorldBackupsModal({
@@ -115,12 +116,26 @@ export function WorldBackupsModal({
   onClose,
   onCreate,
   onRestore,
+  onDelete,
 }: BackupsProps) {
-  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    id: string;
+    action: "restore" | "delete";
+  } | null>(null);
   const formatDate = (seconds: string) => {
     const value = Number(seconds);
     return Number.isFinite(value) ? new Date(value * 1000).toLocaleString() : seconds;
   };
+  const cancelConfirmationButton = (
+    <button
+      className="ghost-action"
+      type="button"
+      disabled={working}
+      onClick={() => setConfirmation(null)}
+    >
+      CANCEL
+    </button>
+  );
   return (
     <div className="confirm-overlay" onClick={() => !working && onClose()}>
       <div
@@ -151,38 +166,56 @@ export function WorldBackupsModal({
         </button>
         <div className="build-safety-list">
           {backups.length === 0 && <p className="panel-text">Копий пока нет.</p>}
-          {backups.map((backup) => (
-            <div className="build-safety-row" key={backup.id}>
-              <div>
-                <strong>{formatDate(backup.createdAt)}</strong>
-                <span>Миров: {backup.worldCount}</span>
+          {backups.map((backup) => {
+            const action = confirmation?.id === backup.id ? confirmation.action : null;
+            return (
+              <div className="build-safety-row" key={backup.id}>
+                <div>
+                  <strong>{formatDate(backup.createdAt)}</strong>
+                  <span>Миров: {backup.worldCount}</span>
+                </div>
+                <div className="build-safety-actions">
+                  {action ? (
+                    <>
+                      {action === "delete" && cancelConfirmationButton}
+                      <button
+                        className="ghost-action build-safety-danger"
+                        type="button"
+                        disabled={working || (action === "restore" && running)}
+                        onClick={() => {
+                          setConfirmation(null);
+                          if (action === "delete") onDelete(backup.id);
+                          else onRestore(backup.id);
+                        }}
+                      >
+                        {action === "delete" ? "CONFIRM DELETE" : "CONFIRM RESTORE"}
+                      </button>
+                      {action === "restore" && cancelConfirmationButton}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="ghost-action"
+                        type="button"
+                        disabled={working || running}
+                        onClick={() => setConfirmation({ id: backup.id, action: "restore" })}
+                      >
+                        RESTORE
+                      </button>
+                      <button
+                        className="ghost-action build-safety-danger"
+                        type="button"
+                        disabled={working}
+                        onClick={() => setConfirmation({ id: backup.id, action: "delete" })}
+                      >
+                        DELETE
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="build-safety-actions">
-                {confirmRestore === backup.id ? (
-                  <button
-                    className="ghost-action build-safety-danger"
-                    type="button"
-                    disabled={working || running}
-                    onClick={() => {
-                      setConfirmRestore(null);
-                      onRestore(backup.id);
-                    }}
-                  >
-                    CONFIRM RESTORE
-                  </button>
-                ) : (
-                  <button
-                    className="ghost-action"
-                    type="button"
-                    disabled={working || running}
-                    onClick={() => setConfirmRestore(backup.id)}
-                  >
-                    RESTORE
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {error && (
           <p className="build-safety-error" role="alert">

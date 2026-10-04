@@ -39,6 +39,7 @@ pub fn run() {
             commands::instances::purge_deleted_instance,
             commands::backups::create_world_backup,
             commands::backups::list_world_backups,
+            commands::backups::delete_world_backup,
             commands::backups::restore_world_backup,
             commands::instances::get_instance_export_data,
             commands::instances::import_instance,

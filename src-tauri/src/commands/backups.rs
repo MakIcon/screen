@@ -121,6 +121,34 @@ fn list_backups_sync(instance_id: &str, root: &Path) -> Result<Vec<WorldBackupIn
     Ok(backups)
 }
 
+fn delete_backup_sync(instance_id: &str, backup_id: &str, root: &Path) -> Result<(), String> {
+    Uuid::parse_str(backup_id).map_err(|_| "Invalid backup id".to_string())?;
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("read backups folder error: {e}"))?;
+    let backup = root.join(backup_id);
+    let file_type = fs::symlink_metadata(&backup)
+        .map_err(|e| format!("read backup error: {e}"))?
+        .file_type();
+    if !file_type.is_dir() || file_type.is_symlink() {
+        return Err("Backup path is not a regular directory".into());
+    }
+    let resolved = backup
+        .canonicalize()
+        .map_err(|e| format!("resolve backup path error: {e}"))?;
+    if resolved.parent() != Some(root.as_path()) {
+        return Err("Backup path is outside this build's backups folder".into());
+    }
+    let metadata: WorldBackupInfo = serde_json::from_slice(
+        &fs::read(backup.join("backup.json")).map_err(|e| format!("read backup error: {e}"))?,
+    )
+    .map_err(|e| format!("parse backup error: {e}"))?;
+    if metadata.id != backup_id || metadata.instance_id != instance_id {
+        return Err("Backup does not belong to this build".into());
+    }
+    fs::remove_dir_all(backup).map_err(|e| format!("delete world backup error: {e}"))
+}
+
 fn restore_backup_sync(
     instance_id: &str,
     backup_id: &str,
@@ -204,6 +232,15 @@ pub async fn list_world_backups(instance_id: String) -> Result<Vec<WorldBackupIn
 }
 
 #[tauri::command]
+pub async fn delete_world_backup(instance_id: String, backup_id: String) -> Result<(), String> {
+    active_game_dir(&instance_id).await?;
+    let root = backup_root(&instance_id)?;
+    tokio::task::spawn_blocking(move || delete_backup_sync(&instance_id, &backup_id, &root))
+        .await
+        .map_err(|e| format!("backup deletion task error: {e}"))?
+}
+
+#[tauri::command]
 pub async fn restore_world_backup(instance_id: String, backup_id: String) -> Result<(), String> {
     let game_dir = active_game_dir(&instance_id).await?;
     let root = backup_root(&instance_id)?;
@@ -216,7 +253,7 @@ pub async fn restore_world_backup(instance_id: String, backup_id: String) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::{create_backup_sync, list_backups_sync, restore_backup_sync};
+    use super::{create_backup_sync, delete_backup_sync, list_backups_sync, restore_backup_sync};
     use std::fs;
     use uuid::Uuid;
 
@@ -235,6 +272,81 @@ mod tests {
             b"before"
         );
         assert_eq!(list_backups_sync("inst-test", &backups).unwrap().len(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn deletes_only_the_selected_backup_and_keeps_live_worlds() {
+        let root = std::env::temp_dir().join(format!("screen-backups-{}", Uuid::new_v4()));
+        let game = root.join("game");
+        let backups = root.join("backups");
+        fs::create_dir_all(game.join("saves/world")).unwrap();
+        fs::write(game.join("saves/world/level.dat"), b"before").unwrap();
+        let selected = create_backup_sync("inst-test", &game, &backups).unwrap();
+        let other = create_backup_sync("inst-test", &game, &backups).unwrap();
+        fs::write(game.join("saves/world/level.dat"), b"current").unwrap();
+
+        delete_backup_sync("inst-test", &selected.id, &backups).unwrap();
+
+        assert!(!backups.join(&selected.id).exists());
+        let remaining = list_backups_sync("inst-test", &backups).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, other.id);
+        assert_eq!(
+            fs::read(backups.join(&other.id).join("saves/world/level.dat")).unwrap(),
+            b"before"
+        );
+        assert_eq!(
+            fs::read(game.join("saves/world/level.dat")).unwrap(),
+            b"current"
+        );
+        assert_eq!(
+            root.canonicalize().unwrap().parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_invalid_missing_and_mismatched_backups() {
+        let root = std::env::temp_dir().join(format!("screen-backups-{}", Uuid::new_v4()));
+        let game = root.join("game");
+        let backups = root.join("backups");
+        fs::create_dir_all(game.join("saves/world")).unwrap();
+        fs::write(game.join("saves/world/level.dat"), b"keep").unwrap();
+        let backup = create_backup_sync("inst-test", &game, &backups).unwrap();
+
+        for invalid in ["", "..", "../game", "..\\game", "C:\\", "/"] {
+            assert_eq!(
+                delete_backup_sync("inst-test", invalid, &backups).unwrap_err(),
+                "Invalid backup id"
+            );
+        }
+        assert!(delete_backup_sync("inst-test", &Uuid::new_v4().to_string(), &backups).is_err());
+        assert_eq!(
+            delete_backup_sync("another-build", &backup.id, &backups).unwrap_err(),
+            "Backup does not belong to this build"
+        );
+        let mut mismatched = backup.clone();
+        mismatched.id = Uuid::new_v4().to_string();
+        fs::write(
+            backups.join(&backup.id).join("backup.json"),
+            serde_json::to_vec(&mismatched).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            delete_backup_sync("inst-test", &backup.id, &backups).unwrap_err(),
+            "Backup does not belong to this build"
+        );
+        assert!(backups.join(&backup.id).is_dir());
+        assert_eq!(
+            fs::read(game.join("saves/world/level.dat")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            root.canonicalize().unwrap().parent().unwrap(),
+            std::env::temp_dir().canonicalize().unwrap()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

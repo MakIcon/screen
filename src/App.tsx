@@ -1988,6 +1988,21 @@ export default function App() {
     }
   };
 
+  const deleteWorldBackup = async (backupId: string) => {
+    if (!backupsInstanceId || backupsWorking) return;
+    setBackupsWorking(true);
+    setBackupsError("");
+    try {
+      await invoke("delete_world_backup", { instanceId: backupsInstanceId, backupId });
+      setWorldBackups((current) => current.filter((backup) => backup.id !== backupId));
+      pushToast("info", "Резервная копия миров удалена", { title: "World backup deleted" });
+    } catch (error) {
+      setBackupsError(toErrorMessage(error));
+    } finally {
+      setBackupsWorking(false);
+    }
+  };
+
   const handleMascotDeleteConfirmed = () => {
     if (!mascotConfirmPendingId) return;
     const id = mascotConfirmPendingId;
@@ -2750,6 +2765,7 @@ export default function App() {
                 onClose={() => setBackupsInstanceId(null)}
                 onCreate={() => void createWorldBackup()}
                 onRestore={(id) => void restoreWorldBackup(id)}
+                onDelete={(id) => void deleteWorldBackup(id)}
               />
             ) : null;
           })()}
