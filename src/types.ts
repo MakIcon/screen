@@ -498,11 +498,32 @@ export type ImportInstanceResult = {
   items: ImportContentResult[];
 };
 
+export type BackupWorldInfo = {
+  folderName: string;
+  sizeBytes: number;
+  modifiedAt: string;
+};
+
 export type WorldBackupInfo = {
   id: string;
   instanceId: string;
   createdAt: string;
   worldCount: number;
+  name: string;
+  kind: "manual" | "beforeRestore";
+  worlds: BackupWorldInfo[];
+  sizeBytes: number;
+};
+
+export type WorldBackupState = {
+  worlds: BackupWorldInfo[];
+  backups: WorldBackupInfo[];
+  selectedWorlds: string[];
+};
+
+export type WorldRestoreResult = {
+  restoredWorlds: string[];
+  safetyBackup: WorldBackupInfo | null;
 };
 
 export type BuildRuntimeSettingsDraft = {

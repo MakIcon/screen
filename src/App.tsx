@@ -75,7 +75,6 @@ import type {
   MinecraftManifest,
   TabKey,
   UpdateInstancePayload,
-  WorldBackupInfo,
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
 import { LauncherGuide } from "./components/guide/LauncherGuide";
@@ -102,7 +101,8 @@ import { RuntimeMonitorScope, useRuntimeMonitorController } from "./hooks/useRun
 import { useInstanceTransfers } from "./hooks/useInstanceTransfers";
 import { useContentIcons, type ContentIconKind } from "./hooks/useContentIcons";
 import { InstanceTransferModals } from "./components/transfer/InstanceTransferModals";
-import { DeletedBuildsModal, WorldBackupsModal } from "./components/builds/BuildSafetyModals";
+import { DeletedBuildsModal } from "./components/builds/BuildSafetyModals";
+import { WorldBackupsModal } from "./components/builds/WorldBackupsModal";
 import type { TransferHoverTarget, TransferListPreview } from "./components/transfer/types";
 import { pickPreferredInstance } from "./utils/instances";
 import { createShredPaths, createTearPath } from "./utils/closeEffects";
@@ -387,9 +387,6 @@ export default function App() {
   const [trashWorking, setTrashWorking] = useState(false);
   const [trashError, setTrashError] = useState("");
   const [backupsInstanceId, setBackupsInstanceId] = useState<string | null>(null);
-  const [worldBackups, setWorldBackups] = useState<WorldBackupInfo[]>([]);
-  const [backupsWorking, setBackupsWorking] = useState(false);
-  const [backupsError, setBackupsError] = useState("");
   const [mascotConfirmPendingId, setMascotConfirmPendingId] = useState<string | null>(null);
   const [mascotConfirmPendingName, setMascotConfirmPendingName] = useState("");
   const [mascotHiddenInstanceIds, setMascotHiddenInstanceIds] = useState<string[]>([]);
@@ -1941,68 +1938,6 @@ export default function App() {
     }
   };
 
-  const openWorldBackups = async (id: string) => {
-    setBackupsInstanceId(id);
-    setBackupsError("");
-    setWorldBackups([]);
-    try {
-      setWorldBackups(await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: id }));
-    } catch (error) {
-      setBackupsError(toErrorMessage(error));
-    }
-  };
-
-  const createWorldBackup = async () => {
-    if (!backupsInstanceId || isRunning(backupsInstanceId)) return;
-    setBackupsWorking(true);
-    setBackupsError("");
-    try {
-      await invoke<WorldBackupInfo>("create_world_backup", { instanceId: backupsInstanceId });
-      setWorldBackups(
-        await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: backupsInstanceId }),
-      );
-      pushToast("info", "Резервная копия миров создана", { title: "World backup" });
-    } catch (error) {
-      setBackupsError(toErrorMessage(error));
-    } finally {
-      setBackupsWorking(false);
-    }
-  };
-
-  const restoreWorldBackup = async (backupId: string) => {
-    if (!backupsInstanceId || isRunning(backupsInstanceId)) return;
-    setBackupsWorking(true);
-    setBackupsError("");
-    try {
-      await invoke("restore_world_backup", { instanceId: backupsInstanceId, backupId });
-      setWorldBackups(
-        await invoke<WorldBackupInfo[]>("list_world_backups", { instanceId: backupsInstanceId }),
-      );
-      pushToast("info", "Миры восстановлены; предыдущие миры сохранены отдельной копией", {
-        title: "Worlds restored",
-      });
-    } catch (error) {
-      setBackupsError(toErrorMessage(error));
-    } finally {
-      setBackupsWorking(false);
-    }
-  };
-
-  const deleteWorldBackup = async (backupId: string) => {
-    if (!backupsInstanceId || backupsWorking) return;
-    setBackupsWorking(true);
-    setBackupsError("");
-    try {
-      await invoke("delete_world_backup", { instanceId: backupsInstanceId, backupId });
-      setWorldBackups((current) => current.filter((backup) => backup.id !== backupId));
-      pushToast("info", "Резервная копия миров удалена", { title: "World backup deleted" });
-    } catch (error) {
-      setBackupsError(toErrorMessage(error));
-    } finally {
-      setBackupsWorking(false);
-    }
-  };
-
   const handleMascotDeleteConfirmed = () => {
     if (!mascotConfirmPendingId) return;
     const id = mascotConfirmPendingId;
@@ -2207,7 +2142,7 @@ export default function App() {
             handleExportInstance={handleExportInstance}
             handleImportBuild={handleImportBuild}
             onOpenTrash={() => void openTrash()}
-            onOpenWorldBackups={(id) => void openWorldBackups(id)}
+            onOpenWorldBackups={setBackupsInstanceId}
             handleOpenFolder={handleOpenFolder}
             handleRenameInstance={(id, name) => updateInstanceIdentity(id, { name })}
             handleTogglePin={(id, pinned) => updateInstanceIdentity(id, { pinned })}
@@ -2757,15 +2692,11 @@ export default function App() {
             const instance = instances.find((item) => item.id === backupsInstanceId);
             return instance ? (
               <WorldBackupsModal
+                key={instance.id}
                 instance={instance}
-                backups={worldBackups}
-                working={backupsWorking}
                 running={isRunning(instance.id)}
-                error={backupsError}
                 onClose={() => setBackupsInstanceId(null)}
-                onCreate={() => void createWorldBackup()}
-                onRestore={(id) => void restoreWorldBackup(id)}
-                onDelete={(id) => void deleteWorldBackup(id)}
+                pushToast={pushToast}
               />
             ) : null;
           })()}
