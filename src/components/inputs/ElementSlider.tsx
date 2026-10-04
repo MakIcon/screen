@@ -410,7 +410,7 @@ export function ElementSlider({
             <span
               className="es-default-marker"
               style={{ left: `${defaultMarkerPercent}%` }}
-              title={`Default: ${defaultMarkerValue}`}
+              data-tooltip={`Default: ${defaultMarkerValue}`}
               aria-hidden="true"
             />
           )}

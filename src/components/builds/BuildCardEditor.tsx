@@ -5,8 +5,10 @@ import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { BuildCardContentView, resolveBuildCardTags } from "./BuildCardContentView";
 import { BuildCardVerticalBody } from "./BuildCardVerticalBody";
+import { BuildCardPin } from "./BuildCardPin";
 import {
   BUILD_CARD_GRID_SIZE,
+  BUILD_CARD_PIN_ELEMENT_ID,
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
@@ -445,6 +447,14 @@ export function BuildCardEditor({
                         <BuildCardResizeHandle appearance={draft} id="title" />
                       )}
                     </span>
+                    <BuildCardPin
+                      appearance={draft}
+                      movable={gridEnabled}
+                      selected={selectedElementId === BUILD_CARD_PIN_ELEMENT_ID}
+                      onAnchorChange={(pinAnchor) =>
+                        onDraftChange((prev) => ({ ...prev, pinAnchor }))
+                      }
+                    />
                     {shouldShowBuildCardBadge(draft, true) && (
                       <span
                         className={`instance-running-badge ${gridEnabled ? "build-card-movable" : ""} ${gridEnabled && selectedElementId === "badge" ? "build-card-movable--selected" : ""}`}
@@ -574,8 +584,9 @@ export function BuildCardEditor({
                 </button>
               </EditorRow>
               <p className="bce-grid-hint">
-                Turn on the grid, then select any text or tag. Drag it to move, or pull its
+                Turn on the grid, then select any text, tag or pin. Drag it to move, or pull its
                 bottom-right handle to resize. Positions snap to {BUILD_CARD_GRID_SIZE}px cells.
+                {" The pin appears on pinned builds."}
                 {draft.backgroundMode === "draw" && " Turn it off to continue drawing."}
               </p>
             </EditorSection>

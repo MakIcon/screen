@@ -166,6 +166,10 @@
   touch-action: none;
 }
 
+.bce-preview-card--grid .instance-pin-badge {
+  pointer-events: auto;
+}
+
 .bce-preview-card--grid .build-card-movable:hover,
 .bce-preview-card--grid .build-card-movable:focus-visible {
   outline: 1px dashed var(--accent);

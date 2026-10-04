@@ -122,7 +122,7 @@ export function BuildPlaceholdersWindowApp() {
             className="bpg-preference-toggle"
             aria-label="Наклон листа в покое"
             aria-pressed={restTiltEnabled}
-            title="Лёгкий наклон листа в покое"
+            data-tooltip="Лёгкий наклон листа в покое"
             onClick={toggleRestTilt}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -144,7 +144,7 @@ export function BuildPlaceholdersWindowApp() {
             className="bpg-preference-toggle"
             aria-label="Анимация при перетаскивании"
             aria-pressed={dragAnimationEnabled}
-            title="Качание листа и подъём пина при перетаскивании"
+            data-tooltip="Качание листа и подъём пина при перетаскивании"
             onClick={toggleDragAnimation}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -254,7 +254,7 @@ export function BuildPlaceholdersWindowApp() {
                                 type="button"
                                 className={`bpg-token ${copiedToken === token ? "bpg-token--copied" : ""}`}
                                 aria-label={`Скопировать ${token}`}
-                                title={copiedToken === token ? "Скопировано" : "Скопировать"}
+                                data-tooltip={copiedToken === token ? "Скопировано" : "Скопировать"}
                                 onClick={() => void copyToken(token)}
                               >
                                 <code>{token}</code>

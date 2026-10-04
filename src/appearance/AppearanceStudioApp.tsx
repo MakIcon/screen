@@ -1973,7 +1973,7 @@ export function AppearanceStudioApp() {
               type="button"
               onClick={undo}
               disabled={!canUndo}
-              title="Undo (Ctrl+Z)"
+              data-tooltip="Undo (Ctrl+Z)"
               aria-label="Undo last appearance change"
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -1985,7 +1985,7 @@ export function AppearanceStudioApp() {
               type="button"
               onClick={redo}
               disabled={!canRedo}
-              title="Redo (Ctrl+Shift+Z)"
+              data-tooltip="Redo (Ctrl+Shift+Z)"
               aria-label="Redo last appearance change"
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -2101,7 +2101,7 @@ export function AppearanceStudioApp() {
           <section className="appearance-target-bar">
             <div className="appearance-target-current">
               <span>CURRENT TARGET</span>
-              <strong title={selectedTargets.map((target) => target.label).join(", ")}>
+              <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
                 {selectedTargets.length > 1
                   ? `${selectedTargets.length} ELEMENTS SELECTED`
                   : selectedTarget?.label || "WHOLE LAUNCHER"}

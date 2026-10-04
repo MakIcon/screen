@@ -25,6 +25,10 @@ export type BuildCardElementOffset = {
   x: number;
   y: number;
 };
+export type BuildCardPinAnchor = {
+  right: number;
+  top: number;
+};
 export const BUILD_CARD_GRID_SIZE = 12;
 export const BUILD_CARD_MIN_ELEMENT_SCALE = 0.5;
 export const BUILD_CARD_MAX_ELEMENT_SCALE = 4;
@@ -42,6 +46,7 @@ let buildCardTagSeed = 0;
 
 export const BUILD_CARD_TITLE_ELEMENT_ID = "title";
 export const BUILD_CARD_BADGE_ELEMENT_ID = "badge";
+export const BUILD_CARD_PIN_ELEMENT_ID = "pin";
 const BUILD_CARD_LEGACY_META = [
   { id: "meta-version", tagId: "build-card-tag-version", template: "%build_version%" },
   { id: "meta-loader", tagId: "build-card-tag-loader", template: "%build_loader%" },
@@ -99,6 +104,7 @@ export type BuildCardAppearance = {
   contentTagPositions: Record<string, BuildCardElementPosition>;
   layoutOffsets: Record<string, BuildCardElementOffset>;
   elementScales: Record<string, number>;
+  pinAnchor: BuildCardPinAnchor | null;
 };
 
 function clampPercent(value: number, fallback: number) {
@@ -269,6 +275,7 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   contentTagPositions: createDefaultBuildCardTagPositions(DEFAULT_BUILD_CARD_CONTENT_TAGS),
   layoutOffsets: {},
   elementScales: {},
+  pinAnchor: null,
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -323,6 +330,17 @@ function normalizeBuildCardElementScales(value: unknown): Record<string, number>
       return normalized === 1 ? [] : [[id, normalized]];
     }),
   );
+}
+
+function normalizeBuildCardPinAnchor(value: unknown): BuildCardPinAnchor | null {
+  if (!value || typeof value !== "object") return null;
+  const anchor = value as Partial<BuildCardPinAnchor>;
+  if (typeof anchor.right !== "number" || typeof anchor.top !== "number") return null;
+  if (!Number.isFinite(anchor.right) || !Number.isFinite(anchor.top)) return null;
+  return {
+    right: Math.round(anchor.right * 100) / 100,
+    top: Math.round(anchor.top * 100) / 100,
+  };
 }
 
 function mergeBuildCardContentLayout<T>(
@@ -604,6 +622,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       contentTags,
       contentEnabled,
     ),
+    pinAnchor: normalizeBuildCardPinAnchor(draft.pinAnchor),
   };
 }
 

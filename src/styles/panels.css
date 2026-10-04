@@ -290,6 +290,8 @@
 }
 
 .instance-pin-badge {
+  z-index: 1;
+  flex-shrink: 0;
   align-self: center;
   margin-left: auto;
   color: var(--accent);

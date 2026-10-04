@@ -264,7 +264,7 @@ export function BuildLogsModal({
 
         <div className="build-logs-meta">
           {metaRows.map((row) => (
-            <div className="build-logs-meta-item" key={row.label} title={row.title || row.value}>
+            <div className="build-logs-meta-item" key={row.label} data-tooltip={row.title || row.value}>
               <span>{row.label}</span>
               <strong>{row.value}</strong>
             </div>
@@ -292,7 +292,7 @@ export function BuildLogsModal({
             type="button"
             onClick={copyActiveLog}
             disabled={loading || !bodyText}
-            title={`Скопировать ${activeTab === "crash" ? "CRASH REPORT" : "JVM OUTPUT"}`}
+            data-tooltip={`Скопировать ${activeTab === "crash" ? "CRASH REPORT" : "JVM OUTPUT"}`}
           >
             {copied ? (
               <>

@@ -13,7 +13,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import "./App.css";
-import { TAB_HINT, TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
+import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
 import { useRunningInstances } from "./hooks/useRunningInstances";
 import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
@@ -2370,7 +2370,7 @@ export default function App() {
               <div data-guide-target="player-summary">
                 <small>PLAYER</small>
                 <strong
-                  title={resolve("%player_name%")}
+                  data-tooltip={resolve("%player_name%")}
                   data-guide-value
                   {...createPlaceholderAppearanceAttributes("%player_name%", resolve)}
                 >
@@ -2380,7 +2380,7 @@ export default function App() {
               <div>
                 <small>BUILD</small>
                 <strong
-                  title={resolve("%build_name%")}
+                  data-tooltip={resolve("%build_name%")}
                   {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}
                 >
                   {resolve("%build_name%")}
@@ -2410,7 +2410,6 @@ export default function App() {
                   type="button"
                   aria-current={activeTab === tab ? "page" : undefined}
                   data-tab-key={tab}
-                  title={TAB_HINT[tab]}
                 >
                   <span>{TAB_INDEX[tab].replace(".", "")}</span>
                   <strong>{TAB_TITLE[tab]}</strong>

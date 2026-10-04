@@ -175,7 +175,7 @@ function ModDownloadControls({
         <span style={{ width: `${percent}%` }} />
       </div>
       <div className="mod-download-progress-actions">
-        <span title={progress.filename}>{progress.filename || "Resolving dependencies…"}</span>
+        <span data-tooltip={progress.filename}>{progress.filename || "Resolving dependencies…"}</span>
         <button type="button" onClick={() => void onPause(!paused)}>
           {paused ? "RESUME" : "PAUSE"}
         </button>
@@ -528,7 +528,8 @@ export function ModrinthContentTab({
                         <button
                           className="installed-mod-delete-btn"
                           type="button"
-                          title={copy.deleteTitle}
+                          data-tooltip={copy.deleteTitle}
+                          aria-label={copy.deleteTitle}
                           disabled={!item.projectId || busyProjectId !== null}
                           onClick={() => item.projectId && void uninstall(item.projectId)}
                         >

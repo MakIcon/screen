@@ -258,7 +258,8 @@ export function BuildRuntimeSettingsEditor({
               <button
                 className="brs-icon-action"
                 type="button"
-                title="Export arguments"
+                data-tooltip="Export arguments"
+                aria-label="Export arguments"
                 onClick={exportJavaArgs}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -274,7 +275,8 @@ export function BuildRuntimeSettingsEditor({
               <button
                 className="brs-icon-action"
                 type="button"
-                title="Import arguments"
+                data-tooltip="Import arguments"
+                aria-label="Import arguments"
                 onClick={() => importArgsInputRef.current?.click()}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -318,7 +320,8 @@ export function BuildRuntimeSettingsEditor({
                 <button
                   className="brs-icon-action brs-find-action"
                   type="button"
-                  title="Previous match"
+                  data-tooltip="Previous match"
+                  aria-label="Previous match"
                   disabled={argsSearchMatches.length === 0}
                   onClick={() => moveSearchMatch(-1)}
                 >
@@ -335,7 +338,8 @@ export function BuildRuntimeSettingsEditor({
                 <button
                   className="brs-icon-action brs-find-action"
                   type="button"
-                  title="Next match"
+                  data-tooltip="Next match"
+                  aria-label="Next match"
                   disabled={argsSearchMatches.length === 0}
                   onClick={() => moveSearchMatch(1)}
                 >
@@ -440,7 +444,7 @@ export function BuildRuntimeSettingsEditor({
                     <button
                       className="brs-compact-action"
                       type="button"
-                      title="Use the launcher-managed Java"
+                      data-tooltip="Use the launcher-managed Java"
                       onClick={() => setJavaPath("")}
                     >
                       AUTO

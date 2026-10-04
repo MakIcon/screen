@@ -163,7 +163,7 @@ export function DrawingCanvas({
   return (
     <div className="drawing-editor">
       <div className="drawing-toolbar">
-        <div className="studio-color-compact" title="Brush color">
+        <div className="studio-color-compact" data-tooltip="Brush color">
           <ColorPicker value={brushColor} onChange={setBrushColor} label="Brush color" />
         </div>
         <label className="drawing-size">

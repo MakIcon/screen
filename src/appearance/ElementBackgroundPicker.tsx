@@ -367,7 +367,7 @@ export function ElementBackgroundPicker({
             type="button"
             className="element-background-picker__contrast"
             onClick={() => setTextPreviewTone((tone) => (tone === "dark" ? "light" : "dark"))}
-            title="Switch text preview background"
+            data-tooltip="Switch text preview background"
             aria-label={`Preview text on ${textPreviewTone === "dark" ? "light" : "dark"} background`}
           >
             {textPreviewTone === "dark" ? "☀ LIGHT" : "● DARK"}
@@ -409,14 +409,14 @@ export function ElementBackgroundPicker({
             <div className="element-gradient-editor__section-head">
               <span>COLOR STOPS</span>
               <div>
-                <button type="button" onClick={reverseStops} title="Reverse gradient">
+                <button type="button" onClick={reverseStops} data-tooltip="Reverse gradient">
                   ↔ REVERSE
                 </button>
                 <button
                   type="button"
                   onClick={addStopInLargestGap}
                   disabled={stops.length >= MAX_GRADIENT_STOPS}
-                  title={`Add color stop (${stops.length}/${MAX_GRADIENT_STOPS})`}
+                  data-tooltip={`Add color stop (${stops.length}/${MAX_GRADIENT_STOPS})`}
                 >
                   + ADD
                 </button>
@@ -431,7 +431,7 @@ export function ElementBackgroundPicker({
                 if (event.target !== event.currentTarget) return;
                 addStopAt(pointerPositionIn(event, event.currentTarget));
               }}
-              title="Click to add a color stop"
+              data-tooltip="Click to add a color stop"
             >
               {stops.map((stop, index) => (
                 <button
@@ -484,7 +484,7 @@ export function ElementBackgroundPicker({
                 className="element-gradient-stop-editor__remove"
                 disabled={stops.length <= 2}
                 onClick={removeActiveStop}
-                title="Remove selected color stop"
+                data-tooltip="Remove selected color stop"
               >
                 REMOVE
               </button>

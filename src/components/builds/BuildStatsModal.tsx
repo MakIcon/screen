@@ -613,10 +613,10 @@ export function BuildStatsModal({ instance, onClose }: Props) {
 
           {tab === "timeline" && (
             <div className="tl-dir-switcher">
-              <button type="button" className={`tl-dir-btn${dir === "v" ? " active" : ""}`} title="Вертикально" onClick={() => setDir("v")}>
+              <button type="button" className={`tl-dir-btn${dir === "v" ? " active" : ""}`} data-tooltip="Вертикально" onClick={() => setDir("v")}>
                 <IconVertical />
               </button>
-              <button type="button" className={`tl-dir-btn${dir === "h" ? " active" : ""}`} title="Горизонтально" onClick={() => setDir("h")}>
+              <button type="button" className={`tl-dir-btn${dir === "h" ? " active" : ""}`} data-tooltip="Горизонтально" onClick={() => setDir("h")}>
                 <IconHorizontal />
               </button>
             </div>

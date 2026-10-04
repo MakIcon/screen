@@ -356,7 +356,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                           : ""
                       }
                       aria-label={`Origin ${preset.x}%, ${preset.y}%`}
-                      title={`Origin ${preset.x}%, ${preset.y}%`}
+                      data-tooltip={`Origin ${preset.x}%, ${preset.y}%`}
                       onClick={() =>
                         onChange({
                           backgroundGradientCenterX: preset.x,
@@ -382,7 +382,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                         type="button"
                         className={Math.abs(gradientAngle - preset.angle) < 0.5 ? "active" : ""}
                         aria-label={preset.name}
-                        title={`${preset.name} · ${preset.angle}°`}
+                        data-tooltip={`${preset.name} · ${preset.angle}°`}
                         onClick={() => onChange({ backgroundGradientAngle: preset.angle })}
                       >
                         {preset.label}

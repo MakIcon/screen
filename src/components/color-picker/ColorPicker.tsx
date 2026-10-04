@@ -256,7 +256,7 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
           type="button"
           className="cp-eyedropper"
           onClick={pickEye}
-          title={
+          data-tooltip={
             eyedropperSupported ? "Pick color from screen" : "Screen color picker is unavailable"
           }
           aria-label="Pick color from screen"
@@ -441,7 +441,7 @@ export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
         aria-expanded={open}
         aria-controls={open ? popupId : undefined}
         aria-label={label ? `${label}: ${displayValue}` : undefined}
-        title={`Choose color ${displayValue}`}
+        data-tooltip={`Choose color ${displayValue}`}
       >
         <span
           className="cp-trigger__swatch"

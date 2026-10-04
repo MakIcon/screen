@@ -90,7 +90,7 @@ function DiscordRpcSettingsEditor({
           <div className="drpc-assets">
             <div
               className={`drpc-large${settings.largeImageKey.trim() ? " is-set" : ""}`}
-              title="Large image — asset key from the Developer Portal"
+              data-tooltip="Large image — asset key from the Developer Portal"
             >
               <input
                 value={settings.largeImageKey}
@@ -100,7 +100,7 @@ function DiscordRpcSettingsEditor({
             </div>
             <div
               className={`drpc-small${settings.smallImageKey.trim() ? " is-set" : ""}`}
-              title="Small image — asset key (corner badge)"
+              data-tooltip="Small image — asset key (corner badge)"
             >
               <input
                 value={settings.smallImageKey}

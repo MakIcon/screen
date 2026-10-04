@@ -304,7 +304,13 @@ export function MicrosoftAccountsModal({
         <div className="ms-modal-head">
           <span className="ms-modal-tag">ACCOUNT</span>
           <span className="ms-modal-title">Microsoft Profile Manager</span>
-          <button className="ms-modal-close" onClick={onClose} title="Close" type="button">
+          <button
+            className="ms-modal-close"
+            onClick={onClose}
+            data-tooltip="Close"
+            aria-label="Close"
+            type="button"
+          >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
@@ -356,7 +362,8 @@ export function MicrosoftAccountsModal({
                       {isActive && <span className="ms-account-badge">ACTIVE</span>}
                       <button
                         className="ms-account-remove"
-                        title="Remove account"
+                        data-tooltip="Remove account"
+                        aria-label="Remove account"
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();

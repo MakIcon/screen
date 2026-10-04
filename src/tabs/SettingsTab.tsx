@@ -357,7 +357,7 @@ export function SettingsTab({
                   className={`theme-switch-btn theme-switch-btn--studio${appearanceCustomized ? " active" : ""}`}
                   type="button"
                   aria-pressed={appearanceCustomized}
-                  title={
+                  data-tooltip={
                     appearanceCustomized
                       ? "Custom design active · edit in Appearance Studio (Ctrl+Shift+A)"
                       : "Edit design in Appearance Studio (Ctrl+Shift+A)"

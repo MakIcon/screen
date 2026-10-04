@@ -46,7 +46,7 @@ export function BuildPlaceholderCaseControl({ value, maxLength, onChange }: Prop
             key={option.mode}
             className={currentCase === option.mode ? "active" : ""}
             disabled={disabled}
-            title={option.title}
+            data-tooltip={option.title}
             onClick={() => {
               if (nextValue !== value) onChange(nextValue);
             }}

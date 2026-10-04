@@ -217,7 +217,7 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
                     <button
                       type="button"
                       key={token}
-                      title={`${token} → ${liveValue}`}
+                      data-tooltip={`${token} → ${liveValue}`}
                       disabled={!hasRoom}
                       onMouseDown={keepEditorSelection}
                       onClick={() => insertPlaceholder(token)}

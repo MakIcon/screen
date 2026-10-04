@@ -12,7 +12,7 @@ export function BuildCardResizeHandle({ appearance, id }: Props) {
       className="bce-resize-handle"
       data-card-resize-id={id}
       aria-label="Resize element"
-      title="Drag to resize · Arrow keys to adjust size"
+      data-tooltip="Drag to resize · Arrow keys to adjust size"
       style={{ transform: `scale(${1 / getBuildCardElementScale(appearance, id)})` }}
     />
   );

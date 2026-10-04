@@ -409,7 +409,7 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                     }}
                   />
                 </div>
-                <small title={props.importProgress.filename}>
+                <small data-tooltip={props.importProgress.filename}>
                   {props.importCancelRequested
                     ? "Останавливаю и очищаю незавершённую сборку…"
                     : props.importProgress.filename || "Подготовка файлов…"}
@@ -540,7 +540,7 @@ function TransferPreview(props: CommonPreviewProps) {
               title={item.title}
               source={item.source}
             />
-            <span className="eximp-list-preview-title" title={item.title}>
+            <span className="eximp-list-preview-title" data-tooltip={item.title}>
               {item.title}
             </span>
             <span className="eximp-list-preview-src">{fileTypeLabel(item.title, item.source)}</span>

@@ -408,10 +408,14 @@
 
 .mockup-split-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   width: 100%;
   align-items: stretch;
+}
+
+.mockup-split-row > .mockup-block {
+  min-width: 0;
 }
 
 .mockup-split-row > .mockup-block:first-child {
@@ -464,6 +468,9 @@
   border: none;
   border-bottom: 1px solid transparent;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   font-family: inherit;
   font-size: 20px;
   font-weight: 700;
@@ -485,6 +492,13 @@
   display: block;
   text-align: left;
   cursor: text;
+}
+
+.mockup-nickname-value > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Dropdown block (legacy, используется в overview panel) ── */

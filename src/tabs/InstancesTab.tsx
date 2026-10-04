@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import pinIconUrl from "../assets/pin.svg";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import {
@@ -17,6 +16,7 @@ import {
 } from "../components/builds/BuildCardSettingsPopup";
 import { BuildCardContentView } from "../components/builds/BuildCardContentView";
 import { BuildCardVerticalBody } from "../components/builds/BuildCardVerticalBody";
+import { BuildCardPin, PinIcon } from "../components/builds/BuildCardPin";
 import { BuildConfigurationGrid } from "../components/builds/BuildConfigurationGrid";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import {
@@ -106,16 +106,6 @@ interface InstancesTabProps {
   setStatsInstanceId: (id: string | null) => void;
   setScreenshotsInstanceId: (id: string | null) => void;
   openBuildCardSettings: (targetId?: string | null) => void;
-}
-
-function PinIcon({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`pin-icon ${className}`.trim()}
-      style={{ "--pin-icon-url": `url("${pinIconUrl}")` } as CSSProperties}
-      aria-hidden="true"
-    />
-  );
 }
 
 function RenameIcon() {
@@ -254,7 +244,7 @@ export function InstancesTab({
               <button
                 className="ghost-action build-library-trash-action"
                 type="button"
-                title="Корзина сборок"
+                data-tooltip="Корзина сборок"
                 aria-label="Корзина сборок"
                 onClick={onOpenTrash}
               >
@@ -271,7 +261,7 @@ export function InstancesTab({
               <button
                 className="ghost-action icon-square-action"
                 type="button"
-                title="Импортировать сборку из файла"
+                data-tooltip="Импортировать сборку из файла"
                 aria-label="Импортировать сборку из файла"
                 onClick={handleImportBuild}
               >
@@ -400,15 +390,7 @@ export function InstancesTab({
                         >
                           {resolveInstanceTemplate("%build_name%")}
                         </span>
-                        {instance.pinned && (
-                          <span
-                            className="instance-pin-badge"
-                            title="Закреплённая сборка"
-                            aria-label="Закреплённая сборка"
-                          >
-                            <PinIcon />
-                          </span>
-                        )}
+                        <BuildCardPin appearance={cardAppearance} pinned={instance.pinned} />
                         {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
                           <span
                             className="instance-running-badge"
@@ -557,7 +539,8 @@ export function InstancesTab({
                       className="ghost-action icon-square-action settings-icon-action"
                       type="button"
                       onClick={() => openBuildCardSettings(null)}
-                      title="Build settings"
+                      data-tooltip="Build settings"
+                      aria-label="Build settings"
                     >
                       <SettingsGearIcon />
                     </button>
@@ -605,7 +588,7 @@ export function InstancesTab({
                             buildNameDraft.trim() === selectedInstance.name
                           }
                           aria-label="Сохранить новое имя"
-                          title="Сохранить новое имя"
+                          data-tooltip="Сохранить новое имя"
                           onClick={() => void commitBuildRename()}
                         >
                           <ConfirmIcon />
@@ -615,7 +598,7 @@ export function InstancesTab({
                           type="button"
                           disabled={working}
                           aria-label="Отменить переименование"
-                          title="Отменить переименование"
+                          data-tooltip="Отменить переименование"
                           onClick={cancelBuildRename}
                         >
                           <CancelIcon />
@@ -632,7 +615,7 @@ export function InstancesTab({
                           type="button"
                           disabled={working || isRunning(selectedInstance.id)}
                           aria-label="Переименовать сборку"
-                          title={
+                          data-tooltip={
                             isRunning(selectedInstance.id)
                               ? "Останови сборку перед переименованием"
                               : "Переименовать сборку"
@@ -649,7 +632,9 @@ export function InstancesTab({
                           aria-label={
                             selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"
                           }
-                          title={selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"}
+                          data-tooltip={
+                            selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"
+                          }
                           onClick={() =>
                             void handleTogglePin(selectedInstance.id, !selectedInstance.pinned)
                           }
@@ -758,7 +743,8 @@ export function InstancesTab({
                     <button
                       className="ghost-action icon-square-action export-action"
                       type="button"
-                      title="Экспортировать сборку"
+                      data-tooltip="Экспортировать сборку"
+                      aria-label="Экспортировать сборку"
                       onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}
                     >
                       <svg
@@ -782,7 +768,8 @@ export function InstancesTab({
                         className="ghost-action icon-square-action settings-icon-action"
                         type="button"
                         onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
-                        title="Build settings"
+                        data-tooltip="Build settings"
+                        aria-label="Build settings"
                       >
                         <SettingsGearIcon />
                       </button>
@@ -790,7 +777,8 @@ export function InstancesTab({
                     <button
                       className="ghost-action icon-square-action screenshots-action"
                       type="button"
-                      title="Screenshots"
+                      data-tooltip="Screenshots"
+                      aria-label="Screenshots"
                       onClick={() =>
                         selectedInstance && setScreenshotsInstanceId(selectedInstance.id)
                       }
@@ -814,7 +802,8 @@ export function InstancesTab({
                     <button
                       className="ghost-action icon-square-action trash-action"
                       type="button"
-                      title="Удалить сборку"
+                      data-tooltip="Удалить сборку"
+                      aria-label="Удалить сборку"
                       disabled={
                         working || (selectedInstance ? isRunning(selectedInstance.id) : false)
                       }

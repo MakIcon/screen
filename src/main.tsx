@@ -1,6 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { CustomTooltip } from "./components/display/CustomTooltip";
 import {
   BuildLogsWindowApp,
   readBuildLogsWindowRoute,
@@ -34,6 +35,7 @@ const isBuildPlaceholdersWindow = isBuildPlaceholdersWindowRoute(window.location
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
+    <CustomTooltip />
     {isBuildPlaceholdersWindow ? (
       <Suspense fallback={null}>
         <BuildPlaceholdersWindowApp />

@@ -155,7 +155,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
                   <button
                     type="button"
                     className={`bme-toggle ${mod.enabled ? "enabled" : ""}`}
-                    title={mod.enabled ? "Отключить мод" : "Включить мод"}
+                    data-tooltip={mod.enabled ? "Отключить мод" : "Включить мод"}
+                    aria-label={mod.enabled ? "Отключить мод" : "Включить мод"}
                     aria-pressed={mod.enabled}
                     disabled={busy}
                     onClick={() => void toggleMod(mod.filename, !mod.enabled)}
