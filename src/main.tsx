@@ -10,10 +10,17 @@ import {
   readInstallProgressWindowRoute,
 } from "./components/builds/InstallProgressWindowApp";
 import { isAppearanceStudioRoute } from "./appearance/window";
+import { isBuildPlaceholdersWindowRoute } from "./components/builds/buildPlaceholdersWindow";
 
 const AppearanceStudioApp = lazy(() =>
   import("./appearance/AppearanceStudioApp").then((module) => ({
     default: module.AppearanceStudioApp,
+  })),
+);
+
+const BuildPlaceholdersWindowApp = lazy(() =>
+  import("./components/builds/BuildPlaceholdersWindowApp").then((module) => ({
+    default: module.BuildPlaceholdersWindowApp,
   })),
 );
 
@@ -23,10 +30,15 @@ const AppearanceStudioApp = lazy(() =>
 const logWindowRoute = readBuildLogsWindowRoute();
 const isInstallProgressWindow = readInstallProgressWindowRoute();
 const isAppearanceStudioWindow = isAppearanceStudioRoute();
+const isBuildPlaceholdersWindow = isBuildPlaceholdersWindowRoute(window.location.search);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {isAppearanceStudioWindow ? (
+    {isBuildPlaceholdersWindow ? (
+      <Suspense fallback={null}>
+        <BuildPlaceholdersWindowApp />
+      </Suspense>
+    ) : isAppearanceStudioWindow ? (
       <Suspense fallback={null}>
         <AppearanceStudioApp />
       </Suspense>

@@ -59,7 +59,12 @@ describe("build card element sizes", () => {
     };
     const restored = normalizeBuildCardAppearance(JSON.parse(JSON.stringify(draft)));
 
-    expect(restored.elementScales).toEqual(draft.elementScales);
+    expect(restored.elementScales).toEqual({
+      title: 1.5,
+      badge: 0.75,
+      "build-card-tag-version": 2,
+      "build-card-tag-ram": 1.25,
+    });
     expect(getBuildCardElementStyle(restored, "build-card-tag-version")).toMatchObject({
       left: "24px",
       top: "12px",
@@ -80,7 +85,61 @@ describe("build card element sizes", () => {
       },
     });
 
-    expect(appearance.elementScales).toEqual({ "meta-loader": 0.5, "meta-ram": 4 });
+    expect(appearance.elementScales).toEqual({
+      "build-card-tag-loader": 0.5,
+      "build-card-tag-ram": 4,
+    });
+  });
+});
+
+describe("unified build card content layout", () => {
+  it("migrates the visible gray text layout to the shared tag ids", () => {
+    const appearance = normalizeBuildCardAppearance({
+      contentEnabled: false,
+      layoutOffsets: {
+        "meta-loader": { x: 12, y: 24 },
+        "build-card-tag-loader": { x: 36, y: 48 },
+      },
+      elementScales: { "meta-loader": 1.5, "build-card-tag-loader": 2 },
+    });
+
+    expect(appearance.layoutOffsets).toEqual({ "build-card-tag-loader": { x: 12, y: 24 } });
+    expect(appearance.elementScales).toEqual({ "build-card-tag-loader": 1.5 });
+    const enabled = normalizeBuildCardAppearance({ ...appearance, contentEnabled: true });
+    expect(enabled.layoutOffsets).toEqual(appearance.layoutOffsets);
+    expect(enabled.elementScales).toEqual(appearance.elementScales);
+  });
+
+  it("preserves the visible styled tag layout when legacy text settings also exist", () => {
+    const appearance = normalizeBuildCardAppearance({
+      contentEnabled: true,
+      layoutOffsets: {
+        "meta-ram": { x: 12, y: 24 },
+        "build-card-tag-ram": { x: 36, y: 48 },
+      },
+      elementScales: { "meta-ram": 1.5, "build-card-tag-ram": 2 },
+    });
+
+    expect(appearance.layoutOffsets).toEqual({ "build-card-tag-ram": { x: 36, y: 48 } });
+    expect(appearance.elementScales).toEqual({ "build-card-tag-ram": 2 });
+    expect(normalizeBuildCardAppearance(appearance)).toEqual(appearance);
+  });
+
+  it("recognizes legacy content with custom ids and leaves unrelated elements alone", () => {
+    const appearance = normalizeBuildCardAppearance({
+      contentTags: [{ id: "custom-loader", text: "^%build_loader%" }],
+      layoutOffsets: {
+        "meta-loader": { x: 12, y: 24 },
+        title: { x: 36, y: 0 },
+      },
+      elementScales: { "meta-loader": 1.5, badge: 2 },
+    });
+
+    expect(appearance.layoutOffsets).toEqual({
+      "custom-loader": { x: 12, y: 24 },
+      title: { x: 36, y: 0 },
+    });
+    expect(appearance.elementScales).toEqual({ "custom-loader": 1.5, badge: 2 });
   });
 });
 

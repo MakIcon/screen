@@ -3,7 +3,6 @@ import pinIconUrl from "../assets/pin.svg";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import {
-  BUILD_CARD_DEFAULT_META,
   SettingsGearIcon,
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
@@ -180,9 +179,6 @@ export function InstancesTab({
   getBuildCardAppearance,
   buildCardPreviewTarget,
   createPreviewName,
-  createPreviewVersion,
-  createPreviewLoader,
-  createPreviewRam,
   createMeasureAppearance,
   resolveBuildCardContentTags,
   resolveForTarget,
@@ -327,28 +323,18 @@ export function InstancesTab({
                 <div className="instance-card-top">
                   <span className="instance-name">{createPreviewName}</span>
                 </div>
-                <div
-                  className={`instance-card-meta ${createMeasureAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
-                >
-                  {createMeasureAppearance.contentEnabled ? (
-                    <BuildCardContentView
-                      mode={createMeasureAppearance.contentMode}
-                      align={createMeasureAppearance.contentTextAlign}
-                      strokeEnabled={createMeasureAppearance.contentTextStrokeEnabled}
-                      tags={resolveBuildCardContentTags(
-                        createMeasureAppearance,
-                        buildCardPreviewTarget,
-                        { buildState: "RUNNING" },
-                      )}
-                    />
-                  ) : (
-                    <>
-                      <span>{createPreviewVersion}</span>
-                      <span>{createPreviewLoader}</span>
-                      <span>{createPreviewRam} GB</span>
-                      <span>NEVER</span>
-                    </>
-                  )}
+                <div className="instance-card-meta instance-card-meta--content">
+                  <BuildCardContentView
+                    mode={createMeasureAppearance.contentMode}
+                    align={createMeasureAppearance.contentTextAlign}
+                    strokeEnabled={createMeasureAppearance.contentTextStrokeEnabled}
+                    appearance={createMeasureAppearance}
+                    tags={resolveBuildCardContentTags(
+                      createMeasureAppearance,
+                      buildCardPreviewTarget,
+                      { buildState: "RUNNING" },
+                    )}
+                  />
                 </div>
               </div>
             </div>
@@ -440,32 +426,14 @@ export function InstancesTab({
                           </span>
                         )}
                       </div>
-                      <div
-                        className={`instance-card-meta ${cardAppearance.contentEnabled ? "instance-card-meta--content" : ""}`}
-                      >
-                        {cardAppearance.contentEnabled ? (
-                          <BuildCardContentView
-                            mode={cardAppearance.contentMode}
-                            align={cardAppearance.contentTextAlign}
-                            strokeEnabled={cardAppearance.contentTextStrokeEnabled}
-                            appearance={cardAppearance}
-                            tags={resolvedContentTags}
-                          />
-                        ) : (
-                          BUILD_CARD_DEFAULT_META.map(({ id, template }) => (
-                            <span
-                              key={id}
-                              data-card-layout-element
-                              style={getBuildCardElementStyle(cardAppearance, id)}
-                              {...createPlaceholderAppearanceAttributes(
-                                template,
-                                resolveInstanceTemplate,
-                              )}
-                            >
-                              {resolveInstanceTemplate(template)}
-                            </span>
-                          ))
-                        )}
+                      <div className="instance-card-meta instance-card-meta--content">
+                        <BuildCardContentView
+                          mode={cardAppearance.contentMode}
+                          align={cardAppearance.contentTextAlign}
+                          strokeEnabled={cardAppearance.contentTextStrokeEnabled}
+                          appearance={cardAppearance}
+                          tags={resolvedContentTags}
+                        />
                       </div>
                     </BuildCardVerticalBody>
                   </button>

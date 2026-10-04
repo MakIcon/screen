@@ -42,11 +42,11 @@ let buildCardTagSeed = 0;
 
 export const BUILD_CARD_TITLE_ELEMENT_ID = "title";
 export const BUILD_CARD_BADGE_ELEMENT_ID = "badge";
-export const BUILD_CARD_DEFAULT_META = [
-  { id: "meta-version", template: "%build_version%" },
-  { id: "meta-loader", template: "%build_loader%" },
-  { id: "meta-ram", template: "%build_ram%" },
-  { id: "meta-last-played", template: "%build_last_played%" },
+const BUILD_CARD_LEGACY_META = [
+  { id: "meta-version", tagId: "build-card-tag-version", template: "%build_version%" },
+  { id: "meta-loader", tagId: "build-card-tag-loader", template: "%build_loader%" },
+  { id: "meta-ram", tagId: "build-card-tag-ram", template: "%build_ram%" },
+  { id: "meta-last-played", tagId: "build-card-tag-last-played", template: "%build_last_played%" },
 ] as const;
 
 const DEFAULT_TITLE_POSITION: BuildCardElementPosition = { x: 0, y: 0 };
@@ -325,6 +325,27 @@ function normalizeBuildCardElementScales(value: unknown): Record<string, number>
   );
 }
 
+function mergeBuildCardContentLayout<T>(
+  settings: Record<string, T>,
+  tags: BuildCardContentTag[],
+  contentEnabled: boolean,
+): Record<string, T> {
+  const merged = { ...settings };
+  for (const legacy of BUILD_CARD_LEGACY_META) {
+    const tag =
+      tags.find((item) => item.id === legacy.tagId) ??
+      tags.find((item) => item.text.replace(/\^%/g, "%") === legacy.template);
+    if (tag && settings[legacy.id] !== undefined) {
+      // Keep the layout that was visible when the older card was saved.
+      if (!contentEnabled || settings[tag.id] === undefined) {
+        merged[tag.id] = settings[legacy.id];
+      }
+    }
+    delete merged[legacy.id];
+  }
+  return merged;
+}
+
 export function getBuildCardElementScale(appearance: BuildCardAppearance, id: string): number {
   return appearance.elementScales[id] ?? 1;
 }
@@ -496,6 +517,10 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         ),
       )
     : cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS);
+  const contentEnabled =
+    typeof draft.contentEnabled === "boolean"
+      ? draft.contentEnabled
+      : DEFAULT_BUILD_CARD_APPEARANCE.contentEnabled;
   return {
     backgroundMode,
     image: typeof draft.image === "string" ? draft.image : "",
@@ -560,10 +585,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
       getContrastTextColor(normalizedBadgeColor),
     ),
     badgePosition: normalizeBuildCardElementPosition(draft.badgePosition, DEFAULT_BADGE_POSITION),
-    contentEnabled:
-      typeof draft.contentEnabled === "boolean"
-        ? draft.contentEnabled
-        : DEFAULT_BUILD_CARD_APPEARANCE.contentEnabled,
+    contentEnabled,
     contentMode,
     contentTextAlign,
     contentTextStrokeEnabled:
@@ -572,8 +594,16 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
         : DEFAULT_BUILD_CARD_APPEARANCE.contentTextStrokeEnabled,
     contentTags,
     contentTagPositions: normalizeBuildCardTagPositions(draft.contentTagPositions, contentTags),
-    layoutOffsets: normalizeBuildCardLayoutOffsets(draft.layoutOffsets),
-    elementScales: normalizeBuildCardElementScales(draft.elementScales),
+    layoutOffsets: mergeBuildCardContentLayout(
+      normalizeBuildCardLayoutOffsets(draft.layoutOffsets),
+      contentTags,
+      contentEnabled,
+    ),
+    elementScales: mergeBuildCardContentLayout(
+      normalizeBuildCardElementScales(draft.elementScales),
+      contentTags,
+      contentEnabled,
+    ),
   };
 }
 

@@ -6,12 +6,42 @@ import type {
   BuildCardTextAlign,
 } from "./BuildCardSettingsPopup";
 import { getBuildCardElementStyle } from "./BuildCardSettingsPopup";
-import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
+import {
+  createPlaceholderAppearanceAttributes,
+  setPlaceholderTemplateCase,
+  type PlaceholderAppearanceAttributes,
+} from "../../utils/placeholders";
 import { BuildCardResizeHandle } from "./BuildCardResizeHandle";
 
 export type ResolvedBuildCardContentTag = BuildCardContentTag & {
   appearance?: PlaceholderAppearanceAttributes;
 };
+
+export function resolveBuildCardTags(
+  appearance: BuildCardAppearance,
+  resolve: (template: string) => string,
+): ResolvedBuildCardContentTag[] {
+  return appearance.contentTags.map((tag) => {
+    const template = appearance.contentEnabled
+      ? tag.text
+      : setPlaceholderTemplateCase(tag.text, "value");
+    return {
+      ...tag,
+      text: resolve(template),
+      appearance: createPlaceholderAppearanceAttributes(template, resolve),
+    };
+  });
+}
+
+export function getBuildCardPlainContentStyle(tag: BuildCardContentTag): CSSProperties {
+  return {
+    // The original gray metadata uses 11px; default styled tags use 9px.
+    fontSize: `${(tag.fontSize * 11) / 9}px`,
+    color: "var(--text-alt)",
+    fontWeight: "normal",
+    letterSpacing: "1px",
+  };
+}
 
 type Props = {
   mode: BuildCardContentMode;
@@ -48,6 +78,32 @@ export function BuildCardContentView({
 }: Props) {
   const visibleTags = tags.filter((tag) => tag.text.trim().length > 0);
   if (visibleTags.length === 0) return null;
+
+  if (appearance && !appearance.contentEnabled) {
+    return (
+      <div className="build-card-content build-card-content--plain">
+        {visibleTags.map((tag) => (
+          <span
+            key={tag.id}
+            className={`build-card-plain-text ${movable ? "build-card-movable" : ""} ${movable && selectedElementId === tag.id ? "build-card-movable--selected" : ""}`}
+            data-card-layout-element
+            data-card-move-id={movable ? tag.id : undefined}
+            tabIndex={movable ? 0 : undefined}
+            {...tag.appearance}
+            style={{
+              ...getBuildCardPlainContentStyle(tag),
+              ...getBuildCardElementStyle(appearance, tag.id),
+            }}
+          >
+            {tag.text}
+            {movable && selectedElementId === tag.id && (
+              <BuildCardResizeHandle appearance={appearance} id={tag.id} />
+            )}
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   if (mode === "text") {
     return (

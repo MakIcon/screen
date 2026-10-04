@@ -31,6 +31,7 @@ import {
   type BuildCardAppearance,
   type BuildCardPreviewSize,
 } from "./components/builds/BuildCardSettingsPopup";
+import { resolveBuildCardTags } from "./components/builds/BuildCardContentView";
 // Stats (with its heavy canvas constellation) and screenshots are on-demand
 // modals — keep them out of the main bundle until the user opens one.
 const BuildStatsModal = lazy(() =>
@@ -961,14 +962,7 @@ export default function App() {
       buildState?: string;
     } = {},
   ) =>
-    appearance.contentTags.map((tag) => {
-      const resolveTag = (template: string) => resolveForTarget(template, target, overrides);
-      return {
-        ...tag,
-        text: resolveTag(tag.text),
-        appearance: createPlaceholderAppearanceAttributes(tag.text, resolveTag),
-      };
-    });
+    resolveBuildCardTags(appearance, (template) => resolveForTarget(template, target, overrides));
 
   const selectedModTarget = useMemo(
     () =>

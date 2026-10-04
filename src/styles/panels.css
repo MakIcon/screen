@@ -462,11 +462,21 @@
 }
 
 .build-card-content--tags,
-.build-card-content--text {
+.build-card-content--text,
+.build-card-content--plain {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   width: 100%;
+}
+
+.build-card-content--plain {
+  gap: 10px 16px;
+}
+
+.build-card-plain-text {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .build-card-content--tags {

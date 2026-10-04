@@ -3,11 +3,10 @@ import { useRef, useState } from "react";
 import "./BuildCardEditor.css";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
-import { BuildCardContentView } from "./BuildCardContentView";
+import { BuildCardContentView, resolveBuildCardTags } from "./BuildCardContentView";
 import { BuildCardVerticalBody } from "./BuildCardVerticalBody";
 import {
   BUILD_CARD_GRID_SIZE,
-  BUILD_CARD_DEFAULT_META,
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
@@ -346,11 +345,7 @@ export function BuildCardEditor({
     }));
   }
 
-  const previewContentTags = draft.contentTags.map((tag) => ({
-    ...tag,
-    text: resolvePreviewText(tag.text),
-    appearance: createPlaceholderAppearanceAttributes(tag.text, resolvePreviewText),
-  }));
+  const previewContentTags = resolveBuildCardTags(draft, resolvePreviewText);
   const badgeTemplate = getBuildCardBadgeText(draft);
   const basePreviewHeight = previewCardSize?.height ?? 86;
   const heightValue = draft.cardHeight > 0 ? draft.cardHeight : basePreviewHeight;
@@ -472,41 +467,16 @@ export function BuildCardEditor({
                       </span>
                     )}
                   </div>
-                  <div
-                    className={`instance-card-meta ${draft.contentEnabled ? "instance-card-meta--content" : ""}`}
-                  >
-                    {draft.contentEnabled ? (
-                      <BuildCardContentView
-                        mode={draft.contentMode}
-                        align={draft.contentTextAlign}
-                        tags={previewContentTags}
-                        strokeEnabled={draft.contentTextStrokeEnabled}
-                        appearance={draft}
-                        movable={gridEnabled}
-                        selectedElementId={selectedElementId}
-                      />
-                    ) : (
-                      BUILD_CARD_DEFAULT_META.map(({ id, template }) => (
-                        <span
-                          key={id}
-                          className={
-                            gridEnabled
-                              ? `build-card-movable ${selectedElementId === id ? "build-card-movable--selected" : ""}`
-                              : undefined
-                          }
-                          data-card-layout-element
-                          data-card-move-id={gridEnabled ? id : undefined}
-                          tabIndex={gridEnabled ? 0 : undefined}
-                          style={getBuildCardElementStyle(draft, id)}
-                          {...createPlaceholderAppearanceAttributes(template, resolvePreviewText)}
-                        >
-                          {resolvePreviewText(template)}
-                          {gridEnabled && selectedElementId === id && (
-                            <BuildCardResizeHandle appearance={draft} id={id} />
-                          )}
-                        </span>
-                      ))
-                    )}
+                  <div className="instance-card-meta instance-card-meta--content">
+                    <BuildCardContentView
+                      mode={draft.contentMode}
+                      align={draft.contentTextAlign}
+                      tags={previewContentTags}
+                      strokeEnabled={draft.contentTextStrokeEnabled}
+                      appearance={draft}
+                      movable={gridEnabled}
+                      selectedElementId={selectedElementId}
+                    />
                   </div>
                 </BuildCardVerticalBody>
               </div>

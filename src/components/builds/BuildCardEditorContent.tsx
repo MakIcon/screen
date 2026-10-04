@@ -16,6 +16,9 @@ import {
   type PlaceholderAppearanceAttributes,
 } from "../../utils/placeholders";
 import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
+import { getBuildCardPlainContentStyle, resolveBuildCardTags } from "./BuildCardContentView";
+import { openBuildPlaceholdersWindow } from "./buildPlaceholdersWindow";
+import { logger } from "../../utils/logger";
 
 function alphaColor(hex: string, opacity: number) {
   const normalizedOpacity = Math.max(0, Math.min(100, opacity));
@@ -31,6 +34,7 @@ type ContentTagRowProps = {
   previewText: string;
   previewAppearance: PlaceholderAppearanceAttributes;
   strokeEnabled: boolean;
+  enabled: boolean;
   onUpdate: (tag: BuildCardContentTag) => void;
   onDelete: () => void;
 };
@@ -41,6 +45,7 @@ function ContentTagRow({
   previewText,
   previewAppearance,
   strokeEnabled,
+  enabled,
   onUpdate,
   onDelete,
 }: ContentTagRowProps) {
@@ -52,23 +57,25 @@ function ContentTagRow({
       <div className="bce-tag-row-head">
         <button type="button" className="bce-tag-toggle" onClick={() => setOpen((prev) => !prev)}>
           <span
-            className={`bce-tag-preview ${mode === "text" ? "bce-tag-preview--text" : ""}`}
+            className={`bce-tag-preview ${!enabled || mode === "text" ? "bce-tag-preview--text" : ""}`}
             {...previewAppearance}
             style={
-              mode === "tags"
-                ? {
-                    borderColor: tag.borderColor,
-                    backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),
-                    color: tag.textColor,
-                    fontSize: `${tag.fontSize}px`,
-                  }
-                : {
-                    color: alphaColor(tag.fillColor, tag.fillOpacity),
-                    WebkitTextStroke: strokeEnabled ? `0.55px ${tag.borderColor}` : undefined,
-                    textShadow: strokeEnabled ? `0 0 0 ${tag.borderColor}` : undefined,
-                    paintOrder: strokeEnabled ? "stroke fill" : undefined,
-                    fontSize: `${tag.fontSize}px`,
-                  }
+              !enabled
+                ? getBuildCardPlainContentStyle(tag)
+                : mode === "tags"
+                  ? {
+                      borderColor: tag.borderColor,
+                      backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),
+                      color: tag.textColor,
+                      fontSize: `${tag.fontSize}px`,
+                    }
+                  : {
+                      color: alphaColor(tag.fillColor, tag.fillOpacity),
+                      WebkitTextStroke: strokeEnabled ? `0.55px ${tag.borderColor}` : undefined,
+                      textShadow: strokeEnabled ? `0 0 0 ${tag.borderColor}` : undefined,
+                      paintOrder: strokeEnabled ? "stroke fill" : undefined,
+                      fontSize: `${tag.fontSize}px`,
+                    }
             }
           >
             {previewText || tag.text || `${labelPrefix} tag`}
@@ -199,12 +206,23 @@ type Props = {
 
 export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Props) {
   const [open, setOpen] = useState(true);
+  const [guideOpening, setGuideOpening] = useState(false);
+  const [guideError, setGuideError] = useState("");
 
-  const previewContentTags = draft.contentTags.map((tag) => ({
-    ...tag,
-    text: resolvePreviewText(tag.text),
-    appearance: createPlaceholderAppearanceAttributes(tag.text, resolvePreviewText),
-  }));
+  async function openPlaceholderGuide() {
+    setGuideOpening(true);
+    setGuideError("");
+    try {
+      await openBuildPlaceholdersWindow();
+    } catch (error) {
+      logger.error(error);
+      setGuideError("Не удалось открыть справочник плейсхолдеров. Попробуй ещё раз.");
+    } finally {
+      setGuideOpening(false);
+    }
+  }
+
+  const previewContentTags = resolveBuildCardTags(draft, resolvePreviewText);
 
   function updateContentTag(tagId: string, nextTag: BuildCardContentTag) {
     onDraftChange((prev) => ({
@@ -234,7 +252,6 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
       const nextTag = createBuildCardContentTag(prev.contentMode);
       return {
         ...prev,
-        contentEnabled: true,
         contentTags: [...prev.contentTags, nextTag],
         contentTagPositions: {
           ...prev.contentTagPositions,
@@ -334,6 +351,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
                 createPlaceholderAppearanceAttributes(tag.text, resolvePreviewText)
               }
               strokeEnabled={draft.contentTextStrokeEnabled}
+              enabled={draft.contentEnabled}
               onUpdate={(nextTag) => updateContentTag(tag.id, nextTag)}
               onDelete={() => deleteContentTag(tag.id)}
             />
@@ -358,11 +376,39 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
         Add tag
       </button>
 
-      <p className="bce-content-hint">
-        Use placeholders like `%build_name%`, `%build_version%`, `%build_loader%`,
-        `%build_full_loader%`, `%build_ram%`, `%build_playtime%`, `%build_last_played%` or
-        `%build_state%`. Prefix with `^` to force uppercase.
-      </p>
+      <button
+        type="button"
+        className="bce-placeholder-guide-btn"
+        disabled={guideOpening}
+        aria-busy={guideOpening}
+        onClick={() => void openPlaceholderGuide()}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M4 2h7l3 3v11H4zM11 2v4h3" stroke="currentColor" strokeWidth="1.2" />
+          <path
+            d="m7 12 4-4M6.5 8h1M10.5 12h1"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span>Плейсхолдеры</span>
+        <svg
+          className="bce-placeholder-guide-arrow"
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M4 3h7v7M11 3l-8 8" stroke="currentColor" strokeWidth="1.3" />
+        </svg>
+      </button>
+      {guideError && (
+        <p className="bce-content-hint" role="alert">
+          {guideError}
+        </p>
+      )}
     </EditorSection>
   );
 }
