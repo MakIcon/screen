@@ -9,7 +9,7 @@ import {
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
   getBuildCardBadgeVisibility,
-  getBuildCardElementOffsetStyle,
+  getBuildCardElementStyle,
   hasBuildCardBackgroundImage,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
@@ -406,7 +406,7 @@ export function InstancesTab({
                         <span
                           className="instance-name"
                           data-card-layout-element
-                          style={getBuildCardElementOffsetStyle(cardAppearance, "title")}
+                          style={getBuildCardElementStyle(cardAppearance, "title")}
                           {...createPlaceholderAppearanceAttributes(
                             "%build_name%",
                             resolveInstanceTemplate,
@@ -429,7 +429,7 @@ export function InstancesTab({
                             data-card-layout-element
                             style={{
                               ...getBuildCardBadgeStyle(cardAppearance),
-                              ...getBuildCardElementOffsetStyle(cardAppearance, "badge"),
+                              ...getBuildCardElementStyle(cardAppearance, "badge"),
                             }}
                             {...createPlaceholderAppearanceAttributes(
                               badgeTemplate,
@@ -456,7 +456,7 @@ export function InstancesTab({
                             <span
                               key={id}
                               data-card-layout-element
-                              style={getBuildCardElementOffsetStyle(cardAppearance, id)}
+                              style={getBuildCardElementStyle(cardAppearance, id)}
                               {...createPlaceholderAppearanceAttributes(
                                 template,
                                 resolveInstanceTemplate,

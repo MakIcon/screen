@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BUILD_CARD_APPEARANCE,
   getBuildCardAppearanceStyle,
-  getBuildCardElementOffsetStyle,
+  getBuildCardElementStyle,
   hasBuildCardBackgroundImage,
   normalizeBuildCardAppearance,
 } from "./BuildCardSettingsPopup";
@@ -43,13 +43,54 @@ describe("build card drawing background", () => {
   });
 });
 
+describe("build card element sizes", () => {
+  it("keeps older cards at their original size", () => {
+    const appearance = normalizeBuildCardAppearance({ layoutOffsets: { title: { x: 12, y: 0 } } });
+
+    expect(appearance.elementScales).toEqual({});
+    expect(getBuildCardElementStyle(appearance, "title")?.transform).toBeUndefined();
+  });
+
+  it("preserves resized elements and their grid positions through save and reload", () => {
+    const draft = {
+      ...DEFAULT_BUILD_CARD_APPEARANCE,
+      elementScales: { title: 1.5, badge: 0.75, "build-card-tag-version": 2, "meta-ram": 1.25 },
+      layoutOffsets: { "build-card-tag-version": { x: 24, y: 12 } },
+    };
+    const restored = normalizeBuildCardAppearance(JSON.parse(JSON.stringify(draft)));
+
+    expect(restored.elementScales).toEqual(draft.elementScales);
+    expect(getBuildCardElementStyle(restored, "build-card-tag-version")).toMatchObject({
+      left: "24px",
+      top: "12px",
+      transform: "scale(2)",
+      transformOrigin: "top left",
+    });
+  });
+
+  it("rejects invalid sizes and bounds stored scales", () => {
+    const appearance = normalizeBuildCardAppearance({
+      elementScales: {
+        title: Infinity,
+        badge: "2",
+        "meta-version": NaN,
+        "meta-loader": -1,
+        "meta-ram": 100,
+        "meta-last-played": 1,
+      },
+    });
+
+    expect(appearance.elementScales).toEqual({ "meta-loader": 0.5, "meta-ram": 4 });
+  });
+});
+
 describe("build card grid positions", () => {
   it("keeps the existing layout as the zero position for older cards", () => {
     const appearance = normalizeBuildCardAppearance({ backgroundMode: "color" });
 
     expect(appearance.layoutOffsets).toEqual({});
-    expect(getBuildCardElementOffsetStyle(appearance, "title")).toBeUndefined();
-    expect(getBuildCardElementOffsetStyle(appearance, "meta-version")).toBeUndefined();
+    expect(getBuildCardElementStyle(appearance, "title")).toBeUndefined();
+    expect(getBuildCardElementStyle(appearance, "meta-version")).toBeUndefined();
   });
 
   it("restores saved title and tag offsets", () => {
@@ -61,11 +102,11 @@ describe("build card grid positions", () => {
       },
     });
 
-    expect(getBuildCardElementOffsetStyle(appearance, "title")).toMatchObject({
+    expect(getBuildCardElementStyle(appearance, "title")).toMatchObject({
       left: "24px",
       top: "36px",
     });
-    expect(getBuildCardElementOffsetStyle(appearance, "build-card-tag-version")).toMatchObject({
+    expect(getBuildCardElementStyle(appearance, "build-card-tag-version")).toMatchObject({
       left: "-12px",
       top: "12px",
     });

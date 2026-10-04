@@ -26,6 +26,8 @@ export type BuildCardElementOffset = {
   y: number;
 };
 export const BUILD_CARD_GRID_SIZE = 12;
+export const BUILD_CARD_MIN_ELEMENT_SCALE = 0.5;
+export const BUILD_CARD_MAX_ELEMENT_SCALE = 4;
 export type BuildCardContentTag = {
   id: string;
   text: string;
@@ -96,6 +98,7 @@ export type BuildCardAppearance = {
   contentTags: BuildCardContentTag[];
   contentTagPositions: Record<string, BuildCardElementPosition>;
   layoutOffsets: Record<string, BuildCardElementOffset>;
+  elementScales: Record<string, number>;
 };
 
 function clampPercent(value: number, fallback: number) {
@@ -265,6 +268,7 @@ export const DEFAULT_BUILD_CARD_APPEARANCE: BuildCardAppearance = {
   contentTags: cloneBuildCardContentTags(DEFAULT_BUILD_CARD_CONTENT_TAGS),
   contentTagPositions: createDefaultBuildCardTagPositions(DEFAULT_BUILD_CARD_CONTENT_TAGS),
   layoutOffsets: {},
+  elementScales: {},
 };
 
 function clampUnit(value: number, fallback: number) {
@@ -306,16 +310,38 @@ function normalizeBuildCardLayoutOffsets(value: unknown): Record<string, BuildCa
   );
 }
 
-export function getBuildCardElementOffsetStyle(
+function normalizeBuildCardElementScales(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([id, scale]) => {
+      if (typeof scale !== "number" || !Number.isFinite(scale)) return [];
+      const normalized = Math.max(
+        BUILD_CARD_MIN_ELEMENT_SCALE,
+        Math.min(BUILD_CARD_MAX_ELEMENT_SCALE, Math.round(scale * 100) / 100),
+      );
+      return normalized === 1 ? [] : [[id, normalized]];
+    }),
+  );
+}
+
+export function getBuildCardElementScale(appearance: BuildCardAppearance, id: string): number {
+  return appearance.elementScales[id] ?? 1;
+}
+
+export function getBuildCardElementStyle(
   appearance: BuildCardAppearance,
   id: string,
 ): CSSProperties | undefined {
   const offset = appearance.layoutOffsets[id];
-  if (!offset || (!offset.x && !offset.y)) return undefined;
+  const scale = getBuildCardElementScale(appearance, id);
+  if ((!offset || (!offset.x && !offset.y)) && scale === 1) return undefined;
   return {
     position: "relative",
-    left: `${offset.x}px`,
-    top: `${offset.y}px`,
+    left: offset ? `${offset.x}px` : undefined,
+    top: offset ? `${offset.y}px` : undefined,
+    transform: scale !== 1 ? `scale(${scale})` : undefined,
+    transformOrigin: scale !== 1 ? "top left" : undefined,
   };
 }
 
@@ -547,6 +573,7 @@ export function normalizeBuildCardAppearance(value: unknown): BuildCardAppearanc
     contentTags,
     contentTagPositions: normalizeBuildCardTagPositions(draft.contentTagPositions, contentTags),
     layoutOffsets: normalizeBuildCardLayoutOffsets(draft.layoutOffsets),
+    elementScales: normalizeBuildCardElementScales(draft.elementScales),
   };
 }
 

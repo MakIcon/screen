@@ -5,8 +5,9 @@ import type {
   BuildCardContentTag,
   BuildCardTextAlign,
 } from "./BuildCardSettingsPopup";
-import { getBuildCardElementOffsetStyle } from "./BuildCardSettingsPopup";
+import { getBuildCardElementStyle } from "./BuildCardSettingsPopup";
 import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
+import { BuildCardResizeHandle } from "./BuildCardResizeHandle";
 
 export type ResolvedBuildCardContentTag = BuildCardContentTag & {
   appearance?: PlaceholderAppearanceAttributes;
@@ -19,6 +20,7 @@ type Props = {
   strokeEnabled?: boolean;
   appearance?: BuildCardAppearance;
   movable?: boolean;
+  selectedElementId?: string | null;
 };
 
 function alphaColor(hex: string, opacity: number) {
@@ -42,6 +44,7 @@ export function BuildCardContentView({
   strokeEnabled = true,
   appearance,
   movable = false,
+  selectedElementId,
 }: Props) {
   const visibleTags = tags.filter((tag) => tag.text.trim().length > 0);
   if (visibleTags.length === 0) return null;
@@ -51,12 +54,12 @@ export function BuildCardContentView({
       <div className={`build-card-content build-card-content--text build-card-content--${align}`}>
         {visibleTags.map((tag, index) => (
           <span
-            className={`build-card-content-inline ${movable ? "build-card-movable" : ""}`}
+            className={`build-card-content-inline ${movable ? "build-card-movable" : ""} ${movable && selectedElementId === tag.id ? "build-card-movable--selected" : ""}`}
             data-card-layout-element
             key={tag.id}
             data-card-move-id={movable ? tag.id : undefined}
             tabIndex={movable ? 0 : undefined}
-            style={appearance ? getBuildCardElementOffsetStyle(appearance, tag.id) : undefined}
+            style={appearance ? getBuildCardElementStyle(appearance, tag.id) : undefined}
           >
             {index > 0 && <span className="build-card-content-separator">|</span>}
             <span
@@ -72,6 +75,9 @@ export function BuildCardContentView({
             >
               {tag.text}
             </span>
+            {movable && appearance && selectedElementId === tag.id && (
+              <BuildCardResizeHandle appearance={appearance} id={tag.id} />
+            )}
           </span>
         ))}
       </div>
@@ -85,14 +91,14 @@ export function BuildCardContentView({
     >
       {visibleTags.map((tag) => (
         <span
-          className={`build-card-tag ${movable ? "build-card-movable" : ""}`}
+          className={`build-card-tag ${movable ? "build-card-movable" : ""} ${movable && selectedElementId === tag.id ? "build-card-movable--selected" : ""}`}
           data-card-layout-element
           key={tag.id}
           data-card-move-id={movable ? tag.id : undefined}
           tabIndex={movable ? 0 : undefined}
           {...tag.appearance}
           style={{
-            ...(appearance ? getBuildCardElementOffsetStyle(appearance, tag.id) : undefined),
+            ...(appearance ? getBuildCardElementStyle(appearance, tag.id) : undefined),
             borderColor: tag.borderColor,
             backgroundColor: alphaColor(tag.fillColor, tag.fillOpacity),
             color: tag.textColor,
@@ -100,6 +106,9 @@ export function BuildCardContentView({
           }}
         >
           {tag.text}
+          {movable && appearance && selectedElementId === tag.id && (
+            <BuildCardResizeHandle appearance={appearance} id={tag.id} />
+          )}
         </span>
       ))}
     </div>

@@ -11,7 +11,8 @@ import {
   getBuildCardAppearanceStyle,
   getBuildCardBadgeStyle,
   getBuildCardBadgeText,
-  getBuildCardElementOffsetStyle,
+  getBuildCardElementScale,
+  getBuildCardElementStyle,
   hasBuildCardBackgroundImage,
   shouldShowBuildCardBadge,
   type BuildCardAppearance,
@@ -23,6 +24,8 @@ import { BackgroundSection } from "./BuildCardEditorBackground";
 import { BadgeSection } from "./BuildCardEditorBadge";
 import { ContentSection } from "./BuildCardEditorContent";
 import { BuildCardDrawingCanvas } from "./BuildCardDrawingCanvas";
+import { BuildCardResizeHandle } from "./BuildCardResizeHandle";
+import { getBuildCardResizeLimit, getBuildCardResizedScale } from "./buildCardResize";
 import {
   createPlaceholderAppearanceAttributes,
   createPlaceholderValueAttributes,
@@ -46,6 +49,31 @@ type GridBounds = {
   minY: number;
   maxY: number;
 };
+
+type ResizeSession = {
+  id: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startScale: number;
+  width: number;
+  height: number;
+  maxScale: number;
+  lastScale: number;
+};
+
+function getResizeMaxScale(card: HTMLDivElement, element: HTMLElement, scale: number) {
+  const cardRect = card.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const cardStyle = getComputedStyle(card);
+  return getBuildCardResizeLimit({
+    width: elementRect.width,
+    height: elementRect.height,
+    scale,
+    availableWidth: cardRect.right - parseFloat(cardStyle.borderRightWidth) - elementRect.left,
+    availableHeight: cardRect.bottom - parseFloat(cardStyle.borderBottomWidth) - elementRect.top,
+  });
+}
 
 function getGridBounds(
   card: HTMLDivElement,
@@ -113,18 +141,59 @@ export function BuildCardEditor({
   const [layoutOpen, setLayoutOpen] = useState(true);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [resizingId, setResizingId] = useState<string | null>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const dragSessionRef = useRef<DragSession | null>(null);
+  const resizeSessionRef = useRef<ResizeSession | null>(null);
+
+  function updateElementScale(id: string, scale: number) {
+    onDraftChange((prev) => {
+      const elementScales = { ...prev.elementScales };
+      if (scale === 1) delete elementScales[id];
+      else elementScales[id] = scale;
+      return { ...prev, elementScales };
+    });
+  }
 
   function handleGridPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (!gridEnabled || event.button !== 0) return;
+    if (dragSessionRef.current || resizeSessionRef.current) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const element = target.closest<HTMLElement>("[data-card-move-id]");
     const card = event.currentTarget;
-    if (!element || !card.contains(element)) return;
+    if (!element || !card.contains(element)) {
+      setSelectedElementId(null);
+      return;
+    }
 
     const id = element.dataset.cardMoveId;
     if (!id) return;
+    setSelectedElementId(id);
+
+    const resizeHandle = target.closest<HTMLElement>("[data-card-resize-id]");
+    if (resizeHandle) {
+      const scale = getBuildCardElementScale(draft, id);
+      const rect = element.getBoundingClientRect();
+      resizeSessionRef.current = {
+        id,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startScale: scale,
+        width: rect.width,
+        height: rect.height,
+        maxScale: getResizeMaxScale(card, element, scale),
+        lastScale: scale,
+      };
+      resizeHandle.focus({ preventScroll: true });
+      card.setPointerCapture(event.pointerId);
+      setResizingId(id);
+      event.preventDefault();
+      return;
+    }
+
+    element.focus({ preventScroll: true });
     const currentOffset = draft.layoutOffsets[id] ?? { x: 0, y: 0 };
 
     dragSessionRef.current = {
@@ -144,6 +213,30 @@ export function BuildCardEditor({
   }
 
   function handleGridPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const resizeSession = resizeSessionRef.current;
+    if (resizeSession && resizeSession.pointerId === event.pointerId) {
+      const dx = event.clientX - resizeSession.startX;
+      const dy = event.clientY - resizeSession.startY;
+      if (
+        Math.abs(dx) < 3 &&
+        Math.abs(dy) < 3 &&
+        resizeSession.lastScale === resizeSession.startScale
+      )
+        return;
+      const scale = getBuildCardResizedScale(
+        resizeSession.startScale,
+        resizeSession.width,
+        resizeSession.height,
+        dx,
+        dy,
+        resizeSession.maxScale,
+      );
+      if (scale === resizeSession.lastScale) return;
+      resizeSession.lastScale = scale;
+      updateElementScale(resizeSession.id, scale);
+      return;
+    }
+
     const session = dragSessionRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
     const dx = event.clientX - session.startX;
@@ -178,17 +271,23 @@ export function BuildCardEditor({
   }
 
   function handleGridPointerEnd(event: PointerEvent<HTMLDivElement>) {
-    const session = dragSessionRef.current;
+    const session = resizeSessionRef.current ?? dragSessionRef.current;
     if (!session || session.pointerId !== event.pointerId) return;
     dragSessionRef.current = null;
+    resizeSessionRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setDraggingId(null);
+    setResizingId(null);
   }
 
   function handleGridKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (!gridEnabled) return;
+    if (event.key === "Escape") {
+      setSelectedElementId(null);
+      return;
+    }
     const step = {
       ArrowLeft: { x: -1, y: 0 },
       ArrowRight: { x: 1, y: 0 },
@@ -199,6 +298,25 @@ export function BuildCardEditor({
 
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const resizeId = target.dataset.cardResizeId;
+    if (resizeId) {
+      const element = target.closest<HTMLElement>("[data-card-move-id]");
+      if (!element) return;
+      event.preventDefault();
+      const scale = getBuildCardElementScale(draft, resizeId);
+      const rect = element.getBoundingClientRect();
+      const change = (step.x || step.y) * (event.shiftKey ? 0.1 : 0.05);
+      const nextScale = getBuildCardResizedScale(
+        scale,
+        rect.width,
+        rect.height,
+        (rect.width / scale) * change,
+        (rect.height / scale) * change,
+        getResizeMaxScale(event.currentTarget, element, scale),
+      );
+      if (nextScale !== scale) updateElementScale(resizeId, nextScale);
+      return;
+    }
     const id = target.dataset.cardMoveId;
     if (!id) return;
     event.preventDefault();
@@ -300,7 +418,7 @@ export function BuildCardEditor({
               />
             ) : (
               <div
-                className={`instance-card bce-preview-card ${hasBuildCardBackgroundImage(draft) ? "instance-card-with-image" : ""} ${gridEnabled ? "bce-preview-card--grid" : ""} ${draggingId ? "bce-preview-card--dragging" : ""}`}
+                className={`instance-card bce-preview-card ${hasBuildCardBackgroundImage(draft) ? "instance-card-with-image" : ""} ${gridEnabled ? "bce-preview-card--grid" : ""} ${draggingId ? "bce-preview-card--dragging" : ""} ${resizingId ? "bce-preview-card--resizing" : ""}`}
                 style={getBuildCardAppearanceStyle(draft)}
                 onPointerDown={handleGridPointerDown}
                 onPointerMove={handleGridPointerMove}
@@ -308,28 +426,39 @@ export function BuildCardEditor({
                 onPointerCancel={handleGridPointerEnd}
                 onLostPointerCapture={handleGridPointerEnd}
                 onKeyDown={handleGridKeyDown}
+                onFocusCapture={(event) => {
+                  if (!gridEnabled || !(event.target instanceof Element)) return;
+                  const element = event.target.closest<HTMLElement>("[data-card-move-id]");
+                  if (element?.dataset.cardMoveId) setSelectedElementId(element.dataset.cardMoveId);
+                }}
               >
-                <BuildCardVerticalBody appearance={draft} freeze={draggingId !== null}>
+                <BuildCardVerticalBody
+                  appearance={draft}
+                  freeze={draggingId !== null || resizingId !== null}
+                >
                   <div className="instance-card-top">
                     <span
-                      className={`instance-name ${gridEnabled ? "build-card-movable" : ""}`}
+                      className={`instance-name ${gridEnabled ? "build-card-movable" : ""} ${gridEnabled && selectedElementId === "title" ? "build-card-movable--selected" : ""}`}
                       data-card-layout-element
                       data-card-move-id={gridEnabled ? "title" : undefined}
                       tabIndex={gridEnabled ? 0 : undefined}
-                      style={getBuildCardElementOffsetStyle(draft, "title")}
+                      style={getBuildCardElementStyle(draft, "title")}
                       {...createPlaceholderAppearanceAttributes("%build_name%", resolvePreviewText)}
                     >
                       {resolvePreviewText("%build_name%")}
+                      {gridEnabled && selectedElementId === "title" && (
+                        <BuildCardResizeHandle appearance={draft} id="title" />
+                      )}
                     </span>
                     {shouldShowBuildCardBadge(draft, true) && (
                       <span
-                        className={`instance-running-badge ${gridEnabled ? "build-card-movable" : ""}`}
+                        className={`instance-running-badge ${gridEnabled ? "build-card-movable" : ""} ${gridEnabled && selectedElementId === "badge" ? "build-card-movable--selected" : ""}`}
                         data-card-layout-element
                         data-card-move-id={gridEnabled ? "badge" : undefined}
                         tabIndex={gridEnabled ? 0 : undefined}
                         style={{
                           ...getBuildCardBadgeStyle(draft),
-                          ...getBuildCardElementOffsetStyle(draft, "badge"),
+                          ...getBuildCardElementStyle(draft, "badge"),
                         }}
                         {...createPlaceholderAppearanceAttributes(
                           badgeTemplate,
@@ -337,6 +466,9 @@ export function BuildCardEditor({
                         )}
                       >
                         {badgePreviewText}
+                        {gridEnabled && selectedElementId === "badge" && (
+                          <BuildCardResizeHandle appearance={draft} id="badge" />
+                        )}
                       </span>
                     )}
                   </div>
@@ -351,19 +483,27 @@ export function BuildCardEditor({
                         strokeEnabled={draft.contentTextStrokeEnabled}
                         appearance={draft}
                         movable={gridEnabled}
+                        selectedElementId={selectedElementId}
                       />
                     ) : (
                       BUILD_CARD_DEFAULT_META.map(({ id, template }) => (
                         <span
                           key={id}
-                          className={gridEnabled ? "build-card-movable" : undefined}
+                          className={
+                            gridEnabled
+                              ? `build-card-movable ${selectedElementId === id ? "build-card-movable--selected" : ""}`
+                              : undefined
+                          }
                           data-card-layout-element
                           data-card-move-id={gridEnabled ? id : undefined}
                           tabIndex={gridEnabled ? 0 : undefined}
-                          style={getBuildCardElementOffsetStyle(draft, id)}
+                          style={getBuildCardElementStyle(draft, id)}
                           {...createPlaceholderAppearanceAttributes(template, resolvePreviewText)}
                         >
                           {resolvePreviewText(template)}
+                          {gridEnabled && selectedElementId === id && (
+                            <BuildCardResizeHandle appearance={draft} id={id} />
+                          )}
                         </span>
                       ))
                     )}
@@ -429,12 +569,15 @@ export function BuildCardEditor({
                     className={`bce-mode-pill ${gridEnabled ? "bce-mode-pill--active" : ""}`}
                     onClick={() => setGridEnabled(true)}
                   >
-                    On · drag
+                    On · edit
                   </button>
                   <button
                     type="button"
                     className={`bce-mode-pill ${!gridEnabled ? "bce-mode-pill--active" : ""}`}
-                    onClick={() => setGridEnabled(false)}
+                    onClick={() => {
+                      setGridEnabled(false);
+                      setSelectedElementId(null);
+                    }}
                   >
                     Off · lock
                   </button>
@@ -450,9 +593,19 @@ export function BuildCardEditor({
                   RESET POSITIONS
                 </button>
               </EditorRow>
+              <EditorRow label="Sizes">
+                <button
+                  type="button"
+                  className="bce-mini-btn"
+                  onClick={() => onDraftChange((prev) => ({ ...prev, elementScales: {} }))}
+                  disabled={Object.keys(draft.elementScales).length === 0}
+                >
+                  RESET SIZES
+                </button>
+              </EditorRow>
               <p className="bce-grid-hint">
-                Turn on the grid, then drag any text or tag on the card. Positions snap to{" "}
-                {BUILD_CARD_GRID_SIZE}px cells.
+                Turn on the grid, then select any text or tag. Drag it to move, or pull its
+                bottom-right handle to resize. Positions snap to {BUILD_CARD_GRID_SIZE}px cells.
                 {draft.backgroundMode === "draw" && " Turn it off to continue drawing."}
               </p>
             </EditorSection>

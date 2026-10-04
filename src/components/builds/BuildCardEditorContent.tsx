@@ -223,6 +223,9 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
       layoutOffsets: Object.fromEntries(
         Object.entries(prev.layoutOffsets).filter(([id]) => id !== tagId),
       ),
+      elementScales: Object.fromEntries(
+        Object.entries(prev.elementScales).filter(([id]) => id !== tagId),
+      ),
     }));
   }
 

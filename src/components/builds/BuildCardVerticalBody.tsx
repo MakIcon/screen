@@ -73,7 +73,13 @@ export function BuildCardVerticalBody({ appearance, children, freeze = false }: 
       mutationObserver.disconnect();
       observer.disconnect();
     };
-  }, [appearance.contentVerticalAlign, appearance.layoutOffsets, appearance.contentTags, freeze]);
+  }, [
+    appearance.contentVerticalAlign,
+    appearance.layoutOffsets,
+    appearance.elementScales,
+    appearance.contentTags,
+    freeze,
+  ]);
 
   return (
     <div
