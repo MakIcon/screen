@@ -10,6 +10,7 @@ import {
   formatWindowSettingsMeta,
   hasJavaArgsData,
   hasJavaPathData,
+  hasEnvironmentVariablesData,
   hasWindowSettingsData,
 } from "../../utils/instanceTransfer";
 import { OptionToggle } from "../inputs/OptionToggle";
@@ -116,6 +117,11 @@ function ExportModal(props: InstanceTransferModalsProps & { previewProps: Common
     },
     { key: "javaArgs", label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(props.exportData) },
     { key: "javaPath", label: "JAVA PATH", meta: props.exportData?.javaPath || undefined },
+    {
+      key: "environmentVariables",
+      label: "ENVIRONMENT VARIABLES",
+      meta: `${Object.keys(props.exportData?.environmentVariables ?? {}).length}`,
+    },
     { key: "window", label: "WINDOW SIZE", meta: formatWindowSettingsMeta(props.exportData) },
     {
       key: "mods",
@@ -241,6 +247,12 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
       label: "JAVA PATH",
       meta: props.importData?.javaPath || undefined,
       disabled: !hasJavaPathData(props.importData),
+    },
+    {
+      key: "environmentVariables",
+      label: "ENVIRONMENT VARIABLES",
+      meta: `${Object.keys(props.importData?.environmentVariables ?? {}).length}`,
+      disabled: !hasEnvironmentVariablesData(props.importData),
     },
     {
       key: "window",

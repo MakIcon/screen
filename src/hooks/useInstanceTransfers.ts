@@ -11,7 +11,12 @@ import type {
 } from "../types";
 import type { InstanceTransferOptions } from "../components/transfer/types";
 import type { PushToast } from "./useToasts";
-import { hasJavaArgsData, hasJavaPathData, hasWindowSettingsData } from "../utils/instanceTransfer";
+import {
+  hasEnvironmentVariablesData,
+  hasJavaArgsData,
+  hasJavaPathData,
+  hasWindowSettingsData,
+} from "../utils/instanceTransfer";
 import { logger } from "../utils/logger";
 import { toErrorMessage } from "../utils/errors";
 
@@ -20,6 +25,7 @@ const DEFAULT_OPTIONS: InstanceTransferOptions = {
   ram: true,
   javaArgs: true,
   javaPath: true,
+  environmentVariables: false,
   window: true,
   mods: true,
   shaders: true,
@@ -105,6 +111,7 @@ export function useInstanceTransfers({
         ram: true,
         javaArgs: hasJavaArgsData(data),
         javaPath: hasJavaPathData(data),
+        environmentVariables: false,
         window: hasWindowSettingsData(data),
         mods: data.mods.length > 0,
         shaders: data.shaders.length > 0,
@@ -127,6 +134,9 @@ export function useInstanceTransfers({
       ram: exportOptions.ram ? exportData.ram : 0,
       javaArgs: exportOptions.javaArgs ? (exportData.javaArgs ?? null) : null,
       javaPath: exportOptions.javaPath ? (exportData.javaPath ?? null) : null,
+      environmentVariables: exportOptions.environmentVariables
+        ? (exportData.environmentVariables ?? {})
+        : {},
       windowWidth: exportOptions.window ? (exportData.windowWidth ?? null) : null,
       windowHeight: exportOptions.window ? (exportData.windowHeight ?? null) : null,
       fullscreen: exportOptions.window ? (exportData.fullscreen ?? false) : false,
@@ -178,6 +188,7 @@ export function useInstanceTransfers({
           includeRam: exportOptions.ram,
           includeJavaArgs: exportOptions.javaArgs,
           includeJavaPath: exportOptions.javaPath,
+          includeEnvironmentVariables: exportOptions.environmentVariables,
           includeWindow: exportOptions.window,
           includeMods: exportOptions.mods,
           includeShaders: exportOptions.shaders,
@@ -206,6 +217,7 @@ export function useInstanceTransfers({
       ram: Boolean(data.ram),
       javaArgs: hasJavaArgsData(data),
       javaPath: hasJavaPathData(data),
+      environmentVariables: hasEnvironmentVariablesData(data),
       window: hasWindowSettingsData(data),
       mods: (data.mods?.length ?? 0) > 0,
       shaders: (data.shaders?.length ?? 0) > 0,
@@ -304,6 +316,9 @@ export function useInstanceTransfers({
             ram,
             javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
             javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+            environmentVariables: importOptions.environmentVariables
+              ? (importData.environmentVariables ?? {})
+              : {},
             windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
             windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
             fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,
@@ -328,6 +343,9 @@ export function useInstanceTransfers({
             ram,
             javaArgs: importOptions.javaArgs ? (importData.javaArgs ?? null) : null,
             javaPath: importOptions.javaPath ? (importData.javaPath ?? null) : null,
+            environmentVariables: importOptions.environmentVariables
+              ? (importData.environmentVariables ?? {})
+              : {},
             windowWidth: importOptions.window ? (importData.windowWidth ?? null) : null,
             windowHeight: importOptions.window ? (importData.windowHeight ?? null) : null,
             fullscreen: importOptions.window ? (importData.fullscreen ?? false) : false,

@@ -153,7 +153,7 @@ fn read_java_release(home: &Path) -> (Option<String>, Option<String>) {
     (version, vendor)
 }
 
-fn major_from_version(version: &str) -> u32 {
+pub(super) fn major_from_version(version: &str) -> u32 {
     let v = version.trim();
     // Legacy "1.8.0_xxx" encodes the major after the leading "1.".
     if let Some(rest) = v.strip_prefix("1.") {

@@ -38,6 +38,8 @@ pub struct MrpackExportOptions {
     pub include_ram: bool,
     pub include_java_args: bool,
     pub include_java_path: bool,
+    #[serde(default)]
+    pub include_environment_variables: bool,
     pub include_window: bool,
     pub include_mods: bool,
     pub include_shaders: bool,
@@ -53,6 +55,8 @@ pub struct MrpackImportOptions {
     pub java_args: Option<String>,
     #[serde(default)]
     pub java_path: Option<String>,
+    #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
     #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
@@ -358,6 +362,10 @@ fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
         ram: meta.as_ref().map(|value| value.ram).unwrap_or(0),
         java_args: meta.as_ref().and_then(|value| value.java_args.clone()),
         java_path: meta.as_ref().and_then(|value| value.java_path.clone()),
+        environment_variables: meta
+            .as_ref()
+            .map(|value| value.environment_variables.clone())
+            .unwrap_or_default(),
         window_width: meta.as_ref().and_then(|value| value.window_width),
         window_height: meta.as_ref().and_then(|value| value.window_height),
         fullscreen: meta.as_ref().map(|value| value.fullscreen).unwrap_or(false),
@@ -625,6 +633,9 @@ pub async fn export_instance_mrpack(
     if !options.include_java_path {
         screen_meta.java_path = None;
     }
+    if !options.include_environment_variables {
+        screen_meta.environment_variables.clear();
+    }
     if !options.include_window {
         screen_meta.window_width = None;
         screen_meta.window_height = None;
@@ -875,6 +886,7 @@ async fn import_mrpack_inner(
         ram: options.ram,
         java_args: options.java_args.clone(),
         java_path: options.java_path.clone(),
+        environment_variables: options.environment_variables.clone(),
         window_width: options.window_width,
         window_height: options.window_height,
         fullscreen: options.fullscreen,
@@ -1144,6 +1156,17 @@ mod tests {
         zip.start_file(INDEX_FILE, options).expect("start index");
         zip.write_all(&serde_json::to_vec(&index).expect("serialize index"))
             .expect("write index");
+        zip.start_file(SCREEN_META_FILE, options)
+            .expect("start metadata");
+        zip.write_all(
+            &serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 2, "name": "Test Pack", "version": "1.21.1",
+                "loader": "Fabric", "ram": 4,
+                "environmentVariables": { "SCREEN_LITERAL": "a=b with spaces", "SCREEN_EMPTY": "" }
+            }))
+            .expect("serialize metadata"),
+        )
+        .expect("write metadata");
         zip.start_file("overrides/mods/local.jar", options)
             .expect("start local mod");
         zip.write_all(b"local mod").expect("write local mod");
@@ -1158,6 +1181,11 @@ mod tests {
         assert_eq!(summary.version, "1.21.1");
         assert_eq!(summary.loader, "Fabric");
         assert_eq!(summary.mods.len(), 2);
+        assert_eq!(
+            summary.environment_variables["SCREEN_LITERAL"],
+            "a=b with spaces"
+        );
+        assert_eq!(summary.environment_variables["SCREEN_EMPTY"], "");
 
         let serialized_file = serde_json::to_value(&index.files[0]).expect("serialize file");
         assert_eq!(
@@ -1172,6 +1200,7 @@ mod tests {
             ram: 4,
             java_args: None,
             java_path: None,
+            environment_variables: HashMap::new(),
             window_width: None,
             window_height: None,
             fullscreen: false,

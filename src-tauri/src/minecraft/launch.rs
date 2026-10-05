@@ -15,7 +15,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     models::{
-        InstanceItem, LaunchLogSnapshot, MicrosoftAccount, MinecraftExitPayload, VersionMeta,
+        InstanceItem, JavaSettingsTestPayload, JavaSettingsTestResult, LaunchLogSnapshot,
+        MicrosoftAccount, MinecraftExitPayload, VersionMeta,
     },
     paths::{
         assets_root, clamp_ram_to_system, libraries_root, offline_uuid, read_instances,
@@ -26,7 +27,10 @@ use crate::{
 use super::{
     assets::download_logging_config,
     effective_version_id_for_instance,
-    java::{effective_ram_gb, is_modern_mc, optimized_minecraft_jvm_args, resolve_java_bin},
+    java::{
+        effective_ram_gb, is_modern_mc, major_from_version, optimized_minecraft_jvm_args,
+        required_java_major, resolve_java_bin,
+    },
     mirrors,
     version::{
         collect_argument_list, evaluate_rules, library_path_from_download, replace_tokens,
@@ -140,12 +144,113 @@ fn should_append_client_jar(instance: &InstanceItem) -> Result<bool, String> {
     Ok(!matches!(loader, LoaderKind::NeoForge))
 }
 
-fn instance_java_args(instance: &InstanceItem) -> Option<Vec<String>> {
-    instance.java_args.as_ref().map(|text| {
+fn custom_java_args(text: Option<&str>) -> Option<Vec<String>> {
+    text.map(|text| {
         split_custom_arguments(text)
             .into_iter()
             .filter(|arg| !is_memory_argument(arg))
             .collect::<Vec<_>>()
+    })
+}
+
+fn runtime_jvm_args(
+    java_bin: &str,
+    ram: u32,
+    java_args: Option<&str>,
+    optimized_java_args_enabled: bool,
+) -> Vec<String> {
+    let ram_gb = effective_ram_gb(java_bin, normalized_ram(ram));
+    let custom_args = custom_java_args(java_args);
+    let optimized_heap = uses_optimized_heap(custom_args.as_ref(), optimized_java_args_enabled);
+    let mut args = vec![
+        format!("-Xmx{ram_gb}G"),
+        if optimized_heap {
+            format!("-Xms{ram_gb}G")
+        } else {
+            "-Xms512M".into()
+        },
+        format!("-Dorg.lwjgl.system.stackSize={LWJGL_STACK_SIZE_KB}"),
+        "-Djava.net.preferIPv4Stack=true".into(),
+    ];
+    if let Some(custom_args) = custom_args {
+        args.extend(custom_args);
+    } else if optimized_java_args_enabled {
+        args.extend(optimized_minecraft_jvm_args(ram_gb));
+    }
+    args
+}
+
+pub async fn test_java_settings(
+    payload: JavaSettingsTestPayload,
+    optimized_java_args_enabled: bool,
+    game_dir: Option<&str>,
+) -> Result<JavaSettingsTestResult, String> {
+    if payload.version.trim().is_empty() {
+        return Err("Выберите версию Minecraft перед проверкой Java".into());
+    }
+    let variables = super::normalize_environment_variables(payload.environment_variables)?;
+    let java_bin = payload
+        .java_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| resolve_java_bin(&payload.version));
+    // javaw suppresses diagnostic output; use the console binary from the same runtime.
+    let mut console_bin = PathBuf::from(&java_bin);
+    if console_bin
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("javaw.exe"))
+    {
+        console_bin.set_file_name("java.exe");
+    }
+    let args = runtime_jvm_args(
+        &java_bin,
+        payload.ram,
+        payload.java_args.as_deref(),
+        optimized_java_args_enabled,
+    );
+    let mut command = tokio::process::Command::new(&console_bin);
+    command
+        .args(args)
+        .arg("-version")
+        .envs(&variables)
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    if let Some(game_dir) = game_dir {
+        command.current_dir(game_dir);
+    }
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(20), command.output())
+        .await
+        .map_err(|_| "Проверка Java не завершилась за 20 секунд; процесс остановлен".to_string())?
+        .map_err(|error| format!("Не удалось запустить Java: {error}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let actual_major = text
+        .lines()
+        .filter(|line| line.starts_with("openjdk version ") || line.starts_with("java version "))
+        .find_map(|line| line.split('"').nth(1))
+        .map(major_from_version)
+        .unwrap_or(0);
+    let required_major = required_java_major(&payload.version);
+    let warning = (output.status.success() && actual_major > 0 && actual_major != required_major)
+        .then(|| format!("Выбрана Java {actual_major}. Для Minecraft {} рекомендуется Java {required_major}.", payload.version));
+    // JVMs echo tool-option environment values; omit those lines from diagnostics.
+    let text = text
+        .lines()
+        .filter(|line| !line.starts_with("Picked up ") && !line.starts_with("NOTE: Picked up "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(JavaSettingsTestResult {
+        success: output.status.success(),
+        java_path: console_bin.to_string_lossy().to_string(),
+        output: text.chars().take(16 * 1024).collect(),
+        warning,
     })
 }
 
@@ -461,26 +566,12 @@ pub async fn build_launch_command(
         .filter(|path| !path.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| resolve_java_bin(&instance.version));
-    let ram_gb = effective_ram_gb(&java_bin, normalized_ram(instance.ram));
-    let custom_java_args = instance_java_args(instance);
-    let optimized_heap =
-        uses_optimized_heap(custom_java_args.as_ref(), optimized_java_args_enabled);
-
-    let mut args = vec![
-        format!("-Xmx{}G", ram_gb),
-        if optimized_heap {
-            format!("-Xms{}G", ram_gb)
-        } else {
-            "-Xms512M".to_string()
-        },
-        format!("-Dorg.lwjgl.system.stackSize={LWJGL_STACK_SIZE_KB}"),
-        "-Djava.net.preferIPv4Stack=true".to_string(),
-    ];
-    if let Some(custom_java_args) = custom_java_args {
-        args.extend(custom_java_args);
-    } else if optimized_java_args_enabled {
-        args.extend(optimized_minecraft_jvm_args(ram_gb));
-    }
+    let mut args = runtime_jvm_args(
+        &java_bin,
+        instance.ram,
+        instance.java_args.as_deref(),
+        optimized_java_args_enabled,
+    );
     args.extend(extra_jvm_args.iter().cloned());
 
     // For offline accounts block the real auth endpoints; MS accounts use real ones
@@ -605,6 +696,8 @@ pub async fn spawn_minecraft_and_persist(
     java_bin: String,
     args: Vec<String>,
 ) -> Result<u32, String> {
+    let environment_variables =
+        super::normalize_environment_variables(instance.environment_variables.clone())?;
     let log_dir = launch_log_dir(instance);
     fs::create_dir_all(&log_dir).map_err(|e| format!("create launch log dir error: {e}"))?;
 
@@ -640,6 +733,7 @@ pub async fn spawn_minecraft_and_persist(
     let mut command = Command::new(&java_bin);
     command
         .args(&args)
+        .envs(&environment_variables)
         .current_dir(&instance.game_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_log))
@@ -742,6 +836,41 @@ pub async fn spawn_minecraft_and_persist(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    #[ignore = "Requires a local Java runtime; run explicitly with --ignored"]
+    async fn java_probe_reports_invalid_flags_and_environment_options() {
+        let mut payload = JavaSettingsTestPayload {
+            instance_id: None,
+            version: "1.21.1".into(),
+            ram: 1,
+            java_args: Some(String::new()),
+            java_path: Some(
+                std::env::var("SCREEN_TEST_JAVA").unwrap_or_else(|_| "javaw.exe".into()),
+            ),
+            environment_variables: HashMap::new(),
+        };
+        let good = test_java_settings(payload.clone(), false, None)
+            .await
+            .unwrap();
+        assert!(good.success, "{}", good.output);
+        assert!(good.output.contains("version"), "{}", good.output);
+        payload.java_args = Some("-XX:ScreenLauncherInvalidFlag=1".into());
+        let bad_flag = test_java_settings(payload.clone(), false, None)
+            .await
+            .unwrap();
+        assert!(!bad_flag.success);
+        assert!(bad_flag.output.contains("ScreenLauncherInvalidFlag"));
+        payload.java_args = Some(String::new());
+        payload.environment_variables.insert(
+            "JAVA_TOOL_OPTIONS".into(),
+            "-XX:ScreenLauncherEnvironmentFlag=1".into(),
+        );
+        let bad_env = test_java_settings(payload, false, None).await.unwrap();
+        assert!(!bad_env.success);
+        assert!(bad_env.output.contains("ScreenLauncherEnvironmentFlag"));
+        assert!(!bad_env.output.contains("Picked up"));
+    }
+
     fn instance_with_loader(loader: &str) -> InstanceItem {
         InstanceItem {
             id: "inst-test".to_string(),
@@ -754,6 +883,7 @@ mod tests {
             ram: 4,
             java_args: None,
             java_path: None,
+            environment_variables: HashMap::new(),
             window_width: None,
             window_height: None,
             fullscreen: false,

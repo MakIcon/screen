@@ -62,6 +62,8 @@ pub struct InstanceItem {
     #[serde(default)]
     pub java_path: Option<String>,
     #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
+    #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
     pub window_height: Option<u32>,
@@ -103,6 +105,8 @@ pub struct CreateInstancePayload {
     #[serde(default)]
     pub java_path: Option<String>,
     #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
+    #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
     pub window_height: Option<u32>,
@@ -127,6 +131,8 @@ pub struct UpdateInstancePayload {
     #[serde(default)]
     pub java_path: Option<String>,
     #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
+    #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
     pub window_height: Option<u32>,
@@ -140,6 +146,28 @@ pub struct ActionResult {
     pub ok: bool,
     pub message: String,
     pub pid: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JavaSettingsTestPayload {
+    #[serde(default)]
+    pub instance_id: Option<String>,
+    pub version: String,
+    pub ram: u32,
+    pub java_args: Option<String>,
+    pub java_path: Option<String>,
+    #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JavaSettingsTestResult {
+    pub success: bool,
+    pub java_path: String,
+    pub output: String,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1068,6 +1096,8 @@ pub struct InstanceExportData {
     #[serde(default)]
     pub java_path: Option<String>,
     #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
+    #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
     pub window_height: Option<u32>,
@@ -1094,6 +1124,8 @@ pub struct ImportInstancePayload {
     pub java_args: Option<String>,
     #[serde(default)]
     pub java_path: Option<String>,
+    #[serde(default)]
+    pub environment_variables: HashMap<String, String>,
     #[serde(default)]
     pub window_width: Option<u32>,
     #[serde(default)]
@@ -1142,10 +1174,26 @@ mod loader_schema_tests {
         });
         let parsed: InstanceExportData = serde_json::from_value(legacy).unwrap();
         assert_eq!(parsed.loader_version.as_deref(), Some("0.16.14"));
+        assert!(parsed.environment_variables.is_empty());
 
         let serialized = serde_json::to_value(parsed).unwrap();
         assert_eq!(serialized["loaderVersion"], "0.16.14");
         assert!(serialized.get("fabricLoaderVersion").is_none());
+    }
+
+    #[test]
+    fn environment_overrides_round_trip_through_build_metadata() {
+        let metadata = serde_json::json!({
+            "schemaVersion": 2, "name": "Test", "version": "1.21.1",
+            "loader": "Vanilla", "ram": 4,
+            "environmentVariables": { "SCREEN_LITERAL": "  a=b  ", "SCREEN_EMPTY": "" }
+        });
+        let parsed: InstanceExportData = serde_json::from_value(metadata.clone()).unwrap();
+        let serialized = serde_json::to_value(parsed).unwrap();
+        assert_eq!(
+            serialized["environmentVariables"],
+            metadata["environmentVariables"]
+        );
     }
 
     #[test]

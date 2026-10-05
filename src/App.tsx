@@ -21,6 +21,10 @@ import { useLocalStorageBoolean } from "./hooks/useLocalStorage";
 import { useAccounts } from "./hooks/useAccounts";
 import { logger } from "./utils/logger";
 import { clampRamToSystem } from "./utils/ram";
+import {
+  environmentVariablesToEntries,
+  environmentVariablesToRecord,
+} from "./utils/environmentVariables";
 import { toErrorMessage } from "./utils/errors";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -199,6 +203,7 @@ export default function App() {
   >({
     javaArgs: "",
     javaPath: "",
+    environmentVariables: [],
     windowWidth: DEFAULT_WINDOW_WIDTH,
     windowHeight: DEFAULT_WINDOW_HEIGHT,
     fullscreen: false,
@@ -599,6 +604,7 @@ export default function App() {
             ? instance.javaArgs
             : getDefaultJavaArgsText(ram, optimizedJavaArgsEnabled),
         javaPath: instance.javaPath ?? "",
+        environmentVariables: environmentVariablesToEntries(instance.environmentVariables),
         windowWidth: instance.windowWidth ?? DEFAULT_WINDOW_WIDTH,
         windowHeight: instance.windowHeight ?? DEFAULT_WINDOW_HEIGHT,
         fullscreen: instance.fullscreen ?? false,
@@ -711,6 +717,9 @@ export default function App() {
             ram: normalizedRuntime.ram,
             javaArgs: normalizedRuntime.javaArgs,
             javaPath: normalizedRuntime.javaPath || null,
+            environmentVariables: environmentVariablesToRecord(
+              normalizedRuntime.environmentVariables,
+            ),
             windowWidth: normalizedRuntime.windowWidth,
             windowHeight: normalizedRuntime.windowHeight,
             fullscreen: normalizedRuntime.fullscreen,
@@ -726,6 +735,7 @@ export default function App() {
         setCreateRuntimeSettings({
           javaArgs: normalizedRuntime.javaArgs,
           javaPath: normalizedRuntime.javaPath,
+          environmentVariables: normalizedRuntime.environmentVariables,
           windowWidth: normalizedRuntime.windowWidth,
           windowHeight: normalizedRuntime.windowHeight,
           fullscreen: normalizedRuntime.fullscreen,
@@ -814,6 +824,7 @@ export default function App() {
           ram: target.ram,
           javaArgs: target.javaArgs ?? null,
           javaPath: target.javaPath ?? null,
+          environmentVariables: target.environmentVariables ?? {},
           windowWidth: target.windowWidth ?? null,
           windowHeight: target.windowHeight ?? null,
           fullscreen: target.fullscreen ?? false,
@@ -1661,6 +1672,7 @@ export default function App() {
           javaArgs: createRuntimeSettingsTouched ? createRuntime.javaArgs : null,
           javaPath:
             createRuntimeSettingsTouched && createRuntime.javaPath ? createRuntime.javaPath : null,
+          environmentVariables: environmentVariablesToRecord(createRuntime.environmentVariables),
           windowWidth: createRuntimeSettingsTouched ? createRuntime.windowWidth : null,
           windowHeight: createRuntimeSettingsTouched ? createRuntime.windowHeight : null,
           fullscreen: createRuntimeSettingsTouched ? createRuntime.fullscreen : false,
@@ -1684,6 +1696,7 @@ export default function App() {
       setCreateRuntimeSettings({
         javaArgs: "",
         javaPath: "",
+        environmentVariables: [],
         windowWidth: DEFAULT_WINDOW_WIDTH,
         windowHeight: DEFAULT_WINDOW_HEIGHT,
         fullscreen: false,

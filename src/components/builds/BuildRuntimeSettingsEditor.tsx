@@ -14,6 +14,11 @@ import { JavaArgsEditor, type JavaArgsTextEditRequest } from "../inputs/JavaArgs
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
 import { getDefaultJavaArgsText } from "../../utils/javaArgs";
+import {
+  environmentVariablesToRecord,
+  getEnvironmentVariablesError,
+} from "../../utils/environmentVariables";
+import { BuildEnvironmentVariablesEditor } from "./BuildEnvironmentVariablesEditor";
 import { toErrorMessage } from "../../utils/errors";
 import { logger } from "../../utils/logger";
 import {
@@ -22,7 +27,11 @@ import {
 } from "../../utils/placeholders";
 import { getTextSearchMatches, replaceAllTextSearchMatches } from "../../utils/textSearch";
 import { invoke } from "@tauri-apps/api/core";
-import type { BuildRuntimeSettingsDraft, JavaInstallation } from "../../types";
+import type {
+  BuildRuntimeSettingsDraft,
+  JavaInstallation,
+  JavaSettingsTestResult,
+} from "../../types";
 
 const JAVA_ARGS_EXPORT_KIND = "screen.java-args";
 
@@ -53,6 +62,8 @@ function readImportedJavaArgs(raw: string) {
 }
 
 type Props = {
+  instanceId: string | null;
+  minecraftVersion: string;
   systemRamGb: number;
   optimizedJavaArgs: boolean;
   draft: BuildRuntimeSettingsDraft;
@@ -62,6 +73,8 @@ type Props = {
 };
 
 export function BuildRuntimeSettingsEditor({
+  instanceId,
+  minecraftVersion,
   systemRamGb,
   optimizedJavaArgs,
   draft,
@@ -79,6 +92,21 @@ export function BuildRuntimeSettingsEditor({
   const [javaScanning, setJavaScanning] = useState(false);
   const [javaScanError, setJavaScanError] = useState("");
   const [javaScanned, setJavaScanned] = useState(false);
+  const [javaTesting, setJavaTesting] = useState(false);
+  const [javaTest, setJavaTest] = useState<{
+    signature: string;
+    result?: JavaSettingsTestResult;
+    error?: string;
+  } | null>(null);
+  const javaTestSignature = JSON.stringify([
+    instanceId,
+    minecraftVersion,
+    draft.ram,
+    draft.javaArgs,
+    draft.javaPath,
+    draft.environmentVariables,
+  ]);
+  const visibleJavaTest = javaTest?.signature === javaTestSignature ? javaTest : null;
   const importArgsInputRef = useRef<HTMLInputElement>(null);
   const textEditRequestId = useRef(0);
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
@@ -143,6 +171,30 @@ export function BuildRuntimeSettingsEditor({
       setJavaScanError(toErrorMessage(error));
     } finally {
       setJavaScanning(false);
+    }
+  };
+
+  const testJavaSettings = async () => {
+    if (javaTesting) return;
+    const signature = javaTestSignature;
+    setJavaTesting(true);
+    setJavaTest(null);
+    try {
+      const result = await invoke<JavaSettingsTestResult>("test_java_settings", {
+        payload: {
+          instanceId,
+          version: minecraftVersion,
+          ram: draft.ram,
+          javaArgs: draft.javaArgs,
+          javaPath: draft.javaPath || null,
+          environmentVariables: environmentVariablesToRecord(draft.environmentVariables),
+        },
+      });
+      setJavaTest({ signature, result });
+    } catch (error) {
+      setJavaTest({ signature, error: toErrorMessage(error) });
+    } finally {
+      setJavaTesting(false);
     }
   };
 
@@ -497,7 +549,57 @@ export function BuildRuntimeSettingsEditor({
                   })}
                 </div>
               )}
+
+              <button
+                className="brs-wide-action"
+                type="button"
+                disabled={
+                  javaTesting ||
+                  !minecraftVersion ||
+                  !!getEnvironmentVariablesError(draft.environmentVariables)
+                }
+                onClick={() => void testJavaSettings()}
+              >
+                {javaTesting ? "TESTING JAVA..." : "TEST JAVA SETTINGS"}
+              </button>
+              <p className="brs-note">
+                Проверяет текущие RAM, аргументы и окружение без запуска Minecraft.
+              </p>
+              {visibleJavaTest && (
+                <div className="brs-java-test" role="status" aria-live="polite">
+                  {visibleJavaTest.error ? (
+                    <p className="brs-args-status">{visibleJavaTest.error}</p>
+                  ) : (
+                    visibleJavaTest.result && (
+                      <>
+                        <strong className={visibleJavaTest.result.success ? "" : "brs-args-status"}>
+                          {visibleJavaTest.result.success
+                            ? "JAVA CHECK PASSED"
+                            : "JAVA CHECK FAILED"}
+                        </strong>
+                        <span className="brs-note brs-java-test-path">
+                          {visibleJavaTest.result.javaPath}
+                        </span>
+                        {visibleJavaTest.result.warning && (
+                          <p className="brs-args-status">{visibleJavaTest.result.warning}</p>
+                        )}
+                        <pre>
+                          {visibleJavaTest.result.output ||
+                            "Java не вернула диагностический вывод."}
+                        </pre>
+                      </>
+                    )
+                  )}
+                </div>
+              )}
             </section>
+
+            <BuildEnvironmentVariablesEditor
+              entries={draft.environmentVariables}
+              onChange={(environmentVariables) =>
+                onDraftChange((prev) => ({ ...prev, environmentVariables }))
+              }
+            />
 
             <section className="brs-section">
               <div className="brs-section-head">

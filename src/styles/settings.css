@@ -418,6 +418,12 @@
   min-width: 0;
 }
 
+/* Reserve the avatar's height in every account state, including nickname editing. */
+.mockup-split-row .mockup-input,
+.mockup-split-row .mockup-ms-row {
+  height: 28px;
+}
+
 .mockup-split-row > .mockup-block:first-child {
   position: relative;
   z-index: 40;

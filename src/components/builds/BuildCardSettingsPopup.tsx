@@ -5,6 +5,7 @@ import { BuildCardEditor } from "./BuildCardEditor";
 import { BuildRuntimeSettingsEditor } from "./BuildRuntimeSettingsEditor";
 import { BuildModsEditor } from "./BuildModsEditor";
 import type { BuildRuntimeSettingsDraft } from "../../types";
+import { getEnvironmentVariablesError } from "../../utils/environmentVariables";
 import "./BuildCardSettingsPopup.css";
 
 export type BuildCardImageFit = "cover" | "stretch";
@@ -789,6 +790,11 @@ export function BuildCardSettingsPopup(props: Props) {
                 <button
                   className="bce-hdr-btn bce-hdr-btn--save"
                   type="button"
+                  disabled={!!getEnvironmentVariablesError(props.runtimeDraft.environmentVariables)}
+                  title={
+                    getEnvironmentVariablesError(props.runtimeDraft.environmentVariables) ??
+                    undefined
+                  }
                   onClick={() => void props.onSave()}
                 >
                   SAVE
@@ -821,6 +827,8 @@ export function BuildCardSettingsPopup(props: Props) {
         <div className="bcs-tab-panel">
           {isRuntimeTab ? (
             <BuildRuntimeSettingsEditor
+              instanceId={props.instanceId}
+              minecraftVersion={props.buildVersion}
               systemRamGb={props.systemRamGb}
               optimizedJavaArgs={props.optimizedJavaArgs}
               draft={props.runtimeDraft}

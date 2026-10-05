@@ -5,6 +5,7 @@ export type InstanceTransferOptions = {
   ram: boolean;
   javaArgs: boolean;
   javaPath: boolean;
+  environmentVariables: boolean;
   window: boolean;
   mods: boolean;
   shaders: boolean;

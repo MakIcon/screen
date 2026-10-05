@@ -65,6 +65,7 @@ pub fn run() {
             commands::launcher::load_instance_screenshot,
             commands::launcher::open_instance_screenshots_folder,
             commands::system::get_system_memory_gb,
+            commands::system::test_java_settings,
             commands::system::scan_java_installations,
             commands::modrinth::get_modrinth_project_icons,
             commands::modrinth::resolve_modrinth_content_icons,

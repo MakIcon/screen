@@ -9,7 +9,7 @@ use tauri::AppHandle;
 use crate::{
     commands::import_progress::{ImportContext, IMPORT_CANCELLED},
     commands::modrinth::{build_client, install_project_to_dir, InstalledModEntry},
-    minecraft::{normalized_loader_and_version, normalized_ram},
+    minecraft::{normalize_environment_variables, normalized_loader_and_version, normalized_ram},
     models::{
         CreateInstancePayload, ExportedItem, ImportContentResult, ImportInstancePayload,
         ImportInstanceResult, InstanceExportData, InstanceItem, UpdateInstancePayload,
@@ -159,6 +159,7 @@ pub async fn purge_deleted_instance(instance_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceItem, String> {
+    let environment_variables = normalize_environment_variables(payload.environment_variables)?;
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -195,6 +196,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
         java_path: normalize_optional_path(payload.java_path),
+        environment_variables,
         window_width: normalize_window_width(payload.window_width),
         window_height: normalize_window_height(payload.window_height),
         fullscreen: payload.fullscreen,
@@ -220,6 +222,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
 
 #[tauri::command]
 pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceItem, String> {
+    let environment_variables = normalize_environment_variables(payload.environment_variables)?;
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -275,6 +278,7 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
         java_path: normalize_optional_path(payload.java_path),
+        environment_variables,
         window_width: normalize_window_width(payload.window_width),
         window_height: normalize_window_height(payload.window_height),
         fullscreen: payload.fullscreen,
@@ -387,6 +391,7 @@ pub async fn get_instance_export_data(instance_id: String) -> Result<InstanceExp
         ram: instance.ram,
         java_args: instance.java_args,
         java_path: instance.java_path,
+        environment_variables: instance.environment_variables,
         window_width: instance.window_width,
         window_height: instance.window_height,
         fullscreen: instance.fullscreen,
@@ -589,6 +594,7 @@ pub(crate) async fn discard_imported_instance(item: &InstanceItem) -> Result<(),
 pub(crate) async fn create_imported_instance(
     payload: ImportInstancePayload,
 ) -> Result<InstanceItem, String> {
+    let environment_variables = normalize_environment_variables(payload.environment_variables)?;
     let mut items = read_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -625,6 +631,7 @@ pub(crate) async fn create_imported_instance(
         ram: normalized_ram(payload.ram),
         java_args: normalize_optional_text(payload.java_args),
         java_path: normalize_optional_path(payload.java_path),
+        environment_variables,
         window_width: normalize_window_width(payload.window_width),
         window_height: normalize_window_height(payload.window_height),
         fullscreen: payload.fullscreen,
@@ -666,6 +673,7 @@ mod tests {
             ram: 4,
             java_args: None,
             java_path: None,
+            environment_variables: Default::default(),
             window_width: None,
             window_height: None,
             fullscreen: false,

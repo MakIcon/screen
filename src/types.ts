@@ -14,6 +14,7 @@ export type InstanceItem = {
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
+  environmentVariables?: Record<string, string>;
   windowWidth?: number | null;
   windowHeight?: number | null;
   fullscreen?: boolean;
@@ -115,6 +116,18 @@ export type JavaInstallation = {
   major: number;
 };
 
+export type JavaSettingsTestResult = {
+  success: boolean;
+  javaPath: string;
+  output: string;
+  warning: string | null;
+};
+
+export type EnvironmentVariable = {
+  name: string;
+  value: string;
+};
+
 export type MinecraftManifestVersion = {
   id: string;
   type: "release" | "snapshot" | "old_beta" | "old_alpha";
@@ -141,6 +154,7 @@ export type CreateInstancePayload = {
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
+  environmentVariables?: Record<string, string>;
   windowWidth?: number | null;
   windowHeight?: number | null;
   fullscreen?: boolean;
@@ -156,6 +170,7 @@ export type UpdateInstancePayload = {
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
+  environmentVariables?: Record<string, string>;
   windowWidth?: number | null;
   windowHeight?: number | null;
   fullscreen?: boolean;
@@ -476,6 +491,7 @@ export type InstanceExportData = {
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
+  environmentVariables?: Record<string, string>;
   windowWidth?: number | null;
   windowHeight?: number | null;
   fullscreen?: boolean;
@@ -492,6 +508,7 @@ export type ImportInstancePayload = {
   ram: number;
   javaArgs?: string | null;
   javaPath?: string | null;
+  environmentVariables?: Record<string, string>;
   windowWidth?: number | null;
   windowHeight?: number | null;
   fullscreen?: boolean;
@@ -544,6 +561,7 @@ export type BuildRuntimeSettingsDraft = {
   ram: number;
   javaArgs: string;
   javaPath: string;
+  environmentVariables: EnvironmentVariable[];
   windowWidth: number;
   windowHeight: number;
   fullscreen: boolean;

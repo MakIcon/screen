@@ -59,7 +59,9 @@
   line-height: 1;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .bcs-tab:last-child {
@@ -167,7 +169,10 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .brs-icon-action:hover {
@@ -216,7 +221,9 @@
   min-width: 0;
   border: 1px solid var(--line);
   background: var(--bg);
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .brs-search-field:focus-within {
@@ -286,7 +293,10 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .brs-compact-action:hover {
@@ -307,7 +317,10 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .brs-wide-action:hover {
@@ -429,7 +442,9 @@
   outline: none;
   font-size: 11px;
   letter-spacing: 0.04em;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .brs-field > input {
@@ -474,6 +489,69 @@
   flex-shrink: 0;
 }
 
+.brs-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.brs-env-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.brs-env-name-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.brs-env-name-row .brs-field {
+  flex: 1;
+}
+
+.brs-java-test {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brs-java-test > strong {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.brs-java-test-path {
+  overflow-wrap: anywhere;
+}
+
+.brs-java-test pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.brs-wide-action:disabled,
+.brs-compact-action:disabled,
+.bce-hdr-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .brs-java-list {
   display: flex;
   flex-direction: column;
@@ -494,7 +572,9 @@
   color: var(--ink);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .brs-java-item:hover {

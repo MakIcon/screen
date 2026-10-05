@@ -1,6 +1,12 @@
 import type { InstanceExportData } from "../types";
 import { DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH } from "./javaArgs";
 
+export function hasEnvironmentVariablesData(
+  data: Pick<InstanceExportData, "environmentVariables"> | null | undefined,
+) {
+  return Object.keys(data?.environmentVariables ?? {}).length > 0;
+}
+
 export function hasJavaArgsData(data: Pick<InstanceExportData, "javaArgs"> | null | undefined) {
   return Boolean(data?.javaArgs);
 }

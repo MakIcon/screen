@@ -6,6 +6,10 @@ Installing a mod from Modrinth automatically installs its required dependencies,
 
 The mod details window previews required dependencies for the selected build before installation, showing each dependency's version and whether it will be downloaded, reused or enabled.
 
+Each build's Settings → Build tab includes environment-variable overrides (name/value pairs). The game inherits the system environment and applies these overrides to its own process; values are passed literally and may be empty. Environment variables can be included in `.slbuild` and `.mrpack` transfers using their separate selection, which is off by default for exports.
+
+Test Java Settings checks the current Java executable, memory limits, JVM arguments and environment without starting Minecraft or saving the draft. It displays JVM diagnostics and warns about a Java version different from the expected Minecraft runtime. A check is stopped after 20 seconds. Existing builds are checked from their Minecraft directory, so relative JVM paths work as they do at launch.
+
 ## Project layout
 
 - `src/` — React UI, tabs, reusable controls and frontend hooks.

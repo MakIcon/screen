@@ -1,5 +1,9 @@
 import { clampRamToSystem } from "./ram";
 import type { BuildRuntimeSettingsDraft } from "../types";
+import {
+  environmentVariablesToEntries,
+  environmentVariablesToRecord,
+} from "./environmentVariables";
 
 export const DEFAULT_WINDOW_WIDTH = 1280;
 export const DEFAULT_WINDOW_HEIGHT = 720;
@@ -54,18 +58,14 @@ export function getDefaultRuntimeSettingsDraft(
     ram: normalizedRam,
     javaArgs: getDefaultJavaArgsText(normalizedRam, optimizedJavaArgs),
     javaPath: "",
+    environmentVariables: [],
     windowWidth: DEFAULT_WINDOW_WIDTH,
     windowHeight: DEFAULT_WINDOW_HEIGHT,
     fullscreen: false,
   };
 }
 
-export function normalizeWindowDimension(
-  value: number,
-  fallback: number,
-  min = 320,
-  max = 7680,
-) {
+export function normalizeWindowDimension(value: number, fallback: number, min = 320, max = 7680) {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
@@ -80,6 +80,9 @@ export function normalizeRuntimeSettingsDraft(
     ram: clampRamToSystem(draft.ram, systemRamGb),
     javaArgs,
     javaPath: draft.javaPath.trim(),
+    environmentVariables: environmentVariablesToEntries(
+      environmentVariablesToRecord(draft.environmentVariables),
+    ),
     windowWidth: normalizeWindowDimension(draft.windowWidth, DEFAULT_WINDOW_WIDTH, 320, 7680),
     windowHeight: normalizeWindowDimension(draft.windowHeight, DEFAULT_WINDOW_HEIGHT, 240, 4320),
     fullscreen: draft.fullscreen,
