@@ -11,6 +11,7 @@ use tokio::{fs, sync::watch};
 
 use crate::models::InstanceItem;
 
+mod dependencies;
 mod file_content;
 pub mod mods;
 pub mod resourcepacks;
@@ -971,6 +972,113 @@ pub(crate) async fn resolve_project_version(
     })
 }
 
+async fn resolve_project_install_plan(
+    client: &Client,
+    instance: &InstanceItem,
+    root_project_id: &str,
+    target_dir: &Path,
+    loaders: &[&str],
+    state: &HashMap<String, InstalledModEntry>,
+    download_context: Option<&ModDownloadContext>,
+) -> Result<(Vec<dependencies::InstallPlanEntry>, HashSet<String>), String> {
+    let mut available_files = HashSet::new();
+    match fs::read_dir(target_dir).await {
+        Ok(mut directory) => {
+            while let Some(entry) = directory.next_entry().await.map_err(|e| e.to_string())? {
+                if entry
+                    .file_type()
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .is_file()
+                {
+                    available_files.insert(entry.file_name().to_string_lossy().to_string());
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("read content folder error: {error}")),
+    }
+    let installed = state
+        .values()
+        .filter(|entry| {
+            !entry.version_id.is_empty()
+                && entry.game_version == instance.version
+                && (available_files.contains(&entry.filename)
+                    || available_files.contains(&format!("{}.disabled", entry.filename)))
+        })
+        .map(|entry| (entry.project_id.clone(), entry))
+        .collect::<HashMap<_, _>>();
+
+    if let Some(context) = download_context {
+        context
+            .wait_until_running("Проверка обязательных зависимостей", 0, 0)
+            .await?;
+    }
+    let root = resolve_project_version(client, root_project_id, &instance.version, loaders).await?;
+    let plan = dependencies::resolve_required_versions(
+        root,
+        &instance.version,
+        loaders,
+        &available_files,
+        |request| {
+            let installed = &installed;
+            async move {
+                if let Some(context) = download_context {
+                    context
+                        .wait_until_running("Проверка обязательных зависимостей", 0, 0)
+                        .await?;
+                }
+                match request {
+                    dependencies::VersionRequest::Exact(id) => {
+                        http_json(client, &format!("{MODRINTH_API_BASE}/version/{id}"))
+                            .await
+                            .map_err(|error| {
+                                format!("Не удалось загрузить обязательную версию {id}: {error}")
+                            })
+                    }
+                    dependencies::VersionRequest::Project(id) => {
+                        if let Some(entry) = installed.get(&id) {
+                            let version: ModrinthVersion = http_json(
+                                client,
+                                &format!("{MODRINTH_API_BASE}/version/{}", entry.version_id),
+                            )
+                            .await?;
+                            if dependencies::version_is_compatible(
+                                &version,
+                                &instance.version,
+                                loaders,
+                            ) {
+                                return Ok(version);
+                            }
+                        }
+                        resolve_project_version(client, &id, &instance.version, loaders)
+                            .await
+                            .map_err(|error| {
+                                format!("Не удалось подобрать обязательный мод {id}: {error}")
+                            })
+                    }
+                }
+            }
+        },
+    )
+    .await?;
+    Ok((plan, available_files))
+}
+
+fn reusable_installed_entry<'a>(
+    version: &ModrinthVersion,
+    file: &ModrinthVersionFile,
+    state: &'a HashMap<String, InstalledModEntry>,
+    available_files: &HashSet<String>,
+) -> Option<&'a InstalledModEntry> {
+    state.get(&file.filename).filter(|entry| {
+        entry.project_id == version.project_id
+            && entry.version_id == version.id
+            && (available_files.contains(&file.filename)
+                || available_files.contains(&format!("{}.disabled", file.filename)))
+    })
+}
+
 pub(crate) async fn install_project_to_dir(
     client: &Client,
     instance: &InstanceItem,
@@ -983,94 +1091,388 @@ pub(crate) async fn install_project_to_dir(
     fs::create_dir_all(target_dir)
         .await
         .map_err(|e| format!("create target dir error: {e}"))?;
+    let (plan, available_files) = resolve_project_install_plan(
+        client,
+        instance,
+        root_project_id,
+        target_dir,
+        loaders,
+        state,
+        download_context,
+    )
+    .await?;
 
-    let mut project_queue = vec![root_project_id.to_string()];
-    let mut installed_project_ids = state
-        .values()
-        .map(|v| v.project_id.clone())
-        .collect::<std::collections::HashSet<_>>();
-
-    while let Some(project_id) = project_queue.pop() {
-        if installed_project_ids.contains(&project_id) {
-            continue;
-        }
-
-        let project_meta: Value =
-            http_json(client, &format!("{MODRINTH_API_BASE}/project/{project_id}")).await?;
-        let project_title = project_meta
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown Project")
-            .to_string();
-        let project_icon_url = project_meta
-            .get("icon_url")
-            .and_then(Value::as_str)
-            .map(|value| value.to_string());
-
-        let version =
-            resolve_project_version(client, &project_id, &instance.version, loaders).await?;
+    // Fetch metadata and validate all filenames before writing any mod files.
+    let mut prepared = Vec::new();
+    let mut filenames = HashSet::new();
+    for item in plan.into_iter().rev() {
+        let version = item.version;
         let file = choose_primary_file(&version)
-            .ok_or_else(|| format!("No files for project {}", project_id))?
+            .ok_or_else(|| format!("No files for project {}", version.project_id))?
             .clone();
-
-        let target_path = target_dir.join(&file.filename);
-        if let Some(context) = download_context {
-            download_file_with_control(client, &file.url, &target_path, file.size, context).await?;
-        } else {
-            download_file(client, &file.url, &target_path).await?;
+        file_content::validate_filename(&file.filename)?;
+        if !filenames.insert(file.filename.clone()) {
+            return Err(format!(
+                "Разные обязательные моды используют одинаковое имя файла {}",
+                file.filename
+            ));
         }
-
-        state.insert(
-            file.filename.clone(),
+        let existing = reusable_installed_entry(&version, &file, state, &available_files);
+        let reusable = existing.is_some();
+        let mut entry = if let Some(entry) = existing {
+            entry.clone()
+        } else {
+            if let Some(context) = download_context {
+                context
+                    .wait_until_running(&file.filename, 0, file.size.unwrap_or(0))
+                    .await?;
+            }
+            let project_meta: Value = http_json(
+                client,
+                &format!("{MODRINTH_API_BASE}/project/{}", version.project_id),
+            )
+            .await?;
             InstalledModEntry {
-                project_id: project_id.clone(),
-                version_id: version.id.clone(),
-                title: project_title,
+                project_id: version.project_id,
+                version_id: version.id,
+                title: project_meta
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Unknown Project")
+                    .to_string(),
                 author: String::new(),
-                icon_url: project_icon_url,
+                icon_url: project_meta
+                    .get("icon_url")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 version_number: version.version_number,
                 game_version: instance.version.clone(),
-                filename: file.filename,
+                filename: file.filename.clone(),
                 installed_at: crate::paths::now_string(),
-                dependencies: version
-                    .dependencies
-                    .iter()
-                    .filter(|d| d.dependency_type == "required")
-                    .filter_map(|d| d.project_id.clone())
-                    .collect(),
-            },
-        );
+                dependencies: Vec::new(),
+            }
+        };
+        entry.dependencies = item.dependencies;
+        prepared.push((file, entry, reusable));
+    }
 
-        installed_project_ids.insert(project_id);
+    install_prepared_files(
+        client,
+        target_dir,
+        prepared,
+        &available_files,
+        state,
+        download_context,
+    )
+    .await
+}
 
-        for dep in version.dependencies {
-            if dep.dependency_type != "required" {
+async fn install_prepared_files(
+    client: &Client,
+    target_dir: &Path,
+    prepared: Vec<(ModrinthVersionFile, InstalledModEntry, bool)>,
+    available_files: &HashSet<String>,
+    state: &mut HashMap<String, InstalledModEntry>,
+    download_context: Option<&ModDownloadContext>,
+) -> Result<(), String> {
+    // Validate stored filenames too, before committing any files.
+    for (file, entry, _) in &prepared {
+        file_content::validate_filename(&file.filename)?;
+        for old in state
+            .values()
+            .filter(|old| old.project_id == entry.project_id)
+        {
+            file_content::validate_filename(&old.filename)?;
+        }
+    }
+    // Stage the whole batch so a failed/cancelled dependency download does not
+    // leave the root mod installed without the files it needs.
+    let staging = target_dir.join(format!(".screenlauncher-install-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&staging)
+        .await
+        .map_err(|e| format!("create staging dir error: {e}"))?;
+    let result = async {
+        for (file, _, reusable) in &prepared {
+            if *reusable {
                 continue;
             }
-            // Most dependencies carry a project_id. Some only pin a version_id
-            // (e.g. "needs exactly this build"); resolve those to their project
-            // so they don't get silently skipped.
-            let dep_project_id = match dep.project_id {
-                Some(id) if !id.is_empty() => Some(id),
-                _ => match &dep.version_id {
-                    Some(version_id) if !version_id.is_empty() => http_json::<ModrinthVersion>(
-                        client,
-                        &format!("{MODRINTH_API_BASE}/version/{version_id}"),
-                    )
-                    .await
-                    .ok()
-                    .map(|resolved| resolved.project_id)
-                    .filter(|id| !id.is_empty()),
-                    _ => None,
-                },
-            };
-            if let Some(dep_id) = dep_project_id {
-                project_queue.push(dep_id);
+            let path = staging.join(&file.filename);
+            if let Some(context) = download_context {
+                download_file_with_control(client, &file.url, &path, file.size, context).await?;
+            } else {
+                download_file(client, &file.url, &path).await?;
             }
+        }
+        if let Some(context) = download_context {
+            context
+                .wait_until_running("Установка мода и зависимостей", 0, 0)
+                .await?;
+        }
+        for (file, entry, reusable) in &prepared {
+            let destination = target_dir.join(&file.filename);
+            let disabled = target_dir.join(format!("{}.disabled", file.filename));
+            if !*reusable {
+                fs::rename(staging.join(&file.filename), &destination)
+                    .await
+                    .map_err(|e| format!("install {} error: {e}", file.filename))?;
+            } else if !available_files.contains(&file.filename) {
+                fs::rename(&disabled, &destination)
+                    .await
+                    .map_err(|e| format!("enable required mod {} error: {e}", file.filename))?;
+            }
+            // Replacements must remove both enabled and disabled older versions.
+            for stale in state
+                .values()
+                .filter(|old| old.project_id == entry.project_id)
+            {
+                file_content::validate_filename(&stale.filename)?;
+                for name in [
+                    stale.filename.clone(),
+                    format!("{}.disabled", stale.filename),
+                ] {
+                    if name == file.filename {
+                        continue;
+                    }
+                    match fs::remove_file(target_dir.join(&name)).await {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(format!("remove old mod {name} error: {error}")),
+                    }
+                }
+            }
+        }
+        for (_, entry, _) in prepared {
+            state.retain(|_, old| old.project_id != entry.project_id);
+            state.insert(entry.filename.clone(), entry);
+        }
+        Ok(())
+    }
+    .await;
+    let _ = fs::remove_dir_all(&staging).await;
+    result
+}
+
+#[cfg(test)]
+mod installation_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+
+    struct Directory(PathBuf);
+
+    impl Directory {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("screen-mod-install-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
         }
     }
 
-    Ok(())
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn entry(project: &str, version: &str, filename: &str) -> InstalledModEntry {
+        InstalledModEntry {
+            project_id: project.into(),
+            version_id: version.into(),
+            filename: filename.into(),
+            game_version: "1.21.1".into(),
+            ..Default::default()
+        }
+    }
+
+    fn prepared(
+        entry: InstalledModEntry,
+        url: &str,
+        reusable: bool,
+    ) -> (ModrinthVersionFile, InstalledModEntry, bool) {
+        (
+            ModrinthVersionFile {
+                filename: entry.filename.clone(),
+                url: url.into(),
+                ..Default::default()
+            },
+            entry,
+            reusable,
+        )
+    }
+
+    // A single bounded HTTP request proves real file downloads without external services.
+    fn serve_file() -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/mod.jar", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let task = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "No download request received");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nnew jar",
+                )
+                .unwrap();
+        });
+        (url, task)
+    }
+
+    #[tokio::test]
+    async fn reuses_enabled_and_reenables_disabled_dependencies_without_downloading() {
+        let directory = Directory::new();
+        std::fs::write(directory.0.join("api.jar.disabled"), b"existing api").unwrap();
+        std::fs::write(directory.0.join("helper.jar"), b"existing helper").unwrap();
+        let api = entry("api", "api-v1", "api.jar");
+        let helper = entry("helper", "helper-v1", "helper.jar");
+        let mut state = HashMap::from([
+            ("api.jar".into(), api.clone()),
+            ("helper.jar".into(), helper.clone()),
+        ]);
+        install_prepared_files(
+            &Client::new(),
+            &directory.0,
+            vec![
+                prepared(api, "invalid-url", true),
+                prepared(helper, "invalid-url", true),
+            ],
+            &HashSet::from(["api.jar.disabled".into(), "helper.jar".into()]),
+            &mut state,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(directory.0.join("api.jar")).unwrap(),
+            b"existing api"
+        );
+        assert_eq!(
+            std::fs::read(directory.0.join("helper.jar")).unwrap(),
+            b"existing helper"
+        );
+        assert!(!directory.0.join("api.jar.disabled").exists());
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 2);
+    }
+
+    #[tokio::test]
+    async fn failed_dependency_download_leaves_existing_files_and_metadata_unchanged() {
+        let directory = Directory::new();
+        std::fs::write(directory.0.join("old-api.jar.disabled"), b"old api").unwrap();
+        let old_api = entry("api", "old", "old-api.jar");
+        let mut state = HashMap::from([("old-api.jar".into(), old_api)]);
+        let before = serde_json::to_string(&state).unwrap();
+        let (url, server) = serve_file();
+        let result = install_prepared_files(
+            &Client::builder().no_proxy().build().unwrap(),
+            &directory.0,
+            vec![
+                prepared(entry("root", "root-v1", "root.jar"), &url, false),
+                prepared(entry("api", "api-v1", "api.jar"), "invalid-url", false),
+            ],
+            &HashSet::from(["old-api.jar.disabled".into()]),
+            &mut state,
+            None,
+        )
+        .await;
+        server.join().unwrap();
+        assert!(result.is_err());
+        assert_eq!(serde_json::to_string(&state).unwrap(), before);
+        assert_eq!(
+            std::fs::read(directory.0.join("old-api.jar.disabled")).unwrap(),
+            b"old api"
+        );
+        assert!(!directory.0.join("root.jar").exists());
+        assert!(!directory.0.join("api.jar").exists());
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn replaces_old_dependency_files_and_preserves_unrelated_mods() {
+        let directory = Directory::new();
+        for filename in ["old-api.jar", "old-api.jar.disabled", "unrelated.jar"] {
+            std::fs::write(directory.0.join(filename), b"old").unwrap();
+        }
+        let mut state = HashMap::from([
+            ("old-api.jar".into(), entry("api", "old", "old-api.jar")),
+            (
+                "unrelated.jar".into(),
+                entry("unrelated", "v1", "unrelated.jar"),
+            ),
+        ]);
+        let (url, server) = serve_file();
+        install_prepared_files(
+            &Client::builder().no_proxy().build().unwrap(),
+            &directory.0,
+            vec![prepared(entry("api", "new", "api.jar"), &url, false)],
+            &HashSet::from([
+                "old-api.jar".into(),
+                "old-api.jar.disabled".into(),
+                "unrelated.jar".into(),
+            ]),
+            &mut state,
+            None,
+        )
+        .await
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            std::fs::read(directory.0.join("api.jar")).unwrap(),
+            b"new jar"
+        );
+        assert_eq!(
+            std::fs::read(directory.0.join("unrelated.jar")).unwrap(),
+            b"old"
+        );
+        assert!(!directory.0.join("old-api.jar").exists());
+        assert!(!directory.0.join("old-api.jar.disabled").exists());
+        assert_eq!(state.len(), 2);
+        assert_eq!(state["api.jar"].version_id, "new");
+        assert!(!state.contains_key("old-api.jar"));
+    }
+
+    #[tokio::test]
+    async fn replaces_a_dependency_that_keeps_the_same_filename() {
+        let directory = Directory::new();
+        std::fs::write(directory.0.join("api.jar"), b"old api").unwrap();
+        std::fs::write(directory.0.join("api.jar.disabled"), b"old api").unwrap();
+        let mut state = HashMap::from([("api.jar".into(), entry("api", "old", "api.jar"))]);
+        let (url, server) = serve_file();
+        install_prepared_files(
+            &Client::builder().no_proxy().build().unwrap(),
+            &directory.0,
+            vec![prepared(entry("api", "new", "api.jar"), &url, false)],
+            &HashSet::from(["api.jar".into(), "api.jar.disabled".into()]),
+            &mut state,
+            None,
+        )
+        .await
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            std::fs::read(directory.0.join("api.jar")).unwrap(),
+            b"new jar"
+        );
+        assert!(!directory.0.join("api.jar.disabled").exists());
+        assert_eq!(state["api.jar"].version_id, "new");
+    }
 }
 
 #[cfg(test)]

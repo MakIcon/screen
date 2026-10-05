@@ -175,7 +175,9 @@ function ModDownloadControls({
         <span style={{ width: `${percent}%` }} />
       </div>
       <div className="mod-download-progress-actions">
-        <span data-tooltip={progress.filename}>{progress.filename || "Resolving dependencies…"}</span>
+        <span data-tooltip={progress.filename}>
+          {progress.filename || "Resolving dependencies…"}
+        </span>
         <button type="button" onClick={() => void onPause(!paused)}>
           {paused ? "RESUME" : "PAUSE"}
         </button>
@@ -565,6 +567,7 @@ export function ModrinthContentTab({
       <ModrinthProjectModal
         kind={kind}
         project={selectedProject}
+        target={selectedTarget}
         busy={busyProjectId !== null}
         onClose={() => setSelectedProjectId(null)}
         onInstall={() => {

@@ -381,9 +381,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  transition:
-    transform 0.22s ease,
-    background 0.2s ease;
+  transition: transform 0.22s ease;
 }
 
 .installed-mod-row .eximp-list-preview-icon,
@@ -407,7 +405,6 @@
 
 .installed-mod-swipe:hover .installed-mod-row {
   transform: translateX(-62px);
-  background: var(--bg-panel-strong);
 }
 
 .installed-mod-swipe:hover .installed-mod-delete-slot {
@@ -749,6 +746,123 @@
   margin-bottom: 23px;
 }
 
+.modrinth-detail-dependencies {
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modrinth-dependencies-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modrinth-dependencies-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.modrinth-dependencies-context,
+.modrinth-dependencies-note {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.modrinth-dependencies-note {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.modrinth-dependencies-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modrinth-dependencies-error p {
+  margin: 12px 0;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.modrinth-dependencies-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+
+.modrinth-dependency-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.modrinth-dependency-row + .modrinth-dependency-row {
+  border-top: 1px solid var(--line);
+}
+
+.modrinth-dependency-icon {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  font-size: 15px;
+}
+
+.modrinth-dependency-copy {
+  min-width: 0;
+}
+
+.modrinth-dependency-copy strong,
+.modrinth-dependency-copy span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.modrinth-dependency-copy strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modrinth-dependency-copy span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.modrinth-dependency-status {
+  border: 1px solid currentColor;
+  padding: 5px 7px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.modrinth-dependency-status--installed {
+  color: var(--success);
+}
+
+.modrinth-dependency-status--enable {
+  color: var(--warning);
+}
+
 .modrinth-detail-description p {
   margin: 10px 0 0;
   color: var(--text-soft);
@@ -911,5 +1025,15 @@
 
   .modrinth-detail-actions {
     padding: 13px 20px;
+  }
+
+  .modrinth-dependency-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .modrinth-dependency-status {
+    grid-column: 2;
+    justify-self: start;
   }
 }

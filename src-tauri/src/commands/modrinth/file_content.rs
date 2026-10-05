@@ -187,7 +187,7 @@ pub(super) async fn install_file_content(
     let client = build_client()?;
     let instance = find_instance(&instance_id).await?;
     let target_dir = ensure_content_dir(&instance, config).await?;
-    let mut install_batch = HashMap::new();
+    let mut install_batch = read_state(&instance, config).await?;
 
     install_project_to_dir(
         &client,

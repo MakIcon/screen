@@ -2,6 +2,10 @@
 
 Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
 
+Installing a mod from Modrinth automatically installs its required dependencies, including nested dependencies and exact versions specified by the author. Compatible tracked dependencies are reused and disabled required mods are enabled. Optional and embedded dependencies are not downloaded. Dependency resolution and downloads must succeed before the mod files are installed; missing or conflicting requirements are reported as installation errors.
+
+The mod details window previews required dependencies for the selected build before installation, showing each dependency's version and whether it will be downloaded, reused or enabled.
+
 ## Project layout
 
 - `src/` — React UI, tabs, reusable controls and frontend hooks.

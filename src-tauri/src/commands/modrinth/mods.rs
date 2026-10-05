@@ -3,6 +3,7 @@ use std::{
     sync::OnceLock,
 };
 
+use serde::Serialize;
 use tauri::AppHandle;
 use tokio::{
     fs,
@@ -16,9 +17,10 @@ use super::file_content::{
     write_state, FileContentConfig,
 };
 use super::{
-    build_client, fetch_modrinth_search, install_project_to_dir, InstalledModView,
-    ModDownloadContext, ModDownloadControlState, ModrinthSearchResponse, MOD_DOWNLOAD_CANCELLED,
-    SEARCH_PAGE_SIZE_MAX,
+    build_client, choose_primary_file, fetch_modrinth_search, http_json, install_project_to_dir,
+    resolve_project_install_plan, reusable_installed_entry, InstalledModEntry, InstalledModView,
+    ModDownloadContext, ModDownloadControlState, ModrinthSearchResponse, ModrinthVersion,
+    ModrinthVersionFile, MODRINTH_API_BASE, MOD_DOWNLOAD_CANCELLED, SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODS_STATE_FILE: &str = ".screenlauncher-modrinth.json";
@@ -42,6 +44,115 @@ fn instance_loader(loader: &str) -> Result<&'static str, String> {
     LoaderKind::parse(loader)?
         .modrinth_id()
         .ok_or_else(|| "Vanilla builds do not support mods".to_string())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModrinthDependencyStatus {
+    Download,
+    Installed,
+    Enable,
+}
+
+impl ModrinthDependencyStatus {
+    fn for_file(
+        version: &ModrinthVersion,
+        file: &ModrinthVersionFile,
+        state: &HashMap<String, InstalledModEntry>,
+        available_files: &HashSet<String>,
+    ) -> Self {
+        if reusable_installed_entry(version, file, state, available_files).is_none() {
+            Self::Download
+        } else if available_files.contains(&file.filename) {
+            Self::Installed
+        } else {
+            Self::Enable
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModrinthModDependency {
+    pub project_id: String,
+    pub title: String,
+    pub icon_url: Option<String>,
+    pub version_number: String,
+    pub direct: bool,
+    pub status: ModrinthDependencyStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModrinthModDependencies {
+    pub version_number: String,
+    pub dependencies: Vec<ModrinthModDependency>,
+}
+
+#[tauri::command]
+pub async fn get_modrinth_mod_dependencies(
+    instance_id: String,
+    project_id: String,
+) -> Result<ModrinthModDependencies, String> {
+    let instance = find_instance(&instance_id).await?;
+    let loader = instance_loader(&instance.loader)?;
+    let client = build_client()?;
+    let state = read_state(&instance, MODS).await?;
+    let (plan, available_files) = resolve_project_install_plan(
+        &client,
+        &instance,
+        &project_id,
+        &content_dir(&instance, MODS),
+        &[loader],
+        &state,
+        None,
+    )
+    .await?;
+    let root = plan.first().ok_or("Не удалось подобрать версию мода")?;
+    let version_number = root.version.version_number.clone();
+    let direct_dependencies = root.dependencies.clone();
+    let mut dependencies = Vec::new();
+    for item in plan.into_iter().skip(1) {
+        let version = item.version;
+        let file = choose_primary_file(&version)
+            .ok_or_else(|| format!("У зависимости {} нет файлов", version.project_id))?;
+        validate_filename(&file.filename)?;
+        let status = ModrinthDependencyStatus::for_file(&version, file, &state, &available_files);
+        let existing = reusable_installed_entry(&version, file, &state, &available_files);
+        let (title, icon_url) =
+            if let Some(entry) = existing.filter(|entry| !entry.title.is_empty()) {
+                (entry.title.clone(), entry.icon_url.clone())
+            } else {
+                let metadata: serde_json::Value = http_json(
+                    &client,
+                    &format!("{MODRINTH_API_BASE}/project/{}", version.project_id),
+                )
+                .await?;
+                (
+                    metadata
+                        .get("title")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or(&version.project_id)
+                        .to_string(),
+                    metadata
+                        .get("icon_url")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string),
+                )
+            };
+        dependencies.push(ModrinthModDependency {
+            direct: direct_dependencies.contains(&version.project_id),
+            project_id: version.project_id,
+            title,
+            icon_url,
+            version_number: version.version_number,
+            status,
+        });
+    }
+    Ok(ModrinthModDependencies {
+        version_number,
+        dependencies,
+    })
 }
 
 #[tauri::command]
@@ -88,7 +199,7 @@ pub async fn install_modrinth_project(
     let loader = instance_loader(&instance.loader)?;
 
     let target_dir = ensure_content_dir(&instance, MODS).await?;
-    let mut install_batch = HashMap::new();
+    let mut install_batch = read_state(&instance, MODS).await?;
     let key = download_key(&instance_id, &project_id);
     let (control_sender, control_receiver) = watch::channel(ModDownloadControlState::Downloading);
     {
@@ -128,7 +239,7 @@ pub async fn install_modrinth_project(
 
     Ok(ActionResult {
         ok: true,
-        message: "Installed".into(),
+        message: "Мод и все обязательные зависимости установлены".into(),
         pid: None,
     })
 }
@@ -316,4 +427,56 @@ pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledMod
 
     out.sort_by_key(|item| item.title.to_lowercase());
     Ok(out)
+}
+
+#[cfg(test)]
+mod dependency_preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_distinguishes_download_reuse_and_enable_for_the_exact_required_version() {
+        let version = ModrinthVersion {
+            project_id: "api".into(),
+            id: "required".into(),
+            ..Default::default()
+        };
+        let file = ModrinthVersionFile {
+            filename: "api.jar".into(),
+            ..Default::default()
+        };
+        let entry = InstalledModEntry {
+            project_id: "api".into(),
+            version_id: "required".into(),
+            filename: "api.jar".into(),
+            ..Default::default()
+        };
+        let state = HashMap::from([("api.jar".into(), entry)]);
+        for (files, expected) in [
+            (
+                HashSet::from(["api.jar".into()]),
+                ModrinthDependencyStatus::Installed,
+            ),
+            (
+                HashSet::from(["api.jar.disabled".into()]),
+                ModrinthDependencyStatus::Enable,
+            ),
+            (HashSet::new(), ModrinthDependencyStatus::Download),
+        ] {
+            assert_eq!(
+                ModrinthDependencyStatus::for_file(&version, &file, &state, &files),
+                expected
+            );
+        }
+        let available = HashSet::from(["api.jar".into()]);
+        let mut wrong_version = state.clone();
+        wrong_version.get_mut("api.jar").unwrap().version_id = "older".into();
+        assert_eq!(
+            ModrinthDependencyStatus::for_file(&version, &file, &wrong_version, &available),
+            ModrinthDependencyStatus::Download
+        );
+        assert_eq!(
+            ModrinthDependencyStatus::for_file(&version, &file, &HashMap::new(), &available),
+            ModrinthDependencyStatus::Download
+        );
+    }
 }

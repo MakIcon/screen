@@ -4,38 +4,20 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import type {
+  InstanceItem,
   ModDownloadProgressPayload,
   ModrinthProject,
   ModrinthProjectDetails,
 } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
-
-type ModrinthProjectIconProps = {
-  iconUrl?: string | null;
-  title: string;
-  className?: string;
-};
-
-export function ModrinthProjectIcon({ iconUrl, title, className = "" }: ModrinthProjectIconProps) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const hasImage = Boolean(iconUrl) && !imageFailed;
-
-  useEffect(() => setImageFailed(false), [iconUrl]);
-
-  return (
-    <div className={`modrinth-project-icon ${className}`.trim()} aria-hidden="true">
-      {hasImage ? (
-        <img src={iconUrl ?? undefined} alt="" onError={() => setImageFailed(true)} />
-      ) : (
-        <span>{title.trim().charAt(0).toUpperCase() || "M"}</span>
-      )}
-    </div>
-  );
-}
+import { ModrinthProjectIcon } from "./ModrinthProjectIcon";
+import { ModrinthDependenciesSection } from "./ModrinthDependenciesSection";
+export { ModrinthProjectIcon } from "./ModrinthProjectIcon";
 
 type ModrinthProjectModalProps = {
   kind: ModrinthContentKind;
   project: ModrinthProject | null;
+  target: InstanceItem | null;
   busy: boolean;
   onClose: () => void;
   onInstall: () => void;
@@ -202,6 +184,7 @@ function DetailChips({ label, values }: { label: string; values: string[] }) {
 export function ModrinthProjectModal({
   kind,
   project,
+  target,
   busy,
   onClose,
   onInstall,
@@ -339,6 +322,15 @@ export function ModrinthProjectModal({
           )}
 
           {error && <p className="modrinth-detail-error">{error}</p>}
+
+          {kind === "mods" && (
+            <ModrinthDependenciesSection
+              key={`${project.projectId}:${target?.id}:${target?.version}:${target?.loader}`}
+              projectId={project.projectId}
+              target={target}
+              busy={busy}
+            />
+          )}
 
           {body && (
             <section className="modrinth-detail-description">

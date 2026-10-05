@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  ActionResult,
   InstalledModView,
   InstanceItem,
   ModDownloadProgressPayload,
@@ -40,8 +41,8 @@ const CONTENT_COMMANDS: Record<ModrinthContentKind, ContentCommands> = {
     install: "install_modrinth_project",
     uninstall: "uninstall_modrinth_mod",
     includeGameVersion: false,
-    installingMessage: "Installing Modrinth mod...",
-    installedMessage: "Mod install finished",
+    installingMessage: "Установка мода и обязательных зависимостей…",
+    installedMessage: "Мод и обязательные зависимости установлены",
     uninstallingMessage: "Uninstalling mod...",
     installedTitle: "Mod installed",
     installFailedTitle: "Mod install failed",
@@ -292,10 +293,19 @@ export function useModrinthContent({
       }
       setActionError("");
       setBusyMessage(commands.installingMessage);
-      await invoke(commands.install, { instanceId: target.id, projectId });
+      const result = await invoke<ActionResult>(commands.install, {
+        instanceId: target.id,
+        projectId,
+      });
       await refreshContent();
       setBusyMessage(commands.installedMessage);
-      pushToast("info", `${projectName} → ${target.name}`, { title: commands.installedTitle });
+      pushToast(
+        "info",
+        `${projectName} → ${target.name}${kind === "mods" ? ` · ${result.message}` : ""}`,
+        {
+          title: commands.installedTitle,
+        },
+      );
     } catch (caught) {
       const message = toErrorMessage(caught);
       if (message.includes("MOD_DOWNLOAD_CANCELLED")) {

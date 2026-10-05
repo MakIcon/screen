@@ -70,6 +70,7 @@ pub fn run() {
             commands::modrinth::resolve_modrinth_content_icons,
             commands::modrinth::get_modrinth_project_authors,
             commands::modrinth::get_modrinth_project_details,
+            commands::modrinth::get_modrinth_mod_dependencies,
             commands::modrinth::search_modrinth_mods,
             commands::modrinth::install_modrinth_project,
             commands::modrinth::set_modrinth_download_paused,

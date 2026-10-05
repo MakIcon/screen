@@ -82,6 +82,20 @@ export type ModrinthSearchResponse = {
   limit: number;
 };
 
+export type ModrinthModDependency = {
+  projectId: string;
+  title: string;
+  iconUrl?: string | null;
+  versionNumber: string;
+  direct: boolean;
+  status: "download" | "installed" | "enable";
+};
+
+export type ModrinthModDependencies = {
+  versionNumber: string;
+  dependencies: ModrinthModDependency[];
+};
+
 export type InstalledModView = {
   projectId?: string | null;
   title: string;
