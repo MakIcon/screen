@@ -508,6 +508,7 @@
 
 .modrinth-card .mod-card-head {
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .modrinth-card .mod-card-project {
@@ -515,6 +516,30 @@
   align-items: center;
   gap: 13px;
   min-width: 0;
+  flex: 1 1 190px;
+}
+
+.modrinth-card .mod-title-row {
+  min-width: 0;
+  flex: 1;
+  gap: 4px 12px;
+}
+
+.modrinth-card .mod-title-row h3 {
+  max-width: 100%;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.mod-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-inline-start: auto;
+  gap: 8px;
 }
 
 .modrinth-project-icon {

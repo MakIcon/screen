@@ -18,6 +18,7 @@ import { BuildCardContentView } from "../components/builds/BuildCardContentView"
 import { BuildCardVerticalBody } from "../components/builds/BuildCardVerticalBody";
 import { BuildCardPin, PinIcon } from "../components/builds/BuildCardPin";
 import { BuildConfigurationGrid } from "../components/builds/BuildConfigurationGrid";
+import { BuildPlayButton } from "../components/builds/BuildPlayButton";
 import { LOADER_OPTIONS } from "../constants/tabs";
 import {
   createPlaceholderAppearanceAttributes,
@@ -690,34 +691,18 @@ export function InstancesTab({
                   data-guide-target="build-actions"
                 >
                   {selectedInstance && isRunning(selectedInstance.id) ? (
-                    <button
-                      className="primary-action kill-action build-play-action"
-                      type="button"
+                    <BuildPlayButton
+                      state="running"
                       onClick={() => handleStopGame(selectedInstance.id)}
-                    >
-                      <span className="bpa-stack">
-                        <span className="bpa-label">■ STOP GAME</span>
-                        <span className="bpa-sizer" aria-hidden="true">
-                          ■ STOP GAME
-                        </span>
-                      </span>
-                    </button>
+                    />
                   ) : (
-                    <button
-                      className="primary-action build-play-action"
-                      type="button"
+                    <BuildPlayButton
+                      state={working ? "starting" : "idle"}
                       onClick={() => handleLaunchSelected()}
                       disabled={working}
                       data-mascot-stealable
                       data-mascot-label="PLAY BUILD"
-                    >
-                      <span className="bpa-stack">
-                        <span className="bpa-label">{working ? "WORKING..." : "PLAY BUILD"}</span>
-                        <span className="bpa-sizer" aria-hidden="true">
-                          ■ STOP GAME
-                        </span>
-                      </span>
-                    </button>
+                    />
                   )}
                   <button
                     className="ghost-action"

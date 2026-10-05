@@ -1,4 +1,5 @@
 import type { InstanceItem, TabKey } from "../types";
+import { BuildPlayButton } from "../components/builds/BuildPlayButton";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 
 interface OverviewTabProps {
@@ -115,34 +116,21 @@ export function OverviewTab({
 
           <div className="action-row">
             {isRunning(selectedInstance.id) ? (
-              <button
-                className="primary-action play-last-button kill-action build-play-action"
-                type="button"
+              <BuildPlayButton
+                state="running"
+                className="play-last-button"
                 onClick={() => handleStopGame(selectedInstance.id)}
-              >
-                <span className="bpa-stack">
-                  <span className="bpa-label">■ STOP GAME</span>
-                  <span className="bpa-sizer" aria-hidden="true">
-                    ■ STOP GAME
-                  </span>
-                </span>
-              </button>
+              />
             ) : (
-              <button
-                className="primary-action play-last-button build-play-action"
-                type="button"
+              <BuildPlayButton
+                state={working ? "starting" : "idle"}
+                idleLabel="PLAY LAST"
+                className="play-last-button"
                 onClick={() => handleLaunchSelected()}
                 disabled={working}
                 data-mascot-stealable
                 data-mascot-label="PLAY LAST"
-              >
-                <span className="bpa-stack">
-                  <span className="bpa-label">{working ? "WORKING..." : "PLAY LAST"}</span>
-                  <span className="bpa-sizer" aria-hidden="true">
-                    ■ STOP GAME
-                  </span>
-                </span>
-              </button>
+              />
             )}
           </div>
         </div>

@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  ModrinthProjectIcon,
-  ModrinthProjectModal,
-} from "../components/modrinth/ModrinthProjectModal";
-import { CatalogSearchField } from "../components/modrinth/CatalogSearchField";
+import { ModrinthProjectModal } from "../components/modrinth/ModrinthProjectModal";
+import { CatalogProjectCard } from "../components/modrinth/CatalogProjectCard";
+import { CatalogSearchToolbar } from "../components/modrinth/CatalogSearchToolbar";
 import { ExportedItemIcon } from "../components/transfer/ExportedItemIcon";
 import type { ContentIconCandidate } from "../hooks/useContentIcons";
 import type { ExportedItem } from "../types";
@@ -12,7 +10,6 @@ import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
 import type { DropdownKey, InstanceItem } from "../types";
-import type { ModDownloadProgressPayload } from "../types";
 import {
   createPlaceholderAppearanceAttributes,
   createPlaceholderValueAttributes,
@@ -150,45 +147,6 @@ function TrashIcon() {
   );
 }
 
-function truncateDescription(description: string) {
-  return description.length > 160 ? `${description.slice(0, 160)}...` : description;
-}
-
-function ModDownloadControls({
-  progress,
-  onPause,
-  onCancel,
-}: {
-  progress: ModDownloadProgressPayload;
-  onPause: (paused: boolean) => Promise<void>;
-  onCancel: () => Promise<void>;
-}) {
-  const paused = progress.state === "paused";
-  const percent = Math.round(progress.percent);
-  return (
-    <div className="mod-download-progress" onClick={(event) => event.stopPropagation()}>
-      <div className="mod-download-progress-head">
-        <strong>{paused ? "PAUSED" : "DOWNLOADING"}</strong>
-        <span>{percent}%</span>
-      </div>
-      <div className="mod-download-progress-track" aria-label={`Download ${percent}%`}>
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mod-download-progress-actions">
-        <span data-tooltip={progress.filename}>
-          {progress.filename || "Resolving dependencies…"}
-        </span>
-        <button type="button" onClick={() => void onPause(!paused)}>
-          {paused ? "RESUME" : "PAUSE"}
-        </button>
-        <button className="danger" type="button" onClick={() => void onCancel()}>
-          CANCEL
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function ModrinthContentTab({
   kind,
   controller,
@@ -258,16 +216,13 @@ export function ModrinthContentTab({
   return (
     <section className="launcher-panel">
       <div className="panel-grid panel-grid-catalog-fixed">
-        <div className="panel-card catalog-toolbar-card" data-guide-target={`${kind}-search`}>
-          <div className="toolbar-row toolbar-row-single modrinth-toolbar-grid">
-            <CatalogSearchField
-              label={copy.searchLabel}
-              placeholder={copy.searchPlaceholder}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-        </div>
+        <CatalogSearchToolbar
+          guideTarget={`${kind}-search`}
+          label={copy.searchLabel}
+          placeholder={copy.searchPlaceholder}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
 
         <div className="panel-card mod-list-card" data-guide-target={`${kind}-catalog`}>
           <div className="card-topline">
@@ -320,111 +275,21 @@ export function ModrinthContentTab({
                     const contentBusy = busyProjectId !== null;
 
                     return (
-                      <div
-                        className="mod-card modrinth-card"
+                      <CatalogProjectCard
                         key={item.projectId}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Open ${item.title} details`}
-                        aria-haspopup="dialog"
-                        onClick={() => setSelectedProjectId(item.projectId)}
-                        onKeyDown={(event) => {
-                          if (
-                            event.target === event.currentTarget &&
-                            (event.key === "Enter" || event.key === " ")
-                          ) {
-                            event.preventDefault();
-                            setSelectedProjectId(item.projectId);
-                          }
-                        }}
-                        data-mascot-content-kind={kind}
-                        data-mascot-project-id={item.projectId}
-                        data-mascot-content-title={item.title}
-                        data-mascot-installed={item.installed ? "true" : "false"}
-                      >
-                        <div className="mod-card-head">
-                          <div className="mod-card-project">
-                            <ModrinthProjectIcon iconUrl={item.iconUrl} title={item.title} />
-                            <div className="mod-title-row">
-                              <h3>{item.title}</h3>
-                              <span className="mod-category">{category.toUpperCase()}</span>
-                            </div>
-                          </div>
-                          <div
-                            style={{ display: "flex", gap: 8 }}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {item.installed ? (
-                              copy.installedCatalogMode === "downloaded" ? (
-                                <>
-                                  <button
-                                    className="ghost-action installed catalog-action"
-                                    type="button"
-                                    disabled
-                                  >
-                                    DOWNLOADED
-                                  </button>
-                                  <button
-                                    className="ghost-action danger catalog-action"
-                                    type="button"
-                                    disabled={contentBusy}
-                                    onClick={() => void uninstall(item.projectId)}
-                                  >
-                                    {busy ? "REMOVING..." : "DELETE"}
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    className="ghost-action danger catalog-action"
-                                    type="button"
-                                    disabled={contentBusy}
-                                    onClick={() => void uninstall(item.projectId)}
-                                  >
-                                    {busy ? "..." : "REMOVE"}
-                                  </button>
-                                  <button
-                                    className="ghost-action installed catalog-action"
-                                    type="button"
-                                    disabled={contentBusy}
-                                    onClick={() => void install(item.projectId)}
-                                    data-mascot-stealable
-                                    data-mascot-label="UPDATE"
-                                  >
-                                    {busy ? "..." : "UPDATE"}
-                                  </button>
-                                </>
-                              )
-                            ) : (
-                              <button
-                                className="catalog-action install"
-                                type="button"
-                                disabled={contentBusy}
-                                onClick={() => void install(item.projectId)}
-                                data-mascot-stealable
-                                data-mascot-label="INSTALL"
-                              >
-                                {busy ? "INSTALLING..." : "INSTALL"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {kind === "mods" &&
-                          busy &&
-                          downloadProgress?.projectId === item.projectId && (
-                            <ModDownloadControls
-                              progress={downloadProgress}
-                              onPause={setDownloadPaused}
-                              onCancel={cancelDownload}
-                            />
-                          )}
-                        <p className="mod-description">{truncateDescription(item.description)}</p>
-                        <div className="mod-meta-strip">
-                          <span>BY {item.author.toUpperCase()}</span>
-                          <span>{item.downloads.toLocaleString()} DOWNLOADS</span>
-                          <span>{item.follows.toLocaleString()} FOLLOWERS</span>
-                        </div>
-                      </div>
+                        item={item}
+                        kind={kind}
+                        category={category}
+                        busy={busy}
+                        contentBusy={contentBusy}
+                        installedCatalogMode={copy.installedCatalogMode}
+                        downloadProgress={downloadProgress}
+                        onOpen={() => setSelectedProjectId(item.projectId)}
+                        onInstall={() => void install(item.projectId)}
+                        onUninstall={() => void uninstall(item.projectId)}
+                        setDownloadPaused={setDownloadPaused}
+                        cancelDownload={cancelDownload}
+                      />
                     );
                   })}
                   {loadingMore && (

@@ -1,13 +1,27 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import windowsArrowCursorUrl from "../../assets/cursors/windows-arrow.svg";
-import windowsIbeamCursorUrl from "../../assets/cursors/windows-ibeam.svg";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
+import { GuidePointer } from "./GuidePointer";
+import { playGuideDemo, type GuideAction } from "./guidePlayback";
+import {
+  guidePreviewLayout,
+  measureGuideScene,
+  type GuideSceneMeasurement,
+} from "./guidePreviewLayout";
 import type { TabKey } from "../../types";
 import { LauncherGuideDemoScene, type LauncherGuideScene } from "./LauncherGuideScenes";
 import "./LauncherGuide.css";
 
 export type LauncherGuidePlacement = "auto" | "above" | "right" | "below" | "left";
 export type LauncherGuideAnimation = "typewriter" | "pulse" | "none";
-export type LauncherGuideDemoAction = "click" | "type" | "toggle" | "select" | "drag";
+export type LauncherGuideDemoAction = "click" | "type" | "toggle" | "select";
 
 export interface LauncherGuideStep {
   id: string;
@@ -26,7 +40,6 @@ export interface LauncherGuideStep {
   demoTargetSelector?: string;
   demoResultSelector?: string;
   demoResultText?: string;
-  demoDragX?: number;
   showPointer?: boolean;
   placement?: LauncherGuidePlacement;
   animation?: LauncherGuideAnimation;
@@ -66,38 +79,42 @@ interface TargetSnapshot {
 interface CardSize {
   width: number;
   height: number;
+  contentWidth: number;
+  previewHeight: number;
 }
 
 const GUIDE_MARGIN = 22;
 const GUIDE_GAP = 34;
 
-function getLauncherGuideSceneSize(scene: LauncherGuideScene) {
+function getLauncherGuideSceneSize(scene: LauncherGuideScene, source: HTMLElement) {
   switch (scene.kind) {
     case "dropdown":
       return {
         width: 320,
-        height: (scene.variant === "account" ? 100 : 76) + scene.options.length * 49 + 20,
+        height: 128 + scene.options.length * 49,
       };
     case "build-config":
       return { width: 560, height: 310 };
+    case "play":
+      return { width: 240, height: 56 };
     case "search":
-      return { width: 520, height: 160 };
+      return { width: 440, height: 160 };
+    case "choice":
+      return {
+        width: source.querySelector<HTMLElement>(".theme-switch")?.offsetWidth || 320,
+        height: 26,
+      };
+    case "catalog":
+      return { width: 480, height: 320 };
     case "slider":
-      return { width: 320, height: 94 };
+      return { width: 380, height: 122 };
     case "preference":
-      return { width: 320, height: scene.action === "expand" ? 132 : 94 };
+      return { width: 380, height: scene.action === "expand" ? 196 : 80 };
   }
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function getReplicaContentWidth(cardWidth: number) {
-  const gridCellSize = 16;
-  const gridAvailableWidth = Math.max(gridCellSize * 4, cardWidth - 42);
-  const gridWidth = Math.floor(gridAvailableWidth / gridCellSize) * gridCellSize;
-  return Math.max(gridCellSize * 3, gridWidth - 18);
 }
 
 function rectsMatch(a: RectSnapshot, b: RectSnapshot) {
@@ -268,12 +285,10 @@ function activateDemoNode(
   targetSelector?: string,
   resultSelector?: string,
   resultText?: string,
-  dragX = 80,
 ) {
   const demoNode = findDemoNode(clone, targetSelector);
   if (!demoNode) return;
   demoNode.classList.remove("launcher-guide-demo-press");
-  demoNode.classList.add("launcher-guide-demo-activated");
 
   if (action === "toggle") {
     const enabled = !demoNode.classList.contains("enabled");
@@ -306,20 +321,7 @@ function activateDemoNode(
     demoNode.classList.add("active");
   }
 
-  if (action === "drag") {
-    demoNode.style.setProperty("left", `calc(50% + ${dragX / 2}px)`, "important");
-    demoNode.style.setProperty("cursor", "grabbing", "important");
-    const fill = clone.querySelector<HTMLElement>(".es-fill");
-    fill?.style.setProperty("width", "68%", "important");
-  }
-
   if (action === "click") {
-    demoNode.style.setProperty("border-color", "var(--accent)", "important");
-    demoNode.style.setProperty(
-      "box-shadow",
-      "0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent)",
-      "important",
-    );
     const dropdown = demoNode.closest<HTMLElement>(".inline-dropdown");
     dropdown?.classList.add("open");
     dropdown
@@ -405,18 +407,34 @@ export function LauncherGuide({
 }: LauncherGuideProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [target, setTarget] = useState<TargetSnapshot | null>(null);
-  const [cardSize, setCardSize] = useState<CardSize>({ width: 380, height: 292 });
+  const [cardSize, setCardSize] = useState<CardSize>({
+    width: 380,
+    height: 292,
+    contentWidth: 338,
+    previewHeight: 280,
+  });
+  const [sceneMeasurement, setSceneMeasurement] = useState<GuideSceneMeasurement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const pointerRef = useRef<HTMLSpanElement | null>(null);
   const replicaRef = useRef<HTMLDivElement | null>(null);
   const targetSelectorRef = useRef<string | null>(null);
   const revealedStepRef = useRef<string | null>(null);
   const currentStep = steps[stepIndex] ?? null;
+  const onSceneHeightChange = useCallback(
+    (height: number) => {
+      if (!currentStep) return;
+      setSceneMeasurement((previous) => measureGuideScene(previous, currentStep.id, height));
+    },
+    [currentStep],
+  );
 
   useEffect(() => {
     if (!active) {
       setStepIndex(0);
       setTarget(null);
+      setSceneMeasurement(null);
       targetSelectorRef.current = null;
       revealedStepRef.current = null;
       onTargetChange?.(null);
@@ -507,7 +525,15 @@ export function LauncherGuide({
       frame = window.requestAnimationFrame(update);
     };
 
-    const mutationObserver = new MutationObserver(scheduleUpdate);
+    const mutationObserver = new MutationObserver((records) => {
+      if (
+        records.some(
+          (record) =>
+            !(record.target instanceof Element) || !record.target.closest(".launcher-guide-layer"),
+        )
+      )
+        scheduleUpdate();
+    });
     mutationObserver.observe(root, { subtree: true, childList: true, attributes: true });
     resizeObserver.observe(root);
     window.addEventListener("resize", scheduleUpdate);
@@ -523,16 +549,43 @@ export function LauncherGuide({
     };
   }, [active, containerRef, currentStep, onTargetChange]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const card = cardRef.current;
     if (!active || !card) return;
-    const observer = new ResizeObserver(() => {
-      const rect = card.getBoundingClientRect();
-      setCardSize({ width: rect.width, height: rect.height });
-    });
+    const measure = () => {
+      const style = window.getComputedStyle(card);
+      const contentWidth =
+        card.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const stageHeight = stageRef.current?.offsetHeight ?? 0;
+      const surroundingHeight = card.offsetHeight - stageHeight;
+      const rootHeight = containerRef.current?.clientHeight ?? window.innerHeight;
+      const next = {
+        width: card.offsetWidth,
+        height: card.offsetHeight,
+        contentWidth,
+        previewHeight: Math.max(50, rootHeight - GUIDE_MARGIN * 2 - surroundingHeight),
+      };
+      setCardSize((previous) =>
+        Object.keys(next).every(
+          (key) => previous[key as keyof CardSize] === next[key as keyof CardSize],
+        )
+          ? previous
+          : next,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(card);
+    if (containerRef.current) observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [active, currentStep?.id, target?.element]);
+  }, [
+    active,
+    containerRef,
+    currentStep?.id,
+    target?.element,
+    sceneMeasurement?.stepId,
+    sceneMeasurement?.viewportHeight,
+  ]);
 
   useEffect(() => {
     const holder = replicaRef.current;
@@ -546,77 +599,66 @@ export function LauncherGuide({
       currentStep.previewWidth,
     );
     const desiredZoom = currentStep?.zoom ?? 1.28;
-    const maxReplicaWidth = getReplicaContentWidth(cardSize.width);
-    const scale = Math.min(desiredZoom, maxReplicaWidth / Math.max(1, previewTarget.rect.width));
+    const { scale } = guidePreviewLayout({
+      contentWidth: cardSize.contentWidth,
+      availableHeight: cardSize.previewHeight,
+      previewWidth: previewTarget.rect.width,
+      previewHeight: previewTarget.rect.height,
+      zoom: desiredZoom,
+    });
     const clone = mountTargetReplica(holder, previewTarget, scale);
     const selector = currentStep?.previewValueSelector ?? "[data-guide-value]";
     const valueNode = clone.matches(selector) ? clone : clone.querySelector<HTMLElement>(selector);
-    const interactiveNode = valueNode?.closest<HTMLElement>(
-      "button, input, textarea, [role='button']",
-    );
-    const previewValue = currentStep?.previewValue;
+    const previewValue = currentStep.previewValue;
     const demoAction =
       currentStep.demoAction ?? (currentStep.animation === "typewriter" ? "type" : undefined);
-    const timers: number[] = [];
-
-    if (demoAction === "select") {
-      prepareSelectDemo(clone, currentStep.demoTargetSelector);
-    }
-
-    if (valueNode && previewValue !== undefined && demoAction === "type") {
-      setDemoNodeValue(valueNode, "");
-      timers.push(
-        window.setTimeout(() => {
-          clone.classList.add("launcher-guide-simulated-hover");
-          interactiveNode?.style.setProperty(
-            "border-bottom-color",
-            "var(--line-strong)",
-            "important",
-          );
-        }, 820),
-      );
-      timers.push(
-        window.setTimeout(() => {
-          valueNode.classList.add("launcher-guide-typing-value");
-        }, 1_020),
-      );
-      Array.from(previewValue).forEach((_, index) => {
-        timers.push(
-          window.setTimeout(
-            () => {
-              setDemoNodeValue(valueNode, previewValue.slice(0, index + 1));
-              valueNode.classList.add("launcher-guide-typing-value");
-            },
-            1_180 + index * 115,
-          ),
-        );
-      });
-    } else if (demoAction && demoAction !== "type") {
-      const demoNode = findDemoNode(clone, currentStep.demoTargetSelector);
-      timers.push(
-        window.setTimeout(() => demoNode?.classList.add("launcher-guide-demo-press"), 880),
-      );
-      timers.push(
-        window.setTimeout(
-          () =>
+    const actions: GuideAction[] = [{ kind: "wait", duration: 350 }];
+    const demoNode = findDemoNode(
+      clone,
+      currentStep.demoTargetSelector ?? (demoAction === "type" ? selector : undefined),
+    );
+    if (demoAction === "select") prepareSelectDemo(clone, currentStep.demoTargetSelector);
+    if (demoAction && demoNode) {
+      demoNode.dataset.guideDemoControl = "true";
+      const control = "[data-guide-demo-control]";
+      actions.push({ kind: "move", target: control, duration: 550 });
+      actions.push({
+        kind: "press",
+        target: control,
+        activate: () => {
+          if (demoAction !== "type")
             activateDemoNode(
               clone,
               demoAction,
               currentStep.demoTargetSelector,
               currentStep.demoResultSelector,
               currentStep.demoResultText,
-              currentStep.demoDragX,
-            ),
-          1_080,
-        ),
-      );
+            );
+        },
+      });
+      if (demoAction === "type" && valueNode && previewValue !== undefined) {
+        setDemoNodeValue(valueNode, "");
+        actions.push({
+          kind: "type",
+          target: control,
+          value: previewValue,
+          onChange: (value) => {
+            setDemoNodeValue(valueNode, value);
+            valueNode.classList.add("launcher-guide-typing-value");
+          },
+        });
+      }
     }
-
+    actions.push({ kind: "wait", duration: 1_300 });
+    const stop =
+      stageRef.current && pointerRef.current && demoAction
+        ? playGuideDemo(stageRef.current, pointerRef.current, actions)
+        : undefined;
     return () => {
-      timers.forEach((timer) => window.clearTimeout(timer));
+      stop?.();
       holder.replaceChildren();
     };
-  }, [active, cardSize.width, currentStep, target]);
+  }, [active, cardSize.contentWidth, cardSize.previewHeight, currentStep, target]);
 
   useEffect(() => {
     if (!active || !target || target.stepId !== currentStep?.id) return;
@@ -651,43 +693,32 @@ export function LauncherGuide({
   }
 
   const desiredZoom = currentStep.zoom ?? 1.28;
-  const sceneSize = currentStep.scene ? getLauncherGuideSceneSize(currentStep.scene) : null;
+  const sceneSize = currentStep.scene
+    ? getLauncherGuideSceneSize(currentStep.scene, target.element)
+    : null;
   const previewTarget = currentStep.scene
     ? target
     : resolvePreviewTarget(target, currentStep.previewTargetSelector, currentStep.previewWidth);
-  const maxReplicaWidth = getReplicaContentWidth(cardSize.width);
   const previewWidth = sceneSize?.width ?? previewTarget.rect.width;
-  const previewHeight = sceneSize?.height ?? previewTarget.rect.height;
-  const replicaScale = Math.min(
-    sceneSize ? 1 : desiredZoom,
-    maxReplicaWidth / Math.max(1, previewWidth),
-  );
-  const gridCellSize = 16;
-  const gridAvailableWidth = Math.max(gridCellSize * 4, cardSize.width - 42);
-  const gridAvailableHeight = Math.max(gridCellSize * 3, previewHeight * replicaScale + 18);
-  const gridWidth = Math.floor(gridAvailableWidth / gridCellSize) * gridCellSize;
-  const gridHeight =
-    Math.ceil(gridAvailableHeight / gridCellSize) * gridCellSize +
-    (currentStep.scene?.kind === "search" ? gridCellSize * 2 : 0);
-  const previewSelector = currentStep.previewValueSelector ?? "[data-guide-value]";
-  const pointerSelector = currentStep.demoTargetSelector ?? previewSelector;
-  const sourceValueNode = currentStep.scene
-    ? null
-    : previewTarget.element.matches(pointerSelector)
-      ? previewTarget.element
-      : previewTarget.element.querySelector<HTMLElement>(pointerSelector);
-  const sourceValueRect = sourceValueNode?.getBoundingClientRect();
-  const sourceTargetRect = previewTarget.element.getBoundingClientRect();
-  const pointerOffsetX =
-    ((sourceValueRect?.left ?? sourceTargetRect.left) -
-      sourceTargetRect.left +
-      (sourceValueRect?.width ?? sourceTargetRect.width) / 2) *
-    replicaScale;
-  const pointerOffsetY =
-    ((sourceValueRect?.top ?? sourceTargetRect.top) -
-      sourceTargetRect.top +
-      (sourceValueRect?.height ?? sourceTargetRect.height) / 2) *
-    replicaScale;
+  const previewHeight =
+    (currentStep.scene && sceneMeasurement?.stepId === currentStep.id
+      ? sceneMeasurement.viewportHeight
+      : sceneSize?.height) ?? previewTarget.rect.height;
+  const {
+    scale: replicaScale,
+    gridWidth,
+    gridHeight,
+    cell: gridCellSize,
+  } = guidePreviewLayout({
+    contentWidth: cardSize.contentWidth,
+    availableHeight: cardSize.previewHeight,
+    previewWidth,
+    previewHeight,
+    zoom:
+      currentStep.scene?.kind === "choice" || currentStep.scene?.kind === "play" || !sceneSize
+        ? desiredZoom
+        : 1,
+  });
   const spotlightPadding = currentStep.spotlightPadding ?? 8;
   const spotlightLeft = target.rect.left - spotlightPadding;
   const spotlightTop = target.rect.top - spotlightPadding;
@@ -782,6 +813,7 @@ export function LauncherGuide({
 
         {currentStep.showPreview ? (
           <div
+            ref={stageRef}
             className={`launcher-guide-replica-stage launcher-guide-replica-stage--${
               currentStep.animation ?? "typewriter"
             }${currentStep.scene ? ` launcher-guide-replica-stage--scene-${currentStep.scene.kind}` : ""}`}
@@ -790,12 +822,9 @@ export function LauncherGuide({
                 "--launcher-guide-replica-width": `${previewWidth * replicaScale}px`,
                 "--launcher-guide-replica-height": `${previewHeight * replicaScale}px`,
                 "--launcher-guide-replica-scale": replicaScale,
-                "--launcher-guide-demo-drag-x": `${(currentStep.demoDragX ?? 80) * replicaScale}px`,
                 "--launcher-guide-grid-cell": `${gridCellSize}px`,
                 "--launcher-guide-grid-width": `${gridWidth}px`,
                 "--launcher-guide-grid-height": `${gridHeight}px`,
-                "--launcher-guide-pointer-x": `calc(50% - var(--launcher-guide-replica-width) / 2 + ${pointerOffsetX}px)`,
-                "--launcher-guide-pointer-y": `calc(50% - var(--launcher-guide-replica-height) / 2 + ${pointerOffsetY}px)`,
               } as CSSProperties
             }
             aria-hidden="true"
@@ -807,41 +836,30 @@ export function LauncherGuide({
                 className="launcher-guide-scene-viewport"
                 style={{
                   width: sceneSize.width * replicaScale,
-                  height: sceneSize.height * replicaScale,
+                  height: previewHeight * replicaScale,
                 }}
               >
                 <div
                   className="launcher-guide-scene-scale-frame"
                   style={{
                     width: sceneSize.width,
-                    height: sceneSize.height,
+                    height: previewHeight,
                     transform: `scale(${replicaScale})`,
                   }}
                 >
-                  <LauncherGuideDemoScene key={currentStep.id} scene={currentStep.scene} />
+                  <LauncherGuideDemoScene
+                    key={currentStep.id}
+                    scene={currentStep.scene}
+                    sourceElement={target.element}
+                    onHeightChange={onSceneHeightChange}
+                  />
                 </div>
               </div>
             ) : (
               <div ref={replicaRef} className="launcher-guide-replica" />
             )}
             {!currentStep.scene && (currentStep.showPointer || currentStep.demoAction) ? (
-              <span
-                className={`launcher-guide-demo-pointer launcher-guide-demo-pointer--${
-                  currentStep.demoAction ?? "type"
-                }`}
-                aria-hidden="true"
-              >
-                <img
-                  className="launcher-guide-demo-pointer-arrow"
-                  src={windowsArrowCursorUrl}
-                  alt=""
-                />
-                <img
-                  className="launcher-guide-demo-pointer-ibeam"
-                  src={windowsIbeamCursorUrl}
-                  alt=""
-                />
-              </span>
+              <GuidePointer pointerRef={pointerRef} />
             ) : null}
           </div>
         ) : (

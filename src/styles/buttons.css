@@ -192,10 +192,7 @@
   min-width: 0;
 }
 
-/* Keep the main action a fixed size when swapping PLAY BUILD ↔ ■ STOP GAME.
-   Instead of guessing a min-width, an invisible sizer always reserves the width
-   of the longest label (■ STOP GAME), so the button never resizes — regardless
-   of how wide the ✕ glyph renders. */
+/* Reserve both labels so launching and stopping never resize the button. */
 .instance-actions-build > .primary-action {
   flex: 0 0 auto;
 }

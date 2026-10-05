@@ -1,10 +1,11 @@
-import type { ChangeEventHandler, Ref } from "react";
+import type { ChangeEventHandler, MouseEventHandler, Ref } from "react";
 
 interface CatalogSearchFieldProps {
   label: string;
   placeholder: string;
   value: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
+  onClick?: MouseEventHandler<HTMLInputElement>;
   inputRef?: Ref<HTMLInputElement>;
   className?: string;
 }
@@ -14,6 +15,7 @@ export function CatalogSearchField({
   placeholder,
   value,
   onChange,
+  onClick,
   inputRef,
   className = "",
 }: CatalogSearchFieldProps) {
@@ -25,6 +27,7 @@ export function CatalogSearchField({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        onClick={onClick}
         spellCheck={false}
       />
     </label>
