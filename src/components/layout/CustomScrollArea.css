@@ -2,6 +2,10 @@
   display: none;
 }
 
+.csa-horizontal {
+  padding-bottom: 22px;
+}
+
 .csa-track {
   user-select: none;
 }
