@@ -6,8 +6,14 @@ use crate::{
 
 #[tauri::command]
 pub async fn get_minecraft_manifest() -> Result<MinecraftManifest, String> {
+    read_settings().await?;
     let client = mirrors::build_client()?;
     fetch_manifest_network(&client).await
+}
+
+#[tauri::command]
+pub async fn get_cached_minecraft_manifest() -> Result<Option<MinecraftManifest>, String> {
+    crate::minecraft::read_cached_manifest().await
 }
 
 #[tauri::command]

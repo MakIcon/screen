@@ -1,11 +1,16 @@
 use std::{
     env,
+    ops::{Deref, DerefMut},
     path::PathBuf,
+    sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use sysinfo::System;
-use tokio::fs;
+use tokio::{
+    fs,
+    sync::{Mutex, OwnedMutexGuard},
+};
 
 use crate::models::{InstanceItem, LauncherSettings};
 
@@ -111,13 +116,6 @@ pub async fn ensure_layout() -> Result<(), String> {
         }
     }
 
-    let index = instances_index_path()?;
-    if !index.exists() {
-        fs::write(index, "[]")
-            .await
-            .map_err(|e| format!("create instances index error: {e}"))?;
-    }
-
     Ok(())
 }
 
@@ -177,22 +175,65 @@ pub async fn write_settings(settings: &LauncherSettings) -> Result<(), String> {
 }
 
 pub async fn read_instances() -> Result<Vec<InstanceItem>, String> {
-    ensure_layout().await?;
-    let raw = fs::read_to_string(instances_index_path()?)
-        .await
-        .map_err(|e| format!("read instances error: {e}"))?;
-
-    serde_json::from_str(&raw).map_err(|e| format!("parse instances error: {e}"))
+    Ok(edit_instances().await?.to_vec())
 }
 
-pub async fn write_instances(items: &[InstanceItem]) -> Result<(), String> {
-    ensure_layout().await?;
-    let raw = serde_json::to_string_pretty(items)
-        .map_err(|e| format!("serialize instances error: {e}"))?;
-    atomic_write_path(&instances_index_path()?, raw.as_bytes()).await
+/// Holds the index lock from reading through committing, including directory changes.
+/// An atomic rename alone cannot protect read-modify-write operations from lost updates.
+pub struct InstanceIndex {
+    items: Vec<InstanceItem>,
+    path: PathBuf,
+    _guard: OwnedMutexGuard<()>,
 }
 
-async fn atomic_write_path(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+impl InstanceIndex {
+    async fn open(path: PathBuf, lock: Arc<Mutex<()>>) -> Result<Self, String> {
+        let guard = lock.lock_owned().await;
+        let items = match fs::read(&path).await {
+            Ok(raw) => {
+                serde_json::from_slice(&raw).map_err(|e| format!("parse instances error: {e}"))?
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(format!("read instances error: {error}")),
+        };
+        Ok(Self {
+            items,
+            path,
+            _guard: guard,
+        })
+    }
+
+    pub async fn commit(&self) -> Result<(), String> {
+        let raw = serde_json::to_vec_pretty(&self.items)
+            .map_err(|e| format!("serialize instances error: {e}"))?;
+        atomic_write_path(&self.path, &raw).await
+    }
+}
+
+impl Deref for InstanceIndex {
+    type Target = Vec<InstanceItem>;
+    fn deref(&self) -> &Self::Target {
+        &self.items
+    }
+}
+
+impl DerefMut for InstanceIndex {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.items
+    }
+}
+
+pub async fn edit_instances() -> Result<InstanceIndex, String> {
+    static INDEX_LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
+    ensure_layout().await?;
+    InstanceIndex::open(
+        instances_index_path()?,
+        INDEX_LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone(),
+    )
+    .await
+}
+
+pub(crate) async fn atomic_write_path(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     let temp = path.with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4()));
     fs::write(&temp, bytes)
         .await
@@ -281,6 +322,62 @@ mod name_tests {
         tokio::fs::write(&path, b"old").await.unwrap();
         atomic_write_path(&path, b"new").await.unwrap();
         assert_eq!(tokio::fs::read(&path).await.unwrap(), b"new");
+        tokio::fs::remove_file(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn serializes_concurrent_index_changes_without_losing_updates() {
+        use super::{Arc, InstanceIndex, Mutex};
+        let path =
+            std::env::temp_dir().join(format!("screen-index-race-{}.json", uuid::Uuid::new_v4()));
+        let lock = Arc::new(Mutex::new(()));
+        let item: crate::models::InstanceItem = serde_json::from_value(serde_json::json!({
+            "id": "test", "name": "BUILD", "version": "1.21", "loader": "Vanilla",
+            "status": "EMPTY", "ram": 4, "lastPlayed": "NEVER", "createdAt": "0", "gameDir": "unused"
+        })).unwrap();
+        let mut first = InstanceIndex::open(path.clone(), lock.clone())
+            .await
+            .unwrap();
+        first.push(item);
+        first.commit().await.unwrap();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn({
+            let path = path.clone();
+            let lock = lock.clone();
+            async move {
+                started.send(()).unwrap();
+                let mut second = InstanceIndex::open(path, lock).await.unwrap();
+                second[0].status = "READY".into();
+                second.commit().await.unwrap();
+            }
+        });
+        waiting.await.unwrap();
+        first[0].ram = 12;
+        first.commit().await.unwrap();
+        drop(first);
+        task.await.unwrap();
+        let result = InstanceIndex::open(path.clone(), lock.clone())
+            .await
+            .unwrap();
+        assert_eq!(result[0].ram, 12);
+        assert_eq!(result[0].status, "READY");
+        drop(result);
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..30 {
+            let path = path.clone();
+            let lock = lock.clone();
+            tasks.spawn(async move {
+                let mut items = InstanceIndex::open(path, lock).await.unwrap();
+                items[0].playtime_secs += 1;
+                items.commit().await.unwrap();
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            result.unwrap();
+        }
+        let result = InstanceIndex::open(path.clone(), lock).await.unwrap();
+        assert_eq!(result[0].playtime_secs, 30);
+        drop(result);
         tokio::fs::remove_file(path).await.unwrap();
     }
 }

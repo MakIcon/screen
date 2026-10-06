@@ -29,6 +29,7 @@ pub fn run() {
             commands::auth::set_minecraft_cape,
             commands::auth::hide_minecraft_cape,
             commands::system::get_minecraft_manifest,
+            commands::system::get_cached_minecraft_manifest,
             commands::system::get_loader_versions,
             commands::instances::list_instances,
             commands::instances::create_instance,

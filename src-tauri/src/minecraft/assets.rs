@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    downloader::download_many,
+    downloader::{download_many, DownloadTask},
     version::{
         classifier_for_windows, evaluate_rules, library_path_from_download,
         resolve_library_classifier_download,
@@ -24,9 +24,8 @@ use super::{
 
 fn clear_directory(path: &Path) -> Result<(), String> {
     if path.exists() {
-        if let Err(e) = std::fs::remove_dir_all(path) {
-            println!("Предупреждение: не удалось полностью очистить папку: {}", e);
-        }
+        std::fs::remove_dir_all(path)
+            .map_err(|e| format!("clear natives directory {} error: {e}", path.display()))?;
     }
     std::fs::create_dir_all(path).map_err(|e| format!("create dir error: {e}"))
 }
@@ -43,7 +42,6 @@ pub async fn extract_natives(
     resolved: &VersionMeta,
     natives_dir: &Path,
 ) -> Result<(), String> {
-    let _ = clear_directory(natives_dir);
     let mut tasks = Vec::new();
     let mut native_archives: Vec<(PathBuf, Vec<String>)> = Vec::new();
 
@@ -60,13 +58,13 @@ pub async fn extract_natives(
         };
 
         let archive_path = library_path_from_download(&classifier_download)?;
-        if !archive_path.exists() {
-            tasks.push((
-                classifier_download.url.clone(),
-                archive_path.clone(),
-                format!("Native {}", library.name),
-            ));
-        }
+        tasks.push(DownloadTask::new(
+            classifier_download.url.clone(),
+            archive_path.clone(),
+            format!("Native {}", library.name),
+            classifier_download.sha1.clone(),
+            classifier_download.size,
+        ));
         let excludes = library
             .extract
             .as_ref()
@@ -82,9 +80,31 @@ pub async fn extract_natives(
         native_archives.len().max(1),
     );
 
+    let natives_dir = natives_dir.to_owned();
+    tokio::task::spawn_blocking(move || {
+        extract_native_archives(&natives_dir, &native_archives, |archive_path| {
+            reporter.step(format!(
+                "Processed {}",
+                archive_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            ));
+        })
+    })
+    .await
+    .map_err(|e| format!("natives extraction task error: {e}"))?
+}
+
+fn extract_native_archives(
+    natives_dir: &Path,
+    native_archives: &[(PathBuf, Vec<String>)],
+    mut on_archive: impl FnMut(&Path),
+) -> Result<(), String> {
+    clear_directory(natives_dir)?;
     for (archive_path, excludes) in native_archives {
         let file =
-            File::open(&archive_path).map_err(|e| format!("open natives archive error: {e}"))?;
+            File::open(archive_path).map_err(|e| format!("open natives archive error: {e}"))?;
         let mut zip = ZipArchive::new(file).map_err(|e| format!("zip open error: {e}"))?;
 
         for i in 0..zip.len() {
@@ -96,33 +116,27 @@ pub async fn extract_natives(
                 None => continue,
             };
             let entry_name = enclosed.to_string_lossy().replace('\\', "/");
-            if should_skip_native_entry(&entry_name, &excludes) {
+            if should_skip_native_entry(&entry_name, excludes) {
                 continue;
             }
             let out_path = natives_dir.join(&enclosed);
             if entry.is_dir() {
-                let _ = std::fs::create_dir_all(&out_path);
+                std::fs::create_dir_all(&out_path).map_err(|e| {
+                    format!("create natives directory {} error: {e}", out_path.display())
+                })?;
                 continue;
             }
             if let Some(parent) = out_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!("create natives directory {} error: {e}", parent.display())
+                })?;
             }
-            match File::create(&out_path) {
-                Ok(mut out_file) => {
-                    let _ = io::copy(&mut entry, &mut out_file);
-                }
-                Err(_) => {
-                    println!("Пропущен заблокированный натив: {:?}", out_path);
-                }
-            }
+            let mut out_file = File::create(&out_path)
+                .map_err(|e| format!("create native {} error: {e}", out_path.display()))?;
+            io::copy(&mut entry, &mut out_file)
+                .map_err(|e| format!("extract native {} error: {e}", out_path.display()))?;
         }
-        reporter.step(format!(
-            "Processed {}",
-            archive_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-        ));
+        on_archive(archive_path);
     }
     Ok(())
 }
@@ -138,15 +152,13 @@ pub async fn download_asset_index(
     let path = assets_root()?
         .join("indexes")
         .join(format!("{}.json", index.id));
-    let tasks = if path.exists() {
-        Vec::new()
-    } else {
-        vec![(
-            index.url.clone(),
-            path.clone(),
-            format!("Asset index {}", index.id),
-        )]
-    };
+    let tasks = vec![DownloadTask::new(
+        index.url.clone(),
+        path.clone(),
+        format!("Asset index {}", index.id),
+        index.sha1.clone(),
+        index.size,
+    )];
     download_many(app, "asset-index", tasks).await?;
     let raw = fs::read_to_string(&path)
         .await
@@ -170,8 +182,8 @@ pub async fn download_assets(
     let mut tasks = Vec::new();
 
     for (logical_path, object) in &asset_index.objects {
-        if object.hash.len() < 2 {
-            continue;
+        if object.hash.len() != 40 || !object.hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(format!("Invalid SHA-1 for asset {logical_path}"));
         }
         let prefix = &object.hash[0..2];
         let object_path = assets.join("objects").join(prefix).join(&object.hash);
@@ -179,12 +191,21 @@ pub async fn download_assets(
             "https://resources.download.minecraft.net/{prefix}/{}",
             object.hash
         );
-        if !object_path.exists() {
-            tasks.push((url, object_path.clone(), format!("Asset {logical_path}")));
-        }
+        tasks.push(DownloadTask::new(
+            url,
+            object_path,
+            format!("Asset {logical_path}"),
+            Some(object.hash.clone()),
+            Some(object.size),
+        ));
     }
 
     download_many(app, "assets", tasks).await?;
+    if !make_virtual && !map_to_resources {
+        ProgressReporter::new(app.clone(), "assets-copy", 1)
+            .step("Assets ready; no copies required");
+        return Ok(());
+    }
     let reporter = ProgressReporter::new(
         app.clone(),
         "assets-copy".to_string(),
@@ -256,11 +277,86 @@ pub async fn download_logging_config(
         })
         .unwrap_or_else(|| "client-logging.xml".to_string());
     let path = launcher_root()?.join("log_configs").join(filename);
-    let tasks = if path.exists() {
-        Vec::new()
-    } else {
-        vec![(file.url.clone(), path.clone(), "Logging config".to_string())]
-    };
+    let tasks = vec![DownloadTask::new(
+        file.url.clone(),
+        path.clone(),
+        "Logging config",
+        file.sha1.clone(),
+        file.size,
+    )];
     download_many(app, "logging", tasks).await?;
     Ok(Some(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let root =
+                std::env::temp_dir().join(format!("screen-natives-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+        fn archive(&self, files: &[(&str, &[u8])]) -> PathBuf {
+            let path = self.0.join("natives.jar");
+            let mut zip = ZipWriter::new(File::create(&path).unwrap());
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            for (name, content) in files {
+                zip.start_file(*name, options).unwrap();
+                zip.write_all(content).unwrap();
+            }
+            zip.finish().unwrap();
+            path
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn extracts_nested_natives_and_honours_exclusions() {
+        let fixture = Fixture::new();
+        let archive = fixture.archive(&[
+            ("META-INF/signature", b"skip"),
+            ("skip/native.dll", b"skip"),
+            ("nested/native.dll", b"dll"),
+        ]);
+        let out = fixture.0.join("out");
+        extract_native_archives(&out, &[(archive, vec!["skip/".into()])], |_| {}).unwrap();
+        assert_eq!(
+            std::fs::read(out.join("nested/native.dll")).unwrap(),
+            b"dll"
+        );
+        assert!(!out.join("skip").exists());
+        assert!(!out.join("META-INF").exists());
+    }
+
+    #[test]
+    fn returns_directory_and_corrupt_payload_errors_instead_of_reporting_success() {
+        let fixture = Fixture::new();
+        let archive = fixture.archive(&[
+            ("native.dll", b"payload contents"),
+            ("native.dll/child", b"blocked"),
+        ]);
+        let out = fixture.0.join("out");
+        assert!(extract_native_archives(&out, &[(archive, vec![])], |_| {}).is_err());
+        let archive = fixture.archive(&[("native.dll", b"payload contents")]);
+        let mut bytes = std::fs::read(&archive).unwrap();
+        let position = bytes
+            .windows(b"payload contents".len())
+            .position(|value| value == b"payload contents")
+            .unwrap();
+        bytes[position] ^= 1;
+        std::fs::write(&archive, bytes).unwrap();
+        let error = extract_native_archives(&out, &[(archive, vec![])], |_| {}).unwrap_err();
+        assert!(error.contains("extract native"), "{error}");
+    }
 }

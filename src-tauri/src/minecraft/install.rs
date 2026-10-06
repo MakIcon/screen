@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use crate::{
     minecraft::{ensure_loader_profile, mirrors},
     models::{InstallProgressPayload, InstanceItem},
-    paths::{ensure_layout, read_instances, write_instances},
+    paths::{edit_instances, ensure_layout},
 };
 
 use super::{
@@ -31,10 +31,12 @@ async fn download_client_jar(
     super::downloader::download_many(
         app,
         "client",
-        vec![(
+        vec![super::downloader::DownloadTask::new(
             download.url.clone(),
             path.clone(),
             format!("Client jar {minecraft_version_id}"),
+            download.sha1.clone(),
+            download.size,
         )],
     )
     .await?;
@@ -96,11 +98,11 @@ pub async fn install_instance_files(
 }
 
 pub async fn update_instance_status(id: &str, status: &str) -> Result<(), String> {
-    let mut items = read_instances().await?;
-    for item in &mut items {
+    let mut items = edit_instances().await?;
+    for item in items.iter_mut() {
         if item.id == id {
             item.status = status.to_string();
         }
     }
-    write_instances(&items).await
+    items.commit().await
 }

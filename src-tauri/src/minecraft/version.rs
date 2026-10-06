@@ -10,7 +10,23 @@ use crate::{
     paths::{ensure_layout, libraries_root, versions_root},
 };
 
-use super::{downloader::download_to_path, manifest::fetch_manifest_network};
+use super::{
+    downloader::download_to_path,
+    manifest::{fetch_manifest_network, read_cached_manifest},
+};
+
+async fn read_version_cache(
+    path: &std::path::Path,
+    version_id: &str,
+) -> Result<Option<VersionMeta>, String> {
+    match tokio::fs::read(path).await {
+        Ok(raw) => Ok(serde_json::from_slice::<VersionMeta>(&raw)
+            .ok()
+            .filter(|meta| meta.id == version_id)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("read version json error: {error}")),
+    }
+}
 
 async fn load_or_fetch_version_json(
     client: &Client,
@@ -21,16 +37,44 @@ async fn load_or_fetch_version_json(
         .join(version_id)
         .join(format!("{version_id}.json"));
 
-    if !json_path.exists() {
+    let cached = read_version_cache(&json_path, version_id).await?;
+    let known_version = read_cached_manifest()
+        .await
+        .ok()
+        .flatten()
+        .and_then(|manifest| {
+            manifest
+                .versions
+                .into_iter()
+                .find(|version| version.id == version_id)
+        });
+    // Locally generated loader profiles have no official hash. Keep valid profiles usable offline.
+    if known_version
+        .as_ref()
+        .is_none_or(|version| version.sha1.is_none())
+    {
+        if let Some(meta) = cached {
+            return Ok(meta);
+        }
+    }
+    let found: ManifestVersion = if let Some(version) = known_version {
+        version
+    } else {
         let manifest: MinecraftManifest = fetch_manifest_network(client).await?;
-        let found: ManifestVersion = manifest
+        manifest
             .versions
             .into_iter()
             .find(|v| v.id == version_id)
-            .ok_or_else(|| format!("version not found in manifest: {version_id}"))?;
-
-        download_to_path(client, &found.url, &json_path).await?;
+            .ok_or_else(|| format!("version not found in manifest: {version_id}"))?
+    };
+    if found.sha1.is_none() {
+        match tokio::fs::remove_file(&json_path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("remove invalid version cache error: {error}")),
+        }
     }
+    download_to_path(client, &found.url, &json_path, found.sha1.as_deref(), None).await?;
 
     let raw = tokio::fs::read_to_string(&json_path)
         .await
@@ -341,4 +385,23 @@ pub fn library_path_from_download(download: &DownloadInfo) -> Result<PathBuf, St
         .as_ref()
         .ok_or_else(|| "library download path missing".to_string())?;
     Ok(libraries_root()?.join(rel))
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    #[tokio::test]
+    async fn invalid_or_mismatched_version_json_is_not_reused() {
+        let path =
+            std::env::temp_dir().join(format!("screen-version-{}.json", uuid::Uuid::new_v4()));
+        assert!(read_version_cache(&path, "1.21.1").await.unwrap().is_none());
+        tokio::fs::write(&path, b"partial json").await.unwrap();
+        assert!(read_version_cache(&path, "1.21.1").await.unwrap().is_none());
+        tokio::fs::write(&path, br#"{"id":"1.21.1"}"#)
+            .await
+            .unwrap();
+        assert!(read_version_cache(&path, "1.21.1").await.unwrap().is_some());
+        assert!(read_version_cache(&path, "1.21.4").await.unwrap().is_none());
+        tokio::fs::remove_file(path).await.unwrap();
+    }
 }

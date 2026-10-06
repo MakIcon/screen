@@ -2,6 +2,10 @@
 
 Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
 
+Local builds, settings and accounts load independently of the Minecraft version service. The launcher displays a cached version manifest before refreshing it in the background, so a network failure does not hide installed builds.
+
+Minecraft downloads stream into temporary files and verify the available size and SHA-1 metadata before replacing cached files. Existing files are verified on first use; unchanged files reuse the verification result for the current launcher session. Downloads use a bounded queue and stop all remaining workers when one fails. Build-index edits are serialized from reading through committing, and installation progress is throttled to 150 ms while always reporting phase changes and completion.
+
 Installing a mod from Modrinth automatically installs its required dependencies, including nested dependencies and exact versions specified by the author. Compatible tracked dependencies are reused and disabled required mods are enabled. Optional and embedded dependencies are not downloaded. Dependency resolution and downloads must succeed before the mod files are installed; missing or conflicting requirements are reported as installation errors.
 
 The mod details window previews required dependencies for the selected build before installation, showing each dependency's version and whether it will be downloaded, reused or enabled.
@@ -28,6 +32,8 @@ Requirements: Node.js, pnpm, the Rust toolchain and the platform prerequisites f
 pnpm install
 pnpm tauri dev
 ```
+
+The PaintShot application icon is maintained in `public/paintshot.svg`. After editing it, run `pnpm icons` to regenerate desktop PNGs, the Windows ICO, the macOS ICNS, mobile assets and web icons. Tauri uses these assets for the executable, windows, Alt+Tab and taskbar. Restart the native application after rebuilding to see an updated icon.
 
 Useful checks:
 

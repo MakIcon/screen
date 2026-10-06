@@ -25,7 +25,7 @@ semver = "1"
 discord-rich-presence = "1.1"
 
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "multipart", "native-tls", "socks"] }
-tokio = { version = "1", features = ["fs", "sync", "macros", "rt-multi-thread", "time", "process"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "macros", "rt-multi-thread", "time", "process"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zip = { version = "8.2.0", default-features = false, features = ["deflate"] }
 md5 = "0.8.0"

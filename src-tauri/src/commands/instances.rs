@@ -15,8 +15,8 @@ use crate::{
         ImportInstanceResult, InstanceExportData, InstanceItem, UpdateInstancePayload,
     },
     paths::{
-        instances_root, launcher_root, make_instance_dir_name, now_string, read_instances,
-        sanitize_name, unique_instance_dir, write_instances,
+        edit_instances, instances_root, launcher_root, make_instance_dir_name, now_string,
+        read_instances, sanitize_name, unique_instance_dir,
     },
 };
 
@@ -46,7 +46,7 @@ pub(crate) fn is_trashed(instance: &InstanceItem) -> bool {
 
 #[tauri::command]
 pub async fn delete_instance(instance_id: String) -> Result<(), String> {
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let Some(index) = items.iter().position(|i| i.id == instance_id) else {
         return Err("Instance not found".into());
     };
@@ -54,7 +54,7 @@ pub async fn delete_instance(instance_id: String) -> Result<(), String> {
         return Err("Build is already in the trash".into());
     }
     items[index].status = format!("{TRASH_PREFIX}{}", items[index].status);
-    write_instances(&items).await
+    items.commit().await
 }
 
 #[tauri::command]
@@ -77,7 +77,7 @@ pub async fn list_deleted_instances() -> Result<Vec<InstanceItem>, String> {
 
 #[tauri::command]
 pub async fn restore_instance(instance_id: String) -> Result<InstanceItem, String> {
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let index = items
         .iter()
         .position(|item| item.id == instance_id && is_trashed(item))
@@ -98,13 +98,13 @@ pub async fn restore_instance(instance_id: String) -> Result<InstanceItem, Strin
         .unwrap_or("EMPTY")
         .to_string();
     let restored = items[index].clone();
-    write_instances(&items).await?;
+    items.commit().await?;
     Ok(restored)
 }
 
 #[tauri::command]
 pub async fn purge_deleted_instance(instance_id: String) -> Result<(), String> {
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let index = items
         .iter()
         .position(|item| item.id == instance_id && is_trashed(item))
@@ -154,13 +154,13 @@ pub async fn purge_deleted_instance(instance_id: String) -> Result<(), String> {
             .map_err(|e| format!("delete world backups error: {e}"))?;
     }
     items.remove(index);
-    write_instances(&items).await
+    items.commit().await
 }
 
 #[tauri::command]
 pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceItem, String> {
     let environment_variables = normalize_environment_variables(payload.environment_variables)?;
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
     if clean_name.is_empty() {
@@ -215,7 +215,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
         .map_err(|e| format!("write instance meta error: {e}"))?;
 
     items.push(item.clone());
-    write_instances(&items).await?;
+    items.commit().await?;
 
     Ok(item)
 }
@@ -223,7 +223,7 @@ pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceI
 #[tauri::command]
 pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceItem, String> {
     let environment_variables = normalize_environment_variables(payload.environment_variables)?;
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
     if clean_name.is_empty() {
@@ -292,7 +292,7 @@ pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceI
     };
 
     items[index] = updated_item.clone();
-    write_instances(&items).await?;
+    items.commit().await?;
 
     let meta_path = final_instance_dir.join("instance.json");
     let raw = serde_json::to_string_pretty(&updated_item)
@@ -595,7 +595,7 @@ pub(crate) async fn create_imported_instance(
     payload: ImportInstancePayload,
 ) -> Result<InstanceItem, String> {
     let environment_variables = normalize_environment_variables(payload.environment_variables)?;
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
     if clean_name.is_empty() {
@@ -650,7 +650,7 @@ pub(crate) async fn create_imported_instance(
         .map_err(|e| format!("write instance meta error: {e}"))?;
 
     items.push(item.clone());
-    write_instances(&items).await?;
+    items.commit().await?;
 
     Ok(item)
 }

@@ -21,7 +21,7 @@ use crate::{
         ActionResult, LaunchLogSnapshot, PlaytimeLog, PlaytimeSession, ScreenshotImage,
         ScreenshotItem,
     },
-    paths::{read_instances, read_settings, write_instances},
+    paths::{edit_instances, read_instances, read_settings},
     plugins::obs_telemetry::{prepare_obs_telemetry_for_launch, ObsTelemetryState},
 };
 
@@ -293,10 +293,10 @@ pub fn is_process_alive(pid: u32) -> bool {
 
 #[tauri::command]
 pub async fn record_playtime(instance_id: String, elapsed_secs: u64) -> Result<(), String> {
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     if let Some(index) = items.iter().position(|i| i.id == instance_id) {
         items[index].playtime_secs = items[index].playtime_secs.saturating_add(elapsed_secs);
-        write_instances(&items).await?;
+        items.commit().await?;
     }
     if elapsed_secs > 0 {
         append_playtime_session(&instance_id, elapsed_secs).await?;

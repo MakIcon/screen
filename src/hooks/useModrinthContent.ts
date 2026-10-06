@@ -11,6 +11,7 @@ import type {
   TabKey,
 } from "../types";
 import { toErrorMessage } from "../utils/errors";
+import { RequestGeneration } from "../utils/requestGeneration";
 import type { PushToast } from "./useToasts";
 
 export type ModrinthContentKind = "mods" | "resourcepacks" | "shaders";
@@ -126,6 +127,19 @@ export function useModrinthContent({
   const [installedLoading, setInstalledLoading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<ModDownloadProgressPayload | null>(null);
   const clearBusyTimer = useRef<number | null>(null);
+  const searchRequests = useRef(new RequestGeneration());
+  const installedRequests = useRef(new RequestGeneration());
+  const loadMoreInFlight = useRef<(() => boolean) | null>(null);
+  const targetKey = JSON.stringify([
+    kind,
+    target?.id,
+    target?.version,
+    target?.loader,
+    target?.loaderVersion,
+  ]);
+  const searchKey = JSON.stringify([targetKey, activeTab, search.trim()]);
+  const contextRef = useRef({ targetKey, searchKey });
+  contextRef.current = { targetKey, searchKey };
 
   const buildSearchArguments = (offset: number, limit: number) => ({
     instanceId: target?.id,
@@ -144,13 +158,30 @@ export function useModrinthContent({
   };
 
   const refreshContent = async () => {
-    const [searchResult, installedResult] = await Promise.all([
-      fetchSearchPage(0, Math.max(items.length, PAGE_SIZE)),
+    if (contextRef.current.targetKey !== targetKey) return;
+    const refreshSearch = contextRef.current.searchKey === searchKey;
+    const searchCurrent = refreshSearch ? searchRequests.current.begin() : () => false;
+    const installedCurrent = installedRequests.current.begin();
+    if (refreshSearch) {
+      setLoading(true);
+      setLoadingMore(false);
+    }
+    const [searchResult, installedResult] = await Promise.allSettled([
+      refreshSearch ? fetchSearchPage(0, Math.max(items.length, PAGE_SIZE)) : Promise.resolve(null),
       fetchInstalled(),
     ]);
-    setItems(searchResult.hits);
-    setTotalHits(searchResult.totalHits);
-    setInstalledItems(installedResult);
+    if (searchCurrent() && contextRef.current.searchKey === searchKey) {
+      if (searchResult.status === "fulfilled" && searchResult.value) {
+        setItems(searchResult.value.hits);
+        setTotalHits(searchResult.value.totalHits);
+      } else if (searchResult.status === "rejected") setError(toErrorMessage(searchResult.reason));
+      setLoading(false);
+    }
+    if (installedCurrent() && contextRef.current.targetKey === targetKey) {
+      if (installedResult.status === "fulfilled") setInstalledItems(installedResult.value);
+      else setError(toErrorMessage(installedResult.reason));
+      setInstalledLoading(false);
+    }
   };
 
   const scheduleBusyMessageClear = () => {
@@ -173,6 +204,7 @@ export function useModrinthContent({
 
   useEffect(() => {
     if (kind !== "mods") return;
+    setDownloadProgress(null);
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<ModDownloadProgressPayload>("mod-download-progress", (event) => {
@@ -191,86 +223,97 @@ export function useModrinthContent({
   }, [kind, target?.id]);
 
   useEffect(() => {
-    let cancelled = false;
+    const requests = installedRequests.current;
+    const current = requests.begin();
+    const isCurrent = () => current() && contextRef.current.targetKey === targetKey;
+    setInstalledItems([]);
 
     if (!target) {
-      setInstalledItems([]);
+      setInstalledLoading(false);
       return;
     }
 
     setInstalledLoading(true);
     void invoke<InstalledModView[]>(commands.list, { instanceId: target.id })
       .then((result) => {
-        if (!cancelled) setInstalledItems(result);
+        if (isCurrent()) setInstalledItems(result);
       })
       .catch((caught) => {
-        if (!cancelled) {
+        if (isCurrent()) {
           setInstalledItems([]);
           setError(toErrorMessage(caught));
         }
       })
       .finally(() => {
-        if (!cancelled) setInstalledLoading(false);
+        if (isCurrent()) setInstalledLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      requests.invalidate();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload installed items only when the target id changes, not on object identity
-  }, [commands.list, target?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- targetKey covers the target identity and compatibility fields
+  }, [commands.list, targetKey]);
 
   useEffect(() => {
+    const requests = searchRequests.current;
+    const current = requests.begin();
+    const isCurrent = () => current() && contextRef.current.searchKey === searchKey;
+    setLoading(false);
+    setLoadingMore(false);
+    setItems([]);
+    setTotalHits(0);
     if (activeTab !== commands.tab || !target || (commands.includeGameVersion && !target.version)) {
-      if (!target) {
-        setItems([]);
-        setTotalHits(0);
-      }
       return;
     }
 
-    let cancelled = false;
+    setLoading(true);
     const timer = window.setTimeout(() => {
-      setLoading(true);
       setError("");
       void invoke<ModrinthSearchResponse>(commands.search, buildSearchArguments(0, PAGE_SIZE))
         .then((result) => {
-          if (cancelled) return;
+          if (!isCurrent()) return;
           setItems(result.hits);
           setTotalHits(result.totalHits);
         })
         .catch((caught) => {
-          if (cancelled) return;
+          if (!isCurrent()) return;
           setItems([]);
           setTotalHits(0);
           setError(toErrorMessage(caught));
         })
         .finally(() => {
-          if (!cancelled) setLoading(false);
+          if (isCurrent()) setLoading(false);
         });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
+      requests.invalidate();
       window.clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- id/version are the real search triggers; args are rebuilt inside
-  }, [activeTab, commands, search, target?.id, target?.version]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- searchKey includes tab, query and target compatibility; args are rebuilt inside
+  }, [commands, searchKey]);
 
   const loadMore = async () => {
     if (!target || loadingMore || loading || items.length >= totalHits) return;
+    if (loadMoreInFlight.current?.()) return;
+    const current = searchRequests.current.capture();
+    const isCurrent = () => current() && contextRef.current.searchKey === searchKey;
+    loadMoreInFlight.current = isCurrent;
 
     try {
       setLoadingMore(true);
       const result = await fetchSearchPage(items.length, PAGE_SIZE);
+      if (!isCurrent()) return;
       setItems((current) => {
         const existingIds = new Set(current.map((item) => item.projectId));
         return [...current, ...result.hits.filter((item) => !existingIds.has(item.projectId))];
       });
       setTotalHits(result.totalHits);
     } catch (caught) {
-      setError(toErrorMessage(caught));
+      if (isCurrent()) setError(toErrorMessage(caught));
     } finally {
-      setLoadingMore(false);
+      if (loadMoreInFlight.current === isCurrent) loadMoreInFlight.current = null;
+      if (isCurrent()) setLoadingMore(false);
     }
   };
 
@@ -352,7 +395,7 @@ export function useModrinthContent({
   };
 
   const uninstall = async (projectId: string) => {
-    if (!target) return;
+    if (!target || busyProjectId) return;
     const installedEntry = installedItems.find((item) => item.projectId === projectId);
     if (!installedEntry) return;
 

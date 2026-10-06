@@ -19,8 +19,8 @@ use crate::{
         MicrosoftAccount, MinecraftExitPayload, VersionMeta,
     },
     paths::{
-        assets_root, clamp_ram_to_system, libraries_root, offline_uuid, read_instances,
-        versions_root, write_instances,
+        assets_root, clamp_ram_to_system, edit_instances, libraries_root, offline_uuid,
+        versions_root,
     },
 };
 
@@ -63,13 +63,13 @@ pub async fn download_libraries(
         if let Some(artifact) = resolve_library_artifact_download(library) {
             let path = library_path_from_download(&artifact)?;
             classpath_entries.push(path.clone());
-            if !path.exists() {
-                tasks.push((
-                    artifact.url.clone(),
-                    path,
-                    format!("Library {}", library.name),
-                ));
-            }
+            tasks.push(super::downloader::DownloadTask::new(
+                artifact.url.clone(),
+                path,
+                format!("Library {}", library.name),
+                artifact.sha1.clone(),
+                artifact.size,
+            ));
         }
     }
 
@@ -822,11 +822,11 @@ pub async fn spawn_minecraft_and_persist(
         );
     });
 
-    let mut items = read_instances().await?;
+    let mut items = edit_instances().await?;
     if let Some(index) = items.iter().position(|i| i.id == instance.id) {
         items[index].status = "READY".to_string();
         items[index].last_played = crate::paths::now_string();
-        write_instances(&items).await?;
+        items.commit().await?;
     }
 
     Ok(pid)

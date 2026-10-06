@@ -22,4 +22,4 @@ pub use loaders::{
     effective_version_id_for_instance, ensure_loader_profile, fetch_loader_versions,
     normalized_loader_and_version, LoaderKind,
 };
-pub use manifest::fetch_manifest_network;
+pub use manifest::{fetch_manifest_network, read_cached_manifest};

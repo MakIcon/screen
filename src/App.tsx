@@ -26,6 +26,7 @@ import {
   environmentVariablesToRecord,
 } from "./utils/environmentVariables";
 import { toErrorMessage } from "./utils/errors";
+import { loadStartupValue } from "./utils/launcherStartup";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BuildCardSettingsPopup,
@@ -1216,60 +1217,73 @@ export default function App() {
   };
 
   useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const [
-          manifestResponse,
-          instanceResponse,
-          systemRamResponse,
-          settingsResponse,
-          msAccountsResponse,
-        ] = await Promise.all([
-          invoke<MinecraftManifest>("get_minecraft_manifest"),
-          invoke<InstanceItem[]>("list_instances"),
-          invoke<number>("get_system_memory_gb"),
-          invoke<LauncherSettings>("get_launcher_settings"),
-          invoke<MicrosoftAccount[]>("list_microsoft_accounts"),
-        ]);
-
-        setManifest(manifestResponse);
-        setInstances(instanceResponse);
-        setSystemRamGb(systemRamResponse);
-        setLauncherSettings(settingsResponse);
-        setMsAccounts(msAccountsResponse);
-        if (msAccountsResponse.length > 0) {
-          setActiveMsAccountId((current) =>
-            current && msAccountsResponse.some((account) => account.id === current)
-              ? current
-              : msAccountsResponse[0].id,
-          );
-        } else {
-          setActiveMsAccountId(null);
-          setAccountType("OFFLINE");
-        }
-        setSettingsRamDraft(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
-
-        const preferredVersion =
-          manifestResponse.versions.find((v) => v.type === "release")?.id ||
-          manifestResponse.latest.release ||
-          "";
-
-        setCreateVersion(preferredVersion);
-
-        if (instanceResponse.length > 0) {
-          const storedInstanceId = window.localStorage.getItem(SELECTED_INSTANCE_STORAGE_KEY);
-          const preferredInstance =
-            pickPreferredInstance(instanceResponse, storedInstanceId) || instanceResponse[0];
-          setSelectedInstanceId(preferredInstance.id);
-        }
-
-        setCreateRamGb(clampRamToSystem(settingsResponse.defaultRamGb, systemRamResponse));
-      } catch (error) {
-        logger.error(error);
-      }
+    let cancelled = false;
+    let startupMemory = systemRamGb;
+    let startupSettings: LauncherSettings | null = null;
+    const load = <T,>(command: string, apply: (value: T) => void) =>
+      loadStartupValue(
+        () => invoke<T>(command),
+        apply,
+        (error) => logger.error(error),
+        () => !cancelled,
+      );
+    const applyDefaultRam = () => {
+      if (!startupSettings) return;
+      const ram = clampRamToSystem(startupSettings.defaultRamGb, startupMemory);
+      setSettingsRamDraft(ram);
+      setCreateRamGb(ram);
     };
+    const settingsTask = load<LauncherSettings>("get_launcher_settings", (settingsResponse) => {
+      startupSettings = settingsResponse;
+      setLauncherSettings(settingsResponse);
+      applyDefaultRam();
+    });
+    void load<number>("get_system_memory_gb", (systemRamResponse) => {
+      startupMemory = systemRamResponse;
+      setSystemRamGb(systemRamResponse);
+      applyDefaultRam();
+    });
+    void load<InstanceItem[]>("list_instances", (instanceResponse) => {
+      setInstances(instanceResponse);
+      if (instanceResponse.length > 0) {
+        const storedInstanceId = window.localStorage.getItem(SELECTED_INSTANCE_STORAGE_KEY);
+        const preferredInstance =
+          pickPreferredInstance(instanceResponse, storedInstanceId) || instanceResponse[0];
+        setSelectedInstanceId(preferredInstance.id);
+      }
+    });
+    void load<MicrosoftAccount[]>("list_microsoft_accounts", (msAccountsResponse) => {
+      setMsAccounts(msAccountsResponse);
+      if (msAccountsResponse.length > 0) {
+        setActiveMsAccountId((current) =>
+          current && msAccountsResponse.some((account) => account.id === current)
+            ? current
+            : msAccountsResponse[0].id,
+        );
+      } else {
+        setActiveMsAccountId(null);
+        setAccountType("OFFLINE");
+      }
+    });
+    const applyManifest = (manifestResponse: MinecraftManifest) => {
+      setManifest(manifestResponse);
+      const preferredVersion =
+        manifestResponse.versions.find((v) => v.type === "release")?.id ||
+        manifestResponse.latest.release ||
+        "";
 
-    void bootstrap();
+      setCreateVersion((current) => current || preferredVersion);
+    };
+    void (async () => {
+      await load<MinecraftManifest | null>("get_cached_minecraft_manifest", (cached) => {
+        if (cached) applyManifest(cached);
+      });
+      await settingsTask;
+      if (!cancelled) await load<MinecraftManifest>("get_minecraft_manifest", applyManifest);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time bootstrap on mount
   }, []);
 
@@ -1280,8 +1294,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const syncLoaderVersions = async () => {
       if (createLoader === "Vanilla" || !createVersion) {
+        setLoaderVersionsLoading(false);
         setLoaderVersions([]);
         setCreateLoaderVersion("");
         return;
@@ -1289,12 +1305,13 @@ export default function App() {
 
       try {
         setLoaderVersionsLoading(true);
+        setLoaderVersions([]);
         setCreateError("");
         const versions = await invoke<string[]>("get_loader_versions", {
           loader: createLoader,
           mcVersion: createVersion,
         });
-
+        if (cancelled) return;
         setLoaderVersions(versions);
         if (versions.length === 0) {
           setCreateError(
@@ -1306,16 +1323,20 @@ export default function App() {
           return versions[0] || "";
         });
       } catch (error) {
+        if (cancelled) return;
         logger.error(error);
         setLoaderVersions([]);
         setCreateLoaderVersion("");
         setCreateError(toErrorMessage(error));
       } finally {
-        setLoaderVersionsLoading(false);
+        if (!cancelled) setLoaderVersionsLoading(false);
       }
     };
 
     void syncLoaderVersions();
+    return () => {
+      cancelled = true;
+    };
   }, [createLoader, createVersion]);
 
   useEffect(() => {

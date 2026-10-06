@@ -1,16 +1,148 @@
 use std::{
+    collections::HashMap,
+    future::Future,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Mutex, OnceLock},
+    time::SystemTime,
 };
 
 use reqwest::Client;
+use sha1::{Digest, Sha1};
 use tauri::AppHandle;
-use tokio::{fs, sync::Semaphore};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncWriteExt},
+    task::JoinSet,
+};
 
 use crate::{minecraft::mirrors, paths::DOWNLOAD_CONCURRENCY, progress::ProgressReporter};
 
-async fn fetch_bytes(client: &Client, url: &str) -> Result<Vec<u8>, String> {
-    let response = client
+#[derive(Clone)]
+pub(super) struct DownloadTask {
+    pub url: String,
+    pub path: PathBuf,
+    pub detail: String,
+    pub sha1: Option<String>,
+    pub size: Option<u64>,
+}
+impl DownloadTask {
+    pub fn new(
+        url: impl Into<String>,
+        path: PathBuf,
+        detail: impl Into<String>,
+        sha1: Option<String>,
+        size: Option<u64>,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            path,
+            detail: detail.into(),
+            sha1,
+            size,
+        }
+    }
+}
+struct VerifiedFile {
+    size: u64,
+    modified: Option<SystemTime>,
+    sha1: String,
+}
+fn verified_files() -> &'static Mutex<HashMap<PathBuf, VerifiedFile>> {
+    static VERIFIED: OnceLock<Mutex<HashMap<PathBuf, VerifiedFile>>> = OnceLock::new();
+    VERIFIED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+async fn cached_file_valid(
+    path: &Path,
+    sha1: Option<&str>,
+    size: Option<u64>,
+) -> Result<bool, String> {
+    let metadata = match fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("read cached file metadata error: {error}")),
+    };
+    if !metadata.is_file() || size.is_some_and(|size| metadata.len() != size) {
+        return Ok(false);
+    }
+    let Some(expected) = sha1 else {
+        return Ok(size == Some(0) || metadata.len() > 0);
+    };
+    let modified = metadata.modified().ok();
+    if let Ok(cache) = verified_files().lock() {
+        if cache.get(path).is_some_and(|verified| {
+            modified.is_some()
+                && verified.modified == modified
+                && verified.size == metadata.len()
+                && verified.sha1.eq_ignore_ascii_case(expected)
+        }) {
+            return Ok(true);
+        }
+    }
+    let mut file = fs::File::open(path)
+        .await
+        .map_err(|e| format!("open cached file error: {e}"))?;
+    let opened_metadata = file
+        .metadata()
+        .await
+        .map_err(|e| format!("read cached file metadata error: {e}"))?;
+    let mut hasher = Sha1::new();
+    let mut buffer = vec![0; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| format!("read cached file error: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    let valid = format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected);
+    if valid {
+        let after_read = file
+            .metadata()
+            .await
+            .map_err(|e| format!("read cached file metadata error: {e}"))?;
+        if opened_metadata.len() != after_read.len()
+            || opened_metadata.modified().ok() != after_read.modified().ok()
+        {
+            return Ok(false);
+        }
+        if let Ok(mut cache) = verified_files().lock() {
+            cache.insert(
+                path.to_owned(),
+                VerifiedFile {
+                    size: opened_metadata.len(),
+                    modified: opened_metadata.modified().ok(),
+                    sha1: expected.to_owned(),
+                },
+            );
+        }
+    }
+    Ok(valid)
+}
+/// Removes uncommitted files on errors and cancellation.
+struct TemporaryDownload {
+    path: PathBuf,
+    file: Option<fs::File>,
+    committed: bool,
+}
+impl Drop for TemporaryDownload {
+    fn drop(&mut self) {
+        drop(self.file.take());
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+async fn fetch_to_path(
+    client: &Client,
+    url: &str,
+    path: &Path,
+    expected_sha1: Option<&str>,
+    expected_size: Option<u64>,
+) -> Result<(), String> {
+    let mut response = client
         .get(url)
         .send()
         .await
@@ -21,75 +153,430 @@ async fn fetch_bytes(client: &Client, url: &str) -> Result<Vec<u8>, String> {
             response.status()
         ));
     }
-    response
-        .bytes()
+    let content_length = response.content_length();
+    let temp_path = path.with_extension(format!("{}.part", uuid::Uuid::new_v4()));
+    let mut temp = TemporaryDownload {
+        path: temp_path,
+        file: None,
+        committed: false,
+    };
+    temp.file = Some(fs::File::from_std(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp.path)
+            .map_err(|e| format!("create download file error: {e}"))?,
+    ));
+    let mut hasher = Sha1::new();
+    let mut received = 0u64;
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(|e| format!("read download bytes error: {e}"))
+        .map_err(|e| format!("read download bytes error: {e}"))?
+    {
+        received += chunk.len() as u64;
+        if expected_size.is_some_and(|size| received > size) {
+            return Err(format!("download size exceeds metadata for {url}"));
+        }
+        hasher.update(&chunk);
+        temp.file
+            .as_mut()
+            .ok_or("download file is closed")?
+            .write_all(&chunk)
+            .await
+            .map_err(|e| format!("write download error: {e}"))?;
+    }
+    if expected_size
+        .or(content_length)
+        .is_some_and(|size| received != size)
+        || (received == 0 && expected_size != Some(0))
+    {
+        return Err(format!("download size mismatch for {url}"));
+    }
+    if let Some(expected) = expected_sha1 {
+        if !format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected) {
+            return Err(format!("download SHA-1 mismatch for {url}"));
+        }
+    }
+    temp.file
+        .as_mut()
+        .ok_or("download file is closed")?
+        .flush()
+        .await
+        .map_err(|e| format!("flush download error: {e}"))?;
+    let verified_metadata = if expected_sha1.is_some() {
+        temp.file
+            .as_ref()
+            .ok_or("download file is closed")?
+            .metadata()
+            .await
+            .ok()
+    } else {
+        None
+    };
+    drop(temp.file.take());
+    fs::rename(&temp.path, path)
+        .await
+        .map_err(|e| format!("commit download error: {e}"))?;
+    temp.committed = true;
+    if let (Some(expected), Some(metadata)) = (expected_sha1, verified_metadata) {
+        if let Ok(mut cache) = verified_files().lock() {
+            cache.insert(
+                path.to_owned(),
+                VerifiedFile {
+                    size: metadata.len(),
+                    modified: metadata.modified().ok(),
+                    sha1: expected.to_owned(),
+                },
+            );
+        }
+    }
+    Ok(())
 }
-
-pub async fn download_to_path(client: &Client, url: &str, path: &Path) -> Result<(), String> {
-    if path.exists() {
+pub(super) async fn download_to_path(
+    client: &Client,
+    url: &str,
+    path: &Path,
+    sha1: Option<&str>,
+    size: Option<u64>,
+) -> Result<(), String> {
+    if sha1
+        .is_some_and(|hash| hash.len() != 40 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    {
+        return Err("Invalid download SHA-1 metadata".into());
+    }
+    if cached_file_valid(path, sha1, size).await? {
         return Ok(());
     }
-
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .await
             .map_err(|e| format!("create parent dir error: {e}"))?;
     }
-
-    // Try the official host plus any mirror, in the order the user configured.
     let mut last_error = None;
     for candidate in mirrors::candidates(url) {
-        match fetch_bytes(client, &candidate).await {
-            Ok(bytes) => {
-                return fs::write(path, bytes)
-                    .await
-                    .map_err(|e| format!("write file error: {e}"));
-            }
+        match fetch_to_path(client, &candidate, path, sha1, size).await {
+            Ok(()) => return Ok(()),
             Err(error) => last_error = Some(error),
         }
     }
     Err(last_error.unwrap_or_else(|| format!("download failed for {url}")))
 }
-
-pub async fn download_many(
+/// Only `concurrency` tasks exist at a time; failures abort and join all siblings.
+async fn run_bounded<T, F, Fut>(
+    tasks: impl IntoIterator<Item = T>,
+    concurrency: usize,
+    worker: F,
+) -> Result<(), String>
+where
+    T: Send + 'static,
+    F: Fn(T) -> Fut,
+    Fut: Future<Output = Result<(), String>> + Send + 'static,
+{
+    let mut remaining = tasks.into_iter();
+    let mut running = JoinSet::new();
+    for task in remaining.by_ref().take(concurrency.max(1)) {
+        running.spawn(worker(task));
+    }
+    while let Some(result) = running.join_next().await {
+        let error = match result {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(error) => Some(format!("join download task error: {error}")),
+        };
+        if let Some(error) = error {
+            running.abort_all();
+            while running.join_next().await.is_some() {}
+            return Err(error);
+        }
+        if let Some(task) = remaining.next() {
+            running.spawn(worker(task));
+        }
+    }
+    Ok(())
+}
+pub(super) async fn download_many(
     app: &AppHandle,
     phase: &str,
-    tasks: Vec<(String, PathBuf, String)>,
+    tasks: Vec<DownloadTask>,
 ) -> Result<(), String> {
-    if tasks.is_empty() {
-        let reporter = ProgressReporter::new(app.clone(), phase.to_string(), 1);
+    let mut unique = HashMap::<PathBuf, DownloadTask>::new();
+    for task in tasks {
+        if let Some(previous) = unique.get(&task.path) {
+            if previous.sha1 != task.sha1 || previous.size != task.size {
+                return Err(format!(
+                    "Conflicting download metadata for {}",
+                    task.path.display()
+                ));
+            }
+        } else {
+            unique.insert(task.path.clone(), task);
+        }
+    }
+    let reporter = ProgressReporter::new(app.clone(), phase, unique.len().max(1));
+    if unique.is_empty() {
         reporter.step("Nothing to download");
         return Ok(());
     }
-
-    let reporter = ProgressReporter::new(app.clone(), phase.to_string(), tasks.len());
-    reporter.emit("Starting downloads");
-
-    let semaphore = Arc::new(Semaphore::new(DOWNLOAD_CONCURRENCY));
-    let client = Arc::new(mirrors::build_client()?);
-    let mut handles = Vec::new();
-
-    for (url, path, detail) in tasks {
-        let permit = semaphore.clone();
+    reporter.emit("Checking and downloading files");
+    let client = mirrors::build_client()?;
+    run_bounded(unique.into_values(), DOWNLOAD_CONCURRENCY, move |task| {
         let client = client.clone();
         let reporter = reporter.clone();
-        let handle = tokio::spawn(async move {
-            let _permit = permit.acquire_owned().await.map_err(|e| e.to_string())?;
-            download_to_path(&client, &url, &path).await?;
-            reporter.step(detail);
-            Ok::<(), String>(())
+        async move {
+            download_to_path(
+                &client,
+                &task.url,
+                &task.path,
+                task.sha1.as_deref(),
+                task.size,
+            )
+            .await?;
+            reporter.step(task.detail);
+            Ok(())
+        }
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let root =
+                std::env::temp_dir().join(format!("screen-download-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+        fn client() -> Client {
+            Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(3))
+                .build()
+                .unwrap()
+        }
+        fn only_target(&self) -> bool {
+            std::fs::read_dir(&self.0).unwrap().count() == 1
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn serve(body: &'static [u8], declared_size: usize) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).unwrap() > 0);
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {declared_size}\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            socket.write_all(body).unwrap();
         });
-        handles.push(handle);
+        (url, server)
+    }
+    fn hash(body: &[u8]) -> String {
+        format!("{:x}", Sha1::digest(body))
     }
 
-    for handle in handles {
-        handle
-            .await
-            .map_err(|e| format!("join download task error: {e}"))??;
+    #[tokio::test]
+    async fn replaces_a_corrupt_same_size_cache_and_reuses_verified_files_offline() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("file.jar");
+        fs::write(&path, b"evil").await.unwrap();
+        let (url, server) = serve(b"good", 4);
+        download_to_path(
+            &Fixture::client(),
+            &url,
+            &path,
+            Some(&hash(b"good")),
+            Some(4),
+        )
+        .await
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::read(&path).await.unwrap(), b"good");
+        assert!(fixture.only_target());
+        download_to_path(
+            &Fixture::client(),
+            "http://127.0.0.1:9/unavailable",
+            &path,
+            Some(&hash(b"good")),
+            Some(4),
+        )
+        .await
+        .unwrap();
     }
 
-    Ok(())
+    #[tokio::test]
+    async fn wrong_hash_and_truncated_responses_do_not_replace_the_cache_or_leave_part_files() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("file.jar");
+        fs::write(&path, b"previous").await.unwrap();
+        let (url, server) = serve(b"evil", 4);
+        let error = download_to_path(
+            &Fixture::client(),
+            &url,
+            &path,
+            Some(&hash(b"good")),
+            Some(4),
+        )
+        .await
+        .unwrap_err();
+        server.join().unwrap();
+        assert!(error.contains("SHA-1"));
+        assert_eq!(fs::read(&path).await.unwrap(), b"previous");
+        assert!(fixture.only_target());
+        let (url, server) = serve(b"half", 100);
+        assert!(
+            download_to_path(&Fixture::client(), &url, &path, None, Some(100))
+                .await
+                .is_err()
+        );
+        server.join().unwrap();
+        assert_eq!(fs::read(&path).await.unwrap(), b"previous");
+        assert!(fixture.only_target());
+    }
+
+    #[tokio::test]
+    async fn enforces_the_declared_metadata_size() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("file.jar");
+        let (url, server) = serve(b"good", 4);
+        assert!(
+            download_to_path(&Fixture::client(), &url, &path, None, Some(3))
+                .await
+                .unwrap_err()
+                .contains("size")
+        );
+        server.join().unwrap();
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn aborting_a_download_removes_its_temporary_file() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("file.jar");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).unwrap() > 0);
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nhalf")
+                .unwrap();
+            let _ = socket.read(&mut request);
+        });
+        let task = tokio::spawn(async move {
+            download_to_path(&Fixture::client(), &url, &path, None, Some(100)).await
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while std::fs::read_dir(&fixture.0).unwrap().count() == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        server.join().unwrap();
+        assert_eq!(std::fs::read_dir(&fixture.0).unwrap().count(), 0);
+    }
+
+    struct Active(Arc<AtomicUsize>);
+    impl Drop for Active {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn failure_cancels_and_joins_siblings_without_starting_queued_work() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(tokio::sync::Barrier::new(3));
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            run_bounded(0..100, 3, {
+                let active = active.clone();
+                let started = started.clone();
+                move |task| {
+                    let active = active.clone();
+                    let started = started.clone();
+                    let barrier = barrier.clone();
+                    async move {
+                        active.fetch_add(1, Ordering::SeqCst);
+                        let _guard = Active(active);
+                        started.fetch_add(1, Ordering::SeqCst);
+                        barrier.wait().await;
+                        if task == 0 {
+                            Err("failed".into())
+                        } else {
+                            std::future::pending().await
+                        }
+                    }
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap_err(), "failed");
+        assert_eq!(started.load(Ordering::SeqCst), 3);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn processes_the_entire_queue_with_bounded_concurrency() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let completed = Arc::new(AtomicUsize::new(0));
+        run_bounded(0..30, 3, {
+            let active = active.clone();
+            let peak = peak.clone();
+            let completed = completed.clone();
+            move |_| {
+                let active = active.clone();
+                let peak = peak.clone();
+                let completed = completed.clone();
+                async move {
+                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(count, Ordering::SeqCst);
+                    let _guard = Active(active);
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    completed.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(completed.load(Ordering::SeqCst), 30);
+        assert!(peak.load(Ordering::SeqCst) <= 3);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
 }
