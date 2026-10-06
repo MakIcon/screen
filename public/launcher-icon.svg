@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 32 32">
+  <title>Launcher icon</title>
+  <desc>A stepped ivory S with a graphite terminal on a terracotta square.</desc>
+  <rect width="32" height="32" fill="#c94709"/>
+  <path d="M7 7H22V11H11V14H25V25H7V21H21V18H7Z" fill="#f4f1ea"/>
+  <rect x="22" y="7" width="3" height="4" fill="#252524"/>
+</svg>

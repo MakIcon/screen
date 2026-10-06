@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "pnpm typecheck && vite build",
+    "build": "pnpm icons && pnpm typecheck && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "icons": "node scripts/generate_app_icons.mjs",

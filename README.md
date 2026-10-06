@@ -33,7 +33,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-The PaintShot application icon is maintained in `public/paintshot.svg`. After editing it, run `pnpm icons` to regenerate desktop PNGs, the Windows ICO, the macOS ICNS, mobile assets and web icons. Tauri uses these assets for the executable, windows, Alt+Tab and taskbar. Restart the native application after rebuilding to see an updated icon.
+The application icon's single source is `public/launcher-icon.svg`: vector paths and rectangles, without embedded raster images or fonts. Run `pnpm icons` to regenerate the desktop PNGs (16–1024 px), Windows ICO, macOS ICNS, Windows Store/mobile assets and web icons. The PNG is a generated preview of the SVG. The ICO stores its 256 px frame first because Tauri uses the first frame for the default window icon; the other frames cover smaller Windows DPI sizes. Both `pnpm build` and `pnpm tauri dev` regenerate the assets automatically. The executable, main and secondary windows, Alt+Tab, taskbar, installers, uninstaller and application shortcuts use this artwork. Rebuild and restart the native application to display it; previously installed copies need the new executable or installer.
 
 Useful checks:
 
