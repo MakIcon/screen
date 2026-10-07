@@ -19,10 +19,19 @@ pub const MINEFLAYER_BOT_ID: &str = "mineflayer-bot";
 pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
 
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
+const MINEFLAYER_PATHFINDER: &str =
+    include_str!("../../../extensions/mineflayer-bot/pathfinder.cjs");
 const MINEFLAYER_MANIFEST: &str = include_str!("../../../extensions/mineflayer-bot/extension.json");
 const MINEFLAYER_PACKAGE: &str = include_str!("../../../extensions/mineflayer-bot/package.json");
 const MINEFLAYER_PACKAGE_LOCK: &str =
     include_str!("../../../extensions/mineflayer-bot/package-lock.json");
+const MINEFLAYER_COPYING: &str = include_str!("../../../extensions/mineflayer-bot/COPYING");
+const MINEFLAYER_NOTICES: &str =
+    include_str!("../../../extensions/mineflayer-bot/THIRD-PARTY-NOTICES.md");
+const MINEFLAYER_SOURCE: &str =
+    include_str!("../../../extensions/mineflayer-bot/pathfinder-source.json");
+const MINEFLAYER_RESTORE_SOURCE: &str =
+    include_str!("../../../extensions/mineflayer-bot/restore-pathfinder-source.cjs");
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +61,12 @@ pub fn extension_dir(id: &str) -> Result<PathBuf, String> {
 pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
     let installed = extension_dir(MINEFLAYER_BOT_ID)?;
     if installed.join("extension.json").is_file() {
+        if !installed.join("pathfinder.cjs").is_file() {
+            return Err(
+                "Mineflayer Bot package needs an update. Open Extensions and install it again."
+                    .to_string(),
+            );
+        }
         return Ok(installed);
     }
     Err(
@@ -74,6 +89,7 @@ fn mineflayer_status() -> OptionalExtensionStatus {
             manifest.id == MINEFLAYER_BOT_ID
                 && managed.join(&manifest.entry).is_file()
                 && managed.join("node_modules").is_dir()
+                && managed.join("pathfinder.cjs").is_file()
         })
         .unwrap_or(false);
 
@@ -160,9 +176,14 @@ fn npm_error_detail(stdout: &[u8], stderr: &[u8]) -> String {
 async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
     for (name, contents) in [
         ("worker.cjs", MINEFLAYER_WORKER),
+        ("pathfinder.cjs", MINEFLAYER_PATHFINDER),
         ("extension.json", MINEFLAYER_MANIFEST),
         ("package.json", MINEFLAYER_PACKAGE),
         ("package-lock.json", MINEFLAYER_PACKAGE_LOCK),
+        ("COPYING", MINEFLAYER_COPYING),
+        ("THIRD-PARTY-NOTICES.md", MINEFLAYER_NOTICES),
+        ("pathfinder-source.json", MINEFLAYER_SOURCE),
+        ("restore-pathfinder-source.cjs", MINEFLAYER_RESTORE_SOURCE),
     ] {
         tokio::fs::write(staging.join(name), contents)
             .await

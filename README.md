@@ -51,6 +51,8 @@ pnpm package:extensions
 
 The Extensions screen installs Mineflayer's locked dependencies from the npm registry on demand into `%APPDATA%/ScreenLauncher/extensions/mineflayer-bot`. BlueMap's CLI/server package is downloaded on demand into `%APPDATA%/ScreenLauncher/extensions/blue-map-server`. Both packages can be removed independently from the launcher.
 
+Mineflayer Bot uses the supplied Minecraft pathfinding rewrite, maintained in `extensions/mineflayer-bot/pathfinding`. `pnpm build:pathfinder` rebuilds the bundled `pathfinder.cjs` that Tauri and standalone extension archives ship. Run `pnpm test:pathfinder` and `pnpm test:worker` to check the planner, simulated movement and worker integration. Integration details and limits are documented in `extensions/mineflayer-bot/pathfinding/README.md`.
+
 Build the OBS telemetry mod for every version listed in `obs-telemetry-mod/gradle.properties`:
 
 ```powershell

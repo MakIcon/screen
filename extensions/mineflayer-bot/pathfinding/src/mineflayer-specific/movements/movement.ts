@@ -1,0 +1,431 @@
+import { BaseSimulator, BotcraftPhysics, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
+import { Bot } from 'mineflayer'
+import { Vec3 } from 'vec3'
+import { Move } from '../move'
+import { World } from '../world/worldInterface'
+import { BlockInfo } from '../world/cacheWorld'
+import { BreakHandler, InteractHandler, PlaceHandler } from './interactionUtils'
+import type { InteractType } from './interactionUtils'
+import type { Block } from '../../types'
+import { Vec3Properties } from '../../types'
+import { COST_INF, SPRINT_ONE_BLOCK_COST, WALK_ONE_BLOCK_COST, WALK_ONE_IN_WATER_COST } from './costs'
+import type { ExclusionArea } from './exclusionZones'
+
+export interface MovementOptions {
+  allowDiagonalBridging: boolean
+  allowJumpSprint: boolean
+  allow1by1towers: boolean
+
+  // --- Cost knobs (all in GAME TICKS; see costs.ts) -----------------------
+  /** Extra ticks per block when moving through liquid (water is slow). */
+  liquidCost: number
+  /** Multiplier on a block's real mining time. 1 = use the true dig time as-is. */
+  digCost: number
+  /** Extra ticks charged per jump, on top of the physical jump arc. 0 = trust the physics. */
+  jumpCost: number
+  /** Ticks charged for placing a block. Placing interrupts movement, so it is deliberately costly. */
+  placeCost: number
+  /** Ticks charged for killing horizontal velocity (e.g. stopping at the edge of a drop). */
+  velocityKillCost: number
+
+  forceLook: boolean
+  canOpenDoors: boolean
+  canDig: boolean
+  canPlace: boolean
+  dontCreateFlow: boolean
+  dontMineUnderFallingBlock: boolean
+
+  maxDropDown: number
+  infiniteLiquidDropdownDistance: boolean
+  allowSprinting: boolean
+  careAboutLookAlignment: boolean
+
+  movementTimeoutMs: number
+
+  /**
+   * "Keep out" rules for blocks the bot would STAND in / walk into.
+   *
+   * Each {@link ExclusionArea} is a function that returns the extra cost of a
+   * block (return `>= COST_INF` to forbid it entirely). The cost of every area
+   * in the list is added together. An empty list (the default) means "no zones",
+   * and costs nothing to evaluate.
+   *
+   * Write your own; ready-to-copy box/radius helpers live in
+   * `examples/exclusionZones.js`.
+   */
+  exclusionAreasStep: ExclusionArea[]
+
+  /** "Keep out" rules for blocks the bot would BREAK (mine). See {@link exclusionAreasStep}. */
+  exclusionAreasBreak: ExclusionArea[]
+
+  /** "Keep out" rules for blocks the bot would PLACE (build on). See {@link exclusionAreasStep}. */
+  exclusionAreasPlace: ExclusionArea[]
+}
+
+export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
+  allowJumpSprint: true,
+  canOpenDoors: true,
+  canDig: true,
+  canPlace: true,
+  dontCreateFlow: true,
+  dontMineUnderFallingBlock: true,
+  allow1by1towers: true,
+  maxDropDown: 3,
+  infiniteLiquidDropdownDistance: true,
+  allowSprinting: true,
+  // Extra time water adds over walking the same block on land (~4.46 ticks).
+  liquidCost: WALK_ONE_IN_WATER_COST - WALK_ONE_BLOCK_COST,
+  // Baritone's block-placement penalty: building a block to stand on is slow.
+  placeCost: 20,
+  // Keep a block's real mining time as-is (1x). Raise to make digging look worse.
+  digCost: 1,
+  // The jump arc already has a real tick cost (see JUMP_ONE_BLOCK_COST); add no fudge on top.
+  jumpCost: 0,
+  velocityKillCost: 2, // implement at a later date.
+  forceLook: true,
+  careAboutLookAlignment: true,
+  allowDiagonalBridging: true,
+  movementTimeoutMs: 1000,
+  // No exclusion zones by default. Add your own with bot.pathfinder.setMoveOptions(...).
+  exclusionAreasStep: [],
+  exclusionAreasBreak: [],
+  exclusionAreasPlace: []
+}
+
+// Lock the default exclusion lists so the single shared instances above can never
+// be mutated in place. Real settings always receive their own fresh arrays via
+// buildMovementOptions() below, so this is just a safety net.
+Object.freeze(DEFAULT_MOVEMENT_OPTS.exclusionAreasStep)
+Object.freeze(DEFAULT_MOVEMENT_OPTS.exclusionAreasBreak)
+Object.freeze(DEFAULT_MOVEMENT_OPTS.exclusionAreasPlace)
+
+/**
+ * Merge user-supplied movement options on top of {@link DEFAULT_MOVEMENT_OPTS}
+ * and return a complete {@link MovementOptions}.
+ *
+ * The three exclusion-area lists are ALWAYS returned as their own fresh arrays.
+ * The defaults hold a single shared `[]` per list, so copying here is what stops
+ * two different bots — or two `setMoveOptions` calls — from accidentally sharing
+ * (and then mutating) the same array. Use this everywhere instead of a bare
+ * `Object.assign({}, DEFAULT_MOVEMENT_OPTS, settings)`.
+ */
+export function buildMovementOptions (settings: Partial<MovementOptions> = {}): MovementOptions {
+  const merged = Object.assign({}, DEFAULT_MOVEMENT_OPTS, settings)
+  merged.exclusionAreasStep = [...merged.exclusionAreasStep]
+  merged.exclusionAreasBreak = [...merged.exclusionAreasBreak]
+  merged.exclusionAreasPlace = [...merged.exclusionAreasPlace]
+  return merged
+}
+
+/**
+ * Sum the extra cost every exclusion area in `areas` assigns to `block`.
+ *
+ * Returns 0 immediately when the list is empty (the normal case), so it is
+ * essentially free unless the user opted in to exclusion zones.
+ */
+export function sumExclusionAreas (areas: ExclusionArea[], block: BlockInfo): number {
+  if (areas.length === 0) return 0
+  let weight = 0
+  for (const area of areas) weight += area(block)
+  return weight
+}
+
+const cardinalVec3s: Vec3[] = [
+  // { x: -1, z: 0 }, // West
+  // { x: 1, z: 0 }, // East
+  // { x: 0, z: -1 }, // North
+  // { x: 0, z: 1 }, // South
+  new Vec3(-1, 0, 0),
+  new Vec3(1, 0, 0),
+  new Vec3(0, 0, -1),
+  new Vec3(0, 0, 1)
+]
+const cardinalFacings = ['west', 'east', 'north', 'south']
+
+Object.freeze(cardinalVec3s)
+cardinalVec3s.forEach(Object.freeze)
+
+const diagonalVec3s: Vec3[] = [
+  // { x: -1, z: -1 },
+  // { x: -1, z: 1 },
+  // { x: 1, z: -1 },
+  // { x: 1, z: 1 },
+  new Vec3(-1, 0, -1),
+  new Vec3(-1, 0, 1),
+  new Vec3(1, 0, -1),
+  new Vec3(1, 0, 1)
+]
+
+Object.freeze(diagonalVec3s)
+diagonalVec3s.forEach(Object.freeze)
+
+const jumpVec3s: Vec3[] = [
+  new Vec3(-3, 0, 0),
+  new Vec3(-2, 0, 1),
+  new Vec3(-2, 0, -1),
+  new Vec3(-1, 0, 2),
+  new Vec3(-1, 0, -2),
+  new Vec3(0, 0, 3),
+  new Vec3(0, 0, -3),
+  new Vec3(1, 0, 2),
+  new Vec3(1, 0, -2),
+  new Vec3(2, 0, 1),
+  new Vec3(2, 0, -1),
+  new Vec3(3, 0, 0)
+]
+
+Object.freeze(jumpVec3s)
+jumpVec3s.forEach(Object.freeze)
+
+/**
+ * TODO: Separate calculation time from runtime.
+ *
+ * Calculation time is when the bot is deciding what to do.
+ * Runtime is when the bot is actually doing it.
+ *
+ * This class is currently bloated by providing two functions.
+ * It should be broken up.
+ */
+
+export abstract class Movement {
+  static readonly cardinalDirs = cardinalVec3s
+  static readonly diagonalDirs = diagonalVec3s
+  static readonly jumpDirs = jumpVec3s
+
+  public readonly bot: Bot
+  public readonly world: World
+  public settings: MovementOptions
+
+  /**
+   * Current move being executed.
+   *
+   * This move is the same as the thisMove argument provided to functions.
+   */
+  protected currentMove!: Move
+
+  /**
+   * Current interaction.
+   */
+  protected _cI?: InteractHandler
+
+  public constructor (bot: Bot, world: World, settings: Partial<MovementOptions> = {}) {
+    this.bot = bot
+    this.world = world
+    this.settings = buildMovementOptions(settings)
+  }
+
+  loadMove (move: Move): void {
+    this.currentMove = move
+  }
+
+  toBreak (): BreakHandler[] {
+    return this.currentMove.toBreak?.filter((b) => !b.allowExit) ?? []
+  }
+
+  toBreakLen (): number {
+    return this.currentMove.toBreak?.filter((b) => !b.allowExit).length ?? 0
+  }
+
+  toPlace (): PlaceHandler[] {
+    return this.currentMove.toPlace?.filter((b) => !b.allowExit) ?? []
+  }
+
+  toPlaceLen (): number {
+    return this.currentMove.toPlace?.filter((b) => !b.allowExit).length ?? 0
+  }
+
+  getBlock (pos: Vec3Properties, dx: number, dy: number, dz: number): Block | null {
+    return this.world.getBlock(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz))
+  }
+
+  getBlockInfo (pos: Vec3Properties, dx: number, dy: number, dz: number): BlockInfo {
+    const yes = new Vec3(Math.floor(pos.x + dx), Math.floor(pos.y + dy), Math.floor(pos.z + dz))
+    return this.world.getBlockInfo(yes)
+  }
+
+  getBlockInfoRaw (pos: Vec3): BlockInfo {
+    return this.world.getBlockInfo(pos)
+  }
+
+  /**
+   * Returns if a block is safe or not
+   * @param pos
+   * @returns
+   */
+  safe (pos: Vec3Properties): number {
+    const block = this.world.getBlockInfo(new Vec3(pos.x, pos.y, pos.z))
+    return block.physical ? 0 : COST_INF
+  }
+
+  /**
+   * Ticks to travel `blocks` blocks of flat ground.
+   *
+   * The bot sprints when allowed (the fastest way to move), otherwise it walks.
+   * Pass `1` for one straight block, `Math.SQRT2` for one diagonal block, etc.
+   */
+  travelCost (blocks: number): number {
+    return blocks * (this.settings.allowSprinting ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST)
+  }
+
+  /** Extra cost of STANDING in this block (sum of every step exclusion area; 0 if none). */
+  exclusionStep (block: BlockInfo): number {
+    return sumExclusionAreas(this.settings.exclusionAreasStep, block)
+  }
+
+  /** Extra cost of BREAKING this block (sum of every break exclusion area; 0 if none). */
+  exclusionBreak (block: BlockInfo): number {
+    return sumExclusionAreas(this.settings.exclusionAreasBreak, block)
+  }
+
+  /** Extra cost of PLACING a block here (sum of every place exclusion area; 0 if none). */
+  exclusionPlace (block: BlockInfo): number {
+    return sumExclusionAreas(this.settings.exclusionAreasPlace, block)
+  }
+
+  /**
+   * Whether this block is allowed to be broken at all (ignoring cost).
+   *
+   * This only answers the "is it physically/configurably breakable" question
+   * (can we dig, would it create flowing water, would a block fall on us, is it
+   * an unbreakable block like bedrock). The "is it inside a no-mining zone"
+   * question is handled separately as a cost, in {@link breakCost} via
+   * {@link exclusionBreak}.
+   * @param {BlockInfo} block
+   * @returns
+   */
+  safeToBreak (block: BlockInfo): boolean {
+    if (!this.settings.canDig) {
+      return false
+    }
+
+    // Preserve navigation aids and their backing blocks. Mining the backing
+    // wall drops its ladders, invalidating the route that was just planned.
+    if (block.climbable) return false
+    for (let i = 0; i < Movement.cardinalDirs.length; i++) {
+      const dir = Movement.cardinalDirs[i]
+      const neighbor = this.getBlockInfo(block.position, dir.x, 0, dir.z).block
+      if (neighbor?.name === 'ladder' && neighbor.getProperties().facing === cardinalFacings[i]) return false
+    }
+
+    if (this.settings.dontCreateFlow) {
+      if (!block.additionalLoaded) block.loadAdditionalInfo(this)
+      if (block.waterAround) return false
+    }
+
+    if (this.settings.dontMineUnderFallingBlock) {
+      if (!block.additionalLoaded) block.loadAdditionalInfo(this)
+      // TODO: Determine if there are other blocks holding the entity up
+      if (block.fallBlockOver) return false
+      // if (this.getBlockInfo(block.position, 0, 1, 0).canFall) {
+      //   // || (this.getNumEntitiesAt(block.position, 0, 1, 0) > 0)
+      //   return false
+      // }
+    }
+
+    // console.log('block type:', this.bot.registry.blocks[block.type], block.position, !BlockInfo.blocksCantBreak.has(block.type))
+    return BlockInfo.replaceables.has(block.type) || !BlockInfo.blocksCantBreak.has(block.type)
+  }
+
+  /**
+   * Cost of either walking through `block` (if it is already passable) or
+   * breaking it so the bot can pass.
+   *
+   * Returns `COST_INF` (or more) when the block cannot be used — for example an
+   * unbreakable block, or one inside a break-exclusion zone (see
+   * {@link breakCost} / {@link exclusionBreak}). Step-exclusion zones are NOT
+   * checked here; each movement provider applies {@link exclusionStep} to the
+   * block the bot lands in, folding the cost in before the move is created.
+   * @param {BlockInfo} block block
+   * @param {BreakHandler[]} toBreak
+   * @returns {number}
+   */
+  safeOrBreak (block: BlockInfo, toBreak: BreakHandler[]): number {
+    // cost += this.getNumEntitiesAt(block.position, 0, 0, 0) * this.entityCost
+
+    // if (block.breakCost !== undefined) return block.breakCost // cache breaking cost.
+
+    if (block.walkthrough) {
+      // if (!block.replaceable) toBreak.push(BreakHandler.fromVec(block.position, "solid"));
+      return 0 // TODO: block is a carpet or a climbable (BUG)
+    }
+
+    if (block.block === null) return COST_INF // Don't know its type, but that's only replaceables so just return.
+
+    const cost = this.breakCost(block)
+
+    // console.log('cost for:', block.position, cost)
+
+    if (cost >= COST_INF) return cost
+
+    // TODO: Calculate cost of breaking block
+    // if (block.physical) cost += this.getNumEntitiesAt(block.position, 0, 1, 0) * this.entityCost // Add entity cost if there is an entity above (a breakable block) that will fall
+    toBreak.push(BreakHandler.fromVec(block.position, 'solid'))
+
+    return cost
+  }
+
+  /**
+   * Ticks to break (mine) `block` with the bot's best tool.
+   *
+   * `pathingUtil.digCost` returns the real dig time in MILLISECONDS, and the
+   * game runs at 20 ticks/s (50 ms/tick), so `ms / 50` is the dig time in ticks
+   * — the same unit as every other movement cost. `digCost` (default 1) is a
+   * multiplier so callers can make mining look cheaper or dearer.
+   */
+  breakCost (block: BlockInfo): number {
+    if (block.block === null) return COST_INF // Don't know its type, but that's only replaceables so just return.
+    if (!this.safeToBreak(block)) return COST_INF
+
+    // Price mining where this move starts, including water/air penalties.
+    // Using only dry-ground times made tunneling from water look too cheap.
+    const pos = this.currentMove?.cachedVec ?? this.bot.entity.position.floored()
+    const digTimeMs = this.bot.pathingUtil.digCost(block.block, {
+      inWater: this.getBlockInfoRaw(pos.offset(0, 1, 0)).water,
+      notOnGround: !this.getBlockInfoRaw(pos.offset(0, -1, 0)).physical
+    })
+    const miningTicks = (digTimeMs / 50) * this.settings.digCost
+
+    // Add the break-exclusion penalty (0 unless the user configured "no mining" zones).
+    // If the block sits inside a forbidden zone this pushes the cost past COST_INF,
+    // which every caller treats as "do not break this block".
+    return miningTicks + this.exclusionBreak(block)
+  }
+
+  safeOrPlace (block: BlockInfo, toPlace: PlaceHandler[], type: InteractType = 'solid'): number {
+    if (!this.settings.canPlace) return COST_INF
+    if (this.currentMove.remainingBlocks <= 0) return COST_INF
+
+    if (block.block === null) return COST_INF // Don't know its type, but that's only replaceables so just return.
+    if (block.solidFull) return 0 // block is already physical at location.
+
+    const cost = this.placeCost(block)
+
+    if (cost >= COST_INF) return cost
+    toPlace.push(PlaceHandler.fromVec(block.position, type))
+
+    return cost
+  }
+
+  /**
+   * TODO: calculate more accurate place costs.
+   */
+  placeCost (block: BlockInfo): number {
+    // Add the place-exclusion penalty (0 unless the user configured "no building" zones).
+    // A forbidden zone pushes this past COST_INF, which callers treat as "do not place here".
+    return this.settings.placeCost + this.exclusionPlace(block)
+  }
+}
+
+export abstract class SimMovement extends Movement {
+  stateCtx: EPhysicsCtx
+  sim: BaseSimulator
+  constructor (bot: Bot, world: World, settings: Partial<MovementOptions>) {
+    super(bot, world, settings)
+    this.sim = new BaseSimulator(new BotcraftPhysics(bot.registry))
+    this.stateCtx = EPhysicsCtx.FROM_BOT(this.sim.ctx, bot)
+  }
+
+  simulateUntil (...args: Parameters<BaseSimulator['simulateUntil']>): ReturnType<BaseSimulator['simulateUntil']> {
+    return this.sim.simulateUntil(...args)
+  }
+}

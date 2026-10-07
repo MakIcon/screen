@@ -1,0 +1,37 @@
+{
+  "name": "@screenlauncher/minecraft-pathfinding",
+  "version": "0.0.26-screen.7",
+  "private": true,
+  "type": "commonjs",
+  "license": "GPL-3.0-only",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --no-deprecation --test tests/run.cjs"
+  },
+  "dependencies": {
+    "@nxg-org/mineflayer-physics-util": "1.9.2",
+    "@nxg-org/mineflayer-util-plugin": "1.9.3",
+    "debug": "4.4.3",
+    "lru-cache": "10.4.3",
+    "prismarine-block": "1.23.0",
+    "prismarine-nbt": "2.8.0",
+    "prismarine-physics": "1.11.1",
+    "vec3": "0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.25.12",
+    "minecraft-data": "3.113.2",
+    "mineflayer": "4.37.1",
+    "prismarine-chunk": "1.41.0",
+    "prismarine-entity": "2.6.0",
+    "prismarine-item": "1.18.0",
+    "prismarine-provider-anvil": "2.13.0",
+    "prismarine-registry": "1.12.0",
+    "prismarine-world": "3.7.0",
+    "ts-node": "10.9.2",
+    "typescript": "~5.8.3"
+  }
+}

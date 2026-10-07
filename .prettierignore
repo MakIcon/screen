@@ -3,3 +3,6 @@ node_modules
 src-tauri/target
 src-tauri/resources
 pnpm-lock.yaml
+extensions/mineflayer-bot/pathfinding
+extensions/mineflayer-bot/pathfinder.cjs
+extensions/mineflayer-bot/pathfinder-source.json

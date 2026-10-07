@@ -10,6 +10,8 @@ export default tseslint.config(
       "dist-extensions",
       "src-tauri",
       "node_modules",
+      "extensions/mineflayer-bot/pathfinding",
+      "extensions/mineflayer-bot/pathfinder.cjs",
       // Source-copied third-party registry components are checked by TypeScript
       // and kept byte-for-byte close to upstream for easier future refreshes.
       "src/components/canvasui",

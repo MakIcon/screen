@@ -118,6 +118,7 @@ struct WorkerConnectionConfig {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerBehaviorConfig {
+    stay_on_water: bool,
     auto_follow_on_spawn: bool,
     announce_on_spawn: bool,
     spawn_message: String,
@@ -470,6 +471,7 @@ pub async fn start_mineflayer_bot(
             auto_respawn: plugin.auto_respawn,
         },
         behavior: WorkerBehaviorConfig {
+            stay_on_water: plugin.stay_on_water,
             auto_follow_on_spawn: plugin.auto_follow_on_spawn,
             announce_on_spawn: plugin.announce_on_spawn,
             spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),

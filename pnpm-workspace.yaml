@@ -1,5 +1,9 @@
 packages:
   - "extensions/*"
+  - "extensions/mineflayer-bot/pathfinding"
 
 allowBuilds:
   esbuild: false
+
+overrides:
+  vec3: "0.2.0"

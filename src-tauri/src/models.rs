@@ -563,6 +563,8 @@ pub struct MineflayerBotPluginSettings {
     pub can_dig: bool,
     #[serde(default = "default_mineflayer_bot_max_drop_down")]
     pub max_drop_down: u32,
+    #[serde(default = "default_true")]
+    pub stay_on_water: bool,
     #[serde(default)]
     pub auto_follow_on_spawn: bool,
     #[serde(default)]
@@ -899,6 +901,7 @@ impl Default for MineflayerBotPluginSettings {
             allow_parkour: true,
             can_dig: false,
             max_drop_down: default_mineflayer_bot_max_drop_down(),
+            stay_on_water: true,
             auto_follow_on_spawn: false,
             announce_on_spawn: false,
             spawn_message: default_mineflayer_bot_spawn_message(),
@@ -1210,8 +1213,17 @@ mod loader_schema_tests {
         assert!(parsed.auto_reconnect);
         assert!(parsed.auto_respawn);
         assert!(!parsed.can_dig);
+        assert!(parsed.stay_on_water);
         assert_eq!(parsed.command_source, "both");
         assert_eq!(parsed.command_cooldown_ms, 500);
+    }
+
+    #[test]
+    fn preserves_disabled_water_protection_in_saved_settings() {
+        let parsed: MineflayerBotPluginSettings =
+            serde_json::from_value(serde_json::json!({ "stayOnWater": false })).unwrap();
+        assert!(!parsed.stay_on_water);
+        assert_eq!(serde_json::to_value(parsed).unwrap()["stayOnWater"], false);
     }
 
     #[test]

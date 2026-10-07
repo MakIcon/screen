@@ -451,7 +451,7 @@ function MineflayerBotSettingsEditor({
                 />
               </label>
               <label className="mineflayer-bot-field">
-                <span>MAX SAFE DROP</span>
+                <span>MAX GROUND DROP</span>
                 <input
                   type="number"
                   min={1}
@@ -481,6 +481,12 @@ function MineflayerBotSettingsEditor({
                 checked={settings.canDig}
                 warning
                 onChange={(canDig) => update({ canDig })}
+              />
+              <SettingToggle
+                label="STAY ON WATER"
+                description="SWIM UP AND KEEP AIR"
+                checked={settings.stayOnWater}
+                onChange={(stayOnWater) => update({ stayOnWater })}
               />
               <SettingToggle
                 label="PATH DEBUG LOG"

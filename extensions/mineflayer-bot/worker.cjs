@@ -32,9 +32,44 @@ function loadMineflayer () {
 }
 
 const { mineflayer, compatibilityVersion } = loadMineflayer()
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
 
-const { GoalFollow, GoalNear } = goals
+const { GoalFollowEntity, GoalNear } = goals
+
+function configurePathfinder (bot, movement, behavior = {}) {
+  bot.loadPlugin(createPlugin({
+    moveSettings: {
+      allowSprinting: Boolean(movement.allowSprinting),
+      allowJumpSprint: Boolean(movement.allowParkour && movement.allowSprinting),
+      canDig: Boolean(movement.canDig),
+      canPlace: true,
+      allow1by1towers: true,
+      maxDropDown: movement.maxDropDown,
+      infiniteLiquidDropdownDistance: true,
+      movementTimeoutMs: 3000
+    },
+    pathfinderSettings: {
+      searchTimeoutMs: 2500,
+      tickTimeoutMs: 5,
+      maxVisitedNodes: 20000,
+      routePrefixMs: 30,
+      routePrefixLength: 16
+    }
+  }))
+  installSurfaceSwimming(bot, behavior.stayOnWater !== false)
+  if (!movement.allowParkour) {
+    bot.pathfinder.dropMovement(movementProviders.ParkourForward)
+    bot.pathfinder.dropMovement(movementProviders.ParkourDiagonal)
+    bot.pathfinder.dropMovement(movementProviders.MomentumJump)
+    bot.pathfinder.dropMovement(movementProviders.NeoProvider)
+    bot.pathfinder.dropMovement(movementProviders.LadderForward)
+    bot.pathfinder.dropMovement(movementProviders.LadderDiagonal)
+    bot.pathfinder.dropMovement(movementProviders.LadderLandingForward)
+    bot.pathfinder.dropMovement(movementProviders.LadderLandingDiagonal)
+    bot.pathfinder.dropMovement(movementProviders.AroundCornerDiagonal)
+  }
+  return bot.pathfinder
+}
 
 function optionalRequire (name) {
   try {
@@ -284,6 +319,7 @@ function parseConfig (raw) {
     ...(config.connection || {})
   }
   config.behavior = {
+    stayOnWater: true,
     autoFollowOnSpawn: false,
     announceOnSpawn: false,
     spawnMessage: 'Ready, %owner%!',
@@ -506,8 +542,8 @@ async function main () {
     }
 
     activeBot = bot
-    let defaultMoves = null
     let currentGoal = 'idle'
+    let goalGeneration = 0
     let ended = false
     let kickReason = ''
 
@@ -528,10 +564,26 @@ async function main () {
       }
     }
 
-    function stopMovement () {
-      if (bot.pathfinder) bot.pathfinder.stop()
+    async function stopMovement () {
+      goalGeneration++
+      if (bot.pathfinder) await bot.pathfinder.stop()
       bot.clearControlStates()
       currentGoal = 'idle'
+    }
+
+    function startGoal (goal, label) {
+      if (!bot.pathfinder) throw new Error('Bot is not ready to move yet')
+      const generation = ++goalGeneration
+      currentGoal = label
+      void bot.pathfinder.goto(goal).then(() => {
+        if (generation !== goalGeneration || ended) return
+        currentGoal = 'idle'
+        emit('status', { state: 'connected', message: `movement finished: ${label}` })
+      }).catch((error) => {
+        if (generation !== goalGeneration || ended) return
+        currentGoal = 'idle'
+        emit('error', { error: `movement ${label}: ${error.message || String(error)}` })
+      })
     }
 
     function ownerEntity (username = ownerName) {
@@ -540,12 +592,10 @@ async function main () {
 
     function startFollowingOwner (announce, username = ownerName, source = 'chat') {
       const target = ownerEntity(username)
-      if (!target || !defaultMoves) return false
-      currentGoal = `follow ${username}`
-      bot.pathfinder.setMovements(defaultMoves)
-      bot.pathfinder.setGoal(
-        new GoalFollow(target, config.movement.followDistance),
-        true
+      if (!target || !bot.pathfinder) return false
+      startGoal(
+        GoalFollowEntity.fromEntity(target, config.movement.followDistance, { dynamic: true, neverfinish: true }),
+        `follow ${username}`
       )
       if (announce) reply(username, source, `Following ${username}`)
       return true
@@ -611,15 +661,14 @@ async function main () {
             return
           }
           const pos = target.position
-          currentGoal = `near ${username}`
-          bot.pathfinder.setMovements(defaultMoves)
-          bot.pathfinder.setGoal(
+          startGoal(
             new GoalNear(
               pos.x,
               pos.y,
               pos.z,
               config.movement.followDistance
-            )
+            ),
+            `near ${username}`
           )
           reply(username, source, `Coming to ${username}`)
           return
@@ -642,10 +691,9 @@ async function main () {
             reply(username, source, `Usage: ${prefix}goto x y z`)
             return
           }
-          currentGoal = `goto ${x} ${y} ${z}`
-          bot.pathfinder.setMovements(defaultMoves)
-          bot.pathfinder.setGoal(
-            new GoalNear(x, y, z, config.movement.gotoRadius)
+          startGoal(
+            new GoalNear(x, y, z, config.movement.gotoRadius),
+            `goto ${x} ${y} ${z}`
           )
           reply(
             username,
@@ -656,7 +704,7 @@ async function main () {
         }
 
         if (command === 'stop') {
-          stopMovement()
+          await stopMovement()
           reply(username, source, 'Stopped')
           return
         }
@@ -713,21 +761,21 @@ async function main () {
       }
     }
 
-    bot.loadPlugin(pathfinder)
     loadMovementExtras(bot)
 
     bot.once('spawn', () => {
       reconnectAttempts = 0
-      defaultMoves = new Movements(bot)
-      defaultMoves.allowSprinting = Boolean(config.movement.allowSprinting)
-      defaultMoves.allowParkour = Boolean(config.movement.allowParkour)
-      defaultMoves.canDig = Boolean(config.movement.canDig)
-      defaultMoves.maxDropDown = config.movement.maxDropDown
-      bot.pathfinder.setMovements(defaultMoves)
+      try {
+        configurePathfinder(bot, config.movement, config.behavior)
+      } catch (error) {
+        emit('error', { error: `Pathfinder initialization failed: ${error.message}` })
+        bot.quit('pathfinder initialization failed')
+        return
+      }
 
       emit('ready', {
         botUsername: bot.username,
-        message: `connected as ${bot.username}; owners ${allowedOwners.join(', ')}; prefix ${prefix}; source ${config.commands.source}`
+        message: `connected as ${bot.username}; navigation minecraft-pathfinding-2026; owners ${allowedOwners.join(', ')}; prefix ${prefix}; source ${config.commands.source}`
       })
 
       if (config.behavior.announceOnSpawn && config.behavior.spawnMessage) {
@@ -774,16 +822,8 @@ async function main () {
       void handleCommand(username, message, 'whisper')
     })
 
-    bot.on('goal_reached', (goal) => {
-      currentGoal = 'idle'
-      emit('status', {
-        state: 'connected',
-        message: `goal reached ${goal?.constructor?.name || ''}`.trim()
-      })
-    })
-
     if (config.behavior.logPathUpdates) {
-      bot.on('path_update', (result) => {
+      bot.on('pathGenerated', (result) => {
         if (result?.status) {
           emit('status', {
             state: 'connected',
@@ -791,9 +831,13 @@ async function main () {
           })
         }
       })
+      bot.on('resetPath', (reason) => {
+        emit('status', { state: 'connected', message: `path reset: ${reason}` })
+      })
     }
 
     bot.on('death', () => {
+      void stopMovement().catch((error) => emit('error', { error: error.message }))
       currentGoal = 'idle'
       emit('status', {
         state: config.connection.autoRespawn ? 'respawning' : 'dead',
@@ -820,6 +864,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      goalGeneration++
       if (activeBot === bot) activeBot = null
       scheduleReconnect(kickReason || formatReason(reason))
     })
@@ -852,6 +897,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  configurePathfinder,
   compatibleTimePlugin,
   describeKickReason,
   flattenStructuredText,
