@@ -611,6 +611,7 @@ export class BreakHandler extends InteractHandler {
 
         logBreak(`Calling bot.dig on ${block.name}`)
         this._breakTask = bot.dig(block, 'ignore', 'raycast')
+        await this._breakTask
 
         logBreak('Dig task resolved. Now waiting for world update.')
 
@@ -620,8 +621,6 @@ export class BreakHandler extends InteractHandler {
           (block) => block != null && BlockInfo.replaceables.has(block.type),
           { timeoutMs: 5000, settleMs: 75 }
         )
-
-        await this._breakTask
 
         if (this.task != null) this.task.finish()
         break

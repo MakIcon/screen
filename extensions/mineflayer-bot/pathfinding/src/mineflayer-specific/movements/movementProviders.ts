@@ -219,7 +219,12 @@ export class ForwardJump extends MovementProvider {
 
       // console.log('blockC', blockC)
       const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z)
-      if (!blockD.solidFull) {
+      // From water, an attached surface block is enough to swim onto. A lower
+      // stair is only needed when the upper block has no existing click face.
+      // The block above C is the landing space; mining it removes that face.
+      const waterAnchor = block0.water && Movement.cardinalDirs.concat([new Vec3(0, -1, 0)])
+        .some(face => this.getBlockInfoRaw(blockC.position.plus(face)).solidFull)
+      if (!blockD.solidFull && !waterAnchor) {
         if (node.remainingBlocks <= 1) return // not enough blocks to place
 
         // if (this.getNumEntitiesAt(blockD.position, 0, 0, 0) > 0) return // Check for any entities in the way of a block placement
@@ -297,6 +302,7 @@ abstract class DropDownProvider extends MovementProvider {
     while (blockLand.position.y >= min) {
       if (blockLand.isInvalid || !blockLand.safe) return null
       if (blockLand.water) {
+        if (!this.settings.infiniteLiquidDropdownDistance && node.y - blockLand.position.y > this.settings.maxDropDown) return null
         // High drops need a real water column and an open surface to breathe.
         // The ground-drop limit still applies to stone, roofs and the seabed.
         if (node.y - blockLand.position.y > this.settings.maxDropDown &&

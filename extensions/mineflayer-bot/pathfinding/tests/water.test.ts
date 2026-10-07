@@ -34,12 +34,13 @@ for (const version of ['1.20.4', '26.1.2']) {
 
 for (const scenario of [
   { name: 'no reachable anchor', support: false, blocks: 64, canPlace: true },
-  { name: 'not enough inventory blocks', support: true, blocks: 1, canPlace: true },
+  { name: 'no inventory blocks', support: true, blocks: 0, canPlace: true },
+  { name: 'only one block for a two-block stair', support: true, lowerOnly: true, blocks: 1, canPlace: true },
   { name: 'placement disabled', support: true, blocks: 64, canPlace: false },
 ]) {
   test(`water exit cannot fabricate a stair with ${scenario.name}`, async () => {
     const world = ocean('26.1.2')
-    if (scenario.support) for (let y = 56; y <= 67; y++) world.setBlock(new Vec3(2, y, 0), 'stone')
+    if (scenario.support) for (let y = 56; y <= (scenario.lowerOnly ? 62 : 67); y++) world.setBlock(new Vec3(2, y, 0), 'stone')
     const { rig, cacheWorld } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 63, 0.5), { world })
     const settings = { canDig: false, canPlace: scenario.canPlace, allow1by1towers: true }
     rig.bot.loadPlugin(createPlugin({ moveSettings: settings }))
@@ -49,6 +50,28 @@ for (const scenario of [
       const start = Move.startMove(new movementProviders.IdleMovement(rig.bot, cacheWorld), rig.bot.entity.position, new Vec3(0, 0, 0), scenario.blocks)
       const moves = handler.getNeighbors(start, new Set())
       assert.ok(moves.every(move => !(move.moveType instanceof movementProviders.ForwardJump) || move.toPlace.length === 0))
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+}
+
+for (const version of ['1.20.4', '26.1.2']) {
+  test(`one inventory block makes a usable water exit against a wall on ${version}`, { timeout: 5000 }, async (t) => {
+    const world = ocean(version)
+    for (let y = 56; y <= 67; y++) world.setBlock(new Vec3(2, y, 0), 'stone')
+    const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 63, 0.5), { world })
+    const Item = require('prismarine-item')(rig.mcData)
+    rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 1)
+    rig.bot.inventory.slots[9]!.slot = 9
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: true, movementTimeoutMs: 3000 } }))
+    installSurfaceSwimming(rig.bot)
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+    try {
+      await rig.bot.pathfinder.goto(new goals.GoalBlock(1, 64, 0))
+      assert.equal(rig.bot.entity.onGround, true)
+      assert.ok(rig.bot.entity.position.floored().equals(new Vec3(1, 64, 0)), `position=${rig.bot.entity.position}`)
+      assert.equal(world.getBlock(new Vec3(1, 63, 0))?.name, 'cobblestone')
+      assert.equal(world.getBlock(new Vec3(1, 62, 0))?.name, 'water')
+      assert.equal(rig.bot.inventory.items().filter((item: { name: string }) => item.name === 'cobblestone').length, 0)
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 }
@@ -141,6 +164,28 @@ for (const surface of ['stone', 'lava', 'shallow water', 'covered water']) {
     try {
       const result = await rig.bot.pathfinder.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity, new goals.GoalBlock(5, surface === 'stone' ? 64 : 63, 0))
       assert.equal(result, null)
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+}
+
+for (const scenario of [
+  { maxDropDown: 3, infiniteLiquidDropdownDistance: false, allowed: false },
+  { maxDropDown: 4, infiniteLiquidDropdownDistance: false, allowed: true },
+  { maxDropDown: 3, infiniteLiquidDropdownDistance: true, allowed: true },
+]) {
+  test(`a four-block water drop respects maxDropDown=${scenario.maxDropDown} and unlimited=${scenario.infiniteLiquidDropdownDistance}`, async () => {
+    const world = ocean('26.1.2')
+    world.setBlock(new Vec3(0, 66, 0), 'stone')
+    const { rig, cacheWorld } = createCacheWorld('26.1.2', 67, new Vec3(0.5, 67, 0.5), { world })
+    const settings = { canDig: false, canPlace: false, ...scenario }
+    rig.bot.loadPlugin(createPlugin({ moveSettings: settings }))
+    try {
+      const handler = MovementHandler.create(rig.bot, cacheWorld, rig.bot.pathfinder.movements, settings)
+      handler.loadGoal(new goals.GoalBlock(1, 63, 0))
+      const start = Move.startMove(new movementProviders.IdleMovement(rig.bot, cacheWorld), rig.bot.entity.position, new Vec3(0, 0, 0), 0)
+      const moves = handler.getNeighbors(start, new Set())
+      const waterDrop = moves.some(move => move.moveType instanceof movementProviders.ForwardDropDown && move.exitPos.floored().equals(new Vec3(1, 63, 0)))
+      assert.equal(waterDrop, scenario.allowed)
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 }

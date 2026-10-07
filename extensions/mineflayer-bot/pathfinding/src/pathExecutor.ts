@@ -17,6 +17,7 @@ import type { ResetReason } from './types'
 import { ThePathfinder } from './ThePathfinder'
 import { printBotControls } from './utils'
 import { ClimbExecutor } from './mineflayer-specific/movements/climb'
+import { BreakHandler } from './mineflayer-specific/movements/interactionUtils'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -178,6 +179,8 @@ export class PathExecutor {
     let tickInFlight = false
     let lastProgressPosition = bot.entity.position.clone()
     let lastProgressAt = performance.now()
+    let activeDig: BreakHandler | undefined
+    let digDeadline = 0
 
     const completion = new Promise<void>((resolve, reject) => {
       resolveCompletion = resolve
@@ -202,6 +205,16 @@ export class PathExecutor {
       if (settled) return
       settled = true
       bot.off('physicsTick', moveListener)
+      if (this.getCurrentExecutionId() === myExecutionId) {
+        const interaction = this.getCurrentExecutor()?.cI
+        if (interaction instanceof BreakHandler) {
+          try {
+            await interaction._abort(bot)
+          } catch (abortErr) {
+            log('Failed to abort mining after movement failure: %O', abortErr)
+          }
+        }
+      }
       rejectCompletion(err)
     }
 
@@ -501,10 +514,27 @@ export class PathExecutor {
       // Superseded optimizers can still be pending. Retire their tick listener
       // before the stage guard and watchdog so they cannot stall a newer route.
       if (this.getCurrentExecutionId() !== myExecutionId) { void finish(); return }
+      const interaction = this.getCurrentExecutor()?.cI
+      const block = bot.targetDigBlock
+      const now = performance.now()
+      if (interaction instanceof BreakHandler && interaction.isPerforming && block?.position.equals(interaction.vec)) {
+        if (activeDig !== interaction) {
+          activeDig = interaction
+          // Mining is useful progress while stationary. Bound it by the real
+          // dig time with the equipped tool plus the normal response allowance.
+          const expected = bot.digTime(block)
+          digDeadline = now + (Number.isFinite(expected) ? Math.max(0, expected) : 0) + this.host.defaultMoveSettings.movementTimeoutMs
+        }
+        if (now >= digDeadline) {
+          void fail(new Error(`Movement stalled: mining ${block.name} did not finish within its dig time and movement timeout.`))
+          return
+        }
+        lastProgressAt = now
+      } else activeDig = undefined
       if (bot.entity.position.distanceTo(lastProgressPosition) >= 0.05) {
         lastProgressPosition = bot.entity.position.clone()
-        lastProgressAt = performance.now()
-      } else if (performance.now() - lastProgressAt >= this.host.defaultMoveSettings.movementTimeoutMs) {
+        lastProgressAt = now
+      } else if (now - lastProgressAt >= this.host.defaultMoveSettings.movementTimeoutMs) {
         void fail(new Error('Movement stalled: no progress within the movement timeout.'))
         return
       }

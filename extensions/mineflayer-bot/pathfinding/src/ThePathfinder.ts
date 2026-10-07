@@ -723,6 +723,7 @@ export class ThePathfinder {
   private async _goto (goal: goals.Goal, performOpts: PerformOpts = {}): Promise<void> {
     const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic
     const doForever = dynamic && goal.neverfinish
+    let shore: goals.Goal | undefined
     while (!this.disposed) {
       await this.pendingReset
       if (dynamic) goal.update()
@@ -732,6 +733,7 @@ export class ThePathfinder {
         toWaitOn = new Promise<void>((resolve) => {
           cleanup = this.registerAll(goal, {
             onHasUpdate: () => {
+              shore = undefined
               // Finish the current airborne move before chasing the new position.
               if (!(goal instanceof goals.GoalFollowEntity) || this.bot.entity.onGround) {
                 void this.reset('goalUpdated').catch(() => {})
@@ -745,7 +747,10 @@ export class ThePathfinder {
       }
 
       try {
-        const shore = await findShoreGoal(this.bot, this.world, goal, () => this.abortCalculation || this.disposed)
+        // Keep the same exits across partial routes and movement recovery.
+        // Re-scanning around every new position can send a swimmer back and
+        // forth between different banks without ever reaching dry ground.
+        shore ??= await findShoreGoal(this.bot, this.world, goal, () => this.abortCalculation || this.disposed)
         if (this.executionRunner.getResetReason() === 'goalReassignment' || this.disposed) return
         const routingGoal = shore ?? goal
         let path: Path | undefined
@@ -757,9 +762,25 @@ export class ThePathfinder {
           const opts = this.pathfinderSettings
           if (res.result.status === 'partial' && opts.routePrefixMs > 0 &&
               performance.now() - searchStarted >= opts.routePrefixMs && res.result.path.length >= 5) {
-            const moves = res.result.path.slice(0, opts.routePrefixLength)
+            let moves = res.result.path.slice(0, opts.routePrefixLength)
+            // The closest partial node can cross costly stone before the
+            // search has compared a cheaper tower or bridge. Commit mining
+            // only once the route is complete; a walking prefix can still run.
+            const firstDig = moves.findIndex(move => move.toBreak.length > 0)
+            if (firstDig >= 0) moves = moves.slice(0, firstDig)
+            if (moves.length < 5) continue
             const last = moves[moves.length - 1]
-            if (routingGoal.heuristic(last) < routingGoal.heuristic(moves[0]) - 2) {
+            const elevatedGoal = shore == null &&
+              (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
+              goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new Vec3(goal.x, goal.y, goal.z)).water
+            // A partial search may get horizontally closer to a bridge by
+            // abandoning the shore, without finding any way back up. Executing
+            // that prefix repeats the water/shore loop. Wait for a full route
+            // or a prefix that keeps a dry foothold. Compare against the end
+            // of the prefix, including when the bridge starts at our height.
+            const losesFoothold = elevatedGoal &&
+              (last.metadata?.waterLanding === true || this.world.getBlockInfo(last.exitPos).water)
+            if (!losesFoothold && routingGoal.heuristic(last) < routingGoal.heuristic(moves[0]) - 2) {
               path = { ...res.result, path: moves }
               executionGoal = goals.GoalBlock.fromVec(last.exitPos)
               prefix = true
@@ -796,7 +817,8 @@ export class ThePathfinder {
           continue
         }
         await this.cleanupBot()
-        if (prefix || shore != null) continue
+        if (prefix) continue
+        if (shore != null) { shore = undefined; continue }
         if (goal instanceof goals.GoalFollowEntity) {
           goal.update()
           const actual = { ...path.path[path.path.length - 1], exitPos: this.bot.entity.position } as Move
