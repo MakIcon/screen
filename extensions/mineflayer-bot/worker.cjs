@@ -33,6 +33,7 @@ function loadMineflayer () {
 
 const { mineflayer, compatibilityVersion } = loadMineflayer()
 const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
+const { normalizeCombat, createCombatController } = require('./combat.cjs')
 
 const { GoalFollowEntity, GoalNear } = goals
 
@@ -356,6 +357,7 @@ function parseConfig (raw) {
     5000,
     300000
   )
+  config.combat = normalizeCombat(config.combat)
   return config
 }
 
@@ -546,6 +548,7 @@ async function main () {
     let goalGeneration = 0
     let ended = false
     let kickReason = ''
+    let combat = null
 
     function reply (username, source, text) {
       const message = clampChat(text)
@@ -566,6 +569,7 @@ async function main () {
 
     async function stopMovement () {
       goalGeneration++
+      combat?.stop(true)
       if (bot.pathfinder) await bot.pathfinder.stop()
       bot.clearControlStates()
       currentGoal = 'idle'
@@ -574,8 +578,12 @@ async function main () {
     function startGoal (goal, label) {
       if (!bot.pathfinder) throw new Error('Bot is not ready to move yet')
       const generation = ++goalGeneration
+      combat?.stop(true)
       currentGoal = label
-      void bot.pathfinder.goto(goal).then(() => {
+      void bot.pathfinder.stop().then(() => {
+        if (generation !== goalGeneration || ended) return
+        return bot.pathfinder.goto(goal)
+      }).then(() => {
         if (generation !== goalGeneration || ended) return
         currentGoal = 'idle'
         emit('status', { state: 'connected', message: `movement finished: ${label}` })
@@ -615,6 +623,7 @@ async function main () {
       ]
       if (config.commands.allowSay) commands.push('say text')
       if (config.commands.allowQuit) commands.push('quit')
+      if (config.combat.enabled) commands.push('attack player', 'bow player', 'pvp auto|stop|status')
       reply(username, source, commands.map((command) => `${prefix}${command}`).join(' '))
     }
 
@@ -644,13 +653,39 @@ async function main () {
           reply(
             username,
             source,
-            `Bot ${bot.username} on ${serverLabel}; pos ${pos}; hp ${bot.health ?? '?'}; food ${bot.food ?? '?'}; goal ${currentGoal}`
+            `Bot ${bot.username} on ${serverLabel}; pos ${pos}; hp ${bot.health ?? '?'}; food ${bot.food ?? '?'}; goal ${currentGoal}; pvp ${combat?.status || 'not ready'}`
           )
           return
         }
 
         if (command === 'where') {
           reply(username, source, `I am at ${formatPosition(bot.entity?.position)}`)
+          return
+        }
+
+        if (['attack', 'sword', 'bow'].includes(command)) {
+          if (!combat) throw new Error('Combat is not ready yet')
+          const target = combat.findTarget(args.join(' ') || 'nearest')
+          if (!target) throw new Error('Target is not loaded nearby; move closer and use the exact player name, or nearest for a visible hostile mob')
+          await stopMovement()
+          combat.select(target, command === 'bow' ? 'ranged' : command === 'sword' ? 'melee' : config.combat.style)
+          reply(username, source, `Attacking ${target.username || target.name} (${combat.status})`)
+          return
+        }
+
+        if (command === 'pvp') {
+          if (!combat) throw new Error('Combat is not ready yet')
+          const action = (args[0] || 'status').toLowerCase()
+          if (action === 'auto') {
+            await stopMovement()
+            combat.auto(true)
+          } else if (action === 'stop') {
+            await stopMovement()
+          } else if (action !== 'status') {
+            reply(username, source, `Usage: ${prefix}pvp auto|stop|status`)
+            return
+          }
+          reply(username, source, `PvP: ${combat.status}`)
           return
         }
 
@@ -715,12 +750,14 @@ async function main () {
             reply(username, source, `I cannot see ${username}`)
             return
           }
+          await stopMovement()
           await bot.lookAt(target.position.offset(0, target.height || 1.6, 0), true)
           reply(username, source, `Looking at ${username}`)
           return
         }
 
         if (command === 'jump') {
+          await stopMovement()
           bot.setControlState('jump', true)
           setTimeout(() => {
             if (activeBot === bot) bot.setControlState('jump', false)
@@ -749,6 +786,7 @@ async function main () {
             return
           }
           reply(username, source, 'Quitting')
+          await stopMovement()
           stopping = true
           setTimeout(() => bot.quit('owner quit command'), 150)
           return
@@ -767,9 +805,15 @@ async function main () {
       reconnectAttempts = 0
       try {
         configurePathfinder(bot, config.movement, config.behavior)
+        combat = createCombatController(bot, config.combat, {
+          isOwner,
+          onStatus: message => emit('status', { state: 'connected', message }),
+          onError: error => emit('error', { error: `combat: ${error.message || String(error)}` })
+        })
+        bot.launcherCombat = combat
       } catch (error) {
-        emit('error', { error: `Pathfinder initialization failed: ${error.message}` })
-        bot.quit('pathfinder initialization failed')
+        emit('error', { error: `Bot plugin initialization failed: ${error.message}` })
+        bot.quit('bot plugin initialization failed')
         return
       }
 
@@ -864,6 +908,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      combat?.dispose()
       goalGeneration++
       if (activeBot === bot) activeBot = null
       scheduleReconnect(kickReason || formatReason(reason))
@@ -877,6 +922,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      activeBot.launcherCombat?.dispose()
       activeBot.quit(`worker ${signal}`)
     } else {
       finish(0)
@@ -897,6 +943,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  parseConfig,
   configurePathfinder,
   compatibleTimePlugin,
   describeKickReason,

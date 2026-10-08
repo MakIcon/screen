@@ -16,6 +16,9 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.stayOnWater).toBe(true);
     expect(normalized.commandSource).toBe("both");
     expect(normalized.commandCooldownMs).toBe(500);
+    expect(normalized.combat.engine).toBe("custom");
+    expect(normalized.combat.autoTarget).toBe("manual");
+    expect(normalized.combat.smoothAimSpeed).toBe(100);
   });
 
   it("clamps numeric values and rejects unknown command sources", () => {
@@ -49,5 +52,47 @@ describe("normalizeMineflayerBotSettings", () => {
     };
 
     expect(normalizeMineflayerBotSettings(modern)).toEqual(modern);
+  });
+
+  it("normalizes a partial combat configuration without losing bow preferences", () => {
+    const normalized = normalizeMineflayerBotSettings({
+      combat: {
+        engine: "basic",
+        style: "ranged",
+        bowEngine: "hawkeye",
+        bowOffhand: true,
+        bowPredict: false,
+        meleeSkill: -1,
+        bowAccuracy: 110,
+        attackRange: 100,
+        bowIntervalMs: 500,
+        reactionMs: 12.5,
+        strafe: "unknown",
+        smoothAimSpeed: 1000,
+      },
+    });
+    expect(normalized.combat.engine).toBe("basic");
+    expect(normalized.combat.bowEngine).toBe("hawkeye");
+    expect(normalized.combat.bowOffhand).toBe(true);
+    expect(normalized.combat.bowPredict).toBe(false);
+    expect(normalized.combat.meleeSkill).toBe(0);
+    expect(normalized.combat.bowAccuracy).toBe(100);
+    expect(normalized.combat.attackRange).toBe(3);
+    expect(normalized.combat.bowIntervalMs).toBe(1200);
+    expect(normalized.combat.reactionMs).toBe(13);
+    expect(normalized.combat.strafe).toBe("intelligent");
+    expect(normalized.combat.smoothAimSpeed).toBe(300);
+  });
+
+  it("preserves aim speed and restores its default for invalid values", () => {
+    expect(
+      normalizeMineflayerBotSettings({ combat: { smoothAimSpeed: 55 } }).combat.smoothAimSpeed,
+    ).toBe(55);
+    expect(
+      normalizeMineflayerBotSettings({ combat: { smoothAimSpeed: 0 } }).combat.smoothAimSpeed,
+    ).toBe(10);
+    expect(
+      normalizeMineflayerBotSettings({ combat: { smoothAimSpeed: NaN } }).combat.smoothAimSpeed,
+    ).toBe(100);
   });
 });

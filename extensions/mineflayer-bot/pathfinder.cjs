@@ -5,9 +5,9 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
-// pathfinding/dist/mineflayer-specific/world/interactable.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/world/interactable.js
 var require_interactable = __commonJS({
-  "pathfinding/dist/mineflayer-specific/world/interactable.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/world/interactable.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var Interactables = [
@@ -150,9 +150,9 @@ var require_interactable = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/climbablePhysics.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/climbablePhysics.js
 var require_climbablePhysics = __commonJS({
-  "pathfinding/dist/mineflayer-specific/climbablePhysics.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/climbablePhysics.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ClimbAwarePhysics = exports2.climbableNames = void 0;
@@ -195,9 +195,9 @@ var require_climbablePhysics = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/world/cacheWorld.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/world/cacheWorld.js
 var require_cacheWorld = __commonJS({
-  "pathfinding/dist/mineflayer-specific/world/cacheWorld.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/world/cacheWorld.js"(exports2) {
     "use strict";
     var __importDefault2 = exports2 && exports2.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -553,9 +553,9 @@ var require_cacheWorld = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/costs.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/costs.js
 var require_costs = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/costs.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/costs.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.JUMP_UP_ONE_BLOCK_COST = exports2.JUMP_ONE_BLOCK_COST = exports2.FALL_0_25_BLOCKS_COST = exports2.FALL_1_25_BLOCKS_COST = exports2.FALL_N_BLOCKS_COST = exports2.COST_HEURISTIC = exports2.COST_INF = exports2.CENTER_AFTER_FALL_COST = exports2.WALK_OFF_BLOCK_COST = exports2.SPRINT_MULTIPLIER = exports2.SPRINT_ONE_BLOCK_COST = exports2.SNEAK_ONE_BLOCK_COST = exports2.LADDER_DOWN_ONE_COST = exports2.LADDER_UP_ONE_COST = exports2.WALK_ONE_OVER_SOUL_SAND_COST = exports2.WALK_ONE_IN_WATER_COST = exports2.WALK_ONE_BLOCK_COST = void 0;
@@ -611,9 +611,9 @@ var require_costs = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/exceptions.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/exceptions.js
 var require_exceptions = __commonJS({
-  "pathfinding/dist/mineflayer-specific/exceptions.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/exceptions.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.TickAdvanceError = exports2.ManualResetError = exports2.ResetError = exports2.AbortError = exports2.CancelError = void 0;
@@ -659,9 +659,9 @@ var require_exceptions = __commonJS({
   }
 });
 
-// pathfinding/dist/utils.js
+// extensions/mineflayer-bot/pathfinding/dist/utils.js
 var require_utils = __commonJS({
-  "pathfinding/dist/utils.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/utils.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.Task = exports2.getScaffoldCount = exports2.debug = void 0;
@@ -892,9 +892,9 @@ var require_utils = __commonJS({
   }
 });
 
-// pathfinding/dist/customBlockEvents.js
+// extensions/mineflayer-bot/pathfinding/dist/customBlockEvents.js
 var require_customBlockEvents = __commonJS({
-  "pathfinding/dist/customBlockEvents.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/customBlockEvents.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getBlockEventListenerCount = getBlockEventListenerCount;
@@ -1252,9 +1252,9 @@ var require_customBlockEvents = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/interactionUtils.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/interactionUtils.js
 var require_interactionUtils = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/interactionUtils.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/interactionUtils.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.BreakHandler = exports2.PlaceHandler = exports2.InteractHandler = void 0;
@@ -1782,9 +1782,9 @@ var require_interactionUtils = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/goals.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/goals.js
 var require_goals = __commonJS({
-  "pathfinding/dist/mineflayer-specific/goals.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/goals.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.GoalFollowEntity = exports2.GoalPlaceBlock = exports2.GoalMineBlock = exports2.GoalLookAt = exports2.GoalNearXZ = exports2.GoalNear = exports2.GoalBlock = exports2.GoalCompositeAll = exports2.GoalCompositeAny = exports2.GoalComposite = exports2.GoalInvert = exports2.GoalDynamic = exports2.Goal = void 0;
@@ -2265,9 +2265,9 @@ var require_goals = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/move.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/move.js
 var require_move = __commonJS({
-  "pathfinding/dist/mineflayer-specific/move.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/move.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.Move = void 0;
@@ -2358,9 +2358,9 @@ var require_move = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movement.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movement.js
 var require_movement = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movement.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movement.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SimMovement = exports2.Movement = exports2.DEFAULT_MOVEMENT_OPTS = void 0;
@@ -2644,9 +2644,9 @@ var require_movement = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/controls.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/controls.js
 var require_controls = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/controls.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/controls.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.steerToPosition = steerToPosition;
@@ -2851,9 +2851,9 @@ var require_controls = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/simulators/jumpSim.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/simulators/jumpSim.js
 var require_jumpSim = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/simulators/jumpSim.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/simulators/jumpSim.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.JumpSim = void 0;
@@ -3008,9 +3008,9 @@ var require_jumpSim = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movementUtils.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementUtils.js
 var require_movementUtils = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movementUtils.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementUtils.js"(exports2) {
     "use strict";
     var __importDefault2 = exports2 && exports2.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -3362,9 +3362,9 @@ var require_movementUtils = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movementExecutor.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutor.js
 var require_movementExecutor = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movementExecutor.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutor.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -3947,9 +3947,9 @@ var require_movementExecutor = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movementExecutors.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutors.js
 var require_movementExecutors = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movementExecutors.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutors.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ParkourDiagonalExecutor = exports2.ParkourForwardExecutor = exports2.StraightUpExecutor = exports2.StraightDownExecutor = exports2.ForwardDropDownExecutor = exports2.NewForwardJumpExecutor = exports2.ForwardJumpExecutor = exports2.NewForwardExecutor = exports2.IdleMovementExecutor = void 0;
@@ -4929,9 +4929,9 @@ var require_movementExecutors = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movementProvider.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementProvider.js
 var require_movementProvider = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movementProvider.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementProvider.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MovementHandler = exports2.MovementProvider = void 0;
@@ -5146,9 +5146,9 @@ var require_movementProvider = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/neo.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/neo.js
 var require_neo = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/neo.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/neo.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.NeoExecutor = exports2.NeoProvider = void 0;
@@ -5429,9 +5429,9 @@ var require_neo = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/momentum.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/momentum.js
 var require_momentum = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/momentum.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/momentum.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MomentumJumpExecutor = exports2.MomentumJump = void 0;
@@ -5664,9 +5664,9 @@ var require_momentum = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/climb.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/climb.js
 var require_climb = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/climb.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/climb.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ClimbExecutor = exports2.Climb = void 0;
@@ -5814,9 +5814,9 @@ var require_climb = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/advanced/ladder-provider.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-provider.js
 var require_ladder_provider = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/advanced/ladder-provider.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-provider.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.LadderLandingDiagonal = exports2.LadderLandingForward = exports2.LadderDiagonal = exports2.LadderForward = void 0;
@@ -6319,9 +6319,9 @@ var require_ladder_provider = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-provider.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-provider.js
 var require_around_corner_provider = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-provider.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-provider.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.AroundCornerDiagonal = void 0;
@@ -6475,9 +6475,9 @@ var require_around_corner_provider = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/movementProviders.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementProviders.js
 var require_movementProviders = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/movementProviders.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementProviders.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ParkourDiagonal = exports2.ParkourForward = exports2.StraightUp = exports2.StraightDown = exports2.ForwardDropDown = exports2.ForwardJump = exports2.Diagonal = exports2.Forward = exports2.IdleMovement = exports2.AroundCornerDiagonal = exports2.LadderLandingDiagonal = exports2.LadderLandingForward = exports2.LadderDiagonal = exports2.LadderForward = exports2.Climb = exports2.MomentumJump = exports2.NeoProvider = void 0;
@@ -7110,17 +7110,17 @@ var require_movementProviders = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/exclusionZones.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/exclusionZones.js
 var require_exclusionZones = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/exclusionZones.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/exclusionZones.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/index.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/index.js
 var require_movements = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/index.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/index.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -7148,9 +7148,9 @@ var require_movements = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/post/optimizer.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/optimizer.js
 var require_optimizer = __commonJS({
-  "pathfinding/dist/mineflayer-specific/post/optimizer.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/optimizer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.Optimizer = exports2.MovementOptimizer = void 0;
@@ -7273,9 +7273,9 @@ var require_optimizer = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/post/optimizers.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/optimizers.js
 var require_optimizers = __commonJS({
-  "pathfinding/dist/mineflayer-specific/post/optimizers.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/optimizers.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ForwardJumpUpOpt = exports2.DropDownOpt = exports2.LandStraightAheadOpt = void 0;
@@ -7541,9 +7541,9 @@ var require_optimizers = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/post/registry.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/registry.js
 var require_registry = __commonJS({
-  "pathfinding/dist/mineflayer-specific/post/registry.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/registry.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.OptimizationRegistry = void 0;
@@ -7611,9 +7611,9 @@ var require_registry = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/post/index.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/index.js
 var require_post = __commonJS({
-  "pathfinding/dist/mineflayer-specific/post/index.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/post/index.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -7637,9 +7637,9 @@ var require_post = __commonJS({
   }
 });
 
-// pathfinding/dist/abstract/algorithms/index.js
+// extensions/mineflayer-bot/pathfinding/dist/abstract/algorithms/index.js
 var require_algorithms = __commonJS({
-  "pathfinding/dist/abstract/algorithms/index.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/abstract/algorithms/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.reconstructPath = reconstructPath;
@@ -7656,9 +7656,9 @@ var require_algorithms = __commonJS({
   }
 });
 
-// pathfinding/dist/abstract/heap.js
+// extensions/mineflayer-bot/pathfinding/dist/abstract/heap.js
 var require_heap = __commonJS({
-  "pathfinding/dist/abstract/heap.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/abstract/heap.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.BinaryHeapOpenSet = void 0;
@@ -7740,9 +7740,9 @@ var require_heap = __commonJS({
   }
 });
 
-// pathfinding/dist/abstract/node.js
+// extensions/mineflayer-bot/pathfinding/dist/abstract/node.js
 var require_node = __commonJS({
-  "pathfinding/dist/abstract/node.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/abstract/node.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.CPathNode = exports2.PathNode = void 0;
@@ -7788,9 +7788,9 @@ var require_node = __commonJS({
   }
 });
 
-// pathfinding/dist/abstract/algorithms/astar.js
+// extensions/mineflayer-bot/pathfinding/dist/abstract/algorithms/astar.js
 var require_astar = __commonJS({
-  "pathfinding/dist/abstract/algorithms/astar.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/abstract/algorithms/astar.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.AStarBackOff = exports2.AStar = void 0;
@@ -8019,9 +8019,9 @@ var require_astar = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/algs.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/algs.js
 var require_algs = __commonJS({
-  "pathfinding/dist/mineflayer-specific/algs.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/algs.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.AStarNeighbor = exports2.AStar = void 0;
@@ -8125,9 +8125,9 @@ var require_algs = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/pathProducers/continuousPathProducer.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/continuousPathProducer.js
 var require_continuousPathProducer = __commonJS({
-  "pathfinding/dist/mineflayer-specific/pathProducers/continuousPathProducer.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/continuousPathProducer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ContinuousPathProducer = void 0;
@@ -8169,9 +8169,9 @@ var require_continuousPathProducer = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/pathProducers/partialPathProducer.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/partialPathProducer.js
 var require_partialPathProducer = __commonJS({
-  "pathfinding/dist/mineflayer-specific/pathProducers/partialPathProducer.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/partialPathProducer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.PartialPathProducer = void 0;
@@ -8311,9 +8311,9 @@ var require_partialPathProducer = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/pathProducers/index.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/index.js
 var require_pathProducers = __commonJS({
-  "pathfinding/dist/mineflayer-specific/pathProducers/index.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/pathProducers/index.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -8337,9 +8337,9 @@ var require_pathProducers = __commonJS({
   }
 });
 
-// pathfinding/dist/pathExecutor.js
+// extensions/mineflayer-bot/pathfinding/dist/pathExecutor.js
 var require_pathExecutor = __commonJS({
-  "pathfinding/dist/pathExecutor.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/pathExecutor.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -8890,9 +8890,9 @@ var require_pathExecutor = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/shore.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/shore.js
 var require_shore = __commonJS({
-  "pathfinding/dist/mineflayer-specific/shore.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/shore.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.findShoreGoal = findShoreGoal;
@@ -8979,9 +8979,9 @@ var require_shore = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js
 var require_ladder_executor = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.LadderLandingDiagonalExecutor = exports2.LadderLandingForwardExecutor = exports2.LadderDiagonalExecutor = exports2.LadderForwardExecutor = void 0;
@@ -9399,9 +9399,9 @@ var require_ladder_executor = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-executor.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-executor.js
 var require_around_corner_executor = __commonJS({
-  "pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-executor.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/around-corner-executor.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.AroundCornerDiagonalExecutor = void 0;
@@ -9737,9 +9737,9 @@ var require_around_corner_executor = __commonJS({
   }
 });
 
-// pathfinding/dist/ThePathfinder.js
+// extensions/mineflayer-bot/pathfinding/dist/ThePathfinder.js
 var require_ThePathfinder = __commonJS({
-  "pathfinding/dist/ThePathfinder.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/ThePathfinder.js"(exports2) {
     "use strict";
     var __createBinding2 = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -10477,9 +10477,9 @@ var require_ThePathfinder = __commonJS({
   }
 });
 
-// pathfinding/dist/PathingUtil.js
+// extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js
 var require_PathingUtil = __commonJS({
-  "pathfinding/dist/PathingUtil.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.PathingUtil = void 0;
@@ -10540,9 +10540,9 @@ var require_PathingUtil = __commonJS({
   }
 });
 
-// pathfinding/dist/mineflayer-specific/surfaceSwimming.js
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js
 var require_surfaceSwimming = __commonJS({
-  "pathfinding/dist/mineflayer-specific/surfaceSwimming.js"(exports2) {
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.installSurfaceSwimming = installSurfaceSwimming;
@@ -10615,7 +10615,7 @@ var require_surfaceSwimming = __commonJS({
   }
 });
 
-// pathfinding/dist/index.js
+// extensions/mineflayer-bot/pathfinding/dist/index.js
 var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
   if (k2 === void 0) k2 = k;
   var desc = Object.getOwnPropertyDescriptor(m, k);

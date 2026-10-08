@@ -3,6 +3,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
@@ -37,6 +38,9 @@ export interface ElementSliderProps {
   showHeader?: boolean;
   showValue?: boolean;
   valueEditable?: boolean;
+  showValueBorder?: boolean;
+  valueBackground?: CSSProperties["background"];
+  valueFocusBackground?: CSSProperties["background"];
   keyboardEnabled?: boolean;
   showDefaultMarker?: boolean;
   defaultMarkerMagnetic?: boolean;
@@ -83,6 +87,9 @@ export function ElementSlider({
   showHeader = true,
   showValue,
   valueEditable = false,
+  showValueBorder = true,
+  valueBackground,
+  valueFocusBackground,
   keyboardEnabled = true,
   showDefaultMarker = false,
   defaultMarkerMagnetic = true,
@@ -363,25 +370,35 @@ export function ElementSlider({
       {(effectiveShowHeader || effectiveShowValue) && (
         <div className={`es-header ${!effectiveShowHeader ? "es-header--value-only" : ""}`}>
           {effectiveShowHeader && <span className="es-label">{effectiveLabel}</span>}
-          {effectiveShowValue &&
-            (effectiveValueEditable ? (
-              <CustomNumberInput
-                className="es-value-editor"
-                value={currentValue}
-                min={effectiveMin}
-                max={effectiveMax}
-                step={effectiveStep}
-                showArrows={false}
-                disabled={disabled}
-                ariaLabel={`${effectiveLabel} value`}
-                onChange={(nextValue) => updateValue(nextValue, false)}
-                onCommit={(nextValue) => onCommit?.(snap(nextValue))}
-              />
-            ) : (
-              <span className="es-value-badge" ref={badgeRef}>
-                {currentValue}
-              </span>
-            ))}
+          {effectiveShowValue && (
+            <div className="es-value">
+              {effectiveValueEditable ? (
+                <CustomNumberInput
+                  className="es-value-editor"
+                  showBorder={showValueBorder}
+                  background={valueBackground}
+                  focusBackground={valueFocusBackground}
+                  value={currentValue}
+                  min={effectiveMin}
+                  max={effectiveMax}
+                  step={effectiveStep}
+                  showArrows={false}
+                  disabled={disabled}
+                  ariaLabel={`${effectiveLabel} value`}
+                  onChange={(nextValue) => updateValue(nextValue, false)}
+                  onCommit={(nextValue) => onCommit?.(snap(nextValue))}
+                />
+              ) : (
+                <span
+                  className={`es-value-badge${!showValueBorder ? " es-value-badge--borderless" : ""}`}
+                  ref={badgeRef}
+                  style={{ background: valueBackground }}
+                >
+                  {currentValue}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

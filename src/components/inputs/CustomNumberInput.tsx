@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, FocusEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, CSSProperties, FocusEvent, KeyboardEvent } from "react";
 import { NumberStepperArrows } from "./NumberStepperArrows";
 import "./CustomNumberInput.css";
 
@@ -11,10 +11,13 @@ type CustomNumberInputProps = {
   max?: number;
   step?: number;
   showArrows?: boolean;
+  showBorder?: boolean;
   disabled?: boolean;
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
+  background?: CSSProperties["background"];
+  focusBackground?: CSSProperties["background"];
 };
 
 function isFiniteMax(max: number | undefined): max is number {
@@ -42,6 +45,16 @@ function isAboveUpperBound(value: number, max: number | undefined) {
   return isFiniteMax(max) && value > max;
 }
 
+function decimalPlaces(value: number) {
+  const [coefficient, exponent = "0"] = String(value).toLowerCase().split("e");
+  return Math.max(0, (coefficient.split(".")[1]?.length ?? 0) - Number(exponent));
+}
+
+function cleanNumber(value: number) {
+  // Remove floating point noise while preserving integers and meaningful decimal digits.
+  return Number.isInteger(value) ? value : Number(value.toPrecision(15));
+}
+
 export function CustomNumberInput({
   value,
   onChange,
@@ -50,17 +63,20 @@ export function CustomNumberInput({
   max = -1,
   step = 1,
   showArrows = true,
+  showBorder = true,
   disabled = false,
   placeholder,
   ariaLabel,
   className,
+  background,
+  focusBackground,
 }: CustomNumberInputProps) {
-  const [draft, setDraft] = useState(String(value));
+  const [draft, setDraft] = useState(() => String(cleanNumber(value)));
   const [focused, setFocused] = useState(false);
   const safeStep = step > 0 ? step : 1;
 
   const normalizedValue = useMemo(
-    () => clampValue(value, min, max),
+    () => cleanNumber(clampValue(value, min, max)),
     [max, min, value],
   );
 
@@ -71,10 +87,15 @@ export function CustomNumberInput({
   }, [focused, normalizedValue]);
 
   const commitValue = (nextValue: number) => {
-    const normalized = clampValue(nextValue, min, max);
+    const normalized = cleanNumber(clampValue(nextValue, min, max));
     setDraft(String(normalized));
     onChange(normalized);
     onCommit?.(normalized);
+  };
+
+  const stepValue = (direction: 1 | -1) => {
+    const precision = Math.min(100, Math.max(decimalPlaces(normalizedValue), decimalPlaces(safeStep)));
+    commitValue(Number((normalizedValue + direction * safeStep).toFixed(precision)));
   };
 
   const commitDraft = () => {
@@ -117,13 +138,13 @@ export function CustomNumberInput({
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      commitValue(normalizedValue + safeStep);
+      stepValue(1);
       return;
     }
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      commitValue(normalizedValue - safeStep);
+      stepValue(-1);
     }
   };
 
@@ -135,9 +156,14 @@ export function CustomNumberInput({
       className={[
         "cni-root",
         showArrows ? "cni-root--with-arrows" : "",
+        !showBorder ? "cni-root--borderless" : "",
         disabled ? "cni-root--disabled" : "",
         className,
       ].filter(Boolean).join(" ")}
+      style={{
+        "--cni-background": background,
+        "--cni-focus-background": focusBackground ?? background,
+      } as CSSProperties}
     >
       <input
         className="cni-input"
@@ -157,8 +183,8 @@ export function CustomNumberInput({
           disabled={disabled}
           incrementDisabled={incrementDisabled}
           decrementDisabled={decrementDisabled}
-          onIncrement={() => commitValue(normalizedValue + safeStep)}
-          onDecrement={() => commitValue(normalizedValue - safeStep)}
+          onIncrement={() => stepValue(1)}
+          onDecrement={() => stepValue(-1)}
         />
       )}
     </div>

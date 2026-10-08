@@ -27,6 +27,9 @@ if (Test-Path -LiteralPath $stageDirectory) {
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat-defaults.json") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "COMBAT.md") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "pathfinder.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "extension.json") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "package.json") -Destination $stageDirectory

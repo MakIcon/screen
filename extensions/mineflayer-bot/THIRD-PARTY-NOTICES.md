@@ -15,6 +15,14 @@ pathfinding/src/mineflayer-specific/movements/controls.ts.
 External physics/utility packages retain their GPL-3.0 notices in node_modules;
 all other dependency license files are retained with their packages.
 
+Combat integrations added in 1.7.0 use:
+- @nxg-org/mineflayer-custom-pvp 1.7.16, GenerelSchwerz, GPL-3.0.
+- mineflayer-pvp 1.3.2, TheDudeFromCI / PrismarineJS, MIT.
+- minecrafthawkeye 1.3.9, sefirosweb, ISC.
+The original license files remain in their installed node_modules packages.
+Editable launcher combat code, defaults and tests are in the corresponding
+source archive alongside the worker and Pathfinder source.
+
 Corresponding source is included in pathfinder-source.json. Run:
 
     node restore-pathfinder-source.cjs C:\work\pathfinder-source

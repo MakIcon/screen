@@ -583,6 +583,70 @@ pub struct MineflayerBotPluginSettings {
     pub auto_respawn: bool,
     #[serde(default)]
     pub log_path_updates: bool,
+    #[serde(default)]
+    pub combat: MineflayerCombatSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MineflayerCombatSettings {
+    pub enabled: bool,
+    pub engine: String,
+    pub style: String,
+    pub auto_target: String,
+    pub target_range: f64,
+    pub reaction_ms: u32,
+    pub melee_skill: u32,
+    pub cps: u32,
+    pub attack_range: f64,
+    pub weapon: String,
+    pub strafe: String,
+    pub criticals: String,
+    pub sprint_tap: String,
+    pub shield: bool,
+    pub shield_break: bool,
+    pub smooth_aim: bool,
+    pub smooth_aim_speed: u32,
+    pub bow_enabled: bool,
+    pub bow_engine: String,
+    pub bow_accuracy: u32,
+    pub bow_range: f64,
+    pub bow_interval_ms: u32,
+    pub bow_predict: bool,
+    pub bow_offhand: bool,
+    pub melee_fallback: bool,
+}
+
+impl Default for MineflayerCombatSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            engine: "custom".into(),
+            style: "auto".into(),
+            auto_target: "manual".into(),
+            target_range: 24.0,
+            reaction_ms: 250,
+            melee_skill: 80,
+            cps: 12,
+            attack_range: 3.0,
+            weapon: "sword".into(),
+            strafe: "intelligent".into(),
+            criticals: "hop".into(),
+            sprint_tap: "wtap".into(),
+            shield: true,
+            shield_break: true,
+            smooth_aim: true,
+            smooth_aim_speed: 100,
+            bow_enabled: true,
+            bow_engine: "custom".into(),
+            bow_accuracy: 90,
+            bow_range: 48.0,
+            bow_interval_ms: 1500,
+            bow_predict: true,
+            bow_offhand: false,
+            melee_fallback: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -911,6 +975,7 @@ impl Default for MineflayerBotPluginSettings {
             connect_timeout_seconds: default_mineflayer_bot_connect_timeout_seconds(),
             auto_respawn: true,
             log_path_updates: false,
+            combat: MineflayerCombatSettings::default(),
         }
     }
 }
@@ -1216,6 +1281,31 @@ mod loader_schema_tests {
         assert!(parsed.stay_on_water);
         assert_eq!(parsed.command_source, "both");
         assert_eq!(parsed.command_cooldown_ms, 500);
+        assert_eq!(parsed.combat.engine, "custom");
+        assert_eq!(parsed.combat.auto_target, "manual");
+        assert_eq!(parsed.combat.smooth_aim_speed, 100);
+    }
+
+    #[test]
+    fn mineflayer_combat_round_trips_and_defaults_match_worker() {
+        let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
+            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175 }
+        })).unwrap();
+        let saved = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(saved["combat"]["engine"], "basic");
+        assert_eq!(saved["combat"]["bowEngine"], "hawkeye");
+        assert_eq!(saved["combat"]["bowPredict"], false);
+        assert_eq!(saved["combat"]["attackRange"], 2.5);
+        assert_eq!(saved["combat"]["bowIntervalMs"], 1500);
+        assert_eq!(saved["combat"]["smoothAimSpeed"], 175);
+        let worker: super::MineflayerCombatSettings = serde_json::from_str(include_str!(
+            "../../extensions/mineflayer-bot/combat-defaults.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(super::MineflayerCombatSettings::default()).unwrap(),
+            serde_json::to_value(worker).unwrap()
+        );
     }
 
     #[test]

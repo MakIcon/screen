@@ -5,14 +5,22 @@
   display: flex;
   align-items: center;
   border: 1px solid var(--line-strong);
-  background: var(--bg-elevated);
+  background: var(--cni-background, var(--bg-elevated));
   color: var(--ink);
   transition: border-color 0.15s, background 0.15s, opacity 0.15s;
 }
 
 .cni-root:focus-within {
   border-color: var(--ink);
-  background: var(--bg);
+  background: var(--cni-focus-background, var(--cni-background, var(--bg)));
+}
+
+.cni-root--borderless {
+  border: 0;
+}
+
+.cni-root--borderless:focus-within {
+  box-shadow: inset 0 -1px 0 var(--accent, var(--ink));
 }
 
 .cni-root--disabled {

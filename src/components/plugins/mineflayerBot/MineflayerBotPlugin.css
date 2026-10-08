@@ -57,7 +57,7 @@
 
 .mineflayer-bot-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--line);
   background: var(--bg-card);
 }
@@ -141,8 +141,8 @@
   letter-spacing: 0.14em;
 }
 
-.mineflayer-bot-field input,
-.mineflayer-bot-field textarea {
+.mineflayer-bot-field > input,
+.mineflayer-bot-field > textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -160,23 +160,64 @@
     opacity 0.14s;
 }
 
-.mineflayer-bot-field input {
+.mineflayer-bot-field > input {
   min-height: 40px;
 }
 
-.mineflayer-bot-field textarea {
+.mineflayer-bot-choice {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.mineflayer-bot-choice:disabled {
+  opacity: 0.45;
+}
+
+.mineflayer-bot-slider.es-root {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+}
+
+.mineflayer-bot-toggle-warning .settings-toggle-title {
+  color: var(--danger);
+}
+
+.mineflayer-bot-combat-fields {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.mineflayer-bot-combat-fields:disabled {
+  opacity: 0.45;
+}
+
+.mineflayer-bot-combat-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.mineflayer-bot-field > textarea {
   min-height: 72px;
   padding-top: 11px;
   line-height: 1.45;
 }
 
-.mineflayer-bot-field input:focus,
-.mineflayer-bot-field textarea:focus {
+.mineflayer-bot-field > input:focus,
+.mineflayer-bot-field > textarea:focus {
   border-color: rgba(194, 65, 12, 0.5);
   background: var(--bg-panel);
 }
 
-.mineflayer-bot-field input:disabled {
+.mineflayer-bot-field > input:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }
@@ -289,97 +330,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-}
-
-.mineflayer-bot-toggle {
-  min-width: 0;
-  min-height: 58px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--line);
-  background: var(--bg-card);
-  color: var(--muted);
-  cursor: pointer;
-  padding: 10px 12px;
-  text-align: left;
-  transition:
-    border-color 0.14s,
-    background 0.14s,
-    color 0.14s;
-}
-
-.mineflayer-bot-toggle:hover {
-  border-color: var(--line-strong);
-  background: var(--bg-hover);
-}
-
-.mineflayer-bot-toggle--active {
-  border-color: rgba(47, 111, 69, 0.3);
-  background: rgba(47, 111, 69, 0.055);
-}
-
-.mineflayer-bot-toggle--warning.mineflayer-bot-toggle--active {
-  border-color: rgba(194, 65, 12, 0.34);
-  background: var(--bg-hover-strong);
-}
-
-.mineflayer-bot-toggle-copy {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-}
-
-.mineflayer-bot-toggle-copy strong,
-.mineflayer-bot-toggle-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mineflayer-bot-toggle-copy strong {
-  color: var(--ink);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.11em;
-}
-
-.mineflayer-bot-toggle-copy small {
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.mineflayer-bot-toggle-track {
-  position: relative;
-  width: 34px;
-  height: 18px;
-  flex: 0 0 auto;
-  border: 1px solid var(--line-strong);
-  background: var(--bg-panel);
-}
-
-.mineflayer-bot-toggle-track span {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 10px;
-  height: 10px;
-  background: var(--muted);
-  transition:
-    transform 0.16s,
-    background 0.16s;
-}
-
-.mineflayer-bot-toggle--active .mineflayer-bot-toggle-track span {
-  background: var(--success);
-  transform: translateX(16px);
-}
-
-.mineflayer-bot-toggle--warning.mineflayer-bot-toggle--active .mineflayer-bot-toggle-track span {
-  background: var(--accent);
 }
 
 .mineflayer-bot-presets {

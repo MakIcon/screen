@@ -19,6 +19,9 @@ pub const MINEFLAYER_BOT_ID: &str = "mineflayer-bot";
 pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
 
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
+const MINEFLAYER_COMBAT: &str = include_str!("../../../extensions/mineflayer-bot/combat.cjs");
+const MINEFLAYER_COMBAT_DEFAULTS: &str =
+    include_str!("../../../extensions/mineflayer-bot/combat-defaults.json");
 const MINEFLAYER_PATHFINDER: &str =
     include_str!("../../../extensions/mineflayer-bot/pathfinder.cjs");
 const MINEFLAYER_MANIFEST: &str = include_str!("../../../extensions/mineflayer-bot/extension.json");
@@ -67,6 +70,14 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
                     .to_string(),
             );
         }
+        if !installed.join("combat.cjs").is_file()
+            || !installed.join("combat-defaults.json").is_file()
+        {
+            return Err(
+                "Mineflayer Bot package needs a PvP update. Open Extensions and install it again."
+                    .to_string(),
+            );
+        }
         return Ok(installed);
     }
     Err(
@@ -90,6 +101,8 @@ fn mineflayer_status() -> OptionalExtensionStatus {
                 && managed.join(&manifest.entry).is_file()
                 && managed.join("node_modules").is_dir()
                 && managed.join("pathfinder.cjs").is_file()
+                && managed.join("combat.cjs").is_file()
+                && managed.join("combat-defaults.json").is_file()
         })
         .unwrap_or(false);
 
@@ -176,6 +189,12 @@ fn npm_error_detail(stdout: &[u8], stderr: &[u8]) -> String {
 async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
     for (name, contents) in [
         ("worker.cjs", MINEFLAYER_WORKER),
+        ("combat.cjs", MINEFLAYER_COMBAT),
+        ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
+        (
+            "COMBAT.md",
+            include_str!("../../../extensions/mineflayer-bot/COMBAT.md"),
+        ),
         ("pathfinder.cjs", MINEFLAYER_PATHFINDER),
         ("extension.json", MINEFLAYER_MANIFEST),
         ("package.json", MINEFLAYER_PACKAGE),

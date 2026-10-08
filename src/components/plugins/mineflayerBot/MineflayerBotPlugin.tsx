@@ -6,10 +6,13 @@ import { normalizeMineflayerBotSettings } from "../pluginSettings";
 import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import { PlaceholderGuideButton } from "../../placeholders/PlaceholderGuideButton";
+import { CustomNumberInput } from "../../inputs/CustomNumberInput";
+import { ElementToggle } from "../../inputs/ElementToggle";
+import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
-type SettingsSection = "connection" | "behavior" | "commands" | "control";
+type SettingsSection = "connection" | "behavior" | "combat" | "commands" | "control";
 
 const SETTINGS_SECTIONS: Array<{
   id: SettingsSection;
@@ -18,8 +21,9 @@ const SETTINGS_SECTIONS: Array<{
 }> = [
   { id: "connection", label: "CONNECTION", mark: "01" },
   { id: "behavior", label: "BEHAVIOR", mark: "02" },
-  { id: "commands", label: "COMMANDS", mark: "03" },
-  { id: "control", label: "CONTROL", mark: "04" },
+  { id: "combat", label: "PVP / ЛУК", mark: "03" },
+  { id: "commands", label: "COMMANDS", mark: "04" },
+  { id: "control", label: "CONTROL", mark: "05" },
 ];
 
 const MOVEMENT_PRESETS: Array<{
@@ -85,25 +89,15 @@ function SettingToggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      className={[
-        "mineflayer-bot-toggle",
-        checked ? "mineflayer-bot-toggle--active" : "",
-        warning ? "mineflayer-bot-toggle--warning" : "",
-      ].join(" ")}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="mineflayer-bot-toggle-copy">
-        <strong>{label}</strong>
-        <small>{description}</small>
-      </span>
-      <span className="mineflayer-bot-toggle-track" aria-hidden="true">
-        <span />
-      </span>
-    </button>
+    <div className={warning ? "mineflayer-bot-toggle-warning" : undefined}>
+      <ElementToggle
+        size="small"
+        title={label}
+        note={description}
+        enabled={checked}
+        onToggle={() => onChange(!checked)}
+      />
+    </div>
   );
 }
 
@@ -255,12 +249,13 @@ function MineflayerBotSettingsEditor({
 
               <label className="mineflayer-bot-field">
                 <span>PORT</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="PORT"
+                  background="transparent"
                   min={1}
                   max={65535}
                   value={settings.port}
-                  onChange={(event) => update({ port: event.target.valueAsNumber })}
+                  onChange={(port) => update({ port })}
                 />
               </label>
 
@@ -370,38 +365,37 @@ function MineflayerBotSettingsEditor({
             <div className="mineflayer-bot-grid mineflayer-bot-grid--three">
               <label className="mineflayer-bot-field">
                 <span>RECONNECT DELAY · SEC</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="RECONNECT DELAY · SEC"
+                  background="transparent"
                   min={1}
                   max={300}
                   disabled={!settings.autoReconnect}
                   value={settings.reconnectDelaySeconds}
-                  onChange={(event) =>
-                    update({ reconnectDelaySeconds: event.target.valueAsNumber })
-                  }
+                  onChange={(reconnectDelaySeconds) => update({ reconnectDelaySeconds })}
                 />
               </label>
               <label className="mineflayer-bot-field">
                 <span>MAX ATTEMPTS · 0 = ∞</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="MAX ATTEMPTS · 0 = ∞"
+                  background="transparent"
                   min={0}
                   max={100}
                   disabled={!settings.autoReconnect}
                   value={settings.maxReconnectAttempts}
-                  onChange={(event) => update({ maxReconnectAttempts: event.target.valueAsNumber })}
+                  onChange={(maxReconnectAttempts) => update({ maxReconnectAttempts })}
                 />
               </label>
               <label className="mineflayer-bot-field">
                 <span>TIMEOUT · SEC</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="TIMEOUT · SEC"
+                  background="transparent"
                   min={5}
                   max={300}
                   value={settings.connectTimeoutSeconds}
-                  onChange={(event) =>
-                    update({ connectTimeoutSeconds: event.target.valueAsNumber })
-                  }
+                  onChange={(connectTimeoutSeconds) => update({ connectTimeoutSeconds })}
                 />
               </label>
             </div>
@@ -432,32 +426,35 @@ function MineflayerBotSettingsEditor({
             <div className="mineflayer-bot-grid mineflayer-bot-grid--three">
               <label className="mineflayer-bot-field">
                 <span>FOLLOW DISTANCE</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="FOLLOW DISTANCE"
+                  background="transparent"
                   min={1}
                   max={16}
                   value={settings.followDistance}
-                  onChange={(event) => update({ followDistance: event.target.valueAsNumber })}
+                  onChange={(followDistance) => update({ followDistance })}
                 />
               </label>
               <label className="mineflayer-bot-field">
                 <span>GOTO RADIUS</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="GOTO RADIUS"
+                  background="transparent"
                   min={1}
                   max={16}
                   value={settings.gotoRadius}
-                  onChange={(event) => update({ gotoRadius: event.target.valueAsNumber })}
+                  onChange={(gotoRadius) => update({ gotoRadius })}
                 />
               </label>
               <label className="mineflayer-bot-field">
                 <span>MAX GROUND DROP</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="MAX GROUND DROP"
+                  background="transparent"
                   min={1}
                   max={16}
                   value={settings.maxDropDown}
-                  onChange={(event) => update({ maxDropDown: event.target.valueAsNumber })}
+                  onChange={(maxDropDown) => update({ maxDropDown })}
                 />
               </label>
             </div>
@@ -533,6 +530,14 @@ function MineflayerBotSettingsEditor({
           </>
         )}
 
+        {activeSection === "combat" && (
+          <MineflayerCombatSettingsEditor
+            settings={settings.combat}
+            onChange={(combat) => update({ combat })}
+            commandPrefix={settings.commandPrefix || "!"}
+          />
+        )}
+
         {activeSection === "commands" && (
           <>
             <div className="mineflayer-bot-subhead">
@@ -552,13 +557,14 @@ function MineflayerBotSettingsEditor({
               </label>
               <label className="mineflayer-bot-field">
                 <span>COOLDOWN · MS</span>
-                <input
-                  type="number"
+                <CustomNumberInput
+                  ariaLabel="COOLDOWN · MS"
+                  background="transparent"
                   min={0}
                   max={10000}
                   step={100}
                   value={settings.commandCooldownMs}
-                  onChange={(event) => update({ commandCooldownMs: event.target.valueAsNumber })}
+                  onChange={(commandCooldownMs) => update({ commandCooldownMs })}
                 />
               </label>
             </div>
@@ -626,6 +632,11 @@ function MineflayerBotSettingsEditor({
                 "stop",
                 "look",
                 "jump",
+                "attack player",
+                "bow player",
+                "pvp auto",
+                "pvp stop",
+                "pvp status",
               ].map((command) => (
                 <span key={command}>
                   {settings.commandPrefix || "!"}

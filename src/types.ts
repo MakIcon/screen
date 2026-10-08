@@ -294,6 +294,34 @@ export type DiscordRpcPluginSettings = {
   buttonUrl: string;
 };
 
+export type MineflayerCombatSettings = {
+  enabled: boolean;
+  engine: "custom" | "basic";
+  style: "auto" | "melee" | "ranged";
+  autoTarget: "manual" | "hostile";
+  targetRange: number;
+  reactionMs: number;
+  meleeSkill: number;
+  cps: number;
+  attackRange: number;
+  weapon: "sword" | "axe";
+  strafe: "off" | "intelligent" | "circle" | "random";
+  criticals: "off" | "hop" | "shorthop";
+  sprintTap: "off" | "wtap" | "stap" | "sprintcancel";
+  shield: boolean;
+  shieldBreak: boolean;
+  smoothAim: boolean;
+  smoothAimSpeed: number;
+  bowEnabled: boolean;
+  bowEngine: "custom" | "hawkeye";
+  bowAccuracy: number;
+  bowRange: number;
+  bowIntervalMs: number;
+  bowPredict: boolean;
+  bowOffhand: boolean;
+  meleeFallback: boolean;
+};
+
 export type MineflayerBotPluginSettings = {
   enabled: boolean;
   host: string;
@@ -325,6 +353,7 @@ export type MineflayerBotPluginSettings = {
   connectTimeoutSeconds: number;
   autoRespawn: boolean;
   logPathUpdates: boolean;
+  combat: MineflayerCombatSettings;
 };
 
 export type BlueMapPluginSettings = {

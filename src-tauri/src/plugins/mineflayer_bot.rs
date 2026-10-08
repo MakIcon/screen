@@ -14,7 +14,10 @@ use tauri::{AppHandle, State};
 
 use crate::{
     commands::auth::{read_accounts, refresh_account_if_expired},
-    models::{MicrosoftAccount, MineflayerBotPluginSettings, MineflayerBotStatus},
+    models::{
+        MicrosoftAccount, MineflayerBotPluginSettings, MineflayerBotStatus,
+        MineflayerCombatSettings,
+    },
     paths::read_settings,
 };
 
@@ -63,6 +66,7 @@ struct WorkerConfig {
     movement: WorkerMovementConfig,
     connection: WorkerConnectionConfig,
     behavior: WorkerBehaviorConfig,
+    combat: MineflayerCombatSettings,
 }
 
 #[derive(Debug, Serialize)]
@@ -434,6 +438,7 @@ pub async fn start_mineflayer_bot(
     let server_label = format!("{}:{}", host, plugin.port);
     let version = clean_player_name(&plugin.version, "");
     let config = WorkerConfig {
+        combat: plugin.combat.clone(),
         server: WorkerServerConfig {
             host,
             port: plugin.port,

@@ -2,9 +2,53 @@ import type {
   BlueMapPluginSettings,
   DiscordRpcPluginSettings,
   MineflayerBotPluginSettings,
+  MineflayerCombatSettings,
   ObsTelemetryPluginSettings,
   ProxyPluginSettings,
 } from "../../types";
+import combatDefaults from "../../../extensions/mineflayer-bot/combat-defaults.json";
+
+export const DEFAULT_MINEFLAYER_COMBAT_SETTINGS = combatDefaults as MineflayerCombatSettings;
+
+export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCombatSettings {
+  const draft = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const result = { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS };
+  const choices: Record<string, string[]> = {
+    engine: ["custom", "basic"],
+    style: ["auto", "melee", "ranged"],
+    autoTarget: ["manual", "hostile"],
+    weapon: ["sword", "axe"],
+    strafe: ["off", "intelligent", "circle", "random"],
+    criticals: ["off", "hop", "shorthop"],
+    sprintTap: ["off", "wtap", "stap", "sprintcancel"],
+    bowEngine: ["custom", "hawkeye"],
+  };
+  const bounds: Record<string, [number, number]> = {
+    targetRange: [4, 128],
+    reactionMs: [0, 3000],
+    meleeSkill: [0, 100],
+    cps: [1, 20],
+    attackRange: [1, 3],
+    smoothAimSpeed: [10, 300],
+    bowAccuracy: [0, 100],
+    bowRange: [4, 120],
+    bowIntervalMs: [1200, 10000],
+  };
+  const normalized = result as unknown as Record<string, unknown>;
+  for (const [key, fallback] of Object.entries(result)) {
+    if (typeof fallback === "boolean") normalized[key] = normalizeBoolean(draft[key], fallback);
+    else if (choices[key]) {
+      if (typeof draft[key] === "string" && choices[key].includes(draft[key]))
+        normalized[key] = draft[key];
+    } else if (typeof draft[key] === "number" && Number.isFinite(draft[key])) {
+      const numeric = ["attackRange", "targetRange", "bowRange"].includes(key)
+        ? draft[key]
+        : Math.round(draft[key]);
+      normalized[key] = Math.max(bounds[key][0], Math.min(bounds[key][1], numeric));
+    }
+  }
+  return result;
+}
 
 export const DEFAULT_DISCORD_RPC_SETTINGS: DiscordRpcPluginSettings = {
   enabled: false,
@@ -57,6 +101,7 @@ export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
   connectTimeoutSeconds: 30,
   autoRespawn: true,
   logPathUpdates: false,
+  combat: { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS },
 };
 
 export const DEFAULT_BLUE_MAP_SETTINGS: BlueMapPluginSettings = {
@@ -200,6 +245,7 @@ export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPlu
     ),
     autoRespawn: normalizeBoolean(draft.autoRespawn, defaults.autoRespawn),
     logPathUpdates: normalizeBoolean(draft.logPathUpdates, defaults.logPathUpdates),
+    combat: normalizeMineflayerCombatSettings(draft.combat),
   };
 }
 

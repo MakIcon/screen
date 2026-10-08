@@ -53,6 +53,8 @@ The Extensions screen installs Mineflayer's locked dependencies from the npm reg
 
 Mineflayer Bot uses the supplied Minecraft pathfinding rewrite, maintained in `extensions/mineflayer-bot/pathfinding`. `pnpm build:pathfinder` rebuilds the bundled `pathfinder.cjs` that Tauri and standalone extension archives ship. Run `pnpm test:pathfinder` and `pnpm test:worker` to check the planner, simulated movement and worker integration. Integration details and limits are documented in `extensions/mineflayer-bot/pathfinding/README.md`.
 
+Mineflayer Bot 1.7.2 also includes Custom PvP, Mineflayer PvP and Minecraft HawkEye. The **PvP / Лук** settings tab controls difficulty, tactics, shields, reaction, bow prediction, accuracy and shot interval. Smooth aiming speed is adjustable from 10% to 300% for melee and bow combat. Owners can use `!attack Player`, `!bow Player`, `!pvp auto` (hostile mobs) and `!pvp stop`; explicit targets can include the owner, and movement commands also stop combat. See [combat configuration and commands](extensions/mineflayer-bot/COMBAT.md). Existing installations need an extension update from a launcher built with this source.
+
 Build the OBS telemetry mod for every version listed in `obs-telemetry-mod/gradle.properties`:
 
 ```powershell

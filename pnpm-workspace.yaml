@@ -7,3 +7,5 @@ allowBuilds:
 
 overrides:
   vec3: "0.2.0"
+  mineflayer-utils>mineflayer: "4.37.1"
+  mineflayer-utils>prismarine-entity: "2.6.0"
