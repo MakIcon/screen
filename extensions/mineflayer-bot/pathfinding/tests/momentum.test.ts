@@ -10,7 +10,7 @@ test('a blocked ice takeoff does not execute a walking prefix that stops on the 
   // Preserve the user's geometry, with a ceiling making the takeoff impossible.
   for (let x = 0; x <= 7; x++) world.setBlock(new Vec3(x, 70, 0), x === 7 ? 'ice' : 'cobblestone')
   for (let x = 13; x <= 14; x++) world.setBlock(new Vec3(x, 70, 0), 'cobblestone')
-  world.setBlock(new Vec3(7, 73, 0), 'stone')
+  for (let x = 7; x <= 9; x++) world.setBlock(new Vec3(x, 73, 0), 'stone')
   const start = new Vec3(0.5, 71, 0.5)
   const { rig } = createCacheWorld('26.1.2', 71, start, { world })
   rig.bot.entity.onGround = true
@@ -37,32 +37,59 @@ for (const scenario of [
     const world = createFlatWorld('26.1.2', -64, { renderDistance: 2 })
     for (let i = 0; i <= 7; i++) world.setBlock(center(i).offset(0, -1, 0), i === 7 ? scenario.block : 'cobblestone')
     for (const i of [13, 14]) world.setBlock(center(i).offset(0, -1, 0), 'cobblestone')
-    const { rig } = createCacheWorld('26.1.2', 71, center(scenario.atRim ? 7.576 : 0), { world })
+    const lateral = new Vec3(-scenario.dir.z, 0, scenario.dir.x)
+    const { rig } = createCacheWorld('26.1.2', 71, center(scenario.atRim ? 7.576 : 0).plus(lateral.scaled(0.03)), { world })
     rig.bot.entity.onGround = true
     rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, movementTimeoutMs: 3000 },
       pathfinderSettings: { searchTimeoutMs: 2500, tickTimeoutMs: 5, routePrefixMs: 30 } }))
     t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
     let tick = 0, contactTick = -1, reboundTick = -1, previousGround = true, contactSpeed = 0, contactOffset = 0, lowest = 71
     const moves: any[] = []
+    let lastSide = 0, sideReversals = 0, crouchTicks = 0, wireYawErrors = 0, wireLooks = 0
+    const write = rig.bot._client.write
+    rig.bot._client.write = (packet: string, data: any) => {
+      if (data.yaw != null && rig.bot.pathfinder.currentExecutor?.canInterrupt === false) {
+        wireLooks++
+        const wireYaw = Math.PI - data.yaw * Math.PI / 180
+        if (Math.cos(wireYaw - rig.bot.entity.yaw) < 0.999999) wireYawErrors++
+      }
+      write(packet, data)
+    }
     rig.bot.on('pathGenerated', (path: any) => moves.push(...path.path))
     rig.bot.on('physicsTick', () => {
       tick++
       const e = rig.bot.entity
+      if (rig.bot.getControlState('sneak') && rig.bot.pathfinder.currentExecutor?.constructor.name === 'MomentumJumpExecutor') {
+        crouchTicks++
+        const side = Number(rig.bot.getControlState('left')) - Number(rig.bot.getControlState('right'))
+        if (side !== 0 && lastSide !== 0 && side !== lastSide) sideReversals++
+        if (side !== 0) lastSide = side
+      }
       lowest = Math.min(lowest, e.position.y)
       const offset = e.position.minus(center(7)).dot(scenario.dir)
-      if (e.onGround && !previousGround && offset >= 0.2 && offset < 0.5) {
+      if (e.onGround && !previousGround && offset >= 0.2 && offset < 1.2 && e.velocity.dot(scenario.dir) > 0.2 &&
+          rig.bot.pathfinder.currentExecutor?.canInterrupt === false) {
         contactTick = tick; contactSpeed = e.velocity.dot(scenario.dir); contactOffset = offset
       }
-      if (contactTick >= 0 && reboundTick < 0 && !e.onGround) reboundTick = tick
+      if (contactTick >= 0 && reboundTick < 0 && !e.onGround && rig.bot.getControlState('jump')) reboundTick = tick
       previousGround = e.onGround
     })
     try {
       await rig.bot.pathfinder.goto(goals.GoalNear.fromVec(center(13), 1))
-      assert.ok(moves.some(move => move.metadata?.momentumAirStrafe === true))
+      assert.ok(moves.some(move => move.metadata?.momentumRebound === true))
+      assert.ok(moves.every(move => move.metadata?.momentumAirStrafe !== true))
       assert.equal(reboundTick, contactTick + 1)
-      assert.ok(contactSpeed > 0.28, `speed=${contactSpeed}, offset=${contactOffset}`)
+      assert.ok(contactSpeed > 0.25, `speed=${contactSpeed}, offset=${contactOffset}`)
       assert.ok(lowest >= 70.99, `fell to ${lowest}`)
+      assert.ok(sideReversals <= 1, `crouched side-to-side reversals=${sideReversals}`)
+      assert.ok(crouchTicks < 35, `crouched alignment lasted ${crouchTicks} ticks`)
+      assert.ok(wireLooks > 0)
+      assert.equal(wireYawErrors, 0, 'transmitted view must match the simulated controls without turn lag')
+      assert.ok(new Vec3(-Math.sin(rig.bot.entity.yaw), 0, -Math.cos(rig.bot.entity.yaw)).dot(scenario.dir) > 0.9999, 'face the destination after landing')
       assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.floored().equals(center(13).floored()), String(rig.bot.entity.position))
+    } catch (error) {
+      t.diagnostic(JSON.stringify({ position: rig.bot.entity.position, velocity: rig.bot.entity.velocity, moves: moves.map(m => m.metadata) }))
+      throw error
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 }
@@ -81,7 +108,7 @@ for (const retarget of [false, true]) {
     rig.bot.on('physicsTick', () => {
       tick++
       const entity = rig.bot.entity
-      if (!touchedIce && entity.onGround && !previousGround && entity.position.x >= 6.7 && entity.position.x < 7) {
+      if (!touchedIce && entity.onGround && !previousGround && entity.position.x >= 6.7 && entity.position.x < 7.7) {
         touchedIce = true; contactTick = tick
         if (retarget) { target.position.x = 12.7; rig.bot.emit('entityMoved', target) }
       }
@@ -131,15 +158,19 @@ for (const scenario of [
     let previousPosition = rig.bot.entity.position.clone()
     let reboundTick = -1
     let lowest = 64
+    const onIce = (pos: Vec3): boolean => {
+      const offset = pos.minus(center(6)).dot(scenario.dir)
+      return offset >= -0.5 && offset < (scenario.version.startsWith('26.') ? 1.2 : 0.5)
+    }
     rig.bot.on('pathGenerated', (result: any) => routes.push(...result.path))
     rig.bot.on('physicsTick', () => {
       tick++
       const entity = rig.bot.entity
       lowest = Math.min(lowest, entity.position.y)
-      if (entity.onGround && !previousGround && world.getBlock(entity.position.offset(0, -1, 0))?.name === scenario.block) {
+      if (entity.onGround && !previousGround && onIce(entity.position)) {
         contacts.push({ position: entity.position.clone(), velocity: entity.velocity.clone(), tick })
       }
-      if (!entity.onGround && previousGround && world.getBlock(previousPosition.offset(0, -1, 0))?.name === scenario.block) reboundTick = tick
+      if (!entity.onGround && previousGround && onIce(previousPosition)) reboundTick = tick
       previousGround = entity.onGround; previousPosition = entity.position.clone()
     })
     try {
@@ -149,7 +180,7 @@ for (const scenario of [
       const contact = contacts.find(contact => reboundTick === contact.tick + 1)
       assert.ok(contact, `must land and rebound within one tick: ${JSON.stringify({ contacts, reboundTick })}`)
       const rimOffset = contact.position.minus(center(6)).dot(scenario.dir)
-      assert.ok(rimOffset >= 0.2 && rimOffset < 0.5, `must touch the last 0.3 blocks of the ice, offset=${rimOffset}`)
+      assert.ok(rimOffset >= 0.2 && rimOffset < (scenario.version.startsWith('26.') ? 1.2 : 0.5), `must rebound at the ice edge, offset=${rimOffset}`)
       assert.ok(contact.velocity.dot(scenario.dir) > 0.22, `must preserve the run-up hop velocity, got ${contact.velocity.dot(scenario.dir)}`)
       assert.ok(lowest >= 63.99, `fell to ${lowest}`)
       assert.equal(rig.bot.entity.onGround, true)
@@ -158,11 +189,35 @@ for (const scenario of [
   })
 }
 
-test('ice contact timing and distance come from unmodified native physics', () => {
-  const world = createFlatWorld('26.1.2', -64, { renderDistance: 2 })
+for (const length of [7, 8, 16]) {
+  test(`legacy single-ice five-air-column run-up boundary: ${length} blocks from rest`, () => {
+    const world = createFlatWorld('1.19.4', -64, { renderDistance: 2 })
+    for (let x = 0; x < length; x++) world.setBlock(new Vec3(x, 70, 0), x === length - 1 ? 'ice' : 'cobblestone')
+    for (const x of [length + 5, length + 6]) world.setBlock(new Vec3(x, 70, 0), 'cobblestone')
+    const start = new Vec3(0.5, 71, 0.5)
+    const { rig, cacheWorld } = createCacheWorld('1.19.4', 71, start, { world })
+    rig.bot.entity.onGround = true
+    try {
+      const flight = predictMomentumJump(rig.bot, cacheWorld, start, rig.bot.entity.velocity,
+        new Vec3(length - 0.5, 71, 0.5), new Vec3(length + 5.5, 71, 0.5), false, () => true, true, true)
+      if (length === 7) assert.equal(flight, undefined)
+      else {
+        assert.ok(flight?.rimRebound)
+        assert.equal(flight.airStrafe === true, length === 8)
+        assert.ok(flight.steps.slice(-2).every(step => !step.right && Math.abs(step.yaw + Math.PI / 2) < 1e-8), 'face the landing before touching down')
+        if (length === 16) assert.ok(flight.steps.every(step => !step.right && Math.abs(step.yaw + Math.PI / 2) < 1e-8))
+      }
+      assert.ok(rig.bot.entity.position.equals(start))
+      assert.ok(rig.bot.entity.velocity.equals(new Vec3(0, 0, 0)))
+    } finally { cacheWorld.dispose(); rig.stopPassivePhysics() }
+  })
+}
+
+test('legacy ice contact timing and distance come from unmodified native physics', () => {
+  const world = createFlatWorld('1.19.4', -64, { renderDistance: 2 })
   for (let x = 0; x <= 14; x++) world.setBlock(new Vec3(x, 63, 0), x >= 13 ? 'blue_ice' : 'stone')
   for (let x = 20; x <= 23; x++) world.setBlock(new Vec3(x, 63, 0), 'stone')
-  const { rig, cacheWorld } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { world })
+  const { rig, cacheWorld } = createCacheWorld('1.19.4', 64, new Vec3(0.5, 64, 0.5), { world })
   try {
     const plan = predictMomentumJump(rig.bot, cacheWorld, rig.bot.entity.position, rig.bot.entity.velocity,
       new Vec3(14.5, 64, 0.5), new Vec3(20.5, 64, 0.5))
@@ -189,16 +244,19 @@ for (const constraint of ['short runway', 'ceiling', 'excluded runway', 'sprint 
       world.setBlock(new Vec3(x, 63, 0), x >= 13 ? 'blue_ice' : 'stone')
       if (constraint === 'ceiling') world.setBlock(new Vec3(x, 66, 0), 'stone')
     }
+    // A ceiling ending at the ice face permits an edge takeoff, and a blocked
+    // distant runway block is avoidable with the newly verified short approach.
+    if (constraint === 'ceiling') for (let x = 15; x <= 20; x++) world.setBlock(new Vec3(x, 66, 0), 'stone')
     for (let x = 20; x <= 23; x++) world.setBlock(new Vec3(x, 63, 0), 'stone')
     const { rig } = createCacheWorld('26.1.2', 64, new Vec3(13.5, 64, 0.5), { world })
     rig.bot.loadPlugin(createPlugin({ moveSettings: {
       canDig: false, canPlace: false,
       allowSprinting: constraint !== 'sprint disabled', allowJumpSprint: constraint !== 'jump sprint disabled',
-      exclusionAreasStep: constraint === 'excluded runway' ? [block => block.position.x === 8 ? Infinity : 0] : []
+      exclusionAreasStep: constraint === 'excluded runway' ? [block => block.position.x < 15 ? Infinity : 0] : []
     }, pathfinderSettings: { searchTimeoutMs: 1500 } }))
     try {
       const result = await rig.bot.pathfinder.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity, new goals.GoalBlock(20, 64, 0))
-      assert.equal(result, null)
+      assert.ok(result === null, `unexpected verified route: ${JSON.stringify(result?.path.map((move: any) => ({ position: move.exitPos, momentum: move.metadata })))}`)
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 }
@@ -241,13 +299,19 @@ for (const scenario of [
     let tick = 0
     let previousGround = false
     let previousPosition = rig.bot.entity.position.clone()
+    const surfaceName = (pos: Vec3): string => {
+      const name = world.getBlock(pos.offset(0, -1, 0))?.name ?? ''
+      // Modern vanilla may retain its supporting ice past the center's edge.
+      const offset = pos.minus(position(scenario.edge, 64).offset(0.5, 0, 0.5)).dot(scenario.dir)
+      return scenario.version.startsWith('26.') && name === 'air' && offset > 0 && offset < 1.2 ? scenario.block : name
+    }
     rig.bot.on('pathGenerated', (result: any) => routes.push(...result.path))
     rig.bot.on('physicsTick', () => {
       tick++
       const { position: pos, onGround } = rig.bot.entity
       lowest = Math.min(lowest, pos.y)
-      if (onGround && !previousGround) landings.push({ name: world.getBlock(pos.offset(0, -1, 0))?.name ?? '', tick })
-      if (!onGround && previousGround) launches.push({ name: world.getBlock(previousPosition.offset(0, -1, 0))?.name ?? '', tick })
+      if (onGround && !previousGround) landings.push({ name: surfaceName(pos), tick })
+      if (!onGround && previousGround) launches.push({ name: surfaceName(previousPosition), tick })
       previousPosition = pos.clone(); previousGround = onGround
     })
     try {
@@ -332,5 +396,124 @@ test('a long ice runway builds its own speed and jumps five air blocks from rest
     assert.ok(routes.every(move => move.toPlace.length === 0))
     assert.ok(rig.bot.entity.position.floored().equals(new Vec3(26, 64, 0)))
     assert.equal(rig.bot.entity.onGround, true)
+  } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})
+
+for (const dir of [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]) {
+  test(`three consecutive ice jumps follow a moving owner facing forward ${dir}`, { timeout: 16000 }, async (t) => {
+    const world = createFlatWorld('26.1.2', -64, { renderDistance: 3 })
+    const center = (i: number): Vec3 => new Vec3(0.5, 71, 0.5).plus(dir.scaled(i))
+    for (const [start, length] of [[0, 4], [9, 4], [18, 4], [27, 5]]) {
+      for (let i = start; i < start + length; i++) world.setBlock(center(i).offset(0, -1, 0),
+        start !== 27 && i === start + length - 1 ? 'blue_ice' : 'cobblestone')
+    }
+    const { rig } = createCacheWorld('26.1.2', 71, center(0), { world })
+    rig.bot.entity.onGround = true
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, movementTimeoutMs: 3000 },
+      pathfinderSettings: { searchTimeoutMs: 3500, tickTimeoutMs: 5, routePrefixMs: 1 } }))
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+    const owner = { position: center(28) }
+    const routes: any[] = []
+    let moved = false, lowest = 71, badLook = 0, stopped = 0
+    rig.bot.on('pathGenerated', (route: any) => routes.push(...route.path))
+    rig.bot.on('physicsTick', () => {
+      const e = rig.bot.entity
+      lowest = Math.min(lowest, e.position.y)
+      if (rig.bot.pathfinder.currentExecutor?.canInterrupt === false) {
+        if (new Vec3(-Math.sin(e.yaw), 0, -Math.cos(e.yaw)).dot(dir) < 0.999999 || rig.bot.getControlState('right')) badLook++
+        if (e.onGround && e.position.minus(center(0)).dot(dir) > 7 && e.position.minus(center(0)).dot(dir) < 26 &&
+            (!rig.bot.getControlState('sprint') || rig.bot.getControlState('sneak'))) stopped++
+      }
+      if (!moved && e.onGround && e.position.floored().equals(center(9).floored())) {
+        moved = true; owner.position.set(center(30).x, center(30).y, center(30).z); rig.bot.emit('entityMoved', owner)
+      }
+    })
+    try {
+      await rig.bot.pathfinder.goto(goals.GoalFollowEntity.fromEntity(owner, 0.8, { neverfinish: false }))
+      assert.ok(routes.some(move => move.metadata?.momentumSegments?.length === 3), 'verify the complete chain before starting')
+      assert.equal(moved, true)
+      assert.equal(stopped, 0, 'keep sprinting through the intermediate landings')
+      assert.equal(badLook, 0, 'default controls keep the actual view forward throughout the jumps')
+      assert.ok(lowest >= 70.99)
+      assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(owner.position) <= 0.85, String(rig.bot.entity.position))
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+}
+
+test('air turn is opt-in and a legacy forward jump is not silently strafed', () => {
+  const world = createFlatWorld('1.19.4', -64, { renderDistance: 2 })
+  for (let x = 0; x <= 7; x++) world.setBlock(new Vec3(x, 70, 0), x === 7 ? 'blue_ice' : 'stone')
+  for (const x of [13, 14]) world.setBlock(new Vec3(x, 70, 0), 'stone')
+  const { rig, cacheWorld } = createCacheWorld('1.19.4', 71, new Vec3(0.5, 71, 0.5), { world })
+  rig.bot.entity.onGround = true
+  try {
+    const args = [rig.bot, cacheWorld, rig.bot.entity.position, rig.bot.entity.velocity, new Vec3(7.5, 71, 0.5), new Vec3(13.5, 71, 0.5)] as const
+    assert.equal(predictMomentumJump(...args, false, () => true, true), undefined)
+    assert.equal(predictMomentumJump(...args, false, () => true, true, true)?.airStrafe, true)
+  } finally { cacheWorld.dispose(); rig.stopPassivePhysics() }
+})
+
+for (const { length, block } of [
+  ...[1, 2, 3, 4].map(length => ({ length, block: 'blue_ice' })),
+  ...['ice', 'packed_ice', 'frosted_ice'].map(block => ({ length: 4, block }))
+]) {
+  test(`26.1 straight five-empty-block jump from a centered rest on ${length} total runway blocks ending in ${block}`, () => {
+    const world = createFlatWorld('26.1.2', -64, { renderDistance: 2 })
+    for (let x = 0; x < length; x++) world.setBlock(new Vec3(x, 70, 0), x === length - 1 ? block : 'stone')
+    for (let x = length + 5; x < length + 8; x++) world.setBlock(new Vec3(x, 70, 0), 'stone')
+    const start = new Vec3(0.5, 71, 0.5)
+    const { rig, cacheWorld } = createCacheWorld('26.1.2', 71, start, { world }); rig.bot.entity.onGround = true
+    try {
+      const flight = predictMomentumJump(rig.bot, cacheWorld, start, new Vec3(0, 0, 0),
+        new Vec3(length - 0.5, 71, 0.5), new Vec3(length + 5.5, 71, 0.5))
+      if (length < 3) assert.equal(flight, undefined)
+      else {
+        assert.ok(flight?.rimRebound)
+        assert.ok(flight.steps.every(step => !step.right && !step.left && Math.abs(step.yaw + Math.PI / 2) < 1e-8))
+        const last = flight.steps[flight.steps.length - 1]
+        assert.ok(last.onGround && Math.floor(last.position.x) === length + 5)
+        assert.ok(flight.steps.every(step => step.position.y >= 70.99))
+      }
+      assert.ok(rig.bot.entity.position.equals(start) && rig.bot.entity.velocity.equals(new Vec3(0, 0, 0)))
+      for (let x = length; x < length + 5; x++) assert.equal(world.getBlock(new Vec3(x, 70, 0))?.name, 'air')
+    } finally { cacheWorld.dispose(); rig.stopPassivePhysics() }
+  })
+}
+
+test('opt-in legacy air turns also execute a continuous chain over two five-air-column gaps', { timeout: 16000 }, async (t) => {
+  const world = createFlatWorld('1.19.4', -64, { renderDistance: 3 })
+  for (const [start, length] of [[0, 8], [13, 16], [34, 4]]) {
+    for (let x = start; x < start + length; x++) world.setBlock(new Vec3(x, 70, 0),
+      start !== 34 && x === start + length - 1 ? 'blue_ice' : 'stone')
+  }
+  const { rig } = createCacheWorld('1.19.4', 71, new Vec3(0.5, 71, 0.5), { world }); rig.bot.entity.onGround = true
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { allowAirStrafe: true, canDig: false, canPlace: false, movementTimeoutMs: 3000 },
+    pathfinderSettings: { searchTimeoutMs: 3500, tickTimeoutMs: 5, routePrefixMs: 1 } }))
+  const routes: any[] = []
+  let lowest = 71
+  rig.bot.on('pathGenerated', (route: any) => routes.push(...route.path))
+  rig.bot.on('physicsTick', () => { lowest = Math.min(lowest, rig.bot.entity.position.y) })
+  t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+  try {
+    await rig.bot.pathfinder.goto(new goals.GoalBlock(35, 71, 0))
+    assert.ok(routes.some(move => move.metadata?.momentumSegments?.length === 2 && move.metadata.momentumAirStrafe))
+    assert.ok(lowest >= 70.99)
+    assert.ok(rig.bot.entity.onGround && Math.floor(rig.bot.entity.position.x) === 35)
+  } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})
+
+test('a blocked second ice jump does not consume a momentum prefix', { timeout: 8000 }, async () => {
+  const world = createFlatWorld('26.1.2', -64, { renderDistance: 3 })
+  for (const [start, length] of [[0, 8], [12, 6], [22, 4]]) {
+    for (let x = start; x < start + length; x++) world.setBlock(new Vec3(x, 70, 0), x === start + length - 1 ? 'blue_ice' : 'stone')
+  }
+  for (let x = 17; x <= 19; x++) world.setBlock(new Vec3(x, 73, 0), 'stone')
+  const start = new Vec3(0.5, 71, 0.5)
+  const { rig } = createCacheWorld('26.1.2', 71, start, { world }); rig.bot.entity.onGround = true
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false },
+    pathfinderSettings: { searchTimeoutMs: 2500, tickTimeoutMs: 0.1, routePrefixMs: 1, routePrefixLength: 16 } }))
+  try {
+    await assert.rejects(rig.bot.pathfinder.goto(new goals.GoalBlock(22, 71, 0)), /no verified route beyond the ice/)
+    assert.ok(rig.bot.entity.position.xzDistanceTo(start) < 0.01, String(rig.bot.entity.position))
   } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
 })

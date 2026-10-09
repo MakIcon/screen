@@ -560,6 +560,8 @@ pub struct MineflayerBotPluginSettings {
     #[serde(default = "default_true")]
     pub allow_parkour: bool,
     #[serde(default)]
+    pub allow_air_strafe: bool,
+    #[serde(default)]
     pub can_dig: bool,
     #[serde(default = "default_mineflayer_bot_max_drop_down")]
     pub max_drop_down: u32,
@@ -963,6 +965,7 @@ impl Default for MineflayerBotPluginSettings {
             goto_radius: default_mineflayer_bot_goto_radius(),
             allow_sprinting: true,
             allow_parkour: true,
+            allow_air_strafe: false,
             can_dig: false,
             max_drop_down: default_mineflayer_bot_max_drop_down(),
             stay_on_water: true,
@@ -1275,6 +1278,7 @@ mod loader_schema_tests {
 
         assert_eq!(parsed.host, "localhost");
         assert_eq!(parsed.follow_distance, 5);
+        assert!(!parsed.allow_air_strafe);
         assert!(parsed.auto_reconnect);
         assert!(parsed.auto_respawn);
         assert!(!parsed.can_dig);
@@ -1314,6 +1318,15 @@ mod loader_schema_tests {
             serde_json::from_value(serde_json::json!({ "stayOnWater": false })).unwrap();
         assert!(!parsed.stay_on_water);
         assert_eq!(serde_json::to_value(parsed).unwrap()["stayOnWater"], false);
+    }
+
+    #[test]
+    fn preserves_explicit_jump_head_turn_setting() {
+        let parsed: MineflayerBotPluginSettings =
+            serde_json::from_value(serde_json::json!({ "allowAirStrafe": true })).unwrap();
+        assert!(parsed.allow_air_strafe);
+        assert_eq!(serde_json::to_value(parsed).unwrap()["allowAirStrafe"], true);
+        assert!(!MineflayerBotPluginSettings::default().allow_air_strafe);
     }
 
     #[test]

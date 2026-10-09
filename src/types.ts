@@ -341,6 +341,7 @@ export type MineflayerBotPluginSettings = {
   gotoRadius: number;
   allowSprinting: boolean;
   allowParkour: boolean;
+  allowAirStrafe: boolean;
   canDig: boolean;
   maxDropDown: number;
   stayOnWater: boolean;

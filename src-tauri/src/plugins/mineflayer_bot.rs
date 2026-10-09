@@ -105,6 +105,7 @@ struct WorkerMovementConfig {
     goto_radius: u32,
     allow_sprinting: bool,
     allow_parkour: bool,
+    allow_air_strafe: bool,
     can_dig: bool,
     max_drop_down: u32,
 }
@@ -464,6 +465,7 @@ pub async fn start_mineflayer_bot(
             goto_radius: plugin.goto_radius.clamp(1, 16),
             allow_sprinting: plugin.allow_sprinting,
             allow_parkour: plugin.allow_parkour,
+            allow_air_strafe: plugin.allow_air_strafe,
             can_dig: plugin.can_dig,
             max_drop_down: plugin.max_drop_down.clamp(1, 16),
         },
@@ -551,7 +553,7 @@ pub async fn start_mineflayer_bot(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_extra_owners;
+    use super::{parse_extra_owners, WorkerMovementConfig};
 
     #[test]
     fn parses_and_deduplicates_extra_owners() {
@@ -559,5 +561,19 @@ mod tests {
             parse_extra_owners("Alex, steve\nALEX; Builder"),
             vec!["Alex", "steve", "Builder"]
         );
+    }
+
+    #[test]
+    fn sends_jump_head_turn_preference_to_worker() {
+        let settings = WorkerMovementConfig {
+            follow_distance: 3,
+            goto_radius: 1,
+            allow_sprinting: true,
+            allow_parkour: true,
+            allow_air_strafe: true,
+            can_dig: false,
+            max_drop_down: 3,
+        };
+        assert_eq!(serde_json::to_value(settings).unwrap()["allowAirStrafe"], true);
     }
 }

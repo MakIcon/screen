@@ -14,6 +14,7 @@ import type { ExclusionArea } from './exclusionZones'
 export interface MovementOptions {
   allowDiagonalBridging: boolean
   allowJumpSprint: boolean
+  allowAirStrafe: boolean
   allow1by1towers: boolean
 
   // --- Cost knobs (all in GAME TICKS; see costs.ts) -----------------------
@@ -64,6 +65,7 @@ export interface MovementOptions {
 
 export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowJumpSprint: true,
+  allowAirStrafe: false,
   canOpenDoors: true,
   canDig: true,
   canPlace: true,

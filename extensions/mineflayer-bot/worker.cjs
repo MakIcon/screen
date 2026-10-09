@@ -42,6 +42,7 @@ function configurePathfinder (bot, movement, behavior = {}) {
     moveSettings: {
       allowSprinting: Boolean(movement.allowSprinting),
       allowJumpSprint: Boolean(movement.allowParkour && movement.allowSprinting),
+      allowAirStrafe: movement.allowAirStrafe === true,
       canDig: Boolean(movement.canDig),
       canPlace: true,
       allow1by1towers: true,
@@ -307,6 +308,7 @@ function parseConfig (raw) {
     gotoRadius: 1,
     allowSprinting: true,
     allowParkour: true,
+    allowAirStrafe: false,
     canDig: false,
     maxDropDown: 3,
     ...(config.movement || {})

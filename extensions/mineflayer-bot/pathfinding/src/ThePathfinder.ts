@@ -775,7 +775,7 @@ export class ThePathfinder {
             const last = moves[moves.length - 1]
             // Stopping a walking prefix on the ice consumes the run-up before
             // we know whether the search can reach the opposite platform.
-            const iceRim = last.metadata?.momentumEdge == null && Movement.cardinalDirs.some(dir => {
+            const iceRim = Movement.cardinalDirs.some(dir => {
               let rim = last.exitPos
               for (let distance = 0; distance <= 6; distance++) {
                 const next = rim.plus(dir)

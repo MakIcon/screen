@@ -480,6 +480,12 @@ function MineflayerBotSettingsEditor({
                 onChange={(canDig) => update({ canDig })}
               />
               <SettingToggle
+                label="TURN HEAD DURING JUMPS"
+                description="45° AIR TURN FOR EXTRA RANGE"
+                checked={settings.allowAirStrafe}
+                onChange={(allowAirStrafe) => update({ allowAirStrafe })}
+              />
+              <SettingToggle
                 label="STAY ON WATER"
                 description="SWIM UP AND KEEP AIR"
                 checked={settings.stayOnWater}

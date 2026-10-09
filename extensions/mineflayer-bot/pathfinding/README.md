@@ -100,8 +100,8 @@ MomentumJump predicts both the runway and flight with Mineflayer's native
 physics, including surface friction, current velocity and potion effects. It
 preserves incoming speed and searches the timing of preparatory sprint-jumps,
 including hops from a stone runway onto a short ice rim. A longer runway can
-use several hops before the ice. The solver prioritizes landing on the last
-0.3 blocks of the ice and rebounding on the immediately following tick. The
+use several hops before the ice. The solver prioritizes landing at the ice edge
+and rebounding on the immediately following tick. The
 run-up and final flight are one movement, including four-air-block gaps that
 would otherwise use standing parkour alignment. A bot stopped at the ice rim
 can back up along the available runway before starting the same sequence.
@@ -127,14 +127,25 @@ In the air, `f = 0.91`, `a = 0.98 * 0.026`, and there is no new jump impulse.
 The engine also integrates vertical motion and the player's collision box;
 horizontal distance alone is insufficient to prove a landing.
 
+Minecraft 26.1 uses the supporting collision block under the player's feet,
+not necessarily the block below their center. Verified against the official
+26.1.2 client (`Entity.checkSupportingBlock`, `Entity.getOnPos`,
+`LivingEntity.travelInAir`), the last grounded edge tick can still use ice
+friction after the center passes the ice face. Prismarine-physics samples only
+the center, which incorrectly discarded that momentum and overestimated the
+needed runway. `supportingBlockPhysics.ts` supplies the supporting full block's
+friction to both predictions and live physics on 26.x. It retains the real
+collision shapes, never adds a floor, and leaves older protocol behavior alone.
+The support is carried between ticks and invalidated when position changes.
+
 | Surface | Slipperiness | Ground velocity multiplier |
 | --- | --- | --- |
 | Stone | 0.6 | 0.546 |
 | Ice, packed ice, frosted ice | 0.98 | 0.8918 |
 | Blue ice | 0.989 | 0.89999 |
 
-Reproducible example from rest, tested with the native Mineflayer physics plugin
-on 26.1.2: stone at x=0..12, blue ice at x=13..14, **five empty columns** at
+Legacy reproducible example from rest, tested with the native Mineflayer physics
+plugin on 1.19.4: stone at x=0..12, blue ice at x=13..14, **five empty columns** at
 x=15..19, landing at x=20..23; every floor has y=63 and z=0. Start at
 (0.5,64,0.5). The solver sprints for ten ticks, then chains three preparatory
 hops. It touches blue ice at x=14.999206 with vx=0.283828 blocks/tick and jumps
@@ -159,22 +170,77 @@ an exposed ice rim is also held until the search verifies its continuation;
 otherwise it would run to the ice, consume momentum, crouch, and stop there.
 
 The user's saved platform has stone x=0..6, ice x=7, five empty columns x=8..12,
-and a landing x=13..14. A straight approach alone arrives too slowly. The
-additional air-control candidate uses forward+right with yaw rotated by 45
-degrees while airborne, so its normalized acceleration still points along the
-runway. At takeoff the view and sprint-jump impulse remain straight. Every tick
-uses the same native physics and ordinary controls, without modifying velocity.
+and a landing starting at x=13. With 26.1 supporting-block friction this setup
+has a verified straight approach. A shorter setup also works from centered
+rest: stone x=0..2, blue ice x=3, five empty columns x=4..8, landing at x=9.
+The search starts its first preparatory hop at tick 2, lands at the ice edge,
+then rebounds on the next tick. Tests execute three such short runways in
+sequence, in all four directions, with forward view and no intermediate stop.
 
-This narrow landing also needs a start within the block rather than rounding
-the approach to centers. The planner adjusts a candidate's start using its
-predicted ice contact, and the executor verifies the live trajectory before
-installing controls synchronously at the physics boundary. In the native
-example, starting at x=0.090243 lands at x=7.995 with vx=0.282199, immediately
-rebounds, then lands at x=13.070246. Tests execute the actual controls in four
-directions and from rest at the exposed ice rim. When retreating along the
-runway, the walking executor faces the safe route before moving, including when
-the player's center has slid past the ice face. Blocked takeoffs wait for a
-verified route instead of consuming a runway prefix.
+The executor checks the live position, velocity and jump cooldown before
+installing controls synchronously at the physics boundary. When retreating
+along the runway it faces the safe route before moving, including when the
+player's center has slid past the ice face. Blocked takeoffs wait for a verified
+route instead of consuming a runway prefix.
+
+Preparation now predicts a short held movement followed by coasting and joins
+that sequence directly to the verified flight. It checks the launch position
+and live speed together, instead of alternating opposite keys to stop within
+two millimetres of one coordinate. Longer retreats use walking speed; crouching
+is reserved for the final approach. Small lateral offsets are accepted when the
+whole trajectory still lands safely. Unchanged controls are held across ticks.
+If coasting alone cannot hit a viable tick phase, preparation can include one
+planned braking reversal. The live ice contact also retains at least 98% of
+the planned contact speed, so early alignment cannot replace a strong rebound
+with a marginal slower jump.
+
+View changes also update Mineflayer's transmitted look immediately, and the
+landing restores the forward view. The search refines straight approaches before
+trying optional 45-degree air inputs. These use forward+right with a rotated
+view so acceleration still follows the runway, while sprint-jump impulses stay
+straight. Where those inputs are necessary, it returns the
+view forward as early as native collisions allow, retaining at least 0.005 blocks
+of pre-landing overlap or the original candidate's overlap if smaller. It never
+decouples the simulated direction from the view sent to the server.
+
+`allowAirStrafe` defaults to `false` in the worker, launcher settings and movement
+options. The launcher exposes it as **TURN HEAD DURING JUMPS**. With it disabled,
+both planning and live execution use straight input and view; a jump requiring
+45-degree air inputs is rejected rather than turning anyway. Enabling it opts
+into the additional native input candidates described above.
+
+Consecutive collinear ice jumps are verified as one movement, using each native
+landing's position and velocity to calculate the next approach (up to eight
+gaps per candidate). Their controls share one synchronous tick queue, so an
+intermediate landing does not clear sprint, crouch or stop at a block center.
+The executor settles after the last jump, then normal routing continues to the
+followed player, including updates received during the chain. Partial routes
+ending near an unverified ice gap wait even when their prefix already includes
+a momentum jump. Tests cover three consecutive jumps in all four directions
+with straight view, a moving owner, opt-in five-air-column chains and a blocked
+second takeoff. A saved eight-block first runway, six-block middle runway and
+two five-air-column gaps also pass with straight view. If a landing at a block
+center prevents the next short-runway takeoff, the planner tries four bounded
+landing offsets within that block and verifies the resulting native velocity
+against the following jump before selecting one.
+
+The [parkour wiki's jumping analysis](https://www.mcpk.wiki/wiki/Jumping)
+describes a 12-tick level jump, a 0.2 sprint-jump impulse, and resetting the jump
+cooldown by releasing jump. Its [slipperiness analysis](https://www.mcpk.wiki/wiki/Slipperiness)
+gives ground speed retention as `0.91 * slipperiness`: 0.8918 on ordinary ice
+and 0.89999 on blue ice. [45-degree inputs](https://www.mcpk.wiki/wiki/45_Strafe)
+normalize acceleration to 1.0 rather than 0.98. These explain why a single ice
+block preserves incoming hop momentum but does not create an arbitrary boost.
+
+Run-up limits are geometry and speed dependent. In the tested 26.1.2 level,
+one-block-wide blue-ice fixture, starting centered at rest without effects or
+a ceiling, two ordinary blocks plus ice already produce a verified straight
+five-empty-column crossing; one ordinary block plus ice does not. Three ordinary
+blocks plus ice also pass, including consecutive jumps. These are bounded solver
+results for those starting conditions, not a universal minimum or maximum.
+Already arriving with speed, other surfaces, headhitters and effects change the
+range. Legacy 1.19.4 tests retain the older eight-block, opt-in 45-degree setup.
+The planner tests each available runway and input timing through collisions.
 
 Commands from the repository root:
 

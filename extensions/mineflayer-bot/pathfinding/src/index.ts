@@ -11,6 +11,7 @@ import type { Block, ResetReason } from './types'
 import { HandlerOpts, PlaceBlockOptions } from './types'
 import { PathingUtil } from './PathingUtil'
 import { installClimbablePhysics } from './mineflayer-specific/climbablePhysics'
+import { installSupportingBlockPhysics } from './mineflayer-specific/supportingBlockPhysics'
 
 import * as goals from './mineflayer-specific/goals'
 import { Path } from './mineflayer-specific/algs'
@@ -30,6 +31,7 @@ export function createPlugin (opts?: HandlerOpts) {
     if (!bot.hasPlugin(physicsUtil)) bot.loadPlugin(physicsUtil)
     initSetup(bot.registry)
     installClimbablePhysics(bot)
+    installSupportingBlockPhysics(bot)
     bot.pathfinder = new ThePathfinder(bot, opts)
     bot.pathingUtil = new PathingUtil(bot)
   }

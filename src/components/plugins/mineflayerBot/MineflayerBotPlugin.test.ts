@@ -13,6 +13,7 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.followDistance).toBe(5);
     expect(normalized.autoReconnect).toBe(true);
     expect(normalized.canDig).toBe(false);
+    expect(normalized.allowAirStrafe).toBe(false);
     expect(normalized.stayOnWater).toBe(true);
     expect(normalized.commandSource).toBe("both");
     expect(normalized.commandCooldownMs).toBe(500);
@@ -46,6 +47,7 @@ describe("normalizeMineflayerBotSettings", () => {
       extraOwners: "Alex, Steve",
       allowSayCommand: true,
       canDig: true,
+      allowAirStrafe: true,
       stayOnWater: false,
       autoReconnect: false,
       logPathUpdates: true,

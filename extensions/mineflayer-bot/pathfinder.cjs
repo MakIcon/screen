@@ -2373,6 +2373,7 @@ var require_movement = __commonJS({
     var costs_1 = require_costs();
     exports2.DEFAULT_MOVEMENT_OPTS = {
       allowJumpSprint: true,
+      allowAirStrafe: false,
       canOpenDoors: true,
       canDig: true,
       canPlace: true,
@@ -5434,6 +5435,90 @@ var require_neo = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/supportingBlockPhysics.js
+var require_supportingBlockPhysics = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/supportingBlockPhysics.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.usesSupportingBlock = usesSupportingBlock;
+    exports2.movementSupport = movementSupport;
+    exports2.installSupportingBlockPhysics = installSupportingBlockPhysics;
+    var vec3_1 = require("vec3");
+    var installed = /* @__PURE__ */ new WeakSet();
+    var supportKey = Symbol("supportingBlock");
+    function usesSupportingBlock(bot) {
+      return bot.version.startsWith("26.");
+    }
+    function findSupport(world, position, width) {
+      const half = width / 2;
+      const y = Math.floor(position.y - 1e-6);
+      if (Math.abs(position.y - (y + 1)) > 1e-6)
+        return;
+      let best;
+      let nearest = Infinity;
+      for (let x = Math.floor(position.x - half + 1e-7); x <= Math.floor(position.x + half - 1e-7); x++) {
+        for (let z = Math.floor(position.z - half + 1e-7); z <= Math.floor(position.z + half - 1e-7); z++) {
+          const pos = new vec3_1.Vec3(x, y, z);
+          const block = world.getBlock(pos);
+          if (!block?.shapes?.some((shape) => shape[0] === 0 && shape[1] === 0 && shape[2] === 0 && shape[3] === 1 && shape[4] === 1 && shape[5] === 1))
+            continue;
+          const distance = position.distanceSquared(pos.offset(0.5, 0.5, 0.5));
+          if (distance < nearest) {
+            nearest = distance;
+            best = pos;
+          }
+        }
+      }
+      return best;
+    }
+    function movementSupport(bot, world, state) {
+      if (!usesSupportingBlock(bot) || !state.onGround)
+        return;
+      return state[supportKey]?.block ?? findSupport(world, state.pos, bot.entity.width ?? 0.6);
+    }
+    function installSupportingBlockPhysics(bot) {
+      const physics = bot.physics;
+      if (!usesSupportingBlock(bot) || physics == null || installed.has(physics))
+        return;
+      installed.add(physics);
+      const simulate = physics.simulatePlayer.bind(physics);
+      const appliedPositions = /* @__PURE__ */ new WeakMap();
+      physics.simulatePlayer = (state, world) => {
+        const before = state.pos.clone();
+        const width = bot.entity.width ?? 0.6;
+        let support = state[supportKey];
+        if (support == null && before.equals(bot.entity.position) && state.vel.equals(bot.entity.velocity)) {
+          const applied = appliedPositions.get(bot.entity.position);
+          if (applied?.at.equals(before))
+            support = applied.support;
+        }
+        support ?? (support = { block: findSupport(world, before, width), noBlocks: false });
+        const supportedBlock = state.onGround && support.block != null ? world.getBlock(support.block) : null;
+        const sample = before.offset(0, -1, 0);
+        const facade = Object.create(world);
+        facade.getBlock = (pos) => {
+          const block = world.getBlock(pos);
+          if (supportedBlock == null || block == null || !pos.equals(sample))
+            return block;
+          const surface = Object.create(block);
+          surface.type = supportedBlock.type;
+          return surface;
+        };
+        const result = simulate(state, facade);
+        if (result.onGround) {
+          let block = findSupport(world, result.pos, width);
+          if (block == null && !support.noBlocks)
+            block = findSupport(world, new vec3_1.Vec3(before.x, result.pos.y, before.z), width);
+          result[supportKey] = { block, noBlocks: block == null };
+        } else
+          result[supportKey] = { noBlocks: false };
+        appliedPositions.set(result.pos, { at: result.pos.clone(), support: result[supportKey] });
+        return result;
+      };
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/momentum.js
 var require_momentum = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/momentum.js"(exports2) {
@@ -5450,6 +5535,7 @@ var require_momentum = __commonJS({
     var controls_1 = require_controls();
     var exceptions_1 = require_exceptions();
     var costs_1 = require_costs();
+    var supportingBlockPhysics_12 = require_supportingBlockPhysics();
     var { PlayerState } = require("prismarine-physics");
     var log = require("debug")("minecraft-pathfinding:momentum");
     var slippery = /* @__PURE__ */ new Set(["ice", "packed_ice", "blue_ice", "frosted_ice", "slime_block"]);
@@ -5457,7 +5543,8 @@ var require_momentum = __commonJS({
     function isIceBlock(name) {
       return name != null && ice.has(name);
     }
-    function predict(bot, world, from, velocity, edge, target, warmup = false, live = false, candidates, airStrafe = false, contacts) {
+    function predict(bot, world, from, velocity, edge, target, warmup = false, live = false, candidates, airStrafe = false, contacts, finalStrafeTicks = Number.POSITIVE_INFINITY) {
+      (0, supportingBlockPhysics_12.installSupportingBlockPhysics)(bot);
       log("predict %O -> %O edge=%O warmup=%s velocity=%O", from, target, edge, warmup, velocity);
       const dir = target.minus(edge);
       dir.y = 0;
@@ -5483,6 +5570,7 @@ var require_momentum = __commonJS({
       let launched = false;
       let hopped = false;
       let wasAirborne = false;
+      let finalAirTick = 0;
       for (let tick = 0; tick < 140; tick++) {
         let jump = false;
         const distance = edge.minus(state.pos).dot(dir);
@@ -5490,7 +5578,7 @@ var require_momentum = __commonJS({
           contacts?.push(-distance);
         if (!launched && state.onGround && distance >= 1 && distance <= 7)
           candidates?.push({ tick, distance });
-        const warmupJump = !launched && state.onGround && warmup !== false && (tick === warmup.firstHopTick || hopped && warmup.chain && distance >= (airStrafe ? 3 : 3.5));
+        const warmupJump = !launched && state.onGround && warmup !== false && (tick === warmup.firstHopTick || hopped && warmup.chain && distance >= 3);
         if (warmupJump)
           hopped = true;
         if (!launched && state.onGround && !warmupJump) {
@@ -5501,8 +5589,10 @@ var require_momentum = __commonJS({
           });
           bot.physics.simulatePlayer(preview, { getBlock: (pos) => world.getBlock(pos) });
           const block = world.getBlockInfo(preview.pos.offset(0, -0.05, 0));
-          const supported = block.physical && block.height >= edge.y - 0.05;
-          const rimContact = wasAirborne && isIceBlock(world.getBlock(state.pos.offset(0, -0.05, 0))?.name) && distance <= -0.2 && distance > -0.5;
+          const modern = (0, supportingBlockPhysics_12.usesSupportingBlock)(bot);
+          const supported = modern ? preview.onGround : block.physical && block.height >= edge.y - 0.05;
+          const surface = (0, supportingBlockPhysics_12.movementSupport)(bot, world, state) ?? state.pos.offset(0, -0.05, 0);
+          const rimContact = wasAirborne && isIceBlock(world.getBlock(surface)?.name) && distance <= (modern ? -0.5 : -0.2) && distance > (modern ? -1.2 : -0.5);
           jump = rimContact || !supported;
         }
         if (jump) {
@@ -5511,7 +5601,7 @@ var require_momentum = __commonJS({
         }
         const remaining = target.minus(state.pos).dot(dir);
         const back = launched && remaining < 0.55;
-        const right = airStrafe && !state.onGround && !back;
+        const right = airStrafe && !state.onGround && !back && (!launched || finalAirTick++ < finalStrafeTicks);
         state.yaw = yaw + (right ? Math.PI / 4 : 0);
         state.control = { ...controls, jump: jump || warmupJump, forward: !back, back, right };
         wasAirborne = !state.onGround;
@@ -5523,7 +5613,17 @@ var require_momentum = __commonJS({
           log("rejected tick=%s at %O onGround=%s horizontal=%s", tick, state.pos, state.onGround, state.isCollidedHorizontally);
           return;
         }
-        steps.push({ position: state.pos.clone(), velocity: state.vel.clone(), onGround: state.onGround, yaw: state.yaw, jump: jump || warmupJump, forward: !back, back, right });
+        steps.push({
+          position: state.pos.clone(),
+          velocity: state.vel.clone(),
+          onGround: state.onGround,
+          yaw: state.yaw,
+          jump: jump || warmupJump,
+          forward: !back,
+          back,
+          right,
+          support: (0, supportingBlockPhysics_12.movementSupport)(bot, world, state)?.clone()
+        });
         if (launched && state.onGround) {
           if (state.pos.floored().equals(target.floored())) {
             log("landed in %s ticks at %O", steps.length, state.pos);
@@ -5536,21 +5636,69 @@ var require_momentum = __commonJS({
           return;
       }
     }
-    function reboundsAtRim(world, edge, target, steps) {
+    function shortenAirStrafe(bot, world, from, velocity, edge, target, warmup, live, steps, accept) {
       const dir = target.minus(edge);
       dir.y = 0;
       dir.normalize();
-      return steps.some((step, i) => {
-        if (i < 2 || !step.jump || step.onGround)
-          return false;
+      const clearance = (flight) => flight[flight.length - 2].position.minus(target).dot(dir) + 0.5 + (bot.entity.width ?? 0.6) / 2;
+      const minimum = Math.min(5e-3, clearance(steps));
+      let takeoff = 0;
+      for (let i = 0; i < steps.length; i++)
+        if (steps[i].jump)
+          takeoff = i;
+      const boostedTicks = steps.slice(takeoff).filter((step) => step.right).length;
+      for (let ticks = 0; ticks < boostedTicks; ticks++) {
+        const shorter = predict(bot, world, from, velocity, edge, target, warmup, live, void 0, true, void 0, ticks);
+        if (shorter != null && clearance(shorter) >= minimum - 1e-7 && accept(shorter))
+          return shorter;
+      }
+      return steps;
+    }
+    function rimContactStep(world, edge, target, steps) {
+      const dir = target.minus(edge);
+      dir.y = 0;
+      dir.normalize();
+      for (let i = 2; i < steps.length; i++) {
+        const step = steps[i];
+        if (!step.jump || step.onGround)
+          continue;
         const contact = steps[i - 1];
         const rimOffset = contact.position.minus(edge).dot(dir);
-        return contact.onGround && !steps[i - 2].onGround && rimOffset >= 0.2 && rimOffset < 0.5 && isIceBlock(world.getBlock(contact.position.offset(0, -0.05, 0))?.name);
-      });
+        if (contact.onGround && !steps[i - 2].onGround && rimOffset >= 0.2 && rimOffset < (contact.support != null ? 1.2 : 0.5) && isIceBlock(world.getBlock(contact.support ?? contact.position.offset(0, -0.05, 0))?.name))
+          return contact;
+      }
     }
-    function predictMomentumJump(bot, world, from, velocity, edge, target, live = false, accept = () => true, refineRunup = false) {
+    function reboundsAtRim(world, edge, target, steps) {
+      return rimContactStep(world, edge, target, steps) != null;
+    }
+    function predictMomentumJump(bot, world, from, velocity, edge, target, live = false, accept = () => true, refineRunup = false, allowAirStrafe = false) {
       let fallback;
       const candidates = [];
+      const dir = target.minus(edge);
+      dir.y = 0;
+      dir.normalize();
+      const refine = (warmup, airStrafe, contacts) => {
+        if (live || !refineRunup || velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.02)
+          return;
+        for (const contact of new Set(contacts)) {
+          const shift = 0.495 - contact;
+          if (Math.abs(shift) > 0.49)
+            continue;
+          const runup = from.plus(dir.scaled(shift));
+          if (!world.getBlockInfo(runup.offset(0, -1, 0)).solidFull || ![0, 1, 2].every((y) => world.getBlockInfo(runup.offset(0, y, 0)).walkthrough))
+            continue;
+          const adjusted = predict(bot, world, runup, velocity, edge, target, warmup, false, void 0, airStrafe);
+          if (adjusted != null && accept(adjusted) && reboundsAtRim(world, edge, target, adjusted)) {
+            return {
+              steps: airStrafe ? shortenAirStrafe(bot, world, runup, velocity, edge, target, warmup, false, adjusted, accept) : adjusted,
+              warmup,
+              rimRebound: true,
+              runup,
+              airStrafe
+            };
+          }
+        }
+      };
       const direct = predict(bot, world, from, velocity, edge, target, false, live, candidates);
       if (direct != null && accept(direct)) {
         fallback = { steps: direct, warmup: false, rimRebound: false };
@@ -5570,42 +5718,32 @@ var require_momentum = __commonJS({
       if (from.xzDistanceTo(edge) >= 6) {
         for (let firstHopTick = 0; firstHopTick <= 12; firstHopTick++) {
           const warmup = { firstHopTick, chain: true };
-          const steps = predict(bot, world, from, velocity, edge, target, warmup, live);
+          const contacts = [];
+          const steps = predict(bot, world, from, velocity, edge, target, warmup, live, void 0, false, contacts);
           if (steps != null && accept(steps)) {
             if (reboundsAtRim(world, edge, target, steps))
               return { steps, warmup, rimRebound: true };
             fallback ?? (fallback = { steps, warmup, rimRebound: false });
           }
+          const adjusted = refine(warmup, false, contacts);
+          if (adjusted != null)
+            return adjusted;
         }
       }
-      if (fallback != null)
+      if (fallback != null || !allowAirStrafe)
         return fallback;
       const warmups = [false, ...candidates.map(({ tick }) => ({ firstHopTick: tick, chain: false }))];
       if (from.xzDistanceTo(edge) >= 6)
         for (let tick = 0; tick <= 12; tick++)
           warmups.push({ firstHopTick: tick, chain: true });
-      const dir = target.minus(edge);
-      dir.y = 0;
-      dir.normalize();
       for (const warmup of warmups) {
         const contacts = [];
         const steps = predict(bot, world, from, velocity, edge, target, warmup, live, void 0, true, contacts);
         if (steps != null && accept(steps))
-          return { steps, warmup, rimRebound: reboundsAtRim(world, edge, target, steps), airStrafe: true };
-        if (live || !refineRunup || velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.02)
-          continue;
-        for (const contact of contacts) {
-          const shift = 0.495 - contact;
-          if (Math.abs(shift) > 0.49)
-            continue;
-          const runup = from.plus(dir.scaled(shift));
-          if (!world.getBlockInfo(runup.offset(0, -1, 0)).solidFull || ![0, 1, 2].every((y) => world.getBlockInfo(runup.offset(0, y, 0)).walkthrough))
-            continue;
-          const adjusted = predict(bot, world, runup, velocity, edge, target, warmup, false, void 0, true);
-          if (adjusted != null && accept(adjusted) && reboundsAtRim(world, edge, target, adjusted)) {
-            return { steps: adjusted, warmup, rimRebound: true, runup, airStrafe: true };
-          }
-        }
+          return { steps: shortenAirStrafe(bot, world, from, velocity, edge, target, warmup, live, steps, accept), warmup, rimRebound: reboundsAtRim(world, edge, target, steps), airStrafe: true };
+        const adjusted = refine(warmup, true, contacts);
+        if (adjusted != null)
+          return adjusted;
       }
     }
     function flightExclusionCost(movement, steps) {
@@ -5628,7 +5766,7 @@ var require_momentum = __commonJS({
         super(...arguments);
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
-      provideMovements(node, storage, _goal, closed) {
+      provideMovements(node, storage, goal, closed) {
         if (!this.settings.allowSprinting || !this.settings.allowJumpSprint)
           return;
         const floor = this.getBlockInfo(node, 0, -1, 0);
@@ -5671,7 +5809,7 @@ var require_momentum = __commonJS({
             for (let backup = ahead; backup <= runup; backup++) {
               const from = backup === ahead ? node.exitPos : origin.minus(dir.scaled(backup));
               const velocity = backup === ahead ? node.exitVel : new vec3_1.Vec3(0, 0, 0);
-              const flight = predictMomentumJump(this.bot, this.world, from, velocity, origin, pos, false, (steps) => flightExclusionCost(this, steps) < costs_1.COST_INF, true);
+              const flight = predictMomentumJump(this.bot, this.world, from, velocity, origin, pos, false, (steps) => flightExclusionCost(this, steps) < costs_1.COST_INF, true, this.settings.allowAirStrafe);
               if (flight == null)
                 continue;
               const candidate = { flight, from: flight.runup ?? from, backup };
@@ -5684,22 +5822,96 @@ var require_momentum = __commonJS({
             selected ?? (selected = fallback);
             if (selected != null) {
               const { flight, from, backup } = selected;
-              const cost = flight.steps.length + (backup - ahead) * costs_1.WALK_ONE_BLOCK_COST + flightExclusionCost(this, flight.steps);
-              if (cost < costs_1.COST_INF) {
-                const move = move_12.Move.fromPrevious(cost, pos, node, this);
-                move.metadata = {
-                  momentumEdge: origin,
-                  momentumRunup: from,
-                  momentumWarmup: flight.warmup,
-                  momentumRebound: flight.rimRebound,
-                  momentumAirStrafe: flight.airStrafe === true,
-                  momentumPreciseRunup: flight.runup != null
-                };
-                storage.push(move);
-              }
+              this.addContinuations(node, storage, goal, closed, dir, origin, pos, flight, from, (backup - ahead) * costs_1.WALK_ONE_BLOCK_COST);
             }
             break;
           }
+        }
+      }
+      addContinuations(node, storage, goal, closed, dir, edge, target, flight, from, approachCost) {
+        const segments = [];
+        let steps = [];
+        const preciseRunup = flight.runup != null;
+        for (let count = 0; count < 8; count++) {
+          let nextEdge = target.floored().offset(0.5, 0, 0.5);
+          let length = 0;
+          while (length < 24) {
+            const next = nextEdge.plus(dir);
+            if (!this.getBlockInfo(next, 0, -1, 0).solidFull || ![0, 1, 2].every((y) => this.getBlockInfo(next, 0, y, 0).walkthrough))
+              break;
+            nextEdge = next;
+            length++;
+          }
+          let nextTarget;
+          if (length < 24 && isIceBlock(this.getBlockInfo(nextEdge, 0, -1, 0).block?.name) && !this.getBlockInfo(nextEdge, dir.x, -1, dir.z).physical) {
+            for (let distance = 2; distance <= 9; distance++) {
+              const next = nextEdge.plus(dir.scaled(distance));
+              if (![0, 1, 2].every((y) => this.getBlockInfo(next, 0, y, 0).walkthrough))
+                break;
+              if (!this.getBlockInfo(next, 0, -1, 0).solidFull)
+                continue;
+              if (distance >= 5)
+                nextTarget = next;
+              break;
+            }
+          }
+          const continueFrom = (candidate) => {
+            if (nextTarget == null)
+              return;
+            const landing2 = candidate.steps[candidate.steps.length - 1];
+            return predictMomentumJump(this.bot, this.world, landing2.position, landing2.velocity, nextEdge, nextTarget, false, (nextSteps) => flightExclusionCost(this, nextSteps) < costs_1.COST_INF, false, this.settings.allowAirStrafe);
+          };
+          let continuation = count < 7 ? continueFrom(flight) : void 0;
+          if (count > 0 && count < 7 && nextTarget != null && continuation == null) {
+            const incoming = steps[steps.length - 1];
+            const center = target.floored().offset(0.5, 0, 0.5);
+            for (const shift of [-0.25, -0.45, 0.25, 0.45]) {
+              const adjustedTarget = center.plus(dir.scaled(shift));
+              const adjusted = predictMomentumJump(this.bot, this.world, incoming.position, incoming.velocity, edge, adjustedTarget, false, (nextSteps) => flightExclusionCost(this, nextSteps) < costs_1.COST_INF, false, this.settings.allowAirStrafe);
+              if (adjusted == null)
+                continue;
+              const next = continueFrom(adjusted);
+              if (next == null)
+                continue;
+              target = adjustedTarget;
+              flight = adjusted;
+              continuation = next;
+              break;
+            }
+          }
+          segments.push({
+            edge,
+            target,
+            warmup: flight.warmup,
+            rebound: flight.rimRebound,
+            contactSpeed: rimContactStep(this.world, edge, target, flight.steps)?.velocity.dot(dir) ?? 0,
+            airStrafe: flight.airStrafe === true
+          });
+          steps = [...steps, ...flight.steps];
+          const landing = steps[steps.length - 1];
+          const cost = approachCost + steps.length + flightExclusionCost(this, steps);
+          if (cost >= costs_1.COST_INF)
+            break;
+          const move = new move_12.Move(landing.position.x, landing.position.y, landing.position.z, [], [], node.remainingBlocks, cost, this, node.exitPos, node.exitVel, landing.position.clone(), new vec3_1.Vec3(0, 0, 0), node);
+          move.metadata = {
+            momentumEdge: segments[0].edge,
+            momentumRunup: from,
+            momentumWarmup: segments[0].warmup,
+            momentumRebound: segments[0].rebound,
+            momentumContactSpeed: segments[0].contactSpeed,
+            momentumAirStrafe: segments.some((segment) => segment.airStrafe),
+            momentumPreciseRunup: preciseRunup,
+            momentumSegments: segments.slice()
+          };
+          if (!closed.has(move.hash))
+            storage.push(move);
+          if (goal.isEnd(move))
+            break;
+          if (nextTarget == null || continuation == null)
+            break;
+          edge = nextEdge;
+          target = nextTarget;
+          flight = continuation;
         }
       }
     };
@@ -5710,6 +5922,11 @@ var require_momentum = __commonJS({
         this.steps = [];
         this.index = 0;
         this.landed = false;
+      }
+      face(yaw) {
+        void this.bot.look(yaw, 0, true);
+        this.bot.entity.yaw = yaw;
+        this.bot.entity.pitch = 0;
       }
       // Ice contact is an intermediate landing in the same flight sequence.
       get canInterrupt() {
@@ -5725,10 +5942,109 @@ var require_momentum = __commonJS({
         this.failure = void 0;
         super.reset();
       }
-      planFromCurrentState(move) {
-        const edge = move.metadata.momentumEdge;
-        const incoming = this.bot.entity.position.xzDistanceTo(edge) < 1.5 && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32;
-        return predictMomentumJump(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, edge, move.exitPos, true, (steps) => flightExclusionCost(this, steps) < costs_1.COST_INF && (move.metadata.momentumRebound !== true || incoming || reboundsAtRim(this.world, edge, move.exitPos, steps)))?.steps ?? [];
+      planFromCurrentState(move, position = this.bot.entity.position, velocity = this.bot.entity.velocity, preferredOnly = false) {
+        const segments = move.metadata.momentumSegments;
+        const result = [];
+        for (const [index, segment] of segments.entries()) {
+          const { edge, target, warmup } = segment;
+          const live = index === 0;
+          const incoming = position.xzDistanceTo(edge) < 1.5 && velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32;
+          const dir = target.minus(edge);
+          dir.y = 0;
+          dir.normalize();
+          const accept = (steps2) => {
+            if (flightExclusionCost(this, steps2) >= costs_1.COST_INF)
+              return false;
+            if (!segment.rebound || incoming)
+              return true;
+            const contact = rimContactStep(this.world, edge, target, steps2);
+            return contact != null && contact.velocity.dot(dir) >= segment.contactSpeed * 0.98;
+          };
+          const strafe = this.settings.allowAirStrafe && segment.airStrafe;
+          let steps = predict(this.bot, this.world, position, velocity, edge, target, warmup, live, void 0, strafe);
+          if (steps != null && accept(steps)) {
+            if (strafe)
+              steps = shortenAirStrafe(this.bot, this.world, position, velocity, edge, target, warmup, live, steps, accept);
+          } else {
+            if (preferredOnly)
+              return [];
+            steps = predictMomentumJump(this.bot, this.world, position, velocity, edge, target, live, accept, false, this.settings.allowAirStrafe)?.steps;
+          }
+          if (steps == null)
+            return [];
+          result.push(...steps);
+          const landing = steps[steps.length - 1];
+          position = landing.position;
+          velocity = landing.velocity;
+        }
+        return result;
+      }
+      alignmentPlan(move, yaw) {
+        const target = move.metadata.momentumRunup;
+        if (!this.bot.entity.onGround || this.bot.entity.position.xzDistanceTo(target) > 0.3)
+          return [];
+        const world = { getBlock: (pos) => this.world.getBlock(pos) };
+        const tryInputs = (inputs) => {
+          const control = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: true };
+          const state = new PlayerState(this.bot, control);
+          state.yaw = yaw;
+          const prefix = [];
+          for (let tick = 0; tick < inputs.length + 10; tick++) {
+            const forward = inputs[tick] ?? 0;
+            state.control = { ...control, forward: forward > 0, back: forward < 0 };
+            this.bot.physics.simulatePlayer(state, world);
+            if (!state.onGround || state.isInWater || state.isInLava || state.isCollidedHorizontally)
+              break;
+            prefix.push({
+              position: state.pos.clone(),
+              velocity: state.vel.clone(),
+              onGround: state.onGround,
+              yaw,
+              jump: false,
+              forward: state.control.forward,
+              back: state.control.back,
+              right: false,
+              preparing: true
+            });
+            if (tick < inputs.length - 1 || state.pos.xzDistanceTo(target) > 0.12)
+              continue;
+            const flight = this.planFromCurrentState(move, state.pos, state.vel, true);
+            if (flight.length > 0 && flightExclusionCost(this, [...prefix, ...flight]) < costs_1.COST_INF)
+              return [...prefix, ...flight];
+          }
+          return [];
+        };
+        for (let hold = 0; hold <= 4; hold++)
+          for (const forward of hold === 0 ? [0] : [1, -1]) {
+            const steps = tryInputs(Array(hold).fill(forward));
+            if (steps.length > 0)
+              return steps;
+          }
+        for (let first = 1; first <= 4; first++)
+          for (let brake = 1; brake <= 4; brake++)
+            for (const forward of [1, -1]) {
+              const steps = tryInputs([...Array(first).fill(forward), ...Array(brake).fill(-forward)]);
+              if (steps.length > 0)
+                return steps;
+            }
+        return [];
+      }
+      coastToRunup(target, yaw) {
+        const control = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, sneak: true };
+        const state = new PlayerState(this.bot, control);
+        state.yaw = yaw;
+        for (let tick = 0; tick < 12; tick++)
+          this.bot.physics.simulatePlayer(state, { getBlock: (pos) => this.world.getBlock(pos) });
+        const delta = target.minus(state.pos);
+        const forward = -delta.x * Math.sin(yaw) - delta.z * Math.cos(yaw);
+        const left = -delta.x * Math.cos(yaw) + delta.z * Math.sin(yaw);
+        this.bot.setControlState("forward", forward > 0.025);
+        this.bot.setControlState("back", forward < -0.025);
+        this.bot.setControlState("left", left > 0.035);
+        this.bot.setControlState("right", left < -0.035);
+        this.bot.setControlState("jump", false);
+        this.bot.setControlState("sprint", false);
+        this.bot.setControlState("sneak", this.bot.entity.position.xzDistanceTo(target) < 0.45);
       }
       align(move) {
         const edge = move.metadata.momentumEdge;
@@ -5738,16 +6054,15 @@ var require_momentum = __commonJS({
           return true;
         }
         const target = move.metadata.momentumRunup;
-        this.bot.entity.yaw = Math.atan2(edge.x - move.exitPos.x, edge.z - move.exitPos.z);
-        const precise = move.metadata.momentumPreciseRunup === true;
-        (0, controls_1.steerToPosition)(this.bot, target, precise ? 0.015 : 0.07, precise ? 2e-3 : 0.045);
-        this.bot.setControlState("jump", false);
-        this.bot.setControlState("sprint", false);
-        this.bot.setControlState("sneak", true);
-        if (this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(target) < (precise ? 3e-3 : 0.08) && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) < (precise ? 4e-3 : 0.015)) {
-          if (this.steps.length === 0)
-            throw new exceptions_1.CancelError("Momentum jump: no safe flight with the available speed and runway");
+        const firstTarget = move.metadata.momentumSegments[0].target;
+        const yaw = Math.atan2(edge.x - firstTarget.x, edge.z - firstTarget.z);
+        this.face(yaw);
+        this.steps = this.alignmentPlan(move, yaw);
+        if (this.steps.length > 0) {
+          this.startFlight(move);
+          return true;
         }
+        this.coastToRunup(target, yaw);
         return false;
       }
       async performInit(_move) {
@@ -5762,14 +6077,14 @@ var require_momentum = __commonJS({
             this.failure = new exceptions_1.CancelError("Momentum jump: missed the landing");
             return;
           }
-          this.bot.clearControlStates();
-          this.bot.entity.yaw = step.yaw;
-          this.bot.entity.pitch = 0;
-          this.bot.setControlState("sprint", true);
+          this.face(step.yaw);
+          this.bot.setControlState("sneak", step.preparing === true);
+          this.bot.setControlState("sprint", step.preparing !== true);
           this.bot.setControlState("jump", step.jump);
           this.bot.setControlState("forward", step.forward);
           this.bot.setControlState("back", step.back);
           this.bot.setControlState("right", step.right);
+          this.bot.setControlState("left", step.left === true);
         };
         const listener = () => {
           if (this.aborted || this.bot.pathfinder.abortCalculation) {
@@ -5785,6 +6100,8 @@ var require_momentum = __commonJS({
             this.bot.off("physicsTick", listener);
             this.listener = void 0;
             this.bot.clearControlStates();
+            const last = move.metadata.momentumSegments.at(-1);
+            this.face(Math.atan2(last.edge.x - last.target.x, last.edge.z - last.target.z));
             return;
           }
           apply();
@@ -10491,7 +10808,7 @@ var require_ThePathfinder = __commonJS({
                 if (moves.length < 5)
                   continue;
                 const last = moves[moves.length - 1];
-                const iceRim = last.metadata?.momentumEdge == null && movement_1.Movement.cardinalDirs.some((dir) => {
+                const iceRim = movement_1.Movement.cardinalDirs.some((dir) => {
                   let rim = last.exitPos;
                   for (let distance = 0; distance <= 6; distance++) {
                     const next = rim.plus(dir);
@@ -10836,6 +11153,7 @@ var mineflayer_util_plugin_1 = __importDefault(require("@nxg-org/mineflayer-util
 var mineflayer_physics_util_1 = __importStar(require("@nxg-org/mineflayer-physics-util"));
 var PathingUtil_1 = require_PathingUtil();
 var climbablePhysics_1 = require_climbablePhysics();
+var supportingBlockPhysics_1 = require_supportingBlockPhysics();
 var ThePathfinder_2 = require_ThePathfinder();
 Object.defineProperty(exports, "ThePathfinder", { enumerable: true, get: function() {
   return ThePathfinder_2.ThePathfinder;
@@ -10855,6 +11173,7 @@ function createPlugin(opts) {
       bot.loadPlugin(mineflayer_physics_util_1.default);
     (0, mineflayer_physics_util_1.initSetup)(bot.registry);
     (0, climbablePhysics_1.installClimbablePhysics)(bot);
+    (0, supportingBlockPhysics_1.installSupportingBlockPhysics)(bot);
     bot.pathfinder = new ThePathfinder_1.ThePathfinder(bot, opts);
     bot.pathingUtil = new PathingUtil_1.PathingUtil(bot);
   };
