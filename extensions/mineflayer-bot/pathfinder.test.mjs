@@ -312,15 +312,16 @@ test(
   },
 );
 
-test(
-  "bundled worker preserves ice momentum instead of extending a five-block gap",
+for (const fromRest of [false, true]) test(
+  `bundled worker ${fromRest ? "builds ice momentum from rest" : "preserves incoming ice momentum"} instead of extending a five-block gap`,
   { timeout: 7000 },
   async () => {
-    const world = createFlatWorld("26.1.2", -64, { renderDistance: 1 });
-    for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), x >= 5 ? "blue_ice" : "stone");
-    for (let x = 12; x <= 15; x++) world.setBlock(new Vec3(x, 63, 0), "stone");
-    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(5.5, 64, 0.5), { world });
-    rig.bot.entity.velocity = new Vec3(0.38, -0.0784, 0);
+    const edge = fromRest ? 14 : 6;
+    const world = createFlatWorld("26.1.2", -64, { renderDistance: 2 });
+    for (let x = 0; x <= edge; x++) world.setBlock(new Vec3(x, 63, 0), x >= edge - 1 ? "blue_ice" : "stone");
+    for (let x = edge + 6; x <= edge + 9; x++) world.setBlock(new Vec3(x, 63, 0), "stone");
+    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(fromRest ? 0.5 : 5.5, 64, 0.5), { world });
+    if (!fromRest) rig.bot.entity.velocity = new Vec3(0.38, -0.0784, 0);
     rig.bot.entity.onGround = true;
     const Item = require("prismarine-item")(rig.mcData);
     rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
@@ -333,15 +334,141 @@ test(
         allowSprinting: true,
         canDig: false,
       });
-      await navigator.goto(new pathfinder.goals.GoalBlock(13, 64, 0));
+      await navigator.goto(new pathfinder.goals.GoalBlock(edge + 7, 64, 0));
       assert.ok(routes.some((move) => move.moveType.constructor.name === "MomentumJump"));
       assert.ok(routes.every((move) => move.toPlace.length === 0));
       assert.equal(rig.bot.entity.onGround, true);
-      assert.ok(rig.bot.entity.position.floored().equals(new Vec3(13, 64, 0)));
+      assert.ok(rig.bot.entity.position.floored().equals(new Vec3(edge + 7, 64, 0)));
     } finally {
       await rig.bot.pathfinder?.destroy();
       rig.stopPassivePhysics();
     }
+  },
+);
+
+test(
+  "bundled worker backs up from one ice block and rebounds from its rim without stopping",
+  { timeout: 10000 },
+  async (t) => {
+    const world = createFlatWorld("26.1.2", -64, { renderDistance: 2 });
+    for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), x === 6 ? "ice" : "stone");
+    for (const x of [11, 12]) world.setBlock(new Vec3(x, 63, 0), "stone");
+    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(6.5, 64, 0.5), { world });
+    rig.bot.entity.onGround = true;
+    const Item = require("prismarine-item")(rig.mcData);
+    rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+    rig.bot.inventory.slots[9].slot = 9;
+    const routes = [];
+    let previousGround = true;
+    let contact;
+    let rebound = false;
+    rig.bot.on("pathGenerated", result => routes.push(...result.path));
+    rig.bot.on("physicsTick", () => {
+      const entity = rig.bot.entity;
+      if (!entity.onGround && previousGround && contact) rebound = true;
+      contact = entity.onGround && !previousGround && entity.position.x >= 6.7 && entity.position.x < 7 ? entity.position.clone() : undefined;
+      previousGround = entity.onGround;
+    });
+    try {
+      const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
+      t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+      await navigator.goto(new pathfinder.goals.GoalNear(11.5, 64, 0.5, 2));
+      assert.ok(routes.some(move => move.metadata?.momentumRebound === true));
+      assert.ok(routes.every(move => move.toPlace.length === 0 && move.toBreak.length === 0));
+      assert.equal(rebound, true);
+      assert.equal(rig.bot.entity.onGround, true);
+      assert.ok(rig.bot.entity.position.floored().equals(new Vec3(11, 64, 0)));
+    } finally { await rig.bot.pathfinder?.destroy(); rig.stopPassivePhysics(); }
+  },
+);
+
+test(
+  "bundled worker preserves the ice rebound when its followed player moves on the contact tick",
+  { timeout: 10000 },
+  async (t) => {
+    const world = createFlatWorld("26.1.2", -64, { renderDistance: 2 });
+    for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), x === 6 ? "ice" : "stone");
+    for (const x of [11, 12]) world.setBlock(new Vec3(x, 63, 0), "stone");
+    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { world });
+    rig.bot.entity.onGround = true;
+    const owner = { position: new Vec3(11.5, 64, 0.5) };
+    let previousGround = true, contactTick = -1, reboundTick = -1, tick = 0;
+    rig.bot.on("physicsTick", () => {
+      tick++;
+      const entity = rig.bot.entity;
+      if (contactTick < 0 && entity.onGround && !previousGround && entity.position.x >= 6.7 && entity.position.x < 7) {
+        contactTick = tick;
+        owner.position.x = 12.7;
+        rig.bot.emit("entityMoved", owner);
+      }
+      if (contactTick >= 0 && reboundTick < 0 && !entity.onGround) reboundTick = tick;
+      previousGround = entity.onGround;
+    });
+    try {
+      const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
+      t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+      await navigator.goto(pathfinder.goals.GoalFollowEntity.fromEntity(owner, 0.8, { neverfinish: false }));
+      assert.ok(contactTick >= 0);
+      assert.equal(reboundTick, contactTick + 1);
+      assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(owner.position) <= 0.85);
+    } finally { await rig.bot.pathfinder?.destroy(); rig.stopPassivePhysics(); }
+  },
+);
+
+test(
+  "bundled worker crosses the saved eight-block runway and single ice across five air columns",
+  { timeout: 15000 },
+  async (t) => {
+    const world = createFlatWorld("26.1.2", -64, { renderDistance: 2 });
+    for (let x = 0; x <= 7; x++) world.setBlock(new Vec3(x, 70, 0), x === 7 ? "ice" : "cobblestone");
+    for (const x of [13, 14]) world.setBlock(new Vec3(x, 70, 0), "cobblestone");
+    const { rig } = createCacheWorld("26.1.2", 71, new Vec3(0.5, 71, 0.5), { world });
+    rig.bot.entity.onGround = true;
+    const Item = require("prismarine-item")(rig.mcData);
+    rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+    rig.bot.inventory.slots[9].slot = 9;
+    let tick = 0, contactTick = -1, reboundTick = -1, lowest = 71, previousGround = true;
+    const moves = [];
+    rig.bot.on("pathGenerated", path => moves.push(...path.path));
+    rig.bot.on("physicsTick", () => {
+      tick++;
+      const e = rig.bot.entity;
+      lowest = Math.min(lowest, e.position.y);
+      if (e.onGround && !previousGround && e.position.x >= 7.7 && e.position.x < 8) contactTick = tick;
+      if (contactTick >= 0 && reboundTick < 0 && !e.onGround) reboundTick = tick;
+      previousGround = e.onGround;
+    });
+    try {
+      const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
+      t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+      await navigator.goto(new pathfinder.goals.GoalNear(13.5, 71, 0.5, 2));
+      assert.ok(moves.some(move => move.metadata?.momentumAirStrafe === true));
+      assert.ok(moves.every(move => move.toPlace.length === 0 && move.toBreak.length === 0));
+      assert.equal(reboundTick, contactTick + 1);
+      assert.ok(lowest >= 70.99);
+      assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.x >= 13 && rig.bot.entity.position.x < 15);
+    } finally { await rig.bot.pathfinder?.destroy(); rig.stopPassivePhysics(); }
+  },
+);
+
+test(
+  "bundled worker checks the continuation before running onto a blocked ice rim",
+  { timeout: 8000 },
+  async () => {
+    const world = createFlatWorld("26.1.2", -64, { renderDistance: 2 });
+    for (let x = 0; x <= 7; x++) world.setBlock(new Vec3(x, 70, 0), x === 7 ? "ice" : "cobblestone");
+    for (const x of [13, 14]) world.setBlock(new Vec3(x, 70, 0), "cobblestone");
+    world.setBlock(new Vec3(7, 73, 0), "stone");
+    const start = new Vec3(0.5, 71, 0.5);
+    const { rig } = createCacheWorld("26.1.2", 71, start, { world });
+    rig.bot.entity.onGround = true;
+    try {
+      const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
+      navigator.pathfinderSettings.routePrefixMs = 1;
+      navigator.pathfinderSettings.tickTimeoutMs = 0.1;
+      await assert.rejects(navigator.goto(new pathfinder.goals.GoalNear(13.5, 71, 0.5, 1)), /no verified route beyond the ice/);
+      assert.ok(rig.bot.entity.position.xzDistanceTo(start) < 0.01);
+    } finally { await rig.bot.pathfinder?.destroy(); rig.stopPassivePhysics(); }
   },
 );
 

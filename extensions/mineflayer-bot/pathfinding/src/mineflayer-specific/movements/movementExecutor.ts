@@ -78,6 +78,9 @@ export abstract class MovementExecutor extends Movement {
    */
   public aborted = false
 
+  /** Whether a supported position can safely end or retarget this movement. */
+  public get canInterrupt (): boolean { return true }
+
   /**
    * Whether or not this movement is asking for a reset.
    */

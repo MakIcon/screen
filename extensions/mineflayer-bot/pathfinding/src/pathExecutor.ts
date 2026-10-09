@@ -148,6 +148,7 @@ export class PathExecutor {
     let currentIndex = 0
 
     const isAtGoal = (): boolean => {
+      if (this.getCurrentExecutor()?.canInterrupt === false) return false
       const lastMove = localPath[localPath.length - 1]
       const pos = bot.entity.position
       if (!bot.entity.onGround && !this.host.world.getBlockInfo(pos).climbable && !(bot.entity as any).isInWater) return false

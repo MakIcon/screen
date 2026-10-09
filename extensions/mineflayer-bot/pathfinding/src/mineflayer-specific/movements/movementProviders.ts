@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3'
 export { NeoProvider } from './neo'
 export { MomentumJump } from './momentum'
+import { isIceBlock } from './momentum'
 export { Climb } from './climb'
 export { LadderForward, LadderDiagonal, LadderLandingForward, LadderLandingDiagonal } from './advanced/ladder-provider'
 export { AroundCornerDiagonal } from './advanced/around-corner-provider'
@@ -551,6 +552,9 @@ export class ParkourForward extends MovementProvider {
         floorCleared = floorCleared && !blockE.physical
       } else if (flag1 && ceilingClear && blockB.walkthrough && blockC.walkthrough && blockD.physical) {
         // Forward
+        // Long ice jumps need the verified run-up and rebound controller.
+        // A standing parkour alignment at the rim consumes their momentum.
+        if (d >= 5 && this.settings.allowJumpSprint && isIceBlock(block0.block?.name)) return
         cost += PARKOUR_FORWARD_LANDING_PENALTY
         if ((cost += this.exclusionStep(blockC)) < COST_INF) {
           neighbors.push(Move.fromPrevious(cost, blockC.position.offset(0.5, 0, 0.5), node, this))

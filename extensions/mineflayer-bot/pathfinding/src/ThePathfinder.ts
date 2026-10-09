@@ -52,6 +52,8 @@ import { Task } from '@nxg-org/mineflayer-util-plugin'
 import { reconstructPath } from './abstract/algorithms'
 import { closestPointOnLineSegment, getScaffoldCount, getNormalizedPos, getSupportedStartPos } from './utils'
 import { World } from './mineflayer-specific/world/worldInterface'
+import { Movement } from './mineflayer-specific/movements/movement'
+import { isIceBlock } from './mineflayer-specific/movements/momentum'
 import { handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
 import { PathExecutor, type ExecutionMappings } from './pathExecutor'
 import { NeoProvider, NeoExecutor } from './mineflayer-specific/movements/neo'
@@ -734,8 +736,8 @@ export class ThePathfinder {
           cleanup = this.registerAll(goal, {
             onHasUpdate: () => {
               shore = undefined
-              // Finish the current airborne move before chasing the new position.
-              if (!(goal instanceof goals.GoalFollowEntity) || this.bot.entity.onGround) {
+              // A rebound's ice contact is still part of the committed flight.
+              if (!(goal instanceof goals.GoalFollowEntity) || (this.bot.entity.onGround && this.currentExecutor?.canInterrupt !== false)) {
                 void this.reset('goalUpdated').catch(() => {})
               }
             },
@@ -756,6 +758,7 @@ export class ThePathfinder {
         let path: Path | undefined
         let executionGoal = routingGoal
         let prefix = false
+        let unverifiedIceTakeoff = false
         const searchStarted = performance.now()
         for await (const res of this.getPathTo(routingGoal)) {
           if (res.result.status === 'success') path = res.result
@@ -770,6 +773,22 @@ export class ThePathfinder {
             if (firstDig >= 0) moves = moves.slice(0, firstDig)
             if (moves.length < 5) continue
             const last = moves[moves.length - 1]
+            // Stopping a walking prefix on the ice consumes the run-up before
+            // we know whether the search can reach the opposite platform.
+            const iceRim = last.metadata?.momentumEdge == null && Movement.cardinalDirs.some(dir => {
+              let rim = last.exitPos
+              for (let distance = 0; distance <= 6; distance++) {
+                const next = rim.plus(dir)
+                if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
+                  return isIceBlock(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) &&
+                    routingGoal.heuristic({ ...last, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) } as Move) < routingGoal.heuristic(last)
+                }
+                if (![0, 1].every(y => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough)) break
+                rim = next
+              }
+              return false
+            })
+            if (iceRim) { unverifiedIceTakeoff = true; continue }
             const elevatedGoal = shore == null &&
               (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
               goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new Vec3(goal.x, goal.y, goal.z)).water
@@ -789,6 +808,7 @@ export class ThePathfinder {
             }
           }
           if (res.result.status === 'noPath' || res.result.status === 'timeout') {
+            if (unverifiedIceTakeoff) throw new Error(`Pathfinding failed: ${res.result.status}; no verified route beyond the ice with the available runway and speed`)
             throw new Error(`Pathfinding failed: ${res.result.status}`)
           }
           if (res.result.status === 'canceled') break

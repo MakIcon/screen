@@ -84,6 +84,9 @@ export class NewForwardExecutor extends MovementExecutor {
 
     const target = thisMove.entryPos.floored().translate(0.5, 0, 0.5)
     if (faceForward) {
+      // A rim retreat may begin facing the void. Turn toward the safe route
+      // before alignment starts applying forward movement.
+      void this.lookAtPathPos(thisMove.exitPos)
       // await this.postInitAlignToPath(thisMove)
       // void this.lookAt(target);
       this.bot.setControlState('forward', true)

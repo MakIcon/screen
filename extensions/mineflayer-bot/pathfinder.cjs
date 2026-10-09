@@ -2658,7 +2658,7 @@ var require_controls = __commonJS({
     exports2.botSmartMovement = botSmartMovement;
     var debug = require("debug");
     var logStrafe = debug("minecraft-pathfinding:controls:strafe");
-    function steerToPosition(bot, target, limit = 0.1) {
+    function steerToPosition(bot, target, limit = 0.1, precision = 0.045) {
       const { position: pos, velocity: vel, yaw } = bot.entity;
       const dx = target.x - pos.x;
       const dz = target.z - pos.z;
@@ -2667,7 +2667,7 @@ var require_controls = __commonJS({
       const choose = (delta, speed) => {
         if (Math.abs(speed) > limit)
           return -Math.sign(speed);
-        if (Math.abs(delta) < 0.045)
+        if (Math.abs(delta) < precision)
           return Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0;
         return delta * speed < 0 || Math.abs(speed) < 0.02 ? Math.sign(delta) : 0;
       };
@@ -3426,6 +3426,10 @@ var require_movementExecutor = __commonJS({
       get cI() {
         return this._cI;
       }
+      /** Whether a supported position can safely end or retarget this movement. */
+      get canInterrupt() {
+        return true;
+      }
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
         this.aborted = false;
@@ -4017,6 +4021,7 @@ var require_movementExecutors = __commonJS({
         }
         const target = thisMove.entryPos.floored().translate(0.5, 0, 0.5);
         if (faceForward) {
+          void this.lookAtPathPos(thisMove.exitPos);
           this.bot.setControlState("forward", true);
           if (this.bot.food <= 6)
             this.bot.setControlState("sprint", false);
@@ -5435,6 +5440,8 @@ var require_momentum = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MomentumJumpExecutor = exports2.MomentumJump = void 0;
+    exports2.isIceBlock = isIceBlock;
+    exports2.predictMomentumJump = predictMomentumJump;
     var vec3_1 = require("vec3");
     var move_12 = require_move();
     var movement_1 = require_movement();
@@ -5446,8 +5453,11 @@ var require_momentum = __commonJS({
     var { PlayerState } = require("prismarine-physics");
     var log = require("debug")("minecraft-pathfinding:momentum");
     var slippery = /* @__PURE__ */ new Set(["ice", "packed_ice", "blue_ice", "frosted_ice", "slime_block"]);
-    function predict(bot, world, from, velocity, edge, target, warmup = false) {
-      warmup && (warmup = from.xzDistanceTo(edge) >= 3);
+    var ice = /* @__PURE__ */ new Set(["ice", "packed_ice", "blue_ice", "frosted_ice"]);
+    function isIceBlock(name) {
+      return name != null && ice.has(name);
+    }
+    function predict(bot, world, from, velocity, edge, target, warmup = false, live = false, candidates, airStrafe = false, contacts) {
       log("predict %O -> %O edge=%O warmup=%s velocity=%O", from, target, edge, warmup, velocity);
       const dir = target.minus(edge);
       dir.y = 0;
@@ -5458,17 +5468,31 @@ var require_momentum = __commonJS({
       state.pos = from.clone();
       state.vel = velocity.clone();
       state.yaw = yaw;
-      state.onGround = true;
-      state.isInWater = false;
-      state.isInLava = false;
-      state.vel.y = Math.min(state.vel.y, -0.0784);
-      state.jumpTicks = 0;
-      state.jumpQueued = false;
+      if (live) {
+        if (!state.onGround || state.isInWater || state.isInLava)
+          return;
+      } else {
+        state.onGround = true;
+        state.isInWater = false;
+        state.isInLava = false;
+        state.vel.y = Math.min(state.vel.y, -0.0784);
+        state.jumpTicks = 0;
+        state.jumpQueued = false;
+      }
       const steps = [];
       let launched = false;
+      let hopped = false;
+      let wasAirborne = false;
       for (let tick = 0; tick < 140; tick++) {
         let jump = false;
-        const warmupJump = warmup && tick > 0 && state.onGround && edge.minus(state.pos).dot(dir) >= 6;
+        const distance = edge.minus(state.pos).dot(dir);
+        if (!launched && state.onGround && wasAirborne && Math.abs(distance) < 1.5)
+          contacts?.push(-distance);
+        if (!launched && state.onGround && distance >= 1 && distance <= 7)
+          candidates?.push({ tick, distance });
+        const warmupJump = !launched && state.onGround && warmup !== false && (tick === warmup.firstHopTick || hopped && warmup.chain && distance >= (airStrafe ? 3 : 3.5));
+        if (warmupJump)
+          hopped = true;
         if (!launched && state.onGround && !warmupJump) {
           const preview = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
             pos: state.pos.clone(),
@@ -5478,7 +5502,8 @@ var require_momentum = __commonJS({
           bot.physics.simulatePlayer(preview, { getBlock: (pos) => world.getBlock(pos) });
           const block = world.getBlockInfo(preview.pos.offset(0, -0.05, 0));
           const supported = block.physical && block.height >= edge.y - 0.05;
-          jump = !supported;
+          const rimContact = wasAirborne && isIceBlock(world.getBlock(state.pos.offset(0, -0.05, 0))?.name) && distance <= -0.2 && distance > -0.5;
+          jump = rimContact || !supported;
         }
         if (jump) {
           launched = true;
@@ -5486,13 +5511,19 @@ var require_momentum = __commonJS({
         }
         const remaining = target.minus(state.pos).dot(dir);
         const back = launched && remaining < 0.55;
-        state.control = { ...controls, jump: jump || warmupJump, forward: !back, back };
+        const right = airStrafe && !state.onGround && !back;
+        state.yaw = yaw + (right ? Math.PI / 4 : 0);
+        state.control = { ...controls, jump: jump || warmupJump, forward: !back, back, right };
+        wasAirborne = !state.onGround;
         bot.physics.simulatePlayer(state, { getBlock: (pos) => world.getBlock(pos) });
+        if (!launched && wasAirborne && state.pos.y <= edge.y + 0.01 && Math.abs(state.pos.minus(edge).dot(dir)) < 1.5) {
+          contacts?.push(state.pos.minus(edge).dot(dir));
+        }
         if (state.isInWater || state.isInLava || state.isCollidedHorizontally || state.pos.y < edge.y - 0.05) {
           log("rejected tick=%s at %O onGround=%s horizontal=%s", tick, state.pos, state.onGround, state.isCollidedHorizontally);
           return;
         }
-        steps.push({ position: state.pos.clone(), yaw, jump: jump || warmupJump, forward: !back, back });
+        steps.push({ position: state.pos.clone(), velocity: state.vel.clone(), onGround: state.onGround, yaw: state.yaw, jump: jump || warmupJump, forward: !back, back, right });
         if (launched && state.onGround) {
           if (state.pos.floored().equals(target.floored())) {
             log("landed in %s ticks at %O", steps.length, state.pos);
@@ -5501,9 +5532,96 @@ var require_momentum = __commonJS({
           if (state.pos.xzDistanceTo(target) > 0.85)
             return;
         }
-        if (!launched && !state.onGround && !warmup)
+        if (!launched && !state.onGround && warmup === false)
           return;
       }
+    }
+    function reboundsAtRim(world, edge, target, steps) {
+      const dir = target.minus(edge);
+      dir.y = 0;
+      dir.normalize();
+      return steps.some((step, i) => {
+        if (i < 2 || !step.jump || step.onGround)
+          return false;
+        const contact = steps[i - 1];
+        const rimOffset = contact.position.minus(edge).dot(dir);
+        return contact.onGround && !steps[i - 2].onGround && rimOffset >= 0.2 && rimOffset < 0.5 && isIceBlock(world.getBlock(contact.position.offset(0, -0.05, 0))?.name);
+      });
+    }
+    function predictMomentumJump(bot, world, from, velocity, edge, target, live = false, accept = () => true, refineRunup = false) {
+      let fallback;
+      const candidates = [];
+      const direct = predict(bot, world, from, velocity, edge, target, false, live, candidates);
+      if (direct != null && accept(direct)) {
+        fallback = { steps: direct, warmup: false, rimRebound: false };
+        if (from.xzDistanceTo(edge) < 1.5 && velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32)
+          return fallback;
+      }
+      candidates.sort((a, b) => Math.abs(a.distance - 4.5) - Math.abs(b.distance - 4.5));
+      for (const { tick } of candidates) {
+        const warmup = { firstHopTick: tick, chain: false };
+        const steps = predict(bot, world, from, velocity, edge, target, warmup, live);
+        if (steps != null && accept(steps)) {
+          if (reboundsAtRim(world, edge, target, steps))
+            return { steps, warmup, rimRebound: true };
+          fallback ?? (fallback = { steps, warmup, rimRebound: false });
+        }
+      }
+      if (from.xzDistanceTo(edge) >= 6) {
+        for (let firstHopTick = 0; firstHopTick <= 12; firstHopTick++) {
+          const warmup = { firstHopTick, chain: true };
+          const steps = predict(bot, world, from, velocity, edge, target, warmup, live);
+          if (steps != null && accept(steps)) {
+            if (reboundsAtRim(world, edge, target, steps))
+              return { steps, warmup, rimRebound: true };
+            fallback ?? (fallback = { steps, warmup, rimRebound: false });
+          }
+        }
+      }
+      if (fallback != null)
+        return fallback;
+      const warmups = [false, ...candidates.map(({ tick }) => ({ firstHopTick: tick, chain: false }))];
+      if (from.xzDistanceTo(edge) >= 6)
+        for (let tick = 0; tick <= 12; tick++)
+          warmups.push({ firstHopTick: tick, chain: true });
+      const dir = target.minus(edge);
+      dir.y = 0;
+      dir.normalize();
+      for (const warmup of warmups) {
+        const contacts = [];
+        const steps = predict(bot, world, from, velocity, edge, target, warmup, live, void 0, true, contacts);
+        if (steps != null && accept(steps))
+          return { steps, warmup, rimRebound: reboundsAtRim(world, edge, target, steps), airStrafe: true };
+        if (live || !refineRunup || velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.02)
+          continue;
+        for (const contact of contacts) {
+          const shift = 0.495 - contact;
+          if (Math.abs(shift) > 0.49)
+            continue;
+          const runup = from.plus(dir.scaled(shift));
+          if (!world.getBlockInfo(runup.offset(0, -1, 0)).solidFull || ![0, 1, 2].every((y) => world.getBlockInfo(runup.offset(0, y, 0)).walkthrough))
+            continue;
+          const adjusted = predict(bot, world, runup, velocity, edge, target, warmup, false, void 0, true);
+          if (adjusted != null && accept(adjusted) && reboundsAtRim(world, edge, target, adjusted)) {
+            return { steps: adjusted, warmup, rimRebound: true, runup, airStrafe: true };
+          }
+        }
+      }
+    }
+    function flightExclusionCost(movement, steps) {
+      const visited = /* @__PURE__ */ new Set();
+      let cost = 0;
+      for (const step of steps) {
+        const position = step.position.floored();
+        const key = position.toString();
+        if (visited.has(key))
+          continue;
+        visited.add(key);
+        cost += movement.exclusionStep(movement.world.getBlockInfo(position));
+        if (cost >= costs_1.COST_INF)
+          break;
+      }
+      return cost;
     }
     var MomentumJump = class extends movementProvider_1.MovementProvider {
       constructor() {
@@ -5546,28 +5664,39 @@ var require_momentum = __commonJS({
               break;
             if (!this.getBlockInfo(pos, 0, -1, 0).solidFull)
               continue;
-            if (distance < 6 || closed.has(`${Math.floor(pos.x)},${pos.y},${Math.floor(pos.z)}`))
+            if (distance < 5 || closed.has(`${Math.floor(pos.x)},${pos.y},${Math.floor(pos.z)}`))
               break;
+            let fallback;
+            let selected;
             for (let backup = ahead; backup <= runup; backup++) {
-              const from = origin.minus(dir.scaled(backup));
+              const from = backup === ahead ? node.exitPos : origin.minus(dir.scaled(backup));
               const velocity = backup === ahead ? node.exitVel : new vec3_1.Vec3(0, 0, 0);
-              const direct = predict(this.bot, this.world, from, velocity, origin, pos);
-              const flight = direct ?? predict(this.bot, this.world, from, velocity, origin, pos, true);
+              const flight = predictMomentumJump(this.bot, this.world, from, velocity, origin, pos, false, (steps) => flightExclusionCost(this, steps) < costs_1.COST_INF, true);
               if (flight == null)
                 continue;
-              const visited = /* @__PURE__ */ new Map();
-              for (const step of flight)
-                visited.set(step.position.floored().toString(), step.position.floored());
-              let extraCost = 0;
-              for (const position of visited.values())
-                extraCost += this.exclusionStep(this.getBlockInfoRaw(position));
-              const cost = flight.length + (backup - ahead) * costs_1.WALK_ONE_BLOCK_COST + extraCost;
-              if (cost >= costs_1.COST_INF)
+              const candidate = { flight, from: flight.runup ?? from, backup };
+              if (flight.rimRebound || backup === ahead && velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32) {
+                selected = candidate;
                 break;
-              const move = move_12.Move.fromPrevious(cost, pos, node, this);
-              move.metadata = { momentumEdge: origin, momentumRunup: from, momentumWarmup: direct == null };
-              storage.push(move);
-              break;
+              }
+              fallback ?? (fallback = candidate);
+            }
+            selected ?? (selected = fallback);
+            if (selected != null) {
+              const { flight, from, backup } = selected;
+              const cost = flight.steps.length + (backup - ahead) * costs_1.WALK_ONE_BLOCK_COST + flightExclusionCost(this, flight.steps);
+              if (cost < costs_1.COST_INF) {
+                const move = move_12.Move.fromPrevious(cost, pos, node, this);
+                move.metadata = {
+                  momentumEdge: origin,
+                  momentumRunup: from,
+                  momentumWarmup: flight.warmup,
+                  momentumRebound: flight.rimRebound,
+                  momentumAirStrafe: flight.airStrafe === true,
+                  momentumPreciseRunup: flight.runup != null
+                };
+                storage.push(move);
+              }
             }
             break;
           }
@@ -5582,6 +5711,10 @@ var require_momentum = __commonJS({
         this.index = 0;
         this.landed = false;
       }
+      // Ice contact is an intermediate landing in the same flight sequence.
+      get canInterrupt() {
+        return this.listener == null || this.landed || this.failure != null;
+      }
       reset() {
         if (this.listener != null)
           this.bot.off("physicsTick", this.listener);
@@ -5592,26 +5725,36 @@ var require_momentum = __commonJS({
         this.failure = void 0;
         super.reset();
       }
+      planFromCurrentState(move) {
+        const edge = move.metadata.momentumEdge;
+        const incoming = this.bot.entity.position.xzDistanceTo(edge) < 1.5 && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32;
+        return predictMomentumJump(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, edge, move.exitPos, true, (steps) => flightExclusionCost(this, steps) < costs_1.COST_INF && (move.metadata.momentumRebound !== true || incoming || reboundsAtRim(this.world, edge, move.exitPos, steps)))?.steps ?? [];
+      }
       align(move) {
         const edge = move.metadata.momentumEdge;
-        this.steps = predict(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, edge, move.exitPos) ?? predict(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, edge, move.exitPos, move.metadata.momentumWarmup) ?? [];
-        if (this.steps.length > 0 && this.bot.entity.onGround)
+        this.steps = this.planFromCurrentState(move);
+        if (this.steps.length > 0 && this.bot.entity.onGround) {
+          this.startFlight(move);
           return true;
+        }
         const target = move.metadata.momentumRunup;
         this.bot.entity.yaw = Math.atan2(edge.x - move.exitPos.x, edge.z - move.exitPos.z);
-        (0, controls_1.steerToPosition)(this.bot, target, 0.07);
+        const precise = move.metadata.momentumPreciseRunup === true;
+        (0, controls_1.steerToPosition)(this.bot, target, precise ? 0.015 : 0.07, precise ? 2e-3 : 0.045);
         this.bot.setControlState("jump", false);
         this.bot.setControlState("sprint", false);
         this.bot.setControlState("sneak", true);
-        if (this.bot.entity.position.xzDistanceTo(target) < 0.08 && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) < 0.015) {
-          this.steps = predict(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, edge, move.exitPos, move.metadata.momentumWarmup) ?? [];
+        if (this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(target) < (precise ? 3e-3 : 0.08) && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) < (precise ? 4e-3 : 0.015)) {
           if (this.steps.length === 0)
             throw new exceptions_1.CancelError("Momentum jump: no safe flight with the available speed and runway");
-          return true;
         }
         return false;
       }
-      async performInit(move) {
+      async performInit(_move) {
+        if (this.listener == null && !this.landed)
+          throw this.failure ?? new exceptions_1.CancelError("Momentum jump: flight interrupted before initialization");
+      }
+      startFlight(move) {
         this.index = 0;
         const apply = () => {
           const step = this.steps[this.index++];
@@ -5626,6 +5769,7 @@ var require_momentum = __commonJS({
           this.bot.setControlState("jump", step.jump);
           this.bot.setControlState("forward", step.forward);
           this.bot.setControlState("back", step.back);
+          this.bot.setControlState("right", step.right);
         };
         const listener = () => {
           if (this.aborted || this.bot.pathfinder.abortCalculation) {
@@ -5633,7 +5777,7 @@ var require_momentum = __commonJS({
             return;
           }
           const previous = this.steps[this.index - 1];
-          if (previous != null && previous.position.distanceTo(this.bot.entity.position) > 0.4)
+          if (previous != null && previous.position.distanceTo(this.bot.entity.position) > (move.metadata.momentumAirStrafe ? 0.02 : 0.4))
             this.failure = new exceptions_1.CancelError("Momentum jump: server position differs from the predicted flight");
           if (this.index > 0 && this.bot.entity.onGround && this.bot.entity.position.floored().equals(move.exitPos.floored()))
             this.landed = true;
@@ -6490,6 +6634,7 @@ var require_movementProviders = __commonJS({
     Object.defineProperty(exports2, "MomentumJump", { enumerable: true, get: function() {
       return momentum_1.MomentumJump;
     } });
+    var momentum_2 = require_momentum();
     var climb_1 = require_climb();
     Object.defineProperty(exports2, "Climb", { enumerable: true, get: function() {
       return climb_1.Climb;
@@ -6974,6 +7119,8 @@ var require_movementProviders = __commonJS({
             }
             floorCleared = floorCleared && !blockE.physical;
           } else if (flag1 && ceilingClear && blockB.walkthrough && blockC.walkthrough && blockD.physical) {
+            if (d >= 5 && this.settings.allowJumpSprint && (0, momentum_2.isIceBlock)(block0.block?.name))
+              return;
             cost += PARKOUR_FORWARD_LANDING_PENALTY;
             if ((cost += this.exclusionStep(blockC)) < costs_1.COST_INF) {
               neighbors.push(move_12.Move.fromPrevious(cost, blockC.position.offset(0.5, 0, 0.5), node, this));
@@ -8476,6 +8623,8 @@ var require_pathExecutor = __commonJS({
           return;
         let currentIndex = 0;
         const isAtGoal = () => {
+          if (this.getCurrentExecutor()?.canInterrupt === false)
+            return false;
           const lastMove = localPath[localPath.length - 1];
           const pos = bot.entity.position;
           if (!bot.entity.onGround && !this.host.world.getBlockInfo(pos).climbable && !bot.entity.isInWater)
@@ -9794,12 +9943,14 @@ var require_ThePathfinder = __commonJS({
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var algorithms_1 = require_algorithms();
     var utils_1 = require_utils();
+    var movement_1 = require_movement();
+    var momentum_1 = require_momentum();
     var customBlockEvents_1 = require_customBlockEvents();
     var pathExecutor_1 = require_pathExecutor();
     var neo_1 = require_neo();
     var climb_1 = require_climb();
     var shore_1 = require_shore();
-    var momentum_1 = require_momentum();
+    var momentum_2 = require_momentum();
     var ladder_provider_1 = require_ladder_provider();
     var ladder_executor_1 = require_ladder_executor();
     var around_corner_provider_1 = require_around_corner_provider();
@@ -9826,7 +9977,7 @@ var require_ThePathfinder = __commonJS({
       [movementProviders_1.StraightUp, movementExecutors_1.StraightUpExecutor],
       [climb_1.Climb, climb_1.ClimbExecutor],
       [movementProviders_1.ParkourForward, movementExecutors_1.ParkourForwardExecutor],
-      [momentum_1.MomentumJump, momentum_1.MomentumJumpExecutor],
+      [momentum_2.MomentumJump, momentum_2.MomentumJumpExecutor],
       [movementProviders_1.ParkourDiagonal, movementExecutors_1.ParkourDiagonalExecutor],
       [neo_1.NeoProvider, neo_1.NeoExecutor],
       [ladder_provider_1.LadderForward, ladder_executor_1.LadderForwardExecutor],
@@ -10304,7 +10455,7 @@ var require_ThePathfinder = __commonJS({
               cleanup = this.registerAll(goal, {
                 onHasUpdate: () => {
                   shore = void 0;
-                  if (!(goal instanceof goals.GoalFollowEntity) || this.bot.entity.onGround) {
+                  if (!(goal instanceof goals.GoalFollowEntity) || this.bot.entity.onGround && this.currentExecutor?.canInterrupt !== false) {
                     void this.reset("goalUpdated").catch(() => {
                     });
                   }
@@ -10326,6 +10477,7 @@ var require_ThePathfinder = __commonJS({
             let path;
             let executionGoal = routingGoal;
             let prefix = false;
+            let unverifiedIceTakeoff = false;
             const searchStarted = performance.now();
             for await (const res of this.getPathTo(routingGoal)) {
               if (res.result.status === "success")
@@ -10339,6 +10491,23 @@ var require_ThePathfinder = __commonJS({
                 if (moves.length < 5)
                   continue;
                 const last = moves[moves.length - 1];
+                const iceRim = last.metadata?.momentumEdge == null && movement_1.Movement.cardinalDirs.some((dir) => {
+                  let rim = last.exitPos;
+                  for (let distance = 0; distance <= 6; distance++) {
+                    const next = rim.plus(dir);
+                    if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
+                      return (0, momentum_1.isIceBlock)(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) && routingGoal.heuristic({ ...last, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) }) < routingGoal.heuristic(last);
+                    }
+                    if (![0, 1].every((y) => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough))
+                      break;
+                    rim = next;
+                  }
+                  return false;
+                });
+                if (iceRim) {
+                  unverifiedIceTakeoff = true;
+                  continue;
+                }
                 const elevatedGoal = shore == null && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water;
                 const losesFoothold = elevatedGoal && (last.metadata?.waterLanding === true || this.world.getBlockInfo(last.exitPos).water);
                 if (!losesFoothold && routingGoal.heuristic(last) < routingGoal.heuristic(moves[0]) - 2) {
@@ -10350,6 +10519,8 @@ var require_ThePathfinder = __commonJS({
                 }
               }
               if (res.result.status === "noPath" || res.result.status === "timeout") {
+                if (unverifiedIceTakeoff)
+                  throw new Error(`Pathfinding failed: ${res.result.status}; no verified route beyond the ice with the available runway and speed`);
                 throw new Error(`Pathfinding failed: ${res.result.status}`);
               }
               if (res.result.status === "canceled")
