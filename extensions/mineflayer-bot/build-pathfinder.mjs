@@ -7,6 +7,7 @@ const require = createRequire(new URL("./pathfinding/package.json", import.meta.
 const { build } = require("esbuild");
 
 await build({
+  absWorkingDir: fileURLToPath(new URL("../../", import.meta.url)),
   entryPoints: [fileURLToPath(new URL("./pathfinding/dist/index.js", import.meta.url))],
   outfile: fileURLToPath(new URL("./pathfinder.cjs", import.meta.url)),
   bundle: true,
@@ -37,6 +38,11 @@ for (const file of [
   "combat.cjs",
   "combat-defaults.json",
   "combat.test.mjs",
+  "pearls.cjs",
+  "crystals.cjs",
+  "bow-defense.cjs",
+  "combat-inventory.cjs",
+  "utility.test.mjs",
   "COMBAT.md",
   "pathfinder.test.mjs",
   "package.json",

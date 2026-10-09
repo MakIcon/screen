@@ -97,4 +97,79 @@ describe("normalizeMineflayerBotSettings", () => {
       normalizeMineflayerBotSettings({ combat: { smoothAimSpeed: NaN } }).combat.smoothAimSpeed,
     ).toBe(100);
   });
+
+  it("preserves pearl permissions independently of PvP and bounds crystal/pearl limits", () => {
+    const normalized = normalizeMineflayerBotSettings({
+      combat: {
+        enabled: false,
+        pearlEnabled: true,
+        pearlFollow: false,
+        pearlCome: true,
+        pearlGoto: true,
+        pearlChain: false,
+        pearlMinDistance: 64,
+        pearlMaxDistance: 12,
+        pearlCooldownMs: 50,
+        pearlMinHealth: 0,
+        pearlReserve: 100,
+        bowDefense: true,
+        crystalEnabled: true,
+        crystalPriority: "closest",
+        crystalBuildBase: false,
+        crystalCover: true,
+        crystalCoverBlock: "planks",
+        crystalPlaceRange: 10,
+        crystalBreakRange: 2.5,
+        crystalIntervalMs: 0,
+        crystalPredictionTicks: 100,
+        style: "crystal",
+      },
+    });
+    expect(normalized.combat.enabled).toBe(false);
+    expect(normalized.combat.pearlEnabled).toBe(true);
+    expect(normalized.combat.pearlFollow).toBe(false);
+    expect(normalized.combat.pearlCome).toBe(true);
+    expect(normalized.combat.pearlGoto).toBe(true);
+    expect(normalized.combat.pearlChain).toBe(false);
+    expect(normalized.combat.pearlMinDistance).toBe(12);
+    expect(normalized.combat.pearlCooldownMs).toBe(1000);
+    expect(normalized.combat.pearlMinHealth).toBe(6);
+    expect(normalized.combat.pearlReserve).toBe(64);
+    expect(normalized.combat.bowDefense).toBe(true);
+    expect(normalized.combat.crystalPriority).toBe("closest");
+    expect(normalized.combat.crystalBuildBase).toBe(false);
+    expect(normalized.combat.crystalCover).toBe(true);
+    expect(normalized.combat.crystalCoverBlock).toBe("planks");
+    expect(normalized.combat.crystalPlaceRange).toBe(4.5);
+    expect(normalized.combat.crystalBreakRange).toBe(2.5);
+    expect(normalized.combat.crystalIntervalMs).toBe(100);
+    expect(normalized.combat.crystalPredictionTicks).toBe(10);
+    expect(normalized.combat.style).toBe("crystal");
+  });
+  it("preserves recognition sensitivity and bounds crystal cycle settings", () => {
+    const { combat } = normalizeMineflayerBotSettings({
+      combat: {
+        bowDefenseMode: "trajectory",
+        bowDefenseCheckMs: -100,
+        bowDefenseRange: 200,
+        bowDefenseMargin: 0.45,
+        bowDefenseHoldMs: 0,
+        bowDefenseRequireDraw: false,
+        crystalFastAim: false,
+        crystalMaxCoverBlocks: 100,
+        crystalSpawnTimeoutMs: 1,
+        crystalRetries: 0,
+      },
+    });
+    expect(combat.bowDefenseMode).toBe("trajectory");
+    expect(combat.bowDefenseCheckMs).toBe(0);
+    expect(combat.bowDefenseRange).toBe(128);
+    expect(combat.bowDefenseMargin).toBe(0.45);
+    expect(combat.bowDefenseHoldMs).toBe(100);
+    expect(combat.bowDefenseRequireDraw).toBe(false);
+    expect(combat.crystalFastAim).toBe(false);
+    expect(combat.crystalMaxCoverBlocks).toBe(4);
+    expect(combat.crystalSpawnTimeoutMs).toBe(300);
+    expect(combat.crystalRetries).toBe(1);
+  });
 });

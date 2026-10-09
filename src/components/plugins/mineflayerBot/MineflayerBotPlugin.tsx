@@ -21,7 +21,7 @@ const SETTINGS_SECTIONS: Array<{
 }> = [
   { id: "connection", label: "CONNECTION", mark: "01" },
   { id: "behavior", label: "BEHAVIOR", mark: "02" },
-  { id: "combat", label: "PVP / ЛУК", mark: "03" },
+  { id: "combat", label: "PVP / ПРЕДМЕТЫ", mark: "03" },
   { id: "commands", label: "COMMANDS", mark: "04" },
   { id: "control", label: "CONTROL", mark: "05" },
 ];

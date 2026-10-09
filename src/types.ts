@@ -297,7 +297,7 @@ export type DiscordRpcPluginSettings = {
 export type MineflayerCombatSettings = {
   enabled: boolean;
   engine: "custom" | "basic";
-  style: "auto" | "melee" | "ranged";
+  style: "auto" | "melee" | "ranged" | "crystal";
   autoTarget: "manual" | "hostile";
   targetRange: number;
   reactionMs: number;
@@ -320,6 +320,43 @@ export type MineflayerCombatSettings = {
   bowPredict: boolean;
   bowOffhand: boolean;
   meleeFallback: boolean;
+  bowDefense: boolean;
+  bowDefenseMode: "early" | "trajectory";
+  bowDefenseCheckMs: number;
+  bowDefenseRange: number;
+  bowDefenseMargin: number;
+  bowDefenseHoldMs: number;
+  bowDefenseRequireDraw: boolean;
+  crystalEnabled: boolean;
+  crystalPlace: boolean;
+  crystalBreak: boolean;
+  crystalBuildBase: boolean;
+  crystalCover: boolean;
+  crystalCoverBlock: "auto" | "obsidian" | "planks" | "cobblestone";
+  crystalFastAim: boolean;
+  crystalMaxCoverBlocks: number;
+  crystalSpawnTimeoutMs: number;
+  crystalRetries: number;
+  crystalPlaceRange: number;
+  crystalBreakRange: number;
+  crystalMinDamage: number;
+  crystalMaxSelfDamage: number;
+  crystalMinHealth: number;
+  crystalIntervalMs: number;
+  crystalPredict: boolean;
+  crystalPredictionTicks: number;
+  crystalPriority: "damage" | "closest";
+  crystalProtectOwners: boolean;
+  pearlEnabled: boolean;
+  pearlFollow: boolean;
+  pearlCome: boolean;
+  pearlGoto: boolean;
+  pearlChain: boolean;
+  pearlMinDistance: number;
+  pearlMaxDistance: number;
+  pearlCooldownMs: number;
+  pearlMinHealth: number;
+  pearlReserve: number;
 };
 
 export type MineflayerBotPluginSettings = {

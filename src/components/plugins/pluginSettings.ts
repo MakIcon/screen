@@ -15,15 +15,25 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
   const result = { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS };
   const choices: Record<string, string[]> = {
     engine: ["custom", "basic"],
-    style: ["auto", "melee", "ranged"],
+    style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
     weapon: ["sword", "axe"],
     strafe: ["off", "intelligent", "circle", "random"],
     criticals: ["off", "hop", "shorthop"],
     sprintTap: ["off", "wtap", "stap", "sprintcancel"],
     bowEngine: ["custom", "hawkeye"],
+    crystalPriority: ["damage", "closest"],
+    crystalCoverBlock: ["auto", "obsidian", "planks", "cobblestone"],
+    bowDefenseMode: ["early", "trajectory"],
   };
   const bounds: Record<string, [number, number]> = {
+    bowDefenseCheckMs: [0, 500],
+    bowDefenseRange: [4, 128],
+    bowDefenseMargin: [0, 2],
+    bowDefenseHoldMs: [100, 2000],
+    crystalMaxCoverBlocks: [0, 4],
+    crystalSpawnTimeoutMs: [300, 5000],
+    crystalRetries: [1, 5],
     targetRange: [4, 128],
     reactionMs: [0, 3000],
     meleeSkill: [0, 100],
@@ -33,6 +43,18 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
     bowAccuracy: [0, 100],
     bowRange: [4, 120],
     bowIntervalMs: [1200, 10000],
+    crystalPlaceRange: [1, 4.5],
+    crystalBreakRange: [1, 4.5],
+    crystalMinDamage: [0, 100],
+    crystalMaxSelfDamage: [0, 20],
+    crystalMinHealth: [1, 20],
+    crystalIntervalMs: [100, 5000],
+    crystalPredictionTicks: [0, 10],
+    pearlMinDistance: [4, 64],
+    pearlMaxDistance: [8, 64],
+    pearlCooldownMs: [1000, 10000],
+    pearlMinHealth: [6, 20],
+    pearlReserve: [0, 64],
   };
   const normalized = result as unknown as Record<string, unknown>;
   for (const [key, fallback] of Object.entries(result)) {
@@ -41,12 +63,21 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
       if (typeof draft[key] === "string" && choices[key].includes(draft[key]))
         normalized[key] = draft[key];
     } else if (typeof draft[key] === "number" && Number.isFinite(draft[key])) {
-      const numeric = ["attackRange", "targetRange", "bowRange"].includes(key)
+      const numeric = [
+        "attackRange",
+        "targetRange",
+        "bowRange",
+        "crystalPlaceRange",
+        "crystalBreakRange",
+        "bowDefenseRange",
+        "bowDefenseMargin",
+      ].includes(key)
         ? draft[key]
         : Math.round(draft[key]);
       normalized[key] = Math.max(bounds[key][0], Math.min(bounds[key][1], numeric));
     }
   }
+  result.pearlMinDistance = Math.min(result.pearlMinDistance, result.pearlMaxDistance);
   return result;
 }
 

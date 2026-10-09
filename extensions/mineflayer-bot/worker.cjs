@@ -34,6 +34,8 @@ function loadMineflayer () {
 const { mineflayer, compatibilityVersion } = loadMineflayer()
 const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
 const { normalizeCombat, createCombatController } = require('./combat.cjs')
+const { createTravelController } = require('./pearls.cjs')
+const { Vec3 } = require('vec3')
 
 const { GoalFollowEntity, GoalNear } = goals
 
@@ -551,6 +553,7 @@ async function main () {
     let ended = false
     let kickReason = ''
     let combat = null
+    let travel = null
 
     function reply (username, source, text) {
       const message = clampChat(text)
@@ -570,18 +573,28 @@ async function main () {
     }
 
     async function stopMovement () {
-      goalGeneration++
+      const generation = ++goalGeneration
       combat?.stop(true)
+      await travel?.stop()
+      await combat?.idleTask
+      if (generation !== goalGeneration || ended) return false
       if (bot.pathfinder) await bot.pathfinder.stop()
+      if (generation !== goalGeneration || ended) return false
       bot.clearControlStates()
       currentGoal = 'idle'
+      return true
     }
 
-    function startGoal (goal, label) {
+    function startGoal (goal, label, destination, kind, radius) {
       if (!bot.pathfinder) throw new Error('Bot is not ready to move yet')
       const generation = ++goalGeneration
       combat?.stop(true)
       currentGoal = label
+      if (travel && destination) {
+        travel.start(goal, destination, kind, label, radius)
+        return
+      }
+      travel?.stop()
       void bot.pathfinder.stop().then(() => {
         if (generation !== goalGeneration || ended) return
         return bot.pathfinder.goto(goal)
@@ -605,7 +618,9 @@ async function main () {
       if (!target || !bot.pathfinder) return false
       startGoal(
         GoalFollowEntity.fromEntity(target, config.movement.followDistance, { dynamic: true, neverfinish: true }),
-        `follow ${username}`
+        `follow ${username}`,
+        () => target.isValid === false ? null : target.position,
+        'follow', config.movement.followDistance
       )
       if (announce) reply(username, source, `Following ${username}`)
       return true
@@ -626,6 +641,7 @@ async function main () {
       if (config.commands.allowSay) commands.push('say text')
       if (config.commands.allowQuit) commands.push('quit')
       if (config.combat.enabled) commands.push('attack player', 'bow player', 'pvp auto|stop|status')
+      if (config.combat.enabled && config.combat.crystalEnabled) commands.push('crystal player')
       reply(username, source, commands.map((command) => `${prefix}${command}`).join(' '))
     }
 
@@ -665,12 +681,12 @@ async function main () {
           return
         }
 
-        if (['attack', 'sword', 'bow'].includes(command)) {
+        if (['attack', 'sword', 'bow', 'crystal'].includes(command)) {
           if (!combat) throw new Error('Combat is not ready yet')
           const target = combat.findTarget(args.join(' ') || 'nearest')
           if (!target) throw new Error('Target is not loaded nearby; move closer and use the exact player name, or nearest for a visible hostile mob')
-          await stopMovement()
-          combat.select(target, command === 'bow' ? 'ranged' : command === 'sword' ? 'melee' : config.combat.style)
+          if (!(await stopMovement())) return
+          combat.select(target, command === 'crystal' ? 'crystal' : command === 'bow' ? 'ranged' : command === 'sword' ? 'melee' : config.combat.style)
           reply(username, source, `Attacking ${target.username || target.name} (${combat.status})`)
           return
         }
@@ -679,10 +695,10 @@ async function main () {
           if (!combat) throw new Error('Combat is not ready yet')
           const action = (args[0] || 'status').toLowerCase()
           if (action === 'auto') {
-            await stopMovement()
+            if (!(await stopMovement())) return
             combat.auto(true)
           } else if (action === 'stop') {
-            await stopMovement()
+            if (!(await stopMovement())) return
           } else if (action !== 'status') {
             reply(username, source, `Usage: ${prefix}pvp auto|stop|status`)
             return
@@ -697,7 +713,7 @@ async function main () {
             reply(username, source, `I cannot see ${username}`)
             return
           }
-          const pos = target.position
+          const pos = target.position.clone()
           startGoal(
             new GoalNear(
               pos.x,
@@ -705,7 +721,8 @@ async function main () {
               pos.z,
               config.movement.followDistance
             ),
-            `near ${username}`
+            `near ${username}`,
+            () => pos, 'come', config.movement.followDistance
           )
           reply(username, source, `Coming to ${username}`)
           return
@@ -730,7 +747,8 @@ async function main () {
           }
           startGoal(
             new GoalNear(x, y, z, config.movement.gotoRadius),
-            `goto ${x} ${y} ${z}`
+            `goto ${x} ${y} ${z}`,
+            () => new Vec3(x, y, z), 'goto', config.movement.gotoRadius
           )
           reply(
             username,
@@ -741,7 +759,7 @@ async function main () {
         }
 
         if (command === 'stop') {
-          await stopMovement()
+          if (!(await stopMovement())) return
           reply(username, source, 'Stopped')
           return
         }
@@ -752,14 +770,14 @@ async function main () {
             reply(username, source, `I cannot see ${username}`)
             return
           }
-          await stopMovement()
+          if (!(await stopMovement())) return
           await bot.lookAt(target.position.offset(0, target.height || 1.6, 0), true)
           reply(username, source, `Looking at ${username}`)
           return
         }
 
         if (command === 'jump') {
-          await stopMovement()
+          if (!(await stopMovement())) return
           bot.setControlState('jump', true)
           setTimeout(() => {
             if (activeBot === bot) bot.setControlState('jump', false)
@@ -788,7 +806,7 @@ async function main () {
             return
           }
           reply(username, source, 'Quitting')
-          await stopMovement()
+          if (!(await stopMovement())) return
           stopping = true
           setTimeout(() => bot.quit('owner quit command'), 150)
           return
@@ -813,6 +831,15 @@ async function main () {
           onError: error => emit('error', { error: `combat: ${error.message || String(error)}` })
         })
         bot.launcherCombat = combat
+        travel = createTravelController(bot, config.combat, {
+          onStatus: message => emit('status', { state: 'connected', message }),
+          onFinished: label => {
+            currentGoal = 'idle'
+            emit('status', { state: 'connected', message: `movement finished: ${label}` })
+          },
+          onError: error => emit('error', { error: `movement: ${error.message || String(error)}` })
+        })
+        bot.launcherTravel = travel
       } catch (error) {
         emit('error', { error: `Bot plugin initialization failed: ${error.message}` })
         bot.quit('bot plugin initialization failed')
@@ -910,6 +937,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      travel?.dispose()
       combat?.dispose()
       goalGeneration++
       if (activeBot === bot) activeBot = null
@@ -924,6 +952,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      activeBot.launcherTravel?.dispose()
       activeBot.launcherCombat?.dispose()
       activeBot.quit(`worker ${signal}`)
     } else {

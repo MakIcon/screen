@@ -28,6 +28,9 @@ New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $stageDirectory
+foreach ($file in @("pearls.cjs", "crystals.cjs", "bow-defense.cjs", "combat-inventory.cjs")) {
+    Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
+}
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat-defaults.json") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "COMBAT.md") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "pathfinder.cjs") -Destination $stageDirectory

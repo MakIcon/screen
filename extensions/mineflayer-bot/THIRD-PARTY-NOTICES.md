@@ -23,6 +23,13 @@ The original license files remain in their installed node_modules packages.
 Editable launcher combat code, defaults and tests are in the corresponding
 source archive alongside the worker and Pathfinder source.
 
+The 1.8.0 pearl and crystal controller rewrites were developed using the supplied
+nxg-org/mineflayer-ender (GPL-3.0) and nxg-org/mineflayer-auto-crystal-rewrite (MIT)
+sources as design references. They use the existing Mineflayer dependency APIs;
+the downloaded plugin builds are not installed or loaded at runtime.
+https://github.com/nxg-org/mineflayer-ender
+https://github.com/nxg-org/mineflayer-auto-crystal-rewrite
+
 Corresponding source is included in pathfinder-source.json. Run:
 
     node restore-pathfinder-source.cjs C:\work\pathfinder-source

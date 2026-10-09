@@ -20,6 +20,12 @@ pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
 
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
 const MINEFLAYER_COMBAT: &str = include_str!("../../../extensions/mineflayer-bot/combat.cjs");
+const MINEFLAYER_PEARLS: &str = include_str!("../../../extensions/mineflayer-bot/pearls.cjs");
+const MINEFLAYER_CRYSTALS: &str = include_str!("../../../extensions/mineflayer-bot/crystals.cjs");
+const MINEFLAYER_COMBAT_INVENTORY: &str =
+    include_str!("../../../extensions/mineflayer-bot/combat-inventory.cjs");
+const MINEFLAYER_BOW_DEFENSE: &str =
+    include_str!("../../../extensions/mineflayer-bot/bow-defense.cjs");
 const MINEFLAYER_COMBAT_DEFAULTS: &str =
     include_str!("../../../extensions/mineflayer-bot/combat-defaults.json");
 const MINEFLAYER_PATHFINDER: &str =
@@ -72,6 +78,10 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
         }
         if !installed.join("combat.cjs").is_file()
             || !installed.join("combat-defaults.json").is_file()
+            || !installed.join("pearls.cjs").is_file()
+            || !installed.join("crystals.cjs").is_file()
+            || !installed.join("bow-defense.cjs").is_file()
+            || !installed.join("combat-inventory.cjs").is_file()
         {
             return Err(
                 "Mineflayer Bot package needs a PvP update. Open Extensions and install it again."
@@ -103,6 +113,10 @@ fn mineflayer_status() -> OptionalExtensionStatus {
                 && managed.join("pathfinder.cjs").is_file()
                 && managed.join("combat.cjs").is_file()
                 && managed.join("combat-defaults.json").is_file()
+                && managed.join("pearls.cjs").is_file()
+                && managed.join("crystals.cjs").is_file()
+                && managed.join("bow-defense.cjs").is_file()
+                && managed.join("combat-inventory.cjs").is_file()
         })
         .unwrap_or(false);
 
@@ -190,6 +204,10 @@ async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
     for (name, contents) in [
         ("worker.cjs", MINEFLAYER_WORKER),
         ("combat.cjs", MINEFLAYER_COMBAT),
+        ("pearls.cjs", MINEFLAYER_PEARLS),
+        ("crystals.cjs", MINEFLAYER_CRYSTALS),
+        ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
+        ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
         ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
         (
             "COMBAT.md",

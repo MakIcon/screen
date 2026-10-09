@@ -2,6 +2,9 @@ const defaults = require("./combat-defaults.json");
 const { Vec3 } = require("vec3");
 const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
 const { goals } = require("./pathfinder.cjs");
+const { createCrystalPlanner } = require("./crystals.cjs");
+const { createBowDefense } = require("./bow-defense.cjs");
+const { carriedItems, equipCombatItem } = require("./combat-inventory.cjs");
 
 const protocolInstalled = Symbol("combatProtocolInstalled");
 const originalTurnTime = Symbol("originalSmoothTurnTime");
@@ -88,15 +91,25 @@ function normalizeCombat(value = {}) {
   const result = { ...defaults };
   const enums = {
     engine: ["custom", "basic"],
-    style: ["auto", "melee", "ranged"],
+    style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
     weapon: ["sword", "axe"],
     strafe: ["off", "intelligent", "circle", "random"],
     criticals: ["off", "hop", "shorthop"],
     sprintTap: ["off", "wtap", "stap", "sprintcancel"],
     bowEngine: ["custom", "hawkeye"],
+    crystalPriority: ["damage", "closest"],
+    crystalCoverBlock: ["auto", "obsidian", "planks", "cobblestone"],
+    bowDefenseMode: ["early", "trajectory"],
   };
   const bounds = {
+    bowDefenseCheckMs: [0, 500],
+    bowDefenseRange: [4, 128],
+    bowDefenseMargin: [0, 2],
+    bowDefenseHoldMs: [100, 2000],
+    crystalMaxCoverBlocks: [0, 4],
+    crystalSpawnTimeoutMs: [300, 5000],
+    crystalRetries: [1, 5],
     targetRange: [4, 128],
     reactionMs: [0, 3000],
     meleeSkill: [0, 100],
@@ -106,6 +119,18 @@ function normalizeCombat(value = {}) {
     bowAccuracy: [0, 100],
     bowRange: [4, 120],
     bowIntervalMs: [1200, 10000],
+    crystalPlaceRange: [1, 4.5],
+    crystalBreakRange: [1, 4.5],
+    crystalMinDamage: [0, 100],
+    crystalMaxSelfDamage: [0, 20],
+    crystalMinHealth: [1, 20],
+    crystalIntervalMs: [100, 5000],
+    crystalPredictionTicks: [0, 10],
+    pearlMinDistance: [4, 64],
+    pearlMaxDistance: [8, 64],
+    pearlCooldownMs: [1000, 10000],
+    pearlMinHealth: [6, 20],
+    pearlReserve: [0, 64],
   };
   for (const key of Object.keys(defaults)) {
     if (typeof defaults[key] === "boolean") {
@@ -114,12 +139,21 @@ function normalizeCombat(value = {}) {
       if (enums[key].includes(draft[key])) result[key] = draft[key];
     } else if (typeof draft[key] === "number" && Number.isFinite(draft[key])) {
       const [min, max] = bounds[key];
-      const numeric = ["attackRange", "targetRange", "bowRange"].includes(key)
+      const numeric = [
+        "attackRange",
+        "targetRange",
+        "bowRange",
+        "crystalPlaceRange",
+        "crystalBreakRange",
+        "bowDefenseRange",
+        "bowDefenseMargin",
+      ].includes(key)
         ? draft[key]
         : Math.round(draft[key]);
       result[key] = Math.max(min, Math.min(max, numeric));
     }
   }
+  result.pearlMinDistance = Math.min(result.pearlMinDistance, result.pearlMaxDistance);
   return result;
 }
 
@@ -183,6 +217,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     (settings.smoothAimSpeed ?? defaults.smoothAimSpeed);
 
   function rotateTowardTarget(target) {
+    if (bot.launcherDefendingBow) return;
     if (!target || !canSeeTarget(bot, target)) return;
     const point = target.position.offset(0, (target.height ?? 1.8) * 0.9, 0);
     const rotation = settings.smoothAim
@@ -230,6 +265,16 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     settings.shieldBreak && !bot.supportFeature("doesntHaveOffHandSlot");
   options.rotateConfig.smooth = settings.smoothAim;
   options.rotateConfig.lookAtHidden = false;
+  // These upstream callbacks were registered as function references. Replace
+  // the listeners too, so their normal shield/rotation logic yields to defense.
+  for (const name of ["update", "checkForShield"]) {
+    const update = bot.swordpvp[name];
+    bot.off("physicsTick", update);
+    bot.swordpvp[name] = (...args) => {
+      if (!bot.launcherDefendingBow) return update(...args);
+    };
+    bot.on("physicsTick", bot.swordpvp[name]);
+  }
   bot.swordpvp.weaponOfChoice = settings.weapon;
   // Upstream visibility only raycasts along the current view, while rotation
   // refuses hidden targets. Use line of sight to let it turn toward a new target.
@@ -246,6 +291,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     Math.max(customTiming(...args), Math.ceil(20 / settings.cps));
   const customAttempt = bot.swordpvp.attemptAttack.bind(bot.swordpvp);
   bot.swordpvp.attemptAttack = (reason) => {
+    if (bot.launcherDefendingBow) return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
       bot.swordpvp.ticksToNextAttack = 1;
@@ -265,6 +311,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   const attempt = bot.pvp.attemptAttack.bind(bot.pvp);
   const update = bot.pvp.update.bind(bot.pvp);
   bot.pvp.update = () => {
+    if (bot.launcherDefendingBow) return;
     rotateTowardTarget(bot.pvp.target);
     update();
   };
@@ -339,6 +386,26 @@ function createCombatController(
   let suspended = false;
   let disposed = false;
   let prepareTask = Promise.resolve();
+  let actionTask = Promise.resolve();
+  const crystals = createCrystalPlanner(bot, settings, isOwner);
+  const defense = createBowDefense(bot, settings, {
+    now,
+    onStatus,
+    onError,
+    beforeDefend() {
+      generation++;
+      pending = false;
+      stopEngines();
+      bot.launcherPauseTravelForDefense?.();
+      bot.clearControlStates();
+      return bot.pathfinder.stop();
+    },
+    afterDefend() {
+      bot.launcherResumeTravelAfterDefense?.();
+    },
+  });
+  let nextCrystalAt = 0;
+  let nextCrystalStatusAt = 0;
 
   function distance(entity) {
     return bot.entity.position.distanceTo(entity.position);
@@ -382,6 +449,8 @@ function createCombatController(
   }
   function stop(suspendAuto = true) {
     generation++;
+    defense.stop();
+    crystals.clear();
     if (target) bot.tracker?.stopTrackingEntity(target);
     target = null;
     pending = false;
@@ -393,6 +462,8 @@ function createCombatController(
   function select(entity, style = settings.style) {
     if (!settings.enabled) throw new Error("PvP is disabled in extension settings");
     if (!allowed(entity)) throw new Error("Target is missing or is the bot itself");
+    if (style === "crystal" && !settings.crystalEnabled)
+      throw new Error("Auto Crystal is disabled in extension settings");
     const maxRange =
       style === "melee" ? settings.targetRange : Math.max(settings.targetRange, settings.bowRange);
     if (distance(entity) > maxRange) throw new Error("Target is too far away");
@@ -404,7 +475,7 @@ function createCombatController(
     onStatus(`combat target: ${entity.username || entity.name || entity.id}; ${style}`);
   }
   function hasBow() {
-    const items = bot.inventory.items();
+    const items = carriedItems(bot);
     return (
       settings.bowEnabled &&
       items.some((item) => item.name === "bow") &&
@@ -412,6 +483,20 @@ function createCombatController(
     );
   }
   function chooseMode() {
+    const crystalAvailable =
+      settings.crystalEnabled &&
+      (settings.crystalBreak ||
+        (settings.crystalPlace && carriedItems(bot).some((item) => item.name === "end_crystal")));
+    if (requestedStyle === "crystal")
+      return crystalAvailable ? "crystal" : settings.meleeFallback ? "melee" : null;
+    if (requestedStyle === "auto" && crystalAvailable && crystals.active) return "crystal";
+    if (
+      requestedStyle === "auto" &&
+      crystalAvailable &&
+      distance(target) <= 10 &&
+      crystals.plan(target, now())
+    )
+      return "crystal";
     const ranged = hasBow() && distance(target) <= settings.bowRange;
     if (requestedStyle === "melee") return "melee";
     if (requestedStyle === "ranged")
@@ -433,24 +518,30 @@ function createCombatController(
       await bot.pathfinder.stop();
       if (revision !== generation || !target) return;
       bot.clearControlStates();
-      const items = bot.inventory.items();
+      const items = carriedItems(bot);
+      const current = () => revision === generation && target && !bot.launcherDefendingBow;
       if (nextMode === "ranged") {
         const hand =
           settings.bowOffhand && !bot.supportFeature("doesntHaveOffHandSlot") ? "off-hand" : "hand";
-        await bot.equip(
+        await equipCombatItem(
+          bot,
           items.find((item) => item.name === "bow"),
           hand,
+          current,
         );
-      } else {
+      } else if (nextMode === "melee") {
         const tier = ["netherite", "diamond", "iron", "stone", "golden", "wooden"];
         const weapons = items.filter((item) => item.name.endsWith(`_${settings.weapon}`));
         weapons.sort(
           (a, b) => tier.indexOf(a.name.split("_")[0]) - tier.indexOf(b.name.split("_")[0]),
         );
-        if (weapons[0]) await bot.equip(weapons[0], "hand");
+        if (weapons[0]) await equipCombatItem(bot, weapons[0], "hand", current);
         const shield = items.find((item) => item.name === "shield");
         if (settings.shield && shield && !bot.supportFeature("doesntHaveOffHandSlot"))
-          await bot.equip(shield, "off-hand");
+          await equipCombatItem(bot, shield, "off-hand", current);
+      } else if (nextMode === "crystal") {
+        const crystal = items.find((item) => item.name === "end_crystal");
+        if (settings.crystalPlace && crystal) await equipCombatItem(bot, crystal, "hand", current);
       }
       if (revision !== generation || !target) return;
       mode = nextMode;
@@ -461,8 +552,11 @@ function createCombatController(
           if (settings.engine === "custom") engine.stop();
           else engine.forceStop();
         }
-      } else {
+      } else if (mode === "ranged") {
         bot.tracker?.trackEntity(target);
+      } else if (mode === "crystal") {
+        bot.tracker?.trackEntity(target);
+        nextCrystalAt = now();
       }
       if (revision === generation) pending = false;
     } finally {
@@ -517,11 +611,79 @@ function createCombatController(
       onStatus(`bow shot: ${target.username || target.name}; ${settings.bowEngine}`);
     }
   }
+  async function updateCrystal() {
+    if (now() < nextCrystalAt) return;
+    nextCrystalAt = now() + settings.crystalIntervalMs;
+    const rev = generation,
+      enemy = target;
+    const action = crystals.plan(enemy, now());
+    if (!action) {
+      if (now() >= nextCrystalStatusAt) {
+        onStatus(`crystal waiting: ${crystals.reason}`);
+        nextCrystalStatusAt = now() + 2000;
+      }
+      // Close the gap using the same navigator; retry placement after reaching range.
+      if (distance(enemy) > settings.crystalPlaceRange)
+        bot.pathfinder.setGoal({ entity: enemy, rangeSq: 9 });
+      return;
+    }
+    await bot.pathfinder.stop();
+    if (rev !== generation || target !== enemy) return;
+    bot.clearControlStates();
+    if (action.type !== "break") {
+      const item =
+        action.type === "place"
+          ? carriedItems(bot).find((item) => item.name === "end_crystal")
+          : action.item;
+      if (!item) return;
+      await equipCombatItem(
+        bot,
+        item,
+        "hand",
+        () => rev === generation && target === enemy && !bot.launcherDefendingBow,
+      );
+    }
+    if (rev !== generation || target !== enemy) return;
+    await (settings.smoothAim && bot.smoothLook && !settings.crystalFastAim
+      ? aimCrystal(action.aim, () => rev === generation && target === enemy)
+      : bot.lookAt(action.aim, true));
+    if (rev !== generation || target !== enemy) return;
+    // Recheck cover, target motion, owner positions and health after asynchronous aiming.
+    const verified = crystals.verify(enemy, action, now());
+    if (!verified) return;
+    flushBowLook(bot.entity.yaw, bot.entity.pitch);
+    crystals.commit(verified, now());
+    if (verified.type === "break") bot.attack(verified.crystal);
+    else if (verified.type === "place")
+      await bot._genericPlace(verified.base, verified.face, {
+        forceLook: "ignore",
+        swingArm: "right",
+      });
+    else
+      await bot._placeBlockWithOptions(verified.reference, verified.face, {
+        forceLook: "ignore",
+        swingArm: "right",
+      });
+    if (rev === generation)
+      onStatus(
+        `crystal ${verified.type}: damage ${verified.damage.toFixed(1)}; self ${verified.selfDamage.toFixed(1)}`,
+      );
+  }
+  async function aimCrystal(point, current) {
+    // SmoothLook can finish synchronously before registering its promise handlers.
+    // Never await that promise: allow a short smooth turn, then publish exact aim.
+    void bot.smoothLook.lookAt(point, true).catch(onError);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (!current()) return;
+    bot.smoothLook._cleanupTasks(true);
+    bot.smoothLook._pendingTask = null;
+    await bot.lookAt(point, true);
+  }
   let bowBusy = false;
   function tick() {
-    if (disposed || !settings.enabled || suspended || !bot.entity?.position || bot.health <= 0)
-      return;
+    if (disposed || !settings.enabled || !bot.entity?.position || bot.health <= 0) return;
     try {
+      if (defense.tick(true) || suspended) return;
       if (!target && autoEnabled && now() >= nextActionAt) {
         const entity = bot.nearestEntity(
           (entity) =>
@@ -543,7 +705,7 @@ function createCombatController(
         stop(false);
         return;
       }
-      if (pending || now() < nextActionAt) return;
+      if (pending || bowBusy || now() < nextActionAt) return;
       const nextMode = chooseMode();
       if (!nextMode) {
         stop(true);
@@ -551,16 +713,22 @@ function createCombatController(
         return;
       }
       if (nextMode !== mode) {
+        const revision = generation + 1;
         void prepare(nextMode).catch((error) => {
-          stop(true);
-          onError(error);
-        });
-      } else if (mode === "ranged" && !bowBusy) {
-        bowBusy = true;
-        void updateBow()
-          .catch((error) => {
+          if (revision === generation) {
             stop(true);
             onError(error);
+          }
+        });
+      } else if ((mode === "ranged" || mode === "crystal") && !bowBusy) {
+        bowBusy = true;
+        const revision = generation;
+        actionTask = (mode === "crystal" ? updateCrystal() : updateBow())
+          .catch((error) => {
+            if (revision === generation) {
+              stop(true);
+              onError(error);
+            }
           })
           .finally(() => {
             bowBusy = false;
@@ -587,9 +755,14 @@ function createCombatController(
   bot.on("physicsTick", tick);
   bot.on("entityGone", removed);
   bot.on("entityDead", removed);
+  const died = () => stop(true);
+  bot.on("death", died);
   return {
     select,
     stop,
+    get idleTask() {
+      return Promise.all([prepareTask, actionTask, defense.task]);
+    },
     findTarget(query) {
       const name = String(query).trim().toLowerCase();
       if (name === bot.username.toLowerCase()) throw new Error("The bot cannot attack itself");
@@ -614,14 +787,18 @@ function createCombatController(
         ? `${mode || "preparing"} ${target.username || target.name || target.id}`
         : autoEnabled && !suspended
           ? "hostile mobs"
-          : "idle";
+          : defense.threat
+            ? `bow threat ${defense.threat.username || defense.threat.name}`
+            : "idle";
     },
     dispose() {
       disposed = true;
       stop(true);
+      defense.dispose();
       bot.removeListener("physicsTick", tick);
       bot.removeListener("entityGone", removed);
       bot.removeListener("entityDead", removed);
+      bot.removeListener("death", died);
     },
   };
 }

@@ -1,0 +1,597 @@
+const { Vec3 } = require("vec3");
+const { carriedItems } = require("./combat-inventory.cjs");
+
+const isCrystal = (entity) => /^(end_?crystal|ender_?crystal)$/i.test(entity.name ?? "");
+const eyes = (bot) => bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
+
+const air = (block) => ["air", "cave_air", "void_air"].includes(block?.name);
+const faces = [
+  new Vec3(0, 1, 0),
+  new Vec3(-1, 0, 0),
+  new Vec3(1, 0, 0),
+  new Vec3(0, 0, -1),
+  new Vec3(0, 0, 1),
+  new Vec3(0, -1, 0),
+];
+
+function armourReduction(bot, entity, damage) {
+  const armour =
+    entity === bot.entity && bot.inventory?.slots
+      ? bot.inventory.slots.slice(5, 9)
+      : (entity.equipment ?? []).slice(2, 6);
+  let points = 0,
+    toughness = 0,
+    protection = 0;
+  const tiers = {
+    leather: [1, 3, 2, 1],
+    golden: [2, 5, 3, 1],
+    chainmail: [2, 5, 4, 1],
+    iron: [2, 6, 5, 2],
+    diamond: [3, 8, 6, 3],
+    netherite: [3, 8, 6, 3],
+    turtle: [2, 0, 0, 0],
+  };
+  for (const item of armour) {
+    if (!item) continue;
+    const [tier, part] = item.name.split("_");
+    const index = ["helmet", "chestplate", "leggings", "boots"].indexOf(part);
+    if (tiers[tier] && index >= 0) {
+      points += tiers[tier][index];
+      toughness += tier === "netherite" ? 3 : tier === "diamond" ? 2 : 0;
+    }
+    for (const enchantment of item.enchants ?? []) {
+      const name = String(enchantment.name ?? "").replace(/^minecraft:/, "");
+      protection +=
+        (enchantment.lvl ?? enchantment.level ?? 0) *
+        (name === "blast_protection" ? 2 : name === "protection" ? 1 : 0);
+    }
+  }
+  function attribute(suffix, fallback) {
+    const entry = Object.entries(entity.attributes ?? {}).find(
+      ([name]) => name.replace(/^minecraft:/, "").replace(/^generic[.:]/, "") === suffix,
+    )?.[1];
+    if (!entry) return fallback;
+    let value = entry.value ?? entry.base ?? fallback;
+    const base = value;
+    for (const modifier of entry.modifiers ?? [])
+      if (modifier.operation === 0 || modifier.operation === "add_value") value += modifier.amount;
+    for (const modifier of entry.modifiers ?? [])
+      if (modifier.operation === 1 || modifier.operation === "add_multiplied_base")
+        value += base * modifier.amount;
+    for (const modifier of entry.modifiers ?? [])
+      if (modifier.operation === 2 || modifier.operation === "add_multiplied_total")
+        value *= 1 + modifier.amount;
+    return value;
+  }
+  points = attribute("armor", points);
+  toughness = attribute("armor_toughness", toughness);
+  damage *= 1 - Math.min(20, Math.max(points / 5, points - damage / (2 + toughness / 4))) / 25;
+  const resistance = Object.values(bot.registry?.effects ?? {}).find(
+    (effect) => effect.name.toLowerCase() === "resistance",
+  );
+  const effect = resistance && entity.effects?.[resistance.id];
+  if (effect) damage *= Math.max(0, 1 - 0.2 * ((effect.amplifier ?? 0) + 1));
+  return damage * (1 - Math.min(20, protection) / 25);
+}
+
+function explosionDamage(bot, entity, source) {
+  if (!entity?.position || !bot.world?.raycast) return Infinity;
+  const distance = entity.position.distanceTo(source);
+  if (distance >= 12) return 0;
+  let exposed = 0,
+    samples = 0;
+  const width = entity.width ?? 0.6,
+    height = entity.height ?? 1.8;
+  for (const x of [-0.45, 0, 0.45])
+    for (const y of [0.05, 0.275, 0.5, 0.725, 0.95])
+      for (const z of [-0.45, 0, 0.45]) {
+        const point = entity.position.offset(x * width, y * height, z * width);
+        const delta = point.minus(source),
+          range = delta.norm();
+        samples++;
+        // Reject unknown terrain rather than treating unloaded cover as air.
+        let loaded = true;
+        for (let f = 0; f <= 1; f += 1 / Math.max(1, Math.ceil(range))) {
+          if (!bot.blockAt(source.plus(delta.scaled(f)))) {
+            loaded = false;
+            break;
+          }
+        }
+        if (!loaded) return Infinity;
+        if (range < 0.01 || bot.world.raycast(source, delta.scaled(1 / range), range) === null)
+          exposed++;
+      }
+  const impact = ((1 - distance / 12) * exposed) / samples;
+  // Vanilla crystal power=6; explosion radius=12; the extra 1 applies only in radius.
+  const raw = Math.floor(((impact * impact + impact) * 7 * 12) / 2 + 1);
+  // Raw normal-difficulty damage can increase by 50% on hard difficulty.
+  const difficulty = bot.game?.difficulty;
+  const scaled =
+    difficulty === "hard"
+      ? raw * 1.5
+      : difficulty === "easy"
+        ? Math.min(raw / 2 + 1, raw)
+        : difficulty === "peaceful"
+          ? 0
+          : raw;
+  return armourReduction(bot, entity, scaled);
+}
+
+// Simulate full blocks without changing the actual world or assuming a server accepted placement.
+function overlay(bot, blocks) {
+  const map = new Map(blocks.map((block) => [block.position.toString(), block]));
+  return {
+    entity: bot.entity,
+    inventory: bot.inventory,
+    registry: bot.registry,
+    game: bot.game,
+    blockAt: (point) => map.get(point.floored().toString()) ?? bot.blockAt(point),
+    world: {
+      raycast(origin, direction, range) {
+        let result = bot.world.raycast(origin, direction, range);
+        let closest = result
+          ? (result.intersect ?? result.position).distanceTo(origin)
+          : range + 0.001;
+        for (const block of blocks) {
+          let near = 0,
+            far = range,
+            face = -1;
+          for (const [axis, lowFace, highFace] of [
+            ["x", 4, 5],
+            ["y", 0, 1],
+            ["z", 2, 3],
+          ]) {
+            if (Math.abs(direction[axis]) < 1e-9) {
+              if (origin[axis] < block.position[axis] || origin[axis] > block.position[axis] + 1)
+                far = -1;
+              continue;
+            }
+            const a = (block.position[axis] - origin[axis]) / direction[axis];
+            const b = (block.position[axis] + 1 - origin[axis]) / direction[axis];
+            const first = Math.min(a, b);
+            if (first > near) {
+              near = first;
+              face = a < b ? lowFace : highFace;
+            }
+            far = Math.min(far, Math.max(a, b));
+          }
+          if (near <= far && far > 1e-6 && near < closest) {
+            closest = near;
+            result = { ...block, face, intersect: origin.plus(direction.scaled(near)) };
+          }
+        }
+        return result;
+      },
+    },
+  };
+}
+
+function createCrystalPlanner(bot, settings, isOwner = () => false) {
+  const pendingPlaces = new Map(),
+    pendingBreaks = new Map(),
+    pendingBlocks = new Map();
+  let reason = "no reachable crystal position";
+  let cycle = null,
+    pendingSpawn = null;
+  const failedBases = new Map();
+  function reject(message) {
+    reason = message;
+    return null;
+  }
+  function evaluate(target, source, world = bot) {
+    if (bot.health < settings.crystalMinHealth) return reject("health below crystal minimum");
+    const velocity = settings.crystalPredict
+      ? (bot.tracker?.getEntitySpeed(target) ?? target.velocity ?? new Vec3(0, 0, 0))
+      : new Vec3(0, 0, 0);
+    const predicted = {
+      ...target,
+      position: target.position.plus(velocity.scaled(settings.crystalPredictionTicks)),
+    };
+    const damage = Math.min(
+      explosionDamage(world, target, source),
+      explosionDamage(world, predicted, source),
+    );
+    // Nearby crystals can chain. Bound the combined damage, not just this crystal.
+    const nearby = Object.values(bot.entities ?? {}).filter(
+      (e) => isCrystal(e) && e.isValid !== false,
+    );
+    const sources = [source],
+      included = new Set();
+    // Traverse the entire connected chain, including crystals outside the first radius.
+    for (let i = 0; i < sources.length; i++)
+      for (const e of nearby) {
+        if (included.has(e.id) || e.position.distanceTo(sources[i]) >= 12) continue;
+        included.add(e.id);
+        if (e.position.distanceTo(source) > 0.1) sources.push(e.position);
+        if (sources.length > 128) return null;
+      }
+    const selfDamage = sources.reduce(
+      (sum, pos, index) => sum + explosionDamage(index > 0 ? bot : world, bot.entity, pos),
+      0,
+    );
+    if (
+      !Number.isFinite(damage) ||
+      damage < settings.crystalMinDamage ||
+      selfDamage > settings.crystalMaxSelfDamage ||
+      bot.health - selfDamage < settings.crystalMinHealth
+    )
+      return reject(
+        !Number.isFinite(damage) || !Number.isFinite(selfDamage)
+          ? "terrain is not loaded"
+          : damage < settings.crystalMinDamage
+            ? `target damage ${damage.toFixed(1)} < ${settings.crystalMinDamage}`
+            : `self damage ${selfDamage.toFixed(1)}, limit ${settings.crystalMaxSelfDamage}; health after ${(bot.health - selfDamage).toFixed(1)}`,
+      );
+    if (
+      settings.crystalProtectOwners &&
+      Object.values(bot.entities ?? {}).some(
+        (e) =>
+          e.id !== bot.entity.id &&
+          e.id !== target.id &&
+          e.isValid !== false &&
+          isOwner(e.username) &&
+          sources.some((pos) => explosionDamage(bot, e, pos) > 0),
+      )
+    )
+      return reject("owner near explosion");
+    return { damage, selfDamage };
+  }
+  function clickable(block, world = bot) {
+    for (const face of faces) {
+      const aim = block.position.offset(
+        0.5 + face.x * 0.499,
+        0.5 + face.y * 0.499,
+        0.5 + face.z * 0.499,
+      );
+      const delta = aim.minus(eyes(bot)),
+        range = delta.norm();
+      if (range > settings.crystalPlaceRange || range < 0.001) continue;
+      const hit = world.world.raycast(eyes(bot), delta.scaled(1 / range), range + 0.01);
+      if (hit?.position.equals(block.position)) return { aim, range, face };
+    }
+    return null;
+  }
+  function occupied(p, height = 1) {
+    return Object.values({ ...bot.entities, [bot.entity.id]: bot.entity }).some((e) => {
+      if (e.isValid === false || !e.position) return false;
+      const half = (e.width ?? 0.6) / 2;
+      return (
+        e.position.x + half > p.x &&
+        e.position.x - half < p.x + 1 &&
+        e.position.z + half > p.z &&
+        e.position.z - half < p.z + 1 &&
+        e.position.y + (e.height ?? 1.8) > p.y &&
+        e.position.y < p.y + height
+      );
+    });
+  }
+  function blockAction(position, item, type, time, world = bot) {
+    if (
+      !item ||
+      !air(world.blockAt(position)) ||
+      occupied(position) ||
+      pendingBlocks.get(position.toString()) > time
+    )
+      return null;
+    for (const face of faces) {
+      const reference = world.blockAt(position.minus(face));
+      if (reference?.boundingBox !== "block") continue;
+      const aim = reference.position.offset(
+        0.5 + face.x * 0.499,
+        0.5 + face.y * 0.499,
+        0.5 + face.z * 0.499,
+      );
+      const delta = aim.minus(eyes(bot)),
+        range = delta.norm();
+      if (range > settings.crystalPlaceRange || range < 0.001) continue;
+      const hit = world.world.raycast(eyes(bot), delta.scaled(1 / range), range + 0.01);
+      if (hit?.position.equals(reference.position))
+        return { type, position, item, reference, face, aim, range };
+    }
+    return null;
+  }
+  function protect(source, time, item, choice, select, additionalBlocks = [], reserved = 0) {
+    const count = (item?.count ?? 1) - reserved;
+    const budget = settings.crystalMaxCoverBlocks - (cycle?.covers ?? 0);
+    if (!settings.crystalCover || !item || count <= 0 || budget <= 0) return choice;
+    const direction = source.minus(bot.entity.position),
+      horizontal = Math.hypot(direction.x, direction.z);
+    for (const distance of [1.2, 1.8, 2.3]) {
+      if (horizontal <= distance + 0.5) continue;
+      const foot = bot.entity.position
+        .offset((direction.x / horizontal) * distance, 0, (direction.z / horizontal) * distance)
+        .floored();
+      if (additionalBlocks.some((block) => block.position.equals(foot))) continue;
+      for (const height of [0, 1]) {
+        const position = foot.offset(0, height, 0);
+        const support =
+          height && air(bot.blockAt(foot)) ? blockAction(foot, item, "cover", time) : null;
+        if (support && (count < 2 || budget < 2)) continue;
+        const supportBlock = { name: item.name, position: foot, boundingBox: "block" };
+        const cover = blockAction(
+          position,
+          item,
+          "cover",
+          time,
+          support ? overlay(bot, [supportBlock]) : bot,
+        );
+        if (!cover) continue;
+        const world = overlay(bot, [
+          ...additionalBlocks,
+          ...(support ? [supportBlock] : []),
+          { name: item.name, position, boundingBox: "block" },
+        ]);
+        const protectedChoice = select(world);
+        if (!protectedChoice || (choice && protectedChoice.selfDamage >= choice.selfDamage - 0.25))
+          continue;
+        choice = { ...protectedChoice, nextCover: support ?? cover };
+      }
+    }
+    return choice;
+  }
+  function placement(target, base, time, evaluateDamage = true, world = bot) {
+    if (!["obsidian", "bedrock"].includes(base?.name)) return null;
+    const p = base.position,
+      source = p.offset(0.5, 1, 0.5);
+    const key = p.toString();
+    if (pendingPlaces.get(key) > time) return null;
+    const above = world.blockAt(p.offset(0, 1, 0)),
+      second = world.blockAt(p.offset(0, 2, 0));
+    // Legacy servers require two air blocks. Keep this valid on all supported versions.
+    if (
+      !above ||
+      !second ||
+      !["air", "cave_air", "void_air"].includes(above.name) ||
+      !["air", "cave_air", "void_air"].includes(second.name)
+    )
+      return null;
+    if (
+      Object.values({ ...bot.entities, [bot.entity.id]: bot.entity }).some((e) => {
+        if (e.isValid === false || !e.position) return false;
+        const half = (e.width ?? 0.6) / 2;
+        return (
+          e.position.x + half > p.x &&
+          e.position.x - half < p.x + 1 &&
+          e.position.z + half > p.z &&
+          e.position.z - half < p.z + 1 &&
+          e.position.y + (e.height ?? 1.8) > p.y + 1 &&
+          e.position.y < p.y + 3
+        );
+      })
+    )
+      return null;
+    const click = clickable(base, world);
+    if (!click) return null;
+    const score = evaluateDamage ? evaluate(target, source, world) : {};
+    return score && { type: "place", base, source, ...click, ...score };
+  }
+  function breaking(target, crystal, time, world = bot, evaluateDamage = true) {
+    if (!isCrystal(crystal) || crystal.isValid === false || pendingBreaks.get(crystal.id) > time)
+      return null;
+    let aim, range;
+    for (const fraction of [0.5, 0.98, 0.85, 0.2]) {
+      const point = crystal.position.offset(0, (crystal.height ?? 2) * fraction, 0),
+        delta = point.minus(eyes(bot));
+      const length = delta.norm();
+      if (
+        length <= settings.crystalBreakRange &&
+        (length < 0.001 ||
+          world.world.raycast(eyes(bot), delta.scaled(1 / length), length) === null)
+      ) {
+        aim = point;
+        range = length;
+        break;
+      }
+    }
+    if (!aim) return null;
+    const score = evaluateDamage ? evaluate(target, crystal.position, world) : {};
+    return score && { type: "break", crystal, source: crystal.position, aim, range, ...score };
+  }
+  function plan(target, time) {
+    if (!settings.crystalEnabled || !bot.world?.raycast || !bot.blockAt) return null;
+    for (const [key, deadline] of pendingPlaces) if (deadline <= time) pendingPlaces.delete(key);
+    for (const [key, deadline] of pendingBreaks) if (deadline <= time) pendingBreaks.delete(key);
+    for (const [key, deadline] of pendingBlocks) if (deadline <= time) pendingBlocks.delete(key);
+    for (const [key, deadline] of failedBases) if (deadline <= time) failedBases.delete(key);
+    reason = "no reachable crystal position with free space";
+    if (pendingSpawn) {
+      const spawned = Object.values(bot.entities ?? {}).find(
+        (entity) =>
+          isCrystal(entity) &&
+          entity.isValid !== false &&
+          entity.position.distanceTo(pendingSpawn.source) < 0.5,
+      );
+      if (spawned) {
+        pendingPlaces.delete(pendingSpawn.base.toString());
+        pendingSpawn = null;
+        if (cycle) cycle.crystalId = spawned.id;
+      } else if (time < pendingSpawn.until) {
+        return reject("waiting for server crystal spawn");
+      } else {
+        const key = pendingSpawn.base.toString();
+        pendingPlaces.delete(key);
+        pendingSpawn = null;
+        if (cycle?.attempts >= settings.crystalRetries) {
+          failedBases.set(key, time + 5000);
+          cycle = null;
+          return reject("server did not spawn crystal; placement retries exhausted");
+        }
+      }
+    }
+    const candidates = [];
+    if (
+      cycle?.crystalId &&
+      (bot.entities?.[cycle.crystalId]?.isValid === false || !bot.entities?.[cycle.crystalId])
+    ) {
+      cycle.crystalId = null;
+      cycle.covers = 0;
+      cycle.attempts = 0;
+      cycle.progressAt = time;
+    }
+    if (cycle?.crystalId && pendingBreaks.get(cycle.crystalId) > time)
+      return reject("waiting for server crystal removal");
+    const order = { break: 0, cover: 1, place: 2, build: 3 };
+    const compare = (a, b) =>
+      order[a.type] - order[b.type] ||
+      (settings.crystalPriority === "closest"
+        ? a.range - b.range || b.damage - a.damage
+        : b.damage - a.damage || a.selfDamage - b.selfDamage || a.range - b.range);
+    const items = carriedItems(bot),
+      obsidian = items.find((i) => i.name === "obsidian");
+    const coverItem =
+      items.find((i) =>
+        settings.crystalCoverBlock === "obsidian"
+          ? i.name === "obsidian"
+          : settings.crystalCoverBlock === "planks"
+            ? i.name.endsWith("_planks")
+            : settings.crystalCoverBlock === "cobblestone"
+              ? i.name === "cobblestone"
+              : false,
+      ) ??
+      (settings.crystalCoverBlock === "auto"
+        ? (items.find((i) => i.name === "obsidian") ??
+          items.find((i) => i.name === "cobblestone") ??
+          items.find((i) => i.name.endsWith("_planks")))
+        : null);
+    if (settings.crystalBreak)
+      for (const entity of Object.values(bot.entities ?? {}).sort(
+        (a, b) => Number(b.id === cycle?.crystalId) - Number(a.id === cycle?.crystalId),
+      )) {
+        if (!breaking(target, entity, time, bot, false)) continue;
+        const choice = protect(
+          entity.position,
+          time,
+          coverItem,
+          breaking(target, entity, time),
+          (world) => breaking(target, entity, time, world),
+        );
+        if (choice) {
+          candidates.push(choice.nextCover ? { ...choice, ...choice.nextCover } : choice);
+          if (entity.id === cycle?.crystalId) break;
+        }
+      }
+    if (candidates.length) return candidates.sort(compare)[0];
+    if (settings.crystalPlace && items.some((i) => i.name === "end_crystal")) {
+      const origin = bot.entity.position.floor(),
+        radius = Math.ceil(settings.crystalPlaceRange);
+      const positions = [];
+      for (let x = -radius; x <= radius; x++)
+        for (let y = -3; y <= 2; y++)
+          for (let z = -radius; z <= radius; z++) {
+            const p = origin.offset(x, y, z),
+              block = bot.blockAt(p);
+            if (failedBases.has(p.toString())) continue;
+            if (cycle && !cycle.base.equals(p)) continue;
+            if (
+              ["obsidian", "bedrock"].includes(block?.name) ||
+              (y === 0 && settings.crystalBuildBase && obsidian && air(block))
+            )
+              positions.push({ p, block });
+          }
+      // Reuse a safe existing base first. Search new foundations toward the target
+      // (or toward the bot in proximity mode), stopping at the first safe layout.
+      const preferred =
+        settings.crystalPriority === "closest" ? bot.entity.position : target.position;
+      positions.sort(
+        (a, b) =>
+          Number(air(a.block)) - Number(air(b.block)) ||
+          a.p.distanceTo(preferred) - b.p.distanceTo(preferred),
+      );
+      for (const { p, block: existing } of positions) {
+        if (air(existing) && candidates.length) break;
+        const build =
+          settings.crystalBuildBase && air(existing) && obsidian
+            ? blockAction(p, obsidian, "build", time)
+            : null;
+        const base = build ? { name: "obsidian", position: p, boundingBox: "block" } : existing;
+        if (!["obsidian", "bedrock"].includes(base?.name)) continue;
+        const simulation = build ? overlay(bot, [base]) : bot;
+        const reachable = placement(target, base, time, false, simulation);
+        if (!reachable) continue;
+        const choice = protect(
+          p.offset(0.5, 1, 0.5),
+          time,
+          coverItem,
+          placement(target, base, time, true, simulation),
+          (world) => placement(target, base, time, true, world),
+          build ? [base] : [],
+          build && coverItem?.name === "obsidian" ? 1 : 0,
+        );
+        if (choice)
+          candidates.push(
+            build
+              ? { ...choice, ...build }
+              : choice.nextCover
+                ? { ...choice, ...choice.nextCover }
+                : choice,
+          );
+      }
+      if (cycle && !candidates.length && time - cycle.progressAt > 3000) {
+        failedBases.set(cycle.base.toString(), time + 5000);
+        cycle = null;
+        reason += "; selected layout blocked, replanning";
+      }
+    } else if (settings.crystalPlace) {
+      reason = "no end crystals in inventory";
+      if (!cycle?.crystalId) cycle = null;
+    }
+    if (!candidates.length && settings.crystalBuildBase && !obsidian && !reason.includes("damage"))
+      reason += "; no obsidian for a new base";
+    candidates.sort(compare);
+    return candidates[0] ?? null;
+  }
+  return {
+    plan,
+    placement,
+    breaking,
+    evaluate,
+    get active() {
+      return Boolean(cycle || pendingSpawn);
+    },
+    get reason() {
+      return reason;
+    },
+    verify(target, action, time) {
+      if (action.type === "place")
+        return placement(target, bot.blockAt(action.base.position), time);
+      if (action.type === "break") return breaking(target, action.crystal, time);
+      const current = plan(target, time);
+      return current?.type === action.type && current.position.equals(action.position)
+        ? current
+        : null;
+    },
+    commit(action, time) {
+      if (action.type !== "break") {
+        const base = action.base?.position ?? action.source.offset(-0.5, -1, -0.5).floored();
+        if (!cycle || !cycle.base.equals(base))
+          cycle = {
+            base: base.clone(),
+            covers: 0,
+            attempts: 0,
+            progressAt: time,
+            crystalId: action.crystal?.id,
+          };
+        cycle.progressAt = time;
+        if (action.type === "cover") cycle.covers++;
+      }
+      if (action.type === "place") {
+        cycle.attempts++;
+        const until = time + settings.crystalSpawnTimeoutMs;
+        pendingPlaces.set(action.base.position.toString(), until);
+        pendingSpawn = { base: action.base.position.clone(), source: action.source.clone(), until };
+      } else if (action.type === "break")
+        pendingBreaks.set(action.crystal.id, time + Math.max(500, settings.crystalIntervalMs));
+      else pendingBlocks.set(action.position.toString(), time + 5500);
+    },
+    clear() {
+      pendingPlaces.clear();
+      pendingBreaks.clear();
+      pendingBlocks.clear();
+      pendingSpawn = null;
+      cycle = null;
+      failedBases.clear();
+    },
+  };
+}
+
+module.exports = { isCrystal, explosionDamage, createCrystalPlanner };

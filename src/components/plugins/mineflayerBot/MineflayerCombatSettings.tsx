@@ -178,6 +178,7 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
             ["auto", "Лук вдали, меч вблизи"],
             ["melee", "Только ближний бой"],
             ["ranged", "Только лук"],
+            ["crystal", "Кристаллы Края"],
           ])}
           {choice("autoTarget", "ВЫБОР ЦЕЛИ", [
             ["manual", "Только по команде"],
@@ -241,8 +242,13 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
           в Custom PvP.
         </p>
         <div className="mineflayer-bot-toggle-grid">
-          {toggle("shield", "ИСПОЛЬЗОВАТЬ ЩИТ", "ЕСЛИ ЕСТЬ В ИНВЕНТАРЕ")}
+          {toggle("shield", "ИСПОЛЬЗОВАТЬ ЩИТ", "В ИНВЕНТАРЕ ИЛИ ЛЕВОЙ РУКЕ")}
           {toggle("shieldBreak", "ПРОБИВАТЬ ЩИТ", "ПЕРЕКЛЮЧАТЬСЯ НА ТОПОР")}
+          {toggle(
+            "bowDefense",
+            "РАСПОЗНАВАТЬ ПРИЦЕЛИВАНИЕ ИЗ ЛУКА",
+            "ЩИТ В СТОРОНУ СТРЕЛКА И ВХОДЯЩЕЙ СТРЕЛЫ",
+          )}
           {toggle("smoothAim", "ПЛАВНОЕ НАВЕДЕНИЕ", "ПОВОРОТ К ЦЕЛИ ПЕРЕД УДАРОМ И ВЫСТРЕЛОМ")}
         </div>
         <fieldset className="mineflayer-bot-combat-fields" disabled={!settings.smoothAim}>
@@ -272,6 +278,30 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
           <span>СТРЕЛЬБА ИЗ ЛУКА</span>
           <small>ПРИЦЕЛ И ТЕМП</small>
         </div>
+        <fieldset className="mineflayer-bot-combat-fields" disabled={!settings.bowDefense}>
+          <div className="mineflayer-bot-grid">
+            {choice("bowDefenseMode", "РАСПОЗНАВАНИЕ ПРИЦЕЛА", [
+              ["early", "Раннее распознавание"],
+              ["trajectory", "По траектории стрелы"],
+            ])}
+            {number("bowDefenseCheckMs", "ИНТЕРВАЛ ПРОВЕРКИ, МС", 0, 500, 50)}
+            {number("bowDefenseRange", "ДАЛЬНОСТЬ РАСПОЗНАВАНИЯ, БЛОКИ", 4, 128)}
+            {number("bowDefenseMargin", "ЗАПАС ЧУВСТВИТЕЛЬНОСТИ, БЛОКИ", 0, 2, 0.05)}
+            {number("bowDefenseHoldMs", "УДЕРЖАНИЕ ЩИТА ПОСЛЕ УГРОЗЫ, МС", 100, 2000, 50)}
+          </div>
+          <div className="mineflayer-bot-toggle-grid">
+            {toggle(
+              "bowDefenseRequireDraw",
+              "ТОЛЬКО ПРИ НАТЯЖЕНИИ ЛУКА",
+              "НЕ РЕАГИРОВАТЬ НА ЛУК, ПРОСТО ВЗЯТЫЙ В РУКИ",
+            )}
+          </div>
+          <p className="mineflayer-bot-combat-note">
+            Ранний режим замечает направление прицела при натяжении. Режим траектории проверяет
+            полёт с разной силой выстрела. Больший запас чувствительности даёт более раннюю защиту.
+            Повороты и натяжение проверяются сразу при обновлении игрока сервером.
+          </p>
+        </fieldset>
         <div className="mineflayer-bot-toggle-grid">
           {toggle("bowEnabled", "ИСПОЛЬЗОВАТЬ ЛУК", "НУЖНЫ ЛУК И СТРЕЛЫ")}
         </div>
@@ -296,9 +326,110 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
           движения цели и сервера. Автовыбор атакует только враждебных мобов. Командой с ником можно
           вызвать на бой любого игрока, включая владельца.
         </p>
+        <div className="mineflayer-bot-subhead">
+          <span>AUTO CRYSTAL</span>
+          <small>ПОЗИЦИЯ И УРОН</small>
+        </div>
+        <div className="mineflayer-bot-toggle-grid">
+          {toggle(
+            "crystalEnabled",
+            "ИСПОЛЬЗОВАТЬ КРИСТАЛЛЫ КРАЯ",
+            "В АВТОТАКТИКЕ И ПО КОМАНДЕ CRYSTAL",
+          )}
+        </div>
+        <fieldset className="mineflayer-bot-combat-fields" disabled={!settings.crystalEnabled}>
+          <div className="mineflayer-bot-toggle-grid">
+            {toggle(
+              "crystalPlace",
+              "СТАВИТЬ КРИСТАЛЛЫ",
+              "НА ОБСИДИАН И БЕДРОК В ПРЕДЕЛАХ ДОСЯГАЕМОСТИ",
+            )}
+            {toggle("crystalBreak", "ВЗРЫВАТЬ КРИСТАЛЛЫ", "С УЧЁТОМ УРОНА И ЦЕПНЫХ ВЗРЫВОВ")}
+            {toggle("crystalBuildBase", "СТРОИТЬ ОСНОВУ", "СТАВИТЬ ОБСИДИАН ИЗ ИНВЕНТАРЯ")}
+            {toggle("crystalCover", "ЗАЩИТНЫЙ БЛОК", "ПЕРЕД ВЗРЫВОМ УМЕНЬШАТЬ УРОН СЕБЕ")}
+            {toggle(
+              "crystalFastAim",
+              "БЫСТРОЕ НАВЕДЕНИЕ КРИСТАЛЛОВ",
+              "ПОВОРАЧИВАТЬСЯ БЕЗ ОЖИДАНИЯ ПЛАВНОЙ АНИМАЦИИ",
+            )}
+            {toggle(
+              "crystalPredict",
+              "ПРОГНОЗ ДВИЖЕНИЯ ЦЕЛИ",
+              "ПРОВЕРЯТЬ ТЕКУЩУЮ И БУДУЩУЮ ПОЗИЦИЮ",
+            )}
+            {toggle("crystalProtectOwners", "БЕРЕЧЬ ДРУГИХ ВЛАДЕЛЬЦЕВ", "НЕ ВЗРЫВАТЬ РЯДОМ С НИМИ")}
+          </div>
+          <div className="mineflayer-bot-grid">
+            {choice("crystalPriority", "ВЫБОР ПОЗИЦИИ", [
+              ["damage", "Больше урона"],
+              ["closest", "Ближе к боту"],
+            ])}
+            {choice("crystalCoverBlock", "БЛОК ДЛЯ ЗАЩИТЫ", [
+              ["auto", "Автоматически"],
+              ["obsidian", "Обсидиан"],
+              ["planks", "Доски"],
+              ["cobblestone", "Булыжник"],
+            ])}
+            {number("crystalPlaceRange", "ДАЛЬНОСТЬ УСТАНОВКИ, БЛОКИ", 1, 4.5, 0.1)}
+            {number("crystalBreakRange", "ДАЛЬНОСТЬ РАЗРУШЕНИЯ, БЛОКИ", 1, 4.5, 0.1)}
+            {number("crystalIntervalMs", "ИНТЕРВАЛ ДЕЙСТВИЙ, МС", 100, 5000, 50)}
+            {number("crystalMaxCoverBlocks", "МАКСИМУМ БЛОКОВ УКРЫТИЯ", 0, 4)}
+            {number("crystalSpawnTimeoutMs", "ОЖИДАНИЕ КРИСТАЛЛА ОТ СЕРВЕРА, МС", 300, 5000, 100)}
+            {number("crystalRetries", "ПОПЫТОК УСТАНОВКИ КРИСТАЛЛА", 1, 5)}
+            {number("crystalMinDamage", "МИНИМАЛЬНЫЙ УРОН ЦЕЛИ, HP", 0, 100)}
+            {number("crystalMaxSelfDamage", "МАКСИМАЛЬНЫЙ УРОН СЕБЕ, HP", 0, 20)}
+            {number("crystalMinHealth", "ОСТАВИТЬ ЗДОРОВЬЕ, HP", 1, 20)}
+            {number("crystalPredictionTicks", "ПРОГНОЗ НА ТИКОВ ВПЕРЁД", 0, 10)}
+          </div>
+          <p className="mineflayer-bot-combat-note">
+            Нужны кристаллы и свободное место над обсидианом или бедроком. Бот проверяет
+            препятствия, занятые позиции и урон до действия, ждёт подтверждения сервера и
+            ограничивает повторные попытки. Оценка урона учитывает броню и защитные блоки. 2 HP
+            равны одному сердцу.
+          </p>
+        </fieldset>
+      </fieldset>
+      <div className="mineflayer-bot-subhead">
+        <span>ЭНДЕР-ЖЕМЧУГ</span>
+        <small>ПЕРЕМЕЩЕНИЕ</small>
+      </div>
+      <div className="mineflayer-bot-toggle-grid">
+        {toggle("pearlEnabled", "РАЗРЕШИТЬ ПЕРЕМЕЩЕНИЕ ЖЕМЧУГОМ", "РАБОТАЕТ И ПРИ ВЫКЛЮЧЕННОМ PVP")}
+      </div>
+      <fieldset className="mineflayer-bot-combat-fields" disabled={!settings.pearlEnabled}>
+        <div className="mineflayer-bot-toggle-grid">
+          {toggle("pearlFollow", "ЖЕМЧУГ ДЛЯ FOLLOW", "СОКРАЩАТЬ ПУТЬ ЗА ИГРОКОМ")}
+          {toggle("pearlCome", "ЖЕМЧУГ ДЛЯ COME", "СОКРАЩАТЬ ПУТЬ К ИГРОКУ")}
+          {toggle("pearlGoto", "ЖЕМЧУГ ДЛЯ GOTO", "ИСПОЛЬЗОВАТЬ НА ПУТИ К КООРДИНАТАМ")}
+          {toggle(
+            "pearlChain",
+            "ПОВТОРНЫЕ БРОСКИ",
+            "ПОСЛЕ ТЕЛЕПОРТАЦИИ РАССЧИТАТЬ СЛЕДУЮЩИЙ УЧАСТОК",
+          )}
+        </div>
+        <div className="mineflayer-bot-grid">
+          {number("pearlMinDistance", "МИНИМАЛЬНОЕ СОКРАЩЕНИЕ ПУТИ, БЛОКИ", 4, 64)}
+          {number("pearlMaxDistance", "МАКСИМАЛЬНАЯ ДАЛЬНОСТЬ БРОСКА, БЛОКИ", 8, 64)}
+          {number("pearlCooldownMs", "ПЕРЕРЫВ МЕЖДУ БРОСКАМИ, МС", 1000, 10000, 100)}
+          {number("pearlMinHealth", "МИНИМУМ ЗДОРОВЬЯ ДО БРОСКА, HP", 6, 20)}
+          {number("pearlReserve", "ОСТАВИТЬ ЖЕМЧУГА В ЗАПАСЕ", 0, 64)}
+        </div>
+        <p className="mineflayer-bot-combat-note">
+          Расчёт учитывает скорость бота, гравитацию, сопротивление воздуха и столкновения. Бросок
+          разрешён только на загруженную твёрдую поверхность с местом для бота. При нехватке
+          жемчуга, здоровья или безопасных траекторий бот идёт пешком. После броска ждёт
+          телепортации. Жемчуг обычно отнимает 5 HP.
+        </p>
       </fieldset>
       <div className="mineflayer-bot-command-list">
-        {["attack player", "bow player", "pvp auto", "pvp stop", "pvp status"].map((command) => (
+        {[
+          "attack player",
+          "bow player",
+          "crystal player",
+          "pvp auto",
+          "pvp stop",
+          "pvp status",
+        ].map((command) => (
           <span key={command}>
             {commandPrefix}
             {command}
