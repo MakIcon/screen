@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import { createRequire } from "node:module";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import worker from "./worker.cjs";
 
@@ -8,13 +9,118 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("reads config without closing stdin and keeps later chat messages, including split packets", async () => {
+  const stream = new PassThrough();
+  const lines = worker.createLauncherInput(stream);
+  const initial = lines.next();
+  stream.write('{"server":{"host":"localhost"},"account":{"username":"Bot"}}\n');
+  const config = await initial;
+  assert.equal(worker.parseConfig(config.value).server.host, "localhost");
+  assert.equal(stream.readableEnded, false);
+
+  const messages = [];
+  const events = [];
+  const handling = worker.handleLauncherMessages(
+    lines,
+    () => ({ chat: (message) => messages.push(message) }),
+    (type, payload) => events.push({ type, ...payload }),
+  );
+  stream.write('{"type":"chat","requestId":"enter","message":"Привет');
+  stream.write(' от бота"}\n{"type":"chat","requestId":"button","message":"/help"}\n');
+  stream.end();
+  await handling;
+  assert.deepEqual(messages, ["Привет от бота", "/help"]);
+  assert.deepEqual(
+    events.map((event) => [event.type, event.requestId]),
+    [
+      ["chat_result", "enter"],
+      ["chat_result", "button"],
+    ],
+  );
+  assert.equal(
+    events.every((event) => !event.error),
+    true,
+  );
+});
+
+test("keeps legacy config input ending at EOF compatible", async () => {
+  const stream = new PassThrough();
+  const lines = worker.createLauncherInput(stream);
+  const initial = lines.next();
+  stream.end('{"server":{"host":"localhost"},"account":{"username":"Bot"}}');
+  assert.equal(worker.parseConfig((await initial).value).account.username, "Bot");
+  assert.equal((await lines.next()).done, true);
+});
+
+test("rejects disconnected sends and uses the current bot after reconnection", async () => {
+  let bot = null;
+  const sent = [];
+  const events = [];
+  async function* messages() {
+    yield JSON.stringify({ type: "chat", requestId: "offline", message: "Привет" });
+    bot = { chat: (message) => sent.push(message) };
+    yield JSON.stringify({ type: "chat", requestId: "online", message: "Снова здесь" });
+  }
+  await worker.handleLauncherMessages(
+    messages(),
+    () => bot,
+    (type, payload) => events.push({ type, ...payload }),
+  );
+  assert.match(events[0].error, /не подключён/);
+  assert.equal(events[1].requestId, "online");
+  assert.equal(events[1].error, undefined);
+  assert.deepEqual(sent, ["Снова здесь"]);
+});
+
+test("rejects invalid messages without truncating or sending them and continues after a send failure", async () => {
+  const events = [];
+  const sent = [];
+  const inputs = [
+    " ",
+    "x".repeat(241),
+    "first\nsecond",
+    "§color",
+    "😀".repeat(121),
+    "failure",
+    "  Привет  ",
+  ];
+  const bot = {
+    chat(message) {
+      if (message === "failure") throw new Error("connection closed");
+      sent.push(message);
+    },
+  };
+  const lines = inputs.map((message, index) =>
+    JSON.stringify({ type: "chat", requestId: String(index), message }),
+  );
+  await worker.handleLauncherMessages(
+    lines,
+    () => bot,
+    (type, payload) => events.push({ type, ...payload }),
+  );
+  assert.equal(
+    events.slice(0, -1).every((event) => Boolean(event.error)),
+    true,
+  );
+  assert.match(events[5].error, /connection closed/);
+  assert.equal(events[6].error, undefined);
+  assert.deepEqual(sent, ["Привет"]);
+});
+
 test("anti knockback is disabled for legacy configs and accepts only explicit true", () => {
-  for (const [input, expected] of [[undefined, false], [false, false], [true, true], ["false", false]]) {
-    const config = worker.parseConfig(JSON.stringify({
-      server: { host: "localhost" },
-      account: { username: "Bot" },
-      behavior: { antiKnockback: input },
-    }));
+  for (const [input, expected] of [
+    [undefined, false],
+    [false, false],
+    [true, true],
+    ["false", false],
+  ]) {
+    const config = worker.parseConfig(
+      JSON.stringify({
+        server: { host: "localhost" },
+        account: { username: "Bot" },
+        behavior: { antiKnockback: input },
+      }),
+    );
     assert.equal(config.behavior.antiKnockback, expected);
   }
 });

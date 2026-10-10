@@ -19,6 +19,7 @@ Combat integrations added in 1.7.0 use:
 - @nxg-org/mineflayer-custom-pvp 1.7.16, GenerelSchwerz, GPL-3.0.
 - mineflayer-pvp 1.3.2, TheDudeFromCI / PrismarineJS, MIT.
 - minecrafthawkeye 1.3.9, sefirosweb, ISC.
+- mineflayer-armor-manager 2.0.1, G07cha / PrismarineJS, MIT.
 The original license files remain in their installed node_modules packages.
 Editable launcher combat code, defaults and tests are in the corresponding
 source archive alongside the worker and Pathfinder source.

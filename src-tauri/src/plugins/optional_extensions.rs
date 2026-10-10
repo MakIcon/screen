@@ -25,6 +25,10 @@ const MINEFLAYER_PEARLS: &str = include_str!("../../../extensions/mineflayer-bot
 const MINEFLAYER_CRYSTALS: &str = include_str!("../../../extensions/mineflayer-bot/crystals.cjs");
 const MINEFLAYER_COMBAT_INVENTORY: &str =
     include_str!("../../../extensions/mineflayer-bot/combat-inventory.cjs");
+const MINEFLAYER_ARMOR_MANAGER: &str =
+    include_str!("../../../extensions/mineflayer-bot/armor-manager.cjs");
+const MINEFLAYER_MELEE_SHIELD: &str =
+    include_str!("../../../extensions/mineflayer-bot/melee-shield.cjs");
 const MINEFLAYER_BOW_DEFENSE: &str =
     include_str!("../../../extensions/mineflayer-bot/bow-defense.cjs");
 const MINEFLAYER_COMBAT_DEFAULTS: &str =
@@ -71,8 +75,7 @@ pub fn extension_dir(id: &str) -> Result<PathBuf, String> {
 pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
     let installed = extension_dir(MINEFLAYER_BOT_ID)?;
     if installed.join("extension.json").is_file() {
-        if !installed.join("pathfinder.cjs").is_file()
-            || !installed.join("knockback.cjs").is_file()
+        if !installed.join("pathfinder.cjs").is_file() || !installed.join("knockback.cjs").is_file()
         {
             return Err(
                 "Mineflayer Bot package needs an update. Open Extensions and install it again."
@@ -85,6 +88,8 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
             || !installed.join("crystals.cjs").is_file()
             || !installed.join("bow-defense.cjs").is_file()
             || !installed.join("combat-inventory.cjs").is_file()
+            || !installed.join("armor-manager.cjs").is_file()
+            || !installed.join("melee-shield.cjs").is_file()
         {
             return Err(
                 "Mineflayer Bot package needs a PvP update. Open Extensions and install it again."
@@ -97,6 +102,17 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
         "Mineflayer Bot package is not installed. Open Extensions and install it first."
             .to_string(),
     )
+}
+
+pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), String> {
+    let worker = runtime_dir.join("worker.cjs");
+    let current = fs::read_to_string(&worker)
+        .map_err(|error| format!("Read Mineflayer worker error: {error}"))?;
+    if current != MINEFLAYER_WORKER {
+        fs::write(&worker, MINEFLAYER_WORKER)
+            .map_err(|error| format!("Update Mineflayer worker error: {error}"))?;
+    }
+    Ok(())
 }
 
 fn read_manifest(directory: &Path) -> Option<ExtensionManifest> {
@@ -121,6 +137,8 @@ fn mineflayer_status() -> OptionalExtensionStatus {
                 && managed.join("crystals.cjs").is_file()
                 && managed.join("bow-defense.cjs").is_file()
                 && managed.join("combat-inventory.cjs").is_file()
+                && managed.join("armor-manager.cjs").is_file()
+                && managed.join("melee-shield.cjs").is_file()
         })
         .unwrap_or(false);
 
@@ -213,6 +231,8 @@ async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
         ("crystals.cjs", MINEFLAYER_CRYSTALS),
         ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
         ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
+        ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
+        ("melee-shield.cjs", MINEFLAYER_MELEE_SHIELD),
         ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
         (
             "COMBAT.md",

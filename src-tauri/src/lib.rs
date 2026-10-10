@@ -105,6 +105,7 @@ pub fn run() {
             plugins::discord_rpc::stop_discord_rpc_for_instance,
             plugins::mineflayer_bot::start_mineflayer_bot,
             plugins::mineflayer_bot::stop_mineflayer_bot,
+            plugins::mineflayer_bot::send_mineflayer_bot_chat,
             plugins::mineflayer_bot::get_mineflayer_bot_status,
             plugins::blue_map::prepare_bluemap,
             plugins::blue_map::start_bluemap,

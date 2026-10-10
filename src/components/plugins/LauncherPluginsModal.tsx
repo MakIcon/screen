@@ -14,6 +14,7 @@ import { PluginCard } from "./PluginCard";
 import { PluginIcon } from "./PluginIcon";
 import { PLUGIN_DEFINITIONS, normalizeLauncherPluginsSettings } from "./pluginRegistry";
 import type { PluginId } from "./pluginTypes";
+import { pluginStatusLabel } from "./pluginStatus";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
@@ -166,20 +167,19 @@ export function LauncherPluginsModal({
       <div className="plugins-shell" onWheel={stopWheelNavigation}>
         <div className="plugins-header">
           <div>
-            <span className="plugins-label">ADVANCED</span>
-            <h2>EXTENSIONS</h2>
+            <h2>РАСШИРЕНИЯ</h2>
           </div>
 
-          <div className="plugins-summary" aria-label="Plugin summary">
-            <span>{PLUGIN_DEFINITIONS.length} TOTAL</span>
-            <strong>{enabledCount} ENABLED</strong>
+          <div className="plugins-summary" aria-label="Состояние расширений">
+            <span>{PLUGIN_DEFINITIONS.length} всего</span>
+            <strong>{enabledCount} включено</strong>
           </div>
 
           <button
             className="plugins-close"
             type="button"
             onClick={onClose}
-            aria-label="Close extensions"
+            aria-label="Закрыть расширения"
           >
             <svg
               width="11"
@@ -199,12 +199,7 @@ export function LauncherPluginsModal({
 
         <div className="plugins-layout">
           <aside className="plugins-catalog">
-            <div className="plugins-catalog-head">
-              <span>PLUGIN LIBRARY</span>
-              <strong>{PLUGIN_DEFINITIONS.length}</strong>
-            </div>
-
-            <div className="plugins-list">
+            <nav className="plugins-list" aria-label="Расширения">
               {PLUGIN_DEFINITIONS.map((definition) => (
                 <PluginCard
                   key={definition.id}
@@ -212,7 +207,6 @@ export function LauncherPluginsModal({
                   plugins={draft}
                   active={selectedPluginId === definition.id}
                   onSelect={setSelectedPluginId}
-                  onPluginsChange={commitPlugins}
                   packageReady={
                     !definition.optionalExtensionId ||
                     Boolean(
@@ -226,30 +220,24 @@ export function LauncherPluginsModal({
                   )}
                   installing={definition.optionalExtensionId === installingExtensionId}
                   uninstalling={definition.optionalExtensionId === uninstallingExtensionId}
-                  onDownload={
-                    definition.optionalExtensionId
-                      ? () => void installExtension(definition.optionalExtensionId!)
-                      : undefined
-                  }
                 />
               ))}
-            </div>
+            </nav>
           </aside>
 
-          <section className="plugin-detail" aria-live="polite">
+          <section className="plugin-detail" aria-labelledby="plugin-detail-title">
             <div className="plugin-detail-hero">
               <PluginIcon definition={selectedDefinition} className="plugin-detail-mark" />
 
               <div className="plugin-detail-copy">
                 <div className="plugin-detail-topline">
-                  <span>{selectedDefinition.tag}</span>
+                  <h3 id="plugin-detail-title">{selectedDefinition.title}</h3>
                   {selectedPackageReady && (
                     <strong className={`plugin-status plugin-status--${selectedStatusTone}`}>
-                      {selectedStatus}
+                      {pluginStatusLabel(selectedStatus)}
                     </strong>
                   )}
                 </div>
-                <h3>{selectedDefinition.title}</h3>
                 <p>{selectedDefinition.description}</p>
                 {selectedExtensionId && installError?.id === selectedExtensionId && (
                   <span className="plugin-install-error">{installError.message}</span>
@@ -264,7 +252,11 @@ export function LauncherPluginsModal({
                     !selectedPackageReady ? "plugin-detail-toggle--download" : "",
                   ].join(" ")}
                   type="button"
-                  disabled={selectedExtensionChecking || selectedInstalling || selectedUninstalling}
+                  aria-pressed={selectedPackageReady ? selectedEnabled : undefined}
+                  disabled={
+                    selectedExtensionChecking ||
+                    Boolean(installingExtensionId || uninstallingExtensionId)
+                  }
                   onClick={() => {
                     if (!selectedPackageReady && selectedExtensionId) {
                       void installExtension(selectedExtensionId);
@@ -274,14 +266,16 @@ export function LauncherPluginsModal({
                   }}
                 >
                   {selectedExtensionChecking
-                    ? "CHECKING..."
+                    ? "Проверка…"
                     : selectedInstalling
-                      ? "DOWNLOADING..."
-                      : !selectedPackageReady
-                        ? "DOWNLOAD"
-                        : selectedEnabled
-                          ? "DISABLE"
-                          : "ENABLE"}
+                      ? "Установка…"
+                      : selectedUninstalling
+                        ? "Удаление…"
+                        : !selectedPackageReady
+                          ? "Установить"
+                          : selectedEnabled
+                            ? "Выключить"
+                            : "Включить"}
                 </button>
 
                 {selectedExtensionId && selectedPackageReady && (
@@ -293,7 +287,7 @@ export function LauncherPluginsModal({
                         : "",
                     ].join(" ")}
                     type="button"
-                    disabled={selectedInstalling || selectedUninstalling}
+                    disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
                     onClick={() => {
                       if (confirmUninstallId === selectedExtensionId) {
                         void uninstallExtension(selectedExtensionId);
@@ -303,18 +297,30 @@ export function LauncherPluginsModal({
                     }}
                   >
                     {selectedUninstalling
-                      ? "REMOVING..."
+                      ? "Удаление…"
                       : confirmUninstallId === selectedExtensionId
-                        ? "CONFIRM REMOVE"
-                        : "UNINSTALL"}
+                        ? "Подтвердить удаление"
+                        : "Удалить пакет"}
                   </button>
                 )}
               </div>
             </div>
 
-            <CustomScrollArea className="plugin-detail-settings" onWheel={stopWheelNavigation}>
+            <CustomScrollArea
+              key={selectedPluginId}
+              className="plugin-detail-settings"
+              onWheel={stopWheelNavigation}
+              aria-label={`Настройки ${selectedDefinition.title}`}
+            >
+              {!selectedPackageReady && (
+                <div className="plugin-package-notice">
+                  {selectedExtensionChecking
+                    ? "Проверяем, установлен ли пакет расширения…"
+                    : "Установите пакет кнопкой выше, чтобы включить расширение. Настройки можно подготовить заранее."}
+                </div>
+              )}
               <Suspense
-                fallback={<div className="plugin-settings-loading">LOADING SETTINGS...</div>}
+                fallback={<div className="plugin-settings-loading">Загружаем настройки…</div>}
               >
                 <SelectedPluginSettings
                   plugins={draft}
@@ -324,6 +330,12 @@ export function LauncherPluginsModal({
               </Suspense>
             </CustomScrollArea>
           </section>
+        </div>
+        <div className="plugins-footer">
+          <span>Настройки сохраняются автоматически</span>
+          <button type="button" onClick={onClose}>
+            Готово
+          </button>
         </div>
       </div>
     </ElementPopup>

@@ -83,10 +83,10 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   {
     id: "discordRpc",
     title: "DISCORD RPC",
-    tag: "PRESENCE",
+    tag: "Статус в Discord",
     mark: "RPC",
     icon: { src: discordIcon, alt: "Discord" },
-    description: "Shows the active build, version, loader and play time in Discord.",
+    description: "Показывает сборку, версию Minecraft и время игры в вашем профиле Discord.",
     getEnabled: (plugins) => plugins.discordRpc.enabled,
     getStatus: (plugins) => {
       if (!plugins.discordRpc.enabled) return "OFF";
@@ -101,10 +101,11 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   {
     id: "mineflayerBot",
     title: "MINEFLAYER BOT",
-    tag: "BOT PACKAGE",
+    tag: "Компаньон в Minecraft",
     mark: "BOT",
     icon: { src: steveFaceIcon, alt: "Steve face" },
-    description: "An isolated, optional Minecraft companion package with owner-only commands.",
+    description:
+      "Бот-компаньон для вашего сервера. Настройте подключение, поведение и команды владельца.",
     optionalExtensionId: "mineflayer-bot",
     getEnabled: (plugins) => plugins.mineflayerBot.enabled,
     getStatus: (plugins) => {
@@ -127,10 +128,10 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   {
     id: "blueMap",
     title: "BLUE MAP",
-    tag: "SERVER PACKAGE",
+    tag: "Карта мира",
     mark: "MAP",
     icon: { src: blueMapIcon, alt: "BlueMap" },
-    description: "Runs an isolated BlueMap server package and opens its local web map.",
+    description: "Создаёт интерактивную карту мира и открывает её в браузере или отдельном окне.",
     optionalExtensionId: "blue-map-server",
     getEnabled: (plugins) => plugins.blueMap.enabled,
     getStatus: (plugins) => {
@@ -147,10 +148,10 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   {
     id: "obsTelemetry",
     title: "OBS TELEMETRY",
-    tag: "STREAM",
+    tag: "Оверлей для стрима",
     mark: "OBS",
     icon: { src: obsMinecraftIcon, alt: "OBS Minecraft" },
-    description: "Shows live player health, armor, food and coordinates in OBS.",
+    description: "Передаёт здоровье, броню, еду и координаты игрока в оверлей OBS.",
     getEnabled: (plugins) => plugins.obsTelemetry.enabled,
     getStatus: (plugins) => {
       if (!plugins.obsTelemetry.enabled) return "OFF";
@@ -165,10 +166,10 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
   {
     id: "proxy",
     title: "PROXY",
-    tag: "NETWORK",
+    tag: "Сеть и загрузки",
     mark: "PXY",
     icon: { src: proxyIcon, alt: "Proxy network" },
-    description: "Tunnels launcher downloads through HTTP, HTTPS or SOCKS5 proxies.",
+    description: "Загружает файлы лаунчера через HTTP, HTTPS или SOCKS5-прокси.",
     getEnabled: (plugins) => plugins.proxy.enabled,
     getStatus: (plugins) => {
       if (!plugins.proxy.enabled) return "OFF";

@@ -369,13 +369,44 @@ function parseConfig (raw) {
   return config
 }
 
-function readStdin () {
-  return new Promise((resolve, reject) => {
-    const chunks = []
-    process.stdin.on('data', (chunk) => chunks.push(chunk))
-    process.stdin.on('error', reject)
-    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-  })
+function createLauncherInput (input) {
+  return require('node:readline')
+    .createInterface({ input, crlfDelay: Infinity })[Symbol.asyncIterator]()
+}
+
+async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
+  for await (const line of lines) {
+    if (!line.trim()) continue
+    let request
+    try {
+      request = JSON.parse(line)
+    } catch {
+      sendEvent('log', { message: 'invalid launcher message' })
+      continue
+    }
+    if (request?.type !== 'chat' || typeof request.requestId !== 'string') continue
+    try {
+      const bot = getBot()
+      if (!bot) throw new Error('Бот не подключён к серверу')
+      if (typeof request.message !== 'string' || !request.message.trim()) {
+        throw new Error('Введите сообщение')
+      }
+      const message = request.message.trim()
+      if (message.length > 240 || /[\u0000-\u001f\u007f-\u009f§]/.test(message)) {
+        throw new Error('Сообщение слишком длинное или содержит недопустимые символы')
+      }
+      await bot.chat(message)
+      sendEvent('chat_result', {
+        requestId: request.requestId,
+        message: `chat sent: ${message}`
+      })
+    } catch (error) {
+      sendEvent('chat_result', {
+        requestId: request.requestId,
+        error: error.message || String(error)
+      })
+    }
+  }
 }
 
 function loadMovementExtras (bot) {
@@ -452,7 +483,10 @@ async function main () {
     throw new Error(`Node.js 22+ is required by mineflayer, current is ${process.versions.node}`)
   }
 
-  const config = parseConfig(await readStdin())
+  const input = createLauncherInput(process.stdin)
+  const firstLine = await input.next()
+  if (firstLine.done) throw new Error('Missing bot configuration')
+  const config = parseConfig(firstLine.value)
   const prefix = config.commands.prefix
   const ownerName = config.ownerName
   const serverLabel = `${config.server.host}:${config.server.port}`
@@ -460,6 +494,7 @@ async function main () {
   const commandTimestamps = new Map()
 
   let activeBot = null
+  let chatReady = false
   let reconnectTimer = null
   let reconnectAttempts = 0
   let stopping = false
@@ -536,6 +571,7 @@ async function main () {
 
   function startConnection (isReconnect = false) {
     if (stopping) return
+    chatReady = false
 
     emit('status', {
       state: isReconnect ? 'reconnecting' : 'connecting',
@@ -850,6 +886,7 @@ async function main () {
         return
       }
 
+      chatReady = true
       emit('ready', {
         botUsername: bot.username,
         message: `connected as ${bot.username}; navigation minecraft-pathfinding-2026; owners ${allowedOwners.join(', ')}; prefix ${prefix}; source ${config.commands.source}`
@@ -914,6 +951,7 @@ async function main () {
     }
 
     bot.on('death', () => {
+      chatReady = false
       void stopMovement().catch((error) => emit('error', { error: error.message }))
       currentGoal = 'idle'
       emit('status', {
@@ -925,6 +963,7 @@ async function main () {
     })
 
     bot.on('respawn', () => {
+      chatReady = true
       emit('status', { state: 'connected', message: 'bot respawned' })
     })
 
@@ -944,7 +983,10 @@ async function main () {
       travel?.dispose()
       combat?.dispose()
       goalGeneration++
-      if (activeBot === bot) activeBot = null
+      if (activeBot === bot) {
+        activeBot = null
+        chatReady = false
+      }
       scheduleReconnect(kickReason || formatReason(reason))
     })
   }
@@ -952,6 +994,7 @@ async function main () {
   function requestShutdown (signal) {
     if (stopping) return
     stopping = true
+    chatReady = false
     emit('status', { state: 'stopping', message: `received ${signal}` })
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -967,6 +1010,9 @@ async function main () {
   process.on('SIGINT', () => requestShutdown('SIGINT'))
   process.on('SIGTERM', () => requestShutdown('SIGTERM'))
 
+  void handleLauncherMessages(input, () => chatReady && !stopping ? activeBot : null)
+    .catch(error => emit('error', { error: `launcher input: ${error.message || String(error)}` }))
+
   startConnection(false)
 }
 
@@ -978,6 +1024,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  createLauncherInput,
+  handleLauncherMessages,
   parseConfig,
   configurePathfinder,
   compatibleTimePlugin,

@@ -1,9 +1,11 @@
 use std::{
+    collections::HashMap,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
 
 #[cfg(windows)]
@@ -11,6 +13,7 @@ use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
+use tokio::sync::oneshot;
 
 use crate::{
     commands::auth::{read_accounts, refresh_account_if_expired},
@@ -39,6 +42,7 @@ struct MineflayerBotRuntime {
     server: Option<String>,
     last_error: Option<String>,
     logs: Vec<String>,
+    pending_chat: HashMap<String, oneshot::Sender<Result<(), String>>>,
 }
 
 impl Default for MineflayerBotRuntime {
@@ -52,6 +56,7 @@ impl Default for MineflayerBotRuntime {
             server: None,
             last_error: None,
             logs: Vec::new(),
+            pending_chat: HashMap::new(),
         }
     }
 }
@@ -140,6 +145,40 @@ struct WorkerEvent {
     state: Option<String>,
     bot_username: Option<String>,
     error: Option<String>,
+    request_id: Option<String>,
+}
+
+fn write_worker_message(writer: &mut impl Write, payload: &impl Serialize) -> Result<(), String> {
+    let mut line = serde_json::to_vec(payload)
+        .map_err(|error| format!("serialize bot message error: {error}"))?;
+    line.push(b'\n');
+    writer
+        .write_all(&line)
+        .and_then(|_| writer.flush())
+        .map_err(|error| format!("write bot message error: {error}"))
+}
+
+fn validate_chat_message(message: &str) -> Result<&str, String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Err("Введите сообщение".to_string());
+    }
+    if message.encode_utf16().count() > 240 {
+        return Err("Сообщение должно быть не длиннее 240 символов".to_string());
+    }
+    if message
+        .chars()
+        .any(|character| character.is_control() || character == '§')
+    {
+        return Err("Сообщение содержит недопустимые символы".to_string());
+    }
+    Ok(message)
+}
+
+fn fail_pending_chat(runtime: &mut MineflayerBotRuntime) {
+    for (_, reply) in runtime.pending_chat.drain() {
+        let _ = reply.send(Err("Бот отключился до подтверждения отправки".to_string()));
+    }
 }
 
 fn push_log(runtime: &mut MineflayerBotRuntime, line: impl Into<String>) {
@@ -179,6 +218,7 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
     };
 
     if let Some(status) = exit_status {
+        fail_pending_chat(runtime);
         runtime.child.take();
         runtime.pid = None;
         runtime.state = "stopped".to_string();
@@ -188,6 +228,17 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
 
 fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEvent) {
     match event.event_type.as_str() {
+        "chat_result" => {
+            if let Some(request_id) = event.request_id {
+                if let Some(reply) = runtime.pending_chat.remove(&request_id) {
+                    let result = event.error.map_or(Ok(()), Err);
+                    let _ = reply.send(result);
+                }
+            }
+            if let Some(message) = event.message {
+                push_log(runtime, message);
+            }
+        }
         "ready" => {
             runtime.state = "connected".to_string();
             runtime.bot_username = event.bot_username;
@@ -214,6 +265,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
             push_log(runtime, format!("error: {message}"));
         }
         "end" => {
+            fail_pending_chat(runtime);
             runtime.state = "stopped".to_string();
             if let Some(message) = event.message {
                 push_log(runtime, message);
@@ -374,6 +426,47 @@ pub async fn get_mineflayer_bot_status(
 }
 
 #[tauri::command]
+pub async fn send_mineflayer_bot_chat(
+    state: State<'_, MineflayerBotState>,
+    message: String,
+) -> Result<(), String> {
+    let message = validate_chat_message(&message)?;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (reply, response) = oneshot::channel();
+    {
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        refresh_child_state(&mut runtime);
+        if runtime.state != "connected" || runtime.child.is_none() {
+            return Err("Бот не подключён к серверу".to_string());
+        }
+        let stdin = runtime
+            .child
+            .as_mut()
+            .and_then(|child| child.stdin.as_mut())
+            .ok_or_else(|| "Канал отправки сообщений боту недоступен".to_string())?;
+        write_worker_message(
+            stdin,
+            &serde_json::json!({ "type": "chat", "requestId": request_id, "message": message }),
+        )?;
+        runtime.pending_chat.insert(request_id.clone(), reply);
+    }
+
+    match tokio::time::timeout(Duration::from_secs(5), response).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("Бот отключился до подтверждения отправки".to_string()),
+        Err(_) => {
+            if let Ok(mut runtime) = state.inner.lock() {
+                runtime.pending_chat.remove(&request_id);
+            }
+            Err("Бот не подтвердил отправку сообщения. Проверьте журнал событий".to_string())
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn stop_mineflayer_bot(
     state: State<'_, MineflayerBotState>,
 ) -> Result<MineflayerBotStatus, String> {
@@ -386,6 +479,8 @@ pub async fn stop_mineflayer_bot(
         let _ = child.kill();
         let _ = child.wait();
     }
+
+    fail_pending_chat(&mut runtime);
 
     runtime.pid = None;
     runtime.state = "stopped".to_string();
@@ -493,9 +588,6 @@ pub async fn start_mineflayer_bot(
         return Err(format!("Mineflayer worker not found: {}", worker.display()));
     }
 
-    let config_raw = serde_json::to_vec(&config)
-        .map_err(|error| format!("serialize bot config error: {error}"))?;
-
     let mut runtime = state
         .inner
         .lock()
@@ -504,6 +596,8 @@ pub async fn start_mineflayer_bot(
     if runtime.child.is_some() {
         return Err("Mineflayer bot is already running".to_string());
     }
+
+    super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
 
     let mut command = Command::new(node_executable());
     command
@@ -523,15 +617,15 @@ pub async fn start_mineflayer_bot(
         format!("start node worker error: {error}. Install Node.js 22+ and retry.")
     })?;
 
-    let mut stdin = child
+    let stdin = child
         .stdin
-        .take()
+        .as_mut()
         .ok_or_else(|| "failed to open bot worker stdin".to_string())?;
-    if let Err(error) = stdin.write_all(&config_raw) {
+    if let Err(error) = write_worker_message(stdin, &config) {
         let _ = child.kill();
+        let _ = child.wait();
         return Err(format!("write bot config error: {error}"));
     }
-    drop(stdin);
 
     if let Some(stdout) = child.stdout.take() {
         spawn_log_reader(stdout, state.inner.clone(), "stdout");
@@ -555,7 +649,91 @@ pub async fn start_mineflayer_bot(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_extra_owners, WorkerBehaviorConfig, WorkerMovementConfig};
+    use super::{
+        fail_pending_chat, parse_extra_owners, update_from_worker_event, validate_chat_message,
+        write_worker_message, MineflayerBotRuntime, WorkerBehaviorConfig, WorkerEvent,
+        WorkerMovementConfig,
+    };
+    use tokio::sync::oneshot;
+
+    #[test]
+    fn validates_chat_without_truncating_unicode_or_allowing_packet_controls() {
+        assert_eq!(
+            validate_chat_message("  Привет от бота  ").unwrap(),
+            "Привет от бота"
+        );
+        assert!(validate_chat_message(" ").is_err());
+        assert!(validate_chat_message(&"x".repeat(241)).is_err());
+        assert!(validate_chat_message(&"😀".repeat(121)).is_err());
+        assert!(validate_chat_message(&"😀".repeat(120)).is_ok());
+        assert!(validate_chat_message("first\nsecond").is_err());
+        assert!(validate_chat_message("§color").is_err());
+    }
+
+    #[test]
+    fn frames_worker_input_as_separate_json_lines() {
+        let mut input = Vec::new();
+        write_worker_message(
+            &mut input,
+            &serde_json::json!({ "server": { "host": "localhost" } }),
+        )
+        .unwrap();
+        write_worker_message(
+            &mut input,
+            &serde_json::json!({ "type": "chat", "message": "Привет" }),
+        )
+        .unwrap();
+        let raw = String::from_utf8(input).unwrap();
+        let messages: Vec<serde_json::Value> = raw
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(raw.ends_with('\n'));
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["server"]["host"], "localhost");
+        assert_eq!(messages[1]["message"], "Привет");
+    }
+
+    #[test]
+    fn resolves_chat_acknowledgements_by_id_without_changing_connection_state() {
+        let mut runtime = MineflayerBotRuntime {
+            state: "connected".to_string(),
+            ..Default::default()
+        };
+        let (first_tx, mut first_rx) = oneshot::channel();
+        let (second_tx, mut second_rx) = oneshot::channel();
+        runtime.pending_chat.insert("first".to_string(), first_tx);
+        runtime.pending_chat.insert("second".to_string(), second_tx);
+        let result: WorkerEvent = serde_json::from_value(serde_json::json!({
+            "type": "chat_result", "requestId": "second", "error": "connection closed"
+        }))
+        .unwrap();
+        update_from_worker_event(&mut runtime, result);
+        assert_eq!(
+            second_rx.try_recv().unwrap(),
+            Err("connection closed".to_string())
+        );
+        assert!(first_rx.try_recv().is_err());
+        assert_eq!(runtime.state, "connected");
+        let result: WorkerEvent = serde_json::from_value(serde_json::json!({
+            "type": "chat_result", "requestId": "first", "message": "chat sent: Привет"
+        }))
+        .unwrap();
+        update_from_worker_event(&mut runtime, result);
+        assert_eq!(first_rx.try_recv().unwrap(), Ok(()));
+        assert!(runtime.pending_chat.is_empty());
+        assert!(runtime.logs.last().unwrap().ends_with("chat sent: Привет"));
+    }
+
+    #[test]
+    fn fails_pending_chat_when_bot_stops() {
+        let mut runtime = MineflayerBotRuntime::default();
+        let (tx, mut rx) = oneshot::channel();
+        runtime.pending_chat.insert("pending".to_string(), tx);
+        fail_pending_chat(&mut runtime);
+        assert!(rx.try_recv().unwrap().is_err());
+        assert!(runtime.pending_chat.is_empty());
+    }
 
     #[test]
     fn parses_and_deduplicates_extra_owners() {
@@ -576,7 +754,10 @@ mod tests {
                 spawn_message: String::new(),
                 log_path_updates: false,
             };
-            assert_eq!(serde_json::to_value(settings).unwrap()["antiKnockback"], enabled);
+            assert_eq!(
+                serde_json::to_value(settings).unwrap()["antiKnockback"],
+                enabled
+            );
         }
     }
 
@@ -591,6 +772,9 @@ mod tests {
             can_dig: false,
             max_drop_down: 3,
         };
-        assert_eq!(serde_json::to_value(settings).unwrap()["allowAirStrafe"], true);
+        assert_eq!(
+            serde_json::to_value(settings).unwrap()["allowAirStrafe"],
+            true
+        );
     }
 }

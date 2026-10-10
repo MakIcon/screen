@@ -1,6 +1,6 @@
 .mineflayer-bot-settings {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .mineflayer-bot-live {
@@ -8,7 +8,7 @@
   grid-template-columns: 12px minmax(84px, 0.7fr) minmax(0, 1.4fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
-  min-height: 62px;
+  min-height: 52px;
   border: 1px solid var(--line);
   background: linear-gradient(90deg, rgba(194, 65, 12, 0.045), transparent 45%), var(--bg-card);
   padding: 0 16px;
@@ -37,10 +37,10 @@
 
 .mineflayer-bot-live span,
 .mineflayer-bot-status span {
-  color: var(--muted);
-  font-size: 8px;
+  color: var(--text-alt);
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
 }
 
 .mineflayer-bot-live strong,
@@ -48,74 +48,98 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .mineflayer-bot-tabs {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  border: 1px solid var(--line);
-  background: var(--bg-card);
+  gap: 4px;
+  padding: 8px 0;
+  margin-top: -8px;
+  background: var(--bg);
 }
-
 .mineflayer-bot-tabs button {
   min-width: 0;
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
+  min-height: 38px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-card);
+  color: var(--ink);
+  text-align: center;
+  font-family: inherit;
   cursor: pointer;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  transition:
-    background 0.14s,
-    color 0.14s,
-    box-shadow 0.14s;
 }
-
-.mineflayer-bot-tabs button:last-child {
-  border-right: none;
+.mineflayer-bot-tabs button > strong {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
-
-.mineflayer-bot-tabs button span {
-  color: var(--line-strong);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 8px;
+.mineflayer-bot-tabs button:hover {
+  background: var(--bg-hover);
+  border-color: var(--ink);
 }
-
-.mineflayer-bot-tabs button:hover,
 .mineflayer-bot-tabs button.active {
   background: var(--bg-hover-strong);
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
   color: var(--accent);
 }
 
-.mineflayer-bot-tabs button.active {
-  box-shadow: inset 0 -3px 0 var(--accent);
+.mineflayer-bot-connection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
 }
-
-.mineflayer-bot-tabs button.active span {
-  color: var(--accent);
+.mineflayer-bot-connection-grid > :last-child {
+  grid-column: 1 / -1;
+}
+.mineflayer-bot-combat-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.mineflayer-bot-combat-group {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.mineflayer-bot-combat-group:disabled {
+  opacity: 0.45;
+}
+.mineflayer-bot-combat-group > .plugin-settings-group > .plugin-settings-group-head {
+  min-height: 60px;
+  display: grid;
+  align-items: center;
+}
+.mineflayer-bot-combat-group .plugin-settings-group-copy > span {
+  font-size: 12px;
+}
+.mineflayer-bot-combat-group .plugin-settings-group-copy strong {
+  font-size: 12px;
 }
 
 .mineflayer-bot-section {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
 }
 
 .mineflayer-bot-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
   gap: 12px;
 }
 
@@ -125,7 +149,7 @@
 
 .mineflayer-bot-field {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -135,10 +159,10 @@
 }
 
 .mineflayer-bot-field > span {
-  color: var(--muted);
-  font-size: 9px;
+  color: var(--text-alt);
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
 }
 
 .mineflayer-bot-field > input,
@@ -151,7 +175,7 @@
   color: var(--ink);
   padding: 0 12px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   outline: none;
   resize: vertical;
   transition:
@@ -161,7 +185,7 @@
 }
 
 .mineflayer-bot-field > input {
-  min-height: 40px;
+  min-height: 36px;
 }
 
 .mineflayer-bot-choice {
@@ -188,7 +212,7 @@
 .mineflayer-bot-combat-fields {
   min-width: 0;
   display: grid;
-  gap: 18px;
+  gap: 12px;
   border: 0;
   margin: 0;
   padding: 0;
@@ -200,9 +224,9 @@
 
 .mineflayer-bot-combat-note {
   margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.7;
+  color: var(--text-alt);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .mineflayer-bot-field > textarea {
@@ -234,8 +258,8 @@
 
 .mineflayer-bot-subhead span,
 .mineflayer-bot-subhead small {
-  color: var(--muted);
-  font-size: 9px;
+  color: var(--text-alt);
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.16em;
 }
@@ -245,7 +269,7 @@
 }
 
 .mineflayer-bot-subhead small {
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .mineflayer-bot-mode,
@@ -269,11 +293,11 @@
 .mineflayer-bot-presets button {
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--text-alt);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
   transition:
     background 0.14s,
     border-color 0.14s,
@@ -283,7 +307,7 @@
 
 .mineflayer-bot-mode button,
 .mineflayer-bot-source button {
-  min-height: 40px;
+  min-height: 36px;
   border-right: 1px solid var(--line);
 }
 
@@ -313,7 +337,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 46px;
+  min-height: 38px;
   border: 1px solid var(--line);
   padding: 0 12px;
   text-align: left;
@@ -326,6 +350,13 @@
   image-rendering: pixelated;
 }
 
+.mineflayer-bot-toggle-grid > :is(div, .settings-toggle-row) {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.mineflayer-bot-toggle-grid > :last-child {
+  border-bottom: 0;
+}
 .mineflayer-bot-toggle-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -339,7 +370,7 @@
 }
 
 .mineflayer-bot-presets button {
-  min-height: 66px;
+  min-height: 52px;
   display: grid;
   align-content: center;
   gap: 7px;
@@ -349,13 +380,13 @@
 
 .mineflayer-bot-presets button strong {
   color: var(--ink);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  letter-spacing: 0.06em;
 }
 
 .mineflayer-bot-presets button span {
-  color: var(--muted);
-  font-size: 8px;
+  color: var(--text-alt);
+  font-size: 11px;
   letter-spacing: 0.09em;
 }
 
@@ -377,7 +408,7 @@
   color: var(--text-alt);
   padding: 7px 9px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .mineflayer-bot-command-list span.disabled {
@@ -388,16 +419,16 @@
 .mineflayer-bot-empty,
 .mineflayer-bot-warning,
 .mineflayer-bot-error {
-  min-height: 40px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   border: 1px solid var(--line);
   background: var(--bg-card);
-  color: var(--muted);
+  color: var(--text-alt);
   padding: 0 12px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
 }
 
 .mineflayer-bot-warning,
@@ -414,7 +445,7 @@
 }
 
 .mineflayer-bot-controls button {
-  min-height: 42px;
+  min-height: 36px;
   border: 1px solid var(--line-strong);
 }
 
@@ -425,13 +456,13 @@
 
 .mineflayer-bot-status {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   border: 1px solid var(--line);
 }
 
 .mineflayer-bot-status div {
   min-width: 0;
-  min-height: 58px;
+  min-height: 48px;
   display: grid;
   align-content: center;
   gap: 7px;
@@ -457,10 +488,51 @@
 .mineflayer-bot-log span {
   color: var(--text-alt);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0;
-  line-height: 1.35;
+  line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.mineflayer-bot-chat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.mineflayer-bot-chat button {
+  min-height: 36px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--ink);
+  color: var(--bg-panel);
+  padding: 0 16px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.14s;
+}
+
+.mineflayer-bot-chat button:hover:not(:disabled) {
+  opacity: 0.8;
+}
+
+.mineflayer-bot-chat button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.mineflayer-bot-chat-feedback {
+  margin: 0;
+  color: var(--text-alt);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mineflayer-bot-chat-feedback.is-error {
+  color: var(--danger);
 }
 
 @keyframes mineflayer-bot-pulse {
@@ -474,43 +546,55 @@
   }
 }
 
-@media (max-width: 760px) {
-  .mineflayer-bot-tabs {
+@container (min-width: 840px) {
+  .mineflayer-bot-combat-groups .mineflayer-bot-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container (max-width: 640px) {
+  .mineflayer-bot-tabs button {
+    padding: 8px 4px;
+  }
+  .mineflayer-bot-connection-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mineflayer-bot-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .mineflayer-bot-tabs button:nth-child(2) {
-    border-right: none;
+  .mineflayer-bot-subhead {
+    flex-wrap: wrap;
   }
-
-  .mineflayer-bot-tabs button:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--line);
+}
+@container (max-width: 520px) {
+  .mineflayer-bot-toggle-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-
   .mineflayer-bot-live {
     grid-template-columns: 12px minmax(0, 1fr);
-    padding: 12px 16px;
+    padding: 12px;
   }
-
   .mineflayer-bot-live-dot {
     grid-row: 1 / 4;
   }
-
+  .mineflayer-bot-grid--three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mineflayer-bot-presets button {
+    padding: 8px;
+  }
+}
+@container (max-width: 400px) {
+  .mineflayer-bot-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .mineflayer-bot-grid,
   .mineflayer-bot-grid--three,
-  .mineflayer-bot-toggle-grid,
   .mineflayer-bot-presets,
-  .mineflayer-bot-controls,
-  .mineflayer-bot-status {
-    grid-template-columns: 1fr;
+  .mineflayer-bot-source {
+    grid-template-columns: minmax(0, 1fr);
   }
-
-  .mineflayer-bot-status div {
-    border-right: none;
+  .mineflayer-bot-source button {
+    border-right: 0;
     border-bottom: 1px solid var(--line);
-  }
-
-  .mineflayer-bot-status div:last-child {
-    border-bottom: none;
   }
 }

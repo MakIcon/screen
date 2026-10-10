@@ -1,7 +1,7 @@
 {
   "id": "mineflayer-bot",
   "name": "Mineflayer Bot",
-  "version": "1.8.5",
+  "version": "1.8.7",
   "entry": "worker.cjs",
   "runtime": "node",
   "minimumLauncherVersion": "0.1.0"

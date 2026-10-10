@@ -6,35 +6,54 @@ import type {
   ObsTelemetryStatus,
 } from "../../../types";
 import type { PluginSettingsProps } from "../pluginTypes";
+import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { normalizeObsTelemetrySettings } from "../pluginSettings";
 import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import "./ObsTelemetryPlugin.css";
 
+const OVERLAY_LABELS: Record<string, string> = {
+  all: "Весь оверлей",
+  settings: "Настройки оверлея",
+  health: "Здоровье",
+  food: "Еда",
+  xp: "Опыт",
+  armor: "Броня",
+  helmet: "Шлем",
+  chestplate: "Нагрудник",
+  leggings: "Поножи",
+  boots: "Ботинки",
+  coords: "Координаты",
+  items: "Предметы",
+  mainHand: "Основная рука",
+  offhand: "Вторая рука",
+  dimension: "Измерение",
+};
+
 function formatStatusValue(value?: string | number | null) {
-  if (value === null || value === undefined || value === "") return "NONE";
+  if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }
 
 function formatAge(ageMs?: number | null) {
-  if (ageMs === null || ageMs === undefined) return "NONE";
+  if (ageMs === null || ageMs === undefined) return "—";
   if (ageMs < 1000) return `${ageMs}ms`;
   return `${(ageMs / 1000).toFixed(1)}s`;
 }
 
 function formatHealth(payload?: ObsTelemetryPayload | null) {
-  if (!payload) return "NONE";
+  if (!payload) return "—";
   return `${payload.health.toFixed(1)} / ${payload.maxHealth.toFixed(1)}`;
 }
 
 function formatCoords(payload?: ObsTelemetryPayload | null) {
-  if (!payload) return "NONE";
+  if (!payload) return "—";
   return `${payload.blockPosition.x} ${payload.blockPosition.y} ${payload.blockPosition.z}`;
 }
 
 function formatItemName(payload?: ObsTelemetryPayload | null) {
   const item = payload?.heldItem;
-  if (!item?.displayName) return "EMPTY";
+  if (!item?.displayName) return "Пусто";
   return item.count > 1 ? `${item.displayName} x${item.count}` : item.displayName;
 }
 
@@ -49,7 +68,7 @@ function ObsTelemetrySettingsEditor({
   const status = monitor.snapshot?.obsTelemetry ?? null;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState("");
   const overlayUrl = useMemo(
     () => status?.overlayUrl ?? `http://127.0.0.1:${settings.port}/overlay`,
     [settings.port, status?.overlayUrl],
@@ -133,11 +152,11 @@ function ObsTelemetrySettingsEditor({
     }
   };
 
-  const copyOverlayUrl = async () => {
+  const copySourceUrl = async (url: string) => {
     try {
-      await navigator.clipboard.writeText(overlayUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
+      await navigator.clipboard.writeText(url);
+      setCopiedUrl(url);
+      window.setTimeout(() => setCopiedUrl((current) => (current === url ? "" : current)), 1200);
     } catch (error) {
       setActionError(toErrorMessage(error));
     }
@@ -145,36 +164,26 @@ function ObsTelemetrySettingsEditor({
 
   return (
     <div className="obs-telemetry-settings">
-      <label className="obs-telemetry-field">
-        <span>OBS PORT</span>
-        <input
-          value={settings.port}
-          inputMode="numeric"
-          onChange={(event) => update({ port: Number(event.target.value) })}
-        />
-      </label>
+      <PluginSettingsGroup
+        title="ИСТОЧНИК ДЛЯ OBS"
+        description="Добавьте этот адрес как источник «Браузер» в OBS"
+        collapsible={false}
+      >
+        <label className="obs-telemetry-field">
+          <span>ПОРТ OBS</span>
+          <input
+            value={settings.port}
+            inputMode="numeric"
+            onChange={(event) => update({ port: Number(event.target.value) })}
+          />
+        </label>
 
-      <label className="obs-telemetry-field obs-telemetry-field--wide">
-        <span>MAIN BROWSER SOURCE URL</span>
-        <input value={overlayUrl} readOnly spellCheck={false} />
-      </label>
-
-      <div className="obs-telemetry-links">
-        {Object.entries(overlayUrls).map(([key, url]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(url);
-            }}
-          >
-            <span>{key.toUpperCase()}</span>
-            <strong>{url}</strong>
-          </button>
-        ))}
-      </div>
-
-      <div className="obs-telemetry-subhead">CONTROL</div>
+        <label className="obs-telemetry-field obs-telemetry-field--wide">
+          <span>АДРЕС ОСНОВНОГО ОВЕРЛЕЯ</span>
+          <input value={overlayUrl} readOnly spellCheck={false} />
+        </label>
+      </PluginSettingsGroup>
+      <div className="obs-telemetry-subhead">УПРАВЛЕНИЕ ОВЕРЛЕЕМ</div>
 
       <div className="obs-telemetry-controls">
         <button
@@ -182,79 +191,98 @@ function ObsTelemetrySettingsEditor({
           disabled={!settings.enabled || busy || status?.running}
           onClick={() => void startServer()}
         >
-          {busy ? "WORKING" : "START"}
+          {busy ? "Выполняется…" : "ЗАПУСТИТЬ"}
         </button>
         <button type="button" disabled={busy || !status?.running} onClick={() => void stopServer()}>
-          STOP
+          ОСТАНОВИТЬ
         </button>
         <button type="button" disabled={busy} onClick={() => void refreshStatus()}>
-          REFRESH
+          ОБНОВИТЬ
         </button>
         <button type="button" disabled={busy} onClick={() => void openOverlay()}>
-          OPEN
+          ОТКРЫТЬ
         </button>
-        <button type="button" onClick={() => void copyOverlayUrl()}>
-          {copied ? "COPIED" : "COPY URL"}
+        <button type="button" onClick={() => void copySourceUrl(overlayUrl)}>
+          {copiedUrl === overlayUrl ? "СКОПИРОВАНО" : "КОПИРОВАТЬ АДРЕС"}
         </button>
       </div>
 
-      <div className="obs-telemetry-status">
-        <div>
-          <span>SERVER</span>
-          <strong>{formatStatusValue(status?.state)}</strong>
+      <PluginSettingsGroup
+        title="ОТДЕЛЬНЫЕ ВИДЖЕТЫ"
+        description="Здоровье, броня, координаты и другие источники · нажмите, чтобы скопировать адрес"
+      >
+        <div className="obs-telemetry-links">
+          {Object.entries(overlayUrls).map(([key, url]) => (
+            <button key={key} type="button" onClick={() => void copySourceUrl(url)}>
+              <span>{copiedUrl === url ? "Скопировано" : (OVERLAY_LABELS[key] ?? key)}</span>
+              <strong>{url}</strong>
+            </button>
+          ))}
         </div>
-        <div>
-          <span>LIVE</span>
-          <strong>{isLive ? "YES" : "NO"}</strong>
+      </PluginSettingsGroup>
+      <PluginSettingsGroup
+        title="ДАННЫЕ И ЖУРНАЛ"
+        description="Состояние сервера и последние данные игрока"
+      >
+        <div className="obs-telemetry-status">
+          <div>
+            <span>СЕРВЕР</span>
+            <strong>{formatStatusValue(status?.state)}</strong>
+          </div>
+          <div>
+            <span>ДАННЫЕ В ЭФИРЕ</span>
+            <strong>{isLive ? "Да" : "Нет"}</strong>
+          </div>
+          <div>
+            <span>ИГРОК</span>
+            <strong>{formatStatusValue(status?.lastPlayerName)}</strong>
+          </div>
+          <div>
+            <span>ОБНОВЛЕНИЕ</span>
+            <strong>{formatAge(status?.lastUpdateAgeMs)}</strong>
+          </div>
+          <div>
+            <span>JSON</span>
+            <strong>{jsonUrl}</strong>
+          </div>
         </div>
-        <div>
-          <span>PLAYER</span>
-          <strong>{formatStatusValue(status?.lastPlayerName)}</strong>
-        </div>
-        <div>
-          <span>LAST UPDATE</span>
-          <strong>{formatAge(status?.lastUpdateAgeMs)}</strong>
-        </div>
-        <div>
-          <span>JSON</span>
-          <strong>{jsonUrl}</strong>
-        </div>
-      </div>
 
-      <div className="obs-telemetry-readout">
-        <div>
-          <span>HEALTH</span>
-          <strong>{formatHealth(status?.lastPayload)}</strong>
+        <div className="obs-telemetry-readout">
+          <div>
+            <span>ЗДОРОВЬЕ</span>
+            <strong>{formatHealth(status?.lastPayload)}</strong>
+          </div>
+          <div>
+            <span>БРОНЯ</span>
+            <strong>{formatStatusValue(status?.lastPayload?.armor)}</strong>
+          </div>
+          <div>
+            <span>ЕДА</span>
+            <strong>{formatStatusValue(status?.lastPayload?.food)}</strong>
+          </div>
+          <div>
+            <span>КООРДИНАТЫ</span>
+            <strong>{formatCoords(status?.lastPayload)}</strong>
+          </div>
+          <div>
+            <span>В РУКЕ</span>
+            <strong>{formatItemName(status?.lastPayload)}</strong>
+          </div>
         </div>
-        <div>
-          <span>ARMOR</span>
-          <strong>{formatStatusValue(status?.lastPayload?.armor)}</strong>
-        </div>
-        <div>
-          <span>FOOD</span>
-          <strong>{formatStatusValue(status?.lastPayload?.food)}</strong>
-        </div>
-        <div>
-          <span>COORDS</span>
-          <strong>{formatCoords(status?.lastPayload)}</strong>
-        </div>
-        <div>
-          <span>HAND</span>
-          <strong>{formatItemName(status?.lastPayload)}</strong>
-        </div>
-      </div>
 
+        <div className="obs-telemetry-log" aria-live="polite">
+          {(status?.logs ?? []).length === 0 ? (
+            <span>Пока нет событий</span>
+          ) : (
+            status?.logs
+              .slice(-12)
+              .map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
+          )}
+        </div>
+      </PluginSettingsGroup>
       {(actionError || status?.lastError) && (
         <div className="obs-telemetry-error">{actionError || status?.lastError}</div>
       )}
-
-      <div className="obs-telemetry-log" aria-live="polite">
-        {(status?.logs ?? []).length === 0 ? (
-          <span>NO LOGS</span>
-        ) : (
-          status?.logs.slice(-12).map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
-        )}
-      </div>
     </div>
   );
 }

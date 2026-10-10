@@ -1,10 +1,11 @@
 # PvP and bow combat
 
-Mineflayer Bot 1.8.4 includes the locked published packages:
+Mineflayer Bot 1.8.7 includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.
 - `mineflayer-pvp` 1.3.2: selectable basic melee combat.
 - `minecrafthawkeye` 1.3.9: selectable bow trajectory planner.
+- `mineflayer-armor-manager` 2.0.1: automatic armour equipment on spawn/respawn and pickup.
 
 Documentation and implementation references:
 
@@ -12,6 +13,7 @@ Documentation and implementation references:
 - https://github.com/nxg-org/mineflayer-custom-pvp/blob/master/src/sword/API.md
 - https://github.com/sefirosweb/minecraftHawkEye
 - https://github.com/PrismarineJS/mineflayer-pvp/blob/master/docs/api.md
+- https://github.com/PrismarineJS/MineflayerArmorManager
 
 The attached Custom PvP source identifies itself as the scoped nxg package.
 The extension installs its published build, so it does not depend on a Downloads
@@ -33,6 +35,20 @@ cooldowns still apply. Custom PvP supports circle/random/intelligent strafing,
 jump/short-hop critical hits, sprint resets, shields, axe shield breaking and smooth
 aim. Basic Mineflayer PvP uses skill, CPS, weapon, reach and shield settings; the
 Custom tactics do not apply to that engine. Reach is limited to 3 blocks.
+Custom axe shield breaking reads active-hand metadata for the current Minecraft
+version, charges the axe cooldown, jumps and strikes while falling independently
+of the general critical-hit setting. Stop, target loss and bow defense cancel
+the cycle. The preferred weapon is restored after the
+opponent lowers its shield; an axe weapon preference stays an axe.
+With only axes available, Custom PvP automatically chooses an axe even with a
+sword preference and prepares a falling critical for every charged attack,
+including when shield breaking and general criticals are disabled. With both
+weapon types carried, selecting an axe and enabling criticals uses that same
+cycle to prioritize repeated criticals. Sword combat retains its chosen critical
+mode. Water/lava do not allow these criticals and use charged ordinary attacks.
+ArmorManager runs even with PvP disabled. Armour swaps share the combat inventory
+queue, and its offhand selection is excluded so a totem cannot replace the shield
+during defense. Equipment errors are reported through the worker.
 Smooth aiming uses Custom PvP's smooth-look plugin with an easing curve without
 overshoot. Both melee engines wait until the view ray reaches the enemy before
 attacking, and bow aiming also turns smoothly. Stopping cancels pending turns.
@@ -77,7 +93,12 @@ Threats appear in the
 worker status. With `shield` enabled, a shield in inventory or already in the offhand and an offhand-capable
 version, the bot faces the threat and raises its shield. It releases the shield
 when the threat clears. Defense interrupts offensive bow charging and crystal
-actions; item swaps are serialized and stale actions cannot resume over defense.
+actions. Releasing a bow retains protection through the predicted flight time
+and packet arrival grace; `bowDefenseHoldMs` applies after that time. Incoming
+arrows refresh their flight direction from movement updates, so a stale spawn
+velocity cannot discard an arrow as it falls. Impact, disappearance or a passed
+trajectory clears the flight hold; missing updates have a bounded timeout.
+Item swaps are serialized and stale actions cannot resume over defense.
 The offhand bow preference does not disable shield defense. Travel pauses and
 resumes after defense. Detection does not select or attack the shooter. Stop/death/disconnect
 invalidate pending equips and turns. This feature is disabled by default.

@@ -4,7 +4,9 @@ const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions")
 const { goals } = require("./pathfinder.cjs");
 const { createCrystalPlanner } = require("./crystals.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
-const { carriedItems, equipCombatItem } = require("./combat-inventory.cjs");
+const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
+const { installArmorManager } = require("./armor-manager.cjs");
+const { installShieldBreak } = require("./melee-shield.cjs");
 
 const protocolInstalled = Symbol("combatProtocolInstalled");
 const originalTurnTime = Symbol("originalSmoothTurnTime");
@@ -197,6 +199,7 @@ function installCombatNavigation(bot, onError) {
 
 function configureCombatPlugins(bot, settings, onError = () => {}) {
   installCombatProtocol(bot);
+  installArmorManager(bot, onError);
   const custom = require("@nxg-org/mineflayer-custom-pvp");
   const hawkeye = require("minecrafthawkeye");
   bot.loadPlugin(custom.default || custom);
@@ -267,7 +270,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   options.rotateConfig.lookAtHidden = false;
   // These upstream callbacks were registered as function references. Replace
   // the listeners too, so their normal shield/rotation logic yields to defense.
-  for (const name of ["update", "checkForShield"]) {
+  for (const name of ["update"]) {
     const update = bot.swordpvp[name];
     bot.off("physicsTick", update);
     bot.swordpvp[name] = (...args) => {
@@ -292,6 +295,8 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   const customAttempt = bot.swordpvp.attemptAttack.bind(bot.swordpvp);
   bot.swordpvp.attemptAttack = (reason) => {
     if (bot.launcherDefendingBow) return Promise.resolve();
+    if (bot.launcherAxeAttacking && !["disableshield", "axecritical"].includes(reason))
+      return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
       bot.swordpvp.ticksToNextAttack = 1;
@@ -299,6 +304,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     }
     return customAttempt(reason);
   };
+  installShieldBreak(bot, settings, aimedAt, onError);
   bot.pvp.attackRange = settings.attackRange;
   bot.pvp.followRange = Math.max(1, settings.attackRange - 0.5);
   bot.pvp.viewDistance = settings.targetRange;
@@ -532,12 +538,8 @@ function createCombatController(
           current,
         );
       } else if (nextMode === "melee") {
-        const tier = ["netherite", "diamond", "iron", "stone", "golden", "wooden"];
-        const weapons = items.filter((item) => item.name.endsWith(`_${settings.weapon}`));
-        weapons.sort(
-          (a, b) => tier.indexOf(a.name.split("_")[0]) - tier.indexOf(b.name.split("_")[0]),
-        );
-        if (weapons[0]) await equipCombatItem(bot, weapons[0], "hand", current);
+        const weapon = bestMeleeWeapon(bot, settings.weapon);
+        if (weapon) await equipCombatItem(bot, weapon, "hand", current);
         const shield = items.find((item) => item.name === "shield");
         if (settings.shield && shield && !bot.supportFeature("doesntHaveOffHandSlot"))
           await equipCombatItem(bot, shield, "off-hand", current);
@@ -770,7 +772,12 @@ function createCombatController(
     select,
     stop,
     get idleTask() {
-      return Promise.all([prepareTask, actionTask, defense.task]);
+      return Promise.all([
+        prepareTask,
+        actionTask,
+        defense.task,
+        bot.swordpvp?.launcherShieldBreak?.task,
+      ]);
     },
     findTarget(query) {
       const name = String(query).trim().toLowerCase();

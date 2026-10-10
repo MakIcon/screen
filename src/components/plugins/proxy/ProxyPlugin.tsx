@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProxyPluginSettings } from "../../../types";
 import type { PluginSettingsProps } from "../pluginTypes";
+import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { normalizeProxySettings } from "../pluginSettings";
 import "./ProxyPlugin.css";
 
@@ -50,71 +51,85 @@ function ProxySettingsEditor({
 
   return (
     <div className="proxy-settings">
-      <label className="proxy-field proxy-url-field">
-        <span>PROXY URL</span>
-        <span className="proxy-secret-input">
-          <input
-            type={showProxyUrl ? "text" : "password"}
-            value={settings.url}
-            placeholder="socks5://user:password@127.0.0.1:1080"
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(event) => update({ url: event.target.value })}
-          />
+      <PluginSettingsGroup
+        title="ПОДКЛЮЧЕНИЕ ЧЕРЕЗ ПРОКСИ"
+        description="Адрес, учётные данные и проверка соединения"
+        collapsible={false}
+      >
+        <label className="proxy-field proxy-url-field">
+          <span>АДРЕС ПРОКСИ</span>
+          <span className="proxy-secret-input">
+            <input
+              type={showProxyUrl ? "text" : "password"}
+              value={settings.url}
+              placeholder="socks5://user:password@127.0.0.1:1080"
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(event) => update({ url: event.target.value })}
+            />
+            <button
+              type="button"
+              className={showProxyUrl ? "active" : ""}
+              aria-label={showProxyUrl ? "Скрыть данные прокси" : "Показать данные прокси"}
+              aria-pressed={showProxyUrl}
+              onClick={() => setShowProxyUrl((visible) => !visible)}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4Z"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2" />
+              </svg>
+            </button>
+          </span>
+        </label>
+
+        <div className="proxy-test-row">
           <button
+            className="proxy-test-button"
             type="button"
-            className={showProxyUrl ? "active" : ""}
-            aria-label={showProxyUrl ? "Hide proxy credentials" : "Show proxy credentials"}
-            aria-pressed={showProxyUrl}
-            onClick={() => setShowProxyUrl((visible) => !visible)}
+            disabled={testing || !settings.url.trim()}
+            onClick={() => void testConnection()}
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4Z"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
+            {testing ? "Проверка…" : "Проверить соединение"}
           </button>
-        </span>
-      </label>
+          {testResult && (
+            <div className={`proxy-test-result ${testResult.ok ? "success" : "error"}`}>
+              <strong>{testResult.ok ? "Соединение установлено" : "Ошибка подключения"}</strong>
+              <span>
+                {testResult.message}
+                {testResult.latencyMs > 0 ? ` · ${testResult.latencyMs} ms` : ""}
+              </span>
+            </div>
+          )}
+        </div>
 
-      <label className="proxy-field">
-        <span>DIRECT CONNECTION / BYPASS</span>
-        <textarea
-          value={settings.bypass}
-          placeholder={"localhost, 127.0.0.1, .example.com\n10.0.0.0/8"}
-          spellCheck={false}
-          onChange={(event) => update({ bypass: event.target.value })}
-        />
-      </label>
+        <p className="proxy-hint">
+          Поддерживаются <code>http://</code>, <code>https://</code> и <code>socks5://</code>. Если
+          нужны логин и пароль, укажите их в адресе прокси.
+        </p>
+      </PluginSettingsGroup>
+      <PluginSettingsGroup
+        title="ПРЯМОЕ СОЕДИНЕНИЕ"
+        description="Домены и сети, которые нужно открывать без прокси"
+      >
+        <label className="proxy-field">
+          <span>ИСКЛЮЧЕНИЯ ДЛЯ ПРОКСИ</span>
+          <textarea
+            value={settings.bypass}
+            placeholder={"localhost, 127.0.0.1, .example.com\n10.0.0.0/8"}
+            spellCheck={false}
+            onChange={(event) => update({ bypass: event.target.value })}
+          />
+        </label>
 
-      <div className="proxy-test-row">
-        <button
-          className="proxy-test-button"
-          type="button"
-          disabled={testing || !settings.url.trim()}
-          onClick={() => void testConnection()}
-        >
-          {testing ? "TESTING..." : "TEST CONNECTION"}
-        </button>
-        {testResult && (
-          <div className={`proxy-test-result ${testResult.ok ? "success" : "error"}`}>
-            <strong>{testResult.ok ? "CONNECTED" : "FAILED"}</strong>
-            <span>
-              {testResult.message}
-              {testResult.latencyMs > 0 ? ` · ${testResult.latencyMs} ms` : ""}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <p className="proxy-hint">
-        Supports <code>http://</code>, <code>https://</code> and <code>socks5://</code>. Separate
-        bypass entries with commas or new lines. Domains include their subdomains; IP addresses and
-        CIDR ranges are also supported.
-      </p>
+        <p className="proxy-hint">
+          Разделяйте адреса запятыми или переносами строк. Домен включает поддомены; также можно
+          указать IP-адрес или диапазон CIDR.
+        </p>
+      </PluginSettingsGroup>
     </div>
   );
 }

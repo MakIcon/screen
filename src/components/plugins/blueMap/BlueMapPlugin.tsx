@@ -5,13 +5,14 @@ import { ElementCheckbox } from "../../inputs/ElementCheckbox";
 import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import type { PluginSettingsProps } from "../pluginTypes";
+import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { DEFAULT_BLUE_MAP_SETTINGS, normalizeBlueMapSettings } from "../pluginSettings";
 import "./BlueMapPlugin.css";
 
 const DEFAULT_MAP_URL = DEFAULT_BLUE_MAP_SETTINGS.mapUrl;
 
 function formatStatusValue(value?: string | number | null) {
-  if (value === null || value === undefined || value === "") return "NONE";
+  if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }
 
@@ -137,92 +138,101 @@ function BlueMapSettingsEditor({
 
   return (
     <div className="blue-map-settings">
-      <label className="blue-map-field blue-map-field--full">
-        <span>MAP URL</span>
-        <input
-          value={settings.mapUrl}
-          placeholder={DEFAULT_MAP_URL}
-          spellCheck={false}
-          onChange={(event) => update({ mapUrl: event.target.value })}
-        />
-      </label>
+      <PluginSettingsGroup
+        title="КАРТА МИРА"
+        description="Адрес интерактивной карты"
+        collapsible={false}
+      >
+        <label className="blue-map-field blue-map-field--full">
+          <span>АДРЕС КАРТЫ</span>
+          <input
+            value={settings.mapUrl}
+            placeholder={DEFAULT_MAP_URL}
+            spellCheck={false}
+            onChange={(event) => update({ mapUrl: event.target.value })}
+          />
+        </label>
+      </PluginSettingsGroup>
+      <PluginSettingsGroup
+        title="СЕРВЕР И JAVA"
+        description="Путь к BlueMap, рабочая папка и параметры обновления"
+      >
+        <label className="blue-map-field blue-map-field--full">
+          <span>ФАЙЛ BLUEMAP CLI · JAR</span>
+          <input
+            value={settings.cliJarPath}
+            placeholder="C:\\Program Files\\BlueMap\\BlueMap-cli.jar"
+            spellCheck={false}
+            onChange={(event) => update({ cliJarPath: event.target.value })}
+          />
+        </label>
 
-      <label className="blue-map-field blue-map-field--full">
-        <span>BLUE MAP CLI JAR</span>
-        <input
-          value={settings.cliJarPath}
-          placeholder="C:\\Program Files\\BlueMap\\BlueMap-cli.jar"
-          spellCheck={false}
-          onChange={(event) => update({ cliJarPath: event.target.value })}
-        />
-      </label>
+        <label className="blue-map-field">
+          <span>РАБОЧАЯ ПАПКА</span>
+          <input
+            value={settings.workingDir}
+            placeholder="Папка с JAR-файлом"
+            spellCheck={false}
+            onChange={(event) => update({ workingDir: event.target.value })}
+          />
+        </label>
 
-      <label className="blue-map-field">
-        <span>WORKING DIR</span>
-        <input
-          value={settings.workingDir}
-          placeholder="jar folder"
-          spellCheck={false}
-          onChange={(event) => update({ workingDir: event.target.value })}
-        />
-      </label>
+        <label className="blue-map-field">
+          <span>ПУТЬ К JAVA</span>
+          <input
+            value={settings.javaPath}
+            placeholder="java"
+            spellCheck={false}
+            onChange={(event) => update({ javaPath: event.target.value })}
+          />
+        </label>
 
-      <label className="blue-map-field">
-        <span>JAVA PATH</span>
-        <input
-          value={settings.javaPath}
-          placeholder="java"
-          spellCheck={false}
-          onChange={(event) => update({ javaPath: event.target.value })}
-        />
-      </label>
-
-      <div className="blue-map-checkboxes">
-        <ElementCheckbox
-          label="BACKGROUND RENDER"
-          checked={settings.renderOnStart}
-          onChange={(renderOnStart) => update({ renderOnStart })}
-        />
-        <ElementCheckbox
-          label="LIVE UPDATE"
-          checked={settings.updateOnStart}
-          onChange={(updateOnStart) => update({ updateOnStart })}
-        />
-      </div>
-
-      <div className="blue-map-subhead">CONTROL</div>
+        <div className="blue-map-checkboxes">
+          <ElementCheckbox
+            label="ФОНОВЫЙ РЕНДЕР"
+            checked={settings.renderOnStart}
+            onChange={(renderOnStart) => update({ renderOnStart })}
+          />
+          <ElementCheckbox
+            label="ОБНОВЛЕНИЕ КАРТЫ"
+            checked={settings.updateOnStart}
+            onChange={(updateOnStart) => update({ updateOnStart })}
+          />
+        </div>
+      </PluginSettingsGroup>
+      <div className="blue-map-subhead">УПРАВЛЕНИЕ КАРТОЙ</div>
 
       <div className="blue-map-controls">
         <button type="button" disabled={!canSetup} onClick={() => void setupBlueMap()}>
-          SETUP
+          ПОДГОТОВИТЬ
         </button>
         <button type="button" disabled={!canStart} onClick={() => void startBlueMap()}>
-          {busy ? "WORKING" : "START CLI"}
+          {busy ? "Выполняется…" : "ЗАПУСТИТЬ"}
         </button>
         <button type="button" disabled={!canStop} onClick={() => void stopBlueMap()}>
-          STOP
+          ОСТАНОВИТЬ
         </button>
         <button type="button" disabled={busy} onClick={() => void monitor.refresh()}>
-          REFRESH
+          ОБНОВИТЬ
         </button>
         <button
           type="button"
           disabled={!canOpen}
           onClick={() => setPreviewOpen((current) => !current)}
         >
-          {previewOpen ? "HIDE" : "VIEW"}
+          {previewOpen ? "СКРЫТЬ КАРТУ" : "ПОКАЗАТЬ КАРТУ"}
         </button>
         <button type="button" disabled={!canOpen} onClick={() => void openBrowser()}>
-          BROWSER
+          В БРАУЗЕРЕ
         </button>
         <button type="button" disabled={!canOpen} onClick={() => void openWindow()}>
-          WINDOW
+          В ОКНЕ
         </button>
       </div>
 
       <div className="blue-map-status">
         <div>
-          <span>STATE</span>
+          <span>СОСТОЯНИЕ</span>
           <strong>{formatStatusValue(status?.state)}</strong>
         </div>
         <div>
@@ -234,11 +244,11 @@ function BlueMapSettingsEditor({
           <strong>{formatStatusValue(status?.url ?? previewUrl)}</strong>
         </div>
         <div>
-          <span>WORK DIR</span>
+          <span>РАБОЧАЯ ПАПКА</span>
           <strong>{formatStatusValue(status?.workingDir || settings.workingDir)}</strong>
         </div>
         <div>
-          <span>WORLD</span>
+          <span>МИР</span>
           <strong>{formatStatusValue(status?.worldPath)}</strong>
         </div>
       </div>
@@ -253,13 +263,20 @@ function BlueMapSettingsEditor({
         </div>
       )}
 
-      <div className="blue-map-log" aria-live="polite">
-        {(status?.logs ?? []).length === 0 ? (
-          <span>NO LOGS</span>
-        ) : (
-          status?.logs.slice(-12).map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
-        )}
-      </div>
+      <PluginSettingsGroup
+        title="ЖУРНАЛ СЕРВЕРА"
+        description={`${status?.logs.length ?? 0} событий · сообщения BlueMap`}
+      >
+        <div className="blue-map-log" aria-live="polite">
+          {(status?.logs ?? []).length === 0 ? (
+            <span>Пока нет событий</span>
+          ) : (
+            status?.logs
+              .slice(-12)
+              .map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
+          )}
+        </div>
+      </PluginSettingsGroup>
     </div>
   );
 }

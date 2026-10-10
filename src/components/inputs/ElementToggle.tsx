@@ -10,6 +10,7 @@ interface ElementToggleProps {
   size?: "normal" | "small" | "large" | number;
   mascotOffSwitch?: boolean;
   expanded?: boolean;
+  expandedControls?: string;
   onToggleExpanded?: () => void;
   guideTarget?: string;
 }
@@ -34,6 +35,7 @@ export function ElementToggle({
   size = "normal",
   mascotOffSwitch = false,
   expanded,
+  expandedControls,
   onToggleExpanded,
   guideTarget,
 }: ElementToggleProps) {
@@ -68,6 +70,7 @@ export function ElementToggle({
             className={`settings-toggle-expand${expanded ? " expanded" : ""}`}
             onClick={onToggleExpanded}
             aria-expanded={expanded}
+            aria-controls={expandedControls}
             aria-label={`${expanded ? "Скрыть" : "Показать"} дополнительные настройки ${settings.title}`}
           >
             <svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true">
