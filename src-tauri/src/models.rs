@@ -568,6 +568,8 @@ pub struct MineflayerBotPluginSettings {
     #[serde(default = "default_true")]
     pub stay_on_water: bool,
     #[serde(default)]
+    pub anti_knockback: bool,
+    #[serde(default)]
     pub auto_follow_on_spawn: bool,
     #[serde(default)]
     pub announce_on_spawn: bool,
@@ -1043,6 +1045,7 @@ impl Default for MineflayerBotPluginSettings {
             can_dig: false,
             max_drop_down: default_mineflayer_bot_max_drop_down(),
             stay_on_water: true,
+            anti_knockback: false,
             auto_follow_on_spawn: false,
             announce_on_spawn: false,
             spawn_message: default_mineflayer_bot_spawn_message(),
@@ -1392,6 +1395,20 @@ mod loader_schema_tests {
             serde_json::from_value(serde_json::json!({ "stayOnWater": false })).unwrap();
         assert!(!parsed.stay_on_water);
         assert_eq!(serde_json::to_value(parsed).unwrap()["stayOnWater"], false);
+    }
+
+    #[test]
+    fn preserves_anti_knockback_preference_with_disabled_legacy_default() {
+        assert!(!MineflayerBotPluginSettings::default().anti_knockback);
+        let legacy: MineflayerBotPluginSettings =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!legacy.anti_knockback);
+        for enabled in [true, false] {
+            let parsed: MineflayerBotPluginSettings =
+                serde_json::from_value(serde_json::json!({ "antiKnockback": enabled })).unwrap();
+            assert_eq!(parsed.anti_knockback, enabled);
+            assert_eq!(serde_json::to_value(parsed).unwrap()["antiKnockback"], enabled);
+        }
     }
 
     #[test]

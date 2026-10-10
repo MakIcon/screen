@@ -124,6 +124,7 @@ struct WorkerConnectionConfig {
 #[serde(rename_all = "camelCase")]
 struct WorkerBehaviorConfig {
     stay_on_water: bool,
+    anti_knockback: bool,
     auto_follow_on_spawn: bool,
     announce_on_spawn: bool,
     spawn_message: String,
@@ -479,6 +480,7 @@ pub async fn start_mineflayer_bot(
         },
         behavior: WorkerBehaviorConfig {
             stay_on_water: plugin.stay_on_water,
+            anti_knockback: plugin.anti_knockback,
             auto_follow_on_spawn: plugin.auto_follow_on_spawn,
             announce_on_spawn: plugin.announce_on_spawn,
             spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),
@@ -553,7 +555,7 @@ pub async fn start_mineflayer_bot(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_extra_owners, WorkerMovementConfig};
+    use super::{parse_extra_owners, WorkerBehaviorConfig, WorkerMovementConfig};
 
     #[test]
     fn parses_and_deduplicates_extra_owners() {
@@ -561,6 +563,21 @@ mod tests {
             parse_extra_owners("Alex, steve\nALEX; Builder"),
             vec!["Alex", "steve", "Builder"]
         );
+    }
+
+    #[test]
+    fn sends_anti_knockback_preference_to_worker() {
+        for enabled in [true, false] {
+            let settings = WorkerBehaviorConfig {
+                stay_on_water: true,
+                anti_knockback: enabled,
+                auto_follow_on_spawn: false,
+                announce_on_spawn: false,
+                spawn_message: String::new(),
+                log_path_updates: false,
+            };
+            assert_eq!(serde_json::to_value(settings).unwrap()["antiKnockback"], enabled);
+        }
     }
 
     #[test]

@@ -13,6 +13,118 @@ const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 
 test(
+  "bundled worker maintains ocean sprint speed across route prefixes and releases it on stop",
+  { timeout: 12000 },
+  async (t) => {
+    const world = createFlatWorld("26.1.2", 56, { renderDistance: 3 });
+    for (let x = -4; x <= 40; x++)
+      for (let z = -4; z <= 4; z++)
+        for (let y = 56; y <= 63; y++) world.setBlock(new Vec3(x, y, z), "water");
+    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 62, 0.5), { world });
+    const navigator = worker.configurePathfinder(rig.bot, {
+      allowSprinting: true,
+      allowParkour: true,
+      canDig: false,
+      maxDropDown: 3,
+    });
+    Object.assign(navigator.pathfinderSettings, {
+      tickTimeoutMs: 1,
+      routePrefixMs: 1,
+      routePrefixLength: 6,
+    });
+    const speeds = [];
+    let interruptions = 0,
+      prefixes = 0;
+    rig.bot.on("pathGenerated", (path) => {
+      if (path.status === "partial") prefixes++;
+    });
+    rig.bot.on("physicsTick", () => {
+      const e = rig.bot.entity;
+      if (e.position.x < 5 || e.position.x > 24) return;
+      speeds.push(Math.hypot(e.velocity.x, e.velocity.z));
+      if (
+        !e.swimming ||
+        !rig.bot.getControlState("forward") ||
+        !rig.bot.getControlState("sprint") ||
+        rig.bot.getControlState("sneak")
+      )
+        interruptions++;
+    });
+    t.signal.addEventListener(
+      "abort",
+      () => {
+        void navigator.stop();
+      },
+      { once: true },
+    );
+    const running = navigator.goto(new pathfinder.goals.GoalBlock(32, 63, 0));
+    try {
+      while (rig.bot.entity.position.x < 24) await rig.bot.waitForTicks(1);
+      await navigator.stop();
+      await running;
+      const mean = speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length;
+      assert.ok(prefixes >= 2);
+      assert.ok(mean > 0.17 && mean < 0.178, `cruise speed=${mean}`);
+      assert.equal(interruptions, 0);
+      assert.equal(rig.bot.getControlState("forward"), false);
+      assert.equal(rig.bot.getControlState("sprint"), false);
+      const stopped = rig.bot.entity.position.clone();
+      await rig.bot.waitForTicks(15);
+      assert.ok(
+        rig.bot.entity.position.xzDistanceTo(stopped) < 2,
+        "no delayed route resumes after stop",
+      );
+      assert.equal(rig.bot.getControlState("forward"), false);
+      assert.equal(rig.bot.getControlState("sprint"), false);
+      assert.ok(Math.hypot(rig.bot.entity.velocity.x, rig.bot.entity.velocity.z) < 0.04);
+    } finally {
+      await navigator.stop();
+      await running;
+      await navigator.destroy();
+      rig.stopPassivePhysics();
+    }
+  },
+);
+
+for (const version of ["1.20.4", "26.1.2"])
+  for (const diagonal of [false, true]) {
+    test(
+      `bundled worker completes ${diagonal ? "four-by-four diagonal" : "four-empty-block"} parkour on ${version}`,
+      { timeout: 7000 },
+      async () => {
+        const world = createFlatWorld(version, -64, { renderDistance: 1 });
+        for (let x = -5; x <= 0; x++)
+          for (let z = -5; z <= (diagonal ? 0 : 2); z++)
+            world.setBlock(new Vec3(x, 63, z), "stone");
+        const landing = new Vec3(diagonal ? 4 : 5, 64, diagonal ? 4 : 0);
+        world.setBlock(landing.offset(0, -1, 0), "stone");
+        const { rig } = createCacheWorld(version, 64, new Vec3(-2.5, 64, diagonal ? -2.2 : 0.2), {
+          world,
+        });
+        const navigator = worker.configurePathfinder(rig.bot, {
+          allowSprinting: true,
+          allowParkour: true,
+          canDig: false,
+          maxDropDown: 3,
+        });
+        let lowest = 64;
+        rig.bot.on("physicsTick", () => {
+          lowest = Math.min(lowest, rig.bot.entity.position.y);
+        });
+        try {
+          await navigator.goto(pathfinder.goals.GoalBlock.fromVec(landing));
+          assert.ok(lowest >= 63.99, `fell to ${lowest}`);
+          assert.equal(rig.bot.entity.onGround, true);
+          assert.ok(rig.bot.entity.position.floored().equals(landing));
+        } finally {
+          await navigator.destroy();
+          rig.stopPassivePhysics();
+        }
+      },
+    );
+  }
+
+test(
   "bundled worker swims to shore before building to a floating platform",
   { timeout: 26000 },
   async (t) => {

@@ -483,13 +483,15 @@ function createCombatController(
     );
   }
   function chooseMode() {
-    const crystalAvailable =
-      settings.crystalEnabled &&
-      (settings.crystalBreak ||
-        (settings.crystalPlace && carriedItems(bot).some((item) => item.name === "end_crystal")));
+    const hasCrystals =
+      settings.crystalPlace && carriedItems(bot).some((item) => item.name === "end_crystal");
+    const crystalAvailable = settings.crystalEnabled && (settings.crystalBreak || hasCrystals);
     if (requestedStyle === "crystal")
       return crystalAvailable ? "crystal" : settings.meleeFallback ? "melee" : null;
-    if (requestedStyle === "auto" && crystalAvailable && crystals.active) return "crystal";
+    // Approach with the crystal controller from the start. Starting melee while
+    // a base is out of reach adds strafing/criticals before the first placement.
+    if (requestedStyle === "auto" && crystalAvailable && (hasCrystals || crystals.active))
+      return "crystal";
     if (
       requestedStyle === "auto" &&
       crystalAvailable &&
@@ -622,9 +624,14 @@ function createCombatController(
         onStatus(`crystal waiting: ${crystals.reason}`);
         nextCrystalStatusAt = now() + 2000;
       }
-      // Close the gap using the same navigator; retry placement after reaching range.
-      if (distance(enemy) > settings.crystalPlaceRange)
-        bot.pathfinder.setGoal({ entity: enemy, rangeSq: 9 });
+      // Stay still while the server confirms the current build/place/break cycle.
+      if (crystals.active || distance(enemy) <= settings.crystalPlaceRange) {
+        await bot.pathfinder.stop();
+        if (rev === generation && target === enemy) bot.clearControlStates();
+      } else {
+        const range = Math.max(1, Math.min(3, settings.crystalPlaceRange - 0.5));
+        bot.pathfinder.setGoal({ entity: enemy, rangeSq: range * range });
+      }
       return;
     }
     await bot.pathfinder.stop();
@@ -658,11 +665,13 @@ function createCombatController(
       await bot._genericPlace(verified.base, verified.face, {
         forceLook: "ignore",
         swingArm: "right",
+        delta: verified.aim.minus(verified.base.position),
       });
     else
       await bot._placeBlockWithOptions(verified.reference, verified.face, {
         forceLook: "ignore",
         swingArm: "right",
+        delta: verified.aim.minus(verified.reference.position),
       });
     if (rev === generation)
       onStatus(

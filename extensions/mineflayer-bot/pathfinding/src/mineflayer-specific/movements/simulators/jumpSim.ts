@@ -132,7 +132,16 @@ export class JumpSim extends BaseSimulator<PlayerState> {
             changed = true
           }
 
-          if (ticks > 0 && srcAABBs.every((src) => !src.intersects(playerBB)) && !jump) {
+          const feet = playerBB.clone(); feet.minY = state.pos.y - 1e-6; feet.maxY = state.pos.y + 1e-6
+          let supported = false
+          for (let x = Math.floor(feet.minX + 1e-7); x <= Math.floor(feet.maxX - 1e-7); x++) {
+            for (let z = Math.floor(feet.minZ + 1e-7); z <= Math.floor(feet.maxZ - 1e-7); z++) {
+              supported ||= this.world.getBlockInfo(new Vec3(x, Math.floor(feet.minY), z)).getBBs().some(bb => bb.collides(feet))
+            }
+          }
+          // Leaving a block in the middle of a runway is not the takeoff.
+          // Native physics allows the last grounded tick beyond the ledge.
+          if (ticks > 0 && state.onGround && !supported && !jump) {
             state.control.jump = true
             jump = true
           } else {

@@ -35,6 +35,8 @@ for (const dir of ["pathfinding/src", "pathfinding/tests"]) await collect(dir);
 for (const file of [
   "worker.cjs",
   "worker.test.mjs",
+  "knockback.cjs",
+  "knockback.test.mjs",
   "combat.cjs",
   "combat-defaults.json",
   "combat.test.mjs",

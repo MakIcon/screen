@@ -162,6 +162,23 @@ var require_climbablePhysics = __commonJS({
     var vineNames = /* @__PURE__ */ new Set(["twisting_vines", "twisting_vines_plant", "weeping_vines", "weeping_vines_plant"]);
     exports2.climbableNames = /* @__PURE__ */ new Set(["ladder", "vine", ...vineNames]);
     var ClimbAwarePhysics = class extends mineflayer_physics_util_12.BotcraftPhysics {
+      constructor(registry) {
+        super(registry);
+        this.simulationAttributes = /* @__PURE__ */ new WeakMap();
+        const internal = this;
+        internal.setSprinting = (context, value) => {
+          context.state.sprinting = value;
+        };
+      }
+      simulate(context, world) {
+        const player = context.state;
+        player.lastOnGround = player.onGround;
+        if (this.simulationAttributes.get(player) !== player.attributes) {
+          player.attributes = structuredClone(player.attributes ?? {});
+          this.simulationAttributes.set(player, player.attributes);
+        }
+        return super.simulate(context, world);
+      }
       isInClimbable(player, world) {
         return player.gameMode !== "spectator" && (vineNames.has(world.getBlock(player.pos)?.name ?? "") || super.isInClimbable(player, world));
       }
@@ -1263,6 +1280,7 @@ var require_interactionUtils = __commonJS({
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var exceptions_1 = require_exceptions();
+    var climbablePhysics_12 = require_climbablePhysics();
     var utils_1 = require_utils();
     var customBlockEvents_1 = require_customBlockEvents();
     var debug = require("debug");
@@ -1369,7 +1387,7 @@ var require_interactionUtils = __commonJS({
         const res = await this.performInfo(bot, ticks);
         if (res.ticks < Infinity)
           return true;
-        const ectx = new mineflayer_physics_util_12.BotcraftPhysics(bot.registry);
+        const ectx = new climbablePhysics_12.ClimbAwarePhysics(bot.registry);
         const state = mineflayer_physics_util_12.EPhysicsCtx.FROM_BOT(ectx, bot);
         const flag0 = bot.entity.onGround;
         for (let i = 0; i < ticks; i++) {
@@ -2371,6 +2389,7 @@ var require_movement = __commonJS({
     var cacheWorld_12 = require_cacheWorld();
     var interactionUtils_1 = require_interactionUtils();
     var costs_1 = require_costs();
+    var climbablePhysics_12 = require_climbablePhysics();
     exports2.DEFAULT_MOVEMENT_OPTS = {
       allowJumpSprint: true,
       allowAirStrafe: false,
@@ -2477,10 +2496,10 @@ var require_movement = __commonJS({
         return this.currentMove.toBreak?.filter((b) => !b.allowExit).length ?? 0;
       }
       toPlace() {
-        return this.currentMove.toPlace?.filter((b) => !b.allowExit) ?? [];
+        return this.currentMove.toPlace?.filter((b) => !b.allowExit && (b.isPerforming || b.needToPerform(this.bot))) ?? [];
       }
       toPlaceLen() {
-        return this.currentMove.toPlace?.filter((b) => !b.allowExit).length ?? 0;
+        return this.toPlace().length;
       }
       getBlock(pos, dx, dy, dz) {
         return this.world.getBlock(new vec3_1.Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
@@ -2634,7 +2653,7 @@ var require_movement = __commonJS({
     var SimMovement = class extends Movement {
       constructor(bot, world, settings) {
         super(bot, world, settings);
-        this.sim = new mineflayer_physics_util_12.BaseSimulator(new mineflayer_physics_util_12.BotcraftPhysics(bot.registry));
+        this.sim = new mineflayer_physics_util_12.BaseSimulator(new climbablePhysics_12.ClimbAwarePhysics(bot.registry));
         this.stateCtx = mineflayer_physics_util_12.EPhysicsCtx.FROM_BOT(this.sim.ctx, bot);
       }
       simulateUntil(...args) {
@@ -2913,7 +2932,16 @@ var require_jumpSim = __commonJS({
           if (jump && state.pos.xzDistanceTo(goalCorner) < 0.5 && !changed) {
             changed = true;
           }
-          if (ticks2 > 0 && srcAABBs.every((src) => !src.intersects(playerBB)) && !jump) {
+          const feet = playerBB.clone();
+          feet.minY = state.pos.y - 1e-6;
+          feet.maxY = state.pos.y + 1e-6;
+          let supported = false;
+          for (let x = Math.floor(feet.minX + 1e-7); x <= Math.floor(feet.maxX - 1e-7); x++) {
+            for (let z = Math.floor(feet.minZ + 1e-7); z <= Math.floor(feet.maxZ - 1e-7); z++) {
+              supported || (supported = this.world.getBlockInfo(new vec3_1.Vec3(x, Math.floor(feet.minY), z)).getBBs().some((bb) => bb.collides(feet)));
+            }
+          }
+          if (ticks2 > 0 && state.onGround && !supported && !jump) {
             state.control.jump = true;
             jump = true;
           } else {
@@ -3211,14 +3239,59 @@ var require_movementUtils = __commonJS({
       }
     };
     exports2.JumpCalculator = JumpCalculator;
+    var LiveParkourPhysics = class extends climbablePhysics_12.ClimbAwarePhysics {
+      constructor(bot) {
+        super(bot.registry);
+        this.bot = bot;
+        this.states = /* @__PURE__ */ new WeakMap();
+      }
+      simulate(context, world) {
+        const player = context.state;
+        let live = this.states.get(player);
+        if (live == null) {
+          const NativeState = require("prismarine-physics").PlayerState;
+          live = new NativeState(this.bot, player.control);
+          this.states.set(player, live);
+        }
+        live.pos = player.pos.clone();
+        live.vel = player.vel.clone();
+        live.control = player.control;
+        live.yaw = player.yaw;
+        live.pitch = player.pitch;
+        live.attributes = structuredClone(player.attributes ?? {});
+        for (const key of ["onGround", "isInWater", "isInLava", "isInWeb", "isCollidedHorizontally", "isCollidedVertically", "jumpTicks", "jumpQueued"])
+          live[key] = player[key];
+        this.bot.physics.simulatePlayer(live, world);
+        player.pos.set(live.pos.x, live.pos.y, live.pos.z);
+        player.vel.set(live.vel.x, live.vel.y, live.vel.z);
+        Object.assign(player, Object.fromEntries(["onGround", "isInWater", "isInLava", "isInWeb", "isCollidedHorizontally", "isCollidedVertically", "jumpTicks", "jumpQueued"].map((key) => [key, live[key]])));
+        player.lastOnGround = player.onGround;
+        return player;
+      }
+    };
     var ParkourJumpHelper = class {
       constructor(bot, world) {
         this.bot = bot;
-        this.sim = new jumpSim_1.JumpSim(new climbablePhysics_12.ClimbAwarePhysics(bot.registry), world);
+        this.sim = new jumpSim_1.JumpSim(new LiveParkourPhysics(bot), world);
         this.world = world;
       }
       _buildBackupCandidates(bbs, goalVert, orgPos) {
         const candidates = /* @__PURE__ */ new Map();
+        const direction = goalVert.minus(orgPos);
+        direction.y = 0;
+        const aligned = [];
+        if (direction.norm() > 1e-6) {
+          direction.normalize();
+          for (const bb of bbs) {
+            const distances = [
+              direction.x > 1e-6 ? (orgPos.x - bb.minX + 0.25) / direction.x : direction.x < -1e-6 ? (orgPos.x - bb.maxX - 0.25) / direction.x : Infinity,
+              direction.z > 1e-6 ? (orgPos.z - bb.minZ + 0.25) / direction.z : direction.z < -1e-6 ? (orgPos.z - bb.maxZ - 0.25) / direction.z : Infinity
+            ];
+            const distance = Math.min(...distances);
+            if (Number.isFinite(distance) && distance > 0)
+              aligned.push(orgPos.minus(direction.scaled(distance)));
+          }
+        }
         for (const bb of bbs) {
           for (const vert of bb.toVertices()) {
             const offsetX = Math.sign(vert.x - goalVert.x) * 0.3;
@@ -3227,7 +3300,7 @@ var require_movementUtils = __commonJS({
             candidates.set(`${candidate.x},${candidate.y},${candidate.z}`, candidate);
           }
         }
-        return [...candidates.values()].sort((a, b) => {
+        return [...aligned, ...[...candidates.values()].sort((a, b) => {
           const aOrgDist = a.xzDistanceTo(orgPos);
           const bOrgDist = b.xzDistanceTo(orgPos);
           if (Math.abs(aOrgDist - bOrgDist) > 1e-6)
@@ -3237,7 +3310,7 @@ var require_movementUtils = __commonJS({
           if (Math.abs(aGoalDist - bGoalDist) > 1e-6)
             return bGoalDist - aGoalDist;
           return 0;
-        });
+        })];
       }
       findGoalVertex(goal) {
         const pos = this.bot.entity.position;
@@ -3251,12 +3324,14 @@ var require_movementUtils = __commonJS({
           (0, vec3_1.default)(goal.maxX, goal.maxY, closerZ)
         ];
         if (goal.minX - pos.x < 1 && pos.x - goal.maxX < 1) {
-          verts.push((0, vec3_1.default)(goal.maxX - pos.x + goal.minX, goal.maxY, goal.minZ));
-          verts.push((0, vec3_1.default)(goal.maxX - pos.x + goal.minX, goal.maxY, goal.maxZ));
+          const x = Math.max(goal.minX, Math.min(goal.maxX, pos.x));
+          verts.push((0, vec3_1.default)(x, goal.maxY, goal.minZ));
+          verts.push((0, vec3_1.default)(x, goal.maxY, goal.maxZ));
         }
         if (goal.minZ - pos.z < 1 && pos.z - goal.maxZ < 1) {
-          verts.push((0, vec3_1.default)(goal.minX, goal.maxY, goal.maxZ - pos.z + goal.minZ));
-          verts.push((0, vec3_1.default)(goal.maxX, goal.maxY, goal.maxZ - pos.z + goal.minZ));
+          const z = Math.max(goal.minZ, Math.min(goal.maxZ, pos.z));
+          verts.push((0, vec3_1.default)(goal.minX, goal.maxY, z));
+          verts.push((0, vec3_1.default)(goal.maxX, goal.maxY, z));
         }
         let minDist = Infinity;
         let minVert = verts[0];
@@ -3354,7 +3429,14 @@ var require_movementUtils = __commonJS({
         const lazyFix = backupTarget ?? this.findBackupVertex(bbs, goalVert);
         const reached = jumpSim_1.JumpSim.getReachedAABB(goalBBs);
         const ctx = mineflayer_physics_util_12.EPhysicsCtx.FROM_BOT(this.sim.ctx, this.bot);
-        this.sim.simulateBackUpBeforeJump(ctx, lazyFix, true, true, 40);
+        const takeoff = lazyFix.offset(0, orgPos.y - lazyFix.y, 0);
+        if (getUnderlyingBBs(this.world, takeoff, 0.6).length === 0)
+          return false;
+        ctx.state.pos.set(takeoff.x, takeoff.y, takeoff.z);
+        ctx.state.vel.set(0, 0, 0);
+        ctx.state.onGround = true;
+        ctx.state.lastOnGround = true;
+        ctx.state.jumpTicks = 0;
         const state = this.sim.simulateJumpFromEdgeOfBlock(ctx, bbs, goalVert, goalBBs, true, 40);
         return reached(state, 0);
       }
@@ -3433,6 +3515,7 @@ var require_movementExecutor = __commonJS({
       }
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
+        this.controlGeneration = 0;
         this.aborted = false;
         this.task = new mineflayer_util_plugin_12.Task();
         this.engine = new climbablePhysics_12.ClimbAwarePhysics(bot.registry);
@@ -3441,6 +3524,7 @@ var require_movementExecutor = __commonJS({
       }
       reset() {
         this.aborted = false;
+        this.controlGeneration++;
         delete this.resetReason;
         this.task.finish();
       }
@@ -3622,13 +3706,19 @@ var require_movementExecutor = __commonJS({
         let bbCheckCond = false;
         let weGood = false;
         const aboveWater = !ectx.state.isInWater && !ectx.state.onGround && this.bot.pathfinder.world.getBlockInfo(this.bot.entity.position.floored().translate(0, -0.6, 0)).liquid;
+        let fluidTarget = target;
+        if ((aboveWater || ectx.state.isInWater) && startMove.entryPos.y === target.y && this.world.getBlockInfo(target).water) {
+          const atSwimHeight = target.offset(0, normPos.y - target.y, 0);
+          if (this.world.getBlockInfo(atSwimHeight).water)
+            fluidTarget = atSwimHeight;
+        }
         if (aboveWater) {
-          bb1bl = this.bot.pathfinder.world.getBlockInfo(target.floored());
+          bb1bl = this.bot.pathfinder.world.getBlockInfo(fluidTarget.floored());
           bbCheckCond = bb1bl.walkthrough;
           const bb1s = mineflayer_util_plugin_12.AABB.fromBlockPos(bb1bl.position);
           weGood = bb1s.collides(bb0) && bbCheckCond;
         } else if (ectx.state.isInWater) {
-          bb1bl = this.bot.pathfinder.world.getBlockInfo(target.floored());
+          bb1bl = this.bot.pathfinder.world.getBlockInfo(fluidTarget.floored());
           bbCheckCond = bb1bl.liquid;
           const bb1s = mineflayer_util_plugin_12.AABB.fromBlock(bb1bl.position);
           weGood = bb1s.collides(bb0) && bbCheckCond;
@@ -3787,7 +3877,9 @@ var require_movementExecutor = __commonJS({
           towardPlayer.y = 0;
           if (route.norm() > 0.2 && towardPlayer.norm() > 0.3 && route.normalize().dot(towardPlayer.normalize()) > 0.85)
             target = player;
-          pitch = Math.max(-0.6, Math.min(0.6, Math.atan2(player.y - pos.y, Math.max(1, player.xzDistanceTo(pos)))));
+          if (!this.bot.entity.isInWater) {
+            pitch = Math.max(-0.6, Math.min(0.6, Math.atan2(player.y - pos.y, Math.max(1, player.xzDistanceTo(pos)))));
+          }
         }
         const dx = target.x - pos.x;
         const dz = target.z - pos.z;
@@ -3897,6 +3989,7 @@ var require_movementExecutor = __commonJS({
         }, controller, this.simCtx, this.world, maxTicks);
       }
       async postInitAlignToPath(startMove, endMove, opts) {
+        const generation = this.controlGeneration;
         if (endMove === void 0) {
           endMove = startMove;
           opts = {};
@@ -3922,6 +4015,8 @@ var require_movementExecutor = __commonJS({
             log(`postInitAlignToPath: failed yaw check (offset=${yawPitch.yaw - this.bot.entity.yaw})`);
           }
         }
+        if (generation !== this.controlGeneration)
+          return;
         (0, controls_1.botStrafeMovement)(this.bot, endMove.exitPos, true);
         (0, controls_1.botSmartMovement)(this.bot, endMove.exitPos, sprint);
       }
@@ -4000,7 +4095,7 @@ var require_movementExecutors = __commonJS({
       }
       async align(thisMove, tickCount, goal) {
         if (this.doWaterLogic()) {
-          this.bot.clearControlStates();
+          this.bot.setControlState("jump", false);
           return await super.align(thisMove, tickCount, goal);
         }
         const faceForward = await this.faceForward();
@@ -4038,7 +4133,10 @@ var require_movementExecutors = __commonJS({
         return this.isInitAligned(thisMove, target, opts);
       }
       async performInit(thisMove, currentIndex, path) {
-        this.bot.clearControlStates();
+        if (this.doWaterLogic())
+          this.bot.setControlState("jump", false);
+        else
+          this.bot.clearControlStates();
         const faceForward = await this.faceForward();
         if (faceForward) {
           await this.postInitAlignToPath(thisMove);
@@ -4101,6 +4199,8 @@ var require_movementExecutors = __commonJS({
             return false;
           }
         }
+        if (this.doWaterLogic() && this.isComplete(thisMove))
+          return true;
         if (!this.bot.entity.onGround && !this.bot.getControlState("jump") && !this.doWaterLogic() && this.canJump(thisMove, currentIndex, path) || this.bot.entity.position.y < Math.round(thisMove.entryPos.y) - 1) {
           throw new exceptions_1.CancelError(`ForwardMove: not on ground. Target pos: ${thisMove.exitPos}, us: ${this.bot.entity.position}`);
         }
@@ -4586,7 +4686,12 @@ var require_movementExecutors = __commonJS({
         this._lookAtInFlight = null;
         this._pendingLookTarget = null;
       }
+      get canInterrupt() {
+        return !this.executing || this.hasLeftGround && this.bot.entity.onGround;
+      }
       reset() {
+        this.stopTickControls();
+        this.tickFailure = void 0;
         this.executing = false;
         this.hasLeftGround = false;
         this.lockedYaw = null;
@@ -4596,6 +4701,54 @@ var require_movementExecutors = __commonJS({
         this.backupTarget = null;
         this._pendingLookTarget = null;
         super.reset();
+      }
+      stopTickControls() {
+        if (this.tickControls != null)
+          this.bot.off("physicsTick", this.tickControls);
+        this.tickControls = void 0;
+      }
+      startTickControls() {
+        if (this.tickControls != null)
+          return;
+        const move = this.currentMove;
+        const listener = () => {
+          if (this.currentMove !== move || this.aborted || this.bot.pathfinder.abortCalculation) {
+            this.stopTickControls();
+            return;
+          }
+          try {
+            const target = this._getTargetEyeVec(this._getTargetBlock(move));
+            if (this.backingUp) {
+              const state = this._advanceBackup(move);
+              if (state === "backing")
+                return;
+              if (state === "failed")
+                throw new exceptions_1.CancelError("ParkourExecutor: backup failed");
+              this._tryApproachWhenAligned(target);
+            }
+            if (!this.executing) {
+              if (this.bot.entity.onGround && this._isYawAlignedForApproach(target) && this.shitterTwo.simForwardMove(this._getTargetBlock(move), target))
+                this._startJumpExecution(target);
+              return;
+            }
+            if (!this.bot.entity.onGround && this.bot.entity.position.y > move.entryPos.y + 0.05)
+              this.hasLeftGround = true;
+            if (this.hasLeftGround && this.bot.entity.onGround) {
+              this.bot.setControlState("jump", false);
+              this.bot.setControlState("sprint", false);
+              this.bot.setControlState("sneak", true);
+              (0, controls_1.steerToPosition)(this.bot, move.exitPos, 0.08);
+              return;
+            }
+            this._lockCurrentYaw(this._desiredYawTo(target));
+            this._applySmartControls(target, !this.hasLeftGround && move.exitPos.y >= move.entryPos.y);
+          } catch (error) {
+            this.tickFailure = error instanceof Error ? error : new Error(String(error));
+            this.stopTickControls();
+          }
+        };
+        this.tickControls = listener;
+        this.bot.prependListener("physicsTick", listener);
       }
       isComplete(startMove, endMove, opts = {}) {
         const ret = super.isComplete(startMove, endMove, opts);
@@ -4678,10 +4831,14 @@ var require_movementExecutors = __commonJS({
       _applyBackupControls(thisMove, target) {
         this._lockCurrentYaw(this._desiredYawTo(target));
         void this._queueLookAtSync(target);
-        this._applySmartControls(target, false);
-        this.bot.setControlState("sneak", this._shouldSneakDuringBackup(thisMove, target));
+        this._applyLockedYaw();
+        (0, controls_1.steerToPosition)(this.bot, target, 0.025);
+        this.bot.setControlState("jump", false);
+        this.bot.setControlState("sprint", false);
+        this.bot.setControlState("sneak", true);
       }
       _startBackup(thisMove) {
+        this.stopTickControls();
         this.backupTarget ?? (this.backupTarget = this._getBackupTarget(thisMove));
         if (this.backupTarget == null) {
           this._debugLog("backup start failed: no backup target");
@@ -4691,20 +4848,13 @@ var require_movementExecutors = __commonJS({
         this.backupAttempted = true;
         this._debugLog("backup start:", this.backupTarget);
         this._applyBackupControls(thisMove, this.backupTarget);
+        this.startTickControls();
         return true;
       }
       _advanceBackup(thisMove) {
         this.backupTarget ?? (this.backupTarget = this._getBackupTarget(thisMove));
         if (this.backupTarget == null) {
           return "failed";
-        }
-        const jumpState = this._getJumpState(thisMove);
-        if (jumpState.canJumpFromEdge) {
-          this._debugLog("backup advance: jump-from-edge became available, switching out of backup");
-          this._clearBackupState();
-          this._clearLockedYaw();
-          this.bot.clearControlStates();
-          return "jump";
         }
         const dist = this.bot.entity.position.xzDistanceTo(this.backupTarget);
         const xzVel = this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0);
@@ -4717,13 +4867,14 @@ var require_movementExecutors = __commonJS({
         this.backupSettling = true;
         this.bot.clearControlStates();
         this.bot.setControlState("sneak", this._shouldSneakDuringBackup(thisMove, this.backupTarget));
-        if (xzVel.norm() > 0.05) {
+        if (xzVel.norm() > 3e-3) {
           this._debugLog("backup advance: waiting for velocity to settle", "target:", this.backupTarget, "xzVel:", xzVel.norm());
           return "backing";
         }
         this._clearBackupState();
         this._clearLockedYaw();
         this.bot.clearControlStates();
+        this.bot.setControlState("sneak", true);
         this._debugLog("backup recheck: reached target, retrying jump state");
         return "recheck";
       }
@@ -4758,13 +4909,14 @@ var require_movementExecutors = __commonJS({
         this.bot.setControlState("right", false);
         this.bot.setControlState("jump", false);
         this.bot.setControlState("sprint", false);
-        this.bot.setControlState("sneak", false);
+        this.bot.setControlState("sneak", this.bot.entity.onGround);
       }
       _startJumpExecution(target) {
         this.lockedYaw = this._desiredYawTo(target);
         this.executing = true;
         this.hasLeftGround = false;
         this._applySmartControls(target, true);
+        this.startTickControls();
       }
       _desiredYawTo(target) {
         const dx = target.x - this.bot.entity.position.x;
@@ -4790,9 +4942,18 @@ var require_movementExecutors = __commonJS({
           return false;
         }
         this._applySmartControls(targetEyeVec, false);
+        this.startTickControls();
         return true;
       }
       async align(thisMove, tickCount, goal) {
+        if (this.tickFailure != null)
+          throw this.tickFailure;
+        if (this.executing)
+          return true;
+        if (!this.bot.entity.onGround && !this.tooLowCheck(thisMove)) {
+          this.bot.setControlState("jump", false);
+          return false;
+        }
         this.executing = false;
         this.hasLeftGround = false;
         this._clearLockedYaw();
@@ -4848,7 +5009,7 @@ var require_movementExecutors = __commonJS({
             this._clearBackupState();
             this.bot.clearControlStates();
             this.bot.setControlState("sneak", true);
-            if (this.bot.entity.velocity.norm() < 1e-4) {
+            if (this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0).norm() < 3e-3) {
               throw new exceptions_1.CancelError("ParkourExecutor: will not make this jump after backing up!");
             }
           }
@@ -4867,6 +5028,8 @@ var require_movementExecutors = __commonJS({
         void this._queueLookAtSync(targetEyeVec);
       }
       performPerTick(thisMove, tickCount, currentIndex, path) {
+        if (this.tickFailure != null)
+          throw this.tickFailure;
         const target = this._getTargetBlock(thisMove);
         const targetEyeVec = this._getTargetEyeVec(target);
         if (this.tooLowCheck(thisMove))
@@ -4874,6 +5037,13 @@ var require_movementExecutors = __commonJS({
         if (this.executing) {
           if (!this.bot.entity.onGround && this.bot.entity.position.y > thisMove.entryPos.y + 0.05)
             this.hasLeftGround = true;
+          if (this.hasLeftGround && this.bot.entity.onGround) {
+            this.bot.setControlState("jump", false);
+            this.bot.setControlState("sprint", false);
+            this.bot.setControlState("sneak", true);
+            (0, controls_1.steerToPosition)(this.bot, thisMove.exitPos, 0.08);
+            return this.isComplete(thisMove);
+          }
           this._lockCurrentYaw(this._desiredYawTo(targetEyeVec));
           this._applySmartControls(targetEyeVec, !this.hasLeftGround && thisMove.exitPos.y >= thisMove.entryPos.y);
           return this.isComplete(thisMove);
@@ -8801,6 +8971,213 @@ var require_pathProducers = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js
+var require_surfaceSwimming = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.canContinueSwimming = canContinueSwimming;
+    exports2.installSurfaceSwimming = installSurfaceSwimming;
+    var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
+    var climbablePhysics_12 = require_climbablePhysics();
+    var controllers = /* @__PURE__ */ new WeakMap();
+    var water = (block) => block != null && (["water", "bubble_column", "kelp", "kelp_plant", "seagrass", "tall_seagrass"].includes(block.name) || block.getProperties?.().waterlogged === true);
+    function canContinueSwimming(bot) {
+      return bot.entity.swimming === true && bot.entity.isInWater === true && !bot.entity.onGround && bot.health !== 0 && bot.food > 6 && !bot.usingHeldItem && bot.getControlState("forward") && !bot.getControlState("back") && !bot.entity.isCollidedHorizontally && [0.7, 1.8].every((distance) => water(bot.blockAt(bot.entity.position.offset(-Math.sin(bot.entity.yaw) * distance, 0, -Math.cos(bot.entity.yaw) * distance))));
+    }
+    function surfaceHeight(bot) {
+      let block = bot.blockAt(bot.entity.position);
+      if (!water(block))
+        return;
+      for (let i = 0; i < 8; i++) {
+        const above = bot.blockAt(block.position.offset(0, 1, 0));
+        if (above == null)
+          return;
+        if (!water(above)) {
+          const level = block.name === "water" ? Number(block.getProperties().level ?? 0) : 0;
+          return block.position.y + 1 - ((level >= 8 ? 0 : level) + 1) / 9;
+        }
+        block = above;
+      }
+    }
+    var SwimmingPhysics = class extends climbablePhysics_12.ClimbAwarePhysics {
+      constructor(registry) {
+        super(registry);
+        this.checkingPose = false;
+        const internal = this;
+        const updatePoses = internal.updatePoses.bind(this);
+        internal.updatePoses = (context, world) => {
+          this.checkingPose = true;
+          try {
+            updatePoses(context, world);
+          } finally {
+            this.checkingPose = false;
+          }
+        };
+        internal.isSwimming = (context) => context.state.swimming;
+      }
+      getWaterInBBs(...args) {
+        return this.checkingPose ? [] : super.getWaterInBBs(...args);
+      }
+    };
+    function installSwimmingPhysics(bot, travelling) {
+      const physics = bot.physics;
+      const originalSimulate = physics.simulatePlayer;
+      let engine;
+      let context;
+      const simulate = (state, world) => {
+        if (bot.entity.onGround && !bot.entity.isInWater || !travelling() && !context?.state.swimming) {
+          if (context != null) {
+            Object.assign(bot.entity, { swimming: false, sprinting: false, crouching: false, height: 1.8, eyeHeight: 1.62, pose: 0 });
+          }
+          context = void 0;
+          return originalSimulate.call(physics, state, world);
+        }
+        const previousPose = context?.state.pose;
+        engine ?? (engine = new SwimmingPhysics(bot.registry));
+        context ?? (context = mineflayer_physics_util_12.EPhysicsCtx.FROM_BOT(engine, bot));
+        const controls = mineflayer_physics_util_12.ControlStateHandler.DEFAULT();
+        for (const control of Object.keys(state.control))
+          controls.set(control, state.control[control]);
+        const player = context.state.update(bot, controls);
+        if (previousPose != null)
+          player.pose = previousPose;
+        player.pos.set(state.pos.x, state.pos.y, state.pos.z);
+        player.vel.set(state.vel.x, state.vel.y, state.vel.z);
+        player.onGround = state.onGround;
+        player.pitch = state.pitch;
+        engine.simulate(context, world);
+        state.pos.set(player.pos.x, player.pos.y, player.pos.z);
+        state.vel.set(player.vel.x, player.vel.y, player.vel.z);
+        for (const key of ["onGround", "isInWater", "isInLava", "isInWeb", "isCollidedHorizontally", "isCollidedVertically", "jumpTicks", "jumpQueued"]) {
+          state[key] = player[key];
+        }
+        const extra = {
+          swimming: player.swimming,
+          sprinting: player.sprinting,
+          crouching: player.crouching,
+          isUnderWater: player.isUnderWater,
+          height: player.height,
+          eyeHeight: player.eyeHeight,
+          pose: player.pose
+        };
+        const apply = state.apply;
+        state.apply = (target) => {
+          apply.call(state, target);
+          Object.assign(target.entity, extra);
+        };
+        return state;
+      };
+      physics.simulatePlayer = simulate;
+      return () => {
+        if (physics.simulatePlayer === simulate)
+          physics.simulatePlayer = originalSimulate;
+        if (context != null) {
+          Object.assign(bot.entity, { swimming: false, sprinting: false, crouching: false, height: 1.8, eyeHeight: 1.62, pose: 0 });
+        }
+      };
+    }
+    function installSurfaceSwimming(bot, enabled = true) {
+      const existing = controllers.get(bot);
+      if (existing != null) {
+        if (!enabled)
+          existing();
+        else
+          return existing;
+      }
+      if (!enabled)
+        return () => {
+        };
+      const originalSetControl = bot.setControlState;
+      let wantedJump = bot.getControlState("jump");
+      let wantedSneak = bot.getControlState("sneak");
+      let wantedSprint = bot.getControlState("sprint");
+      let waterSprint = false;
+      let alive = true;
+      let disposed = false;
+      const modern = bot.registry.version[">"]("1.13.2");
+      const floating = () => alive && bot.entity?.isInWater === true && bot.health !== 0;
+      const travelling = () => floating() && modern && bot.food > 6 && bot.getControlState("forward") && !bot.getControlState("back") && !bot.usingHeldItem && !bot.entity.isCollidedHorizontally && water(bot.blockAt(bot.entity.position.offset(0, -0.8, 0))) && [0.7, 1.8].every((distance) => water(bot.blockAt(bot.entity.position.offset(-Math.sin(bot.entity.yaw) * distance, 0, -Math.cos(bot.entity.yaw) * distance))));
+      const restorePhysics = modern ? installSwimmingPhysics(bot, travelling) : () => {
+      };
+      const applyWaterControls = () => {
+        const float = floating(), swim = travelling();
+        if (!float) {
+          originalSetControl.call(bot, "jump", wantedJump);
+          originalSetControl.call(bot, "sneak", wantedSneak);
+          if (waterSprint)
+            originalSetControl.call(bot, "sprint", wantedSprint);
+          waterSprint = false;
+          return;
+        }
+        const surface = surfaceHeight(bot);
+        const eyeY = bot.entity.position.y + (bot.entity.eyeHeight ?? 1.62);
+        const headWet = water(bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0))) && (surface == null || eyeY < surface);
+        const rise = swim ? bot.entity.swimming === true && (surface == null ? headWet : eyeY + Math.max(0, bot.entity.velocity.y) * 4 < surface + 0.04) : float;
+        originalSetControl.call(bot, "jump", wantedJump || rise);
+        originalSetControl.call(bot, "sneak", wantedSneak && !float || swim && !bot.entity.swimming && !headWet);
+        originalSetControl.call(bot, "sprint", swim || wantedSprint);
+        waterSprint = swim;
+      };
+      const setControl = (control, value) => {
+        if (control === "jump")
+          wantedJump = value;
+        else if (control === "sneak")
+          wantedSneak = value;
+        else if (control === "sprint")
+          wantedSprint = value;
+        if (!floating()) {
+          originalSetControl.call(bot, control, value);
+          return;
+        }
+        if (control === "jump" || control === "sneak" || control === "sprint") {
+          applyWaterControls();
+          return;
+        }
+        originalSetControl.call(bot, control, value);
+        if (control === "forward" || control === "back")
+          applyWaterControls();
+      };
+      const tick = applyWaterControls;
+      const death = () => {
+        alive = false;
+        wantedJump = false;
+        wantedSneak = false;
+        wantedSprint = false;
+        tick();
+      };
+      const spawn = () => {
+        alive = true;
+        tick();
+      };
+      const dispose = () => {
+        if (disposed)
+          return;
+        disposed = true;
+        bot.off("physicsTick", tick);
+        bot.off("death", death);
+        bot.off("spawn", spawn);
+        bot.off("end", dispose);
+        if (bot.setControlState === setControl)
+          bot.setControlState = originalSetControl;
+        originalSetControl.call(bot, "jump", wantedJump);
+        originalSetControl.call(bot, "sneak", wantedSneak);
+        originalSetControl.call(bot, "sprint", wantedSprint);
+        restorePhysics();
+        controllers.delete(bot);
+      };
+      bot.setControlState = setControl;
+      bot.on("physicsTick", tick);
+      bot.on("death", death);
+      bot.on("spawn", spawn);
+      bot.once("end", dispose);
+      controllers.set(bot, dispose);
+      tick();
+      return dispose;
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/pathExecutor.js
 var require_pathExecutor = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/pathExecutor.js"(exports2) {
@@ -8852,6 +9229,7 @@ var require_pathExecutor = __commonJS({
     var utils_1 = require_utils();
     var climb_1 = require_climb();
     var interactionUtils_1 = require_interactionUtils();
+    var surfaceSwimming_12 = require_surfaceSwimming();
     var debug = require("debug");
     var log = debug("minecraft-pathfinding:PathExecutor");
     var EMPTY_VEC = new vec3_1.Vec3(0, 0, 0);
@@ -8928,7 +9306,7 @@ var require_pathExecutor = __commonJS({
         }
         return currentIndex;
       }
-      async perform(path, goal, entry = 0) {
+      async perform(path, goal, entry = 0, continueSwimming) {
         const MAX_RECOVERY_DEPTH = 2;
         if (entry > MAX_RECOVERY_DEPTH) {
           throw new Error("Too many failures, exiting performing.");
@@ -8946,6 +9324,8 @@ var require_pathExecutor = __commonJS({
           const pos = bot.entity.position;
           if (!bot.entity.onGround && !this.host.world.getBlockInfo(pos).climbable && !bot.entity.isInWater)
             return false;
+          if (continueSwimming?.() === true && Math.floor(pos.x) === lastMove.x && Math.floor(pos.z) === lastMove.z)
+            return true;
           if (goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) {
             return goal.isEnd({ ...lastMove, exitPos: pos, x: pos.x, y: pos.y, z: pos.z });
           }
@@ -8962,6 +9342,7 @@ var require_pathExecutor = __commonJS({
         let pendingInit;
         let tickCount = 0;
         let settled = false;
+        let keptSwimming = false;
         let recoveryInFlight = false;
         const stopController = new climb_1.ClimbExecutor(bot, this.host.world, this.host.defaultMoveSettings);
         let resolveCompletion;
@@ -8978,13 +9359,14 @@ var require_pathExecutor = __commonJS({
         const executorSafeReset = (executor) => {
           executor?.reset();
         };
-        const finish = async () => {
+        const finish = async (completed = false) => {
           if (settled)
             return;
           settled = true;
           bot.off("physicsTick", moveListener);
           if (this.getCurrentExecutionId() === myExecutionId) {
-            await this.timeAsync("finish cleanup", async () => await this.host.cleanupBot());
+            keptSwimming = completed && continueSwimming?.() === true;
+            await this.timeAsync("finish cleanup", async () => await this.host.cleanupBot(false, keptSwimming));
           }
           resolveCompletion();
         };
@@ -9092,13 +9474,17 @@ var require_pathExecutor = __commonJS({
             if (executor == null) {
               throw new Error("No executor for movement type " + move.moveType.constructor.name);
             }
+            const previousMove = this.getCurrentMove() ?? localPath[currentIndex - 1];
+            const waterStroke = (candidate) => candidate != null && /^(Forward|Diagonal)$/.test(candidate.moveType.constructor.name) && candidate.toPlace.length === 0 && candidate.toBreak.length === 0 && this.host.world.getBlockInfo(candidate.exitPos).liquid;
+            const resumingSwim = currentIndex <= 1 && (0, surfaceSwimming_12.canContinueSwimming)(bot);
+            const keepSwimming = bot.entity.isInWater === true && (waterStroke(move) && (waterStroke(previousMove) || resumingSwim) || resumingSwim && move.moveType.constructor.name === "IdleMovement");
             this.setCurrentMove(move);
             this.setCurrentExecutor(executor);
             this.setCurrentIndex(currentIndex);
             this.setCurrentPath(localPath);
             log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId);
             tickCount = 0;
-            await this.timeAsync("prepare cleanup", async () => await this.host.cleanupBot());
+            await this.timeAsync("prepare cleanup", async () => await this.host.cleanupBot(false, keepSwimming));
             executor.loadMove(move);
             if (executor.isAlreadyCompleted(move, tickCount, goal)) {
               const nextIndex = this.findNextCurrentIdx(move, localPath, currentIndex);
@@ -9126,11 +9512,12 @@ var require_pathExecutor = __commonJS({
                 await finish();
                 return;
               }
-              const active = this.getCurrentMove();
+              const active = this.getCurrentMove() ?? localPath[localPath.length - 1];
               if (isAtGoal() && bot.entity.onGround && active?.toBreak.length === 0 && active.toPlace.length === 0) {
                 const target = localPath[localPath.length - 1].exitPos;
                 const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm();
-                if (speed > 0.035) {
+                const needsCentering = goal instanceof goals.GoalBlock && bot.entity.position.xzDistanceTo(target) > 0.25;
+                if (speed > 0.025 || needsCentering) {
                   stopController.adjustPosition(target, 0.08);
                   bot.setControlState("jump", false);
                   bot.setControlState("sprint", false);
@@ -9145,7 +9532,7 @@ var require_pathExecutor = __commonJS({
                 if (!hasWork) {
                   if (pendingOptimize == null) {
                     log(`execution ${myExecutionId} completed at ${bot.entity.position}`);
-                    await finish();
+                    await finish(true);
                     return;
                   }
                   return;
@@ -9279,7 +9666,7 @@ var require_pathExecutor = __commonJS({
             void fail(err);
           }).finally(() => {
             tickInFlight = false;
-            if (settled && this.getCurrentExecutionId() === myExecutionId)
+            if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId)
               bot.clearControlStates();
           });
         };
@@ -9430,7 +9817,7 @@ var require_shore = __commonJS({
                 continue;
               const onwardCost = Math.hypot(pos.x - goal.x, pos.z - goal.z) * costs_1.WALK_ONE_BLOCK_COST;
               const score = Math.hypot(pos.x - origin.x, pos.z - origin.z) * costs_1.WALK_ONE_IN_WATER_COST + onwardCost + (buildStep ? settings.placeCost : 0);
-              candidates.push({ goal: new ShoreGoal(pos, onwardCost), score });
+              candidates.push({ goal: new ShoreGoal(pos, onwardCost), score, buildStep });
               foundRadius = Math.min(foundRadius, radius);
               break;
             }
@@ -9439,8 +9826,9 @@ var require_shore = __commonJS({
       }
       if (candidates.length === 0)
         return;
-      candidates.sort((a, b) => a.score - b.score);
-      return new goals_1.GoalCompositeAny(...candidates.slice(0, 32).map((candidate) => candidate.goal));
+      const exits = candidates.filter((candidate) => !candidate.buildStep || !candidates.some((other) => !other.buildStep && other.goal.y === candidate.goal.y && Math.abs(other.goal.x - candidate.goal.x) + Math.abs(other.goal.z - candidate.goal.z) === 1));
+      exits.sort((a, b) => a.score - b.score);
+      return new goals_1.GoalCompositeAny(...exits.slice(0, 32).map((candidate) => candidate.goal));
     }
   }
 });
@@ -10267,6 +10655,7 @@ var require_ThePathfinder = __commonJS({
     var neo_1 = require_neo();
     var climb_1 = require_climb();
     var shore_1 = require_shore();
+    var surfaceSwimming_12 = require_surfaceSwimming();
     var momentum_2 = require_momentum();
     var ladder_provider_1 = require_ladder_provider();
     var ladder_executor_1 = require_ladder_executor();
@@ -10807,13 +11196,13 @@ var require_ThePathfinder = __commonJS({
                   moves = moves.slice(0, firstDig);
                 if (moves.length < 5)
                   continue;
-                const last = moves[moves.length - 1];
+                const last2 = moves[moves.length - 1];
                 const iceRim = movement_1.Movement.cardinalDirs.some((dir) => {
-                  let rim = last.exitPos;
+                  let rim = last2.exitPos;
                   for (let distance = 0; distance <= 6; distance++) {
                     const next = rim.plus(dir);
                     if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
-                      return (0, momentum_1.isIceBlock)(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) && routingGoal.heuristic({ ...last, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) }) < routingGoal.heuristic(last);
+                      return (0, momentum_1.isIceBlock)(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) && routingGoal.heuristic({ ...last2, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) }) < routingGoal.heuristic(last2);
                     }
                     if (![0, 1].every((y) => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough))
                       break;
@@ -10825,11 +11214,11 @@ var require_ThePathfinder = __commonJS({
                   unverifiedIceTakeoff = true;
                   continue;
                 }
-                const elevatedGoal = shore == null && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water;
-                const losesFoothold = elevatedGoal && (last.metadata?.waterLanding === true || this.world.getBlockInfo(last.exitPos).water);
-                if (!losesFoothold && routingGoal.heuristic(last) < routingGoal.heuristic(moves[0]) - 2) {
+                const elevatedGoal = shore == null && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > last2.exitPos.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water;
+                const losesFoothold = elevatedGoal && (last2.metadata?.waterLanding === true || this.world.getBlockInfo(last2.exitPos).water);
+                if (!losesFoothold && routingGoal.heuristic(last2) < routingGoal.heuristic(moves[0]) - 2) {
                   path = { ...res.result, path: moves };
-                  executionGoal = goals.GoalBlock.fromVec(last.exitPos);
+                  executionGoal = goals.GoalBlock.fromVec(last2.exitPos);
                   prefix = true;
                   this.bot.emit("pathGenerated", path);
                   break;
@@ -10859,7 +11248,9 @@ var require_ThePathfinder = __commonJS({
             if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity) {
               executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist));
             }
-            await this.perform(path, executionGoal);
+            const last = path.path[path.path.length - 1];
+            const continueSwimming = () => prefix && this.resetReason == null && !this.disposed && last != null && last.toPlace.length === 0 && last.toBreak.length === 0 && /^(Forward|Diagonal)$/.test(last.moveType.constructor.name) && this.world.getBlockInfo(last.exitPos).water && (0, surfaceSwimming_12.canContinueSwimming)(this.bot);
+            await this.perform(path, executionGoal, 0, continueSwimming);
             await this.pendingReset;
             if (this.resetReason != null) {
               if (this.resetReason === "goalReassignment")
@@ -10869,7 +11260,7 @@ var require_ThePathfinder = __commonJS({
               await this.cleanupBot();
               continue;
             }
-            await this.cleanupBot();
+            await this.cleanupBot(false, continueSwimming());
             if (prefix)
               continue;
             if (shore != null) {
@@ -10895,14 +11286,15 @@ var require_ThePathfinder = __commonJS({
           }
         }
       }
-      async perform(path, goal, entry = 0) {
-        return await this.executionRunner.perform(path, goal, entry);
+      async perform(path, goal, entry = 0, continueSwimming) {
+        return await this.executionRunner.perform(path, goal, entry, continueSwimming);
       }
       async recovery(move, path, goal, entry = 0) {
         return await this.executionRunner.recovery(move, path, goal, entry);
       }
-      async cleanupBot(forceSafety = false) {
-        this.bot.clearControlStates();
+      async cleanupBot(forceSafety = false, keepControls = false) {
+        if (!keepControls)
+          this.bot.clearControlStates();
         let exec;
         for (const [, executor] of this.activeMappings.movements) {
           exec ?? (exec = executor);
@@ -11025,81 +11417,6 @@ var require_PathingUtil = __commonJS({
       }
     };
     exports2.PathingUtil = PathingUtil;
-  }
-});
-
-// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js
-var require_surfaceSwimming = __commonJS({
-  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/surfaceSwimming.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.installSurfaceSwimming = installSurfaceSwimming;
-    var controllers = /* @__PURE__ */ new WeakMap();
-    function installSurfaceSwimming(bot, enabled = true) {
-      const existing = controllers.get(bot);
-      if (existing != null) {
-        if (!enabled)
-          existing();
-        else
-          return existing;
-      }
-      if (!enabled)
-        return () => {
-        };
-      const originalSetControl = bot.setControlState;
-      let wantedJump = bot.getControlState("jump");
-      let wantedSneak = bot.getControlState("sneak");
-      let alive = true;
-      let disposed = false;
-      const floating = () => alive && bot.entity?.isInWater === true && bot.health !== 0;
-      const setControl = (control, value) => {
-        if (control === "jump") {
-          wantedJump = value;
-          value = value || floating();
-        }
-        if (control === "sneak") {
-          wantedSneak = value;
-          value = value && !floating();
-        }
-        originalSetControl.call(bot, control, value);
-      };
-      const tick = () => {
-        originalSetControl.call(bot, "jump", wantedJump || floating());
-        originalSetControl.call(bot, "sneak", wantedSneak && !floating());
-      };
-      const death = () => {
-        alive = false;
-        wantedJump = false;
-        wantedSneak = false;
-        tick();
-      };
-      const spawn = () => {
-        alive = true;
-        tick();
-      };
-      const dispose = () => {
-        if (disposed)
-          return;
-        disposed = true;
-        bot.off("physicsTick", tick);
-        bot.off("death", death);
-        bot.off("spawn", spawn);
-        bot.off("end", dispose);
-        if (bot.setControlState === setControl)
-          bot.setControlState = originalSetControl;
-        originalSetControl.call(bot, "jump", wantedJump);
-        originalSetControl.call(bot, "sneak", wantedSneak);
-        controllers.delete(bot);
-      };
-      bot.setControlState = setControl;
-      bot.on("physicsTick", tick);
-      bot.on("death", death);
-      bot.on("spawn", spawn);
-      bot.once("end", dispose);
-      controllers.set(bot, dispose);
-      tick();
-      return dispose;
-    }
   }
 });
 

@@ -382,6 +382,7 @@ export type MineflayerBotPluginSettings = {
   canDig: boolean;
   maxDropDown: number;
   stayOnWater: boolean;
+  antiKnockback: boolean;
   autoFollowOnSpawn: boolean;
   announceOnSpawn: boolean;
   spawnMessage: string;

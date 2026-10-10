@@ -13,6 +13,37 @@ const faces = [
   new Vec3(0, 0, 1),
   new Vec3(0, -1, 0),
 ];
+const hitFaces = [faces[5], faces[0], faces[3], faces[4], faces[1], faces[2]];
+
+function viewDirection(bot) {
+  const { yaw, pitch } = bot.entity;
+  return new Vec3(
+    -Math.sin(yaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    -Math.cos(yaw) * Math.cos(pitch),
+  );
+}
+
+function entityRayDistance(origin, direction, entity) {
+  const half = (entity.width ?? 2) / 2;
+  let near = 0,
+    far = Infinity;
+  for (const [axis, low, high] of [
+    ["x", entity.position.x - half, entity.position.x + half],
+    ["y", entity.position.y, entity.position.y + (entity.height ?? 2)],
+    ["z", entity.position.z - half, entity.position.z + half],
+  ]) {
+    if (Math.abs(direction[axis]) < 1e-9) {
+      if (origin[axis] < low || origin[axis] > high) return null;
+      continue;
+    }
+    const a = (low - origin[axis]) / direction[axis];
+    const b = (high - origin[axis]) / direction[axis];
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+  }
+  return near <= far && far >= 0 ? near : null;
+}
 
 function armourReduction(bot, entity, damage) {
   const armour =
@@ -247,7 +278,12 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         range = delta.norm();
       if (range > settings.crystalPlaceRange || range < 0.001) continue;
       const hit = world.world.raycast(eyes(bot), delta.scaled(1 / range), range + 0.01);
-      if (hit?.position.equals(block.position)) return { aim, range, face };
+      if (hit?.position.equals(block.position) && hitFaces[hit.face])
+        return {
+          aim: hit.intersect,
+          range: hit.intersect.distanceTo(eyes(bot)),
+          face: hitFaces[hit.face],
+        };
     }
     return null;
   }
@@ -285,8 +321,8 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         range = delta.norm();
       if (range > settings.crystalPlaceRange || range < 0.001) continue;
       const hit = world.world.raycast(eyes(bot), delta.scaled(1 / range), range + 0.01);
-      if (hit?.position.equals(reference.position))
-        return { type, position, item, reference, face, aim, range };
+      if (hit?.position.equals(reference.position) && hitFaces[hit.face]?.equals(face))
+        return { type, position, item, reference, face, aim: hit.intersect, range };
     }
     return null;
   }
@@ -540,6 +576,41 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     candidates.sort(compare);
     return candidates[0] ?? null;
   }
+  function aimed(action) {
+    if (!action) return null;
+    const origin = eyes(bot),
+      direction = viewDirection(bot);
+    if (action.type === "break") {
+      const range = entityRayDistance(origin, direction, action.crystal);
+      if (
+        range === null ||
+        range > settings.crystalBreakRange ||
+        bot.world.raycast(origin, direction, range) !== null
+      )
+        return null;
+      // A normal attack must hit the first entity in the view ray.
+      if (
+        Object.values(bot.entities ?? {}).some((entity) => {
+          if (
+            entity.id === bot.entity.id ||
+            entity.id === action.crystal.id ||
+            entity.isValid === false ||
+            !entity.position
+          )
+            return false;
+          const other = entityRayDistance(origin, direction, entity);
+          return other !== null && other < range;
+        })
+      )
+        return null;
+      return { ...action, aim: origin.plus(direction.scaled(range)), range };
+    }
+    const reference = action.type === "place" ? action.base : action.reference;
+    const hit = bot.world.raycast(origin, direction, settings.crystalPlaceRange);
+    if (!hit?.position.equals(reference.position) || !hitFaces[hit.face]?.equals(action.face))
+      return null;
+    return { ...action, aim: hit.intersect, range: hit.intersect.distanceTo(origin) };
+  }
   return {
     plan,
     placement,
@@ -553,11 +624,11 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     },
     verify(target, action, time) {
       if (action.type === "place")
-        return placement(target, bot.blockAt(action.base.position), time);
-      if (action.type === "break") return breaking(target, action.crystal, time);
+        return aimed(placement(target, bot.blockAt(action.base.position), time));
+      if (action.type === "break") return aimed(breaking(target, action.crystal, time));
       const current = plan(target, time);
       return current?.type === action.type && current.position.equals(action.position)
-        ? current
+        ? aimed(current)
         : null;
     },
     commit(action, time) {

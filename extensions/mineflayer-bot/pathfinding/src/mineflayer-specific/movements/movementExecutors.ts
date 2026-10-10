@@ -53,8 +53,7 @@ export class NewForwardExecutor extends MovementExecutor {
 
   override async align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
     if (this.doWaterLogic()) {
-      // clear to remove jump.
-      this.bot.clearControlStates()
+      this.bot.setControlState('jump', false)
       return await super.align(thisMove, tickCount, goal)
       // this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.entryPos.y)
     }
@@ -111,7 +110,8 @@ export class NewForwardExecutor extends MovementExecutor {
   async performInit (thisMove: Move, currentIndex: number, path: Move[]): Promise<void> {
     // console.log('ForwardMove', thisMove.exitPos, thisMove.toPlace.length, thisMove.toBreak.length)
 
-    this.bot.clearControlStates()
+    if (this.doWaterLogic()) this.bot.setControlState('jump', false)
+    else this.bot.clearControlStates()
 
     const faceForward = await this.faceForward()
 
@@ -190,6 +190,10 @@ export class NewForwardExecutor extends MovementExecutor {
         return false
       }
     }
+
+    // Keep travelling through a reached water waypoint. Steering back toward
+    // its centre before the runner advances destroys sprint-swim momentum.
+    if (this.doWaterLogic() && this.isComplete(thisMove)) return true
 
     // if (tickCount > 160) throw new CancelError("ForwardMove: tickCount > 160");
 
@@ -765,10 +769,16 @@ export class ParkourForwardExecutor extends MovementExecutor {
   private backupTarget: Vec3 | null = null
   private _lookAtInFlight: Promise<void> | null = null
   private _pendingLookTarget: Vec3 | null = null
+  private tickControls?: () => void
+  private tickFailure?: Error
+
+  override get canInterrupt (): boolean { return !this.executing || (this.hasLeftGround && this.bot.entity.onGround) }
 
   protected static readonly APPROACH_YAW_EPS: number = 0.16 // ~9.2 deg — generous for cardinal jumps
 
   override reset (): void {
+    this.stopTickControls()
+    this.tickFailure = undefined
     this.executing = false
     this.hasLeftGround = false
     this.lockedYaw = null
@@ -778,6 +788,53 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.backupTarget = null
     this._pendingLookTarget = null
     super.reset()
+  }
+
+  private stopTickControls (): void {
+    if (this.tickControls != null) this.bot.off('physicsTick', this.tickControls)
+    this.tickControls = undefined
+  }
+
+  private startTickControls (): void {
+    if (this.tickControls != null) return
+    const move = this.currentMove
+    const listener = (): void => {
+      if (this.currentMove !== move || this.aborted || this.bot.pathfinder.abortCalculation) {
+        this.stopTickControls()
+        return
+      }
+      try {
+        const target = this._getTargetEyeVec(this._getTargetBlock(move))
+        if (this.backingUp) {
+          const state = this._advanceBackup(move)
+          if (state === 'backing') return
+          if (state === 'failed') throw new CancelError('ParkourExecutor: backup failed')
+          this._tryApproachWhenAligned(target)
+        }
+        if (!this.executing) {
+          if (this.bot.entity.onGround && this._isYawAlignedForApproach(target) &&
+              this.shitterTwo.simForwardMove(this._getTargetBlock(move), target)) this._startJumpExecution(target)
+          return
+        }
+        if (!this.bot.entity.onGround && this.bot.entity.position.y > move.entryPos.y + 0.05) this.hasLeftGround = true
+        if (this.hasLeftGround && this.bot.entity.onGround) {
+          this.bot.setControlState('jump', false)
+          this.bot.setControlState('sprint', false)
+          this.bot.setControlState('sneak', true)
+          steerToPosition(this.bot, move.exitPos, 0.08)
+          return
+        }
+        this._lockCurrentYaw(this._desiredYawTo(target))
+        this._applySmartControls(target, !this.hasLeftGround && move.exitPos.y >= move.entryPos.y)
+      } catch (error) {
+        this.tickFailure = error instanceof Error ? error : new Error(String(error))
+        this.stopTickControls()
+      }
+    }
+    // Mineflayer may emit several catch-up ticks before an awaited runner step
+    // resumes. Commit the takeoff and airborne inputs at every physics boundary.
+    this.tickControls = listener
+    this.bot.prependListener('physicsTick', listener)
   }
 
   protected isComplete (startMove: Move, endMove?: Move, opts: CompleteOpts = {}): boolean {
@@ -892,12 +949,15 @@ export class ParkourForwardExecutor extends MovementExecutor {
   private _applyBackupControls (thisMove: Move, target: Vec3): void {
     this._lockCurrentYaw(this._desiredYawTo(target))
     void this._queueLookAtSync(target)
-    this._applySmartControls(target, false)
-    // console.log('should sneak', this._shouldSneakDuringBackup(thisMove, target))
-    this.bot.setControlState('sneak', this._shouldSneakDuringBackup(thisMove, target))
+    this._applyLockedYaw()
+    steerToPosition(this.bot, target, 0.025)
+    this.bot.setControlState('jump', false)
+    this.bot.setControlState('sprint', false)
+    this.bot.setControlState('sneak', true)
   }
 
   private _startBackup (thisMove: Move): boolean {
+    this.stopTickControls()
     this.backupTarget ??= this._getBackupTarget(thisMove)
     if (this.backupTarget == null) {
       this._debugLog('backup start failed: no backup target')
@@ -908,6 +968,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.backupAttempted = true
     this._debugLog('backup start:', this.backupTarget)
     this._applyBackupControls(thisMove, this.backupTarget)
+    this.startTickControls()
     return true
   }
 
@@ -916,15 +977,6 @@ export class ParkourForwardExecutor extends MovementExecutor {
     if (this.backupTarget == null) {
       // this._debugLog('backup advance failed: no backup target')
       return 'failed'
-    }
-
-    const jumpState = this._getJumpState(thisMove)
-    if (jumpState.canJumpFromEdge) {
-      this._debugLog('backup advance: jump-from-edge became available, switching out of backup')
-      this._clearBackupState()
-      this._clearLockedYaw()
-      this.bot.clearControlStates()
-      return 'jump'
     }
 
     const dist = this.bot.entity.position.xzDistanceTo(this.backupTarget)
@@ -948,7 +1000,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.bot.clearControlStates()
     this.bot.setControlState('sneak', this._shouldSneakDuringBackup(thisMove, this.backupTarget))
 
-    if (xzVel.norm() > 0.05) {
+    if (xzVel.norm() > 0.003) {
       this._debugLog(
         'backup advance: waiting for velocity to settle',
         'target:', this.backupTarget,
@@ -960,6 +1012,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this._clearBackupState()
     this._clearLockedYaw()
     this.bot.clearControlStates()
+    this.bot.setControlState('sneak', true)
     this._debugLog('backup recheck: reached target, retrying jump state')
     return 'recheck'
   }
@@ -1028,7 +1081,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.bot.setControlState('right', false)
     this.bot.setControlState('jump', false)
     this.bot.setControlState('sprint', false)
-    this.bot.setControlState('sneak', false)
+    this.bot.setControlState('sneak', this.bot.entity.onGround)
   }
 
   private _startJumpExecution (target: Vec3): void {
@@ -1036,6 +1089,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.executing = true
     this.hasLeftGround = false
     this._applySmartControls(target, true)
+    this.startTickControls()
   }
 
   protected _desiredYawTo (target: Vec3): number {
@@ -1065,10 +1119,19 @@ export class ParkourForwardExecutor extends MovementExecutor {
     }
 
     this._applySmartControls(targetEyeVec, false)
+    this.startTickControls()
     return true
   }
 
   async align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
+    if (this.tickFailure != null) throw this.tickFailure
+    if (this.executing) return true
+    if (!this.bot.entity.onGround && !this.tooLowCheck(thisMove)) {
+      // A runway hop or the first contact tick must settle before deciding
+      // that the takeoff needs a retreat. Airborne backup predictions are wrong.
+      this.bot.setControlState('jump', false)
+      return false
+    }
     this.executing = false
     this.hasLeftGround = false
     this._clearLockedYaw()
@@ -1134,7 +1197,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
         this._clearBackupState()
         this.bot.clearControlStates()
         this.bot.setControlState('sneak', true)
-        if (this.bot.entity.velocity.norm() < 1e-4) {
+        if (this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0).norm() < 0.003) {
           throw new CancelError('ParkourExecutor: will not make this jump after backing up!')
         }
       }
@@ -1157,6 +1220,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
   }
 
   performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): boolean | Promise<boolean> {
+    if (this.tickFailure != null) throw this.tickFailure
     const target = this._getTargetBlock(thisMove)
     const targetEyeVec = this._getTargetEyeVec(target)
 
@@ -1164,6 +1228,13 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
     if (this.executing) {
       if (!this.bot.entity.onGround && this.bot.entity.position.y > thisMove.entryPos.y + 0.05) this.hasLeftGround = true
+      if (this.hasLeftGround && this.bot.entity.onGround) {
+        this.bot.setControlState('jump', false)
+        this.bot.setControlState('sprint', false)
+        this.bot.setControlState('sneak', true)
+        steerToPosition(this.bot, thisMove.exitPos, 0.08)
+        return this.isComplete(thisMove)
+      }
       // printBotControls(this.bot, logParkour)
       this._lockCurrentYaw(this._desiredYawTo(targetEyeVec))
       this._applySmartControls(targetEyeVec, !this.hasLeftGround && thisMove.exitPos.y >= thisMove.entryPos.y)

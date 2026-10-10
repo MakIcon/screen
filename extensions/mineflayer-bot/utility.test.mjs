@@ -34,6 +34,27 @@ function worldFixture(version = "26.1.2") {
   return { bot: rig.bot, world, dispose: () => rig.stopPassivePhysics() };
 }
 
+function assertCrystalClick(bot, packet) {
+  const { yaw, pitch } = bot.entity;
+  const origin = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
+  const direction = new Vec3(
+    -Math.sin(yaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    -Math.cos(yaw) * Math.cos(pitch),
+  );
+  const hit = bot.world.raycast(origin, direction, 4.5);
+  assert.ok(hit?.position.equals(packet.location), "view ray reaches the clicked block");
+  assert.equal(hit.face, packet.direction, "clicks the face visible under the crosshair");
+  for (const axis of ["X", "Y", "Z"])
+    assert.ok(
+      Math.abs(
+        packet[`cursor${axis}`] -
+          (hit.intersect[axis.toLowerCase()] - packet.location[axis.toLowerCase()]),
+      ) < 1e-5,
+      "cursor agrees with view ray",
+    );
+}
+
 for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
   test(`pearl trajectories reach safe terrain and serialize real use packets on ${version}`, async () => {
     const f = worldFixture(version),
@@ -320,6 +341,75 @@ test("crystal planner respects self/owner safety, occupied bases and server conf
   }
 });
 
+for (const obstruction of ["view changed", "wall appeared"]) {
+  test(`crystal click is cancelled when ${obstruction} during aiming`, async () => {
+    const f = worldFixture(),
+      bot = f.bot,
+      packets = [],
+      errors = [];
+    bot.supportFeature = bot.registry.supportFeature;
+    for (const plugin of ["entities", "inventory", "simple_inventory", "generic_place"])
+      bot.loadPlugin(runtime(`mineflayer/lib/plugins/${plugin}`), { hideErrors: false });
+    bot.setQuickBarSlot(0);
+    const Item = mineflayerRequire("prismarine-item")(bot.registry);
+    const item = new Item(bot.registry.itemsByName.end_crystal.id, 4);
+    item.slot = 36;
+    bot.inventory.slots[36] = item;
+    bot._client.write = (name, params) => packets.push({ name, params });
+    bot.pathfinder = { stop: async () => {}, goto: () => new Promise(() => {}) };
+    bot.swordpvp = { stop() {} };
+    bot.pvp = { forceStop() {} };
+    const target = {
+      id: 2,
+      username: "Enemy",
+      position: new Vec3(5.5, 65, 0.5),
+      width: 0.6,
+      height: 1.8,
+    };
+    bot.entities[2] = target;
+    f.world.setBlock(new Vec3(3, 64, 0), "obsidian");
+    const look = bot.lookAt.bind(bot);
+    let turns = 0;
+    bot.lookAt = async (point, force) => {
+      turns++;
+      await look(point, force);
+      if (obstruction === "view changed") await bot.look(0, 0, true);
+      else
+        for (let y = 64; y <= 67; y++)
+          for (let z = -2; z <= 2; z++) f.world.setBlock(new Vec3(1, y, z), "stone");
+    };
+    const controller = createCombatController(
+      bot,
+      {
+        style: "crystal",
+        reactionMs: 0,
+        crystalEnabled: true,
+        crystalPredict: false,
+        crystalMaxSelfDamage: 20,
+        crystalMinHealth: 1,
+        smoothAim: false,
+      },
+      { loadPlugins: false, now: () => 0, onError: (error) => errors.push(error) },
+    );
+    try {
+      controller.select(target);
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      assert.deepEqual(errors, []);
+      assert.ok(turns > 0, "attempted aiming before the obstruction cancelled placement");
+      assert.equal(
+        packets.some((p) => p.name === "block_place"),
+        false,
+      );
+    } finally {
+      controller.dispose();
+      f.dispose();
+    }
+  });
+}
+
 test("bow defense detects aiming/incoming arrows, releases its shield and cancels delayed equip", async () => {
   const bot = new EventEmitter(),
     calls = [];
@@ -401,6 +491,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
     bot._client.state = "play";
     bot._client.write = (name, params) => {
       serializer.createPacketBuffer({ name, params });
+      if (name === "block_place") assertCrystalClick(bot, params);
       packets.push({ name, params });
     };
     bot.pathfinder = { stop: async () => {}, goto: () => new Promise(() => {}) };
@@ -448,6 +539,11 @@ for (const version of ["1.20.4", "26.1.2"]) {
       const place = packets.find((p) => p.name === "block_place");
       assert.ok(place, "actual crystal placement");
       assert.deepEqual(place.params.location, new Vec3(3, 64, 0));
+      assert.ok(
+        packets.slice(0, packets.indexOf(place)).some((p) => p.name === "look"),
+        "publishes rotation before clicking",
+      );
+      time = 260;
       bot.emit("physicsTick");
       await flush();
       assert.equal(packets.filter((p) => p.name === "block_place").length, 1);
@@ -460,7 +556,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
         isValid: true,
       };
       bot.entities[3] = crystal;
-      time = 300;
+      time = 600;
       bot.emit("physicsTick");
       await flush();
       const hit = packets.find(
@@ -662,6 +758,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
       let delayedSpawn = null;
       bot._client.write = (name, params) => {
         serializer.createPacketBuffer({ name, params });
+        if (name === "block_place") assertCrystalClick(bot, params);
         packets.push({ name, params, held: bot.heldItem?.name });
         if (name !== "block_place") return;
         const held = bot.heldItem?.name,

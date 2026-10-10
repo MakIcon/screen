@@ -35,6 +35,7 @@ const { mineflayer, compatibilityVersion } = loadMineflayer()
 const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
 const { normalizeCombat, createCombatController } = require('./combat.cjs')
 const { createTravelController } = require('./pearls.cjs')
+const { installKnockback } = require('./knockback.cjs')
 const { Vec3 } = require('vec3')
 
 const { GoalFollowEntity, GoalNear } = goals
@@ -61,6 +62,7 @@ function configurePathfinder (bot, movement, behavior = {}) {
     }
   }))
   installSurfaceSwimming(bot, behavior.stayOnWater !== false)
+  installKnockback(bot, behavior.antiKnockback)
   if (!movement.allowParkour) {
     bot.pathfinder.dropMovement(movementProviders.ParkourForward)
     bot.pathfinder.dropMovement(movementProviders.ParkourDiagonal)
@@ -325,12 +327,14 @@ function parseConfig (raw) {
   }
   config.behavior = {
     stayOnWater: true,
+    antiKnockback: false,
     autoFollowOnSpawn: false,
     announceOnSpawn: false,
     spawnMessage: 'Ready, %owner%!',
     logPathUpdates: false,
     ...(config.behavior || {})
   }
+  config.behavior.antiKnockback = config.behavior.antiKnockback === true
 
   config.commands.prefix = String(config.commands.prefix || '!').slice(0, 8)
   config.commands.source = ['chat', 'whisper', 'both'].includes(config.commands.source)

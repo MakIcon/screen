@@ -272,6 +272,30 @@ test("missing arrows fall back to melee only when configured", async () => {
   }
 });
 
+test("auto crystal approaches directly without starting melee strafing", async () => {
+  const f = fixture({ style: "auto", crystalEnabled: true });
+  f.items.push({ name: "end_crystal" }, { name: "obsidian" });
+  try {
+    f.controller.select(f.enemy);
+    await f.tick(0);
+    await f.tick(50);
+    assert.match(f.controller.status, /^crystal /);
+    assert.equal(
+      f.calls.some(([name]) => name === "melee" || name === "basic"),
+      false,
+    );
+    assert.equal(f.calls.filter(([name]) => name === "goto").length, 1);
+    await f.tick(500);
+    assert.equal(
+      f.calls.filter(([name]) => name === "goto").length,
+      1,
+      "keeps the same approach route",
+    );
+  } finally {
+    f.controller.dispose();
+  }
+});
+
 test("target loss cancels bow toward the ground and dispose removes controller listeners", async () => {
   const f = fixture({ style: "ranged" });
   f.controller.select(f.enemy);

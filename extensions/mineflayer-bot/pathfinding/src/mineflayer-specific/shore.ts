@@ -26,7 +26,7 @@ export async function findShoreGoal (bot: Bot, world: World, goal: Goal, cancele
   const settings = bot.pathfinder.defaultMoveSettings
   const canBuild = settings.canPlace && settings.allow1by1towers && getScaffoldCount(bot) > 0
   const faces = Movement.cardinalDirs.concat([new Vec3(0, -1, 0), new Vec3(0, 1, 0)])
-  const candidates: Array<{ goal: ShoreGoal, score: number }> = []
+  const candidates: Array<{ goal: ShoreGoal, score: number, buildStep: boolean }> = []
   let foundRadius = Infinity
   for (let radius = 1; radius <= Math.min(64, foundRadius + 3); radius++) {
     if (canceled()) return
@@ -54,7 +54,7 @@ export async function findShoreGoal (bot: Bot, world: World, goal: Goal, cancele
         const onwardCost = Math.hypot(pos.x - goal.x, pos.z - goal.z) * WALK_ONE_BLOCK_COST
         const score = Math.hypot(pos.x - origin.x, pos.z - origin.z) * WALK_ONE_IN_WATER_COST + onwardCost +
           (buildStep ? settings.placeCost : 0)
-        candidates.push({ goal: new ShoreGoal(pos, onwardCost), score })
+        candidates.push({ goal: new ShoreGoal(pos, onwardCost), score, buildStep })
         foundRadius = Math.min(foundRadius, radius)
         break
       }
@@ -63,6 +63,11 @@ export async function findShoreGoal (bot: Bot, world: World, goal: Goal, cancele
     await new Promise<void>(resolve => setImmediate(resolve))
   }
   if (candidates.length === 0) return
-  candidates.sort((a, b) => a.score - b.score)
-  return new GoalCompositeAny(...candidates.slice(0, 32).map(candidate => candidate.goal))
+  // An existing landing beside a proposed step is reachable by the same water
+  // approach. Swim onto that landing instead of constructing an extra step.
+  const exits = candidates.filter(candidate => !candidate.buildStep || !candidates.some(other =>
+    !other.buildStep && other.goal.y === candidate.goal.y &&
+    Math.abs(other.goal.x - candidate.goal.x) + Math.abs(other.goal.z - candidate.goal.z) === 1))
+  exits.sort((a, b) => a.score - b.score)
+  return new GoalCompositeAny(...exits.slice(0, 32).map(candidate => candidate.goal))
 }

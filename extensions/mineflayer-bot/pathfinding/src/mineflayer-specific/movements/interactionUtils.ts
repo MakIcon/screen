@@ -4,13 +4,14 @@ import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
 import { BlockInfo } from '../world/cacheWorld'
-import { BotcraftPhysics, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
+import { EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { World } from '../world/worldInterface'
 import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
 
 import { CancelError } from '../exceptions'
 import { MovementOptions } from './movement'
 import { MovementExecutor } from './movementExecutor'
+import { ClimbAwarePhysics } from '../climbablePhysics'
 import type { Block, RayType } from '../../types'
 import { faceToVec, Task } from '../../utils'
 import { handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
@@ -173,7 +174,7 @@ export abstract class InteractHandler {
     const res = await this.performInfo(bot, ticks)
     if (res.ticks < Infinity) return true
 
-    const ectx = new BotcraftPhysics(bot.registry)
+    const ectx = new ClimbAwarePhysics(bot.registry)
     const state = EPhysicsCtx.FROM_BOT(ectx, bot)
 
     const flag0 = bot.entity.onGround

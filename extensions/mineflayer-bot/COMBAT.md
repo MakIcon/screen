@@ -1,6 +1,6 @@
 # PvP and bow combat
 
-Mineflayer Bot 1.8.2 includes the locked published packages:
+Mineflayer Bot 1.8.4 includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.
 - `mineflayer-pvp` 1.3.2: selectable basic melee combat.
@@ -42,7 +42,9 @@ is enabled. 100% preserves the original speed; 50% doubles turn duration and
 rotation speed. The Novice/Normal/Expert presets use 50%/100%/175% respectively.
 Existing settings default to 100%; changes apply on the next bot start.
 
-Auto style prioritizes a safe crystal action when enabled and available, then
+Auto style approaches directly in crystal mode when placement is enabled and
+crystals are carried, without first starting melee strafing or critical jumps.
+When no crystals are carried it prioritizes a safe crystal break, then
 uses a bow beyond melee range plus two blocks, and melee nearby.
 The ranged style stays with the bow; its optional melee fallback applies when a
 bow or arrows are missing. Equip a bow and normal, spectral or tipped arrows in
@@ -112,7 +114,9 @@ bound. `crystalProtectOwners` refuses damage to other owners (an explicitly
 selected owner remains an intentional combat target). `crystalPredict` and
 `crystalPredictionTicks` check both the present and predicted target position.
 `crystalIntervalMs` caps actions. Damage and world constraints are checked again
-after equipping and aiming. Unsafe/missing positions produce a rate-limited status
+after equipping and aiming. The current view ray must hit the actual block face
+or crystal; the placement cursor uses that same intersection. The bot stays still
+while waiting for server confirmation. Unsafe/missing positions produce a rate-limited status
 explaining why the bot is waiting. Default limits are preserved.
 The rewrite has one managed action loop instead of independent placement,
 breaking, explosion and sound-triggered loops. It uses normal Mineflayer APIs.
@@ -183,6 +187,13 @@ launcher's existing dynamic entity goals. The launcher keeps its movement
 settings and supplied pathfinding rewrite; a second navigator is not loaded.
 
 ## Packaging and verification
+
+The Behavior tab has an `АНТИОТБРАСЫВАНИЕ` toggle, disabled by default (also for
+legacy settings). With it off, nearby players and mobs push the bot and server
+hit/explosion impulses apply normally. With it on, those impulses are suppressed
+while walking, jumping, falling and server position corrections remain active.
+Save the setting and restart the bot to apply it. Server team collision rules
+can still disable body pushes independently of this setting.
 
 `pnpm test:worker` includes combat lifecycle, world visibility, melee attack and
 bow tests against 1.8.8, 1.20.4 and 26.1.2 registries and a simulated world.

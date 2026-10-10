@@ -11,6 +11,33 @@ the worker's dependencies. The downloaded source directory is left intact.
 
 Changes from the supplied source:
 
+- Version 1.8.4 retains swimming momentum across partial route searches in open,
+  loaded water. Prefix completion uses the reached water column at the actual
+  swimming height. Reached waypoints and late camera callbacks cannot reverse
+  the next stroke. Arrival, cancellation and interactions still release travel
+  controls. Physics predictions copy server attributes, preserve speed modifiers
+  and use the live grounded state for takeoff acceleration. Ordinary parkour
+  controls commit takeoff on every physics tick, including catch-up ticks, and
+  brake on landing. Short run-ups retreat along the flight line and finish
+  settling before accelerating; aiming preserves the nearest landing axis.
+  Regression routes cover four empty blocks, four-by-four diagonal jumps,
+  lag catch-up, sustained ocean speed and parkour after leaving water.
+
+- Water travel uses sprint swimming on modern versions: a brief dive starts the
+  swim pose, then the bot swims at the surface and releases jump while breathing.
+  The live water simulation uses Botcraft physics with fluid-free pose clearance
+  and retains swim sprint while the eyes are above water. Idle, shallow water,
+  shore collisions and low hunger use standing flotation. The overlay restores
+  controls and physics on disposal; legacy versions keep water-jump movement.
+  Consecutive water moves retain forward/sprint and a level viewing pitch, so
+  route transitions do not interrupt swimming or push the bot toward the sky.
+  Horizontal strokes complete at the current swimming height within the same
+  water column, instead of braking until the bot sinks to the planned depth.
+  When an existing shore landing is beside a proposed step at the same height,
+  the bot uses the landing directly; taller walls still allow a built exit.
+  Reused partial routes recognize a step already confirmed by the server rather
+  than waiting indefinitely for a fresh placement handler to finish.
+
 - Version 1.5.1 keeps the Neo camera facing its landing floor while turning
   around the wall. Back and strafe inputs preserve flight acceleration without
   backward camera turns; the planner bounds rotation between airborne ticks.

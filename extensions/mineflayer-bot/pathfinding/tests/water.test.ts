@@ -84,6 +84,106 @@ function ocean (version: string) {
   return world
 }
 
+test('a server-confirmed water exit step does not leave a reused route waiting for placement', { timeout: 6000 }, async (t) => {
+  const world = ocean('26.1.2')
+  for (let y = 56; y <= 67; y++) world.setBlock(new Vec3(2, y, 0), 'stone')
+  const { rig } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 63, 0.5), { world })
+  const Item = require('prismarine-item')(rig.mcData)
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 1)
+  rig.bot.inventory.slots[9]!.slot = 9
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: true, movementTimeoutMs: 3000 } }))
+  installSurfaceSwimming(rig.bot)
+  let confirmed = false, placements = 0
+  const place = rig.bot._placeBlockWithOptions
+  rig.bot._placeBlockWithOptions = (...args: any[]) => { placements++; return place(...args) }
+  rig.bot.on('pathGenerated', (result: any) => {
+    if (confirmed || !result.path.some((move: Move) => move.toPlace.some(handler => handler.vec.equals(new Vec3(1, 63, 0))))) return
+    // The server (or another player) completes the planned step before execution.
+    confirmed = true
+    world.setBlock(new Vec3(1, 63, 0), 'cobblestone')
+    rig.bot.inventory.slots[9] = null
+  })
+  t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+  try {
+    await rig.bot.pathfinder.goto(new goals.GoalBlock(1, 64, 0))
+    assert.equal(confirmed, true)
+    assert.equal(placements, 0)
+    assert.equal(rig.bot.entity.onGround, true)
+    assert.ok(rig.bot.entity.position.floored().equals(new Vec3(1, 64, 0)))
+  } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})
+
+for (const version of ['1.20.4', '26.1.2']) {
+  test(`an ocean route keeps swimming across consecutive movement steps on ${version}`, { timeout: 9000 }, async (t) => {
+    const world = ocean(version)
+    const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 62, 0.5), { world })
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, movementTimeoutMs: 3000 } }))
+    installSurfaceSwimming(rig.bot)
+    let swimTicks = 0, ticks = 0
+    rig.bot.on('physicsTick', () => { ticks++; if (rig.bot.entity.swimming) swimTicks++ })
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+    try {
+      await rig.bot.pathfinder.goto(new goals.GoalBlock(10, 63, 0))
+      assert.ok(swimTicks >= 30, `swimTicks=${swimTicks}, ticks=${ticks}`)
+      assert.ok(swimTicks > ticks / 2, `swim pose interrupted between route steps: ${swimTicks}/${ticks}`)
+      assert.ok(rig.bot.entity.position.x > 9.7)
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+
+  test(`forward travel enters the swim pose from the surface and stops to breathe on ${version}`, { timeout: 6000 }, async () => {
+    const world = ocean(version)
+    const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 63.1, 0.5), { world })
+    const physics = rig.bot.physics.simulatePlayer
+    const dispose = installSurfaceSwimming(rig.bot)
+    let swimTicks = 0, strokesWithoutJump = 0, speed = 0
+    const observe = () => {
+      if (!rig.bot.entity.swimming) return
+      swimTicks++
+      if (!rig.bot.getControlState('jump')) strokesWithoutJump++
+      speed = Math.max(speed, rig.bot.entity.velocity.x)
+      assert.equal(rig.bot.entity.height, 0.6)
+      assert.equal(rig.bot.entity.eyeHeight, 0.4)
+    }
+    rig.bot.on('physicsTick', observe)
+    try {
+      await rig.bot.look(-Math.PI / 2, 0, true)
+      rig.bot.setControlState('forward', true)
+      // Route executors can ask to walk; water travel still needs swim sprint.
+      rig.bot.setControlState('sprint', false)
+      await rig.bot.waitForTicks(60)
+      assert.ok(swimTicks >= 25, `swimTicks=${swimTicks}, position=${rig.bot.entity.position}`)
+      assert.ok(strokesWithoutJump > 5, `jump was held for all ${swimTicks} swim ticks`)
+      assert.ok(speed > 0.12, `swimming speed=${speed}`)
+      assert.ok(rig.bot.entity.position.x > 6, `position=${rig.bot.entity.position}`)
+      assert.equal(rig.bot.entity.swimming, true, 'keeps swimming while breathing at the surface')
+      rig.bot.clearControlStates()
+      await rig.bot.waitForTicks(25)
+      assert.equal(rig.bot.entity.swimming, false)
+      assert.equal(rig.bot.getControlState('sprint'), false)
+      const eyes = rig.bot.entity.position.offset(0, rig.bot.entity.eyeHeight, 0)
+      assert.equal(world.getBlock(eyes)?.name, 'air', `eyes=${eyes}`)
+      dispose()
+      assert.equal(rig.bot.physics.simulatePlayer, physics)
+    } finally { rig.bot.off('physicsTick', observe); dispose(); rig.stopPassivePhysics() }
+  })
+}
+
+test('legacy water and low hunger keep standing flotation without sprint swimming', { timeout: 3500 }, async () => {
+  for (const [version, food] of [['1.8.8', 20], ['26.1.2', 6]] as const) {
+    const world = ocean(version)
+    const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 61, 0.5), { world })
+    rig.bot.food = food
+    const dispose = installSurfaceSwimming(rig.bot)
+    try {
+      rig.bot.setControlState('forward', true)
+      await rig.bot.waitForTicks(20)
+      assert.equal(rig.bot.entity.swimming ?? false, false)
+      assert.equal(rig.bot.getControlState('sprint'), false)
+      assert.ok(rig.bot.entity.position.y > 61)
+    } finally { dispose(); rig.stopPassivePhysics() }
+  }
+})
+
 for (const version of ['1.20.4', '26.1.2']) {
   test(`surface swimming rises, keeps breathing while idle and survives input clears on ${version}`, { timeout: 6500 }, async () => {
     const world = ocean(version)

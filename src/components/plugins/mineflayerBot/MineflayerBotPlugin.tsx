@@ -487,7 +487,7 @@ function MineflayerBotSettingsEditor({
               />
               <SettingToggle
                 label="STAY ON WATER"
-                description="SWIM UP AND KEEP AIR"
+                description="SPRINT SWIM AND KEEP AIR"
                 checked={settings.stayOnWater}
                 onChange={(stayOnWater) => update({ stayOnWater })}
               />
@@ -496,6 +496,12 @@ function MineflayerBotSettingsEditor({
                 description="REPORT PATH UPDATES"
                 checked={settings.logPathUpdates}
                 onChange={(logPathUpdates) => update({ logPathUpdates })}
+              />
+              <SettingToggle
+                label="АНТИОТБРАСЫВАНИЕ"
+                description="БЛОКИРОВАТЬ ТОЛЧКИ И УДАРЫ · ПОСЛЕ ПЕРЕЗАПУСКА БОТА"
+                checked={settings.antiKnockback}
+                onChange={(antiKnockback) => update({ antiKnockback })}
               />
             </div>
 

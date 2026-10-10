@@ -59,6 +59,7 @@ import { PathExecutor, type ExecutionMappings } from './pathExecutor'
 import { NeoProvider, NeoExecutor } from './mineflayer-specific/movements/neo'
 import { Climb, ClimbExecutor } from './mineflayer-specific/movements/climb'
 import { findShoreGoal } from './mineflayer-specific/shore'
+import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
 import { MomentumJump, MomentumJumpExecutor } from './mineflayer-specific/movements/momentum'
 import { LadderForward, LadderDiagonal, LadderLandingForward, LadderLandingDiagonal } from './mineflayer-specific/movements/advanced/ladder-provider'
 import { LadderForwardExecutor, LadderDiagonalExecutor, LadderLandingForwardExecutor, LadderLandingDiagonalExecutor } from './mineflayer-specific/movements/advanced/ladder-executor'
@@ -828,7 +829,12 @@ export class ThePathfinder {
         if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity) {
           executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist))
         }
-        await this.perform(path, executionGoal)
+        const last = path.path[path.path.length - 1]
+        const continueSwimming = (): boolean => prefix && this.resetReason == null && !this.disposed &&
+          last != null && last.toPlace.length === 0 && last.toBreak.length === 0 &&
+          /^(Forward|Diagonal)$/.test(last.moveType.constructor.name) &&
+          this.world.getBlockInfo(last.exitPos).water && canContinueSwimming(this.bot)
+        await this.perform(path, executionGoal, 0, continueSwimming)
         await this.pendingReset
         if (this.resetReason != null) {
           if (this.resetReason === 'goalReassignment') return
@@ -836,7 +842,7 @@ export class ThePathfinder {
           await this.cleanupBot()
           continue
         }
-        await this.cleanupBot()
+        await this.cleanupBot(false, continueSwimming())
         if (prefix) continue
         if (shore != null) { shore = undefined; continue }
         if (goal instanceof goals.GoalFollowEntity) {
@@ -855,16 +861,16 @@ export class ThePathfinder {
     }
   }
 
-  async perform (path: Path, goal: goals.Goal, entry = 0): Promise<void> {
-    return await this.executionRunner.perform(path, goal, entry)
+  async perform (path: Path, goal: goals.Goal, entry = 0, continueSwimming?: () => boolean): Promise<void> {
+    return await this.executionRunner.perform(path, goal, entry, continueSwimming)
   }
 
   async recovery (move: Move, path: Path, goal: goals.Goal, entry = 0): Promise<void> {
     return await this.executionRunner.recovery(move, path, goal, entry)
   }
 
-  async cleanupBot (forceSafety = false): Promise<void> {
-    this.bot.clearControlStates()
+  async cleanupBot (forceSafety = false, keepControls = false): Promise<void> {
+    if (!keepControls) this.bot.clearControlStates()
 
     // rough code. just need any of them.
 

@@ -305,6 +305,35 @@ export class JumpCalculator {
   }
 }
 
+class LiveParkourPhysics extends ClimbAwarePhysics {
+  private readonly states = new WeakMap<PlayerState, any>()
+
+  constructor (private readonly bot: Bot) { super(bot.registry) }
+
+  override simulate (context: EPhysicsCtx<PlayerState>, world: Parameters<ClimbAwarePhysics['simulate']>[1]): PlayerState {
+    const player = context.state
+    let live = this.states.get(player)
+    if (live == null) {
+      const NativeState = require('prismarine-physics').PlayerState
+      live = new NativeState(this.bot, player.control)
+      this.states.set(player, live)
+    }
+    live.pos = player.pos.clone(); live.vel = player.vel.clone()
+    live.control = player.control
+    live.yaw = player.yaw; live.pitch = player.pitch
+    live.attributes = structuredClone(player.attributes ?? {})
+    for (const key of ['onGround', 'isInWater', 'isInLava', 'isInWeb', 'isCollidedHorizontally', 'isCollidedVertically', 'jumpTicks', 'jumpQueued'] as const) live[key] = player[key]
+    // Use the same native physics and supporting-block compatibility as the
+    // live bot. A different takeoff/friction model shifts the last jump tick.
+    ;(this.bot.physics as any).simulatePlayer(live, world)
+    player.pos.set(live.pos.x, live.pos.y, live.pos.z)
+    player.vel.set(live.vel.x, live.vel.y, live.vel.z)
+    Object.assign(player, Object.fromEntries(['onGround', 'isInWater', 'isInLava', 'isInWeb', 'isCollidedHorizontally', 'isCollidedVertically', 'jumpTicks', 'jumpQueued'].map(key => [key, live[key]])))
+    player.lastOnGround = player.onGround
+    return player
+  }
+}
+
 export class ParkourJumpHelper {
   public readonly sim: JumpSim
   private readonly bot: Bot
@@ -312,12 +341,25 @@ export class ParkourJumpHelper {
 
   constructor (bot: Bot, world: World) {
     this.bot = bot
-    this.sim = new JumpSim(new ClimbAwarePhysics(bot.registry), world)
+    this.sim = new JumpSim(new LiveParkourPhysics(bot), world)
     this.world = world
   }
 
   private _buildBackupCandidates (bbs: AABB[], goalVert: Vec3, orgPos: Vec3): Vec3[] {
     const candidates = new Map<string, Vec3>()
+    const direction = goalVert.minus(orgPos); direction.y = 0
+    const aligned: Vec3[] = []
+    if (direction.norm() > 1e-6) {
+      direction.normalize()
+      for (const bb of bbs) {
+        const distances = [
+          direction.x > 1e-6 ? (orgPos.x - bb.minX + 0.25) / direction.x : direction.x < -1e-6 ? (orgPos.x - bb.maxX - 0.25) / direction.x : Infinity,
+          direction.z > 1e-6 ? (orgPos.z - bb.minZ + 0.25) / direction.z : direction.z < -1e-6 ? (orgPos.z - bb.maxZ - 0.25) / direction.z : Infinity,
+        ]
+        const distance = Math.min(...distances)
+        if (Number.isFinite(distance) && distance > 0) aligned.push(orgPos.minus(direction.scaled(distance)))
+      }
+    }
 
     for (const bb of bbs) {
       for (const vert of bb.toVertices()) {
@@ -328,7 +370,9 @@ export class ParkourJumpHelper {
       }
     }
 
-    return [...candidates.values()].sort((a, b) => {
+    // Retreat along the intended flight line first. The nearest block corner
+    // can be beside the bot, leaving lateral velocity and almost no run-up.
+    return [...aligned, ...[...candidates.values()].sort((a, b) => {
       const aOrgDist = a.xzDistanceTo(orgPos)
       const bOrgDist = b.xzDistanceTo(orgPos)
       if (Math.abs(aOrgDist - bOrgDist) > 1e-6) return aOrgDist - bOrgDist
@@ -338,7 +382,7 @@ export class ParkourJumpHelper {
       if (Math.abs(aGoalDist - bGoalDist) > 1e-6) return bGoalDist - aGoalDist
 
       return 0
-    })
+    })]
   }
 
   public findGoalVertex (goal: AABB): Vec3 {
@@ -367,13 +411,15 @@ export class ParkourJumpHelper {
     // for example: bot pos is 0.7,0,0 and goal is 0,0,0 to 1,0,1, then push 0.7,0,0
 
     if (goal.minX - pos.x < 1 && pos.x - goal.maxX < 1) {
-      verts.push(v(goal.maxX - pos.x + goal.minX, goal.maxY, goal.minZ))
-      verts.push(v(goal.maxX - pos.x + goal.minX, goal.maxY, goal.maxZ))
+      const x = Math.max(goal.minX, Math.min(goal.maxX, pos.x))
+      verts.push(v(x, goal.maxY, goal.minZ))
+      verts.push(v(x, goal.maxY, goal.maxZ))
     }
 
     if (goal.minZ - pos.z < 1 && pos.z - goal.maxZ < 1) {
-      verts.push(v(goal.minX, goal.maxY, goal.maxZ - pos.z + goal.minZ))
-      verts.push(v(goal.maxX, goal.maxY, goal.maxZ - pos.z + goal.minZ))
+      const z = Math.max(goal.minZ, Math.min(goal.maxZ, pos.z))
+      verts.push(v(goal.minX, goal.maxY, z))
+      verts.push(v(goal.maxX, goal.maxY, z))
     }
 
     let minDist = Infinity
@@ -535,7 +581,15 @@ export class ParkourJumpHelper {
 
     const ctx = EPhysicsCtx.FROM_BOT(this.sim.ctx, this.bot)
 
-    this.sim.simulateBackUpBeforeJump(ctx, lazyFix, true, true, 40)
+    // The live retreat settles before the run-up. Testing a moving backup
+    // carries reverse velocity into the prediction and rejects straight lanes.
+    const takeoff = lazyFix.offset(0, orgPos.y - lazyFix.y, 0)
+    if (getUnderlyingBBs(this.world, takeoff, 0.6).length === 0) return false
+    ctx.state.pos.set(takeoff.x, takeoff.y, takeoff.z)
+    ctx.state.vel.set(0, 0, 0)
+    ctx.state.onGround = true
+    ctx.state.lastOnGround = true
+    ctx.state.jumpTicks = 0
     const state = this.sim.simulateJumpFromEdgeOfBlock(ctx, bbs, goalVert, goalBBs, true, 40)
     return reached(state, 0) as boolean
   }

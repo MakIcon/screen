@@ -18,6 +18,7 @@ import { ThePathfinder } from './ThePathfinder'
 import { printBotControls } from './utils'
 import { ClimbExecutor } from './mineflayer-specific/movements/climb'
 import { BreakHandler } from './mineflayer-specific/movements/interactionUtils'
+import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -33,7 +34,7 @@ export interface PathfinderExecutionHost {
   getBot: () => Bot
   getWorld: () => World
   getActiveMappings: () => ExecutionMappings
-  cleanupBot: () => Promise<void>
+  cleanupBot: (forceSafety?: boolean, keepControls?: boolean) => Promise<void>
   getPathFromToRaw: (startPos: Vec3, startVel: Vec3, goal: goals.Goal) => Promise<Path | null>
 }
 
@@ -134,7 +135,7 @@ export class PathExecutor {
     return currentIndex
   }
 
-  public async perform (path: Path, goal: goals.Goal, entry = 0): Promise<void> {
+  public async perform (path: Path, goal: goals.Goal, entry = 0, continueSwimming?: () => boolean): Promise<void> {
     const MAX_RECOVERY_DEPTH = 2
 
     if (entry > MAX_RECOVERY_DEPTH) {
@@ -152,6 +153,9 @@ export class PathExecutor {
       const lastMove = localPath[localPath.length - 1]
       const pos = bot.entity.position
       if (!bot.entity.onGround && !this.host.world.getBlockInfo(pos).climbable && !(bot.entity as any).isInWater) return false
+      // A partial water route ends a horizontal stroke, not a dive to the
+      // search node's depth. Breathing raises the swimmer within that column.
+      if (continueSwimming?.() === true && Math.floor(pos.x) === lastMove.x && Math.floor(pos.z) === lastMove.z) return true
       if (goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) {
         return goal.isEnd({ ...lastMove, exitPos: pos, x: pos.x, y: pos.y, z: pos.z } as Move)
       }
@@ -171,6 +175,7 @@ export class PathExecutor {
     let pendingInit: Promise<void> | undefined
     let tickCount = 0
     let settled = false
+    let keptSwimming = false
     let recoveryInFlight = false
     const stopController = new ClimbExecutor(bot, this.host.world, this.host.defaultMoveSettings)
 
@@ -192,12 +197,13 @@ export class PathExecutor {
       executor?.reset()
     }
 
-    const finish = async (): Promise<void> => {
+    const finish = async (completed = false): Promise<void> => {
       if (settled) return
       settled = true
       bot.off('physicsTick', moveListener)
       if (this.getCurrentExecutionId() === myExecutionId) {
-        await this.timeAsync('finish cleanup', async () => await this.host.cleanupBot())
+        keptSwimming = completed && continueSwimming?.() === true
+        await this.timeAsync('finish cleanup', async () => await this.host.cleanupBot(false, keptSwimming))
       }
       resolveCompletion()
     }
@@ -322,6 +328,17 @@ export class PathExecutor {
           throw new Error('No executor for movement type ' + move.moveType.constructor.name)
         }
 
+        const previousMove = this.getCurrentMove() ?? localPath[currentIndex - 1]
+        // Consecutive water strokes must retain forward/sprint. Clearing them
+        // between blocks exits the swim pose before the next stroke can start.
+        const waterStroke = (candidate: Move | undefined): boolean => candidate != null &&
+          /^(Forward|Diagonal)$/.test(candidate.moveType.constructor.name) &&
+          candidate.toPlace.length === 0 && candidate.toBreak.length === 0 &&
+          this.host.world.getBlockInfo(candidate.exitPos).liquid
+        const resumingSwim = currentIndex <= 1 && canContinueSwimming(bot)
+        const keepSwimming = (bot.entity as any).isInWater === true &&
+          ((waterStroke(move) && (waterStroke(previousMove) || resumingSwim)) ||
+            (resumingSwim && move.moveType.constructor.name === 'IdleMovement'))
         this.setCurrentMove(move)
         this.setCurrentExecutor(executor)
         this.setCurrentIndex(currentIndex)
@@ -330,7 +347,7 @@ export class PathExecutor {
         log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId)
         tickCount = 0
 
-        await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot())
+        await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot(false, keepSwimming))
         executor.loadMove(move)
 
         if (executor.isAlreadyCompleted(move, tickCount, goal)) {
@@ -365,11 +382,12 @@ export class PathExecutor {
 
           // The actual supported position is authoritative. A predicted move
           // completion can otherwise leave a stopped bot waiting at its goal.
-          const active = this.getCurrentMove()
+          const active = this.getCurrentMove() ?? localPath[localPath.length - 1]
           if (isAtGoal() && bot.entity.onGround && active?.toBreak.length === 0 && active.toPlace.length === 0) {
             const target = localPath[localPath.length - 1].exitPos
             const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm()
-            if (speed > 0.035) {
+            const needsCentering = goal instanceof goals.GoalBlock && bot.entity.position.xzDistanceTo(target) > 0.25
+            if (speed > 0.025 || needsCentering) {
               stopController.adjustPosition(target, 0.08)
               bot.setControlState('jump', false)
               bot.setControlState('sprint', false)
@@ -385,7 +403,7 @@ export class PathExecutor {
             if (!hasWork) {
               if (pendingOptimize == null) {
                 log(`execution ${myExecutionId} completed at ${bot.entity.position}`)
-                await finish()
+                await finish(true)
                 return
               }
               return
@@ -548,7 +566,7 @@ export class PathExecutor {
         void fail(err)
       }).finally(() => {
         tickInFlight = false
-        if (settled && this.getCurrentExecutionId() === myExecutionId) bot.clearControlStates()
+        if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId) bot.clearControlStates()
       })
     }
 

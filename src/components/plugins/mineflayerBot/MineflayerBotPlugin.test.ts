@@ -15,6 +15,7 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.canDig).toBe(false);
     expect(normalized.allowAirStrafe).toBe(false);
     expect(normalized.stayOnWater).toBe(true);
+    expect(normalized.antiKnockback).toBe(false);
     expect(normalized.commandSource).toBe("both");
     expect(normalized.commandCooldownMs).toBe(500);
     expect(normalized.combat.engine).toBe("custom");
@@ -49,11 +50,20 @@ describe("normalizeMineflayerBotSettings", () => {
       canDig: true,
       allowAirStrafe: true,
       stayOnWater: false,
+      antiKnockback: true,
       autoReconnect: false,
       logPathUpdates: true,
     };
 
     expect(normalizeMineflayerBotSettings(modern)).toEqual(modern);
+  });
+
+  it("keeps anti knockback off by default and preserves both saved modes", () => {
+    for (const antiKnockback of [true, false]) {
+      const saved = JSON.parse(JSON.stringify(normalizeMineflayerBotSettings({ antiKnockback })));
+      expect(normalizeMineflayerBotSettings(saved).antiKnockback).toBe(antiKnockback);
+    }
+    expect(normalizeMineflayerBotSettings({ antiKnockback: "false" }).antiKnockback).toBe(false);
   });
 
   it("normalizes a partial combat configuration without losing bow preferences", () => {

@@ -1,4 +1,4 @@
-import { BaseSimulator, BotcraftPhysics, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
+import { BaseSimulator, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import { Move } from '../move'
@@ -10,6 +10,7 @@ import type { Block } from '../../types'
 import { Vec3Properties } from '../../types'
 import { COST_INF, SPRINT_ONE_BLOCK_COST, WALK_ONE_BLOCK_COST, WALK_ONE_IN_WATER_COST } from './costs'
 import type { ExclusionArea } from './exclusionZones'
+import { ClimbAwarePhysics } from '../climbablePhysics'
 
 export interface MovementOptions {
   allowDiagonalBridging: boolean
@@ -229,11 +230,13 @@ export abstract class Movement {
   }
 
   toPlace (): PlaceHandler[] {
-    return this.currentMove.toPlace?.filter((b) => !b.allowExit) ?? []
+    // A partial route can reuse a step that the server already confirmed in a
+    // previous route. A fresh handler must not keep that movement locked forever.
+    return this.currentMove.toPlace?.filter((b) => !b.allowExit && (b.isPerforming || b.needToPerform(this.bot))) ?? []
   }
 
   toPlaceLen (): number {
-    return this.currentMove.toPlace?.filter((b) => !b.allowExit).length ?? 0
+    return this.toPlace().length
   }
 
   getBlock (pos: Vec3Properties, dx: number, dy: number, dz: number): Block | null {
@@ -423,7 +426,7 @@ export abstract class SimMovement extends Movement {
   sim: BaseSimulator
   constructor (bot: Bot, world: World, settings: Partial<MovementOptions>) {
     super(bot, world, settings)
-    this.sim = new BaseSimulator(new BotcraftPhysics(bot.registry))
+    this.sim = new BaseSimulator(new ClimbAwarePhysics(bot.registry))
     this.stateCtx = EPhysicsCtx.FROM_BOT(this.sim.ctx, bot)
   }
 

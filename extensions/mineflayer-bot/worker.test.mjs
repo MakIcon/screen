@@ -8,6 +8,17 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("anti knockback is disabled for legacy configs and accepts only explicit true", () => {
+  for (const [input, expected] of [[undefined, false], [false, false], [true, true], ["false", false]]) {
+    const config = worker.parseConfig(JSON.stringify({
+      server: { host: "localhost" },
+      account: { username: "Bot" },
+      behavior: { antiKnockback: input },
+    }));
+    assert.equal(config.behavior.antiKnockback, expected);
+  }
+});
+
 const {
   compatibleTimePlugin,
   describeKickReason,

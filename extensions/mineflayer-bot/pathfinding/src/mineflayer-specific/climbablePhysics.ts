@@ -1,11 +1,35 @@
 import type { Bot } from 'mineflayer'
-import { BotcraftPhysics, PlayerState } from '@nxg-org/mineflayer-physics-util'
+import { BotcraftPhysics, EPhysicsCtx, PlayerState } from '@nxg-org/mineflayer-physics-util'
 
 const patched = new WeakSet<object>()
 const vineNames = new Set(['twisting_vines', 'twisting_vines_plant', 'weeping_vines', 'weeping_vines_plant'])
 export const climbableNames = new Set(['ladder', 'vine', ...vineNames])
 
 export class ClimbAwarePhysics extends BotcraftPhysics {
+  private readonly simulationAttributes = new WeakMap<PlayerState, PlayerState['attributes']>()
+
+  constructor (registry: Bot['registry']) {
+    super(registry)
+    // The engine's setter replaces server attributes with the default speed.
+    // Its movement-speed getter already applies the sprint modifier.
+    const internal = this as unknown as { setSprinting: (context: EPhysicsCtx<PlayerState>, value: boolean) => void }
+    internal.setSprinting = (context, value) => { context.state.sprinting = value }
+  }
+
+  override simulate (context: EPhysicsCtx<PlayerState>, world: Parameters<BotcraftPhysics['simulate']>[1]): PlayerState {
+    const player = context.state
+    // Prismarine does not maintain entity.lastOnGround. A fresh prediction
+    // must use the live grounded state for takeoff acceleration and friction.
+    player.lastOnGround = player.onGround
+    // PlayerState.update shares the bot's attribute objects. Predictions and
+    // water simulation must never change the attributes received from a server.
+    if (this.simulationAttributes.get(player) !== player.attributes) {
+      player.attributes = structuredClone(player.attributes ?? {})
+      this.simulationAttributes.set(player, player.attributes)
+    }
+    return super.simulate(context, world) as PlayerState
+  }
+
   override isInClimbable (player: PlayerState, world: Parameters<BotcraftPhysics['isInClimbable']>[1]): boolean {
     return player.gameMode !== 'spectator' && (vineNames.has(world.getBlock(player.pos)?.name ?? '') || super.isInClimbable(player, world))
   }

@@ -51,6 +51,7 @@ export interface SimOpts {
 export interface PostInitAlignOpts { handleBack?: boolean, lookAt?: Vec3, lookAtYaw?: Vec3, sprint?: boolean }
 
 export abstract class MovementExecutor extends Movement {
+  private controlGeneration = 0
   /**
    * Physics engine, baby.
    */
@@ -98,6 +99,7 @@ export abstract class MovementExecutor extends Movement {
   public reset (): void {
     // log('Resetting MovementExecutor')
     this.aborted = false
+    this.controlGeneration++
     delete this.resetReason
     this.task.finish()
   }
@@ -348,13 +350,22 @@ export abstract class MovementExecutor extends Movement {
       !ectx.state.onGround &&
       this.bot.pathfinder.world.getBlockInfo(this.bot.entity.position.floored().translate(0, -0.6, 0)).liquid
 
+    // Floating/swimming changes foot height within the same water column.
+    // Finish a horizontal stroke at that height instead of braking and backing
+    // up over a reached waypoint until the bot sinks to the planned depth.
+    let fluidTarget = target
+    if ((aboveWater || ectx.state.isInWater) && startMove.entryPos.y === target.y && this.world.getBlockInfo(target).water) {
+      const atSwimHeight = target.offset(0, normPos.y - target.y, 0)
+      if (this.world.getBlockInfo(atSwimHeight).water) fluidTarget = atSwimHeight
+    }
+
     if (aboveWater) {
-      bb1bl = this.bot.pathfinder.world.getBlockInfo(target.floored())
+      bb1bl = this.bot.pathfinder.world.getBlockInfo(fluidTarget.floored())
       bbCheckCond = bb1bl.walkthrough
       const bb1s = AABB.fromBlockPos(bb1bl.position)
       weGood = bb1s.collides(bb0) && bbCheckCond // && !(this.bot.entity as any).isCollidedHorizontally;
     } else if (ectx.state.isInWater) {
-      bb1bl = this.bot.pathfinder.world.getBlockInfo(target.floored())
+      bb1bl = this.bot.pathfinder.world.getBlockInfo(fluidTarget.floored())
       bbCheckCond = bb1bl.liquid
       const bb1s = AABB.fromBlock(bb1bl.position)
       weGood = bb1s.collides(bb0) && bbCheckCond // && !(this.bot.entity as any).isCollidedHorizontally;
@@ -555,7 +566,11 @@ export abstract class MovementExecutor extends Movement {
       // Face the player when it agrees with the safe route. Around an obstacle,
       // keep looking along the route rather than turning into the obstruction.
       if (route.norm() > 0.2 && towardPlayer.norm() > 0.3 && route.normalize().dot(towardPlayer.normalize()) > 0.85) target = player
-      pitch = Math.max(-0.6, Math.min(0.6, Math.atan2(player.y - pos.y, Math.max(1, player.xzDistanceTo(pos)))))
+      // Water propulsion follows pitch. Looking up at a player on a bridge
+      // ejects the swimmer from the water on every stroke; cruise horizontally.
+      if (!(this.bot.entity as any).isInWater) {
+        pitch = Math.max(-0.6, Math.min(0.6, Math.atan2(player.y - pos.y, Math.max(1, player.xzDistanceTo(pos)))))
+      }
     }
     const dx = target.x - pos.x
     const dz = target.z - pos.z
@@ -717,6 +732,7 @@ export abstract class MovementExecutor extends Movement {
     opts?: PostInitAlignOpts
   ): Promise<void>
   protected async postInitAlignToPath (startMove: Move, endMove?: any, opts?: any): Promise<void> {
+    const generation = this.controlGeneration
     if (endMove === undefined) {
       endMove = startMove
       opts = {}
@@ -748,6 +764,9 @@ export abstract class MovementExecutor extends Movement {
       }
     }
 
+    // An awaited camera turn can finish after this move has been replaced.
+    // Do not let its old waypoint brake the next swim stroke or run-up.
+    if (generation !== this.controlGeneration) return
     botStrafeMovement(this.bot, endMove.exitPos, true)
     botSmartMovement(this.bot, endMove.exitPos, sprint)
 
