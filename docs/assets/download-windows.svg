@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="72" viewBox="0 0 320 72" role="img" aria-labelledby="title desc">
+  <title id="title">Download ScreenLauncher for Windows</title>
+  <desc id="desc">64-bit Windows EXE installer</desc>
+  <rect width="320" height="72" rx="13" fill="#c94709"/>
+  <g fill="none" stroke="#fff7ee" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 17V43M22 34L32 44L42 34"/>
+    <path d="M21 50H43"/>
+  </g>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="62" y="32" font-size="17" font-weight="700" letter-spacing="-.25" fill="#fff9f2">Download for Windows</text>
+    <text x="62" y="52" font-size="13" font-weight="450" fill="#f8d9c9">64-bit · .exe installer</text>
+  </g>
+</svg>
