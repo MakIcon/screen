@@ -2,13 +2,12 @@
   <title id="title">Download ScreenLauncher for Windows</title>
   <desc id="desc">Windows 64-bit executable installer</desc>
   <rect width="320" height="72" rx="13" fill="#c94709"/>
-  <rect x="15" y="14" width="44" height="44" rx="11" fill="#ffffff" fill-opacity=".13"/>
-  <g transform="translate(25 23)" stroke="#fffaf4" stroke-width="2.35" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2v13M7 10l5 5 5-5"/>
-    <path d="M4.5 19v3h15v-3"/>
+  <g transform="translate(26 17)" stroke="#fffaf4" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 2v18M9 13l7 7 7-7"/>
+    <path d="M7 26v4h18v-4"/>
   </g>
   <g font-family="Inter,Segoe UI,Arial,sans-serif">
-    <text x="74" y="31" font-size="17" font-weight="700" letter-spacing="-.35" fill="#fffaf4">Download for Windows</text>
-    <text x="74" y="50" font-size="13" font-weight="400" fill="#f7ddce">64-bit · EXE installer</text>
+    <text x="66" y="31" font-size="17" font-weight="700" letter-spacing="-.35" fill="#fffaf4">Download for Windows</text>
+    <text x="66" y="50" font-size="13" font-weight="400" fill="#f7ddce">64-bit · EXE installer</text>
   </g>
 </svg>
