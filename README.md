@@ -2,7 +2,31 @@
 
 Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
 
-[![forthebadge](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjguNDM0MDYyOTU3NzYzNjciIGhlaWdodD0iMzUiIHZpZXdCb3g9IjAgMCAxNjguNDM0MDYyOTU3NzYzNjcgMzUiIGNsYXNzPSJiYWRnZS1zdmciIGRhdGEtdi01YTc3MjM1YT0iIj48ZGVmcyBkYXRhLXYtNWE3NzIzNWE9IiI+PCEtLS0tPjwhLS0tLT48IS0tLS0+PC9kZWZzPjxyZWN0IGRhdGEtdi01YTc3MjM1YT0iIiB3aWR0aD0iMTAzLjk4MzMyOTc3Mjk0OTIyIiBoZWlnaHQ9IjM1IiBmaWxsPSIjMDAwMDAwIi8+PHJlY3QgZGF0YS12LTVhNzcyMzVhPSIiIHg9IjEwMy45ODMzMjk3NzI5NDkyMiIgd2lkdGg9IjY0LjQ1MDczMzE4NDgxNDQ1IiBoZWlnaHQ9IjM1IiBmaWxsPSIjMzg5QUQ1Ii8+PCEtLS0tPjx0ZXh0IHg9IjUxLjk5MTY2NDg4NjQ3NDYxIiB5PSIxNy41IiBkeT0iMC4zNWVtIiBmb250LXNpemU9IjEyIiBmb250LWZhbWlseT0iUm9ib3RvLCBzYW5zLXNlcmlmIiBmaWxsPSIjRkZGRkZGIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMiIgZm9udC13ZWlnaHQ9IjYwMCIgZm9udC1zdHlsZT0ibm9ybWFsIiB0ZXh0LWRlY29yYXRpb249Im5vbmUiIGZpbGwtb3BhY2l0eT0iMSIgZm9udC12YXJpYW50PSJub3JtYWwiIHN0eWxlPSJ0ZXh0LXRyYW5zZm9ybTogdXBwZXJjYXNlOyIgZGF0YS12LTVhNzcyMzVhPSIiPk1BREUgVEhJUzwvdGV4dD48IS0tLS0+PHRleHQgeD0iMTM2LjIwODY5NjM2NTM1NjQ1IiB5PSIxNy41IiBkeT0iMC4zNWVtIiBmb250LXNpemU9IjEyIiBmb250LWZhbWlseT0iTW9udHNlcnJhdCwgc2Fucy1zZXJpZiIgZmlsbD0iI0ZGRkZGRiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC13ZWlnaHQ9IjkwMCIgbGV0dGVyLXNwYWNpbmc9IjIiIGZvbnQtc3R5bGU9Im5vcm1hbCIgdGV4dC1kZWNvcmF0aW9uPSJub25lIiBmaWxsLW9wYWNpdHk9IjEiIGZvbnQtdmFyaWFudD0ibm9ybWFsIiBzdHlsZT0idGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlOyIgZGF0YS12LTVhNzcyMzVhPSIiPlJVU1Q8L3RleHQ+PCEtLS0tPjwvc3ZnPg==)](https://forthebadge.com)
+<svg xmlns="http://www.w3.org/2000/svg" width="316" height="48" viewBox="0 0 316 48" role="img" aria-label="MADE WITH RUST">
+  <title>Made with Rust</title>
+  <defs>
+    <clipPath id="badge-clip">
+      <rect x="1.5" y="1.5" width="313" height="45" rx="4"/>
+    </clipPath>
+    <pattern id="stripes" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="3" height="12" fill="#FFFFFF" opacity="0.07"/>
+    </pattern>
+  </defs>
+  <g clip-path="url(#badge-clip)">
+    <rect width="174" height="48" fill="#181B20"/>
+    <rect x="174" width="142" height="48" fill="#D95C28"/>
+    <rect x="174" width="142" height="48" fill="url(#stripes)"/>
+    <rect x="0" y="0" width="316" height="4" fill="#FFFFFF" opacity="0.12"/>
+    <rect x="174" y="1" width="2" height="46" fill="#0C0E11" opacity="0.40"/>
+  </g>
+  <rect x="1.5" y="1.5" width="313" height="45" rx="4" fill="none" stroke="#0D0F13" stroke-width="3"/>
+  <g fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle" dominant-baseline="middle">
+    <text x="87" y="25" font-size="16" letter-spacing="1.1">MADE WITH</text>
+    <text x="245" y="25" font-size="18" letter-spacing="1.5">RUST</text>
+  </g>
+</svg>
+
+<img width="316" height="48" alt="my-rust-badge" src="https://github.com/user-attachments/assets/1ad4d42b-793b-4f56-a947-30f20d0cae71" />
 
 Local builds, settings and accounts load independently of the Minecraft version service. The launcher displays a cached version manifest before refreshing it in the background, so a network failure does not hide installed builds.
 
