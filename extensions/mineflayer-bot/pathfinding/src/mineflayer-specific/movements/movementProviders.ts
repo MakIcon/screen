@@ -3,6 +3,7 @@ export { NeoProvider } from './neo'
 export { MomentumJump } from './momentum'
 import { isIceBlock } from './momentum'
 export { Climb } from './climb'
+export { WaterDrop } from './waterDrop'
 export { LadderForward, LadderDiagonal, LadderLandingForward, LadderLandingDiagonal } from './advanced/ladder-provider'
 export { AroundCornerDiagonal } from './advanced/around-corner-provider'
 import * as goals from '../goals'
@@ -277,36 +278,20 @@ export class ForwardJump extends MovementProvider {
 
 abstract class DropDownProvider extends MovementProvider {
   getLandingBlock (orgBlock: BlockInfo, node: Move, dir: Vec3 = emptyVec): BlockInfo | null {
-    // const chunk = this.bot.world.getColumn(node.x >> 4, node.z >> 4) as unknown as PCChunk;
-
-    // TODO: optimize this.
-    // If the chunk is cached, this will double our calculation speed.
-    let min
-
-    const startedInLiquid = orgBlock.liquid
-    let blockLand
-    if (startedInLiquid) {
-      min = node.y - 1
-      blockLand = this.getBlockInfo(node, dir.x, -1, dir.z)
-    } else {
-      blockLand = this.getBlockInfo(node, dir.x, -1, dir.z)
-      if (this.settings.infiniteLiquidDropdownDistance) {
-        min = (this.bot.game as any).minY ?? -64
-        // min = isBlockTypeInChunks(BlockInfo.WATER1.block!, chunk) ? (this.bot.game as any).minY : node.y - this.settings.maxDropDown;
-      } else {
-        min = node.y - this.settings.maxDropDown - 1
-      }
-    }
-
-    // min = node.y - this.settings.maxDropDown
-
-    while (blockLand.position.y >= min) {
+    const maxDrop = this.settings.maxDropDown
+    const deepWater = this.settings.allowWaterDrop && this.settings.infiniteLiquidDropdownDistance
+    // Query each depth once. Ground needs one extra cell for its support;
+    // deep water stops at the world's real lower boundary, never a fixed 100.
+    const maxDepth = orgBlock.liquid ? 1 : deepWater
+      ? Math.max(0, node.y - (this.world.minY ?? (this.bot.game as any).minY ?? -64)) : maxDrop + 1
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      const blockLand = this.getBlockInfo(node, dir.x, -depth, dir.z)
       if (blockLand.isInvalid || !blockLand.safe) return null
       if (blockLand.water) {
-        if (!this.settings.infiniteLiquidDropdownDistance && node.y - blockLand.position.y > this.settings.maxDropDown) return null
+        if (!deepWater && depth > maxDrop) return null
         // High drops need a real water column and an open surface to breathe.
         // The ground-drop limit still applies to stone, roofs and the seabed.
-        if (node.y - blockLand.position.y > this.settings.maxDropDown &&
+        if (depth > maxDrop &&
           (!this.getBlockInfo(blockLand.position, 0, -1, 0).water ||
            !this.getBlockInfo(blockLand.position, 0, 1, 0).walkthrough ||
            !this.getBlockInfo(blockLand.position, 0, 2, 0).walkthrough)) return null
@@ -314,15 +299,12 @@ abstract class DropDownProvider extends MovementProvider {
       }
       if (blockLand.liquid) return null // Lava is never a safe water landing.
       if (blockLand.physical) {
-        if (node.y > blockLand.height && node.y - blockLand.height <= this.settings.maxDropDown) {
+        if (node.y > blockLand.height && node.y - blockLand.height <= maxDrop) {
           return this.getBlockInfo(blockLand.position, 0, 1, 0)
         }
-        // return null;
+        return null // A solid roof/floor blocks every landing below it.
       }
       if (!blockLand.walkthrough) return null
-      // console.log("before drop:", blockLand.position)
-      blockLand = this.getBlockInfo(blockLand.position, 0, -1, 0)
-      // console.log("after drop:", blockLand.position)if (node.y - blockLand.position.y <= this.settings.maxDropDown)
     }
     return null
   }

@@ -38,6 +38,8 @@ export interface MovementOptions {
   dontMineUnderFallingBlock: boolean
 
   maxDropDown: number
+  allowWaterDrop: boolean
+  allowBucketWaterDrop: boolean
   infiniteLiquidDropdownDistance: boolean
   allowSprinting: boolean
   careAboutLookAlignment: boolean
@@ -74,6 +76,8 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   dontMineUnderFallingBlock: true,
   allow1by1towers: true,
   maxDropDown: 3,
+  allowWaterDrop: true,
+  allowBucketWaterDrop: true,
   infiniteLiquidDropdownDistance: true,
   allowSprinting: true,
   // Extra time water adds over walking the same block on land (~4.46 ticks).

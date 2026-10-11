@@ -72,11 +72,23 @@ export class Climb extends MovementProvider {
 export class ClimbExecutor extends MovementExecutor {
   private leaving = false
   private started = 0
+  private aim?: Vec3
 
-  override reset (): void { this.leaving = false; this.started = 0; super.reset() }
+  override reset (): void { this.leaving = false; this.started = 0; this.aim = undefined; super.reset() }
   override isAlreadyCompleted (move: Move): boolean { return this.reached(move) }
   align (): boolean { return true }
-  performInit (): void { this.started = performance.now() }
+  performInit (move: Move, currentIndex: number, path: Move[]): void {
+    this.started = performance.now()
+    const mode = move.metadata?.climbMode
+    if (mode === 'enter' || mode === 'enter-up' || mode === 'exit') this.aim = move.exitPos
+    else {
+      // Find the column exit once per move, without slicing the remaining path
+      // and rescanning it on every physics tick of a tall ladder.
+      for (let i = currentIndex + 1; i < path.length; i++) {
+        if (path[i].exitPos.xzDistanceTo(move.entryPos) > 0.7) { this.aim = path[i].exitPos; break }
+      }
+    }
+  }
 
   private reached (move: Move): boolean {
     const pos = this.bot.entity.position
@@ -109,6 +121,11 @@ export class ClimbExecutor extends MovementExecutor {
 
   async performPerTick (move: Move): Promise<boolean> {
     if (this.reached(move)) {
+      const next = this.bot.pathfinder.currentPath?.[this.bot.pathfinder.currentIndex + 1]
+      // Keep vanilla climbing speed through consecutive rungs. Sneaking at
+      // every block kills vertical momentum and makes vines especially slow.
+      if (next?.moveType instanceof Climb && next.entryPos.xzDistanceTo(move.exitPos) < 0.3 &&
+        next.exitPos.y > move.exitPos.y && this.bot.getControlState('jump')) return true
       this.bot.clearControlStates()
       // Sneak arrests downward velocity when the next climbing step is prepared.
       this.bot.setControlState('sneak', !this.bot.entity.onGround)
@@ -120,7 +137,7 @@ export class ClimbExecutor extends MovementExecutor {
     const up = mode === 'up' || mode === 'enter-up' || mode === 'crest' || (mode === 'exit' && move.exitPos.y > move.entryPos.y)
     const target = mode === 'exit' && up && !this.leaving ? move.entryPos : move.exitPos
     if (mode === 'exit' && up && pos.y >= move.exitPos.y - 0.01) this.leaving = true
-    const aim = mode === 'enter' || mode === 'enter-up' || mode === 'exit' ? move.exitPos : (this.bot.pathfinder.currentPath?.slice(this.bot.pathfinder.currentIndex + 1).find(m => m.exitPos.xzDistanceTo(pos) > 0.7)?.exitPos)
+    const aim = this.aim
     if (aim != null && aim.xzDistanceTo(pos) > 0.3) await this.lookAtPathPos(aim)
     this.adjustPosition(this.leaving ? move.exitPos : this.columnAnchor(target, move.exitPos.y < move.entryPos.y ? 'down' : mode))
     this.bot.setControlState('sprint', false)

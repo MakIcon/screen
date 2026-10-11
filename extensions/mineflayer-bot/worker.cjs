@@ -50,7 +50,9 @@ function configurePathfinder (bot, movement, behavior = {}) {
       canPlace: true,
       allow1by1towers: true,
       maxDropDown: movement.maxDropDown,
-      infiniteLiquidDropdownDistance: true,
+      allowWaterDrop: movement.allowWaterDrop !== false,
+      allowBucketWaterDrop: movement.allowBucketWaterDrop !== false,
+      infiniteLiquidDropdownDistance: movement.allowWaterDrop !== false,
       movementTimeoutMs: 3000
     },
     pathfinderSettings: {
@@ -315,6 +317,8 @@ function parseConfig (raw) {
     allowAirStrafe: false,
     canDig: false,
     maxDropDown: 3,
+    allowWaterDrop: true,
+    allowBucketWaterDrop: true,
     ...(config.movement || {})
   }
   config.connection = {
@@ -347,6 +351,8 @@ function parseConfig (raw) {
   config.movement.followDistance = clampNumber(config.movement.followDistance, 3, 1, 16)
   config.movement.gotoRadius = clampNumber(config.movement.gotoRadius, 1, 1, 16)
   config.movement.maxDropDown = clampNumber(config.movement.maxDropDown, 3, 1, 16)
+  config.movement.allowWaterDrop = config.movement.allowWaterDrop !== false
+  config.movement.allowBucketWaterDrop = config.movement.allowBucketWaterDrop !== false
   config.connection.reconnectDelayMs = clampNumber(
     config.connection.reconnectDelayMs,
     5000,

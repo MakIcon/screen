@@ -113,6 +113,8 @@ struct WorkerMovementConfig {
     allow_air_strafe: bool,
     can_dig: bool,
     max_drop_down: u32,
+    allow_water_drop: bool,
+    allow_bucket_water_drop: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -564,6 +566,8 @@ pub async fn start_mineflayer_bot(
             allow_air_strafe: plugin.allow_air_strafe,
             can_dig: plugin.can_dig,
             max_drop_down: plugin.max_drop_down.clamp(1, 16),
+            allow_water_drop: plugin.allow_water_drop,
+            allow_bucket_water_drop: plugin.allow_bucket_water_drop,
         },
         connection: WorkerConnectionConfig {
             auto_reconnect: plugin.auto_reconnect,
@@ -771,10 +775,12 @@ mod tests {
             allow_air_strafe: true,
             can_dig: false,
             max_drop_down: 3,
+            allow_water_drop: true,
+            allow_bucket_water_drop: true,
         };
-        assert_eq!(
-            serde_json::to_value(settings).unwrap()["allowAirStrafe"],
-            true
-        );
+        let serialized = serde_json::to_value(settings).unwrap();
+        assert_eq!(serialized["allowAirStrafe"], true);
+        assert_eq!(serialized["allowWaterDrop"], true);
+        assert_eq!(serialized["allowBucketWaterDrop"], true);
     }
 }

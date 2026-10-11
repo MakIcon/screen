@@ -99,7 +99,11 @@ export async function findShoreGoal (bot: Bot, world: World, goal: Goal, cancele
     const pos = new Vec3(exit.x + 0.5, exit.y, exit.z + 0.5)
     const start = Move.startMove(new IdleMovement(bot, world), pos, new Vec3(0, 0, 0), getScaffoldCount(bot) - (candidate.buildStep ? 1 : 0))
     if (candidate.buildStep) start.toPlace.push(PlaceHandler.fromVec(pos.floored().offset(0, -1, 0), 'solid'))
-    const handler = MovementHandler.create(bot, world, bot.pathfinder.getActiveMappings().movements, settings)
+    // These probes explicitly require a dry continuation. Don't simulate
+    // water jumps only to discard them below; that exhausts the probe budget
+    // before it can distinguish an isolated ledge from a usable shore.
+    const handler = MovementHandler.create(bot, world, bot.pathfinder.getActiveMappings().movements,
+      { ...settings, allowWaterDrop: false, allowBucketWaterDrop: false, infiniteLiquidDropdownDistance: false })
     handler.loadGoal(goal)
     const neighbors = handler.getNeighbors.bind(handler)
     handler.getNeighbors = (move, closed) => neighbors(move, closed).filter(next =>

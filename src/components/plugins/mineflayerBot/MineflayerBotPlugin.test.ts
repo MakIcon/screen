@@ -15,6 +15,8 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.canDig).toBe(false);
     expect(normalized.allowAirStrafe).toBe(false);
     expect(normalized.stayOnWater).toBe(true);
+    expect(normalized.allowWaterDrop).toBe(true);
+    expect(normalized.allowBucketWaterDrop).toBe(true);
     expect(normalized.antiKnockback).toBe(false);
     expect(normalized.commandSource).toBe("both");
     expect(normalized.commandCooldownMs).toBe(500);
@@ -51,6 +53,8 @@ describe("normalizeMineflayerBotSettings", () => {
       canDig: true,
       allowAirStrafe: true,
       stayOnWater: false,
+      allowWaterDrop: false,
+      allowBucketWaterDrop: false,
       antiKnockback: true,
       autoReconnect: false,
       logPathUpdates: true,

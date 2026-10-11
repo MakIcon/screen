@@ -34,10 +34,17 @@ for (const scenario of [
       if (/Parkour|Ladder|Neo|AroundCorner/.test(provider.name)) rig.bot.pathfinder.dropMovement(provider)
     }
     const used: string[] = []
+    let ascentBrakes = 0
+    rig.bot.on('physicsTick', () => {
+      const move = rig.bot.pathfinder.currentMove
+      if (move?.metadata?.climbMode === 'up' && rig.bot.entity.position.y >= 65 &&
+        rig.bot.entity.position.y < 68.8 && rig.bot.getControlState('sneak')) ascentBrakes++
+    })
     rig.bot.on('pathGenerated', (result: any) => used.push(...result.path.map((m: any) => m.moveType.constructor.name)))
     try {
       await rig.bot.pathfinder.goto(new goals.GoalBlock(2, 70, 0))
       assert.ok(used.includes(movementProviders.Climb.name), used.join(','))
+      assert.equal(ascentBrakes, 0, 'Consecutive rungs must retain climbing inputs')
       assert.equal(rig.bot.entity.onGround, true)
       assert.ok(rig.bot.entity.position.floored().equals(new Vec3(2, 70, 0)), `position=${rig.bot.entity.position}`)
       await rig.bot.pathfinder.goto(new goals.GoalBlock(-2, 64, 0))

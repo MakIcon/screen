@@ -58,6 +58,7 @@ import { handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
 import { PathExecutor, type ExecutionMappings } from './pathExecutor'
 import { NeoProvider, NeoExecutor } from './mineflayer-specific/movements/neo'
 import { Climb, ClimbExecutor } from './mineflayer-specific/movements/climb'
+import { WaterDrop, WaterDropExecutor } from './mineflayer-specific/movements/waterDrop'
 import { findShoreGoal, ShoreRouteGoal } from './mineflayer-specific/shore'
 import { selectAscentPrefix } from './mineflayer-specific/ascentPrefix'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
@@ -103,6 +104,7 @@ const DEFAULT_PROVIDER_EXECUTORS = [
   [StraightDown, StraightDownExecutor],
   [StraightUp, StraightUpExecutor],
   [Climb, ClimbExecutor],
+  [WaterDrop, WaterDropExecutor],
   [ParkourForward, ParkourForwardExecutor],
   [MomentumJump, MomentumJumpExecutor],
   [ParkourDiagonal, ParkourDiagonalExecutor],
@@ -490,6 +492,7 @@ export class ThePathfinder {
     const currentIndex = this.currentIndex
     log(`block: ${block?.name} pos: ${block?.position}, path: ${path?.length}, index: ${currentIndex}`)
     if (block == null || path == null) return false
+    if (this.currentExecutor instanceof WaterDropExecutor && this.currentExecutor.acceptsWorldUpdate(block.position, block.name)) return true
 
     const pos = block.position.floored()
     for (let i = Math.max(0, currentIndex - 2); i < path.length; i++) {

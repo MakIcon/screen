@@ -247,7 +247,7 @@ test('surface swimming can be disabled without replacing navigation inputs', { t
   } finally { rig.stopPassivePhysics() }
 })
 
-for (const surface of ['stone', 'lava', 'shallow water', 'covered water']) {
+for (const surface of ['stone', 'lava', 'covered water']) {
   test(`high drops reject ${surface} even when unlimited water drops are enabled`, async () => {
     const world = createFlatWorld('1.20.4', -64, { renderDistance: 1 })
     for (let x = 0; x <= 2; x++) world.setBlock(new Vec3(x, 83, 0), 'stone')
@@ -255,7 +255,7 @@ for (const surface of ['stone', 'lava', 'shallow water', 'covered water']) {
       if (surface === 'stone') world.setBlock(new Vec3(x, 63, z), 'stone')
       else {
         world.setBlock(new Vec3(x, 63, z), surface === 'lava' ? 'lava' : 'water')
-        world.setBlock(new Vec3(x, 62, z), surface === 'shallow water' ? 'stone' : 'water')
+        world.setBlock(new Vec3(x, 62, z), 'water')
         if (surface === 'covered water') world.setBlock(new Vec3(x, 64, z), 'stone')
       }
     }

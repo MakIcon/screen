@@ -9,6 +9,23 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("preserves independent water drop switches in saved worker config", () => {
+  const legacy = worker.parseConfig(
+    JSON.stringify({ server: { host: "localhost" }, account: { username: "Bot" } }),
+  );
+  assert.equal(legacy.movement.allowWaterDrop, true);
+  assert.equal(legacy.movement.allowBucketWaterDrop, true);
+  const explicit = worker.parseConfig(
+    JSON.stringify({
+      server: { host: "localhost" },
+      account: { username: "Bot" },
+      movement: { allowWaterDrop: false, allowBucketWaterDrop: false },
+    }),
+  );
+  assert.equal(explicit.movement.allowWaterDrop, false);
+  assert.equal(explicit.movement.allowBucketWaterDrop, false);
+});
+
 test("reads config without closing stdin and keeps later chat messages, including split packets", async () => {
   const stream = new PassThrough();
   const lines = worker.createLauncherInput(stream);

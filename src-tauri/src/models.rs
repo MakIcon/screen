@@ -566,6 +566,10 @@ pub struct MineflayerBotPluginSettings {
     #[serde(default = "default_mineflayer_bot_max_drop_down")]
     pub max_drop_down: u32,
     #[serde(default = "default_true")]
+    pub allow_water_drop: bool,
+    #[serde(default = "default_true")]
+    pub allow_bucket_water_drop: bool,
+    #[serde(default = "default_true")]
     pub stay_on_water: bool,
     #[serde(default)]
     pub anti_knockback: bool,
@@ -1046,6 +1050,8 @@ impl Default for MineflayerBotPluginSettings {
             allow_air_strafe: false,
             can_dig: false,
             max_drop_down: default_mineflayer_bot_max_drop_down(),
+            allow_water_drop: true,
+            allow_bucket_water_drop: true,
             stay_on_water: true,
             anti_knockback: false,
             auto_follow_on_spawn: false,

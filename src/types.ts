@@ -382,6 +382,8 @@ export type MineflayerBotPluginSettings = {
   allowAirStrafe: boolean;
   canDig: boolean;
   maxDropDown: number;
+  allowWaterDrop: boolean;
+  allowBucketWaterDrop: boolean;
   stayOnWater: boolean;
   antiKnockback: boolean;
   autoFollowOnSpawn: boolean;

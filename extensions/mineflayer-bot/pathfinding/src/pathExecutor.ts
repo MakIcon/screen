@@ -346,6 +346,10 @@ export class PathExecutor {
         const keepSwimming = (bot.entity as any).isInWater === true &&
           ((waterStroke(move) && (waterStroke(previousMove) || resumingSwim)) ||
             (resumingSwim && move.moveType.constructor.name === 'IdleMovement'))
+        const keepClimbing = previousMove?.moveType.constructor.name === 'Climb' &&
+          move.moveType.constructor.name === 'Climb' &&
+          this.host.world.getBlockInfo(bot.entity.position).climbable &&
+          move.exitPos.y > move.entryPos.y && bot.getControlState('jump')
         this.setCurrentMove(move)
         this.setCurrentExecutor(executor)
         this.setCurrentIndex(currentIndex)
@@ -354,7 +358,7 @@ export class PathExecutor {
         log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId)
         tickCount = 0
 
-        await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot(false, keepSwimming))
+        await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot(false, keepSwimming || keepClimbing))
         executor.loadMove(move)
 
         if (executor.isAlreadyCompleted(move, tickCount, goal)) {

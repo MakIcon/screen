@@ -485,6 +485,18 @@ function MineflayerBotSettingsEditor({
                   onChange={(stayOnWater) => update({ stayOnWater })}
                 />
                 <SettingToggle
+                  label="WATER DROP В ВОДОЁМ"
+                  description="Прыгать в воду после проверки траектории"
+                  checked={settings.allowWaterDrop}
+                  onChange={(allowWaterDrop) => update({ allowWaterDrop })}
+                />
+                <SettingToggle
+                  label="WATER DROP С ВЕДРОМ"
+                  description="Ставить воду перед приземлением и забирать её"
+                  checked={settings.allowBucketWaterDrop}
+                  onChange={(allowBucketWaterDrop) => update({ allowBucketWaterDrop })}
+                />
+                <SettingToggle
                   label="ОТЛАДКА МАРШРУТА"
                   description="Записывать изменения пути в журнал"
                   checked={settings.logPathUpdates}

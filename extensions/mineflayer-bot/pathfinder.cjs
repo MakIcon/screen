@@ -2412,6 +2412,8 @@ var require_movement = __commonJS({
       dontMineUnderFallingBlock: true,
       allow1by1towers: true,
       maxDropDown: 3,
+      allowWaterDrop: true,
+      allowBucketWaterDrop: true,
       infiniteLiquidDropdownDistance: true,
       allowSprinting: true,
       // Extra time water adds over walking the same block on land (~4.46 ticks).
@@ -6561,6 +6563,7 @@ var require_climb = __commonJS({
       reset() {
         this.leaving = false;
         this.started = 0;
+        this.aim = void 0;
         super.reset();
       }
       isAlreadyCompleted(move) {
@@ -6569,8 +6572,19 @@ var require_climb = __commonJS({
       align() {
         return true;
       }
-      performInit() {
+      performInit(move, currentIndex, path) {
         this.started = performance.now();
+        const mode = move.metadata?.climbMode;
+        if (mode === "enter" || mode === "enter-up" || mode === "exit")
+          this.aim = move.exitPos;
+        else {
+          for (let i = currentIndex + 1; i < path.length; i++) {
+            if (path[i].exitPos.xzDistanceTo(move.entryPos) > 0.7) {
+              this.aim = path[i].exitPos;
+              break;
+            }
+          }
+        }
       }
       reached(move) {
         const pos = this.bot.entity.position;
@@ -6601,6 +6615,9 @@ var require_climb = __commonJS({
       }
       async performPerTick(move) {
         if (this.reached(move)) {
+          const next = this.bot.pathfinder.currentPath?.[this.bot.pathfinder.currentIndex + 1];
+          if (next?.moveType instanceof Climb && next.entryPos.xzDistanceTo(move.exitPos) < 0.3 && next.exitPos.y > move.exitPos.y && this.bot.getControlState("jump"))
+            return true;
           this.bot.clearControlStates();
           this.bot.setControlState("sneak", !this.bot.entity.onGround);
           return true;
@@ -6613,7 +6630,7 @@ var require_climb = __commonJS({
         const target = mode === "exit" && up && !this.leaving ? move.entryPos : move.exitPos;
         if (mode === "exit" && up && pos.y >= move.exitPos.y - 0.01)
           this.leaving = true;
-        const aim = mode === "enter" || mode === "enter-up" || mode === "exit" ? move.exitPos : this.bot.pathfinder.currentPath?.slice(this.bot.pathfinder.currentIndex + 1).find((m) => m.exitPos.xzDistanceTo(pos) > 0.7)?.exitPos;
+        const aim = this.aim;
         if (aim != null && aim.xzDistanceTo(pos) > 0.3)
           await this.lookAtPathPos(aim);
         this.adjustPosition(this.leaving ? move.exitPos : this.columnAnchor(target, move.exitPos.y < move.entryPos.y ? "down" : mode));
@@ -6626,6 +6643,301 @@ var require_climb = __commonJS({
       }
     };
     exports2.ClimbExecutor = ClimbExecutor;
+  }
+});
+
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/waterDrop.js
+var require_waterDrop = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/waterDrop.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.WaterDropExecutor = exports2.WaterDrop = void 0;
+    exports2.predictWaterDrop = predictWaterDrop;
+    var vec3_1 = require("vec3");
+    var move_12 = require_move();
+    var movement_1 = require_movement();
+    var movementProvider_1 = require_movementProvider();
+    var movementExecutor_1 = require_movementExecutor();
+    var exceptions_1 = require_exceptions();
+    var costs_1 = require_costs();
+    var { PlayerState } = require("prismarine-physics");
+    var Block = require("prismarine-block");
+    var log = require("debug")("minecraft-pathfinding:water-drop");
+    var { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
+    var MAX_TICKS = 160;
+    var REACH = 4.5;
+    function waterBucket(bot) {
+      return bot.inventory.items().find((item) => item.name === "water_bucket");
+    }
+    function permitsWater(bot) {
+      const game = bot.game;
+      return !String(game.dimension).includes("nether") && game.dimensionData?.ultrawarm !== true;
+    }
+    function flightControls(pos, vel, target, sprint, jump) {
+      const delta = target.minus(pos);
+      delta.y = 0;
+      const correction = delta.minus(new vec3_1.Vec3(vel.x, 0, vel.z).scaled(3));
+      const yaw = Math.atan2(-correction.x, -correction.z);
+      return { yaw, controls: {
+        forward: correction.norm() > 0.1,
+        back: false,
+        left: false,
+        right: false,
+        jump,
+        sprint: sprint && delta.norm() > 1,
+        sneak: false
+      } };
+    }
+    function supportHit(world, pos, target) {
+      const eye = pos.offset(0, 1.62, 0);
+      const top = target.offset(0, -0.01, 0);
+      const delta = top.minus(eye);
+      if (delta.norm() > REACH)
+        return false;
+      const hit = world.raycast(eye, delta.normalize(), REACH);
+      return hit != null && hit.position.equals(target.floored().offset(0, -1, 0));
+    }
+    function predictWaterDrop(bot, world, from, velocity, target, bucket, sprint, live = false) {
+      const state = new PlayerState(bot, {});
+      state.pos = from.clone();
+      state.vel = velocity.clone();
+      state.onGround = live ? bot.entity.onGround : true;
+      state.isInWater = false;
+      state.isInLava = false;
+      state.jumpTicks = 0;
+      state.jumpQueued = false;
+      let invalid = false, placed = false, airborne = false, wet = false;
+      const source = Block(bot.registry).fromStateId(bot.registry.blocksByName.water.minStateId, 0);
+      source.position = target.floored();
+      const facade = { getBlock: (pos) => {
+        const info = world.getBlockInfo(pos);
+        if (info.isInvalid || !info.safe)
+          invalid = true;
+        if (placed && pos.floored().equals(source.position))
+          return source;
+        return world.getBlock(pos);
+      } };
+      for (let tick = 0; tick < MAX_TICKS; tick++) {
+        const input = flightControls(state.pos, state.vel, target, sprint && !wet, tick === 0 && state.onGround || wet && !bucket);
+        state.yaw = input.yaw;
+        state.control = input.controls;
+        if (bucket && !placed && state.vel.y < -0.1 && state.pos.y - target.y < 3.1 && state.pos.y > target.y + 0.8 && supportHit(world, state.pos, target))
+          placed = true;
+        bot.physics.simulatePlayer(state, facade);
+        airborne || (airborne = !state.onGround);
+        const waterAtFeet = world.getBlockInfo(state.pos.offset(0, 0.1, 0)).water || placed && state.pos.floored().equals(source.position);
+        wet || (wet = state.isInWater || state.onGround && waterAtFeet);
+        if (invalid || state.isInLava || state.isCollidedHorizontally || !waterAtFeet && state.pos.y < target.y - 1) {
+          log("reject tick=%s pos=%O target=%O invalid=%s lava=%s wall=%s", tick, state.pos, target, invalid, state.isInLava, state.isCollidedHorizontally);
+          return;
+        }
+        if (wet) {
+          if ((!bucket || placed) && state.pos.xzDistanceTo(target) < 0.45 && Math.abs(state.pos.y - target.y) < 1.1) {
+            return { ticks: tick + 1, position: state.pos.clone(), velocity: state.vel.clone() };
+          }
+        }
+        if (airborne && state.onGround) {
+          const foot = facade.getBlock(state.pos.offset(0, 0.1, 0));
+          if (foot?.name !== "water" || state.pos.xzDistanceTo(target) >= 0.45) {
+            log("dry ground at %O", state.pos);
+            return;
+          }
+        }
+      }
+    }
+    var WaterDrop = class extends movementProvider_1.MovementProvider {
+      constructor() {
+        super(...arguments);
+        this.movementDirs = [...movement_1.Movement.cardinalDirs, ...movement_1.Movement.diagonalDirs];
+      }
+      provideMovements(start, storage, goal, closed) {
+        if (!this.settings.allowWaterDrop && !this.settings.allowBucketWaterDrop)
+          return;
+        if (!this.getBlockInfo(start, 0, -1, 0).physical || this.getBlockInfo(start, 0, 0, 0).liquid)
+          return;
+        const bucketAvailable = this.settings.allowBucketWaterDrop && permitsWater(this.bot) && waterBucket(this.bot) != null;
+        if (!this.settings.allowWaterDrop && !bucketAvailable)
+          return;
+        const minY = Math.max(this.world.minY ?? this.bot.game.minY ?? -64, start.y - 128);
+        for (const dir of this.movementDirs) {
+          if (this.getBlockInfo(start, dir.x, -1, dir.z).physical)
+            continue;
+          for (let distance = 1; distance <= (this.settings.allowWaterDrop ? 12 : 4); distance++) {
+            const column = start.cachedVec.offset(dir.x * distance, 0, dir.z * distance);
+            let target, bucket = false;
+            for (let y = start.y; y >= minY; y--) {
+              const info = this.getBlockInfoRaw(new vec3_1.Vec3(column.x, y, column.z));
+              if (info.isInvalid || !info.safe || info.liquid && !info.water)
+                break;
+              if (info.water) {
+                if (this.settings.allowWaterDrop && y < start.y - 1 && (this.settings.infiniteLiquidDropdownDistance || start.y - y <= this.settings.maxDropDown))
+                  target = info.position.offset(0.5, 0.1, 0.5);
+                break;
+              }
+              if (info.physical) {
+                if (bucketAvailable && distance <= 4 && info.solidFull && start.y - info.height > this.settings.maxDropDown && this.getBlockInfoRaw(info.position.offset(0, 1, 0)).block?.name === "air") {
+                  target = info.position.offset(0.5, 1, 0.5);
+                  bucket = true;
+                }
+                break;
+              }
+              if (!info.walkthrough)
+                break;
+            }
+            if (target == null || closed.has(`${Math.floor(target.x)},${Math.floor(target.y)},${Math.floor(target.z)}`))
+              continue;
+            const head = this.getBlockInfoRaw(target.floored().offset(0, 1, 0));
+            if (!head.safe || !head.walkthrough)
+              continue;
+            const exclusion = this.exclusionStep(this.getBlockInfoRaw(target.floored())) + (bucket ? this.exclusionPlace(this.getBlockInfoRaw(target.floored())) : 0);
+            if (exclusion >= costs_1.COST_INF)
+              continue;
+            const flight = predictWaterDrop(this.bot, this.world, start.exitPos, new vec3_1.Vec3(0, 0, 0), target, bucket, this.settings.allowSprinting);
+            if (flight == null)
+              continue;
+            const move = move_12.Move.fromPrevious(flight.ticks + exclusion + (bucket ? 20 : 0), target, start, this);
+            move.metadata = { waterLanding: true, bucketWaterDrop: bucket, waterDropTicks: flight.ticks };
+            storage.push(move);
+          }
+        }
+      }
+    };
+    exports2.WaterDrop = WaterDrop;
+    var WaterDropExecutor = class extends movementExecutor_1.MovementExecutor {
+      constructor() {
+        super(...arguments);
+        this.generation = 0;
+        this.launched = false;
+        this.wet = false;
+        this.placed = false;
+        this.collected = false;
+        this.attempts = 0;
+        this.lastUse = -10;
+        this.started = 0;
+        this.flightTicks = 0;
+      }
+      get canInterrupt() {
+        return !this.launched || this.wet && !this.currentMove.metadata?.bucketWaterDrop || this.collected;
+      }
+      reset() {
+        this.generation++;
+        this.launched = false;
+        this.wet = false;
+        this.placed = false;
+        this.collected = false;
+        this.attempts = 0;
+        this.lastUse = -10;
+        this.started = 0;
+        this.flightTicks = 0;
+        this.previousItem = void 0;
+        super.reset();
+      }
+      isAlreadyCompleted(move) {
+        return !move.metadata?.bucketWaterDrop && this.bot.entity.isInWater === true && this.bot.entity.position.xzDistanceTo(move.exitPos) < 0.45;
+      }
+      align(move) {
+        const pos = this.bot.entity.position;
+        if (!this.bot.entity.onGround)
+          throw new exceptions_1.CancelError("Water drop needs a supported takeoff");
+        if (pos.xzDistanceTo(move.entryPos) < 0.2 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.03)
+          return true;
+        const input = flightControls(pos, this.bot.entity.velocity, move.entryPos, false, false);
+        this.applyControls(input);
+        return false;
+      }
+      async performInit(move) {
+        const generation = this.generation;
+        const bucket = move.metadata?.bucketWaterDrop === true;
+        if (bucket) {
+          const item = waterBucket(this.bot);
+          if (!permitsWater(this.bot) || item == null || this.world.getBlock(move.exitPos)?.name !== "air" || !this.world.getBlockInfo(move.exitPos.offset(0, -1, 0)).solidFull)
+            throw new exceptions_1.CancelError("Water bucket landing unavailable for drop");
+          this.previousItem = this.bot.heldItem ?? void 0;
+          await this.bot.equip(item, "hand");
+          if (generation !== this.generation)
+            return;
+        }
+        if (predictWaterDrop(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, move.exitPos, bucket, this.settings.allowSprinting, true) == null) {
+          throw new exceptions_1.CancelError("Water drop trajectory is no longer safe");
+        }
+        this.started = performance.now();
+      }
+      acceptsWorldUpdate(position, name) {
+        if (!this.currentMove?.metadata?.bucketWaterDrop || !this.placed)
+          return false;
+        const source = this.currentMove.exitPos.floored();
+        if (position.equals(source))
+          return name === "water" || name === "air" && this.attempts > 0;
+        return name === "water" && position.y <= source.y && position.xzDistanceTo(source) <= 7;
+      }
+      applyControls(input) {
+        this.bot.entity.yaw = input.yaw;
+        for (const [name, value] of Object.entries(input.controls))
+          this.bot.setControlState(name, value);
+      }
+      async useBucket(point, generation) {
+        await this.bot.lookAt(point, true);
+        if (generation !== this.generation)
+          return;
+        this.bot._client.write("look", {
+          yaw: Math.fround(toNotchianYaw(this.bot.entity.yaw)),
+          pitch: Math.fround(toNotchianPitch(this.bot.entity.pitch)),
+          onGround: this.bot.entity.onGround,
+          flags: { onGround: this.bot.entity.onGround, hasHorizontalCollision: this.bot.entity.isCollidedHorizontally }
+        });
+        this.bot.activateItem();
+      }
+      async performPerTick(move) {
+        const generation = this.generation;
+        const pos = this.bot.entity.position, vel = this.bot.entity.velocity;
+        log("execute pos=%O wet=%s ground=%s collected=%s item=%s", pos, this.wet, this.bot.entity.onGround, this.collected, this.bot.heldItem?.name);
+        const bucket = move.metadata?.bucketWaterDrop === true;
+        if (performance.now() - this.started > MAX_TICKS * 50 + this.settings.movementTimeoutMs)
+          throw new exceptions_1.CancelError("Water drop timed out");
+        this.wet || (this.wet = this.bot.entity.isInWater === true || this.bot.entity.onGround && this.world.getBlockInfo(pos.offset(0, 0.1, 0)).water);
+        const input = flightControls(pos, vel, move.exitPos, this.settings.allowSprinting, !this.launched);
+        if (this.wet) {
+          input.controls.jump = !bucket;
+          input.controls.sprint = false;
+        }
+        this.applyControls(input);
+        this.launched = true;
+        this.flightTicks++;
+        if (bucket && !this.placed && vel.y < -0.1 && pos.y - move.exitPos.y < 3.1 && supportHit(this.world, pos, move.exitPos)) {
+          if (this.bot.heldItem?.name !== "water_bucket")
+            throw new exceptions_1.CancelError("Water bucket lost during drop");
+          this.placed = true;
+          await this.useBucket(move.exitPos.offset(0, -0.01, 0), generation);
+        }
+        if (!bucket && this.wet && pos.xzDistanceTo(move.exitPos) < 0.5 && Math.abs(pos.y - move.exitPos.y) < 1.1)
+          return true;
+        if (bucket && this.wet && this.bot.entity.onGround && Math.abs(vel.y) < 0.12 && pos.xzDistanceTo(move.exitPos) < 0.45) {
+          if (this.collected || this.attempts > 0 && this.bot.heldItem?.name === "water_bucket") {
+            this.collected = true;
+            if (this.previousItem != null && this.previousItem.name !== "water_bucket") {
+              const item = this.bot.inventory.items().find((item2) => item2.type === this.previousItem?.type);
+              if (item != null)
+                await this.bot.equip(item, "hand");
+            }
+            return true;
+          }
+          const source = this.world.getBlock(move.exitPos.floored());
+          if (source?.name !== "water" || Number(source.getProperties().level) !== 0)
+            throw new exceptions_1.CancelError("Placed water source was removed");
+          if (this.bot.heldItem?.name === "bucket" && this.flightTicks - this.lastUse >= 6) {
+            if (this.attempts >= 3)
+              throw new exceptions_1.CancelError("Server did not confirm water collection");
+            this.lastUse = this.flightTicks;
+            this.attempts++;
+            await this.useBucket(move.exitPos.offset(0, 0.5, 0), generation);
+          }
+        }
+        if (!this.wet && this.bot.entity.onGround && this.flightTicks > 3)
+          throw new exceptions_1.CancelError("Water drop missed its landing");
+        return false;
+      }
+    };
+    exports2.WaterDropExecutor = WaterDropExecutor;
   }
 });
 
@@ -7295,7 +7607,7 @@ var require_movementProviders = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementProviders.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.ParkourDiagonal = exports2.ParkourForward = exports2.StraightUp = exports2.StraightDown = exports2.ForwardDropDown = exports2.ForwardJump = exports2.Diagonal = exports2.Forward = exports2.IdleMovement = exports2.AroundCornerDiagonal = exports2.LadderLandingDiagonal = exports2.LadderLandingForward = exports2.LadderDiagonal = exports2.LadderForward = exports2.Climb = exports2.MomentumJump = exports2.NeoProvider = void 0;
+    exports2.ParkourDiagonal = exports2.ParkourForward = exports2.StraightUp = exports2.StraightDown = exports2.ForwardDropDown = exports2.ForwardJump = exports2.Diagonal = exports2.Forward = exports2.IdleMovement = exports2.AroundCornerDiagonal = exports2.LadderLandingDiagonal = exports2.LadderLandingForward = exports2.LadderDiagonal = exports2.LadderForward = exports2.WaterDrop = exports2.Climb = exports2.MomentumJump = exports2.NeoProvider = void 0;
     var vec3_1 = require("vec3");
     var neo_1 = require_neo();
     Object.defineProperty(exports2, "NeoProvider", { enumerable: true, get: function() {
@@ -7309,6 +7621,10 @@ var require_movementProviders = __commonJS({
     var climb_1 = require_climb();
     Object.defineProperty(exports2, "Climb", { enumerable: true, get: function() {
       return climb_1.Climb;
+    } });
+    var waterDrop_1 = require_waterDrop();
+    Object.defineProperty(exports2, "WaterDrop", { enumerable: true, get: function() {
+      return waterDrop_1.WaterDrop;
     } });
     var ladder_provider_1 = require_ladder_provider();
     Object.defineProperty(exports2, "LadderForward", { enumerable: true, get: function() {
@@ -7555,40 +7871,30 @@ var require_movementProviders = __commonJS({
     exports2.ForwardJump = ForwardJump;
     var DropDownProvider = class extends movementProvider_1.MovementProvider {
       getLandingBlock(orgBlock, node, dir = settings_1.emptyVec) {
-        let min;
-        const startedInLiquid = orgBlock.liquid;
-        let blockLand;
-        if (startedInLiquid) {
-          min = node.y - 1;
-          blockLand = this.getBlockInfo(node, dir.x, -1, dir.z);
-        } else {
-          blockLand = this.getBlockInfo(node, dir.x, -1, dir.z);
-          if (this.settings.infiniteLiquidDropdownDistance) {
-            min = this.bot.game.minY ?? -64;
-          } else {
-            min = node.y - this.settings.maxDropDown - 1;
-          }
-        }
-        while (blockLand.position.y >= min) {
+        const maxDrop = this.settings.maxDropDown;
+        const deepWater = this.settings.allowWaterDrop && this.settings.infiniteLiquidDropdownDistance;
+        const maxDepth = orgBlock.liquid ? 1 : deepWater ? Math.max(0, node.y - (this.world.minY ?? this.bot.game.minY ?? -64)) : maxDrop + 1;
+        for (let depth = 1; depth <= maxDepth; depth++) {
+          const blockLand = this.getBlockInfo(node, dir.x, -depth, dir.z);
           if (blockLand.isInvalid || !blockLand.safe)
             return null;
           if (blockLand.water) {
-            if (!this.settings.infiniteLiquidDropdownDistance && node.y - blockLand.position.y > this.settings.maxDropDown)
+            if (!deepWater && depth > maxDrop)
               return null;
-            if (node.y - blockLand.position.y > this.settings.maxDropDown && (!this.getBlockInfo(blockLand.position, 0, -1, 0).water || !this.getBlockInfo(blockLand.position, 0, 1, 0).walkthrough || !this.getBlockInfo(blockLand.position, 0, 2, 0).walkthrough))
+            if (depth > maxDrop && (!this.getBlockInfo(blockLand.position, 0, -1, 0).water || !this.getBlockInfo(blockLand.position, 0, 1, 0).walkthrough || !this.getBlockInfo(blockLand.position, 0, 2, 0).walkthrough))
               return null;
             return blockLand;
           }
           if (blockLand.liquid)
             return null;
           if (blockLand.physical) {
-            if (node.y > blockLand.height && node.y - blockLand.height <= this.settings.maxDropDown) {
+            if (node.y > blockLand.height && node.y - blockLand.height <= maxDrop) {
               return this.getBlockInfo(blockLand.position, 0, 1, 0);
             }
+            return null;
           }
           if (!blockLand.walkthrough)
             return null;
-          blockLand = this.getBlockInfo(blockLand.position, 0, -1, 0);
         }
         return null;
       }
@@ -9696,13 +10002,14 @@ var require_pathExecutor = __commonJS({
             const waterStroke = (candidate) => candidate != null && /^(Forward|Diagonal)$/.test(candidate.moveType.constructor.name) && candidate.toPlace.length === 0 && candidate.toBreak.length === 0 && this.host.world.getBlockInfo(candidate.exitPos).liquid;
             const resumingSwim = currentIndex <= 1 && (0, surfaceSwimming_12.canContinueSwimming)(bot);
             const keepSwimming = bot.entity.isInWater === true && (waterStroke(move) && (waterStroke(previousMove) || resumingSwim) || resumingSwim && move.moveType.constructor.name === "IdleMovement");
+            const keepClimbing = previousMove?.moveType.constructor.name === "Climb" && move.moveType.constructor.name === "Climb" && this.host.world.getBlockInfo(bot.entity.position).climbable && move.exitPos.y > move.entryPos.y && bot.getControlState("jump");
             this.setCurrentMove(move);
             this.setCurrentExecutor(executor);
             this.setCurrentIndex(currentIndex);
             this.setCurrentPath(localPath);
             log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId);
             tickCount = 0;
-            await this.timeAsync("prepare cleanup", async () => await this.host.cleanupBot(false, keepSwimming));
+            await this.timeAsync("prepare cleanup", async () => await this.host.cleanupBot(false, keepSwimming || keepClimbing));
             executor.loadMove(move);
             if (executor.isAlreadyCompleted(move, tickCount, goal)) {
               const nextIndex = this.findNextCurrentIdx(move, localPath, currentIndex);
@@ -10109,7 +10416,7 @@ var require_shore = __commonJS({
         const start = move_12.Move.startMove(new movementProviders_1.IdleMovement(bot, world), pos, new vec3_1.Vec3(0, 0, 0), (0, utils_1.getScaffoldCount)(bot) - (candidate.buildStep ? 1 : 0));
         if (candidate.buildStep)
           start.toPlace.push(interactionUtils_1.PlaceHandler.fromVec(pos.floored().offset(0, -1, 0), "solid"));
-        const handler = movementProvider_1.MovementHandler.create(bot, world, bot.pathfinder.getActiveMappings().movements, settings);
+        const handler = movementProvider_1.MovementHandler.create(bot, world, bot.pathfinder.getActiveMappings().movements, { ...settings, allowWaterDrop: false, allowBucketWaterDrop: false, infiniteLiquidDropdownDistance: false });
         handler.loadGoal(goal);
         const neighbors = handler.getNeighbors.bind(handler);
         handler.getNeighbors = (move, closed) => neighbors(move, closed).filter((next) => !world.getBlockInfo(next.exitPos).water && next.metadata?.waterLanding !== true);
@@ -11035,6 +11342,7 @@ var require_ThePathfinder = __commonJS({
     var pathExecutor_1 = require_pathExecutor();
     var neo_1 = require_neo();
     var climb_1 = require_climb();
+    var waterDrop_1 = require_waterDrop();
     var shore_1 = require_shore();
     var ascentPrefix_1 = require_ascentPrefix();
     var surfaceSwimming_12 = require_surfaceSwimming();
@@ -11064,6 +11372,7 @@ var require_ThePathfinder = __commonJS({
       [movementProviders_1.StraightDown, movementExecutors_1.StraightDownExecutor],
       [movementProviders_1.StraightUp, movementExecutors_1.StraightUpExecutor],
       [climb_1.Climb, climb_1.ClimbExecutor],
+      [waterDrop_1.WaterDrop, waterDrop_1.WaterDropExecutor],
       [movementProviders_1.ParkourForward, movementExecutors_1.ParkourForwardExecutor],
       [momentum_2.MomentumJump, momentum_2.MomentumJumpExecutor],
       [movementProviders_1.ParkourDiagonal, movementExecutors_1.ParkourDiagonalExecutor],
@@ -11345,6 +11654,8 @@ var require_ThePathfinder = __commonJS({
         log(`block: ${block?.name} pos: ${block?.position}, path: ${path?.length}, index: ${currentIndex}`);
         if (block == null || path == null)
           return false;
+        if (this.currentExecutor instanceof waterDrop_1.WaterDropExecutor && this.currentExecutor.acceptsWorldUpdate(block.position, block.name))
+          return true;
         const pos = block.position.floored();
         for (let i = Math.max(0, currentIndex - 2); i < path.length; i++) {
           const move = path[i];
