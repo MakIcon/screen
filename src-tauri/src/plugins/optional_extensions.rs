@@ -51,6 +51,11 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
 
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("worker.cjs", MINEFLAYER_WORKER),
+    ("web-inventory.cjs", include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs")),
+    ("gathering.cjs", include_str!("../../../extensions/mineflayer-bot/gathering.cjs")),
+    ("gathering-plan.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-plan.cjs")),
+    ("gathering-commands.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-commands.cjs")),
+    ("GATHERING.md", include_str!("../../../extensions/mineflayer-bot/GATHERING.md")),
     ("knockback.cjs", MINEFLAYER_KNOCKBACK),
     ("combat.cjs", MINEFLAYER_COMBAT),
     ("pearls.cjs", MINEFLAYER_PEARLS),
@@ -309,6 +314,21 @@ async fn install_mineflayer_dependencies(staging: &Path) -> Result<(), String> {
         } else {
             format!("Mineflayer dependency installation failed: {detail}")
         });
+    }
+    Ok(())
+}
+
+pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result<(), String> {
+    // Existing installations are synchronized on startup. A new worker also
+    // needs its newly introduced dependencies before Node loads it.
+    for (name, version) in [("mineflayer-statemachine", "1.7.0"), ("mineflayer-tool", "1.2.0"), ("mineflayer-web-inventory", "1.8.5")] {
+        let path = runtime_dir.join("node_modules").join(name).join("package.json");
+        let installed = fs::read_to_string(path).ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+        if installed.as_ref().and_then(|json| json.get("version")).and_then(|v| v.as_str()) != Some(version) {
+            install_mineflayer_dependencies(runtime_dir).await?;
+            break;
+        }
     }
     Ok(())
 }

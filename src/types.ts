@@ -433,6 +433,17 @@ export type MineflayerBotStatus = {
   server?: string | null;
   lastError?: string | null;
   logs: string[];
+  inventoryUrl?: string | null;
+  gathering?: {
+    phase: string;
+    kind: string | null;
+    mined: number;
+    collected: number;
+    delivered: number;
+    queued: number;
+    reason: string;
+    message: string;
+  } | null;
 };
 
 export type BlueMapStatus = {

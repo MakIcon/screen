@@ -37,6 +37,9 @@ const { normalizeCombat, createCombatController } = require('./combat.cjs')
 const { createTravelController } = require('./pearls.cjs')
 const { installKnockback } = require('./knockback.cjs')
 const { normalizeSurvival, createSurvivalController } = require('./survival.cjs')
+const { createGatheringController } = require('./gathering.cjs')
+const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gathering-commands.cjs')
+const { startWebInventory } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
 const { GoalFollowEntity, GoalNear } = goals
@@ -382,6 +385,15 @@ function createLauncherInput (input) {
     .createInterface({ input, crlfDelay: Infinity })[Symbol.asyncIterator]()
 }
 
+function createCommandQueue (handler) {
+  let pending = Promise.resolve()
+  return (...args) => {
+    const next = pending.then(() => handler(...args))
+    pending = next.catch(() => {})
+    return next
+  }
+}
+
 async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
   for await (const line of lines) {
     if (!line.trim()) continue
@@ -392,7 +404,7 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       sendEvent('log', { message: 'invalid launcher message' })
       continue
     }
-    if (request?.type !== 'chat' || typeof request.requestId !== 'string') continue
+    if (!['chat', 'command'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
       const bot = getBot()
       if (!bot) throw new Error('Бот не подключён к серверу')
@@ -400,13 +412,21 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
         throw new Error('Введите сообщение')
       }
       const message = request.message.trim()
+      // Control characters are intentionally rejected before chat/command dispatch.
+      // eslint-disable-next-line no-control-regex
       if (message.length > 240 || /[\u0000-\u001f\u007f-\u009f§]/.test(message)) {
         throw new Error('Сообщение слишком длинное или содержит недопустимые символы')
       }
-      await bot.chat(message)
+      const bareCommand = bot.launcherBareCommands?.has(message.split(/\s+/)[0].toLowerCase())
+      const localCommand = request.type === 'command' || (bot.launcherCommand && (message.startsWith(bot.launcherCommandPrefix) || bareCommand))
+      if (localCommand) {
+        if (!bot.launcherCommand) throw new Error('Команды бота ещё не готовы')
+        await bot.launcherCommand(request.type === 'command' || bareCommand ? `${bot.launcherCommandPrefix}${message}` : message)
+      }
+      else await bot.chat(message)
       sendEvent('chat_result', {
         requestId: request.requestId,
-        message: `chat sent: ${message}`
+        message: `${localCommand ? 'command executed' : 'chat sent'}: ${message}`
       })
     } catch (error) {
       sendEvent('chat_result', {
@@ -602,10 +622,12 @@ async function main () {
     let kickReason = ''
     let combat = null
     let travel = null
+    let gathering = null
+    bot.launcherOwnerName = ownerName
 
     function reply (username, source, text) {
       const message = clampChat(text)
-      if (!config.commands.sendFeedback) {
+      if (source === 'launcher' || !config.commands.sendFeedback) {
         emit('status', {
           state: 'connected',
           message: `command response for ${username}: ${message}`
@@ -620,9 +642,10 @@ async function main () {
       }
     }
 
-    async function stopMovement () {
+    async function stopMovement (cancelGathering = true) {
       const generation = ++goalGeneration
       combat?.stop(true)
+      if (cancelGathering) await gathering?.stop()
       await travel?.stop()
       await combat?.idleTask
       if (generation !== goalGeneration || ended) return false
@@ -638,15 +661,16 @@ async function main () {
       const generation = ++goalGeneration
       combat?.stop(true)
       currentGoal = label
-      if (travel && destination) {
-        travel.start(goal, destination, kind, label, radius)
-        return
-      }
-      travel?.stop()
-      void bot.pathfinder.stop().then(() => {
+      void Promise.all([gathering?.stop(), travel?.stop()]).then(async () => {
+        await bot.pathfinder.stop()
         if (generation !== goalGeneration || ended) return
+        if (travel && destination) {
+          travel.start(goal, destination, kind, label, radius)
+          return
+        }
         return bot.pathfinder.goto(goal)
       }).then(() => {
+        if (travel && destination) return
         if (generation !== goalGeneration || ended) return
         currentGoal = 'idle'
         emit('status', { state: 'connected', message: `movement finished: ${label}` })
@@ -684,31 +708,45 @@ async function main () {
         'goto x y z',
         'stop',
         'look',
-        'jump'
+        'jump',
+        'work status|pause|resume',
+        'mine блок [кол-во]',
+        'forest',
+        'deliver',
+        'inventory'
       ]
       if (config.commands.allowSay) commands.push('say text')
       if (config.commands.allowQuit) commands.push('quit')
       if (config.combat.enabled) commands.push('attack player', 'bow player', 'pvp auto|stop|status')
       if (config.combat.enabled && config.combat.crystalEnabled) commands.push('crystal player')
-      reply(username, source, commands.map((command) => `${prefix}${command}`).join(' '))
+      for (let index = 0; index < commands.length; index += 6)
+        reply(username, source, commands.slice(index, index + 6).map((command) => `${prefix}${command}`).join(' '))
     }
 
     async function handleCommand (username, rawMessage, source) {
-      if (activeBot !== bot || !isOwner(username) || !sourceEnabled(source)) return
-      if (!rawMessage.startsWith(prefix)) return
+      if (activeBot !== bot || !isOwner(username) || (source !== 'launcher' && !sourceEnabled(source))) return
+      if (!rawMessage.startsWith(prefix) && !GATHERING_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase())) return
 
-      const body = rawMessage.slice(prefix.length).trim()
+      const body = (rawMessage.startsWith(prefix) ? rawMessage.slice(prefix.length) : rawMessage).trim()
       if (!body) return
 
       const now = Date.now()
       const lastCommandAt = commandTimestamps.get(username.toLowerCase()) || 0
-      if (now - lastCommandAt < config.commands.cooldownMs) return
-      commandTimestamps.set(username.toLowerCase(), now)
+      if (source !== 'launcher' && now - lastCommandAt < config.commands.cooldownMs) return
+      if (source !== 'launcher') commandTimestamps.set(username.toLowerCase(), now)
 
       const [commandRaw, ...args] = body.split(/\s+/)
       const command = commandRaw.toLowerCase()
 
       try {
+        if (command === 'inventory') {
+          reply(username, source, bot.launcherInventoryUrl || 'Веб-инвентарь ещё запускается')
+          return
+        }
+        if (await handleGatheringCommand(bot, gathering, command, args, {
+          prepare: () => stopMovement(false), reply: text => reply(username, source, text)
+        })) return
+
         if (command === 'help') {
           commandHelp(username, source)
           return
@@ -721,6 +759,7 @@ async function main () {
             source,
             `Bot ${bot.username} on ${serverLabel}; pos ${pos}; hp ${bot.health ?? '?'}; food ${bot.food ?? '?'}; goal ${currentGoal}; pvp ${combat?.status || 'not ready'}`
           )
+          if (gathering?.busy) reply(username, source, gathering.status)
           return
         }
 
@@ -860,14 +899,20 @@ async function main () {
           return
         }
 
+        if (source === 'launcher') throw new Error(`Неизвестная команда. ${prefix}help`)
         reply(username, source, `Unknown command. Try ${prefix}help`)
       } catch (error) {
         emit('error', { error: error.message })
+        if (source === 'launcher') throw error
         reply(username, source, `Command failed: ${error.message}`)
       }
     }
 
     loadMovementExtras(bot)
+    const queuedCommand = createCommandQueue(handleCommand)
+    bot.launcherCommandPrefix = prefix
+    bot.launcherBareCommands = new Set([...GATHERING_COMMANDS, 'inventory'])
+    bot.launcherCommand = message => queuedCommand(ownerName, message, 'launcher')
 
     bot.once('spawn', () => {
       reconnectAttempts = 0
@@ -892,6 +937,14 @@ async function main () {
           onError: error => emit('error', { error: `movement: ${error.message || String(error)}` })
         })
         bot.launcherTravel = travel
+        gathering = createGatheringController(bot, config.gathering, {
+          onStatus: message => emit('status', { state: 'connected', message }),
+          onProgress: gathering => emit('gathering', { gathering })
+        })
+        void startWebInventory(bot, {
+          onReady: inventoryUrl => { bot.launcherInventoryUrl = inventoryUrl; emit('inventory', { inventoryUrl }) },
+          onError: error => emit('log', { message: `Веб-инвентарь: ${error.message}` })
+        })
       } catch (error) {
         emit('error', { error: `Bot plugin initialization failed: ${error.message}` })
         bot.quit('bot plugin initialization failed')
@@ -917,6 +970,7 @@ async function main () {
         let attempts = 0
         const tryFollow = () => {
           if (activeBot !== bot || ended || stopping) return
+          if (gathering?.busy) return
           attempts += 1
           if (startFollowingOwner(false)) {
             emit('status', {
@@ -940,12 +994,12 @@ async function main () {
 
     bot.on('chat', (username, message) => {
       if (sameName(username, bot.username)) return
-      void handleCommand(username, message, 'chat')
+      void queuedCommand(username, message, 'chat').catch(error => emit('error', { error: error.message }))
     })
 
     bot.on('whisper', (username, message) => {
       if (sameName(username, bot.username)) return
-      void handleCommand(username, message, 'whisper')
+      void queuedCommand(username, message, 'whisper').catch(error => emit('error', { error: error.message }))
     })
 
     if (config.behavior.logPathUpdates) {
@@ -992,6 +1046,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      void gathering?.dispose().catch(error => emit('log', { message: `gathering shutdown: ${error.message}` }))
       bot.launcherSurvival?.dispose()
       travel?.dispose()
       combat?.dispose()
@@ -1012,6 +1067,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      void activeBot.launcherGathering?.dispose().catch(error => emit('log', { message: error.message }))
       activeBot.launcherSurvival?.dispose()
       activeBot.launcherTravel?.dispose()
       activeBot.launcherCombat?.dispose()
@@ -1039,6 +1095,7 @@ if (require.main === module) {
 
 module.exports = {
   createLauncherInput,
+  createCommandQueue,
   handleLauncherMessages,
   parseConfig,
   configurePathfinder,

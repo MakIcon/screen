@@ -64,7 +64,9 @@ export class Forward extends MovementProvider {
     if (blockC.isInvalid) return // out of range.
     if (blockC.climbable) return // Climb owns entry, including braking and attachment.
 
-    if (!blockC.walkthrough) return
+    // Mining routes may clear both foot and head space. The safeOrBreak checks
+    // below still reject fluids, protected/excluded blocks and unsafe support.
+    if (!blockC.walkthrough && !this.settings.canDig) return
 
     const blockB = this.getBlockInfo(pos, dir.x, 1, dir.z)
     const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z)

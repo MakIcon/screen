@@ -27,6 +27,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     // Set ownership first, invalidating queued combat/pearl equips immediately.
     bot.launcherTravel?.pauseForSurvival();
     bot.launcherCombat?.pauseForSurvival();
+    bot.launcherGathering?.pauseForSurvival();
     if (bot.usingHeldItem) bot.deactivateItem();
     autoEat.cancelEat();
     bot.clearControlStates();
@@ -39,6 +40,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     bot.clearControlStates();
     bot.launcherCombat?.resumeAfterSurvival();
     bot.launcherTravel?.resumeAfterSurvival();
+    bot.launcherGathering?.resumeAfterSurvival();
     void bot.armorManager?.equipAll().catch(onError);
   }
   function tick() {

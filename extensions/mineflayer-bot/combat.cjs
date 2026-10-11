@@ -411,11 +411,13 @@ function createCombatController(
       pending = false;
       stopEngines();
       bot.launcherPauseTravelForDefense?.();
+      bot.launcherGathering?.pauseForDefense();
       bot.clearControlStates();
-      return bot.pathfinder.stop();
+      return Promise.all([bot.pathfinder.stop(), bot.launcherGathering?.task]);
     },
     afterDefend() {
       bot.launcherResumeTravelAfterDefense?.();
+      bot.launcherGathering?.resumeAfterSurvival();
     },
   });
   let nextCrystalAt = 0;

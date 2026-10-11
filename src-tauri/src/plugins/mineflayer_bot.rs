@@ -43,6 +43,8 @@ struct MineflayerBotRuntime {
     last_error: Option<String>,
     logs: Vec<String>,
     pending_chat: HashMap<String, oneshot::Sender<Result<(), String>>>,
+    inventory_url: Option<String>,
+    gathering: Option<serde_json::Value>,
 }
 
 impl Default for MineflayerBotRuntime {
@@ -57,6 +59,8 @@ impl Default for MineflayerBotRuntime {
             last_error: None,
             logs: Vec::new(),
             pending_chat: HashMap::new(),
+            inventory_url: None,
+            gathering: None,
         }
     }
 }
@@ -149,6 +153,8 @@ struct WorkerEvent {
     bot_username: Option<String>,
     error: Option<String>,
     request_id: Option<String>,
+    inventory_url: Option<String>,
+    gathering: Option<serde_json::Value>,
 }
 
 fn write_worker_message(writer: &mut impl Write, payload: &impl Serialize) -> Result<(), String> {
@@ -198,6 +204,8 @@ fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
         server: runtime.server.clone(),
         last_error: runtime.last_error.clone(),
         logs: runtime.logs.clone(),
+        inventory_url: runtime.inventory_url.clone(),
+        gathering: runtime.gathering.clone(),
     }
 }
 
@@ -225,12 +233,16 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
         runtime.child.take();
         runtime.pid = None;
         runtime.state = "stopped".to_string();
+        runtime.inventory_url = None;
+        runtime.gathering = None;
         push_log(runtime, format!("process stopped: {status}"));
     }
 }
 
 fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEvent) {
     match event.event_type.as_str() {
+        "inventory" => runtime.inventory_url = event.inventory_url,
+        "gathering" => runtime.gathering = event.gathering,
         "chat_result" => {
             if let Some(request_id) = event.request_id {
                 if let Some(reply) = runtime.pending_chat.remove(&request_id) {
@@ -264,10 +276,12 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
                 .or(event.message)
                 .unwrap_or_else(|| "unknown worker error".to_string());
             runtime.last_error = Some(message.clone());
-            runtime.state = "error".to_string();
+            if runtime.state != "connected" { runtime.state = "error".to_string(); }
             push_log(runtime, format!("error: {message}"));
         }
         "end" => {
+            runtime.inventory_url = None;
+            runtime.gathering = None;
             fail_pending_chat(runtime);
             runtime.state = "stopped".to_string();
             if let Some(message) = event.message {
@@ -432,6 +446,7 @@ pub async fn get_mineflayer_bot_status(
 pub async fn send_mineflayer_bot_chat(
     state: State<'_, MineflayerBotState>,
     message: String,
+    command: Option<bool>,
 ) -> Result<(), String> {
     let message = validate_chat_message(&message)?;
     let request_id = uuid::Uuid::new_v4().to_string();
@@ -452,7 +467,7 @@ pub async fn send_mineflayer_bot_chat(
             .ok_or_else(|| "Канал отправки сообщений боту недоступен".to_string())?;
         write_worker_message(
             stdin,
-            &serde_json::json!({ "type": "chat", "requestId": request_id, "message": message }),
+            &serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "requestId": request_id, "message": message }),
         )?;
         runtime.pending_chat.insert(request_id.clone(), reply);
     }
@@ -487,6 +502,8 @@ pub async fn stop_mineflayer_bot(
 
     runtime.pid = None;
     runtime.state = "stopped".to_string();
+    runtime.inventory_url = None;
+    runtime.gathering = None;
     push_log(&mut runtime, "stop requested from launcher");
     Ok(snapshot_status(&runtime))
 }
@@ -594,6 +611,17 @@ pub async fn start_mineflayer_bot(
         return Err(format!("Mineflayer worker not found: {}", worker.display()));
     }
 
+    {
+        let mut runtime = state.inner.lock()
+            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        refresh_child_state(&mut runtime);
+        if runtime.child.is_some() {
+            return Err("Mineflayer bot is already running".to_string());
+        }
+    }
+    super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
+    super::optional_extensions::ensure_mineflayer_dependencies(&runtime_dir).await?;
+
     let mut runtime = state
         .inner
         .lock()
@@ -602,8 +630,6 @@ pub async fn start_mineflayer_bot(
     if runtime.child.is_some() {
         return Err("Mineflayer bot is already running".to_string());
     }
-
-    super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
 
     let mut command = Command::new(node_executable());
     command
@@ -648,6 +674,8 @@ pub async fn start_mineflayer_bot(
     runtime.server = Some(server_label);
     runtime.last_error = None;
     runtime.logs.clear();
+    runtime.inventory_url = None;
+    runtime.gathering = None;
     push_log(&mut runtime, "start requested from launcher");
 
     Ok(snapshot_status(&runtime))
@@ -674,6 +702,24 @@ mod tests {
         assert!(validate_chat_message(&"😀".repeat(120)).is_ok());
         assert!(validate_chat_message("first\nsecond").is_err());
         assert!(validate_chat_message("§color").is_err());
+    }
+
+    #[test]
+    fn worker_progress_inventory_and_command_errors_keep_connected_controls_available() {
+        let mut runtime = MineflayerBotRuntime { state: "connected".into(), ..Default::default() };
+        for json in [
+            serde_json::json!({ "type": "gathering", "gathering": { "phase": "dig", "mined": 3 } }),
+            serde_json::json!({ "type": "inventory", "inventoryUrl": "http://127.0.0.1:12345/" }),
+            serde_json::json!({ "type": "error", "error": "Нет добычи для передачи" }),
+        ] {
+            update_from_worker_event(&mut runtime, serde_json::from_value(json).unwrap());
+        }
+        assert_eq!(runtime.state, "connected");
+        assert_eq!(runtime.gathering.as_ref().unwrap()["mined"], 3);
+        assert_eq!(runtime.inventory_url.as_deref(), Some("http://127.0.0.1:12345/"));
+        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "end" })).unwrap());
+        assert!(runtime.inventory_url.is_none());
+        assert!(runtime.gathering.is_none());
     }
 
     #[test]

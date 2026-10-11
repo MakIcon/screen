@@ -7691,7 +7691,7 @@ var require_movementProviders = __commonJS({
           return;
         if (blockC.climbable)
           return;
-        if (!blockC.walkthrough)
+        if (!blockC.walkthrough && !this.settings.canDig)
           return;
         const blockB = this.getBlockInfo(pos, dir.x, 1, dir.z);
         const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z);

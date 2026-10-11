@@ -2,6 +2,15 @@ This standalone Mineflayer worker and its combined Pathfinder are distributed
 under GPL-3.0-only. The complete license is in COPYING. The launcher communicates
 with this separate worker over standard input/output.
 
+Gathering integrations added in 1.9.0 use mineflayer-statemachine 1.7.0 and
+mineflayer-tool 1.2.0 (PrismarineJS / TheDudeFromCI, MIT). Their license files
+remain in the installed dependency packages. mineflayer-collectblock and the
+supplied Mineflayer-Templates mining/woodcutting/task-queue sources were reviewed
+as design references. The gathering controller is an original implementation
+for this worker's existing navigator; these reference sources are not copied.
+Baritone MineProcess.java and BuilderProcess.java were reviewed for rescan,
+unreachable-target and top-down cuboid clearing behavior. See GATHERING.md.
+
 The original Minecraft Pathfinding 2026 Rewrite is Copyright GenerelSchwerz,
 MIT according to its supplied package manifest. The named author and standard
 MIT text are included in pathfinding/LICENSE in the supplied source.
@@ -55,3 +64,6 @@ install the compiler dependencies with npm --prefix pathfinding install, compile
 with npm --prefix pathfinding run build, and bundle with node build-pathfinder.mjs.
 The source includes the exact manifests, npm worker lockfile, TypeScript files,
 tests, build scripts and original notices used for this release.
+- `mineflayer-web-inventory` 1.8.5 (MIT), https://github.com/imharvol/mineflayer-web-inventory:
+  live window/inventory server. This extension supplies its own Russian browser
+  client for the plugin's window protocol; it does not copy the upstream Svelte client.

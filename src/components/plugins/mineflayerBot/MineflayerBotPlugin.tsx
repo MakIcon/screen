@@ -10,6 +10,7 @@ import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
+import { MineflayerGatheringControls } from "./MineflayerGatheringControls";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
@@ -204,7 +205,7 @@ function MineflayerBotSettingsEditor({
     try {
       await invoke("send_mineflayer_bot_chat", { message });
       setChatMessage((current) => (current === draft ? "" : current));
-      setChatFeedback("Сообщение отправлено");
+      setChatFeedback("Отправлено боту");
       void monitor.refresh();
     } catch (error) {
       setChatError(toErrorMessage(error));
@@ -543,6 +544,7 @@ function MineflayerBotSettingsEditor({
 
         {activeSection === "survival" && (
           <>
+            <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} />
             <PluginSettingsGroup
               title="АВТОЕДА"
               description="Безопасная пища из инвентаря · настройки применяются после перезапуска бота"
@@ -703,6 +705,21 @@ function MineflayerBotSettingsEditor({
                   "pvp auto",
                   "pvp stop",
                   "pvp status",
+                  "mine iron,diamond 64 32",
+                  "ores 64 32",
+                  "forest 16 0 logs",
+                  "area arena 1 x y z",
+                  "area arena 2 x y z",
+                  "quarry arena",
+                  "tunnel 16 2 3",
+                  "collect 16",
+                  "stash x y z",
+                  "deposit",
+                  "work status",
+                  "work queue",
+                  "work pause",
+                  "work resume",
+                  "work stop",
                 ].map((command) => (
                   <span key={command}>
                     {settings.commandPrefix || "!"}
@@ -803,7 +820,7 @@ function MineflayerBotSettingsEditor({
               </div>
             </div>
 
-            <PluginSettingsGroup title="ЧАТ БОТА" collapsible={false}>
+            <PluginSettingsGroup title="ЧАТ И КОМАНДЫ БОТА" description="forest — рубить лес, deliver — принести добычу. Команды добычи работают и без префикса. Остальной текст идёт в игровой чат." collapsible={false}>
               <form
                 className="mineflayer-bot-chat"
                 onSubmit={(event) => {

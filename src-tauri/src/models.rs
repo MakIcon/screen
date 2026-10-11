@@ -819,6 +819,8 @@ pub struct MineflayerBotStatus {
     pub server: Option<String>,
     pub last_error: Option<String>,
     pub logs: Vec<String>,
+    pub inventory_url: Option<String>,
+    pub gathering: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
