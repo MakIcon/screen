@@ -55,6 +55,7 @@
   "pearlFollow": true,
   "pearlCome": true,
   "pearlGoto": false,
+  "pearlChase": false,
   "pearlChain": true,
   "pearlMinDistance": 16,
   "pearlMaxDistance": 48,

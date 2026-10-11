@@ -10,7 +10,8 @@ const runtime = process.env.SCREEN_COMBAT_RUNTIME
   ? createRequire(path.resolve(process.env.SCREEN_COMBAT_RUNTIME, "package.json"))
   : require;
 const { normalizeCombat, installCombatProtocol, createCombatController } = runtime("./combat.cjs");
-const { simulatePearl, planPearl, createTravelController } = runtime("./pearls.cjs");
+const { pearlOrigin, simulatePearlFlight, simulatePearl, planPearl, createTravelController } =
+  runtime("./pearls.cjs");
 const { explosionDamage, createCrystalPlanner } = runtime("./crystals.cjs");
 const { createBowDefense, detectBowThreat } = runtime("./bow-defense.cjs");
 const { Vec3 } = require("vec3");
@@ -146,8 +147,8 @@ test("pearl solver rejects water, unloaded terrain, obstructed arcs and entity c
   }
 });
 
-function travelFixture(patch = {}) {
-  const f = worldFixture(),
+function travelFixture(patch = {}, version = "26.1.2") {
+  const f = worldFixture(version),
     calls = [],
     items = [{ name: "ender_pearl", count: 4 }];
   let time = 0;
@@ -181,6 +182,7 @@ function travelFixture(patch = {}) {
     items,
     destination,
     settings,
+    now: () => time,
     travel,
     tick: async (value) => {
       time = value;
@@ -269,6 +271,521 @@ test("a missing teleport resumes walking; stop/death/dispose cancel an in-progre
     } finally {
       g.close();
     }
+  }
+});
+
+function chaseFixture(patch = {}, version = "26.1.2") {
+  const f = travelFixture({ pearlChase: true, ...patch }, version);
+  const enemy = {
+    id: 99,
+    username: "Enemy",
+    uuid: "00000000-0000-0000-0000-000000000099",
+    type: "player",
+    height: 1.8,
+    width: 0.6,
+    eyeHeight: 1.62,
+    position: new Vec3(6.5, 64, 0.5),
+    isValid: true,
+  };
+  f.bot.username = "Bot";
+  f.bot.supportFeature = f.bot.registry.supportFeature;
+  f.bot.entities[enemy.id] = enemy;
+  f.bot.swordpvp = {
+    target: null,
+    attack: async (entity) => {
+      f.bot.swordpvp.target = entity;
+      f.calls.push(["attack", entity]);
+    },
+    stop: () => {
+      f.bot.swordpvp.target = null;
+    },
+  };
+  const combat = createCombatController(
+    f.bot,
+    {
+      ...f.settings,
+      style: "melee",
+      reactionMs: 0,
+      ...patch,
+    },
+    {
+      loadPlugins: false,
+      now: f.now,
+      onError: (error) => {
+        throw error;
+      },
+    },
+  );
+  f.bot.launcherTravel = f.travel;
+  f.bot.launcherCombat = combat;
+  const close = f.close;
+  f.close = () => {
+    combat.dispose();
+    close();
+  };
+  function spawn(ownerId = enemy.id, velocity = new Vec3(1.45, 0.35, 0)) {
+    const origin = pearlOrigin(enemy, f.bot.registry);
+    const modern = f.bot.registry.version[">="]("1.21.9");
+    const fixed = version === "1.8.8" ? 32 : 1;
+    const packet = {
+      entityId: 101,
+      type: f.bot.registry.entitiesArray.find((e) => /pearl/i.test(e.name)).internalId,
+      objectUUID: "00000000-0000-0000-0000-000000000101",
+      x: fixed === 32 ? Math.floor(origin.x * fixed) : origin.x,
+      y: fixed === 32 ? Math.floor(origin.y * fixed) : origin.y,
+      z: fixed === 32 ? Math.floor(origin.z * fixed) : origin.z,
+      pitch: 0,
+      yaw: 0,
+      headPitch: 0,
+      objectData: version === "1.8.8" ? 0 : ownerId,
+      velocity: velocity.scaled(modern ? 1 : 8000),
+    };
+    const serializer = protocol.createSerializer({ state: "play", isServer: true, version });
+    const parser = protocol.createDeserializer({ state: "play", isServer: false, version });
+    const decoded = parser.parsePacketBuffer(
+      serializer.createPacketBuffer({ name: "spawn_entity", params: packet }),
+    ).data.params;
+    f.bot._client.emit("spawn_entity", decoded);
+    if (version === "1.8.8")
+      f.bot._client.emit("entity_velocity", { entityId: 101, velocity: velocity.scaled(8000) });
+    return simulatePearlFlight(f.bot, origin, velocity, undefined, enemy.id)?.landing;
+  }
+  const teleport = (position) => {
+    enemy.position = position.clone();
+    f.bot.emit("entityMoved", enemy);
+  };
+  return { ...f, enemy, combat, spawn, teleport };
+}
+
+for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+  test(`enemy pearl is chased to its landing and melee resumes on ${version}`, async () => {
+    const f = chaseFixture({}, version);
+    try {
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      const landing = f.spawn();
+      assert.ok(landing.distanceTo(f.bot.entity.position) > f.settings.targetRange);
+      const ownShot = planPearl(f.bot, landing, f.settings, 2.5, true);
+      assert.ok(ownShot);
+      await f.tick(50);
+      assert.equal(f.calls.includes("throw"), false, "wait for the enemy's actual teleport");
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      f.teleport(landing);
+      await f.tick(100);
+      assert.equal(f.bot.swordpvp.target, null);
+      assert.equal(f.travel.chasing, true);
+      assert.match(f.combat.status, /Enemy/);
+      assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+      f.bot.entity.position = ownShot.landing.clone();
+      await f.tick(150);
+      assert.equal(f.travel.chasing, false);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      assert.equal(f.calls.filter((call) => call[0] === "attack").length, 2);
+    } finally {
+      f.close();
+    }
+  });
+}
+
+for (const patch of [{ pearlChase: false }, { pearlReserve: 4 }, { pearlMinHealth: 20 }]) {
+  test(`combat does not throw when ${JSON.stringify(patch)}`, async () => {
+    const f = chaseFixture(patch);
+    f.bot.health = 19;
+    try {
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      f.spawn();
+      f.teleport(new Vec3(20.5, 64, 0.5));
+      await f.tick(50);
+      assert.equal(f.calls.includes("throw"), false);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+    } finally {
+      f.close();
+    }
+  });
+}
+
+for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+  test(`held pearl and confirmed teleport trigger melee pursuit through real packets on ${version}`, async () => {
+    const f = chaseFixture({ pearlEnabled: false, pearlFollow: false }, version);
+    try {
+      f.bot.loadPlugin(runtime("mineflayer/lib/plugins/entities"));
+      const Entity = mineflayerRequire("prismarine-entity")(f.bot.registry);
+      const Item = mineflayerRequire("prismarine-item")(f.bot.registry);
+      const enemy = Object.assign(new Entity(f.enemy.id), f.enemy);
+      enemy.position = new Vec3(2.5, 64, 0.5);
+      f.bot.entities[enemy.id] = enemy;
+      const serializer = protocol.createSerializer({ state: "play", isServer: true, version });
+      const parser = protocol.createDeserializer({ state: "play", isServer: false, version });
+      const receive = (name, params) => {
+        const decoded = parser.parsePacketBuffer(
+          serializer.createPacketBuffer({ name, params }),
+        ).data;
+        f.bot._client.emit(decoded.name, decoded.params);
+      };
+      const modern = f.bot.registry.version[">="]("1.9");
+      const hand = modern ? 1 : 0;
+      const equip = (item) =>
+        receive(
+          "entity_equipment",
+          modern
+            ? { entityId: enemy.id, equipments: [{ slot: hand, item: Item.toNotch(item) }] }
+            : { entityId: enemy.id, slot: hand, item: Item.toNotch(item) },
+        );
+      f.combat.select(enemy);
+      await f.tick(0);
+      equip(new Item(f.bot.registry.itemsByName.ender_pearl.id, 1));
+      await f.tick(50);
+      assert.equal(f.calls.includes("throw"), false, "holding a pearl never throws on its own");
+      // Some servers hide the projectile; equipment and the actual teleport remain visible.
+      equip(null);
+      enemy.position.x += 0.5;
+      f.bot.emit("entityMoved", enemy);
+      await f.tick(100);
+      assert.equal(
+        f.calls.includes("throw"),
+        false,
+        "switching items and walking do not trigger pursuit",
+      );
+      const landing = new Vec3(30.5, 64, 0.5);
+      const fixed = f.bot.supportFeature("fixedPointPosition") ? 32 : 1;
+      const name = f.bot.registry.version[">="]("1.21.3")
+        ? "sync_entity_position"
+        : "entity_teleport";
+      receive(name, {
+        entityId: enemy.id,
+        x: landing.x * fixed,
+        y: landing.y * fixed,
+        z: landing.z * fixed,
+        dx: 0,
+        dy: 0,
+        dz: 0,
+        yaw: 0,
+        pitch: 0,
+        onGround: true,
+      });
+      const shot = planPearl(f.bot, landing, f.settings, 2.5, true);
+      assert.ok(shot);
+      await f.tick(150);
+      assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+      assert.equal(f.travel.chasing, true, "melee pursuit does not require travel pearl toggles");
+      f.bot.entity.position = shot.landing.clone();
+      await f.tick(200);
+      assert.equal(f.bot.swordpvp.target, enemy);
+    } finally {
+      f.close();
+    }
+  });
+}
+
+test("a pearl aim interrupted by water movement is retried after the enemy teleport", async () => {
+  const f = chaseFixture();
+  try {
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    const landing = f.spawn();
+    const look = f.bot.look;
+    f.bot.look = async (...args) => {
+      await look(...args);
+      f.bot.entity.position.z += 8;
+    };
+    f.teleport(landing);
+    await f.tick(50);
+    assert.equal(f.calls.includes("throw"), false);
+    assert.equal(f.travel.chasing, false, "a cancelled aim releases the chase task");
+    f.bot.look = look;
+    await f.tick(400);
+    assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+    assert.equal(f.travel.chasing, true);
+  } finally {
+    f.close();
+  }
+});
+
+test("combat can pursue with pearls carried only in the offhand", async () => {
+  const f = chaseFixture();
+  try {
+    f.bot.inventory.slots[45] = f.items.pop();
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    f.teleport(f.spawn());
+    await f.tick(50);
+    assert.equal(f.calls.includes("throw"), true);
+  } finally {
+    f.close();
+  }
+});
+
+test("combat ignores other players' pearls and refuses an unreachable landing", async () => {
+  const f = chaseFixture({ pearlMaxDistance: 12 });
+  try {
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    f.spawn(123);
+    await f.tick(50);
+    assert.equal(f.calls.includes("throw"), false);
+    const landing = f.spawn();
+    f.teleport(landing);
+    await f.tick(300);
+    assert.equal(f.calls.includes("throw"), false, "never substitute a partial travel throw");
+    await f.tick(10000);
+    assert.equal(f.bot.swordpvp.target, null, "unreachable pursuit eventually expires");
+  } finally {
+    f.close();
+  }
+});
+
+test("separate enemy pearls obey the shared cooldown even when travel chaining is disabled", async () => {
+  const f = chaseFixture({ pearlChain: false });
+  try {
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    const landing = f.spawn();
+    const shot = planPearl(f.bot, landing, f.settings, 2.5, true);
+    f.teleport(landing);
+    await f.tick(50);
+    f.bot.entity.position = shot.landing.offset(0, 0, 2);
+    await f.tick(100);
+    const secondLanding = f.spawn(f.enemy.id, new Vec3(-1.45, 0.35, 0));
+    f.teleport(secondLanding);
+    await f.tick(200);
+    assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+    await f.tick(1600);
+    assert.equal(f.calls.filter((call) => call === "throw").length, 2);
+    await f.tick(10000);
+    assert.equal(f.travel.chasing, false, "flight timeout releases combat");
+    await f.tick(12000);
+    assert.equal(
+      f.bot.swordpvp.target,
+      null,
+      "a missing bot teleport eventually stops a distant fight",
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test("a missing pearl keeps melee active and walking is not mistaken for teleportation", async () => {
+  const f = chaseFixture();
+  try {
+    f.items.length = 0;
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    f.spawn();
+    for (let tick = 1; tick <= 12; tick++) {
+      f.enemy.position.x += 0.5;
+      f.bot.emit("entityMoved", f.enemy);
+      await f.tick(tick * 50);
+    }
+    assert.equal(f.calls.includes("throw"), false);
+    assert.equal(f.bot.swordpvp.target, f.enemy);
+  } finally {
+    f.close();
+  }
+});
+
+test("legacy ownerless pearls with two possible throwers are ignored", async () => {
+  const f = chaseFixture({}, "1.8.8");
+  try {
+    f.bot.entities[98] = {
+      ...f.enemy,
+      id: 98,
+      username: "Other",
+      position: f.enemy.position.offset(0.2, 0, 0),
+    };
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    f.spawn();
+    f.teleport(new Vec3(20.5, 64, 0.5));
+    await f.tick(50);
+    assert.equal(f.calls.includes("throw"), false);
+    assert.equal(f.bot.swordpvp.target, f.enemy);
+  } finally {
+    f.close();
+  }
+});
+
+test("an unknown flight can be chased after the actual enemy teleport confirms loaded terrain", async () => {
+  const f = chaseFixture();
+  try {
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    const blockAt = f.bot.blockAt;
+    f.bot.blockAt = (point) => (point.x > 15 ? null : blockAt(point));
+    assert.equal(f.spawn(), undefined);
+    await f.tick(50);
+    assert.equal(f.calls.includes("throw"), false);
+    f.bot.blockAt = blockAt;
+    f.enemy.position = new Vec3(30.5, 64, 0.5);
+    f.bot.emit("entityMoved", f.enemy);
+    await f.tick(100);
+    assert.equal(f.calls.includes("throw"), true);
+    assert.equal(f.travel.chasing, true);
+  } finally {
+    f.close();
+  }
+});
+
+test("pearl chase interrupts a bow draw before equipping its projectile", async () => {
+  const f = chaseFixture({ style: "ranged" });
+  try {
+    f.items.push({ name: "bow" }, { name: "arrow" });
+    f.bot.bowpvp = { shotToEntity: () => ({ hit: true, yaw: 0.5, pitch: 0.2 }) };
+    const activate = f.bot.activateItem;
+    f.bot.activateItem = () => {
+      f.bot.usingHeldItem = true;
+      activate();
+    };
+    f.bot.deactivateItem = () => {
+      f.bot.usingHeldItem = false;
+    };
+    f.combat.select(f.enemy, "ranged");
+    await f.tick(0);
+    await f.tick(50);
+    assert.equal(f.bot.usingHeldItem, true);
+    f.calls.length = 0;
+    const landing = f.spawn();
+    f.teleport(landing);
+    await f.tick(100);
+    assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+    assert.equal(f.travel.chasing, true);
+    assert.equal(f.bot.usingHeldItem, false);
+  } finally {
+    f.close();
+  }
+});
+
+test("combat preserves a teleporting target across despawn and cancels chase on stop/death/dispose", async () => {
+  const f = chaseFixture();
+  try {
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    const landing = f.spawn();
+    const ownShot = planPearl(f.bot, landing, f.settings, 2.5, true);
+    await f.tick(50);
+    f.bot.emit("entityGone", f.enemy);
+    f.enemy.isValid = false;
+    delete f.bot.entities[f.enemy.id];
+    await f.tick(100);
+    assert.match(f.combat.status, /Enemy/);
+    const replacement = { ...f.enemy, id: 102, position: landing, isValid: true };
+    f.bot.entities[replacement.id] = replacement;
+    await f.tick(150);
+    assert.equal(f.travel.chasing, true);
+    f.bot.entity.position = ownShot.landing.clone();
+    await f.tick(200);
+    assert.equal(f.bot.swordpvp.target, replacement);
+  } finally {
+    f.close();
+  }
+  for (const cancel of ["stop", "death", "dispose", "targetDeath", "newTarget"]) {
+    const g = chaseFixture();
+    let finish;
+    try {
+      g.combat.select(g.enemy);
+      await g.tick(0);
+      g.bot.equip = () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        });
+      g.teleport(g.spawn());
+      await g.tick(50);
+      assert.ok(finish);
+      if (cancel === "death") g.bot.emit("death");
+      else if (cancel === "targetDeath") g.bot.emit("entityDead", g.enemy);
+      else if (cancel === "newTarget")
+        g.combat.select({
+          ...g.enemy,
+          id: 103,
+          username: "Other",
+          position: new Vec3(8.5, 64, 0.5),
+        });
+      else g.combat[cancel]();
+      finish();
+      await flush();
+      await flush();
+      assert.equal(g.calls.includes("throw"), false);
+      assert.equal(g.travel.chasing, false);
+    } finally {
+      g.close();
+    }
+  }
+});
+
+for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+  test(`water launch uses liquid drag and the correct tick order on ${version}`, () => {
+    const f = worldFixture(version);
+    try {
+      const origin = new Vec3(0.5, 65.5, 0.5),
+        velocity = new Vec3(1.5, 0.6, 0);
+      const steps = [];
+      f.bot.world.raycast = (position, direction, length) => {
+        steps.push(direction.scaled(length));
+        return steps.length === 1 ? null : { face: 1, intersect: position.plus(steps[1]) };
+      };
+      const water = { name: "water", boundingBox: "empty" };
+      const shot = simulatePearlFlight(f.bot, origin, velocity, () => water, 1);
+      assert.ok(shot);
+      const expected =
+        version === "26.1.2" ? new Vec3(1.5, 0.57, 0).scaled(Math.fround(0.8)) : velocity;
+      assert.ok(steps[0].distanceTo(expected) < 1e-8);
+      const second =
+        version === "26.1.2"
+          ? expected.offset(0, -0.03, 0).scaled(Math.fround(0.8))
+          : velocity.scaled(Math.fround(0.8)).offset(0, -0.03, 0);
+      assert.ok(steps[1].distanceTo(second) < 1e-8, "water drag also applies on legacy versions");
+    } finally {
+      f.dispose();
+    }
+  });
+}
+
+test("swimming pearls leave water for a safe shore; water landings remain forbidden", async () => {
+  const f = travelFixture({ pearlMinDistance: 4 });
+  try {
+    f.bot.entity.metadata[6] = 3;
+    f.bot.entity.isInWater = true;
+    f.bot.entity.onGround = false;
+    f.bot.entity.velocity = new Vec3(0.08, -0.02, 0);
+    assert.equal(pearlOrigin(f.bot.entity, f.bot.registry).y, 64.3);
+    for (let x = -1; x <= 1; x++)
+      for (let z = -2; z <= 2; z++) f.world.setBlock(new Vec3(x, 64, z), "water");
+    const destination = new Vec3(30.5, 64, 0.5);
+    const shot = planPearl(f.bot, destination, f.settings, 2.5, true);
+    assert.ok(shot);
+    assert.ok(shot.landing.distanceTo(destination) < 2.5);
+    await f.start();
+    await f.tick(0);
+    assert.equal(f.calls.includes("throw"), true);
+  } finally {
+    f.close();
+  }
+});
+
+test("legacy health metadata is not interpreted as a swimming pose", () => {
+  const f = worldFixture("1.8.8");
+  try {
+    f.bot.entity.metadata[6] = 3;
+    assert.equal(pearlOrigin(f.bot.entity, f.bot.registry).y, 65.52);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("a current in water during aiming invalidates the old throw", async () => {
+  const f = travelFixture();
+  try {
+    f.bot.look = async () => {
+      f.bot.entity.velocity = new Vec3(0, -1.5, 0);
+    };
+    await f.start();
+    await f.tick(0);
+    assert.equal(f.calls.includes("throw"), false);
+    assert.equal(f.travel.waiting, false);
+    assert.equal(f.calls.filter((call) => call === "walk").length, 2);
+  } finally {
+    f.close();
   }
 });
 
@@ -565,6 +1082,26 @@ for (const version of ["1.20.4", "26.1.2"]) {
       assert.ok(hit, "breaks server-confirmed entity");
       assert.equal(hit.params.entityId ?? hit.params.target, 3);
       assert.equal(packets[packets.indexOf(hit) - 1].name, "look");
+      delete bot.entities[3];
+      for (let cycle = 0; cycle < 3; cycle++) {
+        time += 300;
+        bot.emit("physicsTick");
+        await controller.idleTask;
+        assert.equal(
+          packets.filter((p) => p.name === "block_place").length,
+          cycle + 2,
+          "immediately reuses the confirmed base after each explosion",
+        );
+        bot.entities[cycle + 4] = { ...crystal, id: cycle + 4 };
+        time += 300;
+        bot.emit("physicsTick");
+        await controller.idleTask;
+        const attacks = packets.filter(
+          (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+        );
+        assert.equal(attacks.length, cycle + 2, "breaks each new confirmed crystal");
+        delete bot.entities[cycle + 4];
+      }
       controller.stop();
       time = 3000;
       const count = packets.length;
@@ -803,6 +1340,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
         style: "crystal",
         reactionMs: 0,
         crystalEnabled: true,
+        crystalMaxSelfDamage: 3,
         ...variant,
       });
       const controller = createCombatController(bot, settings, {
@@ -819,8 +1357,12 @@ for (const version of ["1.20.4", "26.1.2"]) {
             delayedSpawn = null;
           }
           if (variant.bowDefense) {
+            enemy.position.z = delayedSpawn ? 6.5 : 0.5;
             enemy.heldItem = delayedSpawn ? { name: "bow" } : null;
-            enemy.yaw = Math.PI / 2;
+            enemy.yaw = Math.atan2(
+              enemy.position.x - bot.entity.position.x,
+              enemy.position.z - bot.entity.position.z,
+            );
             enemy.pitch = 0;
             enemy.metadata = [];
             enemy.metadata[
@@ -878,6 +1420,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
         const attack = packets.find(
           (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
         );
+        assert.ok(attack, "breaks the confirmed crystal");
         assert.ok(
           statuses.findIndex((message) => message.startsWith("crystal cover:")) <
             statuses.findIndex((message) => message.startsWith("crystal break:")),
@@ -1013,6 +1556,202 @@ for (const version of ["1.20.4", "26.1.2"]) {
       assert.equal(bot.listenerCount("entityUpdate"), 0, "perception callbacks are removed");
     } finally {
       defense.dispose();
+      f.dispose();
+    }
+  });
+}
+
+for (const version of ["1.20.4", "26.1.2"]) {
+  test(`crystal approach walks smoothly through real physics on ${version}`, async () => {
+    const f = worldFixture(version),
+      bot = f.bot;
+    const { PlayerState } = mineflayerRequire("prismarine-physics");
+    const routes = [];
+    bot.supportFeature = bot.registry.supportFeature;
+    bot.inventory.slots[36] = { name: "end_crystal", slot: 36 };
+    bot.pathfinder = {
+      stop: async () => bot.clearControlStates(),
+      goto: (goal) => {
+        routes.push(goal);
+        return new Promise(() => {});
+      },
+    };
+    const enemy = {
+      id: 2,
+      username: "Enemy",
+      type: "player",
+      isValid: true,
+      position: new Vec3(12.5, 64, 0.5),
+      width: 0.6,
+      height: 1.8,
+    };
+    bot.entities[2] = enemy;
+    let time = 0;
+    const controller = createCombatController(
+      bot,
+      { style: "crystal", reactionMs: 0, crystalEnabled: true },
+      { loadPlugins: false, now: () => time },
+    );
+    const controls = [];
+    try {
+      controller.select(enemy);
+      for (let i = 0; i < 100; i++) {
+        time = i * 50;
+        bot.emit("physicsTick");
+        await controller.idleTask;
+        await flush();
+        controls.push(
+          Object.fromEntries(
+            ["forward", "back", "left", "right", "jump", "sprint"].map((name) => [
+              name,
+              bot.getControlState(name),
+            ]),
+          ),
+        );
+        bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), f.world).apply(bot);
+      }
+      assert.ok(bot.entity.position.x > 8.5, "reaches placement distance by walking forward");
+      assert.equal(routes.length, 0, "flat pursuit avoids precise block-centering routes");
+      assert.equal(
+        controls.some((c) => c.left || c.right || c.back || c.jump),
+        false,
+        "no strafing, reverse braking or critical jumps",
+      );
+      assert.ok(enemy.position.distanceTo(bot.entity.position) > 2, "stops before body contact");
+      enemy.position.x = 16.5;
+      time += 300;
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      assert.equal(bot.controlState.forward, true, "resumes when the opponent moves away");
+      const wallX = Math.floor(bot.entity.position.x) + 1;
+      const wallZ = Math.floor(bot.entity.position.z);
+      f.world.setBlock(new Vec3(wallX, 64, wallZ), "stone");
+      f.world.setBlock(new Vec3(wallX, 65, wallZ), "stone");
+      time += 300;
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      assert.equal(routes.length, 1, "an obstacle hands movement back to pathfinding");
+      assert.equal(bot.controlState.forward, false, "releases direct controls before routing");
+      controller.stop();
+      await flush();
+      assert.equal(bot.controlState.forward, false);
+    } finally {
+      controller.dispose();
+      f.dispose();
+    }
+  });
+
+  test(`rejected crystal foundations retry without blocking for 5000ms on ${version}`, async () => {
+    const f = worldFixture(version),
+      bot = f.bot,
+      clicks = [],
+      errors = [];
+    bot.supportFeature = bot.registry.supportFeature;
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/entities"));
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/inventory"), { hideErrors: false });
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/generic_place"));
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/place_block"));
+    bot.setQuickBarSlot(0);
+    const Item = mineflayerRequire("prismarine-item")(bot.registry);
+    for (const [slot, name] of [
+      [36, "end_crystal"],
+      [37, "obsidian"],
+    ]) {
+      const item = new Item(bot.registry.itemsByName[name].id, 16);
+      item.slot = slot;
+      bot.inventory.slots[slot] = item;
+    }
+    bot.equip = async (item) => {
+      const from = item.slot,
+        old = bot.inventory.slots[36];
+      bot.inventory.slots[36] = item;
+      item.slot = 36;
+      bot.inventory.slots[from] = old;
+      if (old) old.slot = from;
+    };
+    bot.pathfinder = { stop: async () => {}, goto: () => new Promise(() => {}) };
+    const enemy = {
+      id: 2,
+      username: "Enemy",
+      type: "player",
+      isValid: true,
+      position: new Vec3(5.5, 64, 0.5),
+      width: 0.6,
+      height: 1.8,
+    };
+    bot.entities[2] = enemy;
+    const serializer = protocol.createSerializer({ state: "play", isServer: false, version });
+    bot._client.state = "play";
+    bot._client.write = (name, params) => {
+      serializer.createPacketBuffer({ name, params });
+      if (name === "block_place") {
+        assertCrystalClick(bot, params);
+        clicks.push({ params, held: bot.heldItem.name }); // Server rejects every click.
+      }
+    };
+    installCombatProtocol(bot);
+    let time = 0;
+    const controller = createCombatController(
+      bot,
+      {
+        style: "crystal",
+        reactionMs: 0,
+        crystalEnabled: true,
+        crystalSpawnTimeoutMs: 300,
+        crystalIntervalMs: 100,
+        crystalCover: false,
+        crystalMaxSelfDamage: 20,
+        crystalMinHealth: 1,
+      },
+      {
+        loadPlugins: false,
+        now: () => time,
+        onError: (error) => errors.push(error),
+      },
+    );
+    async function tick(at) {
+      time = at;
+      bot.emit("physicsTick");
+      let timer;
+      try {
+        await Promise.race([
+          controller.idleTask,
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("block placement locked the combat loop")),
+              100,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+      await flush();
+    }
+    try {
+      controller.select(enemy);
+      await tick(0);
+      await tick(50);
+      assert.equal(clicks.length, 1);
+      await tick(150);
+      assert.equal(clicks.length, 1, "does not duplicate an unconfirmed block");
+      await tick(350);
+      assert.equal(clicks.length, 2, "retries at the configured confirmation deadline");
+      await tick(650);
+      await tick(950);
+      assert.equal(clicks.length, 3, "tries another layout after bounded rejection");
+      assert.equal(
+        clicks.every((click) => click.held === "obsidian"),
+        true,
+        "never places a crystal on an unconfirmed foundation",
+      );
+      assert.deepEqual(errors, []);
+      assert.match(controller.status, /^crystal /, "server rejection keeps the cycle running");
+      controller.stop();
+      await tick(2000);
+      assert.equal(clicks.length, 3, "stop cancels retries");
+    } finally {
+      controller.dispose();
       f.dispose();
     }
   });

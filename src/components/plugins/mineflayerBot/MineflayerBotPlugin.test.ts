@@ -21,6 +21,7 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.engine).toBe("custom");
     expect(normalized.combat.autoTarget).toBe("manual");
     expect(normalized.combat.smoothAimSpeed).toBe(100);
+    expect(normalized.combat.pearlChase).toBe(false);
   });
 
   it("clamps numeric values and rejects unknown command sources", () => {
@@ -116,6 +117,7 @@ describe("normalizeMineflayerBotSettings", () => {
         pearlFollow: false,
         pearlCome: true,
         pearlGoto: true,
+        pearlChase: true,
         pearlChain: false,
         pearlMinDistance: 64,
         pearlMaxDistance: 12,
@@ -140,6 +142,7 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.pearlFollow).toBe(false);
     expect(normalized.combat.pearlCome).toBe(true);
     expect(normalized.combat.pearlGoto).toBe(true);
+    expect(normalized.combat.pearlChase).toBe(true);
     expect(normalized.combat.pearlChain).toBe(false);
     expect(normalized.combat.pearlMinDistance).toBe(12);
     expect(normalized.combat.pearlCooldownMs).toBe(1000);

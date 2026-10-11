@@ -42,6 +42,8 @@ for (const file of [
   "combat.test.mjs",
   "pearls.cjs",
   "crystals.cjs",
+  "crystal-movement.cjs",
+  "crystal-tactics.test.mjs",
   "bow-defense.cjs",
   "combat-inventory.cjs",
   "armor-manager.cjs",

@@ -50,18 +50,30 @@ function installKnockback (bot, enabled = false) {
   // Keep Mineflayer's packet processing intact (including remote entities).
   // Snapshot only our velocity around an impulse; walking, jumping, falling and
   // server position corrections continue to use normal physics in either mode.
-  for (const event of ['entity_velocity', 'explosion']) {
+  for (const event of ['entity_velocity', 'spawn_entity', 'explosion']) {
     const snapshots = new WeakMap()
     const before = (packet) => {
       if (!antiKnockback || !bot.entity?.velocity) return
-      if (event === 'entity_velocity' && packet.entityId !== bot.entity.id) return
+      if (event !== 'explosion' && packet.entityId !== bot.entity.id) return
       snapshots.set(packet, { entity: bot.entity, velocity: bot.entity.velocity.clone() })
     }
     const after = (packet) => {
       const snapshot = snapshots.get(packet)
-      if (!snapshot) return
-      snapshots.delete(packet)
-      if (bot.entity === snapshot.entity) bot.entity.velocity.update(snapshot.velocity)
+      if (snapshot) {
+        snapshots.delete(packet)
+        if (bot.entity === snapshot.entity) bot.entity.velocity.update(snapshot.velocity)
+        return
+      }
+      // New protocols decode lpVec3 directly in blocks/tick. Mineflayer 4.37.1
+      // still divides every velocity by 8000, reducing real hit impulses to zero
+      // on the next physics tick. Correct only that wire format, after injection.
+      const fields = bot.registry?.protocol?.play?.toClient?.types?.[`packet_${event}`]?.[1]
+      if (fields?.find?.(field => field.name === 'velocity')?.type !== 'lpVec3') return
+      const velocity = packet.velocity
+      const entity = bot.entities?.[packet.entityId]
+      if (entity?.velocity && velocity && [velocity.x, velocity.y, velocity.z].every(Number.isFinite)) {
+        entity.velocity.set(velocity.x, velocity.y, velocity.z)
+      }
     }
     bot._client.prependListener(event, before)
     bot._client.on(event, after)

@@ -23,6 +23,8 @@ const MINEFLAYER_KNOCKBACK: &str = include_str!("../../../extensions/mineflayer-
 const MINEFLAYER_COMBAT: &str = include_str!("../../../extensions/mineflayer-bot/combat.cjs");
 const MINEFLAYER_PEARLS: &str = include_str!("../../../extensions/mineflayer-bot/pearls.cjs");
 const MINEFLAYER_CRYSTALS: &str = include_str!("../../../extensions/mineflayer-bot/crystals.cjs");
+const MINEFLAYER_CRYSTAL_MOVEMENT: &str =
+    include_str!("../../../extensions/mineflayer-bot/crystal-movement.cjs");
 const MINEFLAYER_COMBAT_INVENTORY: &str =
     include_str!("../../../extensions/mineflayer-bot/combat-inventory.cjs");
 const MINEFLAYER_ARMOR_MANAGER: &str =
@@ -46,6 +48,29 @@ const MINEFLAYER_SOURCE: &str =
     include_str!("../../../extensions/mineflayer-bot/pathfinder-source.json");
 const MINEFLAYER_RESTORE_SOURCE: &str =
     include_str!("../../../extensions/mineflayer-bot/restore-pathfinder-source.cjs");
+
+const MINEFLAYER_FILES: &[(&str, &str)] = &[
+    ("worker.cjs", MINEFLAYER_WORKER),
+    ("knockback.cjs", MINEFLAYER_KNOCKBACK),
+    ("combat.cjs", MINEFLAYER_COMBAT),
+    ("pearls.cjs", MINEFLAYER_PEARLS),
+    ("crystals.cjs", MINEFLAYER_CRYSTALS),
+    ("crystal-movement.cjs", MINEFLAYER_CRYSTAL_MOVEMENT),
+    ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
+    ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
+    ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
+    ("melee-shield.cjs", MINEFLAYER_MELEE_SHIELD),
+    ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
+    ("COMBAT.md", include_str!("../../../extensions/mineflayer-bot/COMBAT.md")),
+    ("pathfinder.cjs", MINEFLAYER_PATHFINDER),
+    ("extension.json", MINEFLAYER_MANIFEST),
+    ("package.json", MINEFLAYER_PACKAGE),
+    ("package-lock.json", MINEFLAYER_PACKAGE_LOCK),
+    ("COPYING", MINEFLAYER_COPYING),
+    ("THIRD-PARTY-NOTICES.md", MINEFLAYER_NOTICES),
+    ("pathfinder-source.json", MINEFLAYER_SOURCE),
+    ("restore-pathfinder-source.cjs", MINEFLAYER_RESTORE_SOURCE),
+];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,12 +130,19 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
 }
 
 pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), String> {
-    let worker = runtime_dir.join("worker.cjs");
-    let current = fs::read_to_string(&worker)
-        .map_err(|error| format!("Read Mineflayer worker error: {error}"))?;
-    if current != MINEFLAYER_WORKER {
-        fs::write(&worker, MINEFLAYER_WORKER)
-            .map_err(|error| format!("Update Mineflayer worker error: {error}"))?;
+    // The worker requires these modules at startup. Updating only worker.cjs
+    // leaves installed bots running old combat code after a launcher update.
+    for &(name, contents) in MINEFLAYER_FILES {
+        let path = runtime_dir.join(name);
+        let current = match fs::read_to_string(&path) {
+            Ok(current) => Some(current),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(format!("Read Mineflayer package file {name} error: {error}")),
+        };
+        if current.as_deref() != Some(contents) {
+            fs::write(&path, contents)
+                .map_err(|error| format!("Update Mineflayer package file {name} error: {error}"))?;
+        }
     }
     Ok(())
 }
@@ -223,30 +255,7 @@ fn npm_error_detail(stdout: &[u8], stderr: &[u8]) -> String {
 }
 
 async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
-    for (name, contents) in [
-        ("worker.cjs", MINEFLAYER_WORKER),
-        ("knockback.cjs", MINEFLAYER_KNOCKBACK),
-        ("combat.cjs", MINEFLAYER_COMBAT),
-        ("pearls.cjs", MINEFLAYER_PEARLS),
-        ("crystals.cjs", MINEFLAYER_CRYSTALS),
-        ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
-        ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
-        ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
-        ("melee-shield.cjs", MINEFLAYER_MELEE_SHIELD),
-        ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
-        (
-            "COMBAT.md",
-            include_str!("../../../extensions/mineflayer-bot/COMBAT.md"),
-        ),
-        ("pathfinder.cjs", MINEFLAYER_PATHFINDER),
-        ("extension.json", MINEFLAYER_MANIFEST),
-        ("package.json", MINEFLAYER_PACKAGE),
-        ("package-lock.json", MINEFLAYER_PACKAGE_LOCK),
-        ("COPYING", MINEFLAYER_COPYING),
-        ("THIRD-PARTY-NOTICES.md", MINEFLAYER_NOTICES),
-        ("pathfinder-source.json", MINEFLAYER_SOURCE),
-        ("restore-pathfinder-source.cjs", MINEFLAYER_RESTORE_SOURCE),
-    ] {
+    for &(name, contents) in MINEFLAYER_FILES {
         tokio::fs::write(staging.join(name), contents)
             .await
             .map_err(|error| format!("Write Mineflayer package file {name} error: {error}"))?;

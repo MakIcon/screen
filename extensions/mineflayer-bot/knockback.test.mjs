@@ -27,12 +27,20 @@ function fixture(version = "1.20.4") {
   bot.entities[bot.entity.id] = bot.entity;
   bot.entity.velocity.set(0, 0, 0);
   const neighbor = {
-    id: 2, type: "player", username: "Owner", name: "player",
-    width: 0.6, height: 1.8, position: new Vec3(1, 64, 0.5), velocity: new Vec3(0, 0, 0),
+    id: 2,
+    type: "player",
+    username: "Owner",
+    name: "player",
+    width: 0.6,
+    height: 1.8,
+    position: new Vec3(1, 64, 0.5),
+    velocity: new Vec3(0, 0, 0),
   };
   bot.entities[neighbor.id] = neighbor;
   return {
-    bot, world, neighbor,
+    bot,
+    world,
+    neighbor,
     tick() {
       bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), world).apply(bot);
       bot.emit("physicsTick");
@@ -47,31 +55,52 @@ function receivedPacket(version, name, params) {
   return parser.parsePacketBuffer(serializer.createPacketBuffer({ name, params })).data.params;
 }
 
-for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+for (const version of ["1.8.8", "1.20.4", "1.21.11", "26.1.2"]) {
   test(`a nearby player physically pushes the bot with the default worker settings on ${version}`, () => {
     const f = fixture(version);
     try {
-      const config = worker.parseConfig(JSON.stringify({ server: { host: "localhost" }, account: { username: "Bot" } }));
+      const config = worker.parseConfig(
+        JSON.stringify({ server: { host: "localhost" }, account: { username: "Bot" } }),
+      );
       worker.configurePathfinder(f.bot, config.movement, config.behavior);
       const start = f.bot.entity.position.clone();
       for (let tick = 0; tick < 8; tick++) f.tick();
       assert.ok(f.bot.entity.position.x < start.x - 0.2, "body contact moves our actual player");
       assert.equal(f.bot.entity.position.y, start.y, "push does not lift the player");
       assert.equal(f.bot.entity.position.z, start.z);
-      assert.deepEqual(f.neighbor.velocity, new Vec3(0, 0, 0), "remote movement remains server controlled");
-    } finally { f.dispose(); }
+      assert.deepEqual(
+        f.neighbor.velocity,
+        new Vec3(0, 0, 0),
+        "remote movement remains server controlled",
+      );
+    } finally {
+      f.dispose();
+    }
   });
 
   test(`server hit packets respect both modes and preserve remote entity velocity on ${version}`, () => {
     const f = fixture(version);
     try {
       const controller = installKnockback(f.bot);
-      const hit = (id) => receivedPacket(version, "entity_velocity", {
-        entityId: id, velocity: { x: 3200, y: 1600, z: -800 },
-      });
+      const modern =
+        f.bot.registry.protocol.play.toClient.types.packet_entity_velocity[1].find(
+          (field) => field.name === "velocity",
+        ).type === "lpVec3";
+      const hit = (id) =>
+        receivedPacket(version, "entity_velocity", {
+          entityId: id,
+          velocity: modern ? { x: 0.4, y: 0.2, z: -0.1 } : { x: 3200, y: 1600, z: -800 },
+        });
       const ownHit = hit(f.bot.entity.id);
-      const decodedVelocity = new Vec3(ownHit.velocity.x, ownHit.velocity.y, ownHit.velocity.z).scaled(1 / 8000);
-      assert.ok(decodedVelocity.distanceTo(new Vec3(0.4, 0.2, -0.1)) < 0.00003, "wire quantization stays within protocol precision");
+      const decodedVelocity = new Vec3(
+        ownHit.velocity.x,
+        ownHit.velocity.y,
+        ownHit.velocity.z,
+      ).scaled(modern ? 1 : 1 / 8000);
+      assert.ok(
+        decodedVelocity.distanceTo(new Vec3(0.4, 0.2, -0.1)) < (modern ? 0.00006 : 0.00003),
+        "wire quantization stays within protocol precision",
+      );
       f.bot._client.emit("entity_velocity", ownHit);
       assert.deepEqual(f.bot.entity.velocity, decodedVelocity, "disabled accepts server impulse");
       const ownMotion = new Vec3(0.12, 0.42, -0.08);
@@ -83,8 +112,44 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
       assert.deepEqual(f.neighbor.velocity, decodedVelocity);
       controller.setEnabled(false);
       f.bot._client.emit("entity_velocity", hit(f.bot.entity.id));
-      assert.deepEqual(f.bot.entity.velocity, decodedVelocity, "turning off restores impulse handling");
-    } finally { f.dispose(); }
+      assert.deepEqual(
+        f.bot.entity.velocity,
+        decodedVelocity,
+        "turning off restores impulse handling",
+      );
+    } finally {
+      f.dispose();
+    }
+  });
+
+  test(`a serialized survival hit actually moves the bot through physics on ${version}`, () => {
+    const f = fixture(version);
+    try {
+      delete f.bot.entities[f.neighbor.id]; // Isolate damage from body pushing.
+      const controller = installKnockback(f.bot);
+      const modern =
+        f.bot.registry.protocol.play.toClient.types.packet_entity_velocity[1].find(
+          (field) => field.name === "velocity",
+        ).type === "lpVec3";
+      const packet = receivedPacket(version, "entity_velocity", {
+        entityId: f.bot.entity.id,
+        velocity: modern ? { x: 0.4, y: 0.4, z: 0 } : { x: 3200, y: 3200, z: 0 },
+      });
+      const start = f.bot.entity.position.clone();
+      f.bot._client.emit("entity_velocity", packet);
+      for (let tick = 0; tick < 5; tick++) f.tick();
+      assert.ok(f.bot.entity.position.x > start.x + 0.8, "hit causes horizontal displacement");
+      assert.ok(f.bot.entity.position.y > start.y + 0.5, "hit lifts the player");
+      controller.setEnabled(true);
+      f.bot.entity.position.update(start);
+      f.bot.entity.velocity.set(0, 0, 0);
+      f.bot.entity.onGround = true;
+      f.bot._client.emit("entity_velocity", packet);
+      for (let tick = 0; tick < 5; tick++) f.tick();
+      assert.equal(f.bot.entity.position.x, start.x, "anti knockback suppresses the same hit");
+    } finally {
+      f.dispose();
+    }
   });
 
   test(`enabled anti knockback stops body pushes while walking and jumping still work on ${version}`, () => {
@@ -105,7 +170,9 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
       f.bot.entity.onGround = true;
       for (let tick = 0; tick < 5; tick++) f.tick();
       assert.ok(f.bot.entity.position.x < 0.4, "disabling restores body pushes");
-    } finally { f.dispose(); }
+    } finally {
+      f.dispose();
+    }
   });
 }
 
@@ -123,7 +190,9 @@ test("explosions respect the setting for both packet formats without losing curr
       controller.setEnabled(true);
       f.bot._client.emit("explosion", explosion);
       assert.deepEqual(f.bot.entity.velocity, new Vec3(0.5, 0.5, 0.1));
-    } finally { f.dispose(); }
+    } finally {
+      f.dispose();
+    }
   }
 });
 
@@ -131,7 +200,15 @@ test("server position corrections, distant entities, spectators and disabled tea
   const f = fixture();
   try {
     installKnockback(f.bot, true);
-    f.bot._client.emit("position", { x: 4, y: 65, z: 3, yaw: 0, pitch: 0, flags: 0, teleportId: 1 });
+    f.bot._client.emit("position", {
+      x: 4,
+      y: 65,
+      z: 3,
+      yaw: 0,
+      pitch: 0,
+      flags: 0,
+      teleportId: 1,
+    });
     assert.deepEqual(f.bot.entity.position, new Vec3(4, 65, 3));
     installKnockback(f.bot, false);
     f.bot.entity.position.set(0.5, 64, 0.5);
@@ -154,7 +231,9 @@ test("server position corrections, distant entities, spectators and disabled tea
     f.bot.teamMap = { Owner: { collisionRule: "never" } };
     f.bot.emit("physicsTick");
     assert.equal(f.bot.entity.velocity.x, 0);
-  } finally { f.dispose(); }
+  } finally {
+    f.dispose();
+  }
 });
 
 test("reinstall updates the setting once and disconnect removes all controller listeners", () => {
@@ -171,5 +250,7 @@ test("reinstall updates the setting once and disconnect removes all controller l
     assert.equal(f.bot.listenerCount("physicsTick"), tickCount);
     assert.equal(f.bot._client.listenerCount("entity_velocity"), velocityCount);
     assert.equal(f.bot._client.listenerCount("explosion"), explosionCount);
-  } finally { f.dispose(); }
+  } finally {
+    f.dispose();
+  }
 });

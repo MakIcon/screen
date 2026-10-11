@@ -1,5 +1,6 @@
 const { Vec3 } = require("vec3");
 const { carriedItems } = require("./combat-inventory.cjs");
+const { groundAt, walkSegment } = require("./crystal-movement.cjs");
 
 const isCrystal = (entity) => /^(end_?crystal|ender_?crystal)$/i.test(entity.name ?? "");
 const eyes = (bot) => bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
@@ -203,15 +204,23 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     pendingBlocks = new Map();
   let reason = "no reachable crystal position";
   let cycle = null,
-    pendingSpawn = null;
+    pendingSpawn = null,
+    pendingBlock = null;
   const failedBases = new Map();
+  const placed = new Map();
   function reject(message) {
     reason = message;
     return null;
   }
-  function evaluate(target, source, world = bot) {
+  function evaluate(
+    target,
+    source,
+    world = bot,
+    minimumDamage = settings.crystalMinDamage,
+    predict = settings.crystalPredict,
+  ) {
     if (bot.health < settings.crystalMinHealth) return reject("health below crystal minimum");
-    const velocity = settings.crystalPredict
+    const velocity = predict
       ? (bot.tracker?.getEntitySpeed(target) ?? target.velocity ?? new Vec3(0, 0, 0))
       : new Vec3(0, 0, 0);
     const predicted = {
@@ -242,15 +251,15 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     );
     if (
       !Number.isFinite(damage) ||
-      damage < settings.crystalMinDamage ||
+      damage < minimumDamage ||
       selfDamage > settings.crystalMaxSelfDamage ||
       bot.health - selfDamage < settings.crystalMinHealth
     )
       return reject(
         !Number.isFinite(damage) || !Number.isFinite(selfDamage)
           ? "terrain is not loaded"
-          : damage < settings.crystalMinDamage
-            ? `target damage ${damage.toFixed(1)} < ${settings.crystalMinDamage}`
+          : damage < minimumDamage
+            ? `target damage ${damage.toFixed(1)} < ${minimumDamage}`
             : `self damage ${selfDamage.toFixed(1)}, limit ${settings.crystalMaxSelfDamage}; health after ${(bot.health - selfDamage).toFixed(1)}`,
       );
     if (
@@ -329,7 +338,9 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
   function protect(source, time, item, choice, select, additionalBlocks = [], reserved = 0) {
     const count = (item?.count ?? 1) - reserved;
     const budget = settings.crystalMaxCoverBlocks - (cycle?.covers ?? 0);
-    if (!settings.crystalCover || !item || count <= 0 || budget <= 0) return choice;
+    // Once damage is within the limits, finish the attack. Continually improving
+    // an already safe cover adds unnecessary walls and postpones the crystal.
+    if (choice || !settings.crystalCover || !item || count <= 0 || budget <= 0) return choice;
     const direction = source.minus(bot.entity.position),
       horizontal = Math.hypot(direction.x, direction.z);
     for (const distance of [1.2, 1.8, 2.3]) {
@@ -401,7 +412,32 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     const score = evaluateDamage ? evaluate(target, source, world) : {};
     return score && { type: "place", base, source, ...click, ...score };
   }
-  function breaking(target, crystal, time, world = bot, evaluateDamage = true) {
+  function crystalRay(crystal, direction, world = bot) {
+    const origin = eyes(bot),
+      range = entityRayDistance(origin, direction, crystal);
+    if (
+      range === null ||
+      range > settings.crystalBreakRange ||
+      world.world.raycast(origin, direction, range) !== null
+    )
+      return null;
+    if (
+      Object.values(bot.entities ?? {}).some((entity) => {
+        if (
+          entity.id === bot.entity.id ||
+          entity.id === crystal.id ||
+          entity.isValid === false ||
+          !entity.position
+        )
+          return false;
+        const other = entityRayDistance(origin, direction, entity);
+        return other !== null && other < range;
+      })
+    )
+      return null;
+    return range;
+  }
+  function breaking(target, crystal, time, world = bot, evaluateDamage = true, finish = false) {
     if (!isCrystal(crystal) || crystal.isValid === false || pendingBreaks.get(crystal.id) > time)
       return null;
     let aim, range;
@@ -409,19 +445,39 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
       const point = crystal.position.offset(0, (crystal.height ?? 2) * fraction, 0),
         delta = point.minus(eyes(bot));
       const length = delta.norm();
-      if (
-        length <= settings.crystalBreakRange &&
-        (length < 0.001 ||
-          world.world.raycast(eyes(bot), delta.scaled(1 / length), length) === null)
-      ) {
+      const hitRange = crystalRay(
+        crystal,
+        length < 0.001 ? viewDirection(bot) : delta.scaled(1 / length),
+        world,
+      );
+      if (hitRange !== null) {
         aim = point;
-        range = length;
+        range = hitRange;
         break;
       }
     }
     if (!aim) return null;
-    const score = evaluateDamage ? evaluate(target, crystal.position, world) : {};
-    return score && { type: "break", crystal, source: crystal.position, aim, range, ...score };
+    const owned = finish || [...placed.values()].some((entry) => entry.id === crystal.id);
+    const score = evaluateDamage
+      ? evaluate(
+          target,
+          crystal.position,
+          world,
+          owned ? 0 : settings.crystalMinDamage,
+          owned ? false : settings.crystalPredict,
+        )
+      : {};
+    return (
+      score && {
+        type: "break",
+        crystal,
+        source: crystal.position,
+        aim,
+        range,
+        finish: owned,
+        ...score,
+      }
+    );
   }
   function plan(target, time) {
     if (!settings.crystalEnabled || !bot.world?.raycast || !bot.blockAt) return null;
@@ -429,7 +485,39 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     for (const [key, deadline] of pendingBreaks) if (deadline <= time) pendingBreaks.delete(key);
     for (const [key, deadline] of pendingBlocks) if (deadline <= time) pendingBlocks.delete(key);
     for (const [key, deadline] of failedBases) if (deadline <= time) failedBases.delete(key);
+    for (const [key, entry] of placed) {
+      const entity = Object.values(bot.entities ?? {}).find(
+        (e) =>
+          isCrystal(e) &&
+          e.isValid !== false &&
+          (e.id === entry.id || e.position.distanceTo(entry.source) < 0.5),
+      );
+      if (entity) entry.id = entity.id;
+      else if (entry.id !== null || time >= entry.until) placed.delete(key);
+    }
     reason = "no reachable crystal position with free space";
+    if (pendingBlock) {
+      const key = pendingBlock.position.toString();
+      if (bot.blockAt(pendingBlock.position)?.name === pendingBlock.item.name) {
+        pendingBlocks.delete(key);
+        pendingBlock = null;
+        if (cycle) {
+          cycle.blockAttempts = 0;
+          cycle.progressAt = time;
+        }
+      } else if (time < pendingBlock.until) {
+        return reject("waiting for server block confirmation");
+      } else {
+        pendingBlocks.delete(key);
+        if (cycle && pendingBlock.type === "cover") cycle.covers--;
+        pendingBlock = null;
+        if (cycle?.blockAttempts >= settings.crystalRetries) {
+          failedBases.set(cycle.base.toString(), time + 1000);
+          cycle = null;
+          return reject("server did not confirm block; replanning layout");
+        }
+      }
+    }
     if (pendingSpawn) {
       const spawned = Object.values(bot.entities ?? {}).find(
         (entity) =>
@@ -448,7 +536,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         pendingPlaces.delete(key);
         pendingSpawn = null;
         if (cycle?.attempts >= settings.crystalRetries) {
-          failedBases.set(key, time + 5000);
+          failedBases.set(key, time + 1000);
           cycle = null;
           return reject("server did not spawn crystal; placement retries exhausted");
         }
@@ -491,7 +579,9 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         : null);
     if (settings.crystalBreak)
       for (const entity of Object.values(bot.entities ?? {}).sort(
-        (a, b) => Number(b.id === cycle?.crystalId) - Number(a.id === cycle?.crystalId),
+        (a, b) =>
+          Number([...placed.values()].some((p) => p.id === b.id)) -
+          Number([...placed.values()].some((p) => p.id === a.id)),
       )) {
         if (!breaking(target, entity, time, bot, false)) continue;
         const choice = protect(
@@ -503,10 +593,16 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         );
         if (choice) {
           candidates.push(choice.nextCover ? { ...choice, ...choice.nextCover } : choice);
-          if (entity.id === cycle?.crystalId) break;
+          if (choice.finish) break;
         }
       }
     if (candidates.length) return candidates.sort(compare)[0];
+    // A confirmed crystal is the current job even when the opponent runs away.
+    // Keep it available for a safer/visible approach instead of replacing its
+    // cycle with another foundation and accumulating explosive leftovers.
+    if (settings.crystalBreak && [...placed.values()].some((p) => p.id !== null)) {
+      return reject("finishing placed crystal: reposition for reach, visibility or self damage");
+    }
     if (settings.crystalPlace && items.some((i) => i.name === "end_crystal")) {
       const origin = bot.entity.position.floor(),
         radius = Math.ceil(settings.crystalPlaceRange);
@@ -520,7 +616,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
             if (cycle && !cycle.base.equals(p)) continue;
             if (
               ["obsidian", "bedrock"].includes(block?.name) ||
-              (y === 0 && settings.crystalBuildBase && obsidian && air(block))
+              (y <= 0 && settings.crystalBuildBase && obsidian && air(block))
             )
               positions.push({ p, block });
           }
@@ -562,10 +658,12 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
                 : choice,
           );
       }
-      if (cycle && !candidates.length && time - cycle.progressAt > 3000) {
-        failedBases.set(cycle.base.toString(), time + 5000);
+      if (cycle && !candidates.length && time - cycle.progressAt >= settings.crystalIntervalMs) {
+        failedBases.set(cycle.base.toString(), time + 1000);
         cycle = null;
-        reason += "; selected layout blocked, replanning";
+        // A moving target can invalidate a layout between two actions. Select
+        // another one now instead of parking at the rejected base for seconds.
+        return plan(target, time);
       }
     } else if (settings.crystalPlace) {
       reason = "no end crystals in inventory";
@@ -581,28 +679,10 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     const origin = eyes(bot),
       direction = viewDirection(bot);
     if (action.type === "break") {
-      const range = entityRayDistance(origin, direction, action.crystal);
-      if (
-        range === null ||
-        range > settings.crystalBreakRange ||
-        bot.world.raycast(origin, direction, range) !== null
-      )
-        return null;
-      // A normal attack must hit the first entity in the view ray.
-      if (
-        Object.values(bot.entities ?? {}).some((entity) => {
-          if (
-            entity.id === bot.entity.id ||
-            entity.id === action.crystal.id ||
-            entity.isValid === false ||
-            !entity.position
-          )
-            return false;
-          const other = entityRayDistance(origin, direction, entity);
-          return other !== null && other < range;
-        })
-      )
-        return null;
+      // Use the same first-entity ray when selecting and verifying an attack.
+      // A player blocking every ray must trigger repositioning, not endless aim retries.
+      const range = crystalRay(action.crystal, direction);
+      if (range === null) return null;
       return { ...action, aim: origin.plus(direction.scaled(range)), range };
     }
     const reference = action.type === "place" ? action.base : action.reference;
@@ -611,13 +691,95 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
       return null;
     return { ...action, aim: hit.intersect, range: hit.intersect.distanceTo(origin) };
   }
+  function reposition(target, time, pressure = false) {
+    const own = [...placed.values()].find((p) => p.id !== null);
+    const focus = own ? bot.entities?.[own.id] : null;
+    const origin = bot.entity.position;
+    const away = origin.minus(focus?.position ?? target.position);
+    away.y = 0;
+    if (away.norm() < 0.01) away.set(-Math.sin(bot.entity.yaw), 0, -Math.cos(bot.entity.yaw));
+    const direction = away.normalize(),
+      side = new Vec3(-direction.z, 0, direction.x);
+    const offsets = focus
+      ? [2.5, 3.3].flatMap((distance) =>
+          [0, 0.7, -0.7].map((angle) => {
+            const radial = direction.scaled(Math.cos(angle)).plus(side.scaled(Math.sin(angle)));
+            return focus.position.offset(
+              radial.x * distance,
+              origin.y - focus.position.y,
+              radial.z * distance,
+            );
+          }),
+        )
+      : [
+          origin.plus(direction.scaled(pressure ? 1.8 : 1.2)),
+          origin.plus(side.scaled(1.6)),
+          origin.minus(side.scaled(1.6)),
+          origin.plus(direction.scaled(2.4)),
+          origin.plus(direction.scaled(1.2)).plus(side.scaled(1.6)),
+          origin.plus(direction.scaled(1.2)).minus(side.scaled(1.6)),
+        ];
+    const positions = offsets
+      .map((point) => groundAt(bot, point))
+      .filter((p) => p && p.distanceTo(origin) > 0.7);
+    positions.sort(
+      (a, b) =>
+        Number(!walkSegment(bot, a)) - Number(!walkSegment(bot, b)) ||
+        a.distanceTo(origin) - b.distanceTo(origin),
+    );
+    // Test the layout from the proposed standing position, including the new
+    // eye ray and self damage. A waypoint must make a real next action possible.
+    for (const position of positions) {
+      const view = Object.create(bot);
+      view.entity = { ...bot.entity, position, velocity: new Vec3(0, 0, 0) };
+      view.entities = { ...bot.entities, [bot.entity.id]: view.entity };
+      view.blockAt = bot.blockAt.bind(bot);
+      const probe = createCrystalPlanner(
+        view,
+        focus
+          ? { ...settings, crystalMinDamage: 0, crystalPredict: false, crystalPlace: false }
+          : settings,
+        isOwner,
+      );
+      const action = probe.plan(target, time);
+      if (action && (!focus || action.crystal?.id === focus.id))
+        return { position, reason: focus ? "finish crystal" : "make room for crystal" };
+    }
+    // At point-blank range release occupied placement space even when a hit has
+    // temporarily lowered health below the action threshold. Movement continues
+    // and the planner will reconsider as soon as there is a viable layout.
+    if (
+      positions.length &&
+      (pressure || focus || carriedItems(bot).some((item) => item.name === "obsidian"))
+    )
+      return {
+        position: positions[0],
+        reason: pressure ? "make room under attack" : "find crystal angle",
+      };
+    return null;
+  }
   return {
     plan,
     placement,
     breaking,
     evaluate,
+    reposition,
     get active() {
-      return Boolean(cycle || pendingSpawn);
+      return Boolean(cycle || pendingSpawn || pendingBlock || placed.size);
+    },
+    get waiting() {
+      return Boolean(
+        pendingBlock ||
+        pendingSpawn ||
+        [...placed.values()].some((p) => p.id !== null && pendingBreaks.has(p.id)),
+      );
+    },
+    get finishing() {
+      return [...placed.values()].some((p) => p.id !== null);
+    },
+    get focus() {
+      const entry = [...placed.values()].find((p) => p.id !== null);
+      return entry ? bot.entities?.[entry.id] : null;
     },
     get reason() {
       return reason;
@@ -639,6 +801,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
             base: base.clone(),
             covers: 0,
             attempts: 0,
+            blockAttempts: 0,
             progressAt: time,
             crystalId: action.crystal?.id,
           };
@@ -650,17 +813,41 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
         const until = time + settings.crystalSpawnTimeoutMs;
         pendingPlaces.set(action.base.position.toString(), until);
         pendingSpawn = { base: action.base.position.clone(), source: action.source.clone(), until };
+        placed.set(action.base.position.toString(), {
+          source: action.source.clone(),
+          id: null,
+          until: until + 3000,
+        });
       } else if (action.type === "break")
         pendingBreaks.set(action.crystal.id, time + Math.max(500, settings.crystalIntervalMs));
-      else pendingBlocks.set(action.position.toString(), time + 5500);
+      else {
+        cycle.blockAttempts++;
+        const until = time + settings.crystalSpawnTimeoutMs;
+        pendingBlocks.set(action.position.toString(), until);
+        pendingBlock = { ...action, position: action.position.clone(), until };
+      }
+    },
+    fail(action, time) {
+      if (action.type === "break") pendingBreaks.delete(action.crystal.id);
+      else {
+        if (cycle) failedBases.set(cycle.base.toString(), time + 1000);
+        if (action.type === "place") placed.delete(action.base.position.toString());
+        pendingPlaces.clear();
+        pendingBlocks.clear();
+        pendingSpawn = null;
+        pendingBlock = null;
+        cycle = null;
+      }
     },
     clear() {
       pendingPlaces.clear();
       pendingBreaks.clear();
       pendingBlocks.clear();
       pendingSpawn = null;
+      pendingBlock = null;
       cycle = null;
       failedBases.clear();
+      placed.clear();
     },
   };
 }

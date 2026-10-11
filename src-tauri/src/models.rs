@@ -650,6 +650,7 @@ pub struct MineflayerCombatSettings {
     pub pearl_follow: bool,
     pub pearl_come: bool,
     pub pearl_goto: bool,
+    pub pearl_chase: bool,
     pub pearl_chain: bool,
     pub pearl_min_distance: u32,
     pub pearl_max_distance: u32,
@@ -717,6 +718,7 @@ impl Default for MineflayerCombatSettings {
             pearl_follow: true,
             pearl_come: true,
             pearl_goto: false,
+            pearl_chase: false,
             pearl_chain: true,
             pearl_min_distance: 16,
             pearl_max_distance: 48,
@@ -1370,7 +1372,7 @@ mod loader_schema_tests {
     #[test]
     fn mineflayer_combat_round_trips_and_defaults_match_worker() {
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
-            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175 }
+            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175, "pearlChase": true }
         })).unwrap();
         let saved = serde_json::to_value(&parsed).unwrap();
         assert_eq!(saved["combat"]["engine"], "basic");
@@ -1379,6 +1381,7 @@ mod loader_schema_tests {
         assert_eq!(saved["combat"]["attackRange"], 2.5);
         assert_eq!(saved["combat"]["bowIntervalMs"], 1500);
         assert_eq!(saved["combat"]["smoothAimSpeed"], 175);
+        assert_eq!(saved["combat"]["pearlChase"], true);
         let worker: super::MineflayerCombatSettings = serde_json::from_str(include_str!(
             "../../extensions/mineflayer-bot/combat-defaults.json"
         ))

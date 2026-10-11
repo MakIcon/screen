@@ -1,6 +1,6 @@
 # PvP and bow combat
 
-Mineflayer Bot 1.8.7 includes the locked published packages:
+Mineflayer Bot 1.8.10 includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.
 - `mineflayer-pvp` 1.3.2: selectable basic melee combat.
@@ -60,6 +60,10 @@ Existing settings default to 100%; changes apply on the next bot start.
 
 Auto style approaches directly in crystal mode when placement is enabled and
 crystals are carried, without first starting melee strafing or critical jumps.
+On clear level ground it turns toward the enemy and walks forward, releasing
+forward to stop at placement distance with a restart margin. It does not brake
+backward or repeatedly strafe to center on each block. Obstacles, gaps, liquids,
+unloaded terrain and elevation changes use the existing pathfinder.
 When no crystals are carried it prioritizes a safe crystal break, then
 uses a bow beyond melee range plus two blocks, and melee nearby.
 The ranged style stays with the bow; its optional melee fallback applies when a
@@ -112,6 +116,8 @@ and breaking. The planner searches loaded obsidian/bedrock within
 entity overlap, visible clickable faces and reach. `crystalBuildBase` allows building
 an obsidian foundation from carried items. `crystalCover` allows a protective full
 block between bot and explosion when it reduces predicted self damage.
+It builds cover only when needed to meet the damage/health limits, rather than
+adding more walls after the position is already safe.
 If a raised crystal exposes the bot above a low block, cover may require a second
 block supported by the first. Materials must be available; armour and cover do
 not bypass the configured damage/health limits.
@@ -126,7 +132,11 @@ It ranks existing positions by
 `crystalBreakRange`; it never invents entity IDs or treats a placement packet as
 a confirmed spawn. Reservations bound placement retries and repeat attacks.
 
-`crystalMinDamage`, `crystalMaxSelfDamage` and `crystalMinHealth` gate every action.
+`crystalMinDamage` gates new placements and attacks on other crystals.
+The bot remembers its confirmed placements and finishes those explosions even
+when the target moves away and damage falls below that minimum. It completes
+the existing crystal before constructing another layout. `crystalMaxSelfDamage`,
+`crystalMinHealth` and owner protection still gate every action.
 Damage uses exposure rays, difficulty, known armour/toughness, protection and resistance;
 unknown equipment remains conservative. A cover block is simulated before placement;
 it is not assumed to protect against later explosions in a crystal chain.
@@ -134,7 +144,10 @@ all connected loaded crystal explosions contribute to the self/owner safety
 bound. `crystalProtectOwners` refuses damage to other owners (an explicitly
 selected owner remains an intentional combat target). `crystalPredict` and
 `crystalPredictionTicks` check both the present and predicted target position.
-`crystalIntervalMs` caps actions. Damage and world constraints are checked again
+`crystalIntervalMs` caps construction/placement and ordinary break actions.
+A confirmed crystal placed by this bot can be broken on the next tick without
+waiting out that interval; repeated attacks still wait for removal confirmation.
+Damage and world constraints are checked again
 after equipping and aiming. The current view ray must hit the actual block face
 or crystal; the placement cursor uses that same intersection. The bot stays still
 while waiting for server confirmation. Unsafe/missing positions produce a rate-limited status
@@ -149,6 +162,21 @@ unresolved completion promise. `crystalMaxCoverBlocks` bounds cover per cycle.
 `crystalSpawnTimeoutMs` and `crystalRetries` bound waiting/retries for a server
 spawn. Auto style retains crystal mode while waiting, and a rejected layout gets
 a temporary cooldown rather than more construction.
+Foundation/cover clicks use the same confirmation deadline and retry bound.
+Confirmation is checked on subsequent ticks without Mineflayer's blocking 5000 ms
+block-placement wait. Rejected clicks keep combat running and select another
+layout after bounded retries; blocked layouts are reconsidered after 1 second.
+Confirmed crystal removal immediately frees the base for the next placement,
+subject to the action interval and the same damage, health and space limits.
+
+Approach uses forward movement with gradual turns, a stopping margin and normal
+jumps over single-block steps. It does not use reverse or side inputs to brake.
+Walls, liquids, unloaded ground and larger drops use the existing navigator.
+If close players occupy placement space or obstruct a crystal attack, the bot
+chooses a nearby standing position with usable reach, visibility and damage.
+That waypoint persists while moving instead of changing direction on every tick.
+Recent hits trigger faster close-range replanning. Placement and confirmation
+pause movement, then a completed explosion starts the next cycle.
 
 ## Pearl travel
 
@@ -158,13 +186,16 @@ Follow uses the player's current position; come keeps the requested position;
 auto-follow on spawn uses the same travel controller. The bot first starts its
 normal route, then tries a safe throw which saves at least `pearlMinDistance`
 and lands within `pearlMaxDistance` of the bot. Both shallow and lobbed arcs are
-simulated tick by tick with launch velocity, inherited bot velocity, 0.99 drag,
-0.03 gravity, block and entity collision. Unknown chunks, liquids, hazards,
+simulated tick by tick with launch velocity, inherited bot velocity, swimming
+eye height, air/water drag, version-specific gravity/drag order, block and entity
+collision. Throws can leave water for a dry shore. Unknown chunks, hazardous
+flight paths, liquid landings,
 wall impacts and landing spots without solid support or headroom are refused.
 
 `pearlMinHealth` (minimum 6 HP), `pearlReserve` and `pearlCooldownMs` limit use.
 There is at most one pearl in flight. The bot pauses navigation, equips, replans
-after stopping, flushes its look packet, throws and waits for the actual position
+after stopping, verifies its actual rotation/velocity again after aiming,
+flushes its look packet, throws and waits for the actual position
 change. It restores the held item and resumes the original goal after arrival.
 If the server does not teleport it by the bounded deadline, it resumes walking
 and backs off before retrying. `pearlChain` allows more throws after arrival;
@@ -173,6 +204,22 @@ short distances or no safe route continue on foot. Stop, death, new commands
 and disconnect cancel pending throws; a pearl already thrown cannot be recalled.
 Projectile randomness and server plugins can change the actual landing, so
 server testing is still needed for edge/platform throws.
+
+`pearlChase` (disabled by default) enables the **ПРЕСЛЕДОВАТЬ ЖЕМЧУГ ПРОТИВНИКА**
+toggle. With PvP and pearl use enabled, the bot recognizes the selected player's
+pearl from its spawn packet and predicts its impact. Modern owner IDs are checked;
+legacy ownerless packets require an unambiguous nearby thrower. Spawn velocity,
+velocity updates and observed projectile movement drive the prediction.
+The bot throws toward that same landing area only if a safe arc reaches within
+2.5 blocks, pauses combat through its teleport and resumes against the selected
+enemy. A bounded grace period preserves the target beyond ordinary combat range
+and across teleport despawn/respawn. Normal cooldown, health, inventory reserve
+and one-flight limits apply. Stop, target death, new targets and disconnect cancel
+pending pursuit. An unreachable landing never triggers a partial travel throw.
+`pearlChain` applies to movement commands; separate enemy throws can each trigger
+one pursuit. The swimming/tick-order model follows the motion described by
+[MinecraftMotionTools](https://github.com/OrHy3/MinecraftMotionTools) and water
+drag in [projectile-trajectories](https://github.com/Bactrosaurus/projectile-trajectories).
 
 The supplied mineflayer-ender and mineflayer-auto-crystal-rewrite sources were
 used as design references for these rewritten controllers:
@@ -213,11 +260,19 @@ The Behavior tab has an `АНТИОТБРАСЫВАНИЕ` toggle, disabled by d
 legacy settings). With it off, nearby players and mobs push the bot and server
 hit/explosion impulses apply normally. With it on, those impulses are suppressed
 while walking, jumping, falling and server position corrections remain active.
+The adapter preserves native `lpVec3` speeds on newer protocols (including
+1.21.11 and 26.1.2), instead of dividing those decoded speeds by 8000 again.
 Save the setting and restart the bot to apply it. Server team collision rules
 can still disable body pushes independently of this setting.
 
 `pnpm test:worker` includes combat lifecycle, world visibility, melee attack and
 bow tests against 1.8.8, 1.20.4 and 26.1.2 registries and a simulated world.
+Knockback checks also cover 1.21.11 and verify actual player displacement after
+serialized hit packets. Crystal checks simulate forward pursuit, obstacle
+fallback, rejected block confirmations and consecutive placement/break cycles.
+`crystal-tactics.test.mjs` covers fleeing targets, close melee pressure, occupied
+placement space, entity-obstructed attacks and two stepped terraces using real
+player physics and serialized placement/attack packets on 1.20.4 and 26.1.2.
 `utility.test.mjs` also checks real serialized pearl throws on those versions,
 safe/blocked/unknown terrain, pearl permissions/cooldown/chaining, teleport
 timeout/cancellation, crystal exposure/owner safety/reservations and bow defense.

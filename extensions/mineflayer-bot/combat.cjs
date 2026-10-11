@@ -2,11 +2,13 @@ const defaults = require("./combat-defaults.json");
 const { Vec3 } = require("vec3");
 const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
 const { goals } = require("./pathfinder.cjs");
-const { createCrystalPlanner } = require("./crystals.cjs");
+const { createCrystalPlanner, isCrystal } = require("./crystals.cjs");
+const { createCrystalMovement } = require("./crystal-movement.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
 const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
 const { installArmorManager } = require("./armor-manager.cjs");
 const { installShieldBreak } = require("./melee-shield.cjs");
+const { pearlOrigin, simulatePearlFlight } = require("./pearls.cjs");
 
 const protocolInstalled = Symbol("combatProtocolInstalled");
 const originalTurnTime = Symbol("originalSmoothTurnTime");
@@ -393,7 +395,12 @@ function createCombatController(
   let disposed = false;
   let prepareTask = Promise.resolve();
   let actionTask = Promise.resolve();
+  let pursuit = null;
+  let pearlIntent = null;
+  let lastEnemyPosition = null;
+  let nextPursuitPlanAt = 0;
   const crystals = createCrystalPlanner(bot, settings, isOwner);
+  const crystalMovement = createCrystalMovement(bot, { now });
   const defense = createBowDefense(bot, settings, {
     now,
     onStatus,
@@ -412,6 +419,9 @@ function createCombatController(
   });
   let nextCrystalAt = 0;
   let nextCrystalStatusAt = 0;
+  let nextCrystalPlanAt = 0;
+  let crystalReposition = null;
+  let crystalPressureUntil = 0;
 
   function distance(entity) {
     return bot.entity.position.distanceTo(entity.position);
@@ -427,6 +437,9 @@ function createCombatController(
     );
   }
   function stopEngines() {
+    crystalMovement.cancel();
+    crystalReposition = null;
+    nextCrystalPlanAt = 0;
     if (bot.swordpvp?.target) bot.swordpvp.stop();
     if (bot.pvp?.target) bot.pvp.forceStop();
     // The locked smooth-look package exposes task cleanup; stop its tween too
@@ -457,6 +470,10 @@ function createCombatController(
     generation++;
     defense.stop();
     crystals.clear();
+    pursuit = null;
+    pearlIntent = null;
+    lastEnemyPosition = null;
+    bot.launcherTravel?.stopChase();
     if (target) bot.tracker?.stopTrackingEntity(target);
     target = null;
     pending = false;
@@ -475,6 +492,8 @@ function createCombatController(
     if (distance(entity) > maxRange) throw new Error("Target is too far away");
     stop(false);
     target = entity;
+    lastEnemyPosition = entity.position.clone();
+    observePearlHand(entity);
     requestedStyle = style;
     nextActionAt = now() + settings.reactionMs;
     nextShotAt = now();
@@ -616,27 +635,57 @@ function createCombatController(
     }
   }
   async function updateCrystal() {
-    if (now() < nextCrystalAt) return;
-    nextCrystalAt = now() + settings.crystalIntervalMs;
+    if (now() < nextCrystalPlanAt && !crystals.waiting && !crystals.finishing) return;
     const rev = generation,
       enemy = target;
+    const pressure = distance(enemy) <= 3.2 || now() < crystalPressureUntil;
+    nextCrystalPlanAt = now() + (pressure ? 100 : 250);
     const action = crystals.plan(enemy, now());
     if (!action) {
       if (now() >= nextCrystalStatusAt) {
         onStatus(`crystal waiting: ${crystals.reason}`);
         nextCrystalStatusAt = now() + 2000;
       }
-      // Stay still while the server confirms the current build/place/break cycle.
-      if (crystals.active || distance(enemy) <= settings.crystalPlaceRange) {
-        await bot.pathfinder.stop();
-        if (rev === generation && target === enemy) bot.clearControlStates();
+      const range = Math.max(1, Math.min(3, settings.crystalPlaceRange - 0.5));
+      if (crystals.waiting) {
+        await crystalMovement.stop();
+      } else if (!crystals.finishing && distance(enemy) > range + 0.6 && !pressure) {
+        crystalReposition = null;
+        await crystalMovement.setGoal(enemy, range);
       } else {
-        const range = Math.max(1, Math.min(3, settings.crystalPlaceRange - 0.5));
-        bot.pathfinder.setGoal({ entity: enemy, rangeSq: range * range });
+        const focusId = crystals.focus?.id ?? null;
+        if (
+          !crystalReposition ||
+          crystalReposition.focusId !== focusId ||
+          now() >= crystalReposition.until ||
+          bot.entity.position.distanceTo(crystalReposition.entity.position) < 0.65
+        ) {
+          const move = crystals.reposition(enemy, now(), pressure);
+          crystalReposition = move
+            ? {
+                entity: { position: move.position },
+                focusId,
+                reason: move.reason,
+                until: now() + 1500,
+              }
+            : null;
+          if (move) onStatus(`crystal reposition: ${move.reason}`);
+        }
+        if (crystalReposition)
+          await crystalMovement.setGoal(crystalReposition.entity, 0.4, crystalReposition.reason);
+        else if (crystals.focus)
+          await crystalMovement.setGoal(
+            crystals.focus,
+            Math.min(2.5, settings.crystalBreakRange - 0.5),
+            "finish crystal",
+          );
+        else await crystalMovement.stop();
       }
       return;
     }
-    await bot.pathfinder.stop();
+    if (now() < nextCrystalAt && !action.finish) return;
+    crystalReposition = null;
+    await crystalMovement.stop();
     if (rev !== generation || target !== enemy) return;
     bot.clearControlStates();
     if (action.type !== "break") {
@@ -661,20 +710,27 @@ function createCombatController(
     const verified = crystals.verify(enemy, action, now());
     if (!verified) return;
     flushBowLook(bot.entity.yaw, bot.entity.pitch);
+    nextCrystalAt = now() + settings.crystalIntervalMs;
     crystals.commit(verified, now());
-    if (verified.type === "break") bot.attack(verified.crystal);
-    else if (verified.type === "place")
-      await bot._genericPlace(verified.base, verified.face, {
-        forceLook: "ignore",
-        swingArm: "right",
-        delta: verified.aim.minus(verified.base.position),
-      });
-    else
-      await bot._placeBlockWithOptions(verified.reference, verified.face, {
-        forceLook: "ignore",
-        swingArm: "right",
-        delta: verified.aim.minus(verified.reference.position),
-      });
+    try {
+      if (verified.type === "break") bot.attack(verified.crystal);
+      else {
+        const reference = verified.type === "place" ? verified.base : verified.reference;
+        // Send once; the planner checks actual world/entity confirmations on
+        // subsequent ticks. Mineflayer's block helper awaits a fixed 5s timeout.
+        await bot._genericPlace(reference, verified.face, {
+          forceLook: "ignore",
+          swingArm: "right",
+          delta: verified.aim.minus(reference.position),
+        });
+      }
+    } catch (error) {
+      if (rev === generation && target === enemy) {
+        crystals.fail(verified, now());
+        onError(error);
+      }
+      return;
+    }
     if (rev === generation)
       onStatus(
         `crystal ${verified.type}: damage ${verified.damage.toFixed(1)}; self ${verified.selfDamage.toFixed(1)}`,
@@ -691,6 +747,186 @@ function createCombatController(
     await bot.lookAt(point, true);
   }
   let bowBusy = false;
+  function recentPearlHand() {
+    return pearlIntent && pearlIntent.enemy === target && now() - pearlIntent.at <= 9000;
+  }
+  function observePearlHand(entity = target) {
+    if (!settings.pearlChase || !settings.enabled || !entity?.username || entity !== target) return;
+    const hand = [
+      entity.heldItem,
+      entity.equipment?.[0],
+      !bot.supportFeature("doesntHaveOffHandSlot") && entity.equipment?.[1],
+    ].find((item) => item?.name === "ender_pearl");
+    if (hand) {
+      pearlIntent = { enemy: entity, at: now() };
+    }
+  }
+  function packetVelocity(packet, type) {
+    if (!packet.velocity) return null;
+    const fields = bot.registry?.protocol?.play?.toClient?.types?.[type]?.[1];
+    const scale =
+      fields?.find?.((field) => field.name === "velocity")?.type === "lpVec3" ? 1 : 1 / 8000;
+    const { x, y, z } = packet.velocity;
+    if (![x, y, z].every(Number.isFinite)) return null;
+    return new Vec3(x, y, z).scaled(scale);
+  }
+  function enemyPearl(packet) {
+    if (
+      disposed ||
+      !settings.enabled ||
+      !settings.pearlChase ||
+      !target?.username ||
+      !allowed(target) ||
+      bot.health <= 0 ||
+      bot.launcherTravel?.chasing
+    )
+      return;
+    const data = bot.registry?.entitiesArray?.find((entry) => entry.internalId === packet.type);
+    const entity = bot.entities?.[packet.entityId];
+    if (!/pearl/i.test(data?.name ?? entity?.name ?? "")) return;
+    const fixed = bot.supportFeature("fixedPointPosition") ? 1 / 32 : 1;
+    const origin = new Vec3(packet.x, packet.y, packet.z).scaled(fixed);
+    if (packet.objectData > 0) {
+      if (packet.objectData !== target.id) return;
+    } else {
+      // Legacy servers omit the owner. Associate only an unambiguous nearby
+      // thrower; this excludes the bot's and other players' pearls.
+      const players = [bot.entity, ...Object.values(bot.entities ?? {})]
+        .filter((player) => (player.username || player.type === "player") && allowed(player))
+        .concat(bot.entity)
+        .map((player) => ({
+          player,
+          distance: pearlOrigin(player, bot.registry).distanceTo(origin),
+        }))
+        .sort((a, b) => a.distance - b.distance);
+      if (
+        players[0]?.player.id !== target.id ||
+        players[0].distance > 2.25 ||
+        (players[1] && players[1].distance - players[0].distance < 0.5)
+      )
+        return;
+    }
+    // Ignore duplicate packets for the same throw.
+    if (pursuit?.id === packet.entityId) return;
+    const velocity = packetVelocity(packet, "packet_spawn_entity");
+    const shot = velocity && simulatePearlFlight(bot, origin, velocity, undefined, target.id);
+    pursuit = {
+      id: packet.entityId,
+      enemy: target,
+      origin,
+      velocity,
+      sampledAt: now(),
+      landing: shot?.landing ?? null,
+      until: now() + (shot?.ticks ?? 120) * 50 + 3000,
+      attempted: false,
+      teleported: false,
+    };
+    nextPursuitPlanAt = now();
+    onStatus(`enemy pearl: ${target.username}`);
+  }
+  function pearlVelocity(packet) {
+    if (!pursuit || pursuit.id !== packet.entityId) return;
+    pursuit.velocity = packetVelocity(packet, "packet_entity_velocity");
+    updatePursuitLanding();
+  }
+  function updatePursuitLanding() {
+    if (!pursuit?.velocity || pursuit.attempted || pursuit.teleported) return;
+    const shot = simulatePearlFlight(
+      bot,
+      pursuit.origin,
+      pursuit.velocity,
+      undefined,
+      pursuit.enemy.id,
+    );
+    if (shot) pursuit.landing = shot.landing;
+  }
+  function moved(entity) {
+    if (entity === target) {
+      sampleEnemyTeleport();
+      return;
+    }
+    if (!pursuit) return;
+    if (entity.id === pursuit.id && !entity.position.equals(pursuit.origin)) {
+      pursuit.velocity = entity.position
+        .minus(pursuit.origin)
+        .scaled(1 / Math.max(1, (now() - pursuit.sampledAt) / 50));
+      pursuit.origin = entity.position.clone();
+      pursuit.sampledAt = now();
+      updatePursuitLanding();
+    }
+  }
+  function sampleEnemyTeleport() {
+    if (!target?.position) return;
+    if (
+      lastEnemyPosition &&
+      target.position.distanceTo(lastEnemyPosition) > 4 &&
+      settings.pearlChase &&
+      (pursuit || recentPearlHand())
+    ) {
+      if (!pursuit) {
+        pursuit = { id: null, enemy: target, attempted: false, until: now() + 9000 };
+        onStatus(`enemy pearl teleport: ${target.username}`);
+      }
+      pursuit.teleported = true;
+      if (!pursuit.attempted) pursuit.landing = target.position.clone();
+    }
+    lastEnemyPosition = target.position.clone();
+  }
+  function pursuePearl() {
+    if (!pursuit) return false;
+    if (now() >= pursuit.until) {
+      pursuit = null;
+      bot.launcherTravel?.stopChase();
+      return false;
+    }
+    if (!allowed(target)) {
+      const enemy = pursuit.enemy;
+      const replacement = Object.values(bot.entities ?? {}).find(
+        (entity) =>
+          allowed(entity) &&
+          (enemy.uuid ? entity.uuid === enemy.uuid : entity.username === enemy.username),
+      );
+      if (!replacement) return true;
+      target = replacement;
+      pursuit.enemy = replacement;
+      if (pearlIntent) pearlIntent.enemy = replacement;
+      pursuit.teleported = true;
+      pursuit.landing = replacement.position.clone();
+    }
+    sampleEnemyTeleport();
+    if (bot.launcherTravel?.chasing) return true;
+    if (pursuit.attempted) {
+      // Keep the selected enemy while either pearl is still flying.
+      if (!pursuit.teleported) return true;
+      pursuit = null;
+      return false;
+    }
+    if (pursuit.teleported && pursuit.landing && now() >= nextPursuitPlanAt) {
+      nextPursuitPlanAt = now() + 250;
+      const flight = pursuit;
+      if (
+        bot.launcherTravel?.chase(
+          () => flight.landing,
+          () => pursuit === flight && target === flight.enemy,
+          ({ thrown }) => {
+            if (pursuit !== flight) return;
+            flight.attempted = thrown;
+            nextPursuitPlanAt = now() + 250;
+          },
+        )
+      ) {
+        flight.until = Math.max(flight.until, now() + 9000);
+        generation++;
+        pending = false;
+        stopEngines();
+        crystals.clear();
+        bot.clearControlStates();
+        return true;
+      }
+    }
+    // Continue ordinary combat until there is a reachable, safe landing.
+    return false;
+  }
   function tick() {
     if (disposed || !settings.enabled || !bot.entity?.position || bot.health <= 0) return;
     try {
@@ -708,15 +944,19 @@ function createCombatController(
         else nextActionAt = now() + 500;
       }
       if (!target) return;
+      sampleEnemyTeleport();
+      observePearlHand();
+      if (pursuePearl()) return;
       const maxRange =
         requestedStyle === "melee"
           ? settings.targetRange
           : Math.max(settings.targetRange, settings.bowRange);
-      if (!allowed(target) || distance(target) > maxRange) {
+      if (!allowed(target) || (distance(target) > maxRange && !pursuit)) {
         stop(false);
         return;
       }
       if (pending || bowBusy || now() < nextActionAt) return;
+      if (mode === "crystal") void crystalMovement.tick().catch(onError);
       const nextMode = chooseMode();
       if (!nextMode) {
         stop(true);
@@ -748,7 +988,8 @@ function createCombatController(
         mode === "melee" &&
         !(settings.engine === "custom" ? bot.swordpvp.target : bot.pvp.target)
       ) {
-        stop(false);
+        if (pursuit) mode = null;
+        else stop(false);
       }
     } catch (error) {
       stop(true);
@@ -758,6 +999,13 @@ function createCombatController(
   function removed(entity) {
     if (entity === target) {
       bot.tracker?.stopTrackingEntity(entity);
+      if ((pursuit && now() < pursuit.until) || recentPearlHand()) {
+        if (!pursuit) pursuit = { id: null, enemy: target, attempted: false, until: now() + 9000 };
+        generation++;
+        pending = false;
+        stopEngines();
+        return;
+      }
       stop(false);
       nextActionAt = now() + settings.reactionMs;
       onStatus("combat target lost");
@@ -765,7 +1013,29 @@ function createCombatController(
   }
   bot.on("physicsTick", tick);
   bot.on("entityGone", removed);
-  bot.on("entityDead", removed);
+  const dead = (entity) => {
+    if (entity === target) {
+      pursuit = null;
+      pearlIntent = null;
+      removed(entity);
+    }
+  };
+  bot.on("entityDead", dead);
+  bot.on("entityMoved", moved);
+  bot.on("entityEquip", observePearlHand);
+  bot.on("entityUpdate", observePearlHand);
+  const crystalSpawned = (entity) => {
+    if (isCrystal(entity)) nextCrystalPlanAt = 0;
+  };
+  const hurt = (entity) => {
+    if (entity?.id !== bot.entity.id || !target) return;
+    crystalPressureUntil = now() + 1500;
+    nextCrystalPlanAt = 0;
+  };
+  bot.on("entitySpawn", crystalSpawned);
+  bot.on("entityHurt", hurt);
+  bot._client?.on?.("spawn_entity", enemyPearl);
+  bot._client?.on?.("entity_velocity", pearlVelocity);
   const died = () => stop(true);
   bot.on("death", died);
   return {
@@ -813,7 +1083,14 @@ function createCombatController(
       defense.dispose();
       bot.removeListener("physicsTick", tick);
       bot.removeListener("entityGone", removed);
-      bot.removeListener("entityDead", removed);
+      bot.removeListener("entityDead", dead);
+      bot.removeListener("entityMoved", moved);
+      bot.removeListener("entityEquip", observePearlHand);
+      bot.removeListener("entityUpdate", observePearlHand);
+      bot.removeListener("entitySpawn", crystalSpawned);
+      bot.removeListener("entityHurt", hurt);
+      bot._client?.off?.("spawn_entity", enemyPearl);
+      bot._client?.off?.("entity_velocity", pearlVelocity);
       bot.removeListener("death", died);
     },
   };

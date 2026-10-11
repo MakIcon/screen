@@ -351,6 +351,7 @@ export type MineflayerCombatSettings = {
   pearlFollow: boolean;
   pearlCome: boolean;
   pearlGoto: boolean;
+  pearlChase: boolean;
   pearlChain: boolean;
   pearlMinDistance: number;
   pearlMaxDistance: number;
