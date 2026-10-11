@@ -531,16 +531,21 @@ export class GoalFollowEntity extends GoalDynamic<'entityMoved', 'entityGone'> {
   public z: number
   public sqDist: number
 
-  constructor (public readonly refVec: Vec3, distance: number, opts: GoalDynamicOpts = {}) {
+  private trackedEntity?: { position: Vec3 }
+  public get refVec (): Vec3 { return this.trackedEntity?.position ?? this.initialRefVec }
+
+  constructor (private readonly initialRefVec: Vec3, distance: number, opts: GoalDynamicOpts = {}) {
     super(opts)
-    this.x = refVec.x
-    this.y = refVec.y
-    this.z = refVec.z
+    this.x = this.refVec.x
+    this.y = this.refVec.y
+    this.z = this.refVec.z
     this.sqDist = Math.pow(distance, 2)
   }
 
   static fromEntity (entity: { position: Vec3 }, distance: number, opts: GoalDynamicOpts): GoalFollowEntity {
-    return new GoalFollowEntity(entity.position, distance, opts)
+    const goal = new GoalFollowEntity(entity.position, distance, opts)
+    goal.trackedEntity = entity
+    return goal
   }
 
   isEnd (node: Move): boolean {
@@ -561,7 +566,7 @@ export class GoalFollowEntity extends GoalDynamic<'entityMoved', 'entityGone'> {
   }
 
   hasChanged (event: 'entityMoved', e: Entity): boolean {
-    if (e.position !== this.refVec) return false
+    if (this.trackedEntity != null ? e !== this.trackedEntity : e.position !== this.refVec) return false
     const dx = this.x - this.refVec.x
     const dy = this.y - this.refVec.y
     const dz = this.z - this.refVec.z
@@ -570,7 +575,7 @@ export class GoalFollowEntity extends GoalDynamic<'entityMoved', 'entityGone'> {
   }
 
   isValid (event: 'entityGone', entity: Entity): boolean {
-    return entity.position !== this.refVec
+    return this.trackedEntity != null ? entity !== this.trackedEntity : entity.position !== this.refVec
   }
 
   update (): void {

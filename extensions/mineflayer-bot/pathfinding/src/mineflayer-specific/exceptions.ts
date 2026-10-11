@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import type { ResetReason } from '../types'
 
+/** A route can be retried; an interaction/API failure must still be reported. */
+export class NavigationError extends Error {
+  constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery', message: string) {
+    super(message)
+    this.name = 'NavigationError'
+  }
+}
+
 export class CancelError extends Error {
   constructor (...args: any[]) {
     // console.log('CancelError', args)

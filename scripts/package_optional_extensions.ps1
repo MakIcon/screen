@@ -37,7 +37,7 @@ Copy-Item -LiteralPath (Join-Path $sourceDirectory "pathfinder.cjs") -Destinatio
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "extension.json") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "package.json") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "package-lock.json") -Destination $stageDirectory
-foreach ($file in @("COPYING", "THIRD-PARTY-NOTICES.md", "restore-pathfinder-source.cjs", "pathfinder-source.json")) {
+foreach ($file in @("COPYING", "BARITONE-LICENSE", "THIRD-PARTY-NOTICES.md", "restore-pathfinder-source.cjs", "pathfinder-source.json")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 

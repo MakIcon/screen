@@ -11,6 +11,51 @@ the worker's dependencies. The downloaded source directory is left intact.
 
 Changes from the supplied source:
 
+- Version 1.8.12 applies the supplied Baritone 26.1 ascent, descent and partial
+  search approach to Mineflayer. One-block jumps align laterally and respond to
+  actual ground contact, with another attempt after a failed takeoff. Ascents
+  and descents retain control until supported arrival. Jump optimization keeps
+  turns and checks the body's clearance on straight continuations. Corner
+  correction reaches the route's entry waypoint; forward alignment releases
+  opposing controls. Horizontal alignment is normalized after removing height.
+  Verified dry routes found during shore selection are retained and executed
+  after landing, provided their endpoint still satisfies the current goal.
+  Retries increase the search budget for come/goto too. Partial search prefers
+  affordable progress from the start, and repeated prefixes cannot cycle
+  indefinitely. A timed-out mountain search can execute a short supported dry
+  ascent, including allowed scaffolding or digging, then continue toward the
+  original player from the new height. A bounded uphill detour can move sideways
+  beneath an overhead target without discarding the elevation already gained.
+  Planned terrain edits stay on their own search branch and survive excursions
+  outside the local cache, preventing phantom openings and removed landings.
+  Repeated motion without waypoint progress
+  triggers replanning.
+  Ready momentum flights install their controls immediately after optimization, so
+  catch-up physics ticks cannot consume an incoming ice takeoff while idle.
+  Physics regressions cover grassy steps, flowers, trenches, wall turns, and
+  water-to-mountain routes on 1.20.4 and 26.1.2.
+  Failed placements/mining propagate to movement recovery and cannot mark an
+  absent block as a finished interaction. Background interactions deliver their
+  errors through the movement runner. A swimmer retreats out of a future shore
+  step before placing it, then awaits the server-confirmed block before climbing.
+
+- Version 1.8.11 checks the onward route when selecting a water exit, so a
+  nearby isolated ledge does not win over a usable mountain approach. Probes
+  share the real movement rules, inventory and planned shore placement, with
+  small cancellable search budgets. Swimming strokes keep forward propulsion
+  rather than applying land braking toward a waypoint below breathing height.
+  Dynamic following survives search timeouts and blocked movement, increases
+  its search budget on retries and wakes on target or terrain changes. Idle
+  following also checks displacement and replaced entity position vectors.
+  Come/goto retry transient route failures twice and still report permanent
+  failures. Arrival is checked against the actual position after execution or
+  recovery. Mining/API failures keep their existing error behavior.
+  Walking shortcuts sweep the full player body through collision shapes;
+  off-centre turns first reach their supported approach waypoint. A blocked walking
+  or swimming step triggers replanning, and water bobbing is not progress.
+  Pearl pursuit evaluates rotations rounded by Mineflayer before comparing
+  safe landing arcs, including a retry after drifting during water aiming.
+
 - Version 1.8.4 retains swimming momentum across partial route searches in open,
   loaded water. Prefix completion uses the reached water column at the actual
   swimming height. Reached waypoints and late camera callbacks cannot reverse
@@ -68,8 +113,8 @@ Changes from the supplied source:
   parkour tests a feasible walk-off before simulating extra jumping approaches.
   Drops measure the actual fall to the landing surface, honor the configured
   maximum inclusively, and check the destination headroom at its correct column.
-- Follow movement faces the player's direction when it agrees with the route,
-  uses the player's height for pitch, and retains yaw at a reached waypoint.
+- Follow movement faces the route waypoint, uses the player's height for pitch
+  on land, and retains yaw at a reached waypoint.
   Jump aiming stays horizontal and specialized Neo flight controls keep their yaw.
 
 - Stable Mineflayer 4.37.1 `physicsTick` execution, with one asynchronous step

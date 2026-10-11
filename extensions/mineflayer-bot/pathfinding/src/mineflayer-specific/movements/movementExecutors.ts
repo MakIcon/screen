@@ -12,6 +12,7 @@ import { ControlStateHandler, EPhysicsCtx } from '@nxg-org/mineflayer-physics-ut
 import { printBotControls } from '../../utils'
 import type { Block, RayType } from '../../types'
 import { botSmartMovement, botStrafeMovement, steerToPosition } from './controls'
+import { clearBodySegment } from '../navigationGeometry'
 
 const debug = require('debug')
 const logIdle = debug('minecraft-pathfinding:movementExecutors:Idle')
@@ -35,6 +36,25 @@ export class IdleMovementExecutor extends MovementExecutor {
 }
 
 export class NewForwardExecutor extends MovementExecutor {
+  private async correctCorner (move: Move): Promise<boolean> {
+    const pos = this.bot.entity.position
+    if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 ||
+        clearBodySegment(this.world, pos, move.exitPos)) return false
+    // Predicted completion may switch to the next leg while we still hug the
+    // old block's edge. Centre on that supported cell before making the turn.
+    const entry = move.entryPos.clone(); entry.y = pos.y
+    const center = clearBodySegment(this.world, pos, entry, 0.599)
+      ? entry : pos.floored().offset(0.5, 0, 0.5)
+    center.y = pos.y
+    if (pos.xzDistanceTo(center) < 0.08) throw new CancelError('Forward: waypoint is blocked from its approach')
+    if (!clearBodySegment(this.world, pos, center, 0.599)) throw new CancelError('Forward: cannot recenter at a blocked corner')
+    await this.lookAtPathPos(center)
+    steerToPosition(this.bot, center, 0.1, 0.04)
+    this.bot.setControlState('sprint', false)
+    this.bot.setControlState('jump', false)
+    return true
+  }
+
   protected isComplete (startMove: Move, endMove?: Move, opts?: CompleteOpts): boolean {
     return super.isComplete(startMove, endMove, { ticks: 2 })
   }
@@ -52,6 +72,7 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   override async align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
+    if (await this.correctCorner(thisMove)) return false
     if (this.doWaterLogic()) {
       this.bot.setControlState('jump', false)
       return await super.align(thisMove, tickCount, goal)
@@ -85,10 +106,13 @@ export class NewForwardExecutor extends MovementExecutor {
     if (faceForward) {
       // A rim retreat may begin facing the void. Turn toward the safe route
       // before alignment starts applying forward movement.
-      void this.lookAtPathPos(thisMove.exitPos)
+      await this.lookAtPathPos(thisMove.exitPos)
       // await this.postInitAlignToPath(thisMove)
       // void this.lookAt(target);
       this.bot.setControlState('forward', true)
+      this.bot.setControlState('back', false)
+      this.bot.setControlState('left', false)
+      this.bot.setControlState('right', false)
       if (this.bot.food <= 6) this.bot.setControlState('sprint', false)
       else this.bot.setControlState('sprint', this.settings.allowSprinting)
     } else {
@@ -180,13 +204,14 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
+    if (this.cI == null && await this.correctCorner(thisMove)) return false
     if (this.cI != null && !(await this.cI.allowExternalInfluence(this.bot))) {
       return false
     } else if (this.cI == null) {
       const test = await this.interactNeeded(5)
       if (test != null) {
         // console.log('performing interaction')
-        void this.performInteraction(test)
+        this.startInteraction(test)
         return false
       }
     }
@@ -213,11 +238,11 @@ export class NewForwardExecutor extends MovementExecutor {
     if (faceForward) {
       const jump = this.canJump(thisMove, currentIndex, path)
       this.bot.setControlState('jump', jump)
-      void this.postInitAlignToPath(thisMove)
+      await this.postInitAlignToPath(thisMove)
       return this.isComplete(thisMove)
     } else {
       const offset = this.bot.entity.position.minus(thisMove.exitPos).plus(this.bot.entity.position)
-      void this.postInitAlignToPath(thisMove, { lookAt: offset })
+      await this.postInitAlignToPath(thisMove, { lookAt: offset })
       return this.isComplete(thisMove)
     }
   }
@@ -336,7 +361,7 @@ export class ForwardJumpExecutor extends MovementExecutor {
           } else if (info.ticks < Infinity) {
             if (!batchExecuted) {
               logJump(`Block ${p.vec} visible in ${info.ticks} ticks. Triggering background interaction.`)
-              void this.performInteraction(p, { info, predictBlock: true })
+              this.startInteraction(p, { info, predictBlock: true })
             }
             break
           } else {
@@ -387,8 +412,22 @@ export class ForwardJumpExecutor extends MovementExecutor {
 
 export class NewForwardJumpExecutor extends ForwardJumpExecutor {
   private swimming = false
+  private jumpRequested = false
 
-  override reset (): void { this.swimming = false; super.reset() }
+  override reset (): void { this.swimming = false; this.jumpRequested = false; super.reset() }
+
+  private adjacentStep (move: Move): boolean {
+    const delta = move.exitPos.minus(move.entryPos)
+    return delta.y > 0 && delta.y <= 1.25 && Math.abs(delta.x) + Math.abs(delta.z) <= 1.01
+  }
+
+  protected override isComplete (move: Move, end: Move = move): boolean {
+    if (this.world.getBlockInfo(end.exitPos).water) return super.isComplete(move, end)
+    const pos = this.bot.entity.position
+    // Touching the landing edge in flight is not supported arrival.
+    return this.toPlaceLen() === 0 && this.toBreakLen() === 0 && this.cI == null &&
+      this.bot.entity.onGround && Math.abs(pos.y - end.exitPos.y) < 0.15 && pos.xzDistanceTo(end.exitPos) < 0.45
+  }
 
   override async align (move: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
     if (this.doWaterLogic()) { this.swimming = true; return true }
@@ -410,23 +449,76 @@ export class NewForwardJumpExecutor extends ForwardJumpExecutor {
     if (this.swimming) {
       this.bot.clearControlStates()
       this.bot.setControlState('jump', true)
-      for (const interaction of [...this.toBreak(), ...this.toPlace()]) await this.performInteraction(interaction)
+      if (this.toPlaceLen() > 0) {
+        // A fast swim prefix can end inside the future step's column. Retreat
+        // to its water approach before placing; it cannot be placed through
+        // the swimmer's body, even if a predicted later frame is clear.
+        const center = move.entryPos.clone()
+        await this.lookAtPathPos(center)
+        while (this.bot.entity.position.xzDistanceTo(center) > 0.12 || Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) > 0.035) {
+          if (this.aborted || this.bot.pathfinder.abortCalculation) throw new CancelError('Water step placement canceled')
+          steerToPosition(this.bot, center, 0.06)
+          this.bot.setControlState('sprint', false)
+          await this.bot.waitForTicks(1)
+        }
+        this.bot.setControlState('forward', false); this.bot.setControlState('back', false)
+        this.bot.setControlState('left', false); this.bot.setControlState('right', false)
+      }
+      for (const interaction of [...this.toBreak(), ...this.toPlace()]) await this.performInteraction(interaction, { predictBlock: false })
       await this.postInitAlignToPath(move, { sprint: false })
+    } else if (this.adjacentStep(move) && this.toPlaceLen() === 0) {
+      this.bot.clearControlStates()
+      for (const target of this.toBreak()) await this.performInteraction(target)
+      this.jumpRequested = false
     } else await super.performInit(move, index, path)
   }
 
   override async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean> {
     if (this.swimming || super.doWaterLogic()) {
-      this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.exitPos.y)
-      await this.postInitAlignToPath(thisMove, { sprint: false })
-      return this.isComplete(thisMove)
-    } else {
-      return await super.performPerTick(thisMove, tickCount, currentIndex, path)
+      if (this.bot.entity.onGround && !this.doWaterLogic()) this.swimming = false
+      else {
+        this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.exitPos.y)
+        await this.postInitAlignToPath(thisMove, { sprint: false })
+        return this.isComplete(thisMove)
+      }
     }
+    if (this.adjacentStep(thisMove) && this.toPlaceLen() === 0 && this.toBreakLen() === 0 && this.cI == null) {
+      if (this.isComplete(thisMove)) { this.bot.setControlState('jump', false); return true }
+      const pos = this.bot.entity.position
+      if (pos.y < thisMove.entryPos.y - 0.5) throw new CancelError('ForwardJump: fell below the takeoff')
+      const direction = thisMove.exitPos.minus(thisMove.entryPos); direction.y = 0; direction.normalize()
+      const side = Math.abs((pos.x - thisMove.exitPos.x) * direction.z - (pos.z - thisMove.exitPos.z) * direction.x)
+      const lateralSpeed = Math.abs(this.bot.entity.velocity.x * direction.z - this.bot.entity.velocity.z * direction.x)
+      const approach = thisMove.exitPos.clone()
+      if (this.bot.entity.onGround && side > 0.2) {
+        // Correct the approach along the face before jumping into its corner.
+        if (direction.x !== 0) approach.x = pos.x
+        else approach.z = pos.z
+      }
+      await this.lookAtPathPos(approach)
+      steerToPosition(this.bot, approach, this.bot.entity.onGround ? 0.12 : 0.16)
+      this.bot.setControlState('sprint', false)
+      this.bot.setControlState('sneak', false)
+      // MovementAscend's approach rule, using actual ground contact rather
+      // than a simulated takeoff tick. Releasing jump allows another attempt
+      // after a head collision or a server position correction.
+      const jump = this.bot.entity.onGround && pos.y < thisMove.exitPos.y - 0.05 &&
+        pos.xzDistanceTo(thisMove.exitPos) <= 1.25 && side <= 0.2 && lateralSpeed <= 0.1 && !this.jumpRequested
+      this.bot.setControlState('jump', jump)
+      this.jumpRequested = jump
+      return false
+    }
+    return await super.performPerTick(thisMove, tickCount, currentIndex, path)
   }
 }
 
 export class ForwardDropDownExecutor extends MovementExecutor {
+  protected override isComplete (move: Move, end: Move = move): boolean {
+    if (this.world.getBlockInfo(end.exitPos).water) return super.isComplete(move, end)
+    const pos = this.bot.entity.position
+    return this.toPlaceLen() === 0 && this.toBreakLen() === 0 && this.cI == null &&
+      this.bot.entity.onGround && Math.abs(pos.y - end.exitPos.y) < 0.15 && pos.xzDistanceTo(end.exitPos) < 0.45
+  }
   private waterLanded (move: Move): boolean {
     const pos = this.bot.entity.position
     return (this.bot.entity as any).isInWater === true && pos.y >= move.exitPos.y - 0.5 &&
@@ -476,7 +568,7 @@ export class ForwardDropDownExecutor extends MovementExecutor {
         const breakTarget = remainingBreaks[0]
         logDrop(`[ForwardDrop] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`)
         this.bot.clearControlStates()
-        void this.performInteraction(breakTarget)
+        this.startInteraction(breakTarget)
         return false
       }
 
@@ -497,7 +589,7 @@ export class ForwardDropDownExecutor extends MovementExecutor {
           } else if (info.ticks < Infinity) {
             if (!batchExecuted) {
               logDrop(`[ForwardDrop] Block ${p.vec} visible in ${info.ticks} ticks. Triggering background interaction.`)
-              void this.performInteraction(p, { info, predictBlock: true })
+              this.startInteraction(p, { info, predictBlock: true })
             }
             break
           } else {
@@ -509,8 +601,15 @@ export class ForwardDropDownExecutor extends MovementExecutor {
       }
     }
 
-    if (currentIndex < path.length) void this.postInitAlignToPath(thisMove)
-    else void this.postInitAlignToPath(thisMove)
+    if (!this.doWaterLogic()) {
+      // Walk fully off the old support before centring on the lower landing.
+      // Predictive walking/braking can reverse at the lip before the fall.
+      await this.lookAtPathPos(thisMove.exitPos)
+      steerToPosition(this.bot, thisMove.exitPos, 0.15)
+      this.bot.setControlState('sprint', false)
+      this.bot.setControlState('sneak', false)
+      this.bot.setControlState('jump', false)
+    } else await this.postInitAlignToPath(thisMove)
 
     this.handleSneak(thisMove)
     return this.isComplete(thisMove)
@@ -559,7 +658,7 @@ export class StraightDownExecutor extends MovementExecutor {
         const breakTarget = remainingBreaks[0]
         logDown(`[StraightDown] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`)
         this.bot.clearControlStates()
-        void this.performInteraction(breakTarget)
+        this.startInteraction(breakTarget)
         return false
       }
     }

@@ -27,7 +27,8 @@ export class ContinuousPathProducer implements PathProducer {
     settings: MovementOptions,
     bot: Bot,
     world: World,
-    movements: ExecutorMap
+    movements: ExecutorMap,
+    private readonly searchScale = 1
   ) {
     this.start = start
     this.goal = goal
@@ -51,8 +52,8 @@ export class ContinuousPathProducer implements PathProducer {
       moveHandler.loadGoal(this.goal)
 
       const opts = this.bot.pathfinder.pathfinderSettings
-      this.astarContext = new AStar(this.start, moveHandler, this.goal, opts.searchTimeoutMs, opts.tickTimeoutMs, -1, 0)
-      this.astarContext.maxVisitedNodes = opts.maxVisitedNodes
+      this.astarContext = new AStar(this.start, moveHandler, this.goal, opts.searchTimeoutMs * this.searchScale, opts.tickTimeoutMs, -1, 0)
+      this.astarContext.maxVisitedNodes = opts.maxVisitedNodes * this.searchScale
     }
 
     const result = this.astarContext.compute()

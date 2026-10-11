@@ -185,6 +185,7 @@ export class MovementHandler implements AMovementProvider<Move> {
 
   resetLocalData (): void {
     this.localData.fill(null)
+    this.toClear.clear()
   }
 
   // Do not reassign localData, must do shift in place.
@@ -239,7 +240,6 @@ export class MovementHandler implements AMovementProvider<Move> {
   preloadInteractData (orgPos: Vec3, move: Move): void {
     // data has already been shifted, no need to worry.
     let move1: Move | undefined = move
-    let exit = false
 
     let seenStamp = ++this.seenStamp
     if (seenStamp === 0) {
@@ -247,29 +247,21 @@ export class MovementHandler implements AMovementProvider<Move> {
       seenStamp = ++this.seenStamp
     }
 
-    // theoretically, this is incorrect. Newest iteration should occur, not oldest.
-    // reverse by starting at root then traversing down.
-    // or keep track of changes.
-    while (move1 !== undefined && !exit) {
-      const wantedDx = move1.x - orgPos.x + this.halfX
-      const wantedDz = move1.z - orgPos.z + this.halfZ
-      const wantedDy = move1.y - orgPos.y + this.halfY
-
-      if (wantedDx < 0 || wantedDx >= this.boundaryX || wantedDz < 0 || wantedDz >= this.boundaryZ || wantedDy < 0 || wantedDy >= this.boundaryY) {
-        exit = true
-      }
-
+    // Newest edits win. An excursion outside this window does not erase older
+    // edits inside it when the route returns. Skip ancestors without edits.
+    while (move1 !== undefined) {
       for (const m of move1.toPlace) {
         const wantedDx = m.x - orgPos.x + this.halfX
         const wantedDz = m.z - orgPos.z + this.halfZ
         const wantedDy = m.y - orgPos.y + this.halfY
 
         if (wantedDx < 0 || wantedDx >= this.boundaryX || wantedDz < 0 || wantedDz >= this.boundaryZ || wantedDy < 0 || wantedDy >= this.boundaryY) {
-          exit = true
+          continue
         } else {
           const idx = wantedDx * this.xStride + wantedDz * this.zStride + wantedDy
           if (this.seenMarks[idx] !== seenStamp) {
             this.localData[idx] = m.blockInfo
+            this.toClear.add(idx)
             this.seenMarks[idx] = seenStamp
           }
         }
@@ -283,22 +275,28 @@ export class MovementHandler implements AMovementProvider<Move> {
         const wantedDy = m.y - orgPos.y + this.halfY
 
         if (wantedDx < 0 || wantedDx >= this.boundaryX || wantedDz < 0 || wantedDz >= this.boundaryZ || wantedDy < 0 || wantedDy >= this.boundaryY) {
-          exit = true
+          continue
         } else {
           const idx = wantedDx * this.xStride + wantedDz * this.zStride + wantedDy
           if (this.seenMarks[idx] !== seenStamp) {
             this.localData[idx] = m.blockInfo
+            this.toClear.add(idx)
             this.seenMarks[idx] = seenStamp
           }
         }
       }
-      move1 = move1.parent
+      move1 = move1.previousInteractionMove
     }
   }
 
   private lastPos?: Vec3
   getNeighbors (currentMove: Move, closed: Set<string>): Move[] {
     const moves: Move[] = []
+
+    // Keep real block reads cached, but remove the previous branch's planned
+    // terrain before shifting the window and applying this branch's own edits.
+    for (const idx of this.toClear) this.localData[idx] = null
+    this.toClear.clear()
 
     // console.log('hi')
     const pos = currentMove.entryPos.floored()

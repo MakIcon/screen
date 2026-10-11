@@ -254,22 +254,22 @@ export class AStarBackOff<Data extends PathData, MProv extends MovementProvider<
   }
 
   getActualBestNode (): PathNode<Data> {
-    // console.log('check bn6')
-    if (this.bestNode6.h > 5) return this.bestNode6
-    // console.log('check bn5')
-    if (this.bestNode5.h > 5) return this.bestNode5
-    // console.log('check bn4')
-    if (this.bestNode4.h > 5) return this.bestNode4
-    // console.log('check bn3')
-    if (this.bestNode3.h > 5) return this.bestNode3
-    // console.log('check bn2')
-    if (this.bestNode2.h > 5) return this.bestNode2
-    // console.log('check bn1')
-    if (this.bestNode1.h > 5) return this.bestNode1
-    // console.log('check bn0')
-    if (this.bestNode0.h > 5) return this.bestNode0
-
+    // Baritone tries the lowest cost coefficient first and requires progress
+    // FROM THE START. Remaining heuristic > 5 also accepts the unchanged start
+    // of a distant goal and favours the most expensive candidate first.
+    for (const node of [this.bestNode0, this.bestNode1, this.bestNode2, this.bestNode3,
+      this.bestNode4, this.bestNode5, this.bestNode6]) {
+      if (this.hasMinimumProgress(node)) return node
+    }
     return this.bestNode
+  }
+
+  protected hasMinimumProgress (node: PathNode<Data>): boolean {
+    for (let edges = 0; edges < 5; edges++) {
+      if (node.parent == null) return false
+      node = node.parent
+    }
+    return true
   }
 
   compute (): Path<Data, MProv, this> {

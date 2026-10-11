@@ -52,6 +52,7 @@ export interface PostInitAlignOpts { handleBack?: boolean, lookAt?: Vec3, lookAt
 
 export abstract class MovementExecutor extends Movement {
   private controlGeneration = 0
+  private interactionFailure?: unknown
   /**
    * Physics engine, baby.
    */
@@ -100,6 +101,7 @@ export abstract class MovementExecutor extends Movement {
     // log('Resetting MovementExecutor')
     this.aborted = false
     this.controlGeneration++
+    this.interactionFailure = undefined
     delete this.resetReason
     this.task.finish()
   }
@@ -233,6 +235,7 @@ export abstract class MovementExecutor extends Movement {
   }
 
   public async _performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
+    if (this.interactionFailure != null) throw this.interactionFailure
     await this.holdUntilAborted(thisMove, this.task)
     return await this.performPerTick(thisMove, tickCount, currentIndex, path)
   }
@@ -424,8 +427,8 @@ export abstract class MovementExecutor extends Movement {
   public isInitAligned (thisMove: Move, target: Vec3 = thisMove.entryPos, options: InitAlignOpts = {}): boolean {
     if (this.isComplete(thisMove)) return true
 
-    const off0 = thisMove.exitPos.minus(this.bot.entity.position).normalize()
-    const off1 = thisMove.exitPos.minus(target).normalize()
+    const off0 = thisMove.exitPos.minus(this.bot.entity.position)
+    const off1 = thisMove.exitPos.minus(target)
 
     if (this.bot.entity.position.y < thisMove.entryPos.y - 1) throw new CancelError('MovementExecutor: bot is too low.')
 
@@ -433,6 +436,8 @@ export abstract class MovementExecutor extends Movement {
 
     off0.translate(0, -off0.y, 0)
     off1.translate(0, -off1.y, 0)
+    off0.normalize()
+    off1.normalize()
 
     const similarDirection = off0.dot(off1) > 0.7
 
@@ -526,11 +531,24 @@ export abstract class MovementExecutor extends Movement {
   async performInteraction (interaction: PlaceHandler | BreakHandler, opts: InteractOpts = {}): Promise<void> {
     this._cI = interaction
     interaction.loadMove(this)
-    if (interaction instanceof PlaceHandler) {
-      await this.performPlace(interaction, opts)
-    } else if (interaction instanceof BreakHandler) {
-      await this.performBreak(interaction, opts)
+    try {
+      if (interaction instanceof PlaceHandler) {
+        await this.performPlace(interaction, opts)
+      } else if (interaction instanceof BreakHandler) {
+        await this.performBreak(interaction, opts)
+      }
+    } finally {
+      if (this._cI === interaction) this._cI = undefined
     }
+  }
+
+  protected startInteraction (interaction: PlaceHandler | BreakHandler, opts: InteractOpts = {}): void {
+    const generation = this.controlGeneration
+    void this.performInteraction(interaction, opts).catch(error => {
+      // Background mining/placement must fail on the movement runner's next
+      // tick, without an unhandled rejection or a false successful step.
+      if (generation === this.controlGeneration && !this.aborted) this.interactionFailure = error
+    })
   }
 
   protected async performPlace (place: PlaceHandler, opts: InteractOpts = {}): Promise<void> {
@@ -561,11 +579,8 @@ export abstract class MovementExecutor extends Movement {
     const goal = this.bot.pathfinder.currentGoal
     if (goal instanceof goals.GoalFollowEntity && this.currentMove != null && /^(Forward|Diagonal|ForwardDropDown)$/.test(this.currentMove.moveType.constructor.name)) {
       const player = goal.refVec
-      const route = vec3.minus(pos); route.y = 0
-      const towardPlayer = player.minus(pos); towardPlayer.y = 0
-      // Face the player when it agrees with the safe route. Around an obstacle,
-      // keep looking along the route rather than turning into the obstruction.
-      if (route.norm() > 0.2 && towardPlayer.norm() > 0.3 && route.normalize().dot(towardPlayer.normalize()) > 0.85) target = player
+      // Even a small yaw deviation can clip a wall beside a valid route.
+      // Keep steering at the waypoint; only the vertical gaze tracks the player.
       // Water propulsion follows pitch. Looking up at a player on a bridge
       // ejects the swimmer from the water on every stroke; cruise horizontally.
       if (!(this.bot.entity as any).isInWater) {
@@ -767,6 +782,17 @@ export abstract class MovementExecutor extends Movement {
     // An awaited camera turn can finish after this move has been replaced.
     // Do not let its old waypoint brake the next swim stroke or run-up.
     if (generation !== this.controlGeneration) return
+    if (this.doWaterLogic() && this.world.getBlockInfo(endMove.exitPos).water &&
+        startMove.toPlace.length === 0 && startMove.toBreak.length === 0) {
+      // The water waypoint can lie below our breathing height. Land steering
+      // anticipates overshoot and applies back/strafe, cancelling swim sprint.
+      this.bot.setControlState('back', false)
+      this.bot.setControlState('left', false)
+      this.bot.setControlState('right', false)
+      this.bot.setControlState('forward', true)
+      this.bot.setControlState('sprint', sprint)
+      return
+    }
     botStrafeMovement(this.bot, endMove.exitPos, true)
     botSmartMovement(this.bot, endMove.exitPos, sprint)
 

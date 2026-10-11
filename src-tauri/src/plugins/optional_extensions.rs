@@ -67,6 +67,7 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("package.json", MINEFLAYER_PACKAGE),
     ("package-lock.json", MINEFLAYER_PACKAGE_LOCK),
     ("COPYING", MINEFLAYER_COPYING),
+    ("BARITONE-LICENSE", include_str!("../../../extensions/mineflayer-bot/BARITONE-LICENSE")),
     ("THIRD-PARTY-NOTICES.md", MINEFLAYER_NOTICES),
     ("pathfinder-source.json", MINEFLAYER_SOURCE),
     ("restore-pathfinder-source.cjs", MINEFLAYER_RESTORE_SOURCE),

@@ -1,5 +1,5 @@
 const { Vec3 } = require("vec3");
-const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
+const { toNotchianYaw, toNotchianPitch, fromNotchianPitch } = require("mineflayer/lib/conversions");
 
 const hazards = /lava|water|fire|cactus|magma|campfire|powder_snow|sweet_berry|wither_rose|portal/;
 const empty = (block) => block && block.boundingBox === "empty" && !hazards.test(block.name);
@@ -141,11 +141,20 @@ function planPearl(bot, destination, settings, radius = 2, exact = false) {
   };
   let best = null;
   function consider(turn, angle) {
-    const shot = simulatePearl(bot, yaw + turn, angle, blockAt);
+    // Mineflayer's look() rounds both rotations to 0.15-degree increments
+    // from the current view. Compare arcs at the rotation we can actually use.
+    const step = fromNotchianPitch(0.15);
+    const aimYaw = bot.entity.yaw + Math.round((yaw + turn - bot.entity.yaw) / step) * step;
+    const aimPitch = bot.entity.pitch + Math.round((angle - bot.entity.pitch) / step) * step;
+    const shot = simulatePearl(bot, aimYaw, aimPitch, blockAt);
     if (!shot) return;
     const travel = from.distanceTo(shot.landing);
     const after = shot.landing.distanceTo(destination);
     const progress = remaining - after;
+    // Exact pursuit must compare only arcs that land inside the target radius.
+    // A farther overshoot can otherwise win on progress and discard every
+    // usable arc when the swimmer's launch position has shifted sideways.
+    if (exact && after > radius) return;
     if (travel > settings.pearlMaxDistance || progress < minDistance || after > remaining - 3)
       return;
     // Prefer progress, then a shorter flight. Never overshoot into a worse route.

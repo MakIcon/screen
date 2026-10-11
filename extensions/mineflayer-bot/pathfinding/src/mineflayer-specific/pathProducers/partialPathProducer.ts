@@ -46,7 +46,8 @@ export class PartialPathProducer implements PathProducer {
     settings: MovementOptions,
     bot: Bot,
     world: World,
-    movements: ExecutorMap
+    movements: ExecutorMap,
+    private readonly searchScale = 1
   ) {
     this.start = start
     this.goal = goal
@@ -87,9 +88,9 @@ export class PartialPathProducer implements PathProducer {
     }
 
     const opts = this.bot.pathfinder.pathfinderSettings
-    const remainingTimeout = Math.max(0, opts.searchTimeoutMs - (performance.now() - this.startTime))
+    const remainingTimeout = Math.max(0, opts.searchTimeoutMs * this.searchScale - (performance.now() - this.startTime))
     const ret = new AStar(start, moveHandler, this.goal, remainingTimeout, opts.tickTimeoutMs, -1, 0)
-    ret.maxVisitedNodes = Math.max(1, opts.maxVisitedNodes - this.latestClosedNodeCount)
+    ret.maxVisitedNodes = Math.max(1, opts.maxVisitedNodes * this.searchScale - this.latestClosedNodeCount)
     return ret
   }
 

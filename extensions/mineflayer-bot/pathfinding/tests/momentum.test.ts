@@ -365,6 +365,39 @@ for (const scenario of [
   })
 }
 
+test('incoming ice momentum survives catch-up ticks while the route starts', { timeout: 6000 }, async () => {
+  const world = createFlatWorld('1.20.4', -64, { renderDistance: 1 })
+  for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), x >= 5 ? 'packed_ice' : 'stone')
+  for (let x = 12; x <= 15; x++) world.setBlock(new Vec3(x, 63, 0), 'stone')
+  const { rig } = createCacheWorld('1.20.4', 64, new Vec3(5.5, 64, 0.5), { world })
+  rig.bot.physicsEnabled = false
+  rig.bot.entity.velocity = new Vec3(0.38, -0.0784, 0)
+  rig.bot.entity.onGround = true
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false },
+    pathfinderSettings: { searchTimeoutMs: 2500, tickTimeoutMs: 5 } }))
+  const { PlayerState: LivePlayerState } = require('prismarine-physics')
+  let done = false, failure: unknown, lowest = 64
+  const running = rig.bot.pathfinder.goto(new goals.GoalBlock(13, 64, 0))
+    .catch((error: unknown) => { failure = error }).finally(() => { done = true })
+  try {
+    for (let batch = 0; batch < 100 && !done; batch++) {
+      await new Promise<void>(resolve => setImmediate(resolve))
+      for (let tick = 0; tick < 4 && !done; tick++) {
+        const controls = Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(key => [key, rig.bot.getControlState(key)]))
+        const state = new LivePlayerState(rig.bot, controls)
+        rig.bot.physics.simulatePlayer(state, world).apply(rig.bot)
+        lowest = Math.min(lowest, rig.bot.entity.position.y)
+        rig.bot.emit('physicsTick')
+      }
+    }
+    assert.equal(failure, undefined)
+    assert.equal(done, true, `route did not finish at ${rig.bot.entity.position}`)
+    assert.ok(lowest >= 63.99, `fell to ${lowest}`)
+    assert.equal(rig.bot.entity.onGround, true)
+    assert.ok(rig.bot.entity.position.floored().equals(new Vec3(13, 64, 0)))
+  } finally { await rig.bot.pathfinder.stop(); await running; await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})
+
 test('a five-block gap is not declared jumpable from a standing stone edge', async () => {
   const world = createFlatWorld('26.1.2', -64, { renderDistance: 1 })
   for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), 'stone')

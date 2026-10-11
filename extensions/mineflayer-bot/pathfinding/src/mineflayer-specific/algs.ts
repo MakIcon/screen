@@ -7,6 +7,7 @@ import { Move } from './move'
 import type { ExecutorMap } from './movements'
 import { MovementHandler } from './movements'
 import { PathNode } from './node'
+import type { Vec3 } from 'vec3'
 
 export interface Path<T extends AStar = AStar> extends APath<Move, MovementHandler, T> {
   movementProvider: MovementHandler
@@ -22,6 +23,7 @@ export interface PathProducer {
 
 export class AStar extends AAStarBackOff<Move, MovementHandler> {
   visitedChunks: Set<string>
+  private readonly startPosition: Vec3
 
   mostRecentNode: PathNode = this.bestNode // also known as start
   constructor (
@@ -34,7 +36,12 @@ export class AStar extends AAStarBackOff<Move, MovementHandler> {
     differential = 0
   ) {
     super(start, movements, goal, timeout, tickTimeout, searchRadius, differential)
+    this.startPosition = start.exitPos.clone()
     this.visitedChunks = new Set()
+  }
+
+  protected override hasMinimumProgress (node: PathNode): boolean {
+    return node.data != null && node.data.exitPos.distanceSquared(this.startPosition) >= 25
   }
 
   protected addToClosedDataSet (node: PathNode): void {

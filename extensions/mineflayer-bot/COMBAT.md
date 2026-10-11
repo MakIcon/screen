@@ -1,6 +1,6 @@
 # PvP and bow combat
 
-Mineflayer Bot 1.8.10 includes the locked published packages:
+Mineflayer Bot 1.8.12 includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.
 - `mineflayer-pvp` 1.3.2: selectable basic melee combat.

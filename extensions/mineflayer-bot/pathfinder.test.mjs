@@ -484,7 +484,7 @@ test(
     try {
       const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
       t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
-      await navigator.goto(new pathfinder.goals.GoalNear(11.5, 64, 0.5, 2));
+      await navigator.goto(new pathfinder.goals.GoalBlock(11, 64, 0));
       assert.ok(routes.some(move => move.metadata?.momentumRebound === true));
       assert.ok(routes.every(move => move.toPlace.length === 0 && move.toBreak.length === 0));
       assert.equal(rebound, true);

@@ -9,6 +9,7 @@ import { World } from '../world/worldInterface'
 import { sumExclusionAreas } from '../movements/movement'
 import type { ExclusionArea } from '../movements/exclusionZones'
 import { COST_INF } from '../movements/costs'
+import { clearBodySegment } from '../navigationGeometry'
 
 import { AABB, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
 import { stateLookAt } from '../movements/movementUtils'
@@ -107,6 +108,9 @@ export class LandStraightAheadOpt extends MovementOptimizer {
     ]
 
     while (lastMove.exitPos.y === orgY && nextMove.exitPos.y === orgY) {
+      // Rays along the body's vertices can miss a block that enters through
+      // the middle of a side. Keep the original turn in that case.
+      if (!clearBodySegment(this.world, orgPos, nextMove.exitPos)) return --currentIndex
       if (!AABB.fromBlockPos(nextMove.entryPos).collides(AABB.fromBlockPos(nextMove.exitPos))) {
         log(`[LandStraightAhead] Index ${currentIndex}: AABB collision failed between entry and exit.`)
         return --currentIndex
@@ -307,12 +311,22 @@ export class ForwardJumpUpOpt extends MovementOptimizer {
 
     if (nextMove === undefined) return --currentIndex
 
+    // Carry an ascent only through a straight, clear continuation. A turn
+    // needs its own supported landing before the next movement starts.
+    const direction = lastMove.exitPos.minus(lastMove.entryPos); direction.y = 0; direction.normalize()
+    const sameDirection = (move: Move): boolean => {
+      const next = move.exitPos.minus(move.entryPos); next.y = 0
+      return next.norm() > 0 && direction.dot(next.normalize()) > 0.999
+    }
+    const landing = lastMove.exitPos.clone()
+
     while (
       lastMove.exitPos.y === nextMove.exitPos.y &&
       lastMove.entryPos.y !== lastMove.exitPos.y &&
       nextMove.toPlace.length === 0 &&
       nextMove.toBreak.length === 0
     ) {
+      if (!sameDirection(nextMove) || !clearBodySegment(this.world, landing, nextMove.exitPos)) return --currentIndex
       if (lastMove.toPlace.length > 1) {
         log(`[ForwardJumpUpOpt] Index ${currentIndex}: Places >1 blocks. Aborting.`)
         return --currentIndex
@@ -336,6 +350,7 @@ export class ForwardJumpUpOpt extends MovementOptimizer {
       nextMove.toPlace.length === 0 &&
       nextMove.toBreak.length === 0
     ) {
+      if (!sameDirection(nextMove) || !clearBodySegment(this.world, landing, nextMove.exitPos)) return --currentIndex
       if (nextMove.exitPos.y > firstPos.y) {
         log(`[ForwardJumpUpOpt] Index ${currentIndex}: nextMove Y is higher than firstPos Y. Aborting.`)
         return --currentIndex

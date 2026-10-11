@@ -21,8 +21,9 @@ const AnvilProvider = require('prismarine-provider-anvil') as {
   }
 }
 
-function resolveStateId(mcData: ReturnType<typeof registry>, blockRef: string | number): number {
+function resolveStateId(mcData: ReturnType<typeof registry>, blockRef: string | number | Block): number {
   if (typeof blockRef === 'number') return blockRef
+  if (typeof blockRef === 'object') return blockRef.stateId
 
   const blockInfo = mcData.blocksByName[blockRef]
   if (blockInfo == null) {
@@ -145,7 +146,7 @@ export class FakeWorld extends EventEmitter implements World {
     }
   }
 
-  setBlock(pos: Vec3, blockRef: string | number): Block {
+  setBlock(pos: Vec3, blockRef: string | number | Block): Block {
     const block = this.createBlock(pos, blockRef)
     this.sync.setBlock(pos, block)
     return block
@@ -172,7 +173,7 @@ export class FakeWorld extends EventEmitter implements World {
     return this.sync.raycast(from, direction, range, matcher) as RayType | null
   }
 
-  createBlock(pos: Vec3, blockRef: string | number): Block {
+  createBlock(pos: Vec3, blockRef: string | number | Block): Block {
     return createBlockAt(this.Block, resolveStateId(this.mcData, blockRef), pos)
   }
 

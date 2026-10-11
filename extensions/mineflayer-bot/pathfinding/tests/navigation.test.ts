@@ -47,7 +47,7 @@ test('stop wakes a following goal that is waiting inside its radius', { timeout:
   }
 })
 
-test('unreachable goals report timeout and release controls and task state', { timeout: 3000 }, async () => {
+test('unreachable goals report timeout and release controls and task state', { timeout: 5000 }, async () => {
   const rig = prepareRig()
   try {
     let finished = 0

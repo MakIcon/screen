@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 import { Path } from './mineflayer-specific/algs'
 import * as goals from './mineflayer-specific/goals'
 import { Move } from './mineflayer-specific/move'
-import { AbortError, CancelError, ManualResetError, ResetError } from './mineflayer-specific/exceptions'
+import { AbortError, CancelError, ManualResetError, ResetError, NavigationError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveProvider,
   ExecutorMap,
@@ -139,7 +139,7 @@ export class PathExecutor {
     const MAX_RECOVERY_DEPTH = 2
 
     if (entry > MAX_RECOVERY_DEPTH) {
-      throw new Error('Too many failures, exiting performing.')
+      throw new NavigationError('recovery', 'Too many failures, exiting performing.')
     }
 
     const bot = this.bot
@@ -187,6 +187,10 @@ export class PathExecutor {
     let lastProgressAt = performance.now()
     let activeDig: BreakHandler | undefined
     let digDeadline = 0
+    let collisionTicks = 0
+    let progressMove: Move | undefined
+    let bestMoveDistance = Infinity
+    let productiveAt = lastProgressAt
 
     const completion = new Promise<void>((resolve, reject) => {
       resolveCompletion = resolve
@@ -297,6 +301,9 @@ export class PathExecutor {
           lastPathLength = localPath.length
           pendingOptimize = undefined
           if (runnerStage === 'optimize') runnerStage = 'idle'
+          // Prime a verified momentum flight before another tick consumes its
+          // incoming speed. Other executors retain their physics-tick boundary.
+          if (localPath[currentIndex]?.moveType.constructor.name === 'MomentumJump') moveListener()
         },
         (err) => {
           pendingOptimize = undefined
@@ -550,13 +557,46 @@ export class PathExecutor {
         }
         lastProgressAt = now
       } else activeDig = undefined
-      if (bot.entity.position.distanceTo(lastProgressPosition) >= 0.05) {
+      const move = this.getCurrentMove()
+      const horizontalStroke = (bot.entity as any).isInWater === true && move != null &&
+        Math.abs(move.exitPos.y - move.entryPos.y) < 0.1
+      if (move !== progressMove) {
+        progressMove = move
+        bestMoveDistance = Infinity
+        productiveAt = now
+      }
+      if (move != null && interaction == null && (runnerStage === 'align' || runnerStage === 'perform') &&
+          this.getCurrentExecutor()?.canInterrupt !== false) {
+        const remaining = horizontalStroke ? bot.entity.position.xzDistanceTo(move.exitPos) : bot.entity.position.distanceTo(move.exitPos)
+        if (remaining < bestMoveDistance - 0.08) {
+          bestMoveDistance = remaining
+          productiveAt = now
+        } else if (now - productiveAt >= Math.max(2000, this.host.defaultMoveSettings.movementTimeoutMs * 2)) {
+          // Walking in circles and repeating failed jumps are motion, but do
+          // not advance this movement. Replan instead of resetting forever.
+          void fail(new NavigationError('stalled', 'Movement stalled: repeated motion without advancing to the waypoint.'))
+          return
+        }
+      } else productiveAt = now
+      const displacement = horizontalStroke
+        ? bot.entity.position.xzDistanceTo(lastProgressPosition)
+        : bot.entity.position.distanceTo(lastProgressPosition)
+      if (displacement >= 0.08) {
         lastProgressPosition = bot.entity.position.clone()
         lastProgressAt = now
+        collisionTicks = 0
       } else if (now - lastProgressAt >= this.host.defaultMoveSettings.movementTimeoutMs) {
-        void fail(new Error('Movement stalled: no progress within the movement timeout.'))
+        void fail(new NavigationError('stalled', 'Movement stalled: no progress within the movement timeout.'))
         return
       }
+      if ((bot.entity as any).isCollidedHorizontally && interaction == null &&
+          this.getCurrentExecutor()?.canInterrupt !== false && (bot.entity.onGround || horizontalStroke) &&
+          (bot.getControlState('forward') || bot.getControlState('back') || bot.getControlState('left') || bot.getControlState('right'))) {
+        if (++collisionTicks >= 12) {
+          void fail(new NavigationError('stalled', 'Movement stalled: blocked by a wall or corner.'))
+          return
+        }
+      } else collisionTicks = 0
       if (runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
         return
       }

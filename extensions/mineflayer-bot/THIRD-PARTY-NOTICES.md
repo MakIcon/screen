@@ -15,6 +15,15 @@ pathfinding/src/mineflayer-specific/movements/controls.ts.
 External physics/utility packages retain their GPL-3.0 notices in node_modules;
 all other dependency license files are retained with their packages.
 
+Navigation changes in 1.8.12 use the supplied Baritone 26.1 sources as a design
+reference: MovementAscend.java, MovementDescend.java, PathExecutor.java and
+AbstractNodeCostSearch.java. The ascent approach, supported landing and partial
+path selection rules are adapted for Mineflayer's controls and physics.
+Baritone is by cabaletta and the Baritone contributors, LGPL-3.0-or-later:
+https://github.com/cabaletta/baritone
+Its supplied license is included verbatim in BARITONE-LICENSE. No Java classes
+or Baritone binaries are installed or loaded by this worker.
+
 Combat integrations added in 1.7.0 use:
 - @nxg-org/mineflayer-custom-pvp 1.7.16, GenerelSchwerz, GPL-3.0.
 - mineflayer-pvp 1.3.2, TheDudeFromCI / PrismarineJS, MIT.

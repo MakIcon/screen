@@ -1104,10 +1104,15 @@ for (const version of ["1.20.4", "26.1.2"]) {
       }
       controller.stop();
       time = 3000;
-      const count = packets.length;
+      // Mineflayer can flush its last look packet on a timer after stop.
+      // Count crystal clicks, attacks and swings independently of that flush.
+      const actionPackets = () => packets.filter(packet =>
+        ["block_place", "attack", "use_entity", "arm_animation"].includes(packet.name));
+      const count = actionPackets().length;
       bot.emit("physicsTick");
+      await new Promise(resolve => setTimeout(resolve, 65));
       await flush();
-      assert.equal(packets.length, count, "stop cancels all crystal actions");
+      assert.equal(actionPackets().length, count, "stop cancels all crystal actions");
     } finally {
       controller.dispose();
       f.dispose();

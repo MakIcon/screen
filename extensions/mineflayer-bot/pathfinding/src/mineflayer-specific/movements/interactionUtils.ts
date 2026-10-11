@@ -129,11 +129,10 @@ export abstract class InteractHandler {
 
     const ret = await this.perform(bot, item, opts).catch((err) => {
       logBase(`Interaction failed at ${this.vec}: %O`, err)
-      this._internalLock = false
-      this._done = true
+      this._internalLock = true
+      this._done = false
       this.performing = false
 
-      if (this.task?.canceled != null) return
       throw new CancelError(`Failed to perform ${this.constructor.name}`, err)
     })
 

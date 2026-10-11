@@ -6,7 +6,7 @@ import * as goals from './mineflayer-specific/goals'
 import { Vec3 } from 'vec3'
 import { Move } from './mineflayer-specific/move'
 import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorld'
-import { ResetError } from './mineflayer-specific/exceptions'
+import { ResetError, NavigationError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
   BuildableMoveProvider,
@@ -58,7 +58,8 @@ import { handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
 import { PathExecutor, type ExecutionMappings } from './pathExecutor'
 import { NeoProvider, NeoExecutor } from './mineflayer-specific/movements/neo'
 import { Climb, ClimbExecutor } from './mineflayer-specific/movements/climb'
-import { findShoreGoal } from './mineflayer-specific/shore'
+import { findShoreGoal, ShoreRouteGoal } from './mineflayer-specific/shore'
+import { selectAscentPrefix } from './mineflayer-specific/ascentPrefix'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
 import { MomentumJump, MomentumJumpExecutor } from './mineflayer-specific/movements/momentum'
 import { LadderForward, LadderDiagonal, LadderLandingForward, LadderLandingDiagonal } from './mineflayer-specific/movements/advanced/ladder-provider'
@@ -376,6 +377,24 @@ export class ThePathfinder {
     })
   }
 
+  private async waitForRetry (delay: number, update: Promise<void>): Promise<void> {
+    if (this.resetReason === 'goalReassignment' || this.disposed) return
+    await new Promise<void>(resolve => {
+      const finish = (): void => {
+        clearTimeout(timer)
+        this.bot.off('blockUpdate', finish)
+        this.bot.off('chunkColumnLoad', finish)
+        this.waiters.delete(finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, delay)
+      this.waiters.add(finish)
+      this.bot.once('blockUpdate', finish)
+      this.bot.once('chunkColumnLoad', finish)
+      void update.then(finish)
+    })
+  }
+
   async interrupt (timeout = this.defaultMoveSettings.movementTimeoutMs, cancelCalculation = true, reasonStr?: ResetReason): Promise<void> {
     log('Interrupt called. Cancel Calculation: %s. %s', cancelCalculation, reasonStr)
     this.abortCalculation = cancelCalculation
@@ -582,9 +601,9 @@ export class ThePathfinder {
     return cleanup
   }
 
-  getPathTo (goal: goals.Goal, settings = this.defaultMoveSettings): PathGenerator {
+  getPathTo (goal: goals.Goal, settings = this.defaultMoveSettings, searchScale = 1): PathGenerator {
     const { movements } = this.activeMappings
-    return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements)
+    return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements, searchScale)
   }
 
   async * getPathFromTo (
@@ -592,7 +611,8 @@ export class ThePathfinder {
     startVel: Vec3,
     goal: goals.Goal,
     settings = this.defaultMoveSettings,
-    movements = this.activeMappings.movements
+    movements = this.activeMappings.movements,
+    searchScale = 1
   ): PathGenerator {
     this.abortCalculation = false
     this.clearResetReason()
@@ -619,7 +639,8 @@ export class ThePathfinder {
         settings,
         this.bot,
         this.world,
-        movements
+        movements,
+        searchScale
       )
     } else {
       this._currentProducer = new ContinuousPathProducer(
@@ -628,7 +649,8 @@ export class ThePathfinder {
         settings,
         this.bot,
         this.world,
-        movements
+        movements,
+        searchScale
       )
     }
     log('Path producer initialized: %s', this._currentProducer.constructor.name)
@@ -727,18 +749,30 @@ export class ThePathfinder {
     const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic
     const doForever = dynamic && goal.neverfinish
     let shore: goals.Goal | undefined
+    let continuation: Path | undefined
+    let failures = 0
+    let waitingAtGoal = false
+    const rejectedShores: goals.Goal[] = []
+    let shoreRetryAt = 0
+    const prefixVisits = new Map<string, number>()
     while (!this.disposed) {
       await this.pendingReset
+      if (this.executionRunner.getResetReason() === 'goalReassignment' || this.disposed) return
+      if (performance.now() >= shoreRetryAt) rejectedShores.length = 0
       if (dynamic) goal.update()
-      let toWaitOn = Promise.resolve()
+      let toWaitOn = new Promise<void>(() => {})
       let cleanup = (): void => {}
       if (dynamic) {
         toWaitOn = new Promise<void>((resolve) => {
           cleanup = this.registerAll(goal, {
             onHasUpdate: () => {
               shore = undefined
+              continuation = undefined
+              prefixVisits.clear()
+              rejectedShores.length = 0
               // A rebound's ice contact is still part of the committed flight.
-              if (!(goal instanceof goals.GoalFollowEntity) || (this.bot.entity.onGround && this.currentExecutor?.canInterrupt !== false)) {
+              if (!(goal instanceof goals.GoalFollowEntity) ||
+                  ((this.bot.entity.onGround || (this.bot.entity as any).isInWater) && this.currentExecutor?.canInterrupt !== false)) {
                 void this.reset('goalUpdated').catch(() => {})
               }
             },
@@ -750,18 +784,43 @@ export class ThePathfinder {
       }
 
       try {
+        const pos = this.bot.entity.position
+        if (doForever && goal.isEnd({ x: pos.x, y: pos.y, z: pos.z, exitPos: pos } as Move) &&
+            (this.bot.entity.onGround || (this.bot.entity as any).isInWater || this.world.getBlockInfo(pos).climbable)) {
+          failures = 0
+          if (!waitingAtGoal) {
+            await this.cleanupBot()
+            if (this.world.getBlockInfo(pos).climbable) this.bot.setControlState('sneak', true)
+          }
+          waitingAtGoal = true
+          await this.waitForRetry(500, toWaitOn)
+          continue
+        }
+        waitingAtGoal = false
         // Keep the same exits across partial routes and movement recovery.
         // Re-scanning around every new position can send a swimmer back and
         // forth between different banks without ever reaching dry ground.
-        shore ??= await findShoreGoal(this.bot, this.world, goal, () => this.abortCalculation || this.disposed)
+        shore ??= await findShoreGoal(this.bot, this.world, goal, () => this.abortCalculation || this.disposed, rejectedShores)
         if (this.executionRunner.getResetReason() === 'goalReassignment' || this.disposed) return
         const routingGoal = shore ?? goal
         let path: Path | undefined
+        if (continuation != null) {
+          const first = continuation.path[0]
+          const last = continuation.path[continuation.path.length - 1]
+          // A moving follow target may have changed without an entity event.
+          // Reuse only when we actually landed at this plan's starting bank
+          // and its final node still satisfies the current destination.
+          if (this.bot.entity.onGround && first != null && last != null && goal.isEnd(last) &&
+              Math.abs(pos.y - first.entryPos.y) < 0.2 && pos.xzDistanceTo(first.entryPos) < 0.8) path = continuation
+          continuation = undefined
+        }
         let executionGoal = routingGoal
         let prefix = false
         let unverifiedIceTakeoff = false
+        const searchOrigin = pos.clone()
         const searchStarted = performance.now()
-        for await (const res of this.getPathTo(routingGoal)) {
+        if (path != null) this.bot.emit('pathGenerated', path)
+        else for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1))) {
           if (res.result.status === 'success') path = res.result
           const opts = this.pathfinderSettings
           if (res.result.status === 'partial' && opts.routePrefixMs > 0 &&
@@ -774,6 +833,7 @@ export class ThePathfinder {
             if (firstDig >= 0) moves = moves.slice(0, firstDig)
             if (moves.length < 5) continue
             const last = moves[moves.length - 1]
+            if ((prefixVisits.get(last.hash) ?? 0) >= 2) continue // Search past a repeatedly visited dead end.
             // Stopping a walking prefix on the ice consumes the run-up before
             // we know whether the search can reach the opposite platform.
             const iceRim = Movement.cardinalDirs.some(dir => {
@@ -809,8 +869,25 @@ export class ThePathfinder {
             }
           }
           if (res.result.status === 'noPath' || res.result.status === 'timeout') {
+            // A short, costly climb can be the only way off a shore ledge.
+            // Waiting for an entire high mountain route on every retry drops
+            // that climb forever. Commit one supported rise, then search from
+            // the new height with the original destination and fresh inventory.
+            if (res.result.status === 'timeout' && opts.routePrefixMs > 0 && shore == null &&
+                this.bot.entity.onGround && !this.world.getBlockInfo(searchOrigin).liquid &&
+                (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
+                goal.y > searchOrigin.y + 0.5 && !this.world.getBlockInfo(new Vec3(goal.x, goal.y, goal.z)).water) {
+              const moves = selectAscentPrefix(res.result, this.world, goal, searchOrigin, opts.routePrefixLength, prefixVisits)
+              if (moves != null) {
+                path = { ...res.result, path: moves }
+                executionGoal = goals.GoalBlock.fromVec(moves[moves.length - 1].exitPos)
+                prefix = true
+                this.bot.emit('pathGenerated', path)
+                break
+              }
+            }
             if (unverifiedIceTakeoff) throw new Error(`Pathfinding failed: ${res.result.status}; no verified route beyond the ice with the available runway and speed`)
-            throw new Error(`Pathfinding failed: ${res.result.status}`)
+            throw new NavigationError(res.result.status, `Pathfinding failed: ${res.result.status}`)
           }
           if (res.result.status === 'canceled') break
         }
@@ -843,17 +920,48 @@ export class ThePathfinder {
           continue
         }
         await this.cleanupBot(false, continueSwimming())
-        if (prefix) continue
-        if (shore != null) { shore = undefined; continue }
+        if (prefix) {
+          prefixVisits.set(last.hash, (prefixVisits.get(last.hash) ?? 0) + 1)
+          if (prefixVisits.size > 32) prefixVisits.delete(prefixVisits.keys().next().value!)
+          continue
+        }
+        const arrived = this.bot.entity.position
+        const actual = { ...path.path[path.path.length - 1], x: Math.floor(arrived.x), y: Math.floor(arrived.y + 1e-4),
+          z: Math.floor(arrived.z), exitPos: arrived } as Move
+        if ((shore != null || goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear) && !routingGoal.isEnd(actual)) {
+          throw new NavigationError('recovery', 'Movement ended before reaching the route goal.')
+        }
+        if (shore != null) {
+          if (shore instanceof ShoreRouteGoal) continuation = shore.continuation
+          shore = undefined
+          continue
+        }
         if (goal instanceof goals.GoalFollowEntity) {
           goal.update()
-          const actual = { ...path.path[path.path.length - 1], exitPos: this.bot.entity.position } as Move
           if (!goal.isEnd(actual)) continue
         }
         if (!doForever) return
         if (this.world.getBlockInfo(this.bot.entity.position).climbable) this.bot.setControlState('sneak', true)
-        await toWaitOn
+        failures = 0
+        waitingAtGoal = true
+        await this.waitForRetry(500, toWaitOn)
         if (this.resetReason === 'goalReassignment' || this.disposed) return
+      } catch (error) {
+        await this.pendingReset
+        if (this.resetReason === 'goalReassignment' || this.disposed) return
+        if (!(error instanceof NavigationError) || performOpts.errorOnReset || (!doForever && failures >= 2)) throw error
+        failures++
+        if (shore != null && error.reason === 'noPath') {
+          // A usable ascent is still useless when its bank cannot be reached
+          // from this water basin. Try the other exits before revisiting it.
+          rejectedShores.push(shore)
+          shoreRetryAt = performance.now() + 8000
+          shore = undefined
+        }
+        await this.cleanupBot()
+        // A stopped follow task never hears about the next terrain/target
+        // change. Keep it alive, with a bounded backoff and cancellable waits.
+        await this.waitForRetry(doForever ? Math.min(3000, 250 * 2 ** Math.min(failures - 1, 4)) : 100, toWaitOn)
       } finally {
         cleanup()
         delete this.wakeGoal

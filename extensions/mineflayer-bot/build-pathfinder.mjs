@@ -58,6 +58,7 @@ for (const file of [
   "build-pathfinder.mjs",
   "restore-pathfinder-source.cjs",
   "COPYING",
+  "BARITONE-LICENSE",
   "THIRD-PARTY-NOTICES.md",
   "pathfinding/LICENSE",
   "pathfinding/README.md",

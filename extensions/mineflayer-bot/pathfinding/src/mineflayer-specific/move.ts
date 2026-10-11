@@ -23,6 +23,9 @@ export class Move implements PathData {
 
   metadata?: Record<string, any>
 
+  /** Previous move with terrain edits; walking ancestors need no virtual-world scan. */
+  public readonly previousInteractionMove?: Move
+
   constructor (
     public readonly x: number,
     public readonly y: number,
@@ -44,6 +47,8 @@ export class Move implements PathData {
     this.z = Math.floor(z)
     this.hash = `${this.x},${this.y},${this.z}` // this.x + ',' + this.y + ',' + this.z
     this.targetPos = this.exitPos
+    this.previousInteractionMove = parent != null && (parent.toPlace.length > 0 || parent.toBreak.length > 0)
+      ? parent : parent?.previousInteractionMove
 
     this.cachedVec = new Vec3(this.x, this.y, this.z)
     Object.freeze(this.cachedVec)
