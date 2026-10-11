@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="188" height="28" viewBox="0 0 188 28" role="img" aria-labelledby="title">
+  <title id="title">POWERED BY RUST</title>
+  <rect width="112" height="28" fill="#ded4ca"/>
+  <rect x="112" width="76" height="28" fill="#9b6245"/>
+  <g font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="9" letter-spacing="1.35" text-anchor="middle">
+    <text x="56" y="17.7" fill="#3b3430">POWERED BY</text>
+    <text x="150" y="17.7" fill="#fff4eb">RUST</text>
+  </g>
+</svg>
