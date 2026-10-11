@@ -1,68 +1,160 @@
-# ScreenLauncher
+<div align="center">
 
-Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
+<a href="https://github.com/MakIcon/screen/releases">
+  <img src="docs/assets/readme-banner.svg" alt="ScreenLauncher — Minecraft, the way you want it. View releases." width="100%" />
+</a>
 
-Local builds, settings and accounts load independently of the Minecraft version service. The launcher displays a cached version manifest before refreshing it in the background, so a network failure does not hide installed builds.
+<br />
 
-Minecraft downloads stream into temporary files and verify the available size and SHA-1 metadata before replacing cached files. Existing files are verified on first use; unchanged files reuse the verification result for the current launcher session. Downloads use a bounded queue and stop all remaining workers when one fails. Build-index edits are serialized from reading through committing, and installation progress is throttled to 150 ms while always reporting phase changes and completion.
+**Your Minecraft. Your builds. Your rules.**
 
-Installing a mod from Modrinth automatically installs its required dependencies, including nested dependencies and exact versions specified by the author. Compatible tracked dependencies are reused and disabled required mods are enabled. Optional and embedded dependencies are not downloaded. Dependency resolution and downloads must succeed before the mod files are installed; missing or conflicting requirements are reported as installation errors.
+A desktop Minecraft launcher that brings your builds, mods and settings together.
 
-The mod details window previews required dependencies for the selected build before installation, showing each dependency's version and whether it will be downloaded, reused or enabled.
+<br />
 
-Each build's Settings → Build tab includes environment-variable overrides (name/value pairs). The game inherits the system environment and applies these overrides to its own process; values are passed literally and may be empty. Environment variables can be included in `.slbuild` and `.mrpack` transfers using their separate selection, which is off by default for exports.
+<a href="https://github.com/MakIcon/screen/releases/download/apperance/ScreenLauncher_0.1.0_x64-setup.exe">
+  <img src="docs/assets/download-windows.svg" alt="Download ScreenLauncher for Windows (64-bit EXE installer)" width="320" />
+</a>
 
-Test Java Settings checks the current Java executable, memory limits, JVM arguments and environment without starting Minecraft or saving the draft. It displays JVM diagnostics and warns about a Java version different from the expected Minecraft runtime. A check is stopped after 20 seconds. Existing builds are checked from their Minecraft directory, so relative JVM paths work as they do at launch.
+<br />
 
-## Project layout
+<sub>Windows x64 · EXE installer · <a href="https://github.com/MakIcon/screen/releases">All releases</a></sub>
 
-- `src/` — React UI, tabs, reusable controls and frontend hooks.
-- `src-tauri/src/commands/` — Tauri command boundary for accounts, builds, settings and Modrinth.
-- `src-tauri/src/minecraft/` — version resolution, downloads, Java selection and game launch.
-- `src-tauri/src/plugins/` — launcher-side bridges for Discord RPC, optional packages and OBS telemetry.
-- `extensions/mineflayer-bot/` — isolated Mineflayer worker and locked Node dependency manifest. Its dependencies are installed on demand into the launcher's data directory.
-- `obs-telemetry-mod/` — client-only Fabric helper mod bundled with the launcher.
-- `scripts/` — maintained project build scripts.
+<br /><br />
 
-## Development
+</div>
 
-Requirements: Node.js, pnpm, the Rust toolchain and the platform prerequisites for Tauri 2.
+## Your Minecraft, all in one place
 
-```powershell
+ScreenLauncher makes it easier to organize different Minecraft setups without having to manage their files by hand. Create a build for the way you want to play, install content from Modrinth and launch it from one place.
+
+- **Separate builds, no compromises.** Set up Vanilla, Fabric, Quilt, Forge or NeoForge installations independently. Each build keeps its own configuration.
+- **Mods without leaving the launcher.** Discover mods, resource packs and shaders through Modrinth. Required mod dependencies are resolved when installing compatible projects.
+- **A look that feels like yours.** Customize the launcher appearance and build cards instead of settling for the same layout everywhere.
+- **Control over your game.** Choose Java settings, allocated memory and other options for individual builds.
+- **Pick up where you left off.** See your recent build and playtime information, then get back into the game.
+
+## Download & installation
+
+Getting started doesn't require any development tools.
+
+1. **Download** the Windows installer using the button above.
+2. **Install** ScreenLauncher by running the downloaded `.exe` file.
+3. **Open the launcher**, create a build, choose your Minecraft version and press Play.
+
+Want to add mods? Open the **Modrinth** section after creating a compatible build.
+
+> [!NOTE]
+> The repository is currently **private**, so GitHub downloads require repository access. The latest published release is labeled **v2.0**, although its Windows installer is named `ScreenLauncher_0.1.0_x64-setup.exe`. That published installer may not include every change on the `main` branch.
+
+## More than just a Play button
+
+- **Build import & export** — move or back up build configurations using supported transfer formats.
+- **Microsoft and offline account workflows** — manage supported ways to start the game.
+- **Flexible runtime settings** — configure Java, JVM arguments and per-build environment variables.
+- **Safer downloads** — verify downloaded Minecraft files using available checksums and reuse valid cached files.
+- **Optional integrations** — Discord Rich Presence, OBS telemetry and a Mineflayer bot extension for more advanced setups.
+
+These extras are available when you need them; you can also keep things simple and just play.
+
+## Frequently asked questions
+
+<details>
+<summary><b>Do I need to install Java myself?</b></summary>
+
+ScreenLauncher includes Java runtime selection and management. Depending on your Minecraft version and setup, a compatible runtime may need to be selected or downloaded. A Java settings test can help diagnose problems.
+
+</details>
+
+<details>
+<summary><b>Does it support Fabric, Forge and other mod loaders?</b></summary>
+
+Yes. You can create builds for Vanilla, Fabric, Quilt, Forge and NeoForge. The Modrinth browser can help you find content compatible with your build.
+
+</details>
+
+<details>
+<summary><b>Where can I download another version?</b></summary>
+
+See [GitHub Releases](https://github.com/MakIcon/screen/releases). The most recent published release provides a Windows x64 EXE installer, and an [older release](https://github.com/MakIcon/screen/releases/tag/first) includes an MSI installer.
+
+</details>
+
+<details>
+<summary><b>Is there a macOS or Linux download?</b></summary>
+
+There is no published macOS or Linux installer listed in the repository's current releases. The project is based on Tauri, but that does not mean builds for every platform are already available.
+
+</details>
+
+---
+
+<div align="center">
+
+### Built with
+
+<a href="https://tauri.app"><img src="docs/assets/badge-tauri.svg" alt="Built with Tauri 2" height="28" /></a>&nbsp;
+<a href="https://www.rust-lang.org"><img src="docs/assets/badge-rust.svg" alt="Powered by Rust" height="28" /></a>&nbsp;
+<a href="https://react.dev"><img src="docs/assets/badge-react.svg" alt="React and TypeScript frontend" height="28" /></a>
+
+<sub>React 19 · TypeScript · Vite 7 · Tauri 2 · Rust</sub>
+
+</div>
+
+<details>
+<summary><b>Development & building from source</b></summary>
+
+ScreenLauncher uses React and TypeScript for its frontend, with Tauri 2 and Rust for its desktop backend.
+
+**Requirements:** Node.js, pnpm, Rust and the [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+```bash
+git clone https://github.com/MakIcon/screen.git
+cd screen
 pnpm install
 pnpm tauri dev
 ```
 
-The application icon's single source is `public/launcher-icon.svg`: vector paths and rectangles, without embedded raster images or fonts. Run `pnpm icons` to regenerate the desktop PNGs (16–1024 px), Windows ICO, macOS ICNS, Windows Store/mobile assets and web icons. The PNG is a generated preview of the SVG. The ICO stores its 256 px frame first because Tauri uses the first frame for the default window icon; the other frames cover smaller Windows DPI sizes. Both `pnpm build` and `pnpm tauri dev` regenerate the assets automatically. The executable, main and secondary windows, Alt+Tab, taskbar, installers, uninstaller and application shortcuts use this artwork. Rebuild and restart the native application to display it; previously installed copies need the new executable or installer.
+To create a native application bundle or installer for your development platform:
+
+```bash
+pnpm tauri build
+```
 
 Useful checks:
 
-```powershell
-pnpm build
-pnpm check
-pnpm test
+```bash
+pnpm check             # TypeScript and Rust
+pnpm test              # Rust tests
+pnpm test:web          # Frontend tests
+pnpm test:pathfinder   # Pathfinder tests
+pnpm test:worker       # Mineflayer worker tests
+pnpm lint              # Lint frontend code
 ```
 
-Build a standalone optional-extension archive when one is needed for manual distribution:
+**Project structure**
 
-```powershell
-pnpm package:extensions
+```text
+src/                       React frontend, components and hooks
+src-tauri/src/             Tauri commands and Minecraft backend
+extensions/mineflayer-bot/ Optional bot worker and pathfinding
+obs-telemetry-mod/         Fabric client-side telemetry helper
+public/                    App icon and web assets
+scripts/                   Build and packaging tools
 ```
 
-The Extensions screen installs Mineflayer's locked dependencies from the npm registry on demand into `%APPDATA%/ScreenLauncher/extensions/mineflayer-bot`. BlueMap's CLI/server package is downloaded on demand into `%APPDATA%/ScreenLauncher/extensions/blue-map-server`. Both packages can be removed independently from the launcher.
+The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 
-Mineflayer Bot uses the supplied Minecraft pathfinding rewrite, maintained in `extensions/mineflayer-bot/pathfinding`. `pnpm build:pathfinder` rebuilds the bundled `pathfinder.cjs` that Tauri and standalone extension archives ship. Run `pnpm test:pathfinder` and `pnpm test:worker` to check the planner, simulated movement and worker integration. Integration details and limits are documented in `extensions/mineflayer-bot/pathfinding/README.md`.
+For the bot extension, see the [combat guide](extensions/mineflayer-bot/COMBAT.md), [survival guide](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding documentation](extensions/mineflayer-bot/pathfinding/README.md).
 
-Mineflayer Bot 1.7.2 also includes Custom PvP, Mineflayer PvP and Minecraft HawkEye. The **PvP / Лук** settings tab controls difficulty, tactics, shields, reaction, bow prediction, accuracy and shot interval. Smooth aiming speed is adjustable from 10% to 300% for melee and bow combat. Owners can use `!attack Player`, `!bow Player`, `!pvp auto` (hostile mobs) and `!pvp stop`; explicit targets can include the owner, and movement commands also stop combat. See [combat configuration and commands](extensions/mineflayer-bot/COMBAT.md). Existing installations need an extension update from a launcher built with this source.
+</details>
 
-Build the OBS telemetry mod for every version listed in `obs-telemetry-mod/gradle.properties`:
+<div align="center">
 
-```powershell
-.\scripts\build_obs_telemetry.ps1
-```
+<sub>Made by <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a> · <a href="https://github.com/MakIcon/screen/issues">Issues</a></sub>
 
-To build only selected versions, pass them explicitly:
+<br />
 
-```powershell
-.\scripts\build_obs_telemetry.ps1 -MinecraftVersions 1.21.1,1.21.4
-```
+<sub>ScreenLauncher is an independent project and is not affiliated with or endorsed by Mojang Studios or Microsoft.</sub>
+
+</div>

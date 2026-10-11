@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="209" height="28" viewBox="0 0 209 28" role="img" aria-labelledby="title">
+  <title id="title">INTERFACE REACT + TS</title>
+  <rect width="98" height="28" fill="#afe7ef"/>
+  <rect x="98" width="111" height="28" fill="#236b87"/>
+  <g font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="9" letter-spacing="1.35" text-anchor="middle">
+    <text x="49" y="17.7" fill="#17353f">INTERFACE</text>
+    <text x="153.5" y="17.7" fill="#ffffff">REACT + TS</text>
+  </g>
+</svg>
