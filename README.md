@@ -2,33 +2,6 @@
 
 Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
 
-<img width="316" height="48" alt="my-rust-badge" src="https://github.com/user-attachments/assets/32c7ce49-a648-48d6-9e11-52925edf319a" />
-<svg xmlns="http://www.w3.org/2000/svg" width="316" height="48" viewBox="0 0 316 48" role="img" aria-label="MADE WITH RUST">
-  <title>Made with Rust</title>
-  <defs>
-    <clipPath id="badge-clip">
-      <rect x="1.5" y="1.5" width="313" height="45" rx="4"/>
-    </clipPath>
-    <pattern id="stripes" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="3" height="12" fill="#FFFFFF" opacity="0.07"/>
-    </pattern>
-  </defs>
-  <g clip-path="url(#badge-clip)">
-    <rect width="174" height="48" fill="#181B20"/>
-    <rect x="174" width="142" height="48" fill="#D95C28"/>
-    <rect x="174" width="142" height="48" fill="url(#stripes)"/>
-    <rect x="0" y="0" width="316" height="4" fill="#FFFFFF" opacity="0.12"/>
-    <rect x="174" y="1" width="2" height="46" fill="#0C0E11" opacity="0.40"/>
-  </g>
-  <rect x="1.5" y="1.5" width="313" height="45" rx="4" fill="none" stroke="#0D0F13" stroke-width="3"/>
-  <g fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle" dominant-baseline="middle">
-    <text x="87" y="25" font-size="16" letter-spacing="1.1">MADE WITH</text>
-    <text x="245" y="25" font-size="18" letter-spacing="1.5">RUST</text>
-  </g>
-</svg>
-
-
-
 Local builds, settings and accounts load independently of the Minecraft version service. The launcher displays a cached version manifest before refreshing it in the background, so a network failure does not hide installed builds.
 
 Minecraft downloads stream into temporary files and verify the available size and SHA-1 metadata before replacing cached files. Existing files are verified on first use; unchanged files reuse the verification result for the current launcher session. Downloads use a bounded queue and stop all remaining workers when one fails. Build-index edits are serialized from reading through committing, and installation progress is throttled to 150 ms while always reporting phase changes and completion.
