@@ -21,13 +21,13 @@ function waterBucket (bot: Bot): ReturnType<Bot['inventory']['items']>[number] |
   return bot.inventory.items().find(item => item.name === 'water_bucket')
 }
 
-function permitsWater (bot: Bot): boolean {
+export function permitsWater (bot: Bot): boolean {
   const game = bot.game as typeof bot.game & { dimension: string, dimensionData?: { ultrawarm?: boolean } }
   return !String(game.dimension).includes('nether') && game.dimensionData?.ultrawarm !== true
 }
 
 /** Identical inputs are used by prediction and live execution. No invented impulse. */
-function flightControls (pos: Vec3, vel: Vec3, target: Vec3, sprint: boolean, jump: boolean) {
+export function flightControls (pos: Vec3, vel: Vec3, target: Vec3, sprint: boolean, jump: boolean) {
   const delta = target.minus(pos); delta.y = 0
   const correction = delta.minus(new Vec3(vel.x, 0, vel.z).scaled(3))
   const yaw = Math.atan2(-correction.x, -correction.z)
@@ -37,7 +37,7 @@ function flightControls (pos: Vec3, vel: Vec3, target: Vec3, sprint: boolean, ju
   } }
 }
 
-function supportHit (world: World, pos: Vec3, target: Vec3): boolean {
+export function supportHit (world: World, pos: Vec3, target: Vec3): boolean {
   const eye = pos.offset(0, 1.62, 0)
   const top = target.offset(0, -0.01, 0)
   const delta = top.minus(eye)

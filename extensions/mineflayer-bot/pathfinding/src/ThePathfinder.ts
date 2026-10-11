@@ -726,6 +726,14 @@ export class ThePathfinder {
     }
     if (requestId !== this.goalRequestId || this.disposed) return
 
+    // Survival owns movement while eating or arresting an accidental fall.
+    // A new command stays cancellable and starts from the recovered position.
+    this.abortCalculation = false
+    while (this.bot.launcherSurvival?.busy && requestId === this.goalRequestId && !this.disposed) {
+      await this.waitForTick()
+    }
+    if (requestId !== this.goalRequestId || this.disposed) return
+
     this.cleanupClient()
     this.executeTask = new Task()
     this.currentGotoGoal = goal

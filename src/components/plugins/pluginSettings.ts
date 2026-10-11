@@ -3,12 +3,29 @@ import type {
   DiscordRpcPluginSettings,
   MineflayerBotPluginSettings,
   MineflayerCombatSettings,
+  MineflayerSurvivalSettings,
   ObsTelemetryPluginSettings,
   ProxyPluginSettings,
 } from "../../types";
 import combatDefaults from "../../../extensions/mineflayer-bot/combat-defaults.json";
+import survivalDefaults from "../../../extensions/mineflayer-bot/survival-defaults.json";
 
 export const DEFAULT_MINEFLAYER_COMBAT_SETTINGS = combatDefaults as MineflayerCombatSettings;
+export const DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS = survivalDefaults as MineflayerSurvivalSettings;
+
+export function normalizeMineflayerSurvivalSettings(value: unknown): MineflayerSurvivalSettings {
+  const draft = value && typeof value === "object" ? value as Partial<MineflayerSurvivalSettings> : {};
+  const defaults = DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS;
+  return {
+    autoEat: normalizeBoolean(draft.autoEat, defaults.autoEat),
+    autoEatMinHunger: normalizeInteger(draft.autoEatMinHunger, defaults.autoEatMinHunger, 1, 19),
+    autoEatMinHealth: normalizeInteger(draft.autoEatMinHealth, defaults.autoEatMinHealth, 1, 20),
+    autoEatPriority: draft.autoEatPriority === "foodPoints" ? "foodPoints" : "saturation",
+    emergencyMlg: normalizeBoolean(draft.emergencyMlg, defaults.emergencyMlg),
+    mlgMinFallHeight: normalizeInteger(draft.mlgMinFallHeight, defaults.mlgMinFallHeight, 4, 32),
+    mlgPickupWater: normalizeBoolean(draft.mlgPickupWater, defaults.mlgPickupWater),
+  };
+}
 
 export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCombatSettings {
   const draft = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -137,6 +154,7 @@ export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
   autoRespawn: true,
   logPathUpdates: false,
   combat: { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS },
+  survival: { ...DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS },
 };
 
 export const DEFAULT_BLUE_MAP_SETTINGS: BlueMapPluginSettings = {
@@ -288,6 +306,7 @@ export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPlu
     autoRespawn: normalizeBoolean(draft.autoRespawn, defaults.autoRespawn),
     logPathUpdates: normalizeBoolean(draft.logPathUpdates, defaults.logPathUpdates),
     combat: normalizeMineflayerCombatSettings(draft.combat),
+    survival: normalizeMineflayerSurvivalSettings(draft.survival),
   };
 }
 

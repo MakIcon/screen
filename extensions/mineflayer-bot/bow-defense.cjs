@@ -199,7 +199,7 @@ function createBowDefense(
     if (wasDefending) afterDefend();
   }
   function tick(canUseItem, immediate = false) {
-    if (!settings.enabled || !settings.bowDefense || bot.health <= 0) {
+    if (!settings.enabled || !settings.bowDefense || bot.health <= 0 || bot.launcherSurvival?.busy) {
       if (active || busy) stop();
       return false;
     }

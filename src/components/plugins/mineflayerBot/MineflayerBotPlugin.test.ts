@@ -24,6 +24,8 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.autoTarget).toBe("manual");
     expect(normalized.combat.smoothAimSpeed).toBe(100);
     expect(normalized.combat.pearlChase).toBe(false);
+    expect(normalized.survival.autoEat).toBe(true);
+    expect(normalized.survival.emergencyMlg).toBe(true);
   });
 
   it("clamps numeric values and rejects unknown command sources", () => {
@@ -42,6 +44,17 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.maxReconnectAttempts).toBe(0);
     expect(normalized.connectTimeoutSeconds).toBe(5);
     expect(normalized.commandSource).toBe("both");
+  });
+
+  it("saves survival preferences independently and bounds eating and rescue thresholds", () => {
+    const normalized = normalizeMineflayerBotSettings({ survival: {
+      autoEat: false, emergencyMlg: false, mlgPickupWater: false,
+      autoEatMinHunger: 50, autoEatMinHealth: -1, mlgMinFallHeight: 0, autoEatPriority: "foodPoints",
+    } });
+    expect(normalized.survival).toEqual({ autoEat: false, emergencyMlg: false, mlgPickupWater: false,
+      autoEatMinHunger: 19, autoEatMinHealth: 1, mlgMinFallHeight: 4, autoEatPriority: "foodPoints" });
+    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(normalized)))).toEqual(normalized);
+    expect(normalized.allowBucketWaterDrop).toBe(true);
   });
 
   it("keeps every explicit modern setting", () => {

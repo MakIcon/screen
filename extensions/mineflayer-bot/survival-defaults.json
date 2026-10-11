@@ -1,0 +1,9 @@
+{
+  "autoEat": true,
+  "autoEatMinHunger": 15,
+  "autoEatMinHealth": 14,
+  "autoEatPriority": "saturation",
+  "emergencyMlg": true,
+  "mlgMinFallHeight": 4,
+  "mlgPickupWater": true
+}

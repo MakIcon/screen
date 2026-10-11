@@ -13,11 +13,12 @@ import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
-type SettingsSection = "connection" | "behavior" | "combat" | "commands" | "control";
+type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control";
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "connection", label: "Подключение" },
   { id: "behavior", label: "Поведение" },
+  { id: "survival", label: "Выживание" },
   { id: "combat", label: "Бой и предметы" },
   { id: "commands", label: "Команды" },
   { id: "control", label: "Управление" },
@@ -536,6 +537,64 @@ function MineflayerBotSettingsEditor({
                 </label>
                 <PlaceholderGuideButton compact />
               </PluginSettingsGroup>
+            </PluginSettingsGroup>
+          </>
+        )}
+
+        {activeSection === "survival" && (
+          <>
+            <PluginSettingsGroup
+              title="АВТОЕДА"
+              description="Безопасная пища из инвентаря · настройки применяются после перезапуска бота"
+              enabled={settings.survival.autoEat}
+              onToggle={() => update({ survival: { ...settings.survival, autoEat: !settings.survival.autoEat } })}
+            >
+              <div className="mineflayer-bot-grid">
+                <label className="mineflayer-bot-field">
+                  <span>ЕСТЬ ПРИ ГОЛОДЕ ≤ · ИЗ 20</span>
+                  <CustomNumberInput ariaLabel="ЕСТЬ ПРИ ГОЛОДЕ" background="transparent" min={1} max={19}
+                    value={settings.survival.autoEatMinHunger}
+                    onChange={(autoEatMinHunger) => update({ survival: { ...settings.survival, autoEatMinHunger } })} />
+                </label>
+                <label className="mineflayer-bot-field">
+                  <span>ЕСТЬ ПРИ ЗДОРОВЬЕ ≤ · ИЗ 20</span>
+                  <CustomNumberInput ariaLabel="ЕСТЬ ПРИ ЗДОРОВЬЕ" background="transparent" min={1} max={20}
+                    value={settings.survival.autoEatMinHealth}
+                    onChange={(autoEatMinHealth) => update({ survival: { ...settings.survival, autoEatMinHealth } })} />
+                </label>
+                <div className="mineflayer-bot-field mineflayer-bot-field--full">
+                  <span>ВЫБОР ЕДЫ</span>
+                  <div className="mineflayer-bot-mode" role="group" aria-label="ВЫБОР ЕДЫ">
+                    {(["saturation", "foodPoints"] as const).map((priority) => (
+                      <button key={priority} type="button" aria-pressed={settings.survival.autoEatPriority === priority}
+                        className={settings.survival.autoEatPriority === priority ? "active" : ""}
+                        onClick={() => update({ survival: { ...settings.survival, autoEatPriority: priority } })}>
+                        {priority === "saturation" ? "Больше насыщения" : "Больше очков голода"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mineflayer-bot-combat-note">Бот делает паузу для еды и возвращает прежний предмет. Опасная еда и золотые яблоки сохраняются. При полном голоде обычная еда не используется.</p>
+            </PluginSettingsGroup>
+            <PluginSettingsGroup
+              title="АВАРИЙНЫЙ MLG"
+              description="Спасение ведром воды при случайном падении или отбрасывании"
+              enabled={settings.survival.emergencyMlg}
+              onToggle={() => update({ survival: { ...settings.survival, emergencyMlg: !settings.survival.emergencyMlg } })}
+            >
+              <div className="mineflayer-bot-grid">
+                <label className="mineflayer-bot-field">
+                  <span>МИНИМАЛЬНОЕ ПАДЕНИЕ · БЛОКИ</span>
+                  <CustomNumberInput ariaLabel="МИНИМАЛЬНОЕ ПАДЕНИЕ ДЛЯ MLG" background="transparent" min={4} max={32}
+                    value={settings.survival.mlgMinFallHeight}
+                    onChange={(mlgMinFallHeight) => update({ survival: { ...settings.survival, mlgMinFallHeight } })} />
+                </label>
+              </div>
+              <SettingToggle label="ЗАБИРАТЬ ВОДУ ПОСЛЕ MLG" description="Только свой источник и только после приземления"
+                checked={settings.survival.mlgPickupWater}
+                onChange={(mlgPickupWater) => update({ survival: { ...settings.survival, mlgPickupWater } })} />
+              <p className="mineflayer-bot-combat-note">Нужно ведро воды в инвентаре. Бот рассчитывает траекторию с учётом скорости и препятствий. В Нижнем мире вода не ставится. Плановые Water Drop настраиваются во вкладке «Поведение».</p>
             </PluginSettingsGroup>
           </>
         )}

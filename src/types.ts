@@ -360,6 +360,16 @@ export type MineflayerCombatSettings = {
   pearlReserve: number;
 };
 
+export type MineflayerSurvivalSettings = {
+  autoEat: boolean;
+  autoEatMinHunger: number;
+  autoEatMinHealth: number;
+  autoEatPriority: "foodPoints" | "saturation";
+  emergencyMlg: boolean;
+  mlgMinFallHeight: number;
+  mlgPickupWater: boolean;
+};
+
 export type MineflayerBotPluginSettings = {
   enabled: boolean;
   host: string;
@@ -396,6 +406,7 @@ export type MineflayerBotPluginSettings = {
   autoRespawn: boolean;
   logPathUpdates: boolean;
   combat: MineflayerCombatSettings;
+  survival: MineflayerSurvivalSettings;
 };
 
 export type BlueMapPluginSettings = {

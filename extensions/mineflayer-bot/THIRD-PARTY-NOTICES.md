@@ -15,6 +15,12 @@ pathfinding/src/mineflayer-specific/movements/controls.ts.
 External physics/utility packages retain their GPL-3.0 notices in node_modules;
 all other dependency license files are retained with their packages.
 
+The local auto-eat.cjs module adapts the supplied linkle69/mineflayer-auto-eat
+5.0.3 source (Copyright (c) 2023 Link, MIT). Its original license is retained
+verbatim in AUTO-EAT-LICENSE. Lifecycle, inventory ownership and survival
+scheduling have been rewritten for this standalone CommonJS worker.
+https://github.com/linkle69/mineflayer-auto-eat
+
 Navigation changes in 1.8.12 use the supplied Baritone 26.1 sources as a design
 reference: MovementAscend.java, MovementDescend.java, PathExecutor.java and
 AbstractNodeCostSearch.java. The ascent approach, supported landing and partial

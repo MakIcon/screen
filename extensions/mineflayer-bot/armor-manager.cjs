@@ -20,7 +20,7 @@ function installArmorManager(bot, onError = () => {}) {
   managedBot.equip = (item, destination) => {
     if (destination === "off-hand" || disposed) return Promise.resolve();
     return queueInventoryTask(bot, async () => {
-      if (disposed || bot.health <= 0) return;
+      if (disposed || bot.health <= 0 || bot.launcherSurvival?.busy) return;
       const available = bot.inventory.items().find((entry) => entry.type === item.type);
       const equipped = bot.inventory.slots[bot.getEquipmentDestSlot(destination)];
       if (available && (!equipped || isNewArmorBetter(equipped, available)))

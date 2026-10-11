@@ -22,6 +22,7 @@ import type { OptimizationSetup } from './mineflayer-specific/post'
 export { ThePathfinder } from './ThePathfinder'
 export type { PathfinderOptions } from './ThePathfinder'
 export { installSurfaceSwimming } from './mineflayer-specific/surfaceSwimming'
+export * as waterDrop from './mineflayer-specific/movements/waterDrop'
 
 export function createPlugin (opts?: HandlerOpts) {
   return function (bot: Bot) {
@@ -41,6 +42,7 @@ declare module 'mineflayer' {
   interface Bot {
     pathfinder: ThePathfinder
     pathingUtil: PathingUtil
+    launcherSurvival?: { readonly busy: boolean, readonly kind: string | null }
 
     _placeBlockWithOptions: (referenceBlock: Block, faceVector: Vec3, options?: PlaceBlockOptions) => Promise<void>
   }

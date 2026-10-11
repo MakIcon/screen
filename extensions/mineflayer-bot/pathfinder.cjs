@@ -6652,6 +6652,9 @@ var require_waterDrop = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.WaterDropExecutor = exports2.WaterDrop = void 0;
+    exports2.permitsWater = permitsWater;
+    exports2.flightControls = flightControls;
+    exports2.supportHit = supportHit;
     exports2.predictWaterDrop = predictWaterDrop;
     var vec3_1 = require("vec3");
     var move_12 = require_move();
@@ -9614,7 +9617,7 @@ var require_surfaceSwimming = __commonJS({
       let alive = true;
       let disposed = false;
       const modern = bot.registry.version[">"]("1.13.2");
-      const floating = () => alive && bot.entity?.isInWater === true && bot.health !== 0;
+      const floating = () => alive && bot.entity?.isInWater === true && bot.health !== 0 && bot.launcherSurvival?.kind !== "mlg" && bot.pathfinder?.currentMove?.metadata?.bucketWaterDrop !== true;
       const travelling = () => floating() && modern && bot.food > 6 && bot.getControlState("forward") && !bot.getControlState("back") && !bot.usingHeldItem && !bot.entity.isCollidedHorizontally && water(bot.blockAt(bot.entity.position.offset(0, -0.8, 0))) && [0.7, 1.8].every((distance) => water(bot.blockAt(bot.entity.position.offset(-Math.sin(bot.entity.yaw) * distance, 0, -Math.cos(bot.entity.yaw) * distance))));
       const restorePhysics = modern ? installSwimmingPhysics(bot, travelling) : () => {
       };
@@ -11837,6 +11840,12 @@ var require_ThePathfinder = __commonJS({
         }
         if (requestId !== this.goalRequestId || this.disposed)
           return;
+        this.abortCalculation = false;
+        while (this.bot.launcherSurvival?.busy && requestId === this.goalRequestId && !this.disposed) {
+          await this.waitForTick();
+        }
+        if (requestId !== this.goalRequestId || this.disposed)
+          return;
         this.cleanupClient();
         this.executeTask = new mineflayer_util_plugin_12.Task();
         this.currentGotoGoal = goal;
@@ -12255,7 +12264,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -12272,6 +12281,7 @@ var surfaceSwimming_1 = require_surfaceSwimming();
 Object.defineProperty(exports, "installSurfaceSwimming", { enumerable: true, get: function() {
   return surfaceSwimming_1.installSurfaceSwimming;
 } });
+exports.waterDrop = __importStar(require_waterDrop());
 function createPlugin(opts) {
   return function(bot) {
     if (bot.pathfinder instanceof ThePathfinder_1.ThePathfinder)

@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $stageDirectory
-foreach ($file in @("pearls.cjs", "crystals.cjs", "crystal-movement.cjs", "bow-defense.cjs", "combat-inventory.cjs", "armor-manager.cjs", "melee-shield.cjs", "knockback.cjs")) {
+foreach ($file in @("pearls.cjs", "crystals.cjs", "crystal-movement.cjs", "bow-defense.cjs", "combat-inventory.cjs", "armor-manager.cjs", "melee-shield.cjs", "knockback.cjs", "auto-eat.cjs", "emergency-mlg.cjs", "survival.cjs", "survival-defaults.json", "SURVIVAL.md", "AUTO-EAT-LICENSE")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat-defaults.json") -Destination $stageDirectory

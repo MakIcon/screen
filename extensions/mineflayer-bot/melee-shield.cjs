@@ -70,7 +70,7 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       attackReason(action.target) &&
       engine.botReach() <= settings.attackRange &&
       bot.health > 0 &&
-      !bot.launcherDefendingBow
+      !bot.launcherDefendingBow && !bot.launcherSurvival?.busy
     );
   }
   function prepare() {
@@ -78,7 +78,7 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       bot.supportFeature("doesntHaveOffHandSlot") ||
       !engine.target ||
       bot.health <= 0 ||
-      bot.launcherDefendingBow
+      bot.launcherDefendingBow || bot.launcherSurvival?.busy
     ) {
       reset();
       return;
@@ -163,7 +163,7 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
   }
   function update() {
     prepare();
-    if (!bot.launcherDefendingBow) original.update();
+    if (!bot.launcherDefendingBow && !bot.launcherSurvival?.busy) original.update();
     tick();
   }
   function checkForShield() {} // Shield switching is owned by the cycle above.

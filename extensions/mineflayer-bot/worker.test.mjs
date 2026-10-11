@@ -9,6 +9,17 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test('worker preserves separate survival switches and bounds thresholds', () => {
+  const config = worker.parseConfig(JSON.stringify({ server: { host: 'localhost' }, account: { username: 'Bot' },
+    survival: { autoEat: false, emergencyMlg: false, mlgPickupWater: false, autoEatMinHunger: 21, mlgMinFallHeight: 2 } }));
+  assert.equal(config.survival.autoEat, false);
+  assert.equal(config.survival.emergencyMlg, false);
+  assert.equal(config.survival.mlgPickupWater, false);
+  assert.equal(config.survival.autoEatMinHunger, 19);
+  assert.equal(config.survival.mlgMinFallHeight, 4);
+  assert.equal(config.movement.allowBucketWaterDrop, true);
+});
+
 test("preserves independent water drop switches in saved worker config", () => {
   const legacy = worker.parseConfig(
     JSON.stringify({ server: { host: "localhost" }, account: { username: "Bot" } }),

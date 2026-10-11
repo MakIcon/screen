@@ -191,13 +191,14 @@ function createTravelController(
     disposed = false;
   let itemTask = Promise.resolve();
   let defensePaused = false;
+  let survivalPaused = false;
   bot.launcherPauseTravelForDefense = () => {
     defensePaused = true;
     walkRevision++;
   };
   bot.launcherResumeTravelAfterDefense = () => {
     defensePaused = false;
-    if (active && !waiting && !disposed && bot.health > 0) walk(active, generation);
+    if (active && !waiting && !disposed && bot.health > 0 && !survivalPaused) walk(active, generation);
   };
   const valid = (task, rev) =>
     !disposed &&
@@ -212,7 +213,7 @@ function createTravelController(
       task.onResult?.({ thrown: task.throws > 0, arrived });
       return;
     }
-    if (defensePaused) return;
+    if (defensePaused || survivalPaused) return;
     const walkId = ++walkRevision;
     void bot.pathfinder
       .goto(task.goal)
@@ -259,6 +260,7 @@ function createTravelController(
       !busy &&
       !waiting &&
       !defensePaused &&
+      !survivalPaused &&
       (combatChase ? settings.enabled && settings.pearlChase : settings.pearlEnabled) &&
       hasPearls() &&
       (allowUsingItem || !bot.usingHeldItem) &&
@@ -357,7 +359,7 @@ function createTravelController(
     }
   }
   function tick() {
-    if (!active || disposed || busy || defensePaused || bot.health <= 0) return;
+    if (!active || disposed || busy || defensePaused || survivalPaused || bot.health <= 0) return;
     const task = active,
       rev = generation;
     if (!valid(task, rev)) {
@@ -422,6 +424,17 @@ function createTravelController(
   return {
     start,
     stop,
+    pauseForSurvival() {
+      survivalPaused = true;
+      generation++; walkRevision++;
+      waiting = null;
+      bot.launcherPearling = false;
+      if (active?.kind === 'chase') active = null;
+    },
+    resumeAfterSurvival() {
+      survivalPaused = false;
+      if (active && !disposed && bot.health > 0 && !defensePaused) walk(active, generation);
+    },
     chase,
     stopChase() {
       if (active?.kind === "chase") stop();

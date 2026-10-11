@@ -72,6 +72,7 @@ struct WorkerConfig {
     connection: WorkerConnectionConfig,
     behavior: WorkerBehaviorConfig,
     combat: MineflayerCombatSettings,
+    survival: crate::models::MineflayerSurvivalSettings,
 }
 
 #[derive(Debug, Serialize)]
@@ -585,6 +586,7 @@ pub async fn start_mineflayer_bot(
             spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),
             log_path_updates: plugin.log_path_updates,
         },
+        survival: plugin.survival.clone(),
     };
 
     let (worker, runtime_dir) = worker_path()?;

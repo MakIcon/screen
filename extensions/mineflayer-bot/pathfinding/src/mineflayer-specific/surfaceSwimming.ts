@@ -129,7 +129,8 @@ export function installSurfaceSwimming (bot: Bot, enabled = true): () => void {
   let alive = true
   let disposed = false
   const modern = bot.registry.version['>']('1.13.2')
-  const floating = (): boolean => alive && (bot.entity as any)?.isInWater === true && bot.health !== 0
+  const floating = (): boolean => alive && (bot.entity as any)?.isInWater === true && bot.health !== 0 &&
+    bot.launcherSurvival?.kind !== 'mlg' && bot.pathfinder?.currentMove?.metadata?.bucketWaterDrop !== true
   const travelling = (): boolean => floating() && modern && bot.food > 6 &&
     bot.getControlState('forward') && !bot.getControlState('back') && !bot.usingHeldItem &&
     !(bot.entity as any).isCollidedHorizontally &&

@@ -36,6 +36,7 @@ const { createPlugin, goals, movementProviders, installSurfaceSwimming } = requi
 const { normalizeCombat, createCombatController } = require('./combat.cjs')
 const { createTravelController } = require('./pearls.cjs')
 const { installKnockback } = require('./knockback.cjs')
+const { normalizeSurvival, createSurvivalController } = require('./survival.cjs')
 const { Vec3 } = require('vec3')
 
 const { GoalFollowEntity, GoalNear } = goals
@@ -372,6 +373,7 @@ function parseConfig (raw) {
     300000
   )
   config.combat = normalizeCombat(config.combat)
+  config.survival = normalizeSurvival(config.survival)
   return config
 }
 
@@ -871,6 +873,10 @@ async function main () {
       reconnectAttempts = 0
       try {
         configurePathfinder(bot, config.movement, config.behavior)
+        createSurvivalController(bot, config.survival, {
+          onStatus: message => emit('status', { state: 'connected', message }),
+          onError: error => emit('error', { error: `survival: ${error.message || String(error)}` })
+        })
         combat = createCombatController(bot, config.combat, {
           isOwner,
           onStatus: message => emit('status', { state: 'connected', message }),
@@ -986,6 +992,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      bot.launcherSurvival?.dispose()
       travel?.dispose()
       combat?.dispose()
       goalGeneration++
@@ -1005,6 +1012,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      activeBot.launcherSurvival?.dispose()
       activeBot.launcherTravel?.dispose()
       activeBot.launcherCombat?.dispose()
       activeBot.quit(`worker ${signal}`)

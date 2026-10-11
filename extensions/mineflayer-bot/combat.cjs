@@ -276,7 +276,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     const update = bot.swordpvp[name];
     bot.off("physicsTick", update);
     bot.swordpvp[name] = (...args) => {
-      if (!bot.launcherDefendingBow) return update(...args);
+      if (!bot.launcherDefendingBow && !bot.launcherSurvival?.busy) return update(...args);
     };
     bot.on("physicsTick", bot.swordpvp[name]);
   }
@@ -296,7 +296,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     Math.max(customTiming(...args), Math.ceil(20 / settings.cps));
   const customAttempt = bot.swordpvp.attemptAttack.bind(bot.swordpvp);
   bot.swordpvp.attemptAttack = (reason) => {
-    if (bot.launcherDefendingBow) return Promise.resolve();
+    if (bot.launcherDefendingBow || bot.launcherSurvival?.busy) return Promise.resolve();
     if (bot.launcherAxeAttacking && !["disableshield", "axecritical"].includes(reason))
       return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
@@ -319,11 +319,12 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   const attempt = bot.pvp.attemptAttack.bind(bot.pvp);
   const update = bot.pvp.update.bind(bot.pvp);
   bot.pvp.update = () => {
-    if (bot.launcherDefendingBow) return;
+    if (bot.launcherDefendingBow || bot.launcherSurvival?.busy) return;
     rotateTowardTarget(bot.pvp.target);
     update();
   };
   bot.pvp.attemptAttack = () => {
+    if (bot.launcherSurvival?.busy) return;
     if (!bot.pvp.target || Math.random() * 100 >= settings.meleeSkill || !aimedAt(bot.pvp.target)) {
       bot.pvp.timeToNextAttack = 1;
       return;
@@ -928,7 +929,7 @@ function createCombatController(
     return false;
   }
   function tick() {
-    if (disposed || !settings.enabled || !bot.entity?.position || bot.health <= 0) return;
+    if (disposed || !settings.enabled || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy) return;
     try {
       if (defense.tick(true) || suspended) return;
       if (!target && autoEnabled && now() >= nextActionAt) {
@@ -1041,6 +1042,16 @@ function createCombatController(
   return {
     select,
     stop,
+    pauseForSurvival() {
+      generation++;
+      pending = false;
+      defense.stop();
+      crystals.clear();
+      stopEngines();
+    },
+    resumeAfterSurvival() {
+      if (!disposed && bot.health > 0) nextActionAt = now() + settings.reactionMs;
+    },
     get idleTask() {
       return Promise.all([
         prepareTask,

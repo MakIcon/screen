@@ -593,6 +593,34 @@ pub struct MineflayerBotPluginSettings {
     pub log_path_updates: bool,
     #[serde(default)]
     pub combat: MineflayerCombatSettings,
+    #[serde(default)]
+    pub survival: MineflayerSurvivalSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MineflayerSurvivalSettings {
+    pub auto_eat: bool,
+    pub auto_eat_min_hunger: u32,
+    pub auto_eat_min_health: u32,
+    pub auto_eat_priority: String,
+    pub emergency_mlg: bool,
+    pub mlg_min_fall_height: u32,
+    pub mlg_pickup_water: bool,
+}
+
+impl Default for MineflayerSurvivalSettings {
+    fn default() -> Self {
+        Self {
+            auto_eat: true,
+            auto_eat_min_hunger: 15,
+            auto_eat_min_health: 14,
+            auto_eat_priority: "saturation".to_string(),
+            emergency_mlg: true,
+            mlg_min_fall_height: 4,
+            mlg_pickup_water: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1064,6 +1092,7 @@ impl Default for MineflayerBotPluginSettings {
             auto_respawn: true,
             log_path_updates: false,
             combat: MineflayerCombatSettings::default(),
+            survival: MineflayerSurvivalSettings::default(),
         }
     }
 }
@@ -1430,6 +1459,25 @@ mod loader_schema_tests {
             true
         );
         assert!(!MineflayerBotPluginSettings::default().allow_air_strafe);
+    }
+
+    #[test]
+    fn survival_settings_preserve_preferences_and_match_worker_defaults() {
+        let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
+        let defaults: serde_json::Value = serde_json::from_str(include_str!(
+            "../../extensions/mineflayer-bot/survival-defaults.json"
+        )).unwrap();
+        assert_eq!(serde_json::to_value(legacy.survival).unwrap(), defaults);
+        let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
+            "survival": { "autoEat": false, "emergencyMlg": false,
+                "mlgPickupWater": false, "autoEatMinHunger": 12, "autoEatPriority": "foodPoints" }
+        })).unwrap();
+        let saved = serde_json::to_value(parsed).unwrap();
+        assert_eq!(saved["survival"]["autoEat"], false);
+        assert_eq!(saved["survival"]["emergencyMlg"], false);
+        assert_eq!(saved["survival"]["mlgPickupWater"], false);
+        assert_eq!(saved["survival"]["autoEatMinHunger"], 12);
+        assert_eq!(saved["survival"]["autoEatPriority"], "foodPoints");
     }
 
     #[test]
