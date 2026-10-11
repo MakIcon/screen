@@ -1,32 +1,9 @@
-# ScreenLauncher
+<img width="168" height="35" alt="made-this-rust" src="https://github.com/user-attachments/assets/d614dac8-2358-468c-bfc5-1cbed21ef254" /># ScreenLauncher
 
 Desktop Minecraft launcher built with React, TypeScript, Tauri and Rust. It manages isolated builds, Minecraft/loader installation, Modrinth content, Microsoft accounts, runtime settings, import/export and optional launcher plugins.
 
-<svg xmlns="http://www.w3.org/2000/svg" width="316" height="48" viewBox="0 0 316 48" role="img" aria-label="MADE WITH RUST">
-  <title>Made with Rust</title>
-  <defs>
-    <clipPath id="badge-clip">
-      <rect x="1.5" y="1.5" width="313" height="45" rx="4"/>
-    </clipPath>
-    <pattern id="stripes" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="3" height="12" fill="#FFFFFF" opacity="0.07"/>
-    </pattern>
-  </defs>
-  <g clip-path="url(#badge-clip)">
-    <rect width="174" height="48" fill="#181B20"/>
-    <rect x="174" width="142" height="48" fill="#D95C28"/>
-    <rect x="174" width="142" height="48" fill="url(#stripes)"/>
-    <rect x="0" y="0" width="316" height="4" fill="#FFFFFF" opacity="0.12"/>
-    <rect x="174" y="1" width="2" height="46" fill="#0C0E11" opacity="0.40"/>
-  </g>
-  <rect x="1.5" y="1.5" width="313" height="45" rx="4" fill="none" stroke="#0D0F13" stroke-width="3"/>
-  <g fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-weight="900" text-anchor="middle" dominant-baseline="middle">
-    <text x="87" y="25" font-size="16" letter-spacing="1.1">MADE WITH</text>
-    <text x="245" y="25" font-size="18" letter-spacing="1.5">RUST</text>
-  </g>
-</svg>
+![Uploading ma<svg xmlns="http://www.w3.org/2000/svg" width="168.43406295776367" height="35" viewBox="0 0 168.43406295776367 35" class="badge-svg" data-v-5a77235a=""><defs data-v-5a77235a=""><!----><!----><!----></defs><rect data-v-5a77235a="" width="103.98332977294922" height="35" fill="#000000"/><rect data-v-5a77235a="" x="103.98332977294922" width="64.45073318481445" height="35" fill="#389AD5"/><!----><text x="51.99166488647461" y="17.5" dy="0.35em" font-size="12" font-family="Roboto, sans-serif" fill="#FFFFFF" text-anchor="middle" letter-spacing="2" font-weight="600" font-style="normal" text-decoration="none" fill-opacity="1" font-variant="normal" style="text-transform: uppercase;" data-v-5a77235a="">MADE THIS</text><!----><text x="136.20869636535645" y="17.5" dy="0.35em" font-size="12" font-family="Montserrat, sans-serif" fill="#FFFFFF" text-anchor="middle" font-weight="900" letter-spacing="2" font-style="normal" text-decoration="none" fill-opacity="1" font-variant="normal" style="text-transform:uppercase;" data-v-5a77235a="">RUST</text><!----></svg>de-this-rust.svg…]()
 
-<img width="316" height="48" alt="my-rust-badge" src="https://github.com/user-attachments/assets/1ad4d42b-793b-4f56-a947-30f20d0cae71" />
 
 Local builds, settings and accounts load independently of the Minecraft version service. The launcher displays a cached version manifest before refreshing it in the background, so a network failure does not hide installed builds.
 
