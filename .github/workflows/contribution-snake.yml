@@ -1,0 +1,46 @@
+name: Update contribution snake
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/contribution-snake.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contribution-snake
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Generate light and dark contribution snakes
+        uses: Platane/snk/svg-only@v3
+        with:
+          github_user_name: MakIcon
+          outputs: |
+            docs/assets/github-contribution-snake.svg?color_snake=#eb6b24&color_dots=#fff2e8,#fed2af,#fda86d,#ed7a38,#ae440c
+            docs/assets/github-contribution-snake-dark.svg?palette=github-dark&color_snake=#fb923c&color_dots=#161b22,#39251f,#783d27,#bd5b2d,#f79b58
+
+      - name: Commit refreshed images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/assets/github-contribution-snake.svg docs/assets/github-contribution-snake-dark.svg
+          if git diff --cached --quiet; then
+            echo "No contribution changes."
+            exit 0
+          fi
+          git commit -m "chore: refresh animated contribution snake [skip ci]"
+          git push
