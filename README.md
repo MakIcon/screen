@@ -1,73 +1,89 @@
 <div align="center">
 
 <a href="https://github.com/MakIcon/screen/releases">
-  <img src="docs/assets/readme-banner.svg" width="100%" alt="ScreenLauncher — Minecraft, the way you want it. View releases." />
+  <img src="docs/assets/readme-banner.svg" alt="ScreenLauncher — Minecraft, the way you want it. View releases." width="100%" />
 </a>
 
-<br /><br />
+<br />
 
-**Your Minecraft, your way.**
+**Your Minecraft. Your builds. Your rules.**
 
-A desktop launcher for the builds you play, the mods you love, and the little details you want to make your own.
+A desktop Minecraft launcher that brings your builds, mods and settings together.
 
 <br />
 
 <a href="https://github.com/MakIcon/screen/releases/download/apperance/ScreenLauncher_0.1.0_x64-setup.exe">
-  <img src="docs/assets/download-windows.svg" width="320" alt="Download ScreenLauncher for Windows — 64-bit EXE installer" />
+  <img src="docs/assets/download-windows.svg" alt="Download ScreenLauncher for Windows (64-bit EXE installer)" width="320" />
 </a>
 
 <br />
 
-<sub>Windows x64 · <a href="https://github.com/MakIcon/screen/releases/latest">Latest release</a> · <a href="https://github.com/MakIcon/screen/releases">Other versions</a></sub>
+<sub>Windows x64 · EXE installer · <a href="https://github.com/MakIcon/screen/releases">All releases</a></sub>
 
 <br /><br />
 
 </div>
 
-## Made for the way you play.
+## Your Minecraft, all in one place
 
-No messy folders. No juggling different launchers. Keep everything in one place, and spend less time setting up and more time in Minecraft.
+ScreenLauncher makes it easier to organize different Minecraft setups without having to manage their files by hand. Create a build for the way you want to play, install content from Modrinth and launch it from one place.
 
-### 01 / Your builds, organized
+- **Separate builds, no compromises.** Set up Vanilla, Fabric, Quilt, Forge or NeoForge installations independently. Each build keeps its own configuration.
+- **Mods without leaving the launcher.** Discover mods, resource packs and shaders through Modrinth. Required mod dependencies are resolved when installing compatible projects.
+- **A look that feels like yours.** Customize the launcher appearance and build cards instead of settling for the same layout everywhere.
+- **Control over your game.** Choose Java settings, allocated memory and other options for individual builds.
+- **Pick up where you left off.** See your recent build and playtime information, then get back into the game.
 
-From a simple vanilla world to a fully modded setup, create separate builds with **Vanilla, Fabric, Quilt, Forge or NeoForge**. Give each one its own settings and switch whenever you like.
+## Download & installation
 
-### 02 / Mods without the extra steps
+Getting started doesn't require any development tools.
 
-Find **mods, resource packs and shaders** using the built-in Modrinth browser. ScreenLauncher handles compatible required mod dependencies as part of installation.
+1. **Download** the Windows installer using the button above.
+2. **Install** ScreenLauncher by running the downloaded `.exe` file.
+3. **Open the launcher**, create a build, choose your Minecraft version and press Play.
 
-### 03 / Make it yours
+Want to add mods? Open the **Modrinth** section after creating a compatible build.
 
-Personalize your build cards and launcher appearance. Fine-tune memory and Java settings, and keep track of when you last played.
+> [!NOTE]
+> The repository is currently **private**, so GitHub downloads require repository access. The latest published release is labeled **v2.0**, although its Windows installer is named `ScreenLauncher_0.1.0_x64-setup.exe`. That published installer may not include every change on the `main` branch.
 
----
+## More than just a Play button
 
-## Ready to play?
+- **Build import & export** — move or back up build configurations using supported transfer formats.
+- **Microsoft and offline account workflows** — manage supported ways to start the game.
+- **Flexible runtime settings** — configure Java, JVM arguments and per-build environment variables.
+- **Safer downloads** — verify downloaded Minecraft files using available checksums and reuse valid cached files.
+- **Optional integrations** — Discord Rich Presence, OBS telemetry and a Mineflayer bot extension for more advanced setups.
 
-1. **Download** the Windows installer above.
-2. **Install** ScreenLauncher and open it.
-3. **Create a build**, choose your Minecraft version and hit Play.
+These extras are available when you need them; you can also keep things simple and just play.
 
-That's it. Want mods? Head to **Modrinth** inside the launcher and start exploring.
-
-<sub>The currently published Windows installer is <code>ScreenLauncher_0.1.0_x64-setup.exe</code> from the release named v2.0 (August 2026). The release name and application version differ. It may not include every update on the main branch.</sub>
-
-## More to explore
-
-- **Everything in its place** — manage builds, installed content and per-build settings without mixing installations.
-- **A personalized launcher** — customize your interface, build cards and game configuration.
-- **More when you need it** — optional Discord Rich Presence, Mineflayer Bot and OBS telemetry integrations.
+## Frequently asked questions
 
 <details>
-<summary><b>A few things worth knowing</b></summary>
+<summary><b>Do I need to install Java myself?</b></summary>
 
-**Do I need to install Java?** ScreenLauncher offers Java runtime management and configuration. Depending on your setup, you may need to choose a compatible runtime.
+ScreenLauncher includes Java runtime selection and management. Depending on your Minecraft version and setup, a compatible runtime may need to be selected or downloaded. A Java settings test can help diagnose problems.
 
-**Can I use different mod loaders?** Yes — Vanilla, Fabric, Quilt, Forge and NeoForge are supported.
+</details>
 
-**Can I use an MSI instead?** An older [MSI installer](https://github.com/MakIcon/screen/releases/tag/first) is available in Releases.
+<details>
+<summary><b>Does it support Fabric, Forge and other mod loaders?</b></summary>
 
-**Can everyone download it?** Not yet: this repository is private, so GitHub download links require repository access. Public distribution will need a public release location.
+Yes. You can create builds for Vanilla, Fabric, Quilt, Forge and NeoForge. The Modrinth browser can help you find content compatible with your build.
+
+</details>
+
+<details>
+<summary><b>Where can I download another version?</b></summary>
+
+See [GitHub Releases](https://github.com/MakIcon/screen/releases). The most recent published release provides a Windows x64 EXE installer, and an [older release](https://github.com/MakIcon/screen/releases/tag/first) includes an MSI installer.
+
+</details>
+
+<details>
+<summary><b>Is there a macOS or Linux download?</b></summary>
+
+There is no published macOS or Linux installer listed in the repository's current releases. The project is based on Tauri, but that does not mean builds for every platform are already available.
 
 </details>
 
@@ -75,22 +91,22 @@ That's it. Want mods? Head to **Modrinth** inside the launcher and start explori
 
 <div align="center">
 
-### Under the hood
+### Built with
 
 <a href="https://tauri.app"><img src="docs/assets/badge-tauri.svg" alt="Built with Tauri 2" height="28" /></a>&nbsp;
 <a href="https://www.rust-lang.org"><img src="docs/assets/badge-rust.svg" alt="Powered by Rust" height="28" /></a>&nbsp;
-<a href="https://react.dev"><img src="docs/assets/badge-react.svg" alt="Interface built with React and TypeScript" height="28" /></a>
+<a href="https://react.dev"><img src="docs/assets/badge-react.svg" alt="React and TypeScript frontend" height="28" /></a>
 
 <sub>React 19 · TypeScript · Vite 7 · Tauri 2 · Rust</sub>
 
 </div>
 
 <details>
-<summary><b>Development & source build</b></summary>
+<summary><b>Development & building from source</b></summary>
 
-ScreenLauncher uses **React and TypeScript** for the interface and **Tauri 2 with Rust** for its native features.
+ScreenLauncher uses React and TypeScript for its frontend, with Tauri 2 and Rust for its desktop backend.
 
-To run it locally, install Node.js, pnpm, Rust and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/):
+**Requirements:** Node.js, pnpm, Rust and the [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 git clone https://github.com/MakIcon/screen.git
@@ -99,7 +115,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-To build a native application and installer for your platform:
+To create a native application bundle or installer for your development platform:
 
 ```bash
 pnpm tauri build
@@ -108,34 +124,37 @@ pnpm tauri build
 Useful checks:
 
 ```bash
-pnpm check
-pnpm test
-pnpm test:web
-pnpm test:pathfinder
-pnpm test:worker
-pnpm lint
+pnpm check             # TypeScript and Rust
+pnpm test              # Rust tests
+pnpm test:web          # Frontend tests
+pnpm test:pathfinder   # Pathfinder tests
+pnpm test:worker       # Mineflayer worker tests
+pnpm lint              # Lint frontend code
 ```
 
-Project directories:
+**Project structure**
 
-- `src/` — launcher interface, components, tabs and hooks
-- `src-tauri/src/` — native commands, Minecraft installation, launching and integrations
-- `extensions/mineflayer-bot/` — optional Mineflayer bot and [pathfinding](extensions/mineflayer-bot/pathfinding/README.md)
-- `obs-telemetry-mod/` — Fabric-based OBS telemetry helper
-- `scripts/` — build and packaging scripts
+```text
+src/                       React frontend, components and hooks
+src-tauri/src/             Tauri commands and Minecraft backend
+extensions/mineflayer-bot/ Optional bot worker and pathfinding
+obs-telemetry-mod/         Fabric client-side telemetry helper
+public/                    App icon and web assets
+scripts/                   Build and packaging tools
+```
 
-The source artwork lives in `public/launcher-icon.svg`; use `pnpm icons` to regenerate application icons.
+The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 
-For extension details, see [combat commands](extensions/mineflayer-bot/COMBAT.md), [survival](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding documentation](extensions/mineflayer-bot/pathfinding/README.md).
+For the bot extension, see the [combat guide](extensions/mineflayer-bot/COMBAT.md), [survival guide](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding documentation](extensions/mineflayer-bot/pathfinding/README.md).
 
 </details>
 
 <div align="center">
 
-<sub>Created by <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a></sub>
+<sub>Made by <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a> · <a href="https://github.com/MakIcon/screen/issues">Issues</a></sub>
 
 <br />
 
-<sub>ScreenLauncher is an independent project and is not affiliated with Mojang Studios or Microsoft.</sub>
+<sub>ScreenLauncher is an independent project and is not affiliated with or endorsed by Mojang Studios or Microsoft.</sub>
 
 </div>
