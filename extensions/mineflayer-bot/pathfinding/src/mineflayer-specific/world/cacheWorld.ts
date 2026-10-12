@@ -23,6 +23,7 @@ export class BlockInfo {
     return this.walkthrough && this.safe && this.block != null && openWaterNames.has(this.block.name)
   }
   static initialized = false
+  private static registryVersion?: string
   static readonly interactableBlocks = new Set()
   static readonly blocksCantBreak = new Set<number>()
   static readonly blocksToAvoid = new Set()
@@ -89,7 +90,14 @@ export class BlockInfo {
   }
 
   static init (registry: MCData): void {
-    if (BlockInfo.initialized) return
+    if (BlockInfo.initialized && BlockInfo.registryVersion === registry.version.minecraftVersion) return
+    // A reconnect to another protocol must not interpret its block IDs using
+    // the previous registry (ordinary dirt can otherwise become "unbreakable").
+    for (const entries of [BlockInfo.interactableBlocks, BlockInfo.blocksCantBreak,
+      BlockInfo.blocksToAvoid, BlockInfo.climbables, BlockInfo.carpets, BlockInfo.fences,
+      BlockInfo.replaceables, BlockInfo.liquids, BlockInfo.waters, BlockInfo.gravityBlocks,
+      BlockInfo.openable, BlockInfo.emptyBlocks, BlockInfo.scaffoldingBlockItems, BlockInfo.mlgItems]) entries.clear()
+    BlockInfo.registryVersion = registry.version.minecraftVersion
     BlockInfo.initialized = true
 
     if (registry.blocksByName.soul_sand?.id != null) {
@@ -187,8 +195,11 @@ export class BlockInfo {
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (registry.blocksByName.grass) BlockInfo.replaceables.add(registry.blocksByName.grass.id)
 
-    BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.dirt.id)
-    BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.cobblestone.id)
+    for (const name of ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack',
+      'stone', 'deepslate', 'tuff', 'andesite', 'diorite', 'granite']) {
+      const item = registry.itemsByName[name]
+      if (item != null) BlockInfo.scaffoldingBlockItems.add(item.id)
+    }
 
     registry.blocksArray
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

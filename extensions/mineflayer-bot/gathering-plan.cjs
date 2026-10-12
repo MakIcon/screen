@@ -16,12 +16,17 @@ const DEFAULTS = Object.freeze({
   digReach: 4.5,
   maxAttempts: 2,
   scanLimit: 512,
+  travelBlockReserve: 64,
 });
+const SCAFFOLD_ITEMS = new Set([
+  "dirt", "cobblestone", "cobbled_deepslate", "netherrack",
+  "stone", "deepslate", "tuff", "andesite", "diorite", "granite",
+]);
 const AIR = new Set(["air", "cave_air", "void_air"]);
 const FLUIDS = new Set(["water", "lava", "bubble_column"]);
 const PROTECTED =
   /(?:chest|shulker_box|barrel|furnace|hopper|dispenser|dropper|spawner|portal|command_block|structure_block|jigsaw|beacon|bed$|vault|trial_spawner)/;
-const isWood = (name) => /^(?!stripped_).*(?:_log|_stem)$/.test(name);
+const isWood = (name) => /^(?!stripped_).+_log$/.test(name) || ["crimson_stem", "warped_stem", "mushroom_stem"].includes(name);
 const isLeaves = (name) =>
   /_leaves$/.test(name) || ["nether_wart_block", "warped_wart_block", "shroomlight"].includes(name);
 const isOre = (name) => /_ore$/.test(name) || name === "ancient_debris";
@@ -54,6 +59,12 @@ function contains(area, p) {
 }
 function insideTask(task, p) {
   if (task.area) return contains(task.area, p);
+  if (task.kind === "mine")
+    return (
+      Math.hypot(p.x - task.origin.x, p.z - task.origin.z) <= task.radius &&
+      p.y >= task.minY &&
+      p.y <= task.maxY
+    );
   return task.origin.distanceTo(p) <= task.radius;
 }
 function resolveBlocks(registry, input = "ores") {
@@ -112,7 +123,18 @@ function normalizeTask(bot, input, settings = DEFAULTS) {
     scaffold: input.kind === "forest" && input.scaffold !== false,
     routeDig: ["mine", "forest"].includes(input.kind) && input.routeDig !== false,
   };
-  if (input.kind === "mine") task.names = resolveBlocks(bot.registry, input.blocks || "ores");
+  if (input.kind === "mine") {
+    task.names = resolveBlocks(bot.registry, input.blocks || "ores");
+    const minimum = bot.game?.minY ?? (bot.registry.version[">="]("1.18") ? -64 : 0);
+    const maximum = minimum + (bot.game?.height ?? (minimum < 0 ? 384 : 256)) - 1;
+    task.minY = integer(input.minY ?? minimum, "Минимальная высота", minimum, maximum);
+    task.maxY = integer(
+      input.maxY ?? Math.min(maximum, task.origin.y + task.radius),
+      "Максимальная высота",
+      task.minY,
+      maximum,
+    );
+  }
   if (input.kind === "forest") {
     task.names = Object.keys(bot.registry.blocksByName).filter(
       (name) => isWood(name) || (task.leaves && isLeaves(name)),
@@ -182,6 +204,7 @@ function keepItem(bot, item) {
 
 module.exports = {
   DEFAULTS,
+  SCAFFOLD_ITEMS,
   AIR,
   FLUIDS,
   PROTECTED,

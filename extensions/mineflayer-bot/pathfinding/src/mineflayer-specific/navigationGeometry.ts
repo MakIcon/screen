@@ -1,6 +1,25 @@
 import { Vec3 } from 'vec3'
 import type { World } from './world/worldInterface'
 
+/** Check feet support explicitly: raycasts do not intersect shapeless air/lava. */
+export function supportedWalkSegment (world: World, from: Vec3, to: Vec3): boolean {
+  const delta = to.minus(from)
+  const steps = Math.max(1, Math.ceil(delta.norm() * 5))
+  for (let i = 0; i <= steps; i++) {
+    const pos = from.plus(delta.scaled(i / steps))
+    const feet = world.getBlockInfo(pos)
+    if (feet.water) continue
+    // A diagonal corner can have support beneath part of the player's feet,
+    // even when the centre briefly crosses the empty neighbouring cell.
+    const supported = [[0, 0], [-0.28, -0.28], [-0.28, 0.28], [0.28, -0.28], [0.28, 0.28]].some(([x, z]) => {
+      const support = world.getBlockInfo(pos.offset(x, -0.05, z))
+      return support.physical && support.safe && support.height >= pos.y - 0.6
+    })
+    if (!supported) return false
+  }
+  return true
+}
+
 /** Sweep the player's body, including its sides, through actual block shapes. */
 export function clearBodySegment (world: World, from: Vec3, to: Vec3, width = 0.62, height = 1.8): boolean {
   const radius = width / 2

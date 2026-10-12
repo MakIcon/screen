@@ -28,12 +28,15 @@ function taskFromCommand(bot, work, command, args) {
     if (command === "mine" && !args[0])
       throw new Error("mine блок,блок [количество блоков] [радиус]");
     const values = command === "ores" ? args : args.slice(1);
-    if (values.length > 2) throw new Error("mine блок,блок [количество блоков] [радиус]");
+    if (values.length > 4)
+      throw new Error("mine блок,блок [количество блоков] [радиус] [minY] [maxY]");
     return {
       kind: "mine",
       blocks: command === "ores" ? "ores" : args[0],
       count: values[0] ?? 64,
       radius: values[1] ?? 32,
+      minY: values[2],
+      maxY: values[3],
     };
   }
   if (command === "wood" || command === "forest") {
@@ -117,11 +120,15 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
     } else if (action === "stop") await work.stop();
     else if (action === "clear") work.clearQueue();
     else if (action === "remove") work.remove(integer(args[1], "Номер задачи", 1, 1000000));
+    else if (action === "cancel") await work.cancel(integer(args[1], "Номер задачи", 1, 1000000));
+    else if (action === "move") work.reorder(integer(args[1], "Номер задачи", 1, 1000000), args[2]);
     else if (action === "queue") {
       reply(work.snapshot.queue.map((t) => `#${t.id} ${t.kind}`).join("; ") || "Очередь пуста");
       return true;
     } else if (action !== "status")
-      throw new Error("work status|queue|pause|resume|stop|clear|remove номер");
+      throw new Error(
+        "work status|queue|pause|resume|stop|clear|remove номер|cancel номер|move номер up|down",
+      );
     reply(work.status);
     return true;
   }

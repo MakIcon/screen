@@ -19,6 +19,7 @@ import { printBotControls } from './utils'
 import { ClimbExecutor } from './mineflayer-specific/movements/climb'
 import { BreakHandler } from './mineflayer-specific/movements/interactionUtils'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
+import { supportedWalkSegment } from './mineflayer-specific/navigationGeometry'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -230,7 +231,7 @@ export class PathExecutor {
     }
 
     const scheduleRecovery = (rawMove: Move): void => {
-      if (recoveryInFlight) return
+      if (settled || this.getCurrentExecutionId() !== myExecutionId || recoveryInFlight) return
       recoveryInFlight = true
 
       void (async () => {
@@ -244,6 +245,7 @@ export class PathExecutor {
     }
 
     const handleExecutionError = async (err: unknown): Promise<void> => {
+      if (settled || this.getCurrentExecutionId() !== myExecutionId) return
       log(`Error: ${err}`)
 
       if (err instanceof AbortError) {
@@ -359,6 +361,7 @@ export class PathExecutor {
         tickCount = 0
 
         await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot(false, keepSwimming || keepClimbing))
+        if (settled || this.getCurrentExecutionId() !== myExecutionId) return false
         executor.loadMove(move)
 
         if (executor.isAlreadyCompleted(move, tickCount, goal)) {
@@ -394,15 +397,20 @@ export class PathExecutor {
           // The actual supported position is authoritative. A predicted move
           // completion can otherwise leave a stopped bot waiting at its goal.
           const active = this.getCurrentMove() ?? localPath[localPath.length - 1]
-          if (isAtGoal() && bot.entity.onGround && active?.toBreak.length === 0 && active.toPlace.length === 0) {
+          const atGoal = isAtGoal()
+          const routeConsumed = currentIndex >= localPath.length
+          if ((atGoal || routeConsumed) && bot.entity.onGround &&
+              (routeConsumed || (active?.toBreak.length === 0 && active.toPlace.length === 0))) {
             const target = localPath[localPath.length - 1].exitPos
             const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm()
-            const needsCentering = goal instanceof goals.GoalBlock && bot.entity.position.xzDistanceTo(target) > 0.25
+            const needsCentering = (goal instanceof goals.GoalBlock || !atGoal) && bot.entity.position.xzDistanceTo(target) > 0.08
             if (speed > 0.025 || needsCentering) {
               stopController.adjustPosition(target, 0.08)
               bot.setControlState('jump', false)
               bot.setControlState('sprint', false)
-              bot.setControlState('sneak', true)
+              const pos = bot.entity.position
+              const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3)
+              bot.setControlState('sneak', !supportedWalkSegment(this.host.world, pos, projected))
               return
             }
             await finish()
@@ -440,6 +448,7 @@ export class PathExecutor {
               `align ${move.moveType.constructor.name}`,
               async () => await executor.align(move, tickCount, goal)
             )
+            if (settled || this.getCurrentExecutionId() !== myExecutionId) return
             tickCount++
 
             if (aligned) {
@@ -480,6 +489,7 @@ export class PathExecutor {
               `performPerTick ${move.moveType.constructor.name}`,
               async () => await executor._performPerTick(move, tickCount, currentIndex, localPath)
             )
+            if (settled || this.getCurrentExecutionId() !== myExecutionId) return
             tickCount++
 
             if (adding) {
@@ -498,6 +508,7 @@ export class PathExecutor {
           }
         }
       } catch (err) {
+        if (settled || this.getCurrentExecutionId() !== myExecutionId) return
         log(`Error: ${err}`)
         if (err instanceof AbortError) {
           executorSafeReset(this.getCurrentExecutor())
@@ -540,10 +551,15 @@ export class PathExecutor {
     }
 
     const moveListener = (): void => {
-      if (settled || tickInFlight || recoveryInFlight) return
+      if (settled) return
       // Superseded optimizers can still be pending. Retire their tick listener
       // before the stage guard and watchdog so they cannot stall a newer route.
-      if (this.getCurrentExecutionId() !== myExecutionId) { void finish(); return }
+      if (this.getCurrentExecutionId() !== myExecutionId) {
+        // A nested recovery owns its own watchdog. The parent must wait for
+        // its result instead of finishing the outer goto and stopping the child.
+        if (!recoveryInFlight) void finish()
+        return
+      }
       const interaction = this.getCurrentExecutor()?.cI
       const block = bot.targetDigBlock
       const now = performance.now()
@@ -601,7 +617,7 @@ export class PathExecutor {
           return
         }
       } else collisionTicks = 0
-      if (runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
+      if (tickInFlight || recoveryInFlight || runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
         return
       }
 
@@ -629,18 +645,21 @@ export class PathExecutor {
 
   public async recovery (move: Move, path: Path, goal: goals.Goal, entry = 0): Promise<void> {
     const bot = this.bot
+    const revision = this.host.navigationRevision
+    const canceled = (): boolean => this.host.navigationRevision !== revision || this.host.abortCalculation || this.getResetReason() === 'goalReassignment'
     log(`recovery ${entry} for ${move.moveType.constructor.name}`)
 
     bot.clearControlStates()
     const landingDeadline = performance.now() + this.host.defaultMoveSettings.movementTimeoutMs
     while (!bot.entity.onGround && !(bot.entity as any).isInWater) {
-      if (this.host.abortCalculation) return
+      if (canceled()) return
       if (performance.now() >= landingDeadline) throw new Error('Recovery failed: no landing within the movement timeout.')
       await this.host.waitForTick()
     }
 
     bot.emit('enteredRecovery', entry)
     await this.timeAsync('recovery cleanup', async () => await this.host.cleanupBot())
+    if (canceled()) return
 
     const ind = path.path.findIndex((m) => m.entryPos.distanceTo(move.entryPos) < 0.1)
     if (ind === -1) {
@@ -670,6 +689,7 @@ export class PathExecutor {
       'recovery pathfinding',
       async () => await this.host.getPathFromToRaw(bot.entity.position, EMPTY_VEC, newGoal)
     )
+    if (canceled()) return
 
     if (path1 === null) {
       log(' recovery pathfinding returned null')
@@ -681,6 +701,7 @@ export class PathExecutor {
     } else {
       log(' executing partial recovery path')
       await this.perform(path1, newGoal, entry + 1)
+      if (canceled()) return
 
       // We only need to splice the unoptimized path directly!
       path.path.splice(0, ind + 1)

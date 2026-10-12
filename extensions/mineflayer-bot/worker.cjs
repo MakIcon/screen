@@ -39,7 +39,7 @@ const { installKnockback } = require('./knockback.cjs')
 const { normalizeSurvival, createSurvivalController } = require('./survival.cjs')
 const { createGatheringController } = require('./gathering.cjs')
 const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gathering-commands.cjs')
-const { startWebInventory } = require('./web-inventory.cjs')
+const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
 const { GoalFollowEntity, GoalNear } = goals
@@ -63,6 +63,7 @@ function configurePathfinder (bot, movement, behavior = {}) {
       searchTimeoutMs: 2500,
       tickTimeoutMs: 5,
       maxVisitedNodes: 20000,
+      heuristicWeight: 1.5,
       routePrefixMs: 30,
       routePrefixLength: 16
     }
@@ -941,6 +942,7 @@ async function main () {
           onStatus: message => emit('status', { state: 'connected', message }),
           onProgress: gathering => emit('gathering', { gathering })
         })
+        startInventoryTelemetry(bot, { onUpdate: inventory => emit('bot_inventory', { inventory }) })
         void startWebInventory(bot, {
           onReady: inventoryUrl => { bot.launcherInventoryUrl = inventoryUrl; emit('inventory', { inventoryUrl }) },
           onError: error => emit('log', { message: `Веб-инвентарь: ${error.message}` })

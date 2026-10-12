@@ -33,6 +33,8 @@ export interface MovementOptions {
   forceLook: boolean
   canOpenDoors: boolean
   canDig: boolean
+  /** Excavated downward stairs are enabled only while approaching mined resources. */
+  allowExcavatedDescent: boolean
   canPlace: boolean
   dontCreateFlow: boolean
   dontMineUnderFallingBlock: boolean
@@ -71,6 +73,7 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowAirStrafe: false,
   canOpenDoors: true,
   canDig: true,
+  allowExcavatedDescent: false,
   canPlace: true,
   dontCreateFlow: true,
   dontMineUnderFallingBlock: true,
@@ -226,11 +229,11 @@ export abstract class Movement {
   }
 
   toBreak (): BreakHandler[] {
-    return this.currentMove.toBreak?.filter((b) => !b.allowExit) ?? []
+    return this.currentMove.toBreak?.filter((b) => !b.allowExit && (b.isPerforming || b.needToPerform(this.bot))) ?? []
   }
 
   toBreakLen (): number {
-    return this.currentMove.toBreak?.filter((b) => !b.allowExit).length ?? 0
+    return this.toBreak().length
   }
 
   toPlace (): PlaceHandler[] {
@@ -349,6 +352,7 @@ export abstract class Movement {
    * @returns {number}
    */
   safeOrBreak (block: BlockInfo, toBreak: BreakHandler[]): number {
+    if (toBreak.some(handler => handler.vec.equals(block.position))) return 0
     // cost += this.getNumEntitiesAt(block.position, 0, 0, 0) * this.entityCost
 
     // if (block.breakCost !== undefined) return block.breakCost // cache breaking cost.

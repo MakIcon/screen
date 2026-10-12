@@ -78,6 +78,8 @@ export interface PathfinderOptions {
   searchTimeoutMs: number
   tickTimeoutMs: number
   maxVisitedNodes: number
+  /** Bounded weighted A*: favour reaching a useful route over proving the cheapest one. */
+  heuristicWeight: number
   /** Start a nearby, verified route prefix after this search budget; 0 waits for a full route. */
   routePrefixMs: number
   routePrefixLength: number
@@ -89,6 +91,7 @@ const DEFAULT_PATHFINDER_OPTS: PathfinderOptions = {
   searchTimeoutMs: 10000,
   tickTimeoutMs: 10,
   maxVisitedNodes: 50000,
+  heuristicWeight: 1,
   routePrefixMs: 0,
   routePrefixLength: 16
 }
@@ -136,11 +139,14 @@ interface PathGeneratorResult {
 }
 
 interface PerformOpts {
+  /** Commit short excavated routes during gathering, with the caller's exclusions. */
+  allowMiningPrefix?: boolean
   errorOnReset?: boolean
   errorOnAbort?: boolean
 }
 
 export class ThePathfinder {
+  public get navigationRevision (): number { return this.goalRequestId }
   astar: AStar | null
   world: World
   movements: ExecutorMap
@@ -429,6 +435,18 @@ export class ThePathfinder {
 
   setupListeners (): void {
     const blockAbort = new AbortController()
+    const acknowledgedEdits = new Map<string, number>()
+    const rememberEdit = (_old: Block | null, block: Block | null): void => {
+      if (block == null) return
+      const key = block.position.toString()
+      if (this.updateMatchesWanted(block)) {
+        acknowledgedEdits.set(key, block.stateId)
+        if (acknowledgedEdits.size > 256) acknowledgedEdits.delete(acknowledgedEdits.keys().next().value!)
+      } else acknowledgedEdits.delete(key)
+    }
+    const clearEdits = (): void => { acknowledgedEdits.clear() }
+    this.bot.on('blockUpdate', rememberEdit)
+    this.bot.on('goalSet', clearEdits)
     const disposeBlockUpdateListener = handleSettledBlockEvent(
       this.bot,
       async (oldBlock: Block | null, newBlock: Block | null, settledBlock: Block | null) => {
@@ -446,6 +464,10 @@ export class ThePathfinder {
         if (oldBlock == null || settledBlock == null) return
         if (currentPath == null) return
         if (oldBlock.type === settledBlock.type) return // break in progress.
+        // An acknowledged dig may settle after execution has switched from
+        // its prefix to the retained tail. It still belongs to this route.
+        const acknowledged = acknowledgedEdits.get(settledBlock.position.toString())
+        if (acknowledged === settledBlock.stateId) return
         if (!this.isPositionNearPath(oldBlock.position)) return
         if (settledBlock == null) return
         if (this.updateMatchesWanted(settledBlock, currentPath)) return
@@ -462,6 +484,8 @@ export class ThePathfinder {
     this.disposeListeners.push(() => {
       blockAbort.abort()
       disposeBlockUpdateListener()
+      this.bot.off('blockUpdate', rememberEdit)
+      this.bot.off('goalSet', clearEdits)
     })
 
     const onChunkLoad = (chunk: Vec3): void => {
@@ -469,7 +493,18 @@ export class ThePathfinder {
       if (astarContext == null) return
       const cx = chunk.x >> 4 // can confirm, they need to be shifted.
       const cz = chunk.z >> 4
+      const path = this.currentPath
+      if (path != null && path.length > this.currentIndex) {
+        // Loading terrain beside the search frontier does not invalidate a
+        // committed route through already loaded chunks. Restart only when
+        // the refreshed column contains part of the remaining route.
+        const touchesColumn = path.slice(this.currentIndex).some(move =>
+          [move.entryPos, move.exitPos, ...move.toBreak.map(block => block.vec), ...move.toPlace.map(block => block.vec)]
+            .some(pos => (Math.floor(pos.x) >> 4) === cx && (Math.floor(pos.z) >> 4) === cz))
+        if (!touchesColumn) return
+      }
       if (
+        astarContext.visitedChunks.has(`${cx},${cz}`) ||
         astarContext.visitedChunks.has(`${cx - 1},${cz}`) ||
         astarContext.visitedChunks.has(`${cx},${cz - 1}`) ||
         astarContext.visitedChunks.has(`${cx + 1},${cz}`) ||
@@ -495,7 +530,9 @@ export class ThePathfinder {
     if (this.currentExecutor instanceof WaterDropExecutor && this.currentExecutor.acceptsWorldUpdate(block.position, block.name)) return true
 
     const pos = block.position.floored()
-    for (let i = Math.max(0, currentIndex - 2); i < path.length; i++) {
+    // Server updates may settle after several fast excavation steps.
+    // Accept the committed route's own changes even behind the player.
+    for (let i = 0; i < path.length; i++) {
       const move = path[i]
       for (const place of move.toPlace) {
         if (place.vec.equals(pos)) {
@@ -635,11 +672,47 @@ export class ThePathfinder {
 
     this.bot.pathingUtil.refresh()
 
+    const positionedGoal = goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity
+    const destinationSupport = positionedGoal ? new Vec3(Math.floor(goal.x), Math.floor(goal.y - 0.01), Math.floor(goal.z)) : undefined
+    const supportInfo = destinationSupport == null ? undefined : this.world.getBlockInfo(destinationSupport)
+    // Keep the destination's existing floor. Excavating a staircase through
+    // it can remove the owner's footing and make the final goal unreachable.
+    const routeSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2
+      ? { ...settings, exclusionAreasBreak: [...settings.exclusionAreasBreak,
+          (block: BlockInfo) => block.position.equals(destinationSupport) ? Infinity : 0] }
+      : settings
+
+    // Deep excavation makes every sideways tunnel a cheap alternative to
+    // climbing. Prefer progress toward the exit instead of exhausting those
+    // tunnels and committing a single stair on every search timeout. The
+    // movement providers still validate all digging, supports and hazards.
+    const excavationAscent = settings.canDig && !settings.allowExcavatedDescent &&
+      (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
+      goal.y >= startPos.y + 4
+    let nearbyClimb = false
+    if (excavationAscent) {
+      const feet = startPos.floored()
+      for (let x = -3; x <= 3 && !nearbyClimb; x++) for (let z = -3; z <= 3 && !nearbyClimb; z++) {
+        for (let y = 0; y <= 2; y++) if (this.world.getBlockInfo(feet.offset(x, y, z)).climbable) { nearbyClimb = true; break }
+      }
+    }
+    const configuredWeight = this.pathfinderSettings.heuristicWeight
+    const heuristicWeight = nearbyClimb || this.world.getBlockInfo(startPos).water ? 1 : excavationAscent ? 3
+      : Number.isFinite(configuredWeight) ? Math.max(1, Math.min(3, configuredWeight)) : 1
+    const searchGoal: goals.Goal = heuristicWeight !== 1
+      ? {
+          isEnd: node => goal.isEnd(node),
+          heuristic: node => goal.heuristic(node) * heuristicWeight,
+          distHeuristic: node => goal.distHeuristic(node),
+          onFinish: executor => goal.onFinish(executor)
+        }
+      : goal
+
     if (this.pathfinderSettings.partialPathProducer) {
       this._currentProducer = new PartialPathProducer(
         startMove,
-        goal,
-        settings,
+        searchGoal,
+        routeSettings,
         this.bot,
         this.world,
         movements,
@@ -648,8 +721,8 @@ export class ThePathfinder {
     } else {
       this._currentProducer = new ContinuousPathProducer(
         startMove,
-        goal,
-        settings,
+        searchGoal,
+        routeSettings,
         this.bot,
         this.world,
         movements,
@@ -743,8 +816,8 @@ export class ThePathfinder {
 
     let completed = false
     try {
-      await this._goto(goal, performOpts)
-      completed = !this.abortCalculation && !this.disposed
+      await this._goto(goal, performOpts, requestId)
+      completed = requestId === this.goalRequestId && !this.abortCalculation && !this.disposed
     } finally {
       try {
         await this.cleanupAll(goal, this.currentExecutor, completed)
@@ -756,7 +829,82 @@ export class ThePathfinder {
     }
   }
 
-  private async _goto (goal: goals.Goal, performOpts: PerformOpts = {}): Promise<void> {
+  /** Finish the SAME search while its committed excavation prefix is executed. */
+  private prepareContinuation (prefix: Path, canceled: () => boolean): { take: () => Promise<Path | undefined>, stop: () => void } {
+    let context = prefix.context
+    const producer = this._currentProducer
+    const committed = prefix.path.slice()
+    let anchored = false
+    let suffix: ContinuousPathProducer | undefined
+    let stopped = false
+    const stop = (): void => { stopped = true }
+    // Expected digs are already represented in the search's virtual terrain.
+    // Changes in terrain actually read by the search invalidate its nodes.
+    // Unrelated farm, fluid and player updates must not discard the plan.
+    const onBlock = (oldBlock: Block | null, block: Block | null): void => {
+      if (oldBlock?.stateId === block?.stateId) return
+      const changed = block ?? oldBlock
+      if (changed == null || !context.movementProvider.readBlocks.has(`${changed.position.x}:${changed.position.y}:${changed.position.z}`)) return
+      if (!this.updateMatchesWanted(block, committed)) stop()
+    }
+    const onColumn = (pos: Vec3): void => {
+      const x = Math.floor(pos.x) >> 4; const z = Math.floor(pos.z) >> 4
+      if ([[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].some(([dx, dz]) => context.visitedChunks.has(`${x + dx},${z + dz}`))) stop()
+    }
+    this.bot.on('blockUpdate', onBlock)
+    this.bot.on('chunkColumnLoad', onColumn)
+    this.bot.on('chunkColumnUnload', onColumn)
+    const invalid = (): boolean => stopped || canceled() || this.abortCalculation || this.resetReason != null || this._currentProducer !== producer
+    const result = (async (): Promise<Path | undefined> => {
+      try {
+        while (!invalid()) {
+          await new Promise<void>(resolve => setImmediate(resolve))
+          if (invalid()) return
+          const advanced = suffix?.advance()
+          if (advanced != null) context = advanced.astarContext
+          const next = advanced?.result ?? context.compute()
+          if (next.status === 'partial') continue
+          // A better branch may diverge from the steps already executed. Never
+          // splice it by coordinates alone: its digs and supports may differ.
+          if (!['success', 'timeout', 'noPath'].includes(next.status)) return
+          if (!anchored && !committed.every((move, i) => next.path[i] === move)) {
+            // The original tree found a cheaper branch behind our committed
+            // digs. Plan from the segment's END while digging still runs,
+            // carrying its virtual edits, instead of waiting then replanning
+            // from the player after each broken block.
+            const last = committed[committed.length - 1]
+            const start = new Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0,
+              new IdleMovement(this.bot, this.world), last.exitPos.clone(), new Vec3(0, 0, 0),
+              last.exitPos.clone(), new Vec3(0, 0, 0), last)
+            suffix = new ContinuousPathProducer(start, context.goal as goals.Goal, last.moveType.settings,
+              this.bot, this.world, this.activeMappings.movements)
+            anchored = true
+            continue
+          }
+          const tail = anchored ? next.path : next.path.slice(committed.length)
+          // Budget/frontier exhaustion does not erase already validated digs.
+          // Execute that tail before starting a search in newly loaded terrain.
+          if (next.status !== 'success' && tail.length < 4) return
+          return { ...next, path: tail }
+        }
+      } catch {
+        // Execution owns recovery; an abandoned lookahead must not stop it.
+        return undefined
+      }
+    })()
+    return {
+      take: async () => { const path = await result; return invalid() ? undefined : path },
+      stop: () => {
+        stop()
+        this.bot.off('blockUpdate', onBlock)
+        this.bot.off('chunkColumnLoad', onColumn)
+        this.bot.off('chunkColumnUnload', onColumn)
+      }
+    }
+  }
+
+  private async _goto (goal: goals.Goal, performOpts: PerformOpts = {}, requestId = this.goalRequestId): Promise<void> {
+    const canceled = (): boolean => requestId !== this.goalRequestId || this.disposed || this.resetReason === 'goalReassignment'
     const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic
     const doForever = dynamic && goal.neverfinish
     let shore: goals.Goal | undefined
@@ -766,9 +914,9 @@ export class ThePathfinder {
     const rejectedShores: goals.Goal[] = []
     let shoreRetryAt = 0
     const prefixVisits = new Map<string, number>()
-    while (!this.disposed) {
+    while (!canceled()) {
       await this.pendingReset
-      if (this.executionRunner.getResetReason() === 'goalReassignment' || this.disposed) return
+      if (canceled()) return
       if (performance.now() >= shoreRetryAt) rejectedShores.length = 0
       if (dynamic) goal.update()
       let toWaitOn = new Promise<void>(() => {})
@@ -812,7 +960,7 @@ export class ThePathfinder {
         // Re-scanning around every new position can send a swimmer back and
         // forth between different banks without ever reaching dry ground.
         shore ??= await findShoreGoal(this.bot, this.world, goal, () => this.abortCalculation || this.disposed, rejectedShores)
-        if (this.executionRunner.getResetReason() === 'goalReassignment' || this.disposed) return
+        if (canceled()) return
         const routingGoal = shore ?? goal
         let path: Path | undefined
         if (continuation != null) {
@@ -821,62 +969,87 @@ export class ThePathfinder {
           // A moving follow target may have changed without an entity event.
           // Reuse only when we actually landed at this plan's starting bank
           // and its final node still satisfies the current destination.
-          if (this.bot.entity.onGround && first != null && last != null && goal.isEnd(last) &&
+          if (this.bot.entity.onGround && first != null && last != null &&
+              (goal.isEnd(last) || continuation.status !== 'success') &&
               Math.abs(pos.y - first.entryPos.y) < 0.2 && pos.xzDistanceTo(first.entryPos) < 0.8) path = continuation
           continuation = undefined
         }
         let executionGoal = routingGoal
-        let prefix = false
+        let prefix = path != null && path.status !== 'success'
+        if (prefix && path != null) executionGoal = goals.GoalBlock.fromVec(path.path[path.path.length - 1].exitPos)
         let unverifiedIceTakeoff = false
         const searchOrigin = pos.clone()
         const searchStarted = performance.now()
         if (path != null) this.bot.emit('pathGenerated', path)
         else for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1))) {
+          if (canceled()) return
           if (res.result.status === 'success') path = res.result
           const opts = this.pathfinderSettings
-          if (res.result.status === 'partial' && opts.routePrefixMs > 0 &&
-              performance.now() - searchStarted >= opts.routePrefixMs && res.result.path.length >= 5) {
-            let moves = res.result.path.slice(0, opts.routePrefixLength)
-            // The closest partial node can cross costly stone before the
-            // search has compared a cheaper tower or bridge. Commit mining
-            // only once the route is complete; a walking prefix can still run.
+          const miningPrefix = performOpts.allowMiningPrefix === true
+          const swimmingPrefix = this.world.getBlockInfo(searchOrigin).water
+          const distantGoal = !swimmingPrefix && shore == null &&
+            (routingGoal instanceof goals.GoalBlock || routingGoal instanceof goals.GoalNear || routingGoal instanceof goals.GoalFollowEntity) &&
+            (searchOrigin.distanceTo(new Vec3(routingGoal.x, routingGoal.y, routingGoal.z)) >= 48 ||
+              this.world.getBlockInfo(new Vec3(routingGoal.x, routingGoal.y, routingGoal.z)).isInvalid)
+          const exhausted = res.result.status === 'noPath' || res.result.status === 'timeout'
+          const frontier = res.result.path[res.result.path.length - 1]
+          const reachesFrontier = distantGoal && frontier != null && Movement.cardinalDirs.some(dir => {
+            const next = frontier.cachedVec.plus(dir)
+            return this.world.getBlockInfo(next).isInvalid &&
+              routingGoal.heuristic({ ...frontier, x: next.x, y: next.y, z: next.z, exitPos: next } as Move) < routingGoal.heuristic(frontier)
+          })
+          const minimumPrefix = miningPrefix ? Math.max(1, Math.min(4, opts.routePrefixLength)) : distantGoal ? (exhausted || reachesFrontier ? 16 : 32) : 5
+          if ((miningPrefix || swimmingPrefix || distantGoal) &&
+              (res.result.status === 'partial' || (exhausted && (miningPrefix || distantGoal))) && opts.routePrefixMs > 0 &&
+              (exhausted || performance.now() - searchStarted >= opts.routePrefixMs) && res.result.path.length >= minimumPrefix) {
+            let moves = res.result.path.slice(0, distantGoal ? Math.max(48, opts.routePrefixLength) : opts.routePrefixLength)
+            // Gathering opts into a bounded excavation segment. Retain all
+            // of its validated steps rather than searching after every dig.
+            // Walking callers stop before uncommitted digging; distant routes
+            // wait for a long section or the loaded frontier, not five steps.
             const firstDig = moves.findIndex(move => move.toBreak.length > 0)
-            if (firstDig >= 0) moves = moves.slice(0, firstDig)
-            if (moves.length < 5) continue
-            const last = moves[moves.length - 1]
-            if ((prefixVisits.get(last.hash) ?? 0) >= 2) continue // Search past a repeatedly visited dead end.
-            // Stopping a walking prefix on the ice consumes the run-up before
-            // we know whether the search can reach the opposite platform.
-            const iceRim = Movement.cardinalDirs.some(dir => {
-              let rim = last.exitPos
-              for (let distance = 0; distance <= 6; distance++) {
-                const next = rim.plus(dir)
-                if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
-                  return isIceBlock(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) &&
-                    routingGoal.heuristic({ ...last, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) } as Move) < routingGoal.heuristic(last)
+            if (!miningPrefix && firstDig >= 0) moves = moves.slice(0, firstDig)
+            if (moves.length < minimumPrefix) {
+              if (!exhausted) continue
+            } else prefixCandidate: {
+              const last = moves[moves.length - 1]
+              if ((prefixVisits.get(last.hash) ?? 0) >= 2) break prefixCandidate
+              // Stopping a walking prefix on the ice consumes the run-up before
+              // we know whether the search can reach the opposite platform.
+              const iceRim = Movement.cardinalDirs.some(dir => {
+                let rim = last.exitPos
+                for (let distance = 0; distance <= 6; distance++) {
+                  const next = rim.plus(dir)
+                  if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
+                    return isIceBlock(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) &&
+                      routingGoal.heuristic({ ...last, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) } as Move) < routingGoal.heuristic(last)
+                  }
+                  if (![0, 1].every(y => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough)) break
+                  rim = next
                 }
-                if (![0, 1].every(y => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough)) break
-                rim = next
+                return false
+              })
+              if (iceRim) { unverifiedIceTakeoff = true; break prefixCandidate }
+              const elevatedGoal = shore == null &&
+                (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
+                goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new Vec3(goal.x, goal.y, goal.z)).water
+              // A partial search may get horizontally closer to a bridge by
+              // abandoning the shore, without finding any way back up. Executing
+              // that prefix repeats the water/shore loop. Wait for a full route
+              // or a prefix that keeps a dry foothold. Compare against the end
+              // of the prefix, including when the bridge starts at our height.
+              const losesFoothold = elevatedGoal &&
+                (last.metadata?.waterLanding === true || this.world.getBlockInfo(last.exitPos).water)
+              const prefixStart = miningPrefix
+                ? { ...last, exitPos: searchOrigin, x: Math.floor(searchOrigin.x), y: Math.floor(searchOrigin.y), z: Math.floor(searchOrigin.z) } as Move
+                : moves[0]
+              if (!losesFoothold && routingGoal.heuristic(last) < routingGoal.heuristic(prefixStart) - (miningPrefix ? 0.5 : 2)) {
+                path = { ...res.result, path: moves }
+                executionGoal = goals.GoalBlock.fromVec(last.exitPos)
+                prefix = true
+                this.bot.emit('pathGenerated', path)
+                break
               }
-              return false
-            })
-            if (iceRim) { unverifiedIceTakeoff = true; continue }
-            const elevatedGoal = shore == null &&
-              (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) &&
-              goal.y > last.exitPos.y + 0.5 && !this.world.getBlockInfo(new Vec3(goal.x, goal.y, goal.z)).water
-            // A partial search may get horizontally closer to a bridge by
-            // abandoning the shore, without finding any way back up. Executing
-            // that prefix repeats the water/shore loop. Wait for a full route
-            // or a prefix that keeps a dry foothold. Compare against the end
-            // of the prefix, including when the bridge starts at our height.
-            const losesFoothold = elevatedGoal &&
-              (last.metadata?.waterLanding === true || this.world.getBlockInfo(last.exitPos).water)
-            if (!losesFoothold && routingGoal.heuristic(last) < routingGoal.heuristic(moves[0]) - 2) {
-              path = { ...res.result, path: moves }
-              executionGoal = goals.GoalBlock.fromVec(last.exitPos)
-              prefix = true
-              this.bot.emit('pathGenerated', path)
-              break
             }
           }
           if (res.result.status === 'noPath' || res.result.status === 'timeout') {
@@ -903,7 +1076,7 @@ export class ThePathfinder {
           if (res.result.status === 'canceled') break
         }
 
-        if (this.resetReason === 'goalReassignment' || this.disposed) {
+        if (canceled()) {
           if (performOpts.errorOnAbort) throw new Error('Goto: Goal was canceled.')
           return
         }
@@ -914,16 +1087,31 @@ export class ThePathfinder {
         }
         if (path == null) throw new Error('Pathfinding ended without a path.')
 
-        if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity) {
+        if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity &&
+            goal.isEnd === goals.GoalFollowEntity.prototype.isEnd) {
           executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist))
         }
         const last = path.path[path.path.length - 1]
+        // Land at the bank's planned takeoff, not merely the edge of its
+        // composite goal cell, so the saved dry route can be reused directly.
+        if (!prefix && shore != null && last != null) executionGoal = goals.GoalBlock.fromVec(last.exitPos)
         const continueSwimming = (): boolean => prefix && this.resetReason == null && !this.disposed &&
           last != null && last.toPlace.length === 0 && last.toBreak.length === 0 &&
           /^(Forward|Diagonal)$/.test(last.moveType.constructor.name) &&
           this.world.getBlockInfo(last.exitPos).water && canContinueSwimming(this.bot)
-        await this.perform(path, executionGoal, 0, continueSwimming)
+        // Keep water's continuous sprint strokes intact. Excavation spends
+        // time breaking blocks: use that time to finish its existing search,
+        // instead of discarding the open set and searching after each block.
+        const lookahead = prefix && path.status === 'partial' && shore == null && !this.world.getBlockInfo(searchOrigin).water
+          ? this.prepareContinuation(path, canceled) : undefined
+        try {
+          await this.perform(path, executionGoal, 0, continueSwimming)
+          if (lookahead != null && !canceled() && this.resetReason == null) continuation = await lookahead.take()
+        } finally {
+          lookahead?.stop()
+        }
         await this.pendingReset
+        if (canceled()) return
         if (this.resetReason != null) {
           if (this.resetReason === 'goalReassignment') return
           if (performOpts.errorOnReset) throw new Error(`Goto reset: ${this.resetReason}`)
@@ -959,7 +1147,7 @@ export class ThePathfinder {
         if (this.resetReason === 'goalReassignment' || this.disposed) return
       } catch (error) {
         await this.pendingReset
-        if (this.resetReason === 'goalReassignment' || this.disposed) return
+        if (canceled()) return
         if (!(error instanceof NavigationError) || performOpts.errorOnReset || (!doForever && failures >= 2)) throw error
         failures++
         if (shore != null && error.reason === 'noPath') {

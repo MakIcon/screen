@@ -12,6 +12,100 @@ require("ts-node").register({
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 
+test("distant come advances through newly loaded chunks without waiting for an unavailable full route", { timeout: 42000 }, async (t) => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { world });
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: false, canDig: false, maxDropDown: 3 });
+  const goal = new pathfinder.goals.GoalNear(120.5, 64, 0.5, 0.7);
+  const started = performance.now();
+  let firstForward;
+  const control = rig.bot.setControlState;
+  rig.bot.setControlState = (name, value) => {
+    if (name === "forward" && value) firstForward ??= performance.now() - started;
+    control(name, value);
+  };
+  const prefixes = [], resets = [];
+  rig.bot.on("pathGenerated", (path) => { if (path.status !== "success") prefixes.push(path.path.length); });
+  rig.bot.on("resetPath", (reason) => resets.push(reason));
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    assert.equal(world.getColumn(7, 0), undefined, "destination starts outside loaded terrain");
+    await navigator.goto(goal);
+    assert.ok(firstForward < 800, `first forward=${firstForward}ms`);
+    assert.ok(prefixes.length >= 2 && prefixes.every(length => length >= 16), `prefixes=${prefixes}`);
+    assert.ok(prefixes.length <= 8, `prefixes=${prefixes}`);
+    assert.deepEqual(resets, []);
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(120.5, 64, 0.5)) < 0.8);
+    t.diagnostic(`120-block come: start=${firstForward.toFixed(1)}ms, sections=${prefixes.join(",")}`);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("come plans around an underground lava lake without unsafe drops", { timeout: 18000 }, async (t) => {
+  const world = createFlatWorld("26.1.2", 32, { renderDistance: 2 });
+  for (let x = 3; x <= 16; x++) for (let z = -5; z <= 5; z++) world.setBlock(new Vec3(x, 31, z), "lava");
+  for (let x = -5; x <= 24; x++) for (let z = -9; z <= 9; z++) world.setBlock(new Vec3(x, 35, z), "stone");
+  const { rig } = createCacheWorld("26.1.2", 32, new Vec3(0.5, 32, 0.5), { world });
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: false, maxDropDown: 3 });
+  navigator.setMoveOptions({ canPlace: false });
+  const goal = new pathfinder.goals.GoalNear(20.5, 32, 0.5, 0.7);
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    navigator.setOptions({ heuristicWeight: 1 });
+    const baseline = await navigator.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity, goal);
+    navigator.setOptions({ heuristicWeight: 1.5 });
+    let chosen;
+    let searches = 0;
+    rig.bot.on("pathGenerated", (path) => { chosen = path; searches++; });
+    let lowest = 32;
+    rig.bot.on("physicsTick", () => {
+      lowest = Math.min(lowest, rig.bot.entity.position.y);
+      assert.equal(rig.bot.entity.isInLava, false, `lava at ${rig.bot.entity.position}; move=${navigator.currentMove}; route=${chosen?.path.map(m => `${m.moveType.constructor.name}:${m.exitPos}`).join(';')}`);
+    });
+    await navigator.goto(goal);
+    assert.equal(searches, 1);
+    assert.ok(lowest >= 31.99, `lowest=${lowest}`);
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(20.5, 32, 0.5)) < 0.8);
+    assert.ok(chosen.visitedNodes < baseline.visitedNodes, `weighted=${chosen.visitedNodes}, baseline=${baseline.visitedNodes}`);
+    t.diagnostic(`lava detour: visited ${baseline.visitedNodes} -> ${chosen.visitedNodes}; planning ${chosen.calcTime.toFixed(1)}ms`);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("come executes water exit, ladder, Neo and gap as a connected route", { timeout: 26000 }, async (t) => {
+  const version = "26.1.2";
+  const world = createFlatWorld(version, 56, { renderDistance: 2 });
+  for (let x = -3; x <= 18; x++) for (let z = -3; z <= 3; z++)
+    for (let y = 56; y <= 63; y++) world.setBlock(new Vec3(x, y, z), "water");
+  for (let x = 3; x <= 6; x++) world.setBlock(new Vec3(x, 63, 0), "cobblestone");
+  const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 62, 0.5), { world });
+  const Block = require("prismarine-block")(rig.mcData);
+  const ladder = rig.mcData.blocksByName.ladder;
+  let ladderState;
+  for (let state = ladder.minStateId; state <= ladder.maxStateId; state++) {
+    const props = Block.fromStateId(state, 0).getProperties();
+    if (props.facing === "west" && !props.waterlogged) { ladderState = state; break; }
+  }
+  for (let y = 64; y <= 67; y++) {
+    world.setBlock(new Vec3(6, y, 0), "cobblestone");
+    world.setBlock(new Vec3(5, y, 0), ladderState);
+  }
+  for (const x of [7, 8, 9, 12, 13]) world.setBlock(new Vec3(x, 67, 0), "cobblestone");
+  for (const y of [68, 69]) world.setBlock(new Vec3(8, y, 0), "cobblestone");
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: false, maxDropDown: 3 });
+  navigator.setMoveOptions({ canPlace: false });
+  const used = [], resets = [];
+  rig.bot.on("pathGenerated", (path) => used.push(...path.path.map((move) => move.moveType.constructor.name)));
+  rig.bot.on("resetPath", (reason) => resets.push(reason));
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(13.5, 68, 0.5, 0.7));
+    assert.ok(used.includes("Climb"), used.join(","));
+    assert.ok(used.includes("NeoProvider"), used.join(","));
+    assert.ok(used.some((name) => /Parkour/.test(name)), used.join(","));
+    assert.deepEqual(resets, []);
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(new Vec3(13.5, 68, 0.5)) < 0.8);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
 test(
   "bundled worker maintains ocean sprint speed across route prefixes and releases it on stop",
   { timeout: 12000 },
@@ -631,7 +725,7 @@ test(
       const navigator = worker.configurePathfinder(rig.bot, { allowParkour: true, allowSprinting: true, canDig: false });
       navigator.pathfinderSettings.routePrefixMs = 1;
       navigator.pathfinderSettings.tickTimeoutMs = 0.1;
-      await assert.rejects(navigator.goto(new pathfinder.goals.GoalNear(13.5, 71, 0.5, 1)), /no verified route beyond the ice/);
+      await assert.rejects(navigator.goto(new pathfinder.goals.GoalNear(13.5, 71, 0.5, 1)), /Pathfinding failed: (noPath|timeout)/);
       assert.ok(rig.bot.entity.position.xzDistanceTo(start) < 0.01);
     } finally { await rig.bot.pathfinder?.destroy(); rig.stopPassivePhysics(); }
   },

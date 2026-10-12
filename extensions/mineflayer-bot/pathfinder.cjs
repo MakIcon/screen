@@ -263,8 +263,26 @@ var require_cacheWorld = __commonJS({
         this.isInvalid = this.type === -1;
       }
       static init(registry) {
-        if (_BlockInfo.initialized)
+        if (_BlockInfo.initialized && _BlockInfo.registryVersion === registry.version.minecraftVersion)
           return;
+        for (const entries of [
+          _BlockInfo.interactableBlocks,
+          _BlockInfo.blocksCantBreak,
+          _BlockInfo.blocksToAvoid,
+          _BlockInfo.climbables,
+          _BlockInfo.carpets,
+          _BlockInfo.fences,
+          _BlockInfo.replaceables,
+          _BlockInfo.liquids,
+          _BlockInfo.waters,
+          _BlockInfo.gravityBlocks,
+          _BlockInfo.openable,
+          _BlockInfo.emptyBlocks,
+          _BlockInfo.scaffoldingBlockItems,
+          _BlockInfo.mlgItems
+        ])
+          entries.clear();
+        _BlockInfo.registryVersion = registry.version.minecraftVersion;
         _BlockInfo.initialized = true;
         if (registry.blocksByName.soul_sand?.id != null) {
           _BlockInfo.soulsandId = registry.blocksByName.soul_sand.id;
@@ -339,8 +357,22 @@ var require_cacheWorld = __commonJS({
           _BlockInfo.replaceables.add(registry.blocksByName.tall_grass.id);
         if (registry.blocksByName.grass)
           _BlockInfo.replaceables.add(registry.blocksByName.grass.id);
-        _BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.dirt.id);
-        _BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.cobblestone.id);
+        for (const name of [
+          "dirt",
+          "cobblestone",
+          "cobbled_deepslate",
+          "netherrack",
+          "stone",
+          "deepslate",
+          "tuff",
+          "andesite",
+          "diorite",
+          "granite"
+        ]) {
+          const item = registry.itemsByName[name];
+          if (item != null)
+            _BlockInfo.scaffoldingBlockItems.add(item.id);
+        }
         registry.blocksArray.filter((x) => x.minStateId !== void 0).map((x) => _BlockInfo.PBlock.fromStateId(x.minStateId, 0)).forEach((block) => {
           if (block.shapes.length > 0) {
             if (block.shapes[0][4] > 1)
@@ -1713,10 +1745,35 @@ var require_interactionUtils = __commonJS({
       }
       async performInfo(bot, ticks = 15) {
         const bb = mineflayer_util_plugin_12.AABB.fromBlock(this.vec);
-        const dist = bb.distanceToVec(bot.entity.position.offset(0, 1.62, 0));
-        const reachable = dist < _BreakHandler.reach + 5;
+        const eyeHeight = bot.entity.eyeHeight ?? 1.62;
+        const eye = bot.entity.position.offset(0, eyeHeight, 0);
+        const dist = bb.distanceToVec(eye);
+        const block = bot.world.getBlock(this.vec);
+        let reachable = block != null && dist < _BreakHandler.reach && bot.canDigBlock?.(block) !== false;
+        const raycasts = [];
+        if (reachable && bot.world.raycast != null) {
+          const faces = [
+            [0.5, 0.5, 0.5],
+            [1e-3, 0.5, 0.5],
+            [0.999, 0.5, 0.5],
+            [0.5, 1e-3, 0.5],
+            [0.5, 0.999, 0.5],
+            [0.5, 0.5, 1e-3],
+            [0.5, 0.5, 0.999]
+          ];
+          reachable = faces.some(([x, y, z]) => {
+            const delta = this.vec.offset(x, y, z).minus(eye);
+            const range = delta.norm() + 0.01;
+            const hit = bot.world.raycast(eye, delta.normalize(), range);
+            if (hit?.position.equals(this.vec)) {
+              raycasts.push(hit);
+              return true;
+            }
+            return false;
+          });
+        }
         logBreak(`performInfo calculation. Distance: ${dist.toFixed(2)}, Reachable: ${reachable}`);
-        return reachable ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts: [] } : { ticks: Infinity, tickAllowance: Infinity, shiftTick: Infinity, raycasts: [] };
+        return reachable ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts } : { ticks: Infinity, tickAllowance: Infinity, shiftTick: Infinity, raycasts: [] };
       }
       async perform(bot, item = null, opts = {}) {
         const curInfo = { yaw: bot.entity.yaw, pitch: bot.entity.pitch };
@@ -1747,10 +1804,15 @@ var require_interactionUtils = __commonJS({
               logBreak("Error: Block is null");
               throw new Error("Invalid block");
             }
-            logBreak(`Looking at ${this.vec} to start digging.`);
-            await bot.lookAt(this.vec, this.settings.forceLook);
+            const info = await this.performInfo(bot, 0);
+            if (info.ticks === Infinity)
+              throw new exceptions_1.CancelError("Block is outside mining reach or its face is obstructed");
+            const hit = info.raycasts[0];
+            const aim = hit != null ? hit.intersect.minus((0, utils_1.faceToVec)(hit.face).scaled(1e-3)) : this.vec.offset(0.5, 0.5, 0.5);
+            logBreak(`Looking at the reachable face of ${this.vec} to start digging.`);
+            await bot.lookAt(aim, this.settings.forceLook);
             logBreak(`Calling bot.dig on ${block.name}`);
-            this._breakTask = bot.dig(block, "ignore", "raycast");
+            this._breakTask = bot.dig(block, this.settings.forceLook, "raycast");
             await this._breakTask;
             logBreak("Dig task resolved. Now waiting for world update.");
             await (0, customBlockEvents_1.waitForSettledBlockStateAtPosition)(bot, this.blockInfo.position, (block2) => block2 != null && cacheWorld_12.BlockInfo.replaceables.has(block2.type), { timeoutMs: 5e3, settleMs: 75 });
@@ -2407,6 +2469,7 @@ var require_movement = __commonJS({
       allowAirStrafe: false,
       canOpenDoors: true,
       canDig: true,
+      allowExcavatedDescent: false,
       canPlace: true,
       dontCreateFlow: true,
       dontMineUnderFallingBlock: true,
@@ -2504,10 +2567,10 @@ var require_movement = __commonJS({
         this.currentMove = move;
       }
       toBreak() {
-        return this.currentMove.toBreak?.filter((b) => !b.allowExit) ?? [];
+        return this.currentMove.toBreak?.filter((b) => !b.allowExit && (b.isPerforming || b.needToPerform(this.bot))) ?? [];
       }
       toBreakLen() {
-        return this.currentMove.toBreak?.filter((b) => !b.allowExit).length ?? 0;
+        return this.toBreak().length;
       }
       toPlace() {
         return this.currentMove.toPlace?.filter((b) => !b.allowExit && (b.isPerforming || b.needToPerform(this.bot))) ?? [];
@@ -2606,6 +2669,8 @@ var require_movement = __commonJS({
        * @returns {number}
        */
       safeOrBreak(block, toBreak) {
+        if (toBreak.some((handler) => handler.vec.equals(block.position)))
+          return 0;
         if (block.walkthrough) {
           return 0;
         }
@@ -4085,8 +4150,26 @@ var require_navigationGeometry = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/navigationGeometry.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.supportedWalkSegment = supportedWalkSegment;
     exports2.clearBodySegment = clearBodySegment;
     var vec3_1 = require("vec3");
+    function supportedWalkSegment(world, from, to) {
+      const delta = to.minus(from);
+      const steps = Math.max(1, Math.ceil(delta.norm() * 5));
+      for (let i = 0; i <= steps; i++) {
+        const pos = from.plus(delta.scaled(i / steps));
+        const feet = world.getBlockInfo(pos);
+        if (feet.water)
+          continue;
+        const supported = [[0, 0], [-0.28, -0.28], [-0.28, 0.28], [0.28, -0.28], [0.28, 0.28]].some(([x, z]) => {
+          const support = world.getBlockInfo(pos.offset(x, -0.05, z));
+          return support.physical && support.safe && support.height >= pos.y - 0.6;
+        });
+        if (!supported)
+          return false;
+      }
+      return true;
+    }
     function clearBodySegment(world, from, to, width = 0.62, height = 1.8) {
       const radius = width / 2;
       const delta = to.minus(from);
@@ -4170,10 +4253,23 @@ var require_movementExecutors = __commonJS({
     };
     exports2.IdleMovementExecutor = IdleMovementExecutor;
     var NewForwardExecutor = class extends movementExecutor_1.MovementExecutor {
+      constructor() {
+        super(...arguments);
+        this.cornerSneaking = false;
+      }
+      reset() {
+        this.cornerSneaking = false;
+        super.reset();
+      }
       async correctCorner(move) {
         const pos = this.bot.entity.position;
-        if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 || (0, navigationGeometry_1.clearBodySegment)(this.world, pos, move.exitPos))
+        if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 || (0, navigationGeometry_1.clearBodySegment)(this.world, pos, move.exitPos, 0.599) && (0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, move.exitPos)) {
+          if (this.cornerSneaking) {
+            this.bot.setControlState("sneak", false);
+            this.cornerSneaking = false;
+          }
           return false;
+        }
         const entry = move.entryPos.clone();
         entry.y = pos.y;
         const center = (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : pos.floored().offset(0.5, 0, 0.5);
@@ -4186,6 +4282,9 @@ var require_movementExecutors = __commonJS({
         (0, controls_1.steerToPosition)(this.bot, center, 0.1, 0.04);
         this.bot.setControlState("sprint", false);
         this.bot.setControlState("jump", false);
+        const projected = pos.offset(this.bot.entity.velocity.x * 3, 0, this.bot.entity.velocity.z * 3);
+        this.cornerSneaking = !(0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, projected);
+        this.bot.setControlState("sneak", this.cornerSneaking);
         return true;
       }
       isComplete(startMove, endMove, opts) {
@@ -4303,11 +4402,20 @@ var require_movementExecutors = __commonJS({
       async performPerTick(thisMove, tickCount, currentIndex, path) {
         if (this.cI == null && await this.correctCorner(thisMove))
           return false;
+        if (this.cI instanceof interactionUtils_1.BreakHandler && this.cI.isPerforming && !this.cI.allowExit) {
+          for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+            this.bot.setControlState(control, false);
+          return false;
+        }
         if (this.cI != null && !await this.cI.allowExternalInfluence(this.bot)) {
           return false;
         } else if (this.cI == null) {
           const test = await this.interactNeeded(5);
           if (test != null) {
+            if (test instanceof interactionUtils_1.BreakHandler) {
+              for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+                this.bot.setControlState(control, false);
+            }
             this.startInteraction(test);
             return false;
           }
@@ -4531,8 +4639,12 @@ var require_movementExecutors = __commonJS({
           await this.postInitAlignToPath(move, { sprint: false });
         } else if (this.adjacentStep(move) && this.toPlaceLen() === 0) {
           this.bot.clearControlStates();
-          for (const target of this.toBreak())
+          while (this.toBreakLen() > 0) {
+            const target = await this.interactNeeded(0);
+            if (!(target instanceof interactionUtils_1.BreakHandler))
+              throw new exceptions_1.CancelError("No exposed block in the planned ascent");
             await this.performInteraction(target);
+          }
           this.jumpRequested = false;
         } else
           await super.performInit(move, index, path);
@@ -4581,6 +4693,19 @@ var require_movementExecutors = __commonJS({
     };
     exports2.NewForwardJumpExecutor = NewForwardJumpExecutor;
     var ForwardDropDownExecutor = class extends movementExecutor_1.MovementExecutor {
+      constructor() {
+        super(...arguments);
+        this.guardingFloor = false;
+      }
+      reset() {
+        this.guardingFloor = false;
+        super.reset();
+      }
+      holdExcavation() {
+        for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+          this.bot.setControlState(control, false);
+        this.bot.setControlState("sneak", this.guardingFloor);
+      }
       isComplete(move, end = move) {
         if (this.world.getBlockInfo(end.exitPos).water)
           return super.isComplete(move, end);
@@ -4602,12 +4727,25 @@ var require_movementExecutors = __commonJS({
       async align(thisMove, tickCount, goal, lookTarget) {
         if (thisMove.metadata?.waterLanding === true)
           return true;
+        if (this.getRemainingBreaks().some((block) => block.y < thisMove.entryPos.y)) {
+          this.guardingFloor = true;
+          const center = thisMove.entryPos.floored().offset(0.5, 0, 0.5);
+          (0, controls_1.steerToPosition)(this.bot, center, 0.06, 0.03);
+          this.bot.setControlState("sneak", true);
+          this.bot.setControlState("sprint", false);
+          this.bot.setControlState("jump", false);
+          return this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(center) < 0.1 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02;
+        }
         this.handleSneak(thisMove);
         return await super.align(thisMove, tickCount, goal, lookTarget);
       }
       async performInit(thisMove, currentIndex, path) {
         if (thisMove.metadata?.waterLanding === true)
           return;
+        if (this.getRemainingBreaks().length > 0) {
+          this.holdExcavation();
+          return;
+        }
         await this.postInitAlignToPath(thisMove);
       }
       async performPerTick(thisMove, tickCount, currentIndex, path) {
@@ -4622,16 +4760,22 @@ var require_movementExecutors = __commonJS({
           this.bot.setControlState("jump", this.doWaterLogic());
           return false;
         }
+        if (this.cI instanceof interactionUtils_1.BreakHandler && this.cI.isPerforming && !this.cI.allowExit) {
+          this.holdExcavation();
+          return false;
+        }
         if (this.cI != null && !await this.cI.allowExternalInfluence(this.bot, 0)) {
-          this.bot.clearControlStates();
+          this.holdExcavation();
           return false;
         }
         if (this.cI == null) {
           const remainingBreaks = this.getRemainingBreaks();
           if (remainingBreaks.length > 0) {
-            const breakTarget = remainingBreaks[0];
+            const breakTarget = await this.interactNeeded(0);
+            if (!(breakTarget instanceof interactionUtils_1.BreakHandler))
+              throw new exceptions_1.CancelError("No exposed block in the planned descending step");
             logDrop(`[ForwardDrop] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`);
-            this.bot.clearControlStates();
+            this.holdExcavation();
             this.startInteraction(breakTarget);
             return false;
           }
@@ -5341,6 +5485,22 @@ var require_movementProvider = __commonJS({
       getBlockInfoRaw(yes) {
         return this.getBlockInfoAt(yes.x, yes.y, yes.z, yes);
       }
+      /** Ordinary parkour must not cut across a visible lava basin. */
+      jumpCrossesHazard(node, dx, dz) {
+        const samples = Math.ceil(Math.hypot(dx, dz) * 2);
+        for (let i = 1; i < samples; i++) {
+          const x = Math.floor(node.x + 0.5 + dx * i / samples);
+          const z = Math.floor(node.z + 0.5 + dz * i / samples);
+          for (let depth = 1; depth <= 16; depth++) {
+            const block = this.getBlockInfoRaw(new vec3_1.Vec3(x, node.y - depth, z));
+            if (block.isInvalid || !block.safe)
+              return true;
+            if (block.physical || block.water)
+              break;
+          }
+        }
+        return false;
+      }
       getBlockInfoAt(x, y, z, pos) {
         const wantedDx = x - this.orgX + this.halfX;
         const wantedDz = z - this.orgZ + this.halfZ;
@@ -5360,7 +5520,7 @@ var require_movementProvider = __commonJS({
     };
     exports2.MovementProvider = MovementProvider;
     var MovementHandler = class _MovementHandler {
-      constructor(bot, world, recMovement) {
+      constructor(bot, world, recMovement, readBlocks = /* @__PURE__ */ new Set()) {
         this.boundaries = [19, 19, 7];
         this.halfway = [Math.floor(this.boundaries[0] / 2), Math.floor(this.boundaries[1] / 2), Math.floor(this.boundaries[2] / 2)];
         this.boundaryX = this.boundaries[0];
@@ -5383,11 +5543,36 @@ var require_movementProvider = __commonJS({
         this.swapSet = new Array(this.maxBound);
         this.world = world;
         this.recognizedMovements = recMovement;
+        this.readBlocks = readBlocks;
         this.initIndexCoordinates();
       }
       static create(bot, world, recMovement, settings = {}) {
         const opts = (0, movement_1.buildMovementOptions)(settings);
-        return new _MovementHandler(bot, world, [...recMovement.keys()].map((M) => new M(bot, world, opts)));
+        const readBlocks = /* @__PURE__ */ new Set();
+        const record = (pos) => {
+          readBlocks.add(`${Math.floor(pos.x)}:${Math.floor(pos.y)}:${Math.floor(pos.z)}`);
+        };
+        const trackedWorld = {
+          minY: world.minY,
+          getBlock: (pos) => {
+            record(pos);
+            return world.getBlock(pos);
+          },
+          getBlockInfo: (pos) => {
+            record(pos);
+            return world.getBlockInfo(pos);
+          },
+          getBlockStateId: (pos) => {
+            record(pos);
+            return world.getBlockStateId(pos);
+          },
+          raycast: (from, direction, range, matcher) => {
+            for (let distance = 0; distance <= range; distance += 0.5)
+              record(from.plus(direction.scaled(distance)));
+            return world.raycast(from, direction, range, matcher);
+          }
+        };
+        return new _MovementHandler(bot, trackedWorld, [...recMovement.keys()].map((M) => new M(bot, trackedWorld, opts)), readBlocks);
       }
       sanitize() {
         return !!this.goal;
@@ -7915,7 +8100,13 @@ var require_movementProviders = __commonJS({
       getMoveDropDown(node, dir, neighbors, closed) {
         let cost = costs_1.WALK_OFF_BLOCK_COST;
         const block0 = this.getBlockInfo(node, 0, 0, 0);
-        const blockLand = this.getLandingBlock(block0, node, dir);
+        let blockLand = this.getLandingBlock(block0, node, dir);
+        if (blockLand == null && this.settings.canDig && this.settings.allowExcavatedDescent) {
+          const step = this.getBlockInfo(node, dir.x, -1, dir.z);
+          const support = this.getBlockInfo(node, dir.x, -2, dir.z);
+          if (!step.isInvalid && step.safe && support.physical && support.safe && !support.liquid && Math.abs(support.height - (node.y - 1)) < 0.01)
+            blockLand = step;
+        }
         if (blockLand == null)
           return;
         if (blockLand.isInvalid)
@@ -8072,6 +8263,8 @@ var require_movementProviders = __commonJS({
           let cost = cost0 + this.travelCost(d);
           const dx = dir.x * d;
           const dz = dir.z * d;
+          if (this.jumpCrossesHazard(node, dx, dz))
+            break;
           const flag0 = (
             /* true */
             !closed.has(`${node.x + dx},${node.y - 1},${node.z + dz}`)
@@ -8178,6 +8371,8 @@ var require_movementProviders = __commonJS({
         const dx = dir.x * xSteps;
         const dz = dir.z * zSteps;
         const travel = Math.sqrt(xSteps * xSteps + zSteps * zSteps);
+        if (this.jumpCrossesHazard(node, dx, dz))
+          return false;
         let cost = cost0 + this.travelCost(travel);
         const majorIsX = xSteps > zSteps;
         const majorIsZ = zSteps > xSteps;
@@ -8482,6 +8677,8 @@ var require_optimizers = __commonJS({
         ];
         while (lastMove.exitPos.y === orgY && nextMove.exitPos.y === orgY) {
           if (!(0, navigationGeometry_1.clearBodySegment)(this.world, orgPos, nextMove.exitPos))
+            return --currentIndex;
+          if (!(0, navigationGeometry_1.supportedWalkSegment)(this.world, orgPos, nextMove.exitPos))
             return --currentIndex;
           if (!mineflayer_util_plugin_12.AABB.fromBlockPos(nextMove.entryPos).collides(mineflayer_util_plugin_12.AABB.fromBlockPos(nextMove.exitPos))) {
             log(`[LandStraightAhead] Index ${currentIndex}: AABB collision failed between entry and exit.`);
@@ -9751,6 +9948,7 @@ var require_pathExecutor = __commonJS({
     var climb_1 = require_climb();
     var interactionUtils_1 = require_interactionUtils();
     var surfaceSwimming_12 = require_surfaceSwimming();
+    var navigationGeometry_1 = require_navigationGeometry();
     var debug = require("debug");
     var log = debug("minecraft-pathfinding:PathExecutor");
     var EMPTY_VEC = new vec3_1.Vec3(0, 0, 0);
@@ -9913,7 +10111,7 @@ var require_pathExecutor = __commonJS({
           rejectCompletion(err);
         };
         const scheduleRecovery = (rawMove) => {
-          if (recoveryInFlight)
+          if (settled || this.getCurrentExecutionId() !== myExecutionId || recoveryInFlight)
             return;
           recoveryInFlight = true;
           void (async () => {
@@ -9926,6 +10124,8 @@ var require_pathExecutor = __commonJS({
           })();
         };
         const handleExecutionError = async (err) => {
+          if (settled || this.getCurrentExecutionId() !== myExecutionId)
+            return;
           log(`Error: ${err}`);
           if (err instanceof exceptions_1.AbortError) {
             executorSafeReset(this.getCurrentExecutor());
@@ -10013,6 +10213,8 @@ var require_pathExecutor = __commonJS({
             log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId);
             tickCount = 0;
             await this.timeAsync("prepare cleanup", async () => await this.host.cleanupBot(false, keepSwimming || keepClimbing));
+            if (settled || this.getCurrentExecutionId() !== myExecutionId)
+              return false;
             executor.loadMove(move);
             if (executor.isAlreadyCompleted(move, tickCount, goal)) {
               const nextIndex = this.findNextCurrentIdx(move, localPath, currentIndex);
@@ -10041,15 +10243,19 @@ var require_pathExecutor = __commonJS({
                 return;
               }
               const active = this.getCurrentMove() ?? localPath[localPath.length - 1];
-              if (isAtGoal() && bot.entity.onGround && active?.toBreak.length === 0 && active.toPlace.length === 0) {
+              const atGoal = isAtGoal();
+              const routeConsumed = currentIndex >= localPath.length;
+              if ((atGoal || routeConsumed) && bot.entity.onGround && (routeConsumed || active?.toBreak.length === 0 && active.toPlace.length === 0)) {
                 const target = localPath[localPath.length - 1].exitPos;
                 const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm();
-                const needsCentering = goal instanceof goals.GoalBlock && bot.entity.position.xzDistanceTo(target) > 0.25;
+                const needsCentering = (goal instanceof goals.GoalBlock || !atGoal) && bot.entity.position.xzDistanceTo(target) > 0.08;
                 if (speed > 0.025 || needsCentering) {
                   stopController.adjustPosition(target, 0.08);
                   bot.setControlState("jump", false);
                   bot.setControlState("sprint", false);
-                  bot.setControlState("sneak", true);
+                  const pos = bot.entity.position;
+                  const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3);
+                  bot.setControlState("sneak", !(0, navigationGeometry_1.supportedWalkSegment)(this.host.world, pos, projected));
                   return;
                 }
                 await finish();
@@ -10078,6 +10284,8 @@ var require_pathExecutor = __commonJS({
               if (runnerStage === "align") {
                 this.check();
                 const aligned = await this.timeAsync(`align ${move.moveType.constructor.name}`, async () => await executor.align(move, tickCount, goal));
+                if (settled || this.getCurrentExecutionId() !== myExecutionId)
+                  return;
                 tickCount++;
                 if (aligned) {
                   runnerStage = "init";
@@ -10106,6 +10314,8 @@ var require_pathExecutor = __commonJS({
               if (runnerStage === "perform") {
                 this.check();
                 const adding = await this.timeAsync(`performPerTick ${move.moveType.constructor.name}`, async () => await executor._performPerTick(move, tickCount, currentIndex, localPath));
+                if (settled || this.getCurrentExecutionId() !== myExecutionId)
+                  return;
                 tickCount++;
                 if (adding) {
                   const nextIndex = this.findNextCurrentIdx(move, localPath, currentIndex, adding);
@@ -10123,6 +10333,8 @@ var require_pathExecutor = __commonJS({
               }
             }
           } catch (err) {
+            if (settled || this.getCurrentExecutionId() !== myExecutionId)
+              return;
             log(`Error: ${err}`);
             if (err instanceof exceptions_1.AbortError) {
               executorSafeReset(this.getCurrentExecutor());
@@ -10157,10 +10369,11 @@ var require_pathExecutor = __commonJS({
           }
         };
         const moveListener = () => {
-          if (settled || tickInFlight || recoveryInFlight)
+          if (settled)
             return;
           if (this.getCurrentExecutionId() !== myExecutionId) {
-            void finish();
+            if (!recoveryInFlight)
+              void finish();
             return;
           }
           const interaction = this.getCurrentExecutor()?.cI;
@@ -10213,7 +10426,7 @@ var require_pathExecutor = __commonJS({
             }
           } else
             collisionTicks = 0;
-          if (runnerStage === "optimize" || pendingOptimize != null || runnerStage === "init" || pendingInit != null) {
+          if (tickInFlight || recoveryInFlight || runnerStage === "optimize" || pendingOptimize != null || runnerStage === "init" || pendingInit != null) {
             return;
           }
           tickInFlight = true;
@@ -10238,11 +10451,13 @@ var require_pathExecutor = __commonJS({
       }
       async recovery(move, path, goal, entry = 0) {
         const bot = this.bot;
+        const revision = this.host.navigationRevision;
+        const canceled = () => this.host.navigationRevision !== revision || this.host.abortCalculation || this.getResetReason() === "goalReassignment";
         log(`recovery ${entry} for ${move.moveType.constructor.name}`);
         bot.clearControlStates();
         const landingDeadline = performance.now() + this.host.defaultMoveSettings.movementTimeoutMs;
         while (!bot.entity.onGround && !bot.entity.isInWater) {
-          if (this.host.abortCalculation)
+          if (canceled())
             return;
           if (performance.now() >= landingDeadline)
             throw new Error("Recovery failed: no landing within the movement timeout.");
@@ -10250,6 +10465,8 @@ var require_pathExecutor = __commonJS({
         }
         bot.emit("enteredRecovery", entry);
         await this.timeAsync("recovery cleanup", async () => await this.host.cleanupBot());
+        if (canceled())
+          return;
         const ind = path.path.findIndex((m) => m.entryPos.distanceTo(move.entryPos) < 0.1);
         if (ind === -1) {
           log(" recovery failed: could not find move in path");
@@ -10271,6 +10488,8 @@ var require_pathExecutor = __commonJS({
           newGoal = goals.GoalBlock.fromVec(nextMove.vec);
         }
         const path1 = await this.timeAsync("recovery pathfinding", async () => await this.host.getPathFromToRaw(bot.entity.position, EMPTY_VEC, newGoal));
+        if (canceled())
+          return;
         if (path1 === null) {
           log(" recovery pathfinding returned null");
           bot.emit("exitedRecovery", entry);
@@ -10281,6 +10500,8 @@ var require_pathExecutor = __commonJS({
         } else {
           log(" executing partial recovery path");
           await this.perform(path1, newGoal, entry + 1);
+          if (canceled())
+            return;
           path.path.splice(0, ind + 1);
           log(" continuing original goal after partial recovery");
           bot.emit("exitedRecovery", entry);
@@ -11362,6 +11583,7 @@ var require_ThePathfinder = __commonJS({
       searchTimeoutMs: 1e4,
       tickTimeoutMs: 10,
       maxVisitedNodes: 5e4,
+      heuristicWeight: 1,
       routePrefixMs: 0,
       routePrefixLength: 16
     };
@@ -11396,6 +11618,9 @@ var require_ThePathfinder = __commonJS({
     var DEFAULT_SETUP = new Map(DEFAULT_PROVIDER_EXECUTORS);
     var DEFAULT_OPTIMIZATION = new Map(DEFAULT_OPTIMIZERS);
     var ThePathfinder = class {
+      get navigationRevision() {
+        return this.goalRequestId;
+      }
       get currentAStar() {
         return this._currentProducer?.getAstarContext();
       }
@@ -11604,6 +11829,23 @@ var require_ThePathfinder = __commonJS({
       }
       setupListeners() {
         const blockAbort = new AbortController();
+        const acknowledgedEdits = /* @__PURE__ */ new Map();
+        const rememberEdit = (_old, block) => {
+          if (block == null)
+            return;
+          const key = block.position.toString();
+          if (this.updateMatchesWanted(block)) {
+            acknowledgedEdits.set(key, block.stateId);
+            if (acknowledgedEdits.size > 256)
+              acknowledgedEdits.delete(acknowledgedEdits.keys().next().value);
+          } else
+            acknowledgedEdits.delete(key);
+        };
+        const clearEdits = () => {
+          acknowledgedEdits.clear();
+        };
+        this.bot.on("blockUpdate", rememberEdit);
+        this.bot.on("goalSet", clearEdits);
         const disposeBlockUpdateListener = (0, customBlockEvents_1.handleSettledBlockEvent)(this.bot, async (oldBlock, newBlock, settledBlock) => {
           const currentPath = this.currentPath;
           if (oldBlock == null || settledBlock == null)
@@ -11611,6 +11853,9 @@ var require_ThePathfinder = __commonJS({
           if (currentPath == null)
             return;
           if (oldBlock.type === settledBlock.type)
+            return;
+          const acknowledged = acknowledgedEdits.get(settledBlock.position.toString());
+          if (acknowledged === settledBlock.stateId)
             return;
           if (!this.isPositionNearPath(oldBlock.position))
             return;
@@ -11628,6 +11873,8 @@ var require_ThePathfinder = __commonJS({
         this.disposeListeners.push(() => {
           blockAbort.abort();
           disposeBlockUpdateListener();
+          this.bot.off("blockUpdate", rememberEdit);
+          this.bot.off("goalSet", clearEdits);
         });
         const onChunkLoad = (chunk) => {
           const astarContext = this.currentAStar;
@@ -11635,7 +11882,13 @@ var require_ThePathfinder = __commonJS({
             return;
           const cx = chunk.x >> 4;
           const cz = chunk.z >> 4;
-          if (astarContext.visitedChunks.has(`${cx - 1},${cz}`) || astarContext.visitedChunks.has(`${cx},${cz - 1}`) || astarContext.visitedChunks.has(`${cx + 1},${cz}`) || astarContext.visitedChunks.has(`${cx},${cz + 1}`)) {
+          const path = this.currentPath;
+          if (path != null && path.length > this.currentIndex) {
+            const touchesColumn = path.slice(this.currentIndex).some((move) => [move.entryPos, move.exitPos, ...move.toBreak.map((block) => block.vec), ...move.toPlace.map((block) => block.vec)].some((pos) => Math.floor(pos.x) >> 4 === cx && Math.floor(pos.z) >> 4 === cz));
+            if (!touchesColumn)
+              return;
+          }
+          if (astarContext.visitedChunks.has(`${cx},${cz}`) || astarContext.visitedChunks.has(`${cx - 1},${cz}`) || astarContext.visitedChunks.has(`${cx},${cz - 1}`) || astarContext.visitedChunks.has(`${cx + 1},${cz}`) || astarContext.visitedChunks.has(`${cx},${cz + 1}`)) {
             log("Chunk column loaded near path, resetting...");
             void this.reset("chunkLoad").catch(() => {
             });
@@ -11660,7 +11913,7 @@ var require_ThePathfinder = __commonJS({
         if (this.currentExecutor instanceof waterDrop_1.WaterDropExecutor && this.currentExecutor.acceptsWorldUpdate(block.position, block.name))
           return true;
         const pos = block.position.floored();
-        for (let i = Math.max(0, currentIndex - 2); i < path.length; i++) {
+        for (let i = 0; i < path.length; i++) {
           const move = path[i];
           for (const place of move.toPlace) {
             if (place.vec.equals(pos)) {
@@ -11774,10 +12027,38 @@ var require_ThePathfinder = __commonJS({
         this.executionRunner.setCurrentMove(startMove);
         this.executionRunner.setCurrentExecutor(new movementExecutors_1.IdleMovementExecutor(this.bot, this.world, this.defaultMoveSettings));
         this.bot.pathingUtil.refresh();
+        const positionedGoal = goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity;
+        const destinationSupport = positionedGoal ? new vec3_1.Vec3(Math.floor(goal.x), Math.floor(goal.y - 0.01), Math.floor(goal.z)) : void 0;
+        const supportInfo = destinationSupport == null ? void 0 : this.world.getBlockInfo(destinationSupport);
+        const routeSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2 ? { ...settings, exclusionAreasBreak: [
+          ...settings.exclusionAreasBreak,
+          (block) => block.position.equals(destinationSupport) ? Infinity : 0
+        ] } : settings;
+        const excavationAscent = settings.canDig && !settings.allowExcavatedDescent && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y >= startPos.y + 4;
+        let nearbyClimb = false;
+        if (excavationAscent) {
+          const feet = startPos.floored();
+          for (let x = -3; x <= 3 && !nearbyClimb; x++)
+            for (let z = -3; z <= 3 && !nearbyClimb; z++) {
+              for (let y = 0; y <= 2; y++)
+                if (this.world.getBlockInfo(feet.offset(x, y, z)).climbable) {
+                  nearbyClimb = true;
+                  break;
+                }
+            }
+        }
+        const configuredWeight = this.pathfinderSettings.heuristicWeight;
+        const heuristicWeight = nearbyClimb || this.world.getBlockInfo(startPos).water ? 1 : excavationAscent ? 3 : Number.isFinite(configuredWeight) ? Math.max(1, Math.min(3, configuredWeight)) : 1;
+        const searchGoal = heuristicWeight !== 1 ? {
+          isEnd: (node) => goal.isEnd(node),
+          heuristic: (node) => goal.heuristic(node) * heuristicWeight,
+          distHeuristic: (node) => goal.distHeuristic(node),
+          onFinish: (executor) => goal.onFinish(executor)
+        } : goal;
         if (this.pathfinderSettings.partialPathProducer) {
-          this._currentProducer = new pathProducers_1.PartialPathProducer(startMove, goal, settings, this.bot, this.world, movements, searchScale);
+          this._currentProducer = new pathProducers_1.PartialPathProducer(startMove, searchGoal, routeSettings, this.bot, this.world, movements, searchScale);
         } else {
-          this._currentProducer = new pathProducers_1.ContinuousPathProducer(startMove, goal, settings, this.bot, this.world, movements, searchScale);
+          this._currentProducer = new pathProducers_1.ContinuousPathProducer(startMove, searchGoal, routeSettings, this.bot, this.world, movements, searchScale);
         }
         log("Path producer initialized: %s", this._currentProducer.constructor.name);
         let result, astarContext;
@@ -11853,8 +12134,8 @@ var require_ThePathfinder = __commonJS({
         this._gotoMappings = this.snapshotMappings();
         let completed = false;
         try {
-          await this._goto(goal, performOpts);
-          completed = !this.abortCalculation && !this.disposed;
+          await this._goto(goal, performOpts, requestId);
+          completed = requestId === this.goalRequestId && !this.abortCalculation && !this.disposed;
         } finally {
           try {
             await this.cleanupAll(goal, this.currentExecutor, completed);
@@ -11865,7 +12146,81 @@ var require_ThePathfinder = __commonJS({
           }
         }
       }
-      async _goto(goal, performOpts = {}) {
+      /** Finish the SAME search while its committed excavation prefix is executed. */
+      prepareContinuation(prefix, canceled) {
+        let context = prefix.context;
+        const producer = this._currentProducer;
+        const committed = prefix.path.slice();
+        let anchored = false;
+        let suffix;
+        let stopped = false;
+        const stop = () => {
+          stopped = true;
+        };
+        const onBlock = (oldBlock, block) => {
+          if (oldBlock?.stateId === block?.stateId)
+            return;
+          const changed = block ?? oldBlock;
+          if (changed == null || !context.movementProvider.readBlocks.has(`${changed.position.x}:${changed.position.y}:${changed.position.z}`))
+            return;
+          if (!this.updateMatchesWanted(block, committed))
+            stop();
+        };
+        const onColumn = (pos) => {
+          const x = Math.floor(pos.x) >> 4;
+          const z = Math.floor(pos.z) >> 4;
+          if ([[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].some(([dx, dz]) => context.visitedChunks.has(`${x + dx},${z + dz}`)))
+            stop();
+        };
+        this.bot.on("blockUpdate", onBlock);
+        this.bot.on("chunkColumnLoad", onColumn);
+        this.bot.on("chunkColumnUnload", onColumn);
+        const invalid = () => stopped || canceled() || this.abortCalculation || this.resetReason != null || this._currentProducer !== producer;
+        const result = (async () => {
+          try {
+            while (!invalid()) {
+              await new Promise((resolve) => setImmediate(resolve));
+              if (invalid())
+                return;
+              const advanced = suffix?.advance();
+              if (advanced != null)
+                context = advanced.astarContext;
+              const next = advanced?.result ?? context.compute();
+              if (next.status === "partial")
+                continue;
+              if (!["success", "timeout", "noPath"].includes(next.status))
+                return;
+              if (!anchored && !committed.every((move, i) => next.path[i] === move)) {
+                const last = committed[committed.length - 1];
+                const start = new move_12.Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0, new movementProviders_1.IdleMovement(this.bot, this.world), last.exitPos.clone(), new vec3_1.Vec3(0, 0, 0), last.exitPos.clone(), new vec3_1.Vec3(0, 0, 0), last);
+                suffix = new pathProducers_1.ContinuousPathProducer(start, context.goal, last.moveType.settings, this.bot, this.world, this.activeMappings.movements);
+                anchored = true;
+                continue;
+              }
+              const tail = anchored ? next.path : next.path.slice(committed.length);
+              if (next.status !== "success" && tail.length < 4)
+                return;
+              return { ...next, path: tail };
+            }
+          } catch {
+            return void 0;
+          }
+        })();
+        return {
+          take: async () => {
+            const path = await result;
+            return invalid() ? void 0 : path;
+          },
+          stop: () => {
+            stop();
+            this.bot.off("blockUpdate", onBlock);
+            this.bot.off("chunkColumnLoad", onColumn);
+            this.bot.off("chunkColumnUnload", onColumn);
+          }
+        };
+      }
+      async _goto(goal, performOpts = {}, requestId = this.goalRequestId) {
+        const canceled = () => requestId !== this.goalRequestId || this.disposed || this.resetReason === "goalReassignment";
         const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic;
         const doForever = dynamic && goal.neverfinish;
         let shore;
@@ -11875,9 +12230,9 @@ var require_ThePathfinder = __commonJS({
         const rejectedShores = [];
         let shoreRetryAt = 0;
         const prefixVisits = /* @__PURE__ */ new Map();
-        while (!this.disposed) {
+        while (!canceled()) {
           await this.pendingReset;
-          if (this.executionRunner.getResetReason() === "goalReassignment" || this.disposed)
+          if (canceled())
             return;
           if (performance.now() >= shoreRetryAt)
             rejectedShores.length = 0;
@@ -11924,19 +12279,21 @@ var require_ThePathfinder = __commonJS({
             }
             waitingAtGoal = false;
             shore ?? (shore = await (0, shore_1.findShoreGoal)(this.bot, this.world, goal, () => this.abortCalculation || this.disposed, rejectedShores));
-            if (this.executionRunner.getResetReason() === "goalReassignment" || this.disposed)
+            if (canceled())
               return;
             const routingGoal = shore ?? goal;
             let path;
             if (continuation != null) {
               const first = continuation.path[0];
               const last2 = continuation.path[continuation.path.length - 1];
-              if (this.bot.entity.onGround && first != null && last2 != null && goal.isEnd(last2) && Math.abs(pos.y - first.entryPos.y) < 0.2 && pos.xzDistanceTo(first.entryPos) < 0.8)
+              if (this.bot.entity.onGround && first != null && last2 != null && (goal.isEnd(last2) || continuation.status !== "success") && Math.abs(pos.y - first.entryPos.y) < 0.2 && pos.xzDistanceTo(first.entryPos) < 0.8)
                 path = continuation;
               continuation = void 0;
             }
             let executionGoal = routingGoal;
-            let prefix = false;
+            let prefix = path != null && path.status !== "success";
+            if (prefix && path != null)
+              executionGoal = goals.GoalBlock.fromVec(path.path[path.path.length - 1].exitPos);
             let unverifiedIceTakeoff = false;
             const searchOrigin = pos.clone();
             const searchStarted = performance.now();
@@ -11944,45 +12301,62 @@ var require_ThePathfinder = __commonJS({
               this.bot.emit("pathGenerated", path);
             else
               for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1))) {
+                if (canceled())
+                  return;
                 if (res.result.status === "success")
                   path = res.result;
                 const opts = this.pathfinderSettings;
-                if (res.result.status === "partial" && opts.routePrefixMs > 0 && performance.now() - searchStarted >= opts.routePrefixMs && res.result.path.length >= 5) {
-                  let moves = res.result.path.slice(0, opts.routePrefixLength);
+                const miningPrefix = performOpts.allowMiningPrefix === true;
+                const swimmingPrefix = this.world.getBlockInfo(searchOrigin).water;
+                const distantGoal = !swimmingPrefix && shore == null && (routingGoal instanceof goals.GoalBlock || routingGoal instanceof goals.GoalNear || routingGoal instanceof goals.GoalFollowEntity) && (searchOrigin.distanceTo(new vec3_1.Vec3(routingGoal.x, routingGoal.y, routingGoal.z)) >= 48 || this.world.getBlockInfo(new vec3_1.Vec3(routingGoal.x, routingGoal.y, routingGoal.z)).isInvalid);
+                const exhausted = res.result.status === "noPath" || res.result.status === "timeout";
+                const frontier = res.result.path[res.result.path.length - 1];
+                const reachesFrontier = distantGoal && frontier != null && movement_1.Movement.cardinalDirs.some((dir) => {
+                  const next = frontier.cachedVec.plus(dir);
+                  return this.world.getBlockInfo(next).isInvalid && routingGoal.heuristic({ ...frontier, x: next.x, y: next.y, z: next.z, exitPos: next }) < routingGoal.heuristic(frontier);
+                });
+                const minimumPrefix = miningPrefix ? Math.max(1, Math.min(4, opts.routePrefixLength)) : distantGoal ? exhausted || reachesFrontier ? 16 : 32 : 5;
+                if ((miningPrefix || swimmingPrefix || distantGoal) && (res.result.status === "partial" || exhausted && (miningPrefix || distantGoal)) && opts.routePrefixMs > 0 && (exhausted || performance.now() - searchStarted >= opts.routePrefixMs) && res.result.path.length >= minimumPrefix) {
+                  let moves = res.result.path.slice(0, distantGoal ? Math.max(48, opts.routePrefixLength) : opts.routePrefixLength);
                   const firstDig = moves.findIndex((move) => move.toBreak.length > 0);
-                  if (firstDig >= 0)
+                  if (!miningPrefix && firstDig >= 0)
                     moves = moves.slice(0, firstDig);
-                  if (moves.length < 5)
-                    continue;
-                  const last2 = moves[moves.length - 1];
-                  if ((prefixVisits.get(last2.hash) ?? 0) >= 2)
-                    continue;
-                  const iceRim = movement_1.Movement.cardinalDirs.some((dir) => {
-                    let rim = last2.exitPos;
-                    for (let distance = 0; distance <= 6; distance++) {
-                      const next = rim.plus(dir);
-                      if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
-                        return (0, momentum_1.isIceBlock)(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) && routingGoal.heuristic({ ...last2, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) }) < routingGoal.heuristic(last2);
+                  if (moves.length < minimumPrefix) {
+                    if (!exhausted)
+                      continue;
+                  } else
+                    prefixCandidate: {
+                      const last2 = moves[moves.length - 1];
+                      if ((prefixVisits.get(last2.hash) ?? 0) >= 2)
+                        break prefixCandidate;
+                      const iceRim = movement_1.Movement.cardinalDirs.some((dir) => {
+                        let rim = last2.exitPos;
+                        for (let distance = 0; distance <= 6; distance++) {
+                          const next = rim.plus(dir);
+                          if (!this.world.getBlockInfo(next.offset(0, -1, 0)).physical) {
+                            return (0, momentum_1.isIceBlock)(this.world.getBlockInfo(rim.offset(0, -1, 0)).block?.name) && routingGoal.heuristic({ ...last2, exitPos: next, x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) }) < routingGoal.heuristic(last2);
+                          }
+                          if (![0, 1].every((y) => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough))
+                            break;
+                          rim = next;
+                        }
+                        return false;
+                      });
+                      if (iceRim) {
+                        unverifiedIceTakeoff = true;
+                        break prefixCandidate;
                       }
-                      if (![0, 1].every((y) => this.world.getBlockInfo(next.offset(0, y, 0)).walkthrough))
+                      const elevatedGoal = shore == null && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > last2.exitPos.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water;
+                      const losesFoothold = elevatedGoal && (last2.metadata?.waterLanding === true || this.world.getBlockInfo(last2.exitPos).water);
+                      const prefixStart = miningPrefix ? { ...last2, exitPos: searchOrigin, x: Math.floor(searchOrigin.x), y: Math.floor(searchOrigin.y), z: Math.floor(searchOrigin.z) } : moves[0];
+                      if (!losesFoothold && routingGoal.heuristic(last2) < routingGoal.heuristic(prefixStart) - (miningPrefix ? 0.5 : 2)) {
+                        path = { ...res.result, path: moves };
+                        executionGoal = goals.GoalBlock.fromVec(last2.exitPos);
+                        prefix = true;
+                        this.bot.emit("pathGenerated", path);
                         break;
-                      rim = next;
+                      }
                     }
-                    return false;
-                  });
-                  if (iceRim) {
-                    unverifiedIceTakeoff = true;
-                    continue;
-                  }
-                  const elevatedGoal = shore == null && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > last2.exitPos.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water;
-                  const losesFoothold = elevatedGoal && (last2.metadata?.waterLanding === true || this.world.getBlockInfo(last2.exitPos).water);
-                  if (!losesFoothold && routingGoal.heuristic(last2) < routingGoal.heuristic(moves[0]) - 2) {
-                    path = { ...res.result, path: moves };
-                    executionGoal = goals.GoalBlock.fromVec(last2.exitPos);
-                    prefix = true;
-                    this.bot.emit("pathGenerated", path);
-                    break;
-                  }
                 }
                 if (res.result.status === "noPath" || res.result.status === "timeout") {
                   if (res.result.status === "timeout" && opts.routePrefixMs > 0 && shore == null && this.bot.entity.onGround && !this.world.getBlockInfo(searchOrigin).liquid && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y > searchOrigin.y + 0.5 && !this.world.getBlockInfo(new vec3_1.Vec3(goal.x, goal.y, goal.z)).water) {
@@ -12002,7 +12376,7 @@ var require_ThePathfinder = __commonJS({
                 if (res.result.status === "canceled")
                   break;
               }
-            if (this.resetReason === "goalReassignment" || this.disposed) {
+            if (canceled()) {
               if (performOpts.errorOnAbort)
                 throw new Error("Goto: Goal was canceled.");
               return;
@@ -12015,13 +12389,24 @@ var require_ThePathfinder = __commonJS({
             }
             if (path == null)
               throw new Error("Pathfinding ended without a path.");
-            if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity) {
+            if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity && goal.isEnd === goals.GoalFollowEntity.prototype.isEnd) {
               executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist));
             }
             const last = path.path[path.path.length - 1];
+            if (!prefix && shore != null && last != null)
+              executionGoal = goals.GoalBlock.fromVec(last.exitPos);
             const continueSwimming = () => prefix && this.resetReason == null && !this.disposed && last != null && last.toPlace.length === 0 && last.toBreak.length === 0 && /^(Forward|Diagonal)$/.test(last.moveType.constructor.name) && this.world.getBlockInfo(last.exitPos).water && (0, surfaceSwimming_12.canContinueSwimming)(this.bot);
-            await this.perform(path, executionGoal, 0, continueSwimming);
+            const lookahead = prefix && path.status === "partial" && shore == null && !this.world.getBlockInfo(searchOrigin).water ? this.prepareContinuation(path, canceled) : void 0;
+            try {
+              await this.perform(path, executionGoal, 0, continueSwimming);
+              if (lookahead != null && !canceled() && this.resetReason == null)
+                continuation = await lookahead.take();
+            } finally {
+              lookahead?.stop();
+            }
             await this.pendingReset;
+            if (canceled())
+              return;
             if (this.resetReason != null) {
               if (this.resetReason === "goalReassignment")
                 return;
@@ -12070,7 +12455,7 @@ var require_ThePathfinder = __commonJS({
               return;
           } catch (error) {
             await this.pendingReset;
-            if (this.resetReason === "goalReassignment" || this.disposed)
+            if (canceled())
               return;
             if (!(error instanceof exceptions_1.NavigationError) || performOpts.errorOnReset || !doForever && failures >= 2)
               throw error;

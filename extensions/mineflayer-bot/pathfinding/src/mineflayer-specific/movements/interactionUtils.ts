@@ -566,13 +566,30 @@ export class BreakHandler extends InteractHandler {
 
   async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
     const bb = AABB.fromBlock(this.vec)
-    const dist = bb.distanceToVec(bot.entity.position.offset(0, 1.62, 0))
-    const reachable = dist < BreakHandler.reach + 5
+    const eyeHeight = (bot.entity as typeof bot.entity & { eyeHeight?: number }).eyeHeight ?? 1.62
+    const eye = bot.entity.position.offset(0, eyeHeight, 0)
+    const dist = bb.distanceToVec(eye)
+    const block = bot.world.getBlock(this.vec) as Block | null
+    let reachable = block != null && dist < BreakHandler.reach && bot.canDigBlock?.(block) !== false
+    const raycasts: RayType[] = []
+    // Reach alone doesn't expose a block behind another tunnel cell. The
+    // old extra-five-block allowance sent digs the server could not accept.
+    if (reachable && bot.world.raycast != null) {
+      const faces = [[0.5, 0.5, 0.5], [0.001, 0.5, 0.5], [0.999, 0.5, 0.5],
+        [0.5, 0.001, 0.5], [0.5, 0.999, 0.5], [0.5, 0.5, 0.001], [0.5, 0.5, 0.999]]
+      reachable = faces.some(([x, y, z]) => {
+        const delta = this.vec.offset(x, y, z).minus(eye)
+        const range = delta.norm() + 0.01
+        const hit = bot.world.raycast(eye, delta.normalize(), range) as unknown as RayType | null
+        if (hit?.position.equals(this.vec)) { raycasts.push(hit); return true }
+        return false
+      })
+    }
 
     logBreak(`performInfo calculation. Distance: ${dist.toFixed(2)}, Reachable: ${reachable}`)
 
     return reachable
-      ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts: [] }
+      ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts }
       : { ticks: Infinity, tickAllowance: Infinity, shiftTick: Infinity, raycasts: [] }
   }
 
@@ -606,11 +623,17 @@ export class BreakHandler extends InteractHandler {
           throw new Error('Invalid block')
         }
 
-        logBreak(`Looking at ${this.vec} to start digging.`)
-        await bot.lookAt(this.vec, this.settings.forceLook)
+        const info = await this.performInfo(bot, 0)
+        if (info.ticks === Infinity) throw new CancelError('Block is outside mining reach or its face is obstructed')
+        const hit = info.raycasts[0]
+        const aim = hit != null ? hit.intersect.minus(faceToVec(hit.face).scaled(0.001)) : this.vec.offset(0.5, 0.5, 0.5)
+        logBreak(`Looking at the reachable face of ${this.vec} to start digging.`)
+        await bot.lookAt(aim, this.settings.forceLook)
 
         logBreak(`Calling bot.dig on ${block.name}`)
-        this._breakTask = bot.dig(block, 'ignore', 'raycast')
+        // Let Mineflayer send the exposed face as well as the correct look;
+        // forceLook='ignore' otherwise leaves its packet face at "top".
+        this._breakTask = bot.dig(block, this.settings.forceLook, 'raycast')
         await this._breakTask
 
         logBreak('Dig task resolved. Now waiting for world update.')

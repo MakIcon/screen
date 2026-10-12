@@ -90,4 +90,96 @@ async function startWebInventory(bot, { onReady = () => {}, onError = () => {} }
     return { url: null, stop };
   }
 }
-module.exports = { startWebInventory, PAGE };
+function startInventoryTelemetry(bot, { onUpdate = () => {} } = {}) {
+  const assets =
+    dependency("minecraft-assets")(bot.version) || dependency("minecraft-assets")("1.18");
+  let last = "",
+    timer,
+    stopped = false;
+  function attribute(suffix) {
+    const entry = Object.entries(bot.entity?.attributes || {}).find(
+      ([name]) => name.replace("generic.", "").endsWith(`:${suffix}`) || name === suffix,
+    )?.[1];
+    if (!entry) return null;
+    let value = entry.value;
+    const modifiers = entry.modifiers || [];
+    value += modifiers.filter((m) => m.operation === 0).reduce((sum, m) => sum + m.amount, 0);
+    const base = value;
+    value += modifiers
+      .filter((m) => m.operation === 1)
+      .reduce((sum, m) => sum + base * m.amount, 0);
+    for (const m of modifiers.filter((m) => m.operation === 2)) value *= 1 + m.amount;
+    return Number.isFinite(value) ? value : null;
+  }
+  function emitSnapshot() {
+    if (stopped) return;
+    const slots = (bot.inventory.slots || []).map((item, slot) => {
+      if (!item) return null;
+      const maximum = bot.registry.itemsByName[item.name]?.maxDurability;
+      return {
+        slot,
+        name: item.name,
+        displayName: item.displayName || item.name,
+        count: item.count,
+        texture: item.texture || assets?.textureContent?.[item.name]?.texture || FALLBACK,
+        durability: maximum ? Math.max(0, maximum - (item.durabilityUsed || 0)) : null,
+        maxDurability: maximum || null,
+        enchants: (item.enchants || []).map((e) => ({ name: e.name, level: e.lvl ?? e.level })),
+      };
+    });
+    const armorPoints = {
+      leather: [1, 3, 2, 1],
+      golden: [2, 5, 3, 1],
+      chainmail: [2, 5, 4, 1],
+      iron: [2, 6, 5, 2],
+      diamond: [3, 8, 6, 3],
+      netherite: [3, 8, 6, 3],
+      turtle: [2, 0, 0, 0],
+    };
+    const equippedArmor = slots
+      .slice(5, 9)
+      .reduce((sum, item, index) => sum + (armorPoints[item?.name.split("_")[0]]?.[index] || 0), 0);
+    const snapshot = {
+      username: bot.username || "Бот",
+      health: bot.health ?? 0,
+      maxHealth: attribute("max_health") || 20,
+      food: bot.food ?? 0,
+      saturation: bot.foodSaturation ?? 0,
+      armor: attribute("armor") ?? equippedArmor,
+      oxygen: bot.oxygenLevel ?? null,
+      selectedSlot: 36 + (bot.quickBarSlot || 0),
+      slots,
+      occupied: slots.slice(9, 45).filter(Boolean).length,
+      capacity: 36,
+    };
+    const encoded = JSON.stringify(snapshot);
+    if (encoded !== last) {
+      last = encoded;
+      onUpdate(snapshot);
+    }
+  }
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(emitSnapshot, 75);
+  }
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
+    clearInterval(poll);
+    bot.inventory.off("updateSlot", schedule);
+    for (const name of ["health", "heldItemChanged", "entityAttributes", "respawn"])
+      bot.off(name, schedule);
+    bot.off("end", stop);
+    onUpdate(null);
+  }
+  const poll = setInterval(emitSnapshot, 1000);
+  poll.unref?.();
+  bot.inventory.on("updateSlot", schedule);
+  for (const name of ["health", "heldItemChanged", "entityAttributes", "respawn"])
+    bot.on(name, schedule);
+  bot.once("end", stop);
+  emitSnapshot();
+  return { stop };
+}
+module.exports = { startWebInventory, startInventoryTelemetry, PAGE };

@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import plan from "./gathering-plan.cjs";
 import gathering from "./gathering.cjs";
+import { scanMine, createMineIndex } from "./gathering-scan.cjs";
 import commands from "./gathering-commands.cjs";
 import worker from "./worker.cjs";
 
@@ -12,6 +13,46 @@ const { Vec3 } = require("vec3");
 const mcData = require("minecraft-data");
 const blockFactory = require("prismarine-block");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("ore index reuses sections, tracks edits and refreshes reloaded columns", async () => {
+  const bot = new EventEmitter();
+  const ore = new Map([["2,2,2", 1], ["12,2,2", 1]]);
+  let reads = 0;
+  const column = { getBlockStateId(pos) { reads++; return ore.get(`${pos.x},${pos.y},${pos.z}`) || 0; } };
+  bot.registry = { blocksByName: { diamond_ore: { id: 1 } }, blocksByStateId: [{ id: 0 }, { id: 1 }], version: { ">=": () => true } };
+  bot.game = { minY: 0 };
+  bot.world = { getColumn: (x, z) => x === 0 && z === 0 ? column : undefined };
+  bot.entity = { position: new Vec3(2, 2, 2) };
+  bot.blockAt = (pos) => ({ type: ore.get(`${pos.x},${pos.y},${pos.z}`) || 0, position: pos });
+  const task = { kind: "mine", origin: new Vec3(2, 2, 2), radius: 3, minY: 0, maxY: 15, names: ["diamond_ore"] };
+  const index = createMineIndex(bot);
+  const scan = (job = task) => scanMine(bot, job, { index, allowed: (b) => b.type === 1, yieldControl: async () => {} });
+  try {
+    assert.equal((await scan()).remaining, 1);
+    assert.equal(reads, 4096);
+    await scan();
+    assert.equal(reads, 4096, "rescan does not read the section again");
+    const replace = (pos, type) => {
+      ore.set(`${pos.x},${pos.y},${pos.z}`, type);
+      bot.emit("blockUpdate", null, { type, position: pos });
+    };
+    replace(new Vec3(2, 2, 2), 0);
+    replace(new Vec3(3, 2, 2), 1);
+    replace(new Vec3(1, 2, 2), 0); // Ordinary tunnel dig doesn't invalidate ores.
+    const changed = await scan();
+    assert.deepEqual(changed.candidates.map((b) => b.position.x), [3]);
+    assert.equal(reads, 4096);
+    assert.equal((await scan({ ...task, radius: 14 })).remaining, 2, "a wider task reuses the full section");
+    assert.equal(reads, 4096);
+    bot.emit("chunkColumnUnload", new Vec3(0, 0, 0));
+    ore.set("4,2,2", 1);
+    bot.emit("chunkColumnLoad", new Vec3(0, 0, 0));
+    assert.equal((await scan()).remaining, 2);
+    assert.equal(reads, 8192);
+  } finally { index.dispose(); }
+  assert.equal(bot.listenerCount("blockUpdate"), 0);
+  assert.equal(bot.listenerCount("chunkColumnLoad"), 0);
+});
 
 function fixture(version = "26.1.2") {
   const bot = new EventEmitter();
@@ -80,6 +121,7 @@ function fixture(version = "26.1.2") {
   };
   const originalSettings = {
     canDig: true,
+    allowExcavatedDescent: false,
     canPlace: true,
     maxDropDown: 3,
     allowWaterDrop: true,
@@ -173,6 +215,7 @@ for (const version of ["1.20.4", "26.1.2"])
     assert.equal(f.work.snapshot.history[0].mined, 1);
     assert.equal(f.work.snapshot.history[0].collected, 1);
     assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, true);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.allowExcavatedDescent, false);
     assert.deepEqual(f.bot.pathfinder.defaultMoveSettings.exclusionAreasBreak, []);
   });
 
@@ -371,6 +414,10 @@ test("paused or stopped equipment settles before any following dig can start", a
   assert.equal(f.dug.length, 0);
   assert.equal(f.work.snapshot.active, null);
   assert.equal(f.work.snapshot.queue.length, 0);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, true);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.allowExcavatedDescent, false);
+  assert.deepEqual(f.bot.pathfinder.defaultMoveSettings.exclusionAreasBreak, []);
+  assert.deepEqual(f.bot.pathfinder.defaultMoveSettings.exclusionAreasPlace, []);
 });
 
 test("survival interruption resumes the same job, but an owner pause does not auto-resume", async (t) => {
@@ -618,6 +665,61 @@ test("delivery retains an explicit owner pause and never tosses when the owner i
   assert.equal(f.dug.length, 0);
 });
 
+test("delivery builds outside the mining radius, retains construction blocks and restores movement", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push({ ...f.item("cobbled_deepslate"), count: 64 }, { ...f.item("cobblestone"), count: 20 }, { ...f.item("diamond"), count: 7 }, f.item("iron_pickaxe"));
+  const origin = f.bot.entity.position.clone();
+  const owner = { position: new Vec3(50, 70, 0), isValid: true };
+  const obstacle = f.put("stone", 49, 68);
+  const chest = f.put("chest", 49, 69);
+  f.setSlots(0);
+  f.bot.lookAt = async () => {};
+  const tossed = [];
+  f.bot.tossStack = async item => { tossed.push([item.name, item.count]); f.items.splice(f.items.indexOf(item), 1); };
+  f.bot.pathfinder.goto = async (goal, options) => {
+    const movement = f.bot.pathfinder.defaultMoveSettings;
+    assert.equal(movement.canDig, true);
+    assert.equal(movement.canPlace, true);
+    assert.equal(movement.allow1by1towers, true);
+    assert.equal(options.allowMiningPrefix, true);
+    assert.equal(movement.exclusionAreasPlace.at(-1)(obstacle), 0);
+    assert.equal(movement.exclusionAreasBreak.at(-1)(chest), 1000000);
+    if (goal.trackedEntity === owner) {
+      assert.equal(movement.exclusionAreasBreak.at(-1)(obstacle), 0);
+      await f.bot.dig(obstacle, true, "raycast");
+      f.bot.entity.position = owner.position.offset(-1, 0, 0);
+    } else f.bot.entity.position = origin.clone();
+  };
+  await f.work.deliver(() => owner);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(tossed, [["cobblestone", 20], ["diamond", 7]]);
+  assert.equal(f.items.find(item => item.name === "cobbled_deepslate").count, 64);
+  assert.equal(f.work.snapshot.history[0].delivered, 27);
+  assert.deepEqual(f.bot.pathfinder.defaultMoveSettings.exclusionAreasPlace, []);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.maxDropDown, 3);
+});
+
+test("delivery reserves a partial stack and reports missing building material on noPath", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push({ ...f.item("cobblestone"), count: 50 }, { ...f.item("cobbled_deepslate"), count: 50 }, f.item("diamond"));
+  const owner = { position: f.bot.entity.position.clone(), isValid: true };
+  f.bot.pathfinder.goto = async () => {};
+  f.bot.lookAt = async () => {};
+  const partial = [];
+  f.bot.toss = async (type, metadata, count) => { partial.push([type, count]); };
+  f.bot.tossStack = async () => {};
+  await f.work.deliver(() => owner);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(partial, [[f.bot.registry.itemsByName.cobbled_deepslate.id, 36]]);
+  f.items.splice(0, 2);
+  f.bot.pathfinder.goto = async () => { throw new Error("Pathfinding failed: noPath"); };
+  await f.work.deliver(() => owner);
+  await until(f, () => f.work.snapshot.phase === "paused");
+  assert.match(f.work.snapshot.reason, /строительные блоки/);
+});
+
 test("typing forest without a prefix in the launcher runs locally instead of public chat", async () => {
   const sent = [],
     local = [],
@@ -814,4 +916,71 @@ test("an explicit owner pause remains after health recovers", async (t) => {
   assert.equal(f.dug.length, 0);
   assert.equal(f.work.snapshot.phase, "paused");
   assert.match(f.work.snapshot.reason, /владельца/);
+});
+
+test("mining scans deep below its horizontal radius and honours explicit heights", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push(f.item("iron_pickaxe"));
+  f.put("diamond_ore", 2, -40);
+  f.put("diamond_ore", 20, -40);
+  f.put("diamond_ore", 2, 50);
+  f.work.enqueue({ kind: "mine", blocks: "diamond", radius: 8, count: 1, minY: -50, maxY: -30 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.dug.length, 1);
+  assert.equal(f.dug[0].position.y, -40);
+  assert.equal(f.dug[0].position.x, 2);
+});
+
+test("a survival interruption between physics ticks cannot leave an inactive move state", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push(f.item("iron_axe"));
+  f.put("spruce_log", 2);
+  const dig = f.bot.dig;
+  let attempts = 0;
+  f.bot.dig = async (...args) => {
+    if (++attempts === 1) {
+      f.bot.launcherSurvival = { busy: true };
+      await Promise.resolve();
+      throw new gathering.Interrupted();
+    }
+    return dig(...args);
+  };
+  f.work.enqueue({ kind: "forest", count: 1 });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  f.bot.launcherSurvival.busy = false;
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+});
+
+test("queue edits preserve the active job and cancelling it runs the reordered queue", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.put("dirt", 2);
+  f.put("oak_log", 3);
+  f.work.pause();
+  f.bot.health = 6;
+  const first = f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  const second = f.work.enqueue({ kind: "forest", count: 1 });
+  const third = f.work.enqueue({ kind: "collect" });
+  const fourth = f.work.enqueue({ kind: "collect" });
+  f.work.reorder(third, "up");
+  f.work.remove(fourth);
+  assert.equal(f.work.snapshot.active.id, first);
+  assert.deepEqual(
+    f.work.snapshot.queue.map((task) => task.id),
+    [third, second],
+  );
+  assert.ok(f.work.snapshot.queue[1].names.includes("oak_log"));
+  f.bot.health = 20;
+  await f.work.cancel(first);
+  await until(f, () => f.work.snapshot.history.length === 3);
+  assert.deepEqual(
+    f.work.snapshot.history.map((task) => task.id),
+    [first, third, second],
+  );
+  assert.equal(f.work.snapshot.history[0].outcome, "отменено");
+  assert.equal(f.work.snapshot.history[2].mined, 1);
 });

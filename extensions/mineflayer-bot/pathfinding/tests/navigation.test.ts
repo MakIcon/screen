@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Vec3 } from 'vec3'
-import { createPlugin, goals } from '../src'
+import { createPlugin, goals, ThePathfinder } from '../src'
 import { createCacheWorld } from './setup'
 
 function prepareRig () {
@@ -173,7 +173,7 @@ test('updating a cached block preserves other entries and unloaded state is unde
   }
 })
 
-test('a distant goal starts a verified prefix promptly and stop cancels it', { timeout: 3000 }, async () => {
+test('explicit mining starts a verified prefix promptly and stop cancels it', { timeout: 3000 }, async () => {
   const rig = prepareRig()
   try {
     const navigator = rig.bot.pathfinder
@@ -187,7 +187,7 @@ test('a distant goal starts a verified prefix promptly and stop cancels it', { t
       setControl(name, value)
     }
     rig.bot.on('goalFinished', () => finished++)
-    const running = navigator.goto(new goals.GoalBlock(120, 64, 0))
+    const running = navigator.goto(new goals.GoalBlock(120, 64, 0), { allowMiningPrefix: true })
     await rig.bot.waitForTicks(6)
     assert.ok(firstForward != null && firstForward < 300, `first forward=${firstForward}ms`)
     assert.ok(rig.bot.entity.position.x > 0.6)
@@ -199,4 +199,156 @@ test('a distant goal starts a verified prefix promptly and stop cancels it', { t
   } finally {
     await cleanup(rig)
   }
+})
+
+test('ordinary come executes the complete route instead of stopping at five-block partials', { timeout: 14000 }, async () => {
+  const rig = prepareRig()
+  try {
+    const navigator: ThePathfinder = rig.bot.pathfinder
+    navigator.setOptions({ routePrefixMs: 1, routePrefixLength: 5 })
+    const getPathTo = navigator.getPathTo.bind(navigator)
+    let searches = 0
+    navigator.getPathTo = async function * (...args: Parameters<typeof getPathTo>) {
+      searches++
+      for await (const result of getPathTo(...args)) {
+        if (result.result.status === 'success' && result.result.path.length > 6) {
+          yield { ...result, result: { ...result.result, status: 'partial' as const, path: result.result.path.slice(0, 6) } }
+          await rig.bot.waitForTicks(3)
+        }
+        yield result
+      }
+      return null
+    }
+    const lengths: number[] = []
+    const perform = navigator.perform.bind(navigator)
+    navigator.perform = async (...args: Parameters<typeof perform>) => { lengths.push(args[0].path.length); await perform(...args) }
+    await navigator.goto(new goals.GoalNear(25.5, 64, 0.5, 0.7))
+    assert.equal(searches, 1, `searches=${searches}, route lengths=${lengths}`)
+    assert.equal(lengths.length, 1)
+    assert.ok(lengths[0] > 20)
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(25.5, 64, 0.5)) <= 0.8)
+  } finally { await cleanup(rig) }
+})
+
+for (const changed of ['none', 'route', 'remote', 'branch']) test(`mining lookahead handles ${changed} terrain changes while executing its prefix`, { timeout: 9000 }, async () => {
+  const rig = prepareRig()
+  try {
+    const navigator: ThePathfinder = rig.bot.pathfinder
+    navigator.setOptions({ routePrefixMs: 1, routePrefixLength: 3 })
+    const getPathTo = navigator.getPathTo.bind(navigator)
+    let searches = 0
+    let lookaheads = 0
+    let changedWorld = false
+    navigator.getPathTo = async function * (...args: Parameters<typeof getPathTo>) {
+      searches++
+      for await (const result of getPathTo(...args)) {
+        if (searches === 1 && result.result.status === 'partial') continue
+        if (searches === 1 && result.result.status === 'success') {
+          const full = result.result
+          full.context.compute = () => {
+            lookaheads++
+            return changed === 'branch' ? { ...full, path: full.path.map(move => move.clone()) } : full
+          }
+          await rig.bot.waitForTicks(1)
+          yield { ...result, result: { ...full, status: 'partial' as const, path: full.path.slice(0, 3) } }
+        }
+        yield result
+      }
+      return null
+    }
+    const onTick = (): void => {
+      if (['route', 'remote'].includes(changed) && !changedWorld && lookaheads > 0) {
+        changedWorld = true
+        // Outside the executed prefix: invalidate even a completed lookahead.
+        rig.world.setBlock(new Vec3(8, 64, changed === 'remote' ? 25 : 0), 'stone')
+      }
+    }
+    rig.bot.on('physicsTick', onTick)
+    await navigator.goto(new goals.GoalNear(11.5, 64, 0.5, 0.7), { allowMiningPrefix: true })
+    rig.bot.off('physicsTick', onTick)
+    assert.ok(lookaheads > 0)
+    assert.equal(searches, changed === 'route' ? 2 : 1)
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(11.5, 64, 0.5)) <= 0.8)
+    assert.equal(rig.bot.listenerCount('chunkColumnUnload'), 0, 'lookahead listeners are released')
+  } finally { await cleanup(rig) }
+})
+
+test('mining retains the validated tail when its lookahead reaches the search budget', { timeout: 9000 }, async () => {
+  const rig = prepareRig()
+  try {
+    const navigator: ThePathfinder = rig.bot.pathfinder
+    navigator.setOptions({ routePrefixMs: 1, routePrefixLength: 4 })
+    const getPathTo = navigator.getPathTo.bind(navigator)
+    const origins: number[] = []
+    navigator.getPathTo = async function * (...args: Parameters<typeof getPathTo>) {
+      origins.push(rig.bot.entity.position.x)
+      for await (const result of getPathTo(...args)) {
+        if (origins.length === 1 && result.result.status === 'partial') continue
+        if (origins.length === 1 && result.result.status === 'success') {
+          const full = result.result
+          full.context.compute = () => ({ ...full, status: 'timeout' as const, path: full.path.slice(0, 8) })
+          await rig.bot.waitForTicks(1)
+          yield { ...result, result: { ...full, status: 'partial' as const, path: full.path.slice(0, 4) } }
+        }
+        yield result
+      }
+      return null
+    }
+    await navigator.goto(new goals.GoalNear(12.5, 64, 0.5, 0.7), { allowMiningPrefix: true })
+    assert.equal(origins.length, 2)
+    assert.ok(origins[1] >= 8, `the retained tail must execute before a new search: origins=${origins}`)
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(12.5, 64, 0.5)) < 0.8)
+    assert.equal(rig.bot.listenerCount('chunkColumnUnload'), 0)
+  } finally { await cleanup(rig) }
+})
+
+test('come ignores adjacent chunk loads but replans when its route column is refreshed', { timeout: 8000 }, async () => {
+  const rig = prepareRig()
+  try {
+    const navigator: ThePathfinder = rig.bot.pathfinder
+    let searches = 0
+    const getPathTo = navigator.getPathTo.bind(navigator)
+    navigator.getPathTo = (...args) => { searches++; return getPathTo(...args) }
+    const resets: string[] = []
+    rig.bot.on('resetPath', (reason: string) => resets.push(reason))
+    const running = navigator.goto(new goals.GoalNear(10.5, 64, 0.5, 0.7))
+    await rig.bot.waitForTicks(4)
+    assert.ok(navigator.currentPath != null)
+    rig.bot.emit('chunkColumnLoad', new Vec3(0, 0, 16))
+    await rig.bot.waitForTicks(3)
+    assert.deepEqual(resets, [])
+    assert.equal(searches, 1)
+    rig.bot.emit('chunkColumnLoad', new Vec3(0, 0, 0))
+    await running
+    assert.deepEqual(resets, ['chunkLoad'])
+    assert.equal(searches, 2)
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(10.5, 64, 0.5)) <= 0.8)
+  } finally { await cleanup(rig) }
+})
+
+test('a pending movement callback still times out and releases the next navigation', { timeout: 6000 }, async () => {
+  const rig = prepareRig()
+  try {
+    const navigator = rig.bot.pathfinder
+    navigator.setMoveOptions({ movementTimeoutMs: 150 })
+    const originals = new Map<any, any>()
+    const releases: Array<(value: boolean) => void> = []
+    for (const [, executor] of navigator.getActiveMappings().movements) {
+      originals.set(executor, executor._performPerTick)
+      executor._performPerTick = async () => { rig.bot.clearControlStates(); return await new Promise<boolean>(resolve => releases.push(resolve)) }
+    }
+    await assert.rejects(navigator.goto(new goals.GoalBlock(5, 64, 0)), /Movement stalled/)
+    assert.equal(navigator.isPathing, false)
+    assert.equal(rig.bot.getControlState('forward'), false)
+    for (const [executor, original] of originals) executor._performPerTick = original
+    navigator.setMoveOptions({ movementTimeoutMs: 3000 })
+    const next = navigator.goto(new goals.GoalNear(5, 64, 0, 1))
+    await rig.bot.waitForTicks(3)
+    const activeMove = navigator.currentMove
+    for (const release of releases) release(true)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(navigator.currentMove, activeMove, 'a late callback cannot clear the next route')
+    await next
+    assert.ok(rig.bot.entity.position.x > 1)
+  } finally { await cleanup(rig) }
 })

@@ -424,6 +424,50 @@ export type ObsTelemetryPluginSettings = {
   port: number;
 };
 
+export type MineflayerWorkTask = {
+  id: number;
+  kind: string;
+  names?: string[];
+  radius?: number;
+  count: number;
+  minY?: number;
+  maxY?: number;
+  item?: string;
+  area?: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+    volume: number;
+  };
+  mined: number;
+  collected: number;
+  deposited: number;
+  delivered: number;
+  outcome?: string;
+  reason?: string;
+};
+export type MineflayerInventoryItem = {
+  slot: number;
+  name: string;
+  displayName: string;
+  count: number;
+  texture: string;
+  durability: number | null;
+  maxDurability: number | null;
+  enchants: Array<{ name: string; level: number }>;
+};
+export type MineflayerInventory = {
+  username: string;
+  health: number;
+  maxHealth: number;
+  food: number;
+  saturation: number;
+  armor: number;
+  oxygen: number | null;
+  selectedSlot: number;
+  slots: Array<MineflayerInventoryItem | null>;
+  occupied: number;
+  capacity: number;
+};
 export type MineflayerBotStatus = {
   running: boolean;
   state: string;
@@ -434,6 +478,7 @@ export type MineflayerBotStatus = {
   lastError?: string | null;
   logs: string[];
   inventoryUrl?: string | null;
+  inventory?: MineflayerInventory | null;
   gathering?: {
     phase: string;
     kind: string | null;
@@ -443,6 +488,10 @@ export type MineflayerBotStatus = {
     queued: number;
     reason: string;
     message: string;
+    active?: MineflayerWorkTask | null;
+    suspended?: MineflayerWorkTask | null;
+    queue?: MineflayerWorkTask[];
+    history?: MineflayerWorkTask[];
   } | null;
 };
 

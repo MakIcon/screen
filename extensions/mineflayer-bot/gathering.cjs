@@ -1,5 +1,6 @@
 const { NestedStateMachine, StateTransition } = require("mineflayer-statemachine");
 const { Tool } = require("mineflayer-tool");
+const { scanMine, createMineIndex } = require("./gathering-scan.cjs");
 const { Vec3 } = require("vec3");
 const { goals } = require("./pathfinder.cjs");
 const plan = require("./gathering-plan.cjs");
@@ -93,20 +94,38 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       if (now() - site.time > 5000) task.digSites.delete(key);
     task.digSites.set(plan.key(block.position), { position: lastBlock, time: now() });
   }
+  function travelRouting() {
+    return task?.kind === "deliver" || task?.kind === "deposit" ||
+      machine.activeState === states.deposit;
+  }
+  function routeBreakReason(block) {
+    const travel = travelRouting();
+    if (!travel && (!task?.routeDig || !plan.insideTask(task, block.position)))
+      return "Блок вне области добычи";
+    if (!travel && task.kind === "forest" && !plan.isWood(block.name) && !plan.isLeaves(block.name))
+      return "Блок не относится к дереву";
+    const unsafe = plan.safetyReason(bot, block);
+    if (unsafe) return unsafe;
+    if (plan.supportBlock(bot, block)) {
+      const ownSupport = task.kind === "deliver" && task.deliveryPhase === "return" &&
+        task.scaffolds.get(plan.key(block.position)) === block.type;
+      const landing = bot.blockAt(block.position.offset(0, -1, 0));
+      if (!ownSupport || landing?.boundingBox !== "block" || plan.FLUIDS.has(landing.name))
+        return "Опора под ногами";
+    }
+    return null;
+  }
   async function routeDig(block, ...args) {
-    if (!task?.routeDig || machine.activeState !== states.move) return originalDig(block, ...args);
+    if (!task || (!travelRouting() && (!task.routeDig || machine.activeState !== states.move)))
+      return originalDig(block, ...args);
     const signal = abort.signal;
     guard(signal);
-    if (task.count && task.mined >= task.count && plan.matches(task, block))
+    const travel = travelRouting();
+    if (!travel && task.count && task.mined >= task.count && plan.matches(task, block))
       throw new Error("Количество целевых блоков уже достигнуто");
-    if (
-      !plan.insideTask(task, block.position) ||
-      (task.kind === "forest" && !plan.isWood(block.name) && !plan.isLeaves(block.name)) ||
-      plan.safetyReason(bot, block) ||
-      plan.supportBlock(bot, block)
-    )
-      throw new WorkError("Нельзя безопасно проложить путь через этот блок");
-    if (inventoryFull())
+    const unsafe = routeBreakReason(block);
+    if (unsafe) throw new WorkError(`Нельзя безопасно проложить путь: ${unsafe}`);
+    if (!travel && inventoryFull())
       throw new WorkError(
         "Нет места для блоков при прокладке пути; выгрузите инвентарь и продолжите",
       );
@@ -114,11 +133,30 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     trackDig(block);
     await originalDig(block, true, visibleFace(block) || args[1] || "raycast");
     guard(signal);
-    if (plan.matches(task, block)) task.mined++;
+    if (!travel && plan.matches(task, block)) task.mined++;
   }
   bot.dig = routeDig;
 
   const busy = () => Boolean(task || queue.length || pending);
+  function taskSummary(entry) {
+    if (!entry) return null;
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      names: entry.names,
+      radius: entry.radius,
+      count: entry.count || 0,
+      minY: entry.minY,
+      maxY: entry.maxY,
+      item: entry.item,
+      area: entry.area,
+      mined: entry.mined,
+      collected: entry.collected,
+      deposited: entry.deposited,
+      delivered: entry.delivered || 0,
+      missedDrops: entry.missedDrops || 0,
+    };
+  }
   function status() {
     if (!task) return `Добыча: ожидание; очередь ${queue.length}`;
     return (
@@ -140,6 +178,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         queued: queue.length,
         reason: pausedReason || (!task ? history.at(-1)?.reason || "" : ""),
         message: status(),
+        active: taskSummary(task),
+        queue: queue.map(taskSummary),
+        history: [...history],
+        suspended: taskSummary(deliveryContext?.task),
       });
     }
   }
@@ -148,7 +190,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (bot.health <= 0 || bot.isAlive === false) throw new WorkError("Бот погиб");
     if (bot.health <= settings.minHealth)
       throw new WorkError(`Мало здоровья (${bot.health}); жду восстановления`, true);
-    if (bot.launcherSurvival?.busy || bot.launcherDefendingBow) throw new Interrupted();
+    if (bot.launcherSurvival?.busy || bot.launcherDefendingBow)
+      throw new WorkError("Еда или аварийное спасение; затем продолжу работу", true);
   }
   function wait(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -170,6 +213,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     timeout = settings.operationTimeoutMs,
     detach = false,
     recoverable = false,
+    progress = null,
   ) {
     guard(signal);
     let timer, cancel;
@@ -180,14 +224,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const limit = new Promise((_, reject) => {
       cancel = () => reject(new Interrupted());
       signal.addEventListener("abort", cancel, { once: true });
-      timer = setTimeout(
-        () =>
-          reject(
-            recoverable
-              ? new Error("Не удалось подойти к цели за отведённое время")
-              : new WorkError("Операция заняла слишком много времени"),
-          ),
-        timeout,
+      let deadline = now() + timeout;
+      timer = setInterval(
+        () => {
+          const allowance = progress?.();
+          if (allowance) deadline = now() + allowance;
+          if (now() >= deadline)
+            reject(
+              recoverable
+                ? new Error("Не удалось подойти к цели за отведённое время")
+                : new WorkError("Операция заняла слишком много времени"),
+            );
+        },
+        Math.min(200, timeout),
       );
     });
     try {
@@ -210,17 +259,33 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       if (!detach) await original.catch(() => {});
       throw error;
     } finally {
-      clearTimeout(timer);
+      clearInterval(timer);
       signal.removeEventListener("abort", cancel);
     }
   }
   function navigate(goal, signal, timeout = settings.moveTimeoutMs) {
+    let position = bot.entity.position.clone(),
+      digging = null;
     return operation(
-      () => bot.pathfinder.goto(goal),
+      () => bot.pathfinder.goto(goal, { allowMiningPrefix: Boolean(task?.routeDig) || travelRouting() }),
       signal,
       Math.min(timeout, settings.operationTimeoutMs),
       false,
       true,
+      () => {
+        if (position.distanceTo(bot.entity.position) >= 0.25) {
+          position = bot.entity.position.clone();
+          return timeout;
+        }
+        const block = bot.targetDigBlock;
+        if (block && digging !== block) {
+          digging = block;
+          const time = bot.digTime?.(block) ?? tool.getDigTime(block, bot.heldItem);
+          return Math.max(timeout, (Number.isFinite(time) ? time : 0) + 5000);
+        }
+        if (!block) digging = null;
+        return 0;
+      },
     );
   }
   // A trunk can hide the center of its lower log while the side is exposed.
@@ -297,33 +362,27 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     movementSettings = { ...bot.pathfinder.defaultMoveSettings };
     bot.pathfinder.setMoveOptions({
       canDig: false,
-      canPlace: Boolean(task?.scaffold),
-      allow1by1towers: Boolean(task?.scaffold),
+      allowExcavatedDescent: false,
+      canPlace: Boolean(task?.scaffold) || travelRouting(),
+      allow1by1towers: Boolean(task?.scaffold) || travelRouting(),
       exclusionAreasBreak: [
         ...(movementSettings.exclusionAreasBreak || []),
         (block) => {
-          if (!task?.routeDig || !plan.insideTask(task, block.position)) return 1000000;
           const actual = bot.blockAt(block.position);
-          if (plan.supportBlock(bot, actual || block)) return 1000000;
+          if (!actual || routeBreakReason(actual)) return 1000000;
           if (
-            task.kind === "forest" &&
-            actual &&
-            !plan.isWood(actual.name) &&
-            !plan.isLeaves(actual.name)
-          )
-            return 1000000;
-          if (
+            !travelRouting() &&
             task.count &&
             task.mined >= task.count &&
             plan.matches(task, bot.blockAt(block.position))
           )
             return 1000000;
-          return plan.safetyReason(bot, bot.blockAt(block.position)) ? 1000000 : 0;
+          return 0;
         },
       ],
       exclusionAreasPlace: [
         ...(movementSettings.exclusionAreasPlace || []),
-        (block) => (task && plan.insideTask(task, block.position) ? 0 : 1000000),
+        (block) => (task && (travelRouting() || plan.insideTask(task, block.position)) ? 0 : 1000000),
       ],
       allowWaterDrop: false,
       allowBucketWaterDrop: false,
@@ -359,8 +418,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   function finish(outcome, reason = "") {
     if (!task) return;
     const finished = {
-      id: task.id,
-      kind: task.kind,
+      ...taskSummary(task),
       outcome,
       mined: task.mined,
       collected: task.collected,
@@ -533,25 +591,37 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     else {
       let candidates = nearbyTargets();
       if (!candidates.length || now() >= (task.rescanAt || 0)) {
-        task.candidates = bot.findBlocks({
-          point: task.origin,
-          maxDistance: task.radius,
-          count: settings.scanLimit,
-          matching: task.names.map((name) => bot.registry.blocksByName[name].id),
-          useExtraInfo: (block) => allowed(block),
-        });
+        if (task.kind === "mine") {
+          const found = await scanMine(bot, task, {
+            limit: settings.scanLimit,
+            index: mineIndex,
+            allowed,
+            yieldControl: () => wait(0, signal).then(() => guard(signal)),
+          });
+          task.candidates = found.candidates.map((block) => block.position);
+          task.scanRemaining = found.remaining;
+        } else
+          task.candidates = bot.findBlocks({
+            point: task.origin,
+            maxDistance: task.radius,
+            count: settings.scanLimit,
+            matching: task.names.map((name) => bot.registry.blocksByName[name].id),
+            useExtraInfo: (block) => allowed(block),
+          });
         task.rescanAt = now() + settings.rescanIntervalMs;
         candidates = nearbyTargets();
       }
       result = {
         candidates,
         remaining: !candidates.length
-          ? bot.findBlocks({
-              point: task.origin,
-              maxDistance: task.radius,
-              count: 1,
-              matching: task.names.map((name) => bot.registry.blocksByName[name].id),
-            }).length
+          ? task.kind === "mine"
+            ? task.scanRemaining
+            : bot.findBlocks({
+                point: task.origin,
+                maxDistance: task.radius,
+                count: 1,
+                matching: task.names.map((name) => bot.registry.blocksByName[name].id),
+              }).length
           : 0,
       };
     }
@@ -797,10 +867,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const block = bot.blockAt(chest);
     if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
       throw new WorkError("Сундук не загружен или отсутствует");
-    await operation(
-      () => bot.pathfinder.goto(goals.GoalLookAt.fromBlock(bot.pathfinder.world, block, 4)),
-      signal,
-    );
+    await navigate(goals.GoalLookAt.fromBlock(bot.pathfinder.world, block, 4), signal);
     chestWindow = await operation(
       () => bot.openContainer(block),
       signal,
@@ -808,11 +875,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       true,
     );
     try {
-      let scaffoldReserve = task.scaffold ? 64 : 0;
+      let scaffoldReserve = task.scaffold ? settings.travelBlockReserve : 0;
       for (const item of [...bot.inventory.items()]) {
         guard(signal);
         if (plan.keepItem(bot, item)) continue;
-        const keep = /^(dirt|cobblestone|cobbled_deepslate|netherrack)$/.test(item.name)
+        const keep = plan.SCAFFOLD_ITEMS.has(item.name)
           ? Math.min(item.count, scaffoldReserve)
           : 0;
         scaffoldReserve -= keep;
@@ -853,13 +920,30 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const owner = task.owner();
     if (!owner || owner.isValid === false)
       throw new WorkError("Владелец не виден. Подойдите ближе и нажмите «Продолжить»");
-    await operation(
-      () => bot.pathfinder.goto(goals.GoalFollowEntity.fromEntity(owner, 2, { dynamic: true })),
-      signal,
-    );
+    const goal = goals.GoalFollowEntity.fromEntity(owner, 2, { dynamic: true });
+    const nearOwner = goal.isEnd.bind(goal);
+    goal.isEnd = (node) => nearOwner(node) && Math.abs((node.exitPos || node).y - goal.y) <= 1;
+    try {
+      await navigate(goal, signal);
+    } catch (error) {
+      if (/Pathfinding failed: (?:noPath|timeout)/.test(error.message)) {
+        const blocks = bot.inventory.items().some((item) => plan.SCAFFOLD_ITEMS.has(item.name));
+        throw new WorkError(blocks
+          ? "Не найден безопасный выход к владельцу; проверьте препятствия и продолжите"
+          : "Для выхода нужны строительные блоки: булыжник, колотый глубинный сланец или земля");
+      }
+      throw error;
+    }
+    let scaffoldReserve = settings.travelBlockReserve;
+    let retained = 0;
     for (const item of [...bot.inventory.items()]) {
       guard(signal);
       if (plan.keepItem(bot, item)) continue;
+      const keep = plan.SCAFFOLD_ITEMS.has(item.name) ? Math.min(item.count, scaffoldReserve) : 0;
+      scaffoldReserve -= keep;
+      retained += keep;
+      const amount = item.count - keep;
+      if (!amount) continue;
       const currentOwner = task.owner();
       if (
         !currentOwner ||
@@ -868,22 +952,31 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       )
         throw new WorkError("Владелец отошёл. Добыча сохранена; подойдите ближе и продолжите");
       await operation(() => bot.lookAt(currentOwner.position.offset(0, 1, 0), true), signal);
-      await operation(() => bot.tossStack(item), signal);
-      task.delivered += item.count;
+      await operation(() => amount === item.count
+        ? bot.tossStack(item)
+        : bot.toss(item.type, item.metadata, amount), signal);
+      task.delivered += amount;
       report(true);
     }
-    onStatus(`Выброшено для владельца: ${task.delivered} предметов. Возвращаюсь к месту работы`);
+    onStatus(`Выброшено для владельца: ${task.delivered} предметов. Для пути оставлено ${retained} блоков. Возвращаюсь к месту работы`);
     task.deliveryPhase = "return";
     desired = "return";
   }
   async function returnToWork(signal) {
-    await operation(
-      () =>
-        bot.pathfinder.goto(
-          new goals.GoalNear(task.returnPoint.x, task.returnPoint.y, task.returnPoint.z, 0.8),
-        ),
-      signal,
-    );
+    // A pillar fills the original shaft. Walk to its top before dismantling
+    // our own supports; a walking search cannot see through the filled floor.
+    const column = [...task.scaffolds.keys()]
+      .map((key) => new Vec3(...key.split(",").map(Number)))
+      .filter((pos) => pos.offset(0.5, 0, 0.5).xzDistanceTo(task.returnPoint) < 0.8 &&
+        pos.y >= Math.floor(task.returnPoint.y) &&
+        bot.blockAt(pos)?.type === task.scaffolds.get(plan.key(pos)))
+      .sort((a, b) => b.y - a.y)[0];
+    if (column && bot.entity.position.y >= column.y + 0.9) {
+      await navigate(new goals.GoalBlock(column.x, column.y + 1, column.z), signal);
+    }
+    while (bot.entity.position.y > task.returnPoint.y + 0.9 && await descendScaffold(signal))
+      guard(signal);
+    await navigate(new goals.GoalNear(task.returnPoint.x, task.returnPoint.y, task.returnPoint.z, 0.8), signal);
     finish("готово", `Добыча выброшена у владельца: ${task.delivered}`);
   }
   const actions = {
@@ -908,7 +1001,13 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       return;
     }
     if (!task || pending) return;
-    bot.pathfinder.setMoveOptions?.({ canDig: name === "move" && task.routeDig });
+    const travel = ["deliver", "return", "deposit"].includes(name);
+    bot.pathfinder.setMoveOptions?.({
+      canDig: (name === "move" && task.routeDig) || travel,
+      allowExcavatedDescent: name === "move" && task.kind === "mine" && task.routeDig,
+      canPlace: Boolean(task.scaffold) || travel,
+      allow1by1towers: Boolean(task.scaffold) || travel,
+    });
     const generation = revision,
       signal = abort.signal;
     pending = true;
@@ -919,7 +1018,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       })
       .catch((error) => {
         if (generation !== revision || disposed) return;
-        if (error instanceof Interrupted) return;
+        if (error instanceof Interrupted) {
+          requestPause("Движение прервано; восстанавливаю работу", true);
+          return;
+        }
         if (error instanceof WorkError || ["scan", "deposit", "deliver", "return"].includes(name)) {
           requestPause(error.message, error.resumeOnRecovery);
           return;
@@ -997,10 +1099,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   function blockPlaced(previous, block) {
     if (
-      task?.scaffold &&
+      task && (task.scaffold || travelRouting()) &&
       block &&
       previous?.boundingBox === "empty" &&
-      plan.insideTask(task, block.position)
+      (travelRouting() || plan.insideTask(task, block.position)) &&
+      bot.pathfinder.currentMove?.toPlace.some((place) => place.vec.equals(block.position))
     )
       task.scaffolds.set(plan.key(block.position), block.type);
   }
@@ -1075,16 +1178,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     get snapshot() {
       return {
         phase: machine.activeState?.stateName,
-        active: task && {
-          id: task.id,
-          kind: task.kind,
-          mined: task.mined,
-          collected: task.collected,
-          deposited: task.deposited,
-          count: task.count,
-          missedDrops: task.missedDrops,
-        },
-        queue: queue.map((t) => ({ id: t.id, kind: t.kind })),
+        active: taskSummary(task),
+        queue: queue.map(taskSummary),
         history: [...history],
         reason: pausedReason,
       };
@@ -1106,6 +1201,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       };
       queue.push(entry);
       tick();
+      report(true);
       return entry.id;
     },
     pause: (reason) => requestPause(reason || "Пауза владельца"),
@@ -1163,7 +1259,6 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       revision++;
       abort = new AbortController();
       acquireMovement();
-      bot.pathfinder.setMoveOptions?.({ canPlace: false, canDig: false });
       desired = "deliver";
       machine.update();
       report(true);
@@ -1213,13 +1308,46 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       const index = queue.findIndex((t) => t.id === Number(id));
       if (index < 0) throw new Error("Такой задачи в очереди нет");
       queue.splice(index, 1);
+      report(true);
+    },
+    reorder(id, direction) {
+      if (!["up", "down"].includes(direction)) throw new Error("Направление: up или down");
+      const index = queue.findIndex((entry) => entry.id === Number(id));
+      if (index < 0) throw new Error("Такой задачи в очереди нет");
+      const next = index + (direction === "up" ? -1 : 1);
+      if (next >= 0 && next < queue.length)
+        [queue[index], queue[next]] = [queue[next], queue[index]];
+      report(true);
+    },
+    async cancel(id) {
+      if (task?.id !== Number(id)) {
+        controller.remove(id);
+        return;
+      }
+      const paused = (pauseRequested && !survivalPaused) || Boolean(deliveryContext?.paused);
+      revision++;
+      abort.abort();
+      pauseRequested = true;
+      await halt();
+      await work;
+      finish("отменено");
+      abort = new AbortController();
+      pauseRequested = paused;
+      survivalPaused = false;
+      pausedReason = paused ? "Пауза владельца" : "";
+      desired = paused ? "paused" : task ? "scan" : "idle";
+      machine.update();
+      tick();
+      report(true);
     },
     clearQueue() {
       queue.length = 0;
+      report(true);
     },
     async dispose() {
       if (disposed) return;
       disposed = true;
+      mineIndex.dispose();
       if (bot.dig === routeDig) bot.dig = originalDig;
       bot.off("physicsTick", tick);
       bot.off("itemDrop", itemDrop);
@@ -1229,6 +1357,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       machine.onStateExited();
     },
   };
+  const mineIndex = createMineIndex(bot);
   bot.on("physicsTick", tick);
   bot.on("itemDrop", itemDrop);
   bot.on("playerCollect", collected);

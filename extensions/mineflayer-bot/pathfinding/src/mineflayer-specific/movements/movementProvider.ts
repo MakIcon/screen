@@ -90,6 +90,21 @@ export abstract class MovementProvider extends Movement {
     return this.getBlockInfoAt(yes.x, yes.y, yes.z, yes)
   }
 
+  /** Ordinary parkour must not cut across a visible lava basin. */
+  protected jumpCrossesHazard (node: Move, dx: number, dz: number): boolean {
+    const samples = Math.ceil(Math.hypot(dx, dz) * 2)
+    for (let i = 1; i < samples; i++) {
+      const x = Math.floor(node.x + 0.5 + dx * i / samples)
+      const z = Math.floor(node.z + 0.5 + dz * i / samples)
+      for (let depth = 1; depth <= 16; depth++) {
+        const block = this.getBlockInfoRaw(new Vec3(x, node.y - depth, z))
+        if (block.isInvalid || !block.safe) return true
+        if (block.physical || block.water) break
+      }
+    }
+    return false
+  }
+
   private getBlockInfoAt (x: number, y: number, z: number, pos?: Vec3): BlockInfo {
     const wantedDx = x - this.orgX + this.halfX
     const wantedDz = z - this.orgZ + this.halfZ
@@ -123,10 +138,13 @@ export class MovementHandler implements AMovementProvider<Move> {
   recognizedMovements: MovementProvider[]
   goal!: goals.Goal
   world: World
+  /** Real terrain read by this search, including physics simulations. */
+  readonly readBlocks: Set<string>
 
-  constructor (bot: Bot, world: World, recMovement: MovementProvider[]) {
+  constructor (bot: Bot, world: World, recMovement: MovementProvider[], readBlocks = new Set<string>()) {
     this.world = world
     this.recognizedMovements = recMovement
+    this.readBlocks = readBlocks
     this.initIndexCoordinates()
   }
 
@@ -137,10 +155,23 @@ export class MovementHandler implements AMovementProvider<Move> {
     settings: Partial<MovementOptions> = {}
   ): MovementHandler {
     const opts = buildMovementOptions(settings)
+    const readBlocks = new Set<string>()
+    const record = (pos: Vec3): void => { readBlocks.add(`${Math.floor(pos.x)}:${Math.floor(pos.y)}:${Math.floor(pos.z)}`) }
+    const trackedWorld: World = {
+      minY: world.minY,
+      getBlock: pos => { record(pos); return world.getBlock(pos) },
+      getBlockInfo: pos => { record(pos); return world.getBlockInfo(pos) },
+      getBlockStateId: pos => { record(pos); return world.getBlockStateId(pos) },
+      raycast: (from, direction, range, matcher) => {
+        for (let distance = 0; distance <= range; distance += 0.5) record(from.plus(direction.scaled(distance)))
+        return world.raycast(from, direction, range, matcher)
+      }
+    }
     return new MovementHandler(
       bot,
-      world,
-      [...recMovement.keys()].map((M) => new M(bot, world, opts))
+      trackedWorld,
+      [...recMovement.keys()].map((M) => new M(bot, trackedWorld, opts)),
+      readBlocks
     )
   }
 

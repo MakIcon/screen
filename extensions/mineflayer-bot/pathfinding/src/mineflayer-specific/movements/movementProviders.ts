@@ -327,7 +327,16 @@ export class ForwardDropDown extends DropDownProvider {
     let cost = WALK_OFF_BLOCK_COST // step off the ledge
 
     const block0 = this.getBlockInfo(node, 0, 0, 0)
-    const blockLand = this.getLandingBlock(block0, node, dir)
+    let blockLand = this.getLandingBlock(block0, node, dir)
+    // Excavate a supported stair beside the player. A solid adjacent floor
+    // previously blocked all downward mining routes before safeOrBreak ran.
+    // Never choose a shaft below the player's feet or a landing over a void.
+    if (blockLand == null && this.settings.canDig && this.settings.allowExcavatedDescent) {
+      const step = this.getBlockInfo(node, dir.x, -1, dir.z)
+      const support = this.getBlockInfo(node, dir.x, -2, dir.z)
+      if (!step.isInvalid && step.safe && support.physical && support.safe &&
+          !support.liquid && Math.abs(support.height - (node.y - 1)) < 0.01) blockLand = step
+    }
 
     if (blockLand == null) return
     if (blockLand.isInvalid) return // out of range.
@@ -508,6 +517,7 @@ export class ParkourForward extends MovementProvider {
       let cost = cost0 + this.travelCost(d) // jump plus sprinting across d blocks
       const dx = dir.x * d
       const dz = dir.z * d
+      if (this.jumpCrossesHazard(node, dx, dz)) break
 
       const flag0 = /* true */ !closed.has(`${node.x + dx},${node.y - 1},${node.z + dz}`)
       const flag1 = /* true */ !closed.has(`${node.x + dx},${node.y},${node.z + dz}`)
@@ -631,6 +641,7 @@ export class ParkourDiagonal extends MovementProvider {
     const dz = dir.z * zSteps
 
     const travel = Math.sqrt(xSteps * xSteps + zSteps * zSteps)
+    if (this.jumpCrossesHazard(node, dx, dz)) return false
     let cost = cost0 + this.travelCost(travel) // jump plus sprinting across the gap
     const majorIsX = xSteps > zSteps
     const majorIsZ = zSteps > xSteps

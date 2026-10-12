@@ -54,6 +54,7 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("web-inventory.cjs", include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs")),
     ("gathering.cjs", include_str!("../../../extensions/mineflayer-bot/gathering.cjs")),
     ("gathering-plan.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-plan.cjs")),
+    ("gathering-scan.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-scan.cjs")),
     ("gathering-commands.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-commands.cjs")),
     ("GATHERING.md", include_str!("../../../extensions/mineflayer-bot/GATHERING.md")),
     ("knockback.cjs", MINEFLAYER_KNOCKBACK),

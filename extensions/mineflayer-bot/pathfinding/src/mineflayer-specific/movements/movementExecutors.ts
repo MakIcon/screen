@@ -12,7 +12,7 @@ import { ControlStateHandler, EPhysicsCtx } from '@nxg-org/mineflayer-physics-ut
 import { printBotControls } from '../../utils'
 import type { Block, RayType } from '../../types'
 import { botSmartMovement, botStrafeMovement, steerToPosition } from './controls'
-import { clearBodySegment } from '../navigationGeometry'
+import { clearBodySegment, supportedWalkSegment } from '../navigationGeometry'
 
 const debug = require('debug')
 const logIdle = debug('minecraft-pathfinding:movementExecutors:Idle')
@@ -36,10 +36,17 @@ export class IdleMovementExecutor extends MovementExecutor {
 }
 
 export class NewForwardExecutor extends MovementExecutor {
+  private cornerSneaking = false
+
+  override reset (): void { this.cornerSneaking = false; super.reset() }
+
   private async correctCorner (move: Move): Promise<boolean> {
     const pos = this.bot.entity.position
     if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 ||
-        clearBodySegment(this.world, pos, move.exitPos)) return false
+        (clearBodySegment(this.world, pos, move.exitPos, 0.599) && supportedWalkSegment(this.world, pos, move.exitPos))) {
+      if (this.cornerSneaking) { this.bot.setControlState('sneak', false); this.cornerSneaking = false }
+      return false
+    }
     // Predicted completion may switch to the next leg while we still hug the
     // old block's edge. Centre on that supported cell before making the turn.
     const entry = move.entryPos.clone(); entry.y = pos.y
@@ -52,6 +59,9 @@ export class NewForwardExecutor extends MovementExecutor {
     steerToPosition(this.bot, center, 0.1, 0.04)
     this.bot.setControlState('sprint', false)
     this.bot.setControlState('jump', false)
+    const projected = pos.offset(this.bot.entity.velocity.x * 3, 0, this.bot.entity.velocity.z * 3)
+    this.cornerSneaking = !supportedWalkSegment(this.world, pos, projected)
+    this.bot.setControlState('sneak', this.cornerSneaking)
     return true
   }
 
@@ -205,12 +215,20 @@ export class NewForwardExecutor extends MovementExecutor {
 
   async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
     if (this.cI == null && await this.correctCorner(thisMove)) return false
+    if (this.cI instanceof BreakHandler && this.cI.isPerforming && !this.cI.allowExit) {
+      // Keep the exposed face under the crosshair until the server confirms
+      // it. Route steering must not turn away or walk out of mining reach.
+      for (const control of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(control, false)
+      return false
+    }
     if (this.cI != null && !(await this.cI.allowExternalInfluence(this.bot))) {
       return false
     } else if (this.cI == null) {
       const test = await this.interactNeeded(5)
       if (test != null) {
-        // console.log('performing interaction')
+        if (test instanceof BreakHandler) {
+          for (const control of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(control, false)
+        }
         this.startInteraction(test)
         return false
       }
@@ -468,7 +486,11 @@ export class NewForwardJumpExecutor extends ForwardJumpExecutor {
       await this.postInitAlignToPath(move, { sprint: false })
     } else if (this.adjacentStep(move) && this.toPlaceLen() === 0) {
       this.bot.clearControlStates()
-      for (const target of this.toBreak()) await this.performInteraction(target)
+      while (this.toBreakLen() > 0) {
+        const target = await this.interactNeeded(0)
+        if (!(target instanceof BreakHandler)) throw new CancelError('No exposed block in the planned ascent')
+        await this.performInteraction(target)
+      }
       this.jumpRequested = false
     } else await super.performInit(move, index, path)
   }
@@ -513,6 +535,13 @@ export class NewForwardJumpExecutor extends ForwardJumpExecutor {
 }
 
 export class ForwardDropDownExecutor extends MovementExecutor {
+  private guardingFloor = false
+  override reset (): void { this.guardingFloor = false; super.reset() }
+
+  private holdExcavation (): void {
+    for (const control of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(control, false)
+    this.bot.setControlState('sneak', this.guardingFloor)
+  }
   protected override isComplete (move: Move, end: Move = move): boolean {
     if (this.world.getBlockInfo(end.exitPos).water) return super.isComplete(move, end)
     const pos = this.bot.entity.position
@@ -536,12 +565,29 @@ export class ForwardDropDownExecutor extends MovementExecutor {
 
   override async align (thisMove: Move, tickCount?: number, goal?: goals.Goal, lookTarget?: Vec3): Promise<boolean> {
     if (thisMove.metadata?.waterLanding === true) return true
+    if (this.getRemainingBreaks().some(block => block.y < thisMove.entryPos.y)) {
+      this.guardingFloor = true
+      // A descending excavation must start from the old support's centre.
+      // Ordinary ledge alignment moves toward the exit and can put the feet
+      // on the very floor block that is about to be removed.
+      const center = thisMove.entryPos.floored().offset(0.5, 0, 0.5)
+      steerToPosition(this.bot, center, 0.06, 0.03)
+      this.bot.setControlState('sneak', true)
+      this.bot.setControlState('sprint', false)
+      this.bot.setControlState('jump', false)
+      return this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(center) < 0.1 &&
+        Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02
+    }
     this.handleSneak(thisMove)
     return await super.align(thisMove, tickCount, goal, lookTarget)
   }
 
   async performInit (thisMove: Move, currentIndex: number, path: Move[]): Promise<void> {
     if (thisMove.metadata?.waterLanding === true) return
+    if (this.getRemainingBreaks().length > 0) {
+      this.holdExcavation()
+      return
+    }
     await this.postInitAlignToPath(thisMove)
   }
 
@@ -555,9 +601,13 @@ export class ForwardDropDownExecutor extends MovementExecutor {
       this.bot.setControlState('jump', this.doWaterLogic())
       return false
     }
+    if (this.cI instanceof BreakHandler && this.cI.isPerforming && !this.cI.allowExit) {
+      this.holdExcavation()
+      return false
+    }
     if (this.cI != null && !(await this.cI.allowExternalInfluence(this.bot, 0))) {
       // If we are locked by an interaction, freeze so we don't accidentally fall early.
-      this.bot.clearControlStates()
+      this.holdExcavation()
       return false
     }
 
@@ -565,9 +615,13 @@ export class ForwardDropDownExecutor extends MovementExecutor {
       // 1. Process Sequential Breaks (Must wait for server digging)
       const remainingBreaks = this.getRemainingBreaks()
       if (remainingBreaks.length > 0) {
-        const breakTarget = remainingBreaks[0]
+        // A downward step lists its landing floor first, but that floor is
+        // hidden behind the wall at feet height. Clear an exposed planned
+        // block first, retaining the same step and support throughout.
+        const breakTarget = await this.interactNeeded(0)
+        if (!(breakTarget instanceof BreakHandler)) throw new CancelError('No exposed block in the planned descending step')
         logDrop(`[ForwardDrop] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`)
-        this.bot.clearControlStates()
+        this.holdExcavation()
         this.startInteraction(breakTarget)
         return false
       }

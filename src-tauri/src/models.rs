@@ -820,6 +820,7 @@ pub struct MineflayerBotStatus {
     pub last_error: Option<String>,
     pub logs: Vec<String>,
     pub inventory_url: Option<String>,
+    pub inventory: Option<serde_json::Value>,
     pub gathering: Option<serde_json::Value>,
 }
 

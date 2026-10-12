@@ -87,3 +87,55 @@ for (const version of ["1.20.4", "26.1.2"])
     assert.equal(urls.at(-1), null);
     assert.equal(bot.listenerCount("end"), 0);
   });
+
+test("launcher inventory snapshots include live survival stats, all slots and equipment armor", async (t) => {
+  const { bot, original } = botFixture("26.1.2");
+  bot.username = "SCREEN_BOT";
+  bot.health = 6;
+  bot.food = 18;
+  bot.foodSaturation = 4.5;
+  bot.quickBarSlot = 2;
+  bot.entity = { attributes: { "minecraft:max_health": { value: 20, modifiers: [] } } };
+  const updates = [];
+  for (const [slot, name] of [
+    [5, "iron_helmet"],
+    [6, "diamond_chestplate"],
+    [8, "iron_boots"],
+  ])
+    bot.inventory.slots[slot] = {
+      name,
+      type: bot.registry.itemsByName[name].id,
+      count: 1,
+      durabilityUsed: 3,
+    };
+  const controller = viewer.startInventoryTelemetry(bot, {
+    onUpdate: (snapshot) => updates.push(snapshot),
+  });
+  t.after(() => controller.stop());
+  assert.equal(updates[0].health, 6);
+  assert.equal(updates[0].food, 18);
+  assert.equal(updates[0].armor, 12);
+  assert.equal(updates[0].selectedSlot, 38);
+  assert.equal(updates[0].slots[9].count, 12);
+  assert.ok(updates[0].slots[9].texture.startsWith("data:"));
+  assert.equal(original.texture, undefined);
+  bot.health = 15;
+  bot.food = 20;
+  bot.entity.attributes["minecraft:armor"] = {
+    value: 14,
+    modifiers: [{ operation: 0, amount: 1 }],
+  };
+  bot.emit("health");
+  bot.inventory.slots[9] = null;
+  bot.inventory.emit("updateSlot", 9, original, null);
+  await sleep(100);
+  assert.equal(updates.at(-1).health, 15);
+  assert.equal(updates.at(-1).food, 20);
+  assert.equal(updates.at(-1).armor, 15);
+  assert.equal(updates.at(-1).slots[9], null);
+  assert.equal(updates.at(-1).occupied, 0);
+  bot.emit("end");
+  assert.equal(updates.at(-1), null);
+  assert.equal(bot.inventory.listenerCount("updateSlot"), 0);
+  assert.equal(bot.listenerCount("health"), 0);
+});

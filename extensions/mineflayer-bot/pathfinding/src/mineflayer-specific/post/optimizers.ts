@@ -9,7 +9,7 @@ import { World } from '../world/worldInterface'
 import { sumExclusionAreas } from '../movements/movement'
 import type { ExclusionArea } from '../movements/exclusionZones'
 import { COST_INF } from '../movements/costs'
-import { clearBodySegment } from '../navigationGeometry'
+import { clearBodySegment, supportedWalkSegment } from '../navigationGeometry'
 
 import { AABB, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
 import { stateLookAt } from '../movements/movementUtils'
@@ -111,6 +111,7 @@ export class LandStraightAheadOpt extends MovementOptimizer {
       // Rays along the body's vertices can miss a block that enters through
       // the middle of a side. Keep the original turn in that case.
       if (!clearBodySegment(this.world, orgPos, nextMove.exitPos)) return --currentIndex
+      if (!supportedWalkSegment(this.world, orgPos, nextMove.exitPos)) return --currentIndex
       if (!AABB.fromBlockPos(nextMove.entryPos).collides(AABB.fromBlockPos(nextMove.exitPos))) {
         log(`[LandStraightAhead] Index ${currentIndex}: AABB collision failed between entry and exit.`)
         return --currentIndex

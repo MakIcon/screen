@@ -51,6 +51,7 @@ for (const file of [
   "emergency-mlg.cjs",
   "survival.cjs",
   "gathering-plan.cjs",
+  "gathering-scan.cjs",
   "gathering.cjs",
   "gathering-commands.cjs",
   "gathering.test.mjs",

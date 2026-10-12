@@ -11,16 +11,19 @@ import { ElementToggle } from "../../inputs/ElementToggle";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import { MineflayerGatheringControls } from "./MineflayerGatheringControls";
+import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
-type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control";
+type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control" | "gathering" | "inventory";
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "connection", label: "Подключение" },
   { id: "behavior", label: "Поведение" },
   { id: "survival", label: "Выживание" },
   { id: "combat", label: "Бой и предметы" },
+  { id: "gathering", label: "Добыча" },
+  { id: "inventory", label: "Инвентарь" },
   { id: "commands", label: "Команды" },
   { id: "control", label: "Управление" },
 ];
@@ -236,6 +239,8 @@ function MineflayerBotSettingsEditor({
       </nav>
 
       <div className="mineflayer-bot-section" key={activeSection}>
+        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} onOpenInventory={() => setActiveSection("inventory")} />}
+        {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveSection("gathering")} />}
         {activeSection === "connection" && (
           <div className="mineflayer-bot-connection-grid">
             <PluginSettingsGroup title="СЕРВЕР" collapsible={false}>
@@ -544,7 +549,6 @@ function MineflayerBotSettingsEditor({
 
         {activeSection === "survival" && (
           <>
-            <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} />
             <PluginSettingsGroup
               title="АВТОЕДА"
               description="Безопасная пища из инвентаря · настройки применяются после перезапуска бота"
