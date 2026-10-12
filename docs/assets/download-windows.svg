@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="320" height="72" viewBox="0 0 320 72" role="img" aria-labelledby="title desc">
   <title id="title">Download ScreenLauncher for Windows</title>
-  <desc id="desc">Windows 64-bit executable installer</desc>
-  <rect width="320" height="72" rx="13" fill="#c94709"/>
-  <g transform="translate(26 17)" stroke="#fffaf4" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 2v18M9 13l7 7 7-7"/>
-    <path d="M7 26v4h18v-4"/>
+  <desc id="desc">Windows 64-bit EXE installer</desc>
+  <rect width="320" height="72" rx="12" fill="#c94709"/>
+  <g transform="translate(30 21)" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2v17"/>
+    <path d="m6 13 6 6 6-6"/>
+    <path d="M3 24v3h18v-3"/>
   </g>
-  <g font-family="Inter,Segoe UI,Arial,sans-serif">
-    <text x="66" y="31" font-size="17" font-weight="700" letter-spacing="-.35" fill="#fffaf4">Download for Windows</text>
-    <text x="66" y="50" font-size="13" font-weight="400" fill="#f7ddce">64-bit · EXE installer</text>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="76" y="31" font-size="17" font-weight="700" letter-spacing="-.35" fill="#ffffff">Download for Windows</text>
+    <text x="76" y="50" font-size="13" fill="#ffe2d2">64-bit · EXE installer</text>
   </g>
 </svg>

@@ -101,6 +101,18 @@ There is no published macOS or Linux installer listed in the repository's curren
 
 </div>
 
+## Activity snake
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/github-contribution-snake-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/github-contribution-snake.svg" />
+  <img src="docs/assets/github-contribution-snake.svg" alt="Animated snake moving across MakIcon's GitHub contribution graph" width="100%" />
+</picture>
+
+</div>
+
 <details>
 <summary><b>Development & building from source</b></summary>
 
