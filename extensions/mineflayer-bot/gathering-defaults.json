@@ -1,0 +1,8 @@
+{
+  "tunnelWidth": 2,
+  "tunnelHeight": 2,
+  "stairWidth": 2,
+  "stairHeight": 3,
+  "placeTorches": false,
+  "torchInterval": 8
+}

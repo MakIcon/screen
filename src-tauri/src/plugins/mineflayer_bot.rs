@@ -79,6 +79,7 @@ struct WorkerConfig {
     behavior: WorkerBehaviorConfig,
     combat: MineflayerCombatSettings,
     survival: crate::models::MineflayerSurvivalSettings,
+    gathering: crate::models::MineflayerGatheringSettings,
 }
 
 #[derive(Debug, Serialize)]
@@ -612,6 +613,14 @@ pub async fn start_mineflayer_bot(
             log_path_updates: plugin.log_path_updates,
         },
         survival: plugin.survival.clone(),
+        gathering: crate::models::MineflayerGatheringSettings {
+            tunnel_width: plugin.gathering.tunnel_width.clamp(1, 3),
+            tunnel_height: plugin.gathering.tunnel_height.clamp(2, 4),
+            stair_width: plugin.gathering.stair_width.clamp(1, 3),
+            stair_height: plugin.gathering.stair_height.clamp(3, 4),
+            place_torches: plugin.gathering.place_torches,
+            torch_interval: plugin.gathering.torch_interval.clamp(4, 16),
+        },
     };
 
     let (worker, runtime_dir) = worker_path()?;

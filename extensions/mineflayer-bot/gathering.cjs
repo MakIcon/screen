@@ -44,7 +44,7 @@ const LABELS = {
 };
 
 function createGatheringController(bot, options = {}, hooks = {}) {
-  const settings = { ...plan.DEFAULTS, ...options };
+  const settings = { ...plan.DEFAULTS, ...options, ...plan.passageSettings(options) };
   const onStatus = hooks.onStatus || (() => {});
   const onProgress = hooks.onProgress || (() => {});
   const now = hooks.now || Date.now;
@@ -87,6 +87,13 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   const trackedDrops = new Map(),
     picked = new Map();
   const originalDig = bot.dig.bind(bot);
+  const torchSites = new Map();
+  const passageFloors = new Map();
+  let torchAttempt = null;
+  function matchesTarget(block) {
+    return plan.matches(task, block) &&
+      !(torchSites.has(plan.key(block.position)) && /^(wall_)?torch$/.test(block.name));
+  }
   function trackDig(block) {
     lastBlock = block.position.clone();
     task.digSites ||= new Map();
@@ -104,6 +111,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       return "Блок вне области добычи";
     if (!travel && task.kind === "forest" && !plan.isWood(block.name) && !plan.isLeaves(block.name))
       return "Блок не относится к дереву";
+    if (!travel && passageFloors.get(plan.key(block.position)) === block.type) return "Пол готового прохода";
     const unsafe = plan.safetyReason(bot, block);
     if (unsafe) return unsafe;
     if (plan.supportBlock(bot, block)) {
@@ -121,7 +129,13 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const signal = abort.signal;
     guard(signal);
     const travel = travelRouting();
-    if (!travel && task.count && task.mined >= task.count && plan.matches(task, block))
+    if (!travel && (task.kind === "mine" || task.tunnel)) {
+      for (const floor of bot.pathfinder.currentMove?.metadata?.excavationFloors || []) {
+        const support = bot.blockAt(floor);
+        if (support?.boundingBox === "block") passageFloors.set(plan.key(floor), support.type);
+      }
+    }
+    if (!travel && task.count && task.mined >= task.count && matchesTarget(block))
       throw new Error("Количество целевых блоков уже достигнуто");
     const unsafe = routeBreakReason(block);
     if (unsafe) throw new WorkError(`Нельзя безопасно проложить путь: ${unsafe}`);
@@ -133,7 +147,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     trackDig(block);
     await originalDig(block, true, visibleFace(block) || args[1] || "raycast");
     guard(signal);
-    if (!travel && plan.matches(task, block)) task.mined++;
+    if (!travel && matchesTarget(block)) task.mined++;
+    if (!travel && (task.kind === "mine" || task.tunnel)) await lightPassage(signal);
   }
   bot.dig = routeDig;
 
@@ -143,6 +158,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     return {
       id: entry.id,
       kind: entry.kind,
+      tunnel: Boolean(entry.tunnel),
       names: entry.names,
       radius: entry.radius,
       count: entry.count || 0,
@@ -267,7 +283,24 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     let position = bot.entity.position.clone(),
       digging = null;
     return operation(
-      () => bot.pathfinder.goto(goal, { allowMiningPrefix: Boolean(task?.routeDig) || travelRouting() }),
+      async () => {
+        const travel = travelRouting();
+        if (travel) {
+          // Ordinary A* over the current world finds the already excavated
+          // stairs and passages. Only search with construction if walking fails.
+          bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
+          try {
+            return await bot.pathfinder.goto(goal);
+          } catch (error) {
+            guard(signal);
+            if (!/Pathfinding failed: (?:noPath|timeout)/.test(error.message)) throw error;
+          } finally {
+            if (!signal.aborted)
+              bot.pathfinder.setMoveOptions?.({ canDig: true, canPlace: true, allow1by1towers: true });
+          }
+        }
+        return bot.pathfinder.goto(goal, { allowMiningPrefix: Boolean(task?.routeDig) || travel });
+      },
       signal,
       Math.min(timeout, settings.operationTimeoutMs),
       false,
@@ -321,6 +354,67 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     return goal;
   }
+  async function lightPassage(signal) {
+    guard(signal);
+    if (!settings.placeTorches || !bot.placeBlock || !bot.entity.onGround) return;
+    const item = bot.inventory.items().find((value) => value.name === "torch" && value.count > 0);
+    if (!item) return;
+    const foot = bot.entity.position.floored();
+    if (torchAttempt?.equals(foot)) return;
+    for (const [key, site] of torchSites) {
+      if (!/^(wall_)?torch$/.test(bot.blockAt(site.position)?.name || "")) torchSites.delete(key);
+      else if (site.feet.distanceTo(foot) < settings.torchInterval) return;
+    }
+    const ids = ["torch", "wall_torch"].map((name) => bot.registry.blocksByName[name]?.id).filter(Number.isInteger);
+    if (ids.length && bot.findBlocks?.({ point: foot, matching: ids,
+      maxDistance: Math.max(1, settings.torchInterval - 2), count: 1 }).length) return;
+    torchAttempt = foot.clone();
+    const route = bot.pathfinder.currentPath?.slice(bot.pathfinder.currentIndex || 0) || [];
+    const scheduled = (pos) => route.some((move) => move.toBreak.some((entry) => entry.vec.equals(pos)));
+    const choices = [];
+    for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const direction = new Vec3(x, 0, z);
+      for (let distance = 1; distance <= 3; distance++) {
+        const wall = bot.blockAt(foot.offset(x * distance, 1, z * distance));
+        if (!wall) break;
+        if (plan.AIR.has(wall.name)) continue;
+        const destination = wall.position.minus(direction);
+        const space = bot.blockAt(destination);
+        if (wall.boundingBox === "block" && !plan.PROTECTED.test(wall.name) &&
+            !plan.FLUIDS.has(wall.name) && !wall.getProperties?.().waterlogged &&
+            plan.AIR.has(space?.name) && plan.insideTask(task, destination) &&
+            (!task.area || !plan.insideTask(task, wall.position)) &&
+            !scheduled(destination) && !scheduled(wall.position) && visibleFace(wall))
+          choices.push({ wall, face: direction.scaled(-1), destination });
+        break;
+      }
+    }
+    const choice = choices[0];
+    if (!choice) return;
+    const previous = bot.heldItem;
+    try {
+      await operation(() => bot.equip(item, "hand"), signal);
+      guard(signal);
+      if (!plan.AIR.has(bot.blockAt(choice.destination)?.name)) return;
+      await operation(() => bot._placeBlockWithOptions
+        ? bot._placeBlockWithOptions(choice.wall, choice.face, { forceLook: true, swingArm: "right" })
+        : bot.placeBlock(choice.wall, choice.face), signal,
+        Math.max(settings.operationTimeoutMs, 6500));
+      if (/^(wall_)?torch$/.test(bot.blockAt(choice.destination)?.name || ""))
+        torchSites.set(plan.key(choice.destination), { position: choice.destination, feet: foot });
+    } catch (error) {
+      if (error instanceof Interrupted || error instanceof WorkError) throw error;
+      onStatus(`Факел не установлен: ${error.message}; продолжаю добычу`);
+    } finally {
+      if (!signal.aborted) {
+        const items = bot.inventory.items();
+        const held = previous && (items.find((value) => value === previous) ||
+          items.find((value) => value.type === previous.type && value.slot === previous.slot) ||
+          items.find((value) => value.type === previous.type));
+        await operation(() => held ? bot.equip(held, "hand") : bot.unequip("hand"), signal);
+      }
+    }
+  }
   function nearbyTargets() {
     return (task.candidates || []).map((pos) => bot.blockAt(pos)).filter(allowed);
   }
@@ -363,6 +457,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     bot.pathfinder.setMoveOptions({
       canDig: false,
       allowExcavatedDescent: false,
+      excavationWidth: 0,
+      excavationStairWidth: 0,
       canPlace: Boolean(task?.scaffold) || travelRouting(),
       allow1by1towers: Boolean(task?.scaffold) || travelRouting(),
       exclusionAreasBreak: [
@@ -374,7 +470,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             !travelRouting() &&
             task.count &&
             task.mined >= task.count &&
-            plan.matches(task, bot.blockAt(block.position))
+            matchesTarget(bot.blockAt(block.position))
           )
             return 1000000;
           return 0;
@@ -473,7 +569,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   function allowed(block) {
     return (
-      plan.matches(task, block) &&
+      matchesTarget(block) &&
       !plan.safetyReason(bot, block) &&
       (task.failed.get(plan.key(block.position)) || 0) < settings.maxAttempts
     );
@@ -492,7 +588,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           guard(signal);
           const block = bot.blockAt(new Vec3(x, y, z));
           if (!block) unloaded++;
-          else if (plan.matches(task, block)) {
+          else if (matchesTarget(block)) {
             remaining++;
             if (allowed(block)) candidates.push(block);
           }
@@ -704,7 +800,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             [0, -1],
           ].map(
             ([x, z]) =>
-              new goals.GoalBlock(block.position.x + x, block.position.y, block.position.z + z),
+              new goals.GoalBlock(block.position.x + x, task.tunnel ? task.area.min.y : block.position.y, block.position.z + z),
           ),
         ),
         signal,
@@ -803,6 +899,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       throw new Error("Сервер не подтвердил разрушение блока");
     task.mined++;
     task.failed.delete(plan.key(block.position));
+    if (task.kind === "mine" || task.area) await lightPassage(signal);
     const next =
       !task.area &&
       (!task.count || task.mined < task.count) &&
@@ -1002,9 +1099,15 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     if (!task || pending) return;
     const travel = ["deliver", "return", "deposit"].includes(name);
+    const passage = name === "move" && (task.kind === "mine" || task.tunnel) && task.routeDig;
     bot.pathfinder.setMoveOptions?.({
       canDig: (name === "move" && task.routeDig) || travel,
       allowExcavatedDescent: name === "move" && task.kind === "mine" && task.routeDig,
+      excavationWidth: passage ? task.tunnelWidth || settings.tunnelWidth : 0,
+      excavationHeight: task.tunnelHeight || settings.tunnelHeight,
+      excavationStairWidth: passage ? settings.stairWidth : 0,
+      excavationStairHeight: settings.stairHeight,
+      maxDropDown: passage ? 1 : Math.min(2, movementSettings?.maxDropDown ?? 2),
       canPlace: Boolean(task.scaffold) || travel,
       allow1by1towers: Boolean(task.scaffold) || travel,
     });
@@ -1166,6 +1269,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   const controller = {
     machine,
     settings,
+    configurePassages(input) {
+      Object.assign(settings, plan.passageSettings(input, settings));
+      torchAttempt = null;
+      return plan.passageSettings(settings);
+    },
     get busy() {
       return busy();
     },

@@ -239,7 +239,7 @@ function MineflayerBotSettingsEditor({
       </nav>
 
       <div className="mineflayer-bot-section" key={activeSection}>
-        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} onOpenInventory={() => setActiveSection("inventory")} />}
+        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} settings={settings.gathering} onSettingsChange={(gathering) => update({ gathering })} onOpenInventory={() => setActiveSection("inventory")} />}
         {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveSection("gathering")} />}
         {activeSection === "connection" && (
           <div className="mineflayer-bot-connection-grid">

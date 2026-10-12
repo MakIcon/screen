@@ -407,6 +407,16 @@ export type MineflayerBotPluginSettings = {
   logPathUpdates: boolean;
   combat: MineflayerCombatSettings;
   survival: MineflayerSurvivalSettings;
+  gathering: MineflayerGatheringSettings;
+};
+
+export type MineflayerGatheringSettings = {
+  tunnelWidth: number;
+  tunnelHeight: number;
+  stairWidth: number;
+  stairHeight: number;
+  placeTorches: boolean;
+  torchInterval: number;
 };
 
 export type BlueMapPluginSettings = {
@@ -427,6 +437,7 @@ export type ObsTelemetryPluginSettings = {
 export type MineflayerWorkTask = {
   id: number;
   kind: string;
+  tunnel?: boolean;
   names?: string[];
   radius?: number;
   count: number;

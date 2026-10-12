@@ -68,8 +68,8 @@ function taskFromCommand(bot, work, command, args) {
   if (command === "tunnel") {
     if (args.length > 3) throw new Error("tunnel [длина] [ширина] [высота]");
     const length = integer(args[0] ?? 16, "Длина", 1, 128);
-    const width = integer(args[1] ?? 2, "Ширина", 1, 8),
-      height = integer(args[2] ?? 3, "Высота", 2, 8);
+    const width = integer(args[1] ?? work.settings.tunnelWidth, "Ширина", 1, 8),
+      height = integer(args[2] ?? work.settings.tunnelHeight, "Высота", 2, 8);
     const origin = bot.entity.position.floored();
     const facing = new Vec3(-Math.sin(bot.entity.yaw), 0, -Math.cos(bot.entity.yaw));
     const direction =
@@ -82,7 +82,7 @@ function taskFromCommand(bot, work, command, args) {
       .plus(direction.scaled(length))
       .plus(side.scaled(Math.ceil((width - 1) / 2)))
       .offset(0, height - 1, 0);
-    return { kind: "quarry", area: bounds(a, b) };
+    return { kind: "quarry", area: bounds(a, b), tunnel: true, tunnelWidth: width, tunnelHeight: height };
   }
   if (command === "collect") {
     if (args.length > 2) throw new Error("collect [радиус] [предмет]");
@@ -113,6 +113,14 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
   }
   if (command === "work") {
     const action = args[0] || "status";
+    if (action === "tunnels") {
+      if (args.length !== 7 || !["on", "off"].includes(args[5]))
+        throw new Error("work tunnels ширина высота ширинаЛестницы просветЛестницы on|off интервалФакелов");
+      work.configurePassages({ tunnelWidth: args[1], tunnelHeight: args[2],
+        stairWidth: args[3], stairHeight: args[4], placeTorches: args[5] === "on", torchInterval: args[6] });
+      reply("Тоннели и освещение настроены; размеры применятся при следующем подходе");
+      return true;
+    }
     if (action === "pause") work.pause();
     else if (action === "resume") {
       if ((await prepare(false)) === false) return true;

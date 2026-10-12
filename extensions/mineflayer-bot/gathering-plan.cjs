@@ -1,6 +1,7 @@
 const { Vec3 } = require("vec3");
 
 const DEFAULTS = Object.freeze({
+  ...require("./gathering-defaults.json"),
   radius: 32,
   maxRadius: 64,
   maxAreaVolume: 32768,
@@ -18,6 +19,21 @@ const DEFAULTS = Object.freeze({
   scanLimit: 512,
   travelBlockReserve: 64,
 });
+
+function passageSettings(input = {}, defaults = DEFAULTS) {
+  const result = {};
+  for (const [name, label, min, max] of [
+    ["tunnelWidth", "Ширина тоннеля", 1, 3],
+    ["tunnelHeight", "Высота тоннеля", 2, 4],
+    ["stairWidth", "Ширина лестницы", 1, 3],
+    ["stairHeight", "Просвет лестницы", 3, 4],
+    ["torchInterval", "Интервал факелов", 4, 16],
+  ]) result[name] = integer(input[name] ?? defaults[name], label, min, max);
+  if (input.placeTorches != null && typeof input.placeTorches !== "boolean")
+    throw new Error("Факелы: включено или выключено");
+  result.placeTorches = input.placeTorches ?? defaults.placeTorches;
+  return result;
+}
 const SCAFFOLD_ITEMS = new Set([
   "dirt", "cobblestone", "cobbled_deepslate", "netherrack",
   "stone", "deepslate", "tuff", "andesite", "diorite", "granite",
@@ -122,7 +138,13 @@ function normalizeTask(bot, input, settings = DEFAULTS) {
     leaves: input.leaves === true,
     scaffold: input.kind === "forest" && input.scaffold !== false,
     routeDig: ["mine", "forest"].includes(input.kind) && input.routeDig !== false,
+    tunnel: input.kind === "quarry" && input.tunnel === true,
   };
+  if (task.tunnel) {
+    task.routeDig = true;
+    task.tunnelWidth = integer(input.tunnelWidth ?? settings.tunnelWidth, "Ширина", 1, 8);
+    task.tunnelHeight = integer(input.tunnelHeight ?? settings.tunnelHeight, "Высота", 2, 8);
+  }
   if (input.kind === "mine") {
     task.names = resolveBlocks(bot.registry, input.blocks || "ores");
     const minimum = bot.game?.minY ?? (bot.registry.version[">="]("1.18") ? -64 : 0);
@@ -204,6 +226,7 @@ function keepItem(bot, item) {
 
 module.exports = {
   DEFAULTS,
+  passageSettings,
   SCAFFOLD_ITEMS,
   AIR,
   FLUIDS,

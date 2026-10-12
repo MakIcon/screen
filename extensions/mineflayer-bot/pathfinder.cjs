@@ -2470,6 +2470,10 @@ var require_movement = __commonJS({
       canOpenDoors: true,
       canDig: true,
       allowExcavatedDescent: false,
+      excavationWidth: 0,
+      excavationHeight: 2,
+      excavationStairWidth: 0,
+      excavationStairHeight: 3,
       canPlace: true,
       dontCreateFlow: true,
       dontMineUnderFallingBlock: true,
@@ -2638,7 +2642,7 @@ var require_movement = __commonJS({
         for (let i = 0; i < _Movement.cardinalDirs.length; i++) {
           const dir = _Movement.cardinalDirs[i];
           const neighbor = this.getBlockInfo(block.position, dir.x, 0, dir.z).block;
-          if (neighbor?.name === "ladder" && neighbor.getProperties().facing === cardinalFacings[i])
+          if (["ladder", "wall_torch"].includes(neighbor?.name ?? "") && neighbor?.getProperties().facing === cardinalFacings[i])
             return false;
         }
         if (this.settings.dontCreateFlow) {
@@ -5442,11 +5446,14 @@ var require_movementProvider = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.MovementHandler = exports2.MovementProvider = void 0;
+    var move_12 = require_move();
     var movement_1 = require_movement();
     var vec3_1 = require("vec3");
+    var costs_1 = require_costs();
     var MovementProvider = class extends movement_1.Movement {
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
+        this.excavationFloors = /* @__PURE__ */ new Set();
         this.orgX = 0;
         this.orgY = 0;
         this.orgZ = 0;
@@ -5460,8 +5467,71 @@ var require_movementProvider = __commonJS({
         this.zStride = 0;
         this.localData = [];
       }
-      loadLocalData(orgPos, boundaries, arr, clear) {
+      /** Price and plan the entire passage, using this branch's virtual terrain. */
+      shapeExcavation(start, move) {
+        if (!this.settings.canDig || this.settings.excavationWidth <= 0 || move.toBreak.length === 0)
+          return move;
+        if (move.toBreak.some((handler) => this.excavationFloors.has(handler.vec.toString())))
+          return null;
+        const dx = move.x - start.x;
+        const dz = move.z - start.z;
+        const dy = move.y - start.y;
+        const cardinal = Math.abs(dx) + Math.abs(dz) === 1 && Math.abs(dy) <= 1;
+        if (!cardinal || move.metadata?.waterLanding === true) {
+          return move.toBreak.length > 0 ? null : move;
+        }
+        const stair = dy !== 0;
+        const width = Math.max(1, Math.min(3, Math.floor(stair ? this.settings.excavationStairWidth : this.settings.excavationWidth)));
+        const height = Math.max(stair ? 3 : 2, Math.min(4, Math.floor(stair ? this.settings.excavationStairHeight : this.settings.excavationHeight)));
+        const side = dx !== 0 ? new vec3_1.Vec3(0, 0, 1) : new vec3_1.Vec3(1, 0, 0);
+        const toBreak = [...move.toBreak];
+        const toPlace = [...move.toPlace];
+        const floors = [];
+        let cost = move.cost;
+        const upper = Math.max(start.y, move.y) + height - 1;
+        for (const feet of [start.cachedVec, move.cachedVec]) {
+          for (let lane = -Math.floor((width - 1) / 2); lane <= Math.ceil((width - 1) / 2); lane++) {
+            const column = feet.plus(side.scaled(lane));
+            const floor = this.getBlockInfoRaw(column.offset(0, -1, 0));
+            floors.push(floor.position);
+            if (floor.isInvalid || !floor.safe || floor.liquid || toBreak.some((handler) => handler.vec.equals(floor.position)))
+              return null;
+            const plannedFloor = toPlace.some((handler) => handler.vec.equals(floor.position));
+            if (!floor.solidFull && !plannedFloor) {
+              if (!floor.replaceable)
+                return null;
+              const extra = this.safeOrPlace(floor, toPlace, "solid");
+              if (extra >= costs_1.COST_INF || toPlace.length > start.remainingBlocks)
+                return null;
+              cost += extra;
+              if (cost >= costs_1.COST_INF)
+                return null;
+            }
+            for (let y = feet.y; y <= upper; y++) {
+              const block = this.getBlockInfoRaw(new vec3_1.Vec3(column.x, y, column.z));
+              if (this.excavationFloors.has(block.position.toString()))
+                return null;
+              if (block.isInvalid || !block.safe || block.liquid || block.climbable)
+                return null;
+              const extra = this.safeOrBreak(block, toBreak);
+              if (extra >= costs_1.COST_INF)
+                return null;
+              cost += extra;
+              if (cost >= costs_1.COST_INF)
+                return null;
+            }
+          }
+        }
+        const parent = start.parent;
+        if (toBreak.length > 0 && parent != null && (Math.sign(start.x - parent.x) !== dx || Math.sign(start.z - parent.z) !== dz))
+          cost += 2;
+        const shaped = move_12.Move.fromPrevious(cost, move.exitPos, start, this, toPlace, toBreak);
+        shaped.metadata = { ...move.metadata, excavationFloors: floors };
+        return shaped;
+      }
+      loadLocalData(orgPos, boundaries, arr, clear, excavationFloors = /* @__PURE__ */ new Set()) {
         this.orgPos = orgPos;
+        this.excavationFloors = excavationFloors;
         this.orgX = orgPos.x;
         this.orgY = orgPos.y;
         this.orgZ = orgPos.z;
@@ -5533,6 +5603,7 @@ var require_movementProvider = __commonJS({
         this.zStride = this.boundaries[2];
         this.maxBound = this.boundaries[0] * this.boundaries[1] * this.boundaries[2];
         this.toClear = /* @__PURE__ */ new Set();
+        this.excavationFloors = /* @__PURE__ */ new Set();
         this.localData = new Array(this.maxBound).fill(null, 0, this.maxBound);
         this.indexX = new Int16Array(this.maxBound);
         this.indexY = new Int16Array(this.maxBound);
@@ -5636,6 +5707,10 @@ var require_movementProvider = __commonJS({
           seenStamp = ++this.seenStamp;
         }
         while (move1 !== void 0) {
+          for (const floor of move1.metadata?.excavationFloors ?? []) {
+            if (Math.abs(floor.x - orgPos.x) <= 4 && Math.abs(floor.z - orgPos.z) <= 4 && floor.y >= orgPos.y - 3 && floor.y <= orgPos.y + 6)
+              this.excavationFloors.add(floor.toString());
+          }
           for (const m of move1.toPlace) {
             const wantedDx = m.x - orgPos.x + this.halfX;
             const wantedDz = m.z - orgPos.z + this.halfZ;
@@ -5674,6 +5749,7 @@ var require_movementProvider = __commonJS({
         for (const idx of this.toClear)
           this.localData[idx] = null;
         this.toClear.clear();
+        this.excavationFloors.clear();
         const pos = currentMove.entryPos.floored();
         const old = this.lastPos ?? pos;
         this.shiftLocalData(old, pos);
@@ -5681,8 +5757,18 @@ var require_movementProvider = __commonJS({
         this.lastPos = pos;
         for (const newMove of this.recognizedMovements) {
           newMove.loadMove(currentMove);
-          newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear);
+          newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear, this.excavationFloors);
+          const first = moves.length;
           newMove.provideMovements(currentMove, moves, this.goal, closed);
+          if (newMove.settings.canDig && newMove.settings.excavationWidth > 0) {
+            for (let index = first; index < moves.length; ) {
+              const shaped = newMove.shapeExcavation(currentMove, moves[index]);
+              if (shaped == null)
+                moves.splice(index, 1);
+              else
+                moves[index++] = shaped;
+            }
+          }
         }
         return moves;
       }
@@ -11934,7 +12020,7 @@ var require_ThePathfinder = __commonJS({
             }
           }
         }
-        return false;
+        return block.boundingBox === "empty" && (block.name === "wall_torch" || block.name === "torch");
       }
       isPositionNearPath(pos, path = this.currentPath) {
         if (pos == null || path == null)

@@ -4,7 +4,11 @@ import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
-import type { MineflayerBotStatus, MineflayerWorkTask } from "../../../types";
+import type {
+  MineflayerBotStatus,
+  MineflayerWorkTask,
+  MineflayerGatheringSettings,
+} from "../../../types";
 
 type Mode = "mine" | "forest" | "quarry" | "collect" | "tunnel";
 const MODES: Array<[Mode, string]> = [
@@ -27,6 +31,7 @@ const PHASES: Record<string, string> = {
   paused: "На паузе",
 };
 export function workTaskTitle(task: MineflayerWorkTask) {
+  if (task.tunnel) return "Проходка тоннеля";
   if (task.kind === "forest") return "Заготовка леса";
   if (task.kind === "quarry") return "Расчистка области";
   if (task.kind === "collect") return "Сбор предметов";
@@ -67,11 +72,15 @@ export function MineflayerGatheringControls({
   refresh,
   status,
   onOpenInventory,
+  settings,
+  onSettingsChange,
 }: {
   connected: boolean;
   refresh: () => Promise<unknown>;
   status: MineflayerBotStatus | null;
   onOpenInventory: () => void;
+  settings: MineflayerGatheringSettings;
+  onSettingsChange: (settings: MineflayerGatheringSettings) => void;
 }) {
   const [mode, setMode] = useState<Mode>("forest");
   const [blocks, setBlocks] = useState("iron");
@@ -83,9 +92,7 @@ export function MineflayerGatheringControls({
     [corner2, setCorner2] = useState("");
   const [item, setItem] = useState(""),
     [stash, setStash] = useState("");
-  const [length, setLength] = useState(16),
-    [width, setWidth] = useState(2),
-    [height, setHeight] = useState(3);
+  const [length, setLength] = useState(16);
   const [sending, setSending] = useState(false),
     [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -104,9 +111,12 @@ export function MineflayerGatheringControls({
         : mode === "quarry"
           ? `quarry ${corner1.trim()} ${corner2.trim()}`
           : mode === "tunnel"
-            ? `tunnel ${length} ${width} ${height}`
+            ? `tunnel ${length} ${settings.tunnelWidth} ${settings.tunnelHeight}`
             : `collect ${radius} ${item.trim()}`;
 
+  const passageCommand = `work tunnels ${settings.tunnelWidth} ${settings.tunnelHeight} ${settings.stairWidth} ${settings.stairHeight} ${settings.placeTorches ? "on" : "off"} ${settings.torchInterval}`;
+  const updatePassages = (patch: Partial<MineflayerGatheringSettings>) =>
+    onSettingsChange({ ...settings, ...patch });
   async function send(value: string) {
     if (!connected || sendingRef.current) return;
     sendingRef.current = true;
@@ -114,11 +124,15 @@ export function MineflayerGatheringControls({
     setError("");
     setFeedback("");
     try {
+      if (/^(mine|tunnel) /.test(value))
+        await invoke("send_mineflayer_bot_chat", { message: passageCommand, command: true });
       await invoke("send_mineflayer_bot_chat", { message: value.trim(), command: true });
       setFeedback(
-        value === "deliver"
-          ? "Бот несёт добычу к вам, затем вернётся к работе."
-          : "Команда принята. Текущий этап показан ниже.",
+        value === passageCommand
+          ? "Настройки применены. Следующий проход будет нового размера."
+          : value === "deliver"
+            ? "Бот несёт добычу к вам, затем вернётся к работе."
+            : "Команда принята. Текущий этап показан ниже.",
       );
       await refresh();
     } catch (failure) {
@@ -395,13 +409,7 @@ export function MineflayerGatheringControls({
                     {text("ВТОРОЙ УГОЛ · X Y Z", corner2, setCorner2, "110 70 110")}
                   </>
                 )}
-                {mode === "tunnel" && (
-                  <>
-                    {number("ДЛИНА", length, setLength, 1, 128)}
-                    {number("ШИРИНА", width, setWidth, 1, 8)}
-                    {number("ВЫСОТА", height, setHeight, 2, 8)}
-                  </>
-                )}
+                {mode === "tunnel" && <>{number("ДЛИНА", length, setLength, 1, 128)}</>}
               </div>
               {mode === "mine" && (
                 <ElementToggle
@@ -470,6 +478,73 @@ export function MineflayerGatheringControls({
           ))}
         </details>
       )}
+      <PluginSettingsGroup
+        title="ТОННЕЛИ И ОСВЕЩЕНИЕ"
+        description="Размер проходов при добыче руды, лестницы и факелы на стенах"
+      >
+        <div className="mineflayer-bot-grid">
+          {number(
+            "ШИРИНА ТОННЕЛЯ · БЛОКИ",
+            settings.tunnelWidth,
+            (tunnelWidth) => updatePassages({ tunnelWidth }),
+            1,
+            3,
+          )}
+          {number(
+            "ВЫСОТА ТОННЕЛЯ · БЛОКИ",
+            settings.tunnelHeight,
+            (tunnelHeight) => updatePassages({ tunnelHeight }),
+            2,
+            4,
+          )}
+          {number(
+            "ШИРИНА ЛЕСТНИЦЫ · БЛОКИ",
+            settings.stairWidth,
+            (stairWidth) => updatePassages({ stairWidth }),
+            1,
+            3,
+          )}
+          {number(
+            "ПРОСВЕТ ЛЕСТНИЦЫ · БЛОКИ",
+            settings.stairHeight,
+            (stairHeight) => updatePassages({ stairHeight }),
+            3,
+            4,
+          )}
+        </div>
+        <p className="mineflayer-bot-combat-note">
+          Ровные тоннели по умолчанию 2 × 2. Лестницы поднимаются или опускаются на один блок за
+          шаг; просвет от пола — минимум три блока, чтобы прыгать без удара головой. Для доставки и
+          возвращения бот ищет путь по готовым проходам.
+        </p>
+        <ElementToggle
+          title="СТАВИТЬ ФАКЕЛЫ В ПЕЩЕРЕ"
+          note="Использует обычные факелы из инвентаря и крепит их к стенам"
+          enabled={settings.placeTorches}
+          onToggle={() => updatePassages({ placeTorches: !settings.placeTorches })}
+        />
+        {settings.placeTorches && (
+          <div className="mineflayer-bot-grid">
+            {number(
+              "ИНТЕРВАЛ ФАКЕЛОВ · БЛОКИ",
+              settings.torchInterval,
+              (torchInterval) => updatePassages({ torchInterval }),
+              4,
+              16,
+            )}
+          </div>
+        )}
+        <p className="mineflayer-bot-combat-note">
+          Интервал по умолчанию — 8 блоков. Если факелов или подходящей стены нет, бот продолжает
+          работу. Настройки сохраняются и применяются при добавлении добычи или тоннеля; для текущей
+          работы нажмите «Применить к боту».
+        </p>
+        <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
+          <button type="button" disabled={disabled} onClick={() => void send(passageCommand)}>
+            ПРИМЕНИТЬ К БОТУ
+          </button>
+        </div>
+      </PluginSettingsGroup>
       <button
         type="button"
         className="mineflayer-bot-gathering-advanced"
@@ -497,9 +572,9 @@ export function MineflayerGatheringControls({
       )}
       <p className="mineflayer-bot-combat-note">
         Добыча хранится в инвентаре бота. «Принести мне добычу» — подходит к владельцу, выбрасывает
-        добычу перед ним и возвращается. Инструменты, броня, еда и до 64 строительных блоков
-        для пути сохраняются. Если инвентарь
-        заполнен, бот ждёт передачи добычи. Сундук можно настроить дополнительно.
+        добычу перед ним и возвращается. Инструменты, броня, еда и до 64 строительных блоков для
+        пути сохраняются. Если инвентарь заполнен, бот ждёт передачи добычи. Сундук можно настроить
+        дополнительно.
       </p>
       {(error || feedback) && (
         <p

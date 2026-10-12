@@ -555,7 +555,7 @@ export class ThePathfinder {
       }
     }
 
-    return false
+    return block.boundingBox === 'empty' && (block.name === 'wall_torch' || block.name === 'torch')
   }
 
   isPositionNearPath (pos: Vec3 | undefined, path: Move[] | undefined = this.currentPath): boolean {

@@ -4,14 +4,33 @@ import type {
   MineflayerBotPluginSettings,
   MineflayerCombatSettings,
   MineflayerSurvivalSettings,
+  MineflayerGatheringSettings,
   ObsTelemetryPluginSettings,
   ProxyPluginSettings,
 } from "../../types";
 import combatDefaults from "../../../extensions/mineflayer-bot/combat-defaults.json";
 import survivalDefaults from "../../../extensions/mineflayer-bot/survival-defaults.json";
+import gatheringDefaults from "../../../extensions/mineflayer-bot/gathering-defaults.json";
 
 export const DEFAULT_MINEFLAYER_COMBAT_SETTINGS = combatDefaults as MineflayerCombatSettings;
 export const DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS = survivalDefaults as MineflayerSurvivalSettings;
+export const DEFAULT_MINEFLAYER_GATHERING_SETTINGS: MineflayerGatheringSettings = {
+  ...gatheringDefaults,
+};
+
+export function normalizeMineflayerGatheringSettings(value: unknown): MineflayerGatheringSettings {
+  const draft =
+    value && typeof value === "object" ? (value as Partial<MineflayerGatheringSettings>) : {};
+  const defaults = DEFAULT_MINEFLAYER_GATHERING_SETTINGS;
+  return {
+    tunnelWidth: normalizeInteger(draft.tunnelWidth, defaults.tunnelWidth, 1, 3),
+    tunnelHeight: normalizeInteger(draft.tunnelHeight, defaults.tunnelHeight, 2, 4),
+    stairWidth: normalizeInteger(draft.stairWidth, defaults.stairWidth, 1, 3),
+    stairHeight: normalizeInteger(draft.stairHeight, defaults.stairHeight, 3, 4),
+    placeTorches: normalizeBoolean(draft.placeTorches, defaults.placeTorches),
+    torchInterval: normalizeInteger(draft.torchInterval, defaults.torchInterval, 4, 16),
+  };
+}
 
 export function normalizeMineflayerSurvivalSettings(value: unknown): MineflayerSurvivalSettings {
   const draft = value && typeof value === "object" ? value as Partial<MineflayerSurvivalSettings> : {};
@@ -155,6 +174,7 @@ export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
   logPathUpdates: false,
   combat: { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS },
   survival: { ...DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS },
+  gathering: { ...DEFAULT_MINEFLAYER_GATHERING_SETTINGS },
 };
 
 export const DEFAULT_BLUE_MAP_SETTINGS: BlueMapPluginSettings = {
@@ -307,6 +327,7 @@ export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPlu
     logPathUpdates: normalizeBoolean(draft.logPathUpdates, defaults.logPathUpdates),
     combat: normalizeMineflayerCombatSettings(draft.combat),
     survival: normalizeMineflayerSurvivalSettings(draft.survival),
+    gathering: normalizeMineflayerGatheringSettings(draft.gathering),
   };
 }
 

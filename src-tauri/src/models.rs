@@ -595,6 +595,32 @@ pub struct MineflayerBotPluginSettings {
     pub combat: MineflayerCombatSettings,
     #[serde(default)]
     pub survival: MineflayerSurvivalSettings,
+    #[serde(default)]
+    pub gathering: MineflayerGatheringSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MineflayerGatheringSettings {
+    pub tunnel_width: u32,
+    pub tunnel_height: u32,
+    pub stair_width: u32,
+    pub stair_height: u32,
+    pub place_torches: bool,
+    pub torch_interval: u32,
+}
+
+impl Default for MineflayerGatheringSettings {
+    fn default() -> Self {
+        Self {
+            tunnel_width: 2,
+            tunnel_height: 2,
+            stair_width: 2,
+            stair_height: 3,
+            place_torches: false,
+            torch_interval: 8,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1096,6 +1122,7 @@ impl Default for MineflayerBotPluginSettings {
             log_path_updates: false,
             combat: MineflayerCombatSettings::default(),
             survival: MineflayerSurvivalSettings::default(),
+            gathering: MineflayerGatheringSettings::default(),
         }
     }
 }
@@ -1481,6 +1508,23 @@ mod loader_schema_tests {
         assert_eq!(saved["survival"]["mlgPickupWater"], false);
         assert_eq!(saved["survival"]["autoEatMinHunger"], 12);
         assert_eq!(saved["survival"]["autoEatPriority"], "foodPoints");
+    }
+
+    #[test]
+    fn gathering_settings_preserve_preferences_and_match_worker_defaults() {
+        let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
+        let defaults: serde_json::Value = serde_json::from_str(include_str!(
+            "../../extensions/mineflayer-bot/gathering-defaults.json"
+        )).unwrap();
+        assert_eq!(serde_json::to_value(legacy.gathering).unwrap(), defaults);
+        let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
+            "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12 }
+        })).unwrap();
+        let saved = serde_json::to_value(parsed).unwrap();
+        assert_eq!(saved["gathering"]["placeTorches"], true);
+        assert_eq!(saved["gathering"]["tunnelWidth"], 3);
+        assert_eq!(saved["gathering"]["stairHeight"], 3);
+        assert_eq!(saved["gathering"]["torchInterval"], 12);
     }
 
     #[test]

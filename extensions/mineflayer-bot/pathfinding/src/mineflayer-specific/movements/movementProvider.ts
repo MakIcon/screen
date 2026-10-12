@@ -9,6 +9,7 @@ import type { ExecutorMap } from '.'
 import { Vec3 } from 'vec3'
 import { Vec3Properties } from '../../types'
 import { BlockInfo } from '../world/cacheWorld'
+import { COST_INF } from './costs'
 
 /**
  * Movement provider.
@@ -18,6 +19,7 @@ import { BlockInfo } from '../world/cacheWorld'
 export abstract class MovementProvider extends Movement {
   orgPos!: Vec3
   toClear!: Set<number>
+  private excavationFloors: ReadonlySet<string> = new Set()
 
   public constructor (bot: Bot, world: World, settings: Partial<MovementOptions> = {}) {
     super(bot, world, settings)
@@ -53,15 +55,78 @@ export abstract class MovementProvider extends Movement {
    */
   abstract provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void
 
+  /** Price and plan the entire passage, using this branch's virtual terrain. */
+  shapeExcavation (start: Move, move: Move): Move | null {
+    if (!this.settings.canDig || this.settings.excavationWidth <= 0 || move.toBreak.length === 0) return move
+    if (move.toBreak.some(handler => this.excavationFloors.has(handler.vec.toString()))) return null
+    const dx = move.x - start.x
+    const dz = move.z - start.z
+    const dy = move.y - start.y
+    const cardinal = Math.abs(dx) + Math.abs(dz) === 1 && Math.abs(dy) <= 1
+    if (!cardinal || move.metadata?.waterLanding === true) {
+      // Existing open terrain still supports diagonal walking, climbing and
+      // parkour. New excavation uses adjacent cells and one-block stairs.
+      return move.toBreak.length > 0 ? null : move
+    }
+    const stair = dy !== 0
+    const width = Math.max(1, Math.min(3, Math.floor(stair ? this.settings.excavationStairWidth : this.settings.excavationWidth)))
+    const height = Math.max(stair ? 3 : 2, Math.min(4, Math.floor(stair ? this.settings.excavationStairHeight : this.settings.excavationHeight)))
+    // A fixed positive lateral axis keeps an even-width passage in the same
+    // cells on the reverse trip. Turns naturally form square junctions.
+    const side = dx !== 0 ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0)
+    const toBreak = [...move.toBreak]
+    const toPlace = [...move.toPlace]
+    const floors: Vec3[] = []
+    let cost = move.cost
+    const upper = Math.max(start.y, move.y) + height - 1
+    for (const feet of [start.cachedVec, move.cachedVec]) {
+      for (let lane = -Math.floor((width - 1) / 2); lane <= Math.ceil((width - 1) / 2); lane++) {
+        const column = feet.plus(side.scaled(lane))
+        const floor = this.getBlockInfoRaw(column.offset(0, -1, 0))
+        floors.push(floor.position)
+        if (floor.isInvalid || !floor.safe || floor.liquid ||
+            toBreak.some(handler => handler.vec.equals(floor.position))) return null
+        const plannedFloor = toPlace.some(handler => handler.vec.equals(floor.position))
+        if (!floor.solidFull && !plannedFloor) {
+          // Side lanes need a real level floor too; do not leave a trench.
+          if (!floor.replaceable) return null
+          const extra = this.safeOrPlace(floor, toPlace, 'solid')
+          if (extra >= COST_INF || toPlace.length > start.remainingBlocks) return null
+          cost += extra
+          if (cost >= COST_INF) return null
+        }
+        for (let y = feet.y; y <= upper; y++) {
+          const block = this.getBlockInfoRaw(new Vec3(column.x, y, column.z))
+          if (this.excavationFloors.has(block.position.toString())) return null
+          if (block.isInvalid || !block.safe || block.liquid || block.climbable) return null
+          const extra = this.safeOrBreak(block, toBreak)
+          if (extra >= COST_INF) return null
+          cost += extra
+          if (cost >= COST_INF) return null
+        }
+      }
+    }
+    // A small turn cost only for excavation encourages straight runs while
+    // allowing the search to turn around obstacles and branch toward ore.
+    const parent = start.parent
+    if (toBreak.length > 0 && parent != null &&
+        (Math.sign(start.x - parent.x) !== dx || Math.sign(start.z - parent.z) !== dz)) cost += 2
+    const shaped = Move.fromPrevious(cost, move.exitPos, start, this, toPlace, toBreak)
+    shaped.metadata = { ...move.metadata, excavationFloors: floors }
+    return shaped
+  }
+
   private localData: Array<BlockInfo | null> = []
 
   loadLocalData (
     orgPos: Vec3,
     boundaries: [x: number, z: number, y: number],
     arr: Array<BlockInfo | null>,
-    clear: Set<number>
+    clear: Set<number>,
+    excavationFloors: ReadonlySet<string> = new Set()
   ): void {
     this.orgPos = orgPos
+    this.excavationFloors = excavationFloors
     this.orgX = orgPos.x
     this.orgY = orgPos.y
     this.orgZ = orgPos.z
@@ -197,6 +262,7 @@ export class MovementHandler implements AMovementProvider<Move> {
 
   private readonly maxBound = this.boundaries[0] * this.boundaries[1] * this.boundaries[2]
   private readonly toClear: Set<number> = new Set()
+  private readonly excavationFloors = new Set<string>()
   private readonly localData: Array<BlockInfo | null> = new Array(this.maxBound).fill(null, 0, this.maxBound)
   private readonly indexX = new Int16Array(this.maxBound)
   private readonly indexY = new Int16Array(this.maxBound)
@@ -281,6 +347,12 @@ export class MovementHandler implements AMovementProvider<Move> {
     // Newest edits win. An excursion outside this window does not erase older
     // edits inside it when the route returns. Skip ancestors without edits.
     while (move1 !== undefined) {
+      // A lower spiral must not hollow out an older stair's floor. Keep
+      // nearby support reservations alongside this branch's terrain edits.
+      for (const floor of (move1.metadata?.excavationFloors ?? []) as Vec3[]) {
+        if (Math.abs(floor.x - orgPos.x) <= 4 && Math.abs(floor.z - orgPos.z) <= 4 &&
+            floor.y >= orgPos.y - 3 && floor.y <= orgPos.y + 6) this.excavationFloors.add(floor.toString())
+      }
       for (const m of move1.toPlace) {
         const wantedDx = m.x - orgPos.x + this.halfX
         const wantedDz = m.z - orgPos.z + this.halfZ
@@ -328,6 +400,7 @@ export class MovementHandler implements AMovementProvider<Move> {
     // terrain before shifting the window and applying this branch's own edits.
     for (const idx of this.toClear) this.localData[idx] = null
     this.toClear.clear()
+    this.excavationFloors.clear()
 
     // console.log('hi')
     const pos = currentMove.entryPos.floored()
@@ -340,8 +413,16 @@ export class MovementHandler implements AMovementProvider<Move> {
 
     for (const newMove of this.recognizedMovements) {
       newMove.loadMove(currentMove)
-      newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear)
+      newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear, this.excavationFloors)
+      const first = moves.length
       newMove.provideMovements(currentMove, moves, this.goal, closed)
+      if (newMove.settings.canDig && newMove.settings.excavationWidth > 0) {
+        for (let index = first; index < moves.length;) {
+          const shaped = newMove.shapeExcavation(currentMove, moves[index])
+          if (shaped == null) moves.splice(index, 1)
+          else moves[index++] = shaped
+        }
+      }
     }
 
     // for (const move of moves) {

@@ -76,6 +76,19 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalizeMineflayerBotSettings(modern)).toEqual(modern);
   });
 
+  it("preserves passage settings and enforces three-block stair clearance", () => {
+    const legacy = normalizeMineflayerBotSettings({}).gathering;
+    expect(legacy).toEqual({ tunnelWidth: 2, tunnelHeight: 2, stairWidth: 2,
+      stairHeight: 3, placeTorches: false, torchInterval: 8 });
+    const saved = normalizeMineflayerBotSettings({ gathering: {
+      tunnelWidth: 99, tunnelHeight: 1, stairWidth: 0, stairHeight: 2,
+      placeTorches: true, torchInterval: 99,
+    } });
+    expect(saved.gathering).toEqual({ tunnelWidth: 3, tunnelHeight: 2, stairWidth: 1,
+      stairHeight: 3, placeTorches: true, torchInterval: 16 });
+    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+
   it("keeps anti knockback off by default and preserves both saved modes", () => {
     for (const antiKnockback of [true, false]) {
       const saved = JSON.parse(JSON.stringify(normalizeMineflayerBotSettings({ antiKnockback })));

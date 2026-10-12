@@ -35,6 +35,11 @@ export interface MovementOptions {
   canDig: boolean
   /** Excavated downward stairs are enabled only while approaching mined resources. */
   allowExcavatedDescent: boolean
+  /** Zero disables shaping. Mining routes clear these sections before moving. */
+  excavationWidth: number
+  excavationHeight: number
+  excavationStairWidth: number
+  excavationStairHeight: number
   canPlace: boolean
   dontCreateFlow: boolean
   dontMineUnderFallingBlock: boolean
@@ -74,6 +79,10 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   canOpenDoors: true,
   canDig: true,
   allowExcavatedDescent: false,
+  excavationWidth: 0,
+  excavationHeight: 2,
+  excavationStairWidth: 0,
+  excavationStairHeight: 3,
   canPlace: true,
   dontCreateFlow: true,
   dontMineUnderFallingBlock: true,
@@ -316,7 +325,7 @@ export abstract class Movement {
     for (let i = 0; i < Movement.cardinalDirs.length; i++) {
       const dir = Movement.cardinalDirs[i]
       const neighbor = this.getBlockInfo(block.position, dir.x, 0, dir.z).block
-      if (neighbor?.name === 'ladder' && neighbor.getProperties().facing === cardinalFacings[i]) return false
+      if (['ladder', 'wall_torch'].includes(neighbor?.name ?? '') && neighbor?.getProperties().facing === cardinalFacings[i]) return false
     }
 
     if (this.settings.dontCreateFlow) {

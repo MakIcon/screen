@@ -200,6 +200,114 @@ test("validates cuboids, aliases, dimensions and exact block counts before execu
   return f.work.dispose();
 });
 
+test("passage configuration is atomic, keeps stair headroom and reaches local commands", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const before = plan.passageSettings(f.work.settings);
+  assert.throws(() => f.work.configurePassages({ tunnelWidth: 3, stairHeight: 2 }), /Просвет/);
+  assert.deepEqual(plan.passageSettings(f.work.settings), before);
+  let prepares = 0;
+  const replies = [];
+  await commands.handleGatheringCommand(f.bot, f.work, "work",
+    ["tunnels", "3", "2", "2", "4", "on", "12"],
+    { prepare: async () => prepares++, reply: value => replies.push(value) });
+  assert.equal(prepares, 0, "settings do not interrupt an active job");
+  assert.equal(f.work.settings.stairHeight, 4);
+  assert.equal(f.work.settings.placeTorches, true);
+  assert.equal(f.work.settings.torchInterval, 12);
+  assert.match(replies[0], /настроены/);
+  const tunnel = commands.taskFromCommand(f.bot, f.work, "tunnel", ["10"]);
+  assert.equal(tunnel.area.volume, 60, "manual tunnels use the saved 3x2 size");
+});
+
+for (const mode of ["on", "off", "empty", "rejected"]) test(`wall lighting ${mode} keeps equipment and gathering intact`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configurePassages({ placeTorches: mode !== "off", torchInterval: 8 });
+  const pick = f.item("iron_pickaxe");
+  const torch = { ...f.item("torch"), count: 4 };
+  f.items.push(pick);
+  if (mode !== "empty") f.items.push(torch);
+  for (const x of [2, 6, 10]) {
+    f.put("iron_ore", x);
+    f.put("stone", x - 1, 65, 2);
+  }
+  const wrappedDig = f.bot.dig;
+  f.bot.dig = async (block, ...args) => {
+    f.bot.entity.position = block.position.offset(-0.5, 0, 0.5);
+    await wrappedDig(block, ...args);
+  };
+  const placements = [];
+  f.bot.placeBlock = async (wall, face) => {
+    assert.equal(f.bot.heldItem.name, "torch");
+    assert.equal(Math.abs(face.y), 0, "lights attach to walls");
+    assert.equal(wall.name, "stone");
+    if (mode === "rejected") throw new Error("Server rejected placement");
+    const pos = wall.position.plus(face);
+    placements.push(pos);
+    f.put("wall_torch", pos.x, pos.y, pos.z);
+    torch.count--;
+  };
+  f.work.enqueue({ kind: "mine", blocks: "iron", count: 3, radius: 16 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].mined, 3);
+  assert.equal(f.bot.heldItem, pick, "the tool is restored after lighting");
+  assert.equal(placements.length, mode === "on" ? 2 : 0);
+  if (mode === "on") {
+    assert.equal(placements[0].distanceTo(placements[1]), 8);
+    assert.equal(torch.count, 2);
+    assert.ok(plan.keepItem(f.bot, torch), "delivery retains lighting supplies");
+  }
+  if (mode === "rejected") assert.ok(f.events.some(value => value.includes("Факел не установлен")));
+});
+
+test("delivery and return search existing passages before allowing construction", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push(f.item("diamond"));
+  const start = f.bot.entity.position.clone();
+  const owner = { position: new Vec3(10, 64, 0.5), isValid: true };
+  const routes = [];
+  f.bot.lookAt = async () => {};
+  f.bot.tossStack = async () => {};
+  f.bot.pathfinder.goto = async goal => {
+    routes.push(goal);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, false);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.canPlace, false);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.excavationWidth, 0);
+    f.bot.entity.position = goal.trackedEntity ? owner.position.clone() : start.clone();
+  };
+  await f.work.deliver(() => owner);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(routes.length, 2);
+  assert.equal(f.dug.length, 0);
+  assert.equal(f.work.snapshot.history[0].delivered, 1);
+});
+
+test("manual tunnel clearance keeps its own torches and still finishes the area", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configurePassages({ placeTorches: true });
+  f.items.push(f.item("iron_pickaxe"), { ...f.item("torch"), count: 4 });
+  for (const x of [1, 2]) for (const y of [64, 65]) f.put("stone", x, y, 0);
+  f.put("stone", 1, 65, 1);
+  const original = f.bot.dig;
+  f.bot.dig = async (block, ...args) => {
+    f.bot.entity.position = new Vec3(block.position.x - 0.5, 64, 0.5);
+    await original(block, ...args);
+  };
+  f.bot.placeBlock = async (wall, face) => {
+    const pos = wall.position.plus(face);
+    f.put("wall_torch", pos.x, pos.y, pos.z);
+  };
+  f.work.enqueue({ kind: "quarry", area: { min: new Vec3(1, 64, 0), max: new Vec3(2, 65, 0) } });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+  assert.equal(f.work.snapshot.history[0].mined, 4);
+  assert.equal(f.bot.blockAt(new Vec3(1, 65, 0)).name, "wall_torch");
+  assert.equal(f.dug.some(value => value.name === "wall_torch"), false);
+});
+
 for (const version of ["1.20.4", "26.1.2"])
   test(`harvests ore with a suitable tool, collects actual drops, restores movement on ${version}`, async (t) => {
     const f = fixture(version);
@@ -679,6 +787,11 @@ test("delivery builds outside the mining radius, retains construction blocks and
   f.bot.tossStack = async item => { tossed.push([item.name, item.count]); f.items.splice(f.items.indexOf(item), 1); };
   f.bot.pathfinder.goto = async (goal, options) => {
     const movement = f.bot.pathfinder.defaultMoveSettings;
+    if (!movement.canDig) {
+      assert.equal(movement.canPlace, false);
+      assert.equal(movement.allow1by1towers, false);
+      throw new Error("Pathfinding failed: noPath");
+    }
     assert.equal(movement.canDig, true);
     assert.equal(movement.canPlace, true);
     assert.equal(movement.allow1by1towers, true);

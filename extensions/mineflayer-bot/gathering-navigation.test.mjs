@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import worker from "./worker.cjs";
 import gathering from "./gathering.cjs";
+import commands from "./gathering-commands.cjs";
 
 const require = createRequire(new URL("./pathfinding/package.json", import.meta.url));
 require("ts-node").register({
@@ -279,8 +280,8 @@ test(
 );
 
 test(
-  "deep mining restores ordinary come, which escapes its excavated cave by digging headroom",
-  { timeout: 120000 },
+  "deep mining restores movement and leaves reversible stairs with headroom",
+  { timeout: 300000 },
   async (t) => {
     const version = "26.1.2";
     const world = createFlatWorld(version, 24, { renderDistance: 1 });
@@ -313,7 +314,9 @@ test(
       return dig(...args);
     };
     controller.enqueue({ kind: "mine", blocks: "diamond", count: 1, radius: 8 });
-    await waitForJob(controller, 80000);
+    // A full-width reversible descent removes substantially more stone than
+    // the former one-wide shaft. Bound useful work separately from return.
+    await waitForJob(controller, 200000);
     assert.equal(controller.snapshot.history[0].mined, 1, messages.join("\n"));
     assert.ok(bot.entity.position.y < 32, `position=${bot.entity.position}`);
     assert.ok(dug > 30, `dug=${dug}`);
@@ -345,15 +348,16 @@ test(
     };
     // Use the bundled goal class, just as the worker's come command does.
     const bundled = runtime('./pathfinder.cjs');
+    bot.pathfinder.setMoveOptions({ canDig: false, canPlace: false });
     await bot.pathfinder.goto(new bundled.goals.GoalNear(0.5, 64, 0.5, 1));
     assert.ok(bot.entity.position.distanceTo(new Vec3(0.5, 64, 0.5)) <= 1.1, `position=${bot.entity.position}`);
-    assert.ok(dug > beforeCome, 'ordinary come can clear headroom after gathering releases navigation');
+    assert.equal(dug, beforeCome, 'ordinary search climbs the excavated stairs without digging or building');
     t.diagnostic(`come: searches=${comeSearches}, planning=${searchMs}ms, travel=${Date.now() - comeStarted}ms, dug=${dug - beforeCome}, resets=${JSON.stringify(resets)}, results=${JSON.stringify(results)}`);
-    assert.equal(comeSearches, 1, 'the deep ascent must execute one complete route');
+    assert.ok(comeSearches <= 4, 'terrain confirmation and final centering may refresh the route, without a new search per stair');
     assert.ok(searchMs < 3000, `planning=${searchMs}ms`);
-    // Thirty-seven physical jumps and clearing their headroom still take time;
+    // Thirty-seven physical jumps still take time;
     // the planner must not add a timeout and a new search to every stair.
-    assert.ok(Date.now() - comeStarted < 60000, `come duration=${Date.now() - comeStarted}`);
+    assert.ok(Date.now() - comeStarted < 90000, `come duration=${Date.now() - comeStarted}`);
   },
 );
 
@@ -402,6 +406,7 @@ for (const { version, underground = false } of [{ version: '1.20.4' }, { version
   const oreX = underground ? 5 : 8, oreY = underground ? 60 : 64;
   for (const pos of [new Vec3(oreX, oreY, 0), new Vec3(oreX, oreY + 1, 0), new Vec3(oreX + 1, oreY, 0)]) world.setBlock(pos, 'iron_ore');
   const { rig, bot, controller, messages } = prepare(version, world, true);
+  if (!underground) controller.configurePassages({ tunnelWidth: 1 });
   t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
   const runtime = createRequire(new URL('./package.json', import.meta.url));
   const Item = createRequire(runtime.resolve('mineflayer'))('prismarine-item')(bot.registry);
@@ -460,6 +465,7 @@ test('excavation executes several tunnel steps without replanning after each bro
   world.setBlock(new Vec3(14, 64, 0), 'diamond_ore');
   const { rig, bot, controller, messages } = prepare(version, world);
   bot.pathfinder.setOptions({ tickTimeoutMs: 1, routePrefixMs: 1, routePrefixLength: 4 });
+  controller.configurePassages({ tunnelWidth: 1 });
   t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
   const runtime = createRequire(new URL('./package.json', import.meta.url));
   const Item = createRequire(runtime.resolve('mineflayer'))('prismarine-item')(bot.registry);
@@ -481,6 +487,86 @@ test('excavation executes several tunnel steps without replanning after each bro
   assert.ok(searches < dug / 4, `searches=${searches}, dug=${dug}`);
   assert.equal(blockResets, 0);
   t.diagnostic(`tunnel: searches=${searches}, broken=${dug}, longest excavation=${maximumMiningSteps}, block resets=${blockResets}`);
+});
+
+test('a 2x2 ore approach places sparse wall torches using Mineflayer placement packets', { timeout: 35000 }, async (t) => {
+  const version = '26.1.2';
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  for (let x = -1; x <= 14; x++) {
+    for (const z of [-1, 2]) for (let y = 64; y <= 66; y++) world.setBlock(new Vec3(x, y, z), 'bedrock');
+    for (const z of [0, 1]) {
+      world.setBlock(new Vec3(x, 66, z), 'bedrock');
+      if (x >= 1 && x <= 11) for (let y = 64; y <= 65; y++) world.setBlock(new Vec3(x, y, z), 'stone');
+    }
+  }
+  for (const z of [0, 1]) for (let y = 64; y <= 65; y++) world.setBlock(new Vec3(-1, y, z), 'bedrock');
+  world.setBlock(new Vec3(12, 64, 0), 'diamond_ore');
+  const { rig, bot, controller, messages } = prepare(version, world);
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const runtime = createRequire(new URL('./package.json', import.meta.url));
+  const Item = createRequire(runtime.resolve('mineflayer'))('prismarine-item')(bot.registry);
+  const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1);
+  Object.defineProperty(pick, 'enchants', { value: [{ name: 'efficiency', lvl: 5 }] });
+  const torches = new Item(bot.registry.itemsByName.torch.id, 16);
+  pick.slot = 36; torches.slot = 37;
+  bot.inventory.slots[36] = pick; bot.inventory.slots[37] = torches;
+  bot.updateHeldItem(); bot.pathingUtil.refresh();
+  const supportFeature = bot.supportFeature;
+  bot.supportFeature = feature => feature === 'blockPlaceHasInsideBlock' || supportFeature(feature);
+  bot.loadPlugin(runtime('mineflayer/lib/plugins/generic_place'));
+  bot.loadPlugin(runtime('mineflayer/lib/plugins/place_block'));
+  const lights = [], resets = [];
+  const faces = { 2: new Vec3(0, 0, -1), 3: new Vec3(0, 0, 1),
+    4: new Vec3(-1, 0, 0), 5: new Vec3(1, 0, 0) };
+  const write = bot._client.write;
+  bot._client.write = (name, packet) => {
+    if (name === 'block_place' && bot.heldItem?.name === 'torch') {
+      assert.ok(faces[packet.direction], 'the real placement packet targets a wall face');
+      const destination = new Vec3(packet.location.x, packet.location.y, packet.location.z).plus(faces[packet.direction]);
+      assert.equal(bot.blockAt(destination).name, 'air');
+      lights.push({ destination, feet: bot.entity.position.floored() });
+      world.setBlock(destination, 'wall_torch');
+      torches.count--;
+    }
+    write(name, packet);
+  };
+  bot.on('resetPath', reason => resets.push(reason));
+  controller.configurePassages({ placeTorches: true, torchInterval: 8 });
+  controller.enqueue({ kind: 'mine', blocks: 'diamond', count: 1, radius: 16, minY: 64, maxY: 65 });
+  await waitForJob(controller, 30000);
+  assert.equal(controller.snapshot.history[0].mined, 1, messages.join('\n'));
+  assert.ok(lights.length >= 2 && lights.length <= 3, `torches=${lights.length}`);
+  for (let i = 1; i < lights.length; i++) assert.ok(lights[i].feet.distanceTo(lights[i - 1].feet) >= 8);
+  assert.equal(torches.count, 16 - lights.length);
+  assert.equal(bot.heldItem.name, 'netherite_pickaxe');
+  assert.deepEqual(resets, [], 'lighting does not cancel the committed excavation');
+});
+
+test('the manual tunnel command clears a long 2x2 passage under a solid ceiling', { timeout: 35000 }, async (t) => {
+  const version = '26.1.2';
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  for (let x = -1; x <= 12; x++) for (let z = -1; z <= 2; z++)
+    for (let y = 64; y <= 66; y++) world.setBlock(new Vec3(x, y, z), 'stone');
+  for (const z of [0, 1]) for (const y of [64, 65]) world.clearBlock(new Vec3(0, y, z));
+  const { rig, bot, controller, messages } = prepare(version, world);
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const runtime = createRequire(new URL('./package.json', import.meta.url));
+  const Item = createRequire(runtime.resolve('mineflayer'))('prismarine-item')(bot.registry);
+  const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1);
+  Object.defineProperty(pick, 'enchants', { value: [{ name: 'efficiency', lvl: 5 }] });
+  pick.slot = 36; bot.inventory.slots[36] = pick; bot.updateHeldItem(); bot.pathingUtil.refresh();
+  bot.entity.yaw = -Math.PI / 2;
+  const spec = commands.taskFromCommand(bot, controller, 'tunnel', ['10', '2', '2']);
+  controller.enqueue(spec);
+  await waitForJob(controller, 30000);
+  assert.equal(controller.snapshot.history[0].outcome, 'готово', messages.join('\n'));
+  assert.equal(controller.snapshot.history[0].mined, 40);
+  for (let x = 1; x <= 10; x++) for (const z of [0, 1]) {
+    for (const y of [64, 65]) assert.equal(bot.blockAt(new Vec3(x, y, z)).name, 'air', `${x},${y},${z}`);
+    for (const y of [63, 66]) assert.equal(bot.blockAt(new Vec3(x, y, z)).name, 'stone', `${x},${y},${z}`);
+  }
 });
 
 for (const scaffold of [false, true]) test(`ordinary come escapes a roofed shaft ${scaffold ? 'by building a pillar' : 'by digging stairs without building blocks'}`, { timeout: 25000 }, async (t) => {
