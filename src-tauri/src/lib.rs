@@ -100,6 +100,7 @@ pub fn run() {
             plugins::optional_extensions::install_optional_extension,
             plugins::optional_extensions::uninstall_optional_extension,
             plugins::runtime_monitor::get_runtime_monitor_snapshot,
+            plugins::runtime_monitor::get_runtime_monitor_activity,
             plugins::discord_rpc::start_discord_rpc_for_launcher,
             plugins::discord_rpc::start_discord_rpc_for_instance,
             plugins::discord_rpc::stop_discord_rpc_for_instance,

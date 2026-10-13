@@ -837,6 +837,7 @@ pub struct ProxyPluginSettings {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MineflayerBotStatus {
+    pub revision: u64,
     pub running: bool,
     pub state: String,
     pub pid: Option<u32>,

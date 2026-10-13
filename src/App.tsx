@@ -273,6 +273,11 @@ export default function App() {
         launcherSettings?.plugins.blueMap.enabled ||
         launcherSettings?.plugins.obsTelemetry.enabled,
       ),
+    runningInstances.size > 0 ||
+      Boolean(
+        launcherSettings?.plugins.blueMap.enabled ||
+          launcherSettings?.plugins.obsTelemetry.enabled,
+      ),
   );
   const applyDiscordRpcPresence = (
     settings = launcherSettings,

@@ -30,6 +30,36 @@ pub struct RuntimeMonitorSnapshot {
     pub optional_extensions: Vec<OptionalExtensionStatus>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeMonitorActivity {
+    pub blue_map: BlueMapStatus,
+    pub obs_telemetry: ObsTelemetryStatus,
+    pub processes: Vec<RuntimeProcessStatus>,
+}
+
+#[tauri::command]
+pub async fn get_runtime_monitor_activity(
+    pids: Vec<u32>,
+    blue_map_state: State<'_, BlueMapState>,
+    obs_telemetry_state: State<'_, ObsTelemetryState>,
+) -> Result<RuntimeMonitorActivity, String> {
+    Ok(RuntimeMonitorActivity {
+        blue_map: blue_map::current_status(&blue_map_state)?,
+        obs_telemetry: obs_telemetry::current_status(&obs_telemetry_state)?,
+        processes: process_statuses(pids),
+    })
+}
+
+fn process_statuses(pids: Vec<u32>) -> Vec<RuntimeProcessStatus> {
+    pids.into_iter()
+        .map(|pid| RuntimeProcessStatus {
+            pid,
+            alive: is_process_alive(pid),
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn get_runtime_monitor_snapshot(
     pids: Vec<u32>,
@@ -40,13 +70,7 @@ pub async fn get_runtime_monitor_snapshot(
     let mineflayer_bot = mineflayer_bot::current_status(&mineflayer_state)?;
     let blue_map = blue_map::current_status(&blue_map_state)?;
     let obs_telemetry = obs_telemetry::current_status(&obs_telemetry_state)?;
-    let processes = pids
-        .into_iter()
-        .map(|pid| RuntimeProcessStatus {
-            pid,
-            alive: is_process_alive(pid),
-        })
-        .collect();
+    let processes = process_statuses(pids);
 
     Ok(RuntimeMonitorSnapshot {
         mineflayer_bot,

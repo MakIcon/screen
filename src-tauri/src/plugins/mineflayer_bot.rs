@@ -12,7 +12,7 @@ use std::{
 use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::oneshot;
 
 use crate::{
@@ -27,6 +27,7 @@ use crate::{
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const MAX_LOG_LINES: usize = 80;
+const STATUS_EVENT: &str = "mineflayer-bot-status";
 
 #[derive(Clone, Default)]
 pub struct MineflayerBotState {
@@ -34,6 +35,9 @@ pub struct MineflayerBotState {
 }
 
 struct MineflayerBotRuntime {
+    app: Option<AppHandle>,
+    revision: u64,
+    generation: u64,
     child: Option<Child>,
     state: String,
     pid: Option<u32>,
@@ -52,6 +56,9 @@ struct MineflayerBotRuntime {
 impl Default for MineflayerBotRuntime {
     fn default() -> Self {
         Self {
+            app: None,
+            revision: 0,
+            generation: 0,
             child: None,
             state: "idle".to_string(),
             pid: None,
@@ -203,6 +210,7 @@ fn push_log(runtime: &mut MineflayerBotRuntime, line: impl Into<String>) {
 
 fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
     MineflayerBotStatus {
+        revision: runtime.revision,
         running: runtime.child.is_some(),
         state: runtime.state.clone(),
         pid: runtime.pid,
@@ -214,6 +222,15 @@ fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
         inventory_url: runtime.inventory_url.clone(),
         inventory: runtime.inventory.clone(),
         gathering: runtime.gathering.clone(),
+    }
+}
+
+fn publish_status(runtime: &mut MineflayerBotRuntime) {
+    runtime.revision += 1;
+    if let Some(app) = &runtime.app {
+        // Emit under the state lock so stdout, stderr and lifecycle changes stay ordered.
+        // A failed delivery is repaired by the UI's occasional full snapshot.
+        let _ = app.emit_to("main", STATUS_EVENT, snapshot_status(runtime));
     }
 }
 
@@ -237,6 +254,7 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
     };
 
     if let Some(status) = exit_status {
+        runtime.generation += 1;
         fail_pending_chat(runtime);
         runtime.child.take();
         runtime.pid = None;
@@ -246,10 +264,12 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
         runtime.gathering = None;
         runtime.catalog = None;
         push_log(runtime, format!("process stopped: {status}"));
+        publish_status(runtime);
     }
 }
 
 fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEvent) {
+    let status_changed = event.event_type != "minecraft_catalog";
     match event.event_type.as_str() {
         "inventory" => runtime.inventory_url = event.inventory_url,
         "gathering" => runtime.gathering = event.gathering,
@@ -308,9 +328,38 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
             }
         }
     }
+    if status_changed {
+        publish_status(runtime);
+    }
 }
 
-fn spawn_log_reader<R>(reader: R, state: Arc<Mutex<MineflayerBotRuntime>>, label: &'static str)
+fn apply_worker_line(
+    runtime: &mut MineflayerBotRuntime,
+    line: &str,
+    label: &str,
+    generation: u64,
+) {
+    // Output from a stopped worker must not overwrite a newer connection.
+    if runtime.generation != generation {
+        return;
+    }
+    if let Ok(event) = serde_json::from_str::<WorkerEvent>(line) {
+        update_from_worker_event(runtime, event);
+    } else {
+        push_log(runtime, format!("{label}: {line}"));
+        if label == "stderr" {
+            runtime.last_error = Some(line.to_string());
+        }
+        publish_status(runtime);
+    }
+}
+
+fn spawn_log_reader<R>(
+    reader: R,
+    state: Arc<Mutex<MineflayerBotRuntime>>,
+    label: &'static str,
+    generation: u64,
+)
 where
     R: std::io::Read + Send + 'static,
 {
@@ -324,19 +373,26 @@ where
                 continue;
             }
 
-            if let Ok(event) = serde_json::from_str::<WorkerEvent>(trimmed) {
-                if let Ok(mut runtime) = state.lock() {
-                    update_from_worker_event(&mut runtime, event);
-                }
-                continue;
-            }
-
             if let Ok(mut runtime) = state.lock() {
-                push_log(&mut runtime, format!("{label}: {trimmed}"));
-                if label == "stderr" {
-                    runtime.last_error = Some(trimmed.to_string());
-                }
+                apply_worker_line(&mut runtime, trimmed, label, generation);
             }
+        }
+    });
+}
+
+fn spawn_exit_watcher(state: Arc<Mutex<MineflayerBotRuntime>>, generation: u64) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(250));
+        let Ok(mut runtime) = state.lock() else {
+            return;
+        };
+        if runtime.generation != generation || runtime.child.is_none() {
+            return;
+        }
+        // Also publish crashes that produce no worker "end" event.
+        refresh_child_state(&mut runtime);
+        if runtime.child.is_none() {
+            return;
         }
     });
 }
@@ -519,6 +575,7 @@ pub async fn stop_mineflayer_bot(
         .lock()
         .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
 
+    runtime.generation += 1;
     if let Some(mut child) = runtime.child.take() {
         let _ = child.kill();
         let _ = child.wait();
@@ -533,12 +590,13 @@ pub async fn stop_mineflayer_bot(
     runtime.gathering = None;
     runtime.catalog = None;
     push_log(&mut runtime, "stop requested from launcher");
+    publish_status(&mut runtime);
     Ok(snapshot_status(&runtime))
 }
 
 #[tauri::command]
 pub async fn start_mineflayer_bot(
-    _app: AppHandle,
+    app: AppHandle,
     state: State<'_, MineflayerBotState>,
     launcher_nickname: String,
     launcher_account_type: String,
@@ -695,11 +753,14 @@ pub async fn start_mineflayer_bot(
         return Err(format!("write bot config error: {error}"));
     }
 
+    runtime.app = Some(app);
+    runtime.generation += 1;
+    let generation = runtime.generation;
     if let Some(stdout) = child.stdout.take() {
-        spawn_log_reader(stdout, state.inner.clone(), "stdout");
+        spawn_log_reader(stdout, state.inner.clone(), "stdout", generation);
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(stderr, state.inner.clone(), "stderr");
+        spawn_log_reader(stderr, state.inner.clone(), "stderr", generation);
     }
 
     runtime.child = Some(child);
@@ -715,6 +776,8 @@ pub async fn start_mineflayer_bot(
     runtime.gathering = None;
     runtime.catalog = None;
     push_log(&mut runtime, "start requested from launcher");
+    publish_status(&mut runtime);
+    spawn_exit_watcher(state.inner.clone(), generation);
 
     Ok(snapshot_status(&runtime))
 }
@@ -727,6 +790,101 @@ mod tests {
         WorkerMovementConfig,
     };
     use tokio::sync::oneshot;
+
+    #[test]
+    fn ignores_late_output_from_a_previous_worker_and_versions_updates() {
+        let mut runtime = MineflayerBotRuntime {
+            generation: 2,
+            state: "connected".to_string(),
+            ..Default::default()
+        };
+        super::apply_worker_line(&mut runtime, "old worker error", "stderr", 1);
+        assert!(runtime.logs.is_empty());
+        assert!(runtime.last_error.is_none());
+        assert_eq!(runtime.revision, 0);
+
+        super::apply_worker_line(
+            &mut runtime,
+            r#"{"type":"bot_inventory","inventory":{"health":18}}"#,
+            "stdout",
+            2,
+        );
+        assert_eq!(runtime.revision, 1);
+        assert_eq!(super::snapshot_status(&runtime).revision, 1);
+        assert_eq!(runtime.inventory.as_ref().unwrap()["health"], 18);
+
+        super::apply_worker_line(&mut runtime, "current worker error", "stderr", 2);
+        assert_eq!(runtime.revision, 2);
+        assert_eq!(runtime.last_error.as_deref(), Some("current worker error"));
+        super::apply_worker_line(&mut runtime, r#"{"type":"end"}"#, "stdout", 2);
+        assert_eq!(runtime.revision, 3);
+        assert!(runtime.inventory.is_none());
+        super::apply_worker_line(&mut runtime, r#"{"type":"ready"}"#, "stdout", 1);
+        assert_eq!(runtime.state, "stopped");
+        assert_eq!(runtime.revision, 3);
+    }
+
+    #[test]
+    fn catalog_does_not_trigger_a_large_status_event() {
+        let mut runtime = MineflayerBotRuntime::default();
+        super::apply_worker_line(
+            &mut runtime,
+            r#"{"type":"minecraft_catalog","catalog":{"entries":[]}}"#,
+            "stdout",
+            0,
+        );
+        assert!(runtime.catalog.is_some());
+        assert_eq!(runtime.revision, 0);
+        let status = serde_json::to_value(super::snapshot_status(&runtime)).unwrap();
+        assert!(status.get("catalog").is_none());
+    }
+
+    #[test]
+    fn observes_silent_worker_exit_without_a_frontend_status_request() {
+        use std::{
+            process::{Command, Stdio},
+            sync::{Arc, Mutex},
+            time::{Duration, Instant},
+        };
+        let child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let (reply, mut response) = oneshot::channel();
+        let mut runtime = MineflayerBotRuntime {
+            generation: 1,
+            pid: Some(child.id()),
+            child: Some(child),
+            state: "connected".to_string(),
+            inventory: Some(serde_json::json!({ "health": 20 })),
+            ..Default::default()
+        };
+        runtime.pending_chat.insert("pending".to_string(), reply);
+        let state = Arc::new(Mutex::new(runtime));
+        super::spawn_exit_watcher(state.clone(), 1);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            {
+                let runtime = state.lock().unwrap();
+                if runtime.child.is_none() {
+                    assert_eq!(runtime.state, "stopped");
+                    assert!(runtime.pid.is_none());
+                    assert!(runtime.inventory.is_none());
+                    assert_eq!(runtime.revision, 1);
+                    assert_eq!(runtime.generation, 2);
+                    assert!(response.try_recv().unwrap().is_err());
+                    break;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "exit watcher failed to observe the child"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 
     #[test]
     fn validates_chat_without_truncating_unicode_or_allowing_packet_controls() {

@@ -496,6 +496,7 @@ export type MineflayerInventory = {
   capacity: number;
 };
 export type MineflayerBotStatus = {
+  revision: number;
   running: boolean;
   state: string;
   pid?: number | null;
@@ -619,6 +620,11 @@ export type RuntimeMonitorSnapshot = {
   processes: RuntimeProcessStatus[];
   optionalExtensions: OptionalExtensionStatus[];
 };
+
+export type RuntimeMonitorActivity = Pick<
+  RuntimeMonitorSnapshot,
+  "blueMap" | "obsTelemetry" | "processes"
+>;
 
 export type MicrosoftAccount = {
   id: string;
