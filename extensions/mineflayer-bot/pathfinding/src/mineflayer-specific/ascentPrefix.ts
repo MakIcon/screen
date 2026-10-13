@@ -24,6 +24,7 @@ export function selectAscentPrefix (result: Path, world: World, goal: GoalBlock 
   ].map(node => reconstructPath(node)), ...uphillFrontier.map(node => reconstructPath(node))]
   let best: Move[] | undefined
   let bestCost = Infinity
+  let bestRise = 0
   for (const candidate of candidates) {
     const first = candidate[0]
     if (first == null || first.entryPos.xzDistanceTo(start) > 0.8 || Math.abs(first.entryPos.y - start.y) > 0.2) continue
@@ -51,8 +52,11 @@ export function selectAscentPrefix (result: Path, world: World, goal: GoalBlock 
       if (move.metadata?.waterLanding === true || !feet.walkthrough || !head.walkthrough ||
           !feet.safe || !head.safe || feet.liquid || head.liquid ||
           !floor.physical || !floor.safe || Math.abs(floor.height - move.exitPos.y) > 0.2) continue
-      if (cost < bestCost) { best = candidate.slice(0, index + 1); bestCost = cost }
-      break
+      const rise = move.exitPos.y - start.y
+      const costPerRise = cost / rise
+      if (costPerRise < bestCost || (Math.abs(costPerRise - bestCost) < 1e-6 && rise > bestRise)) {
+        best = candidate.slice(0, index + 1); bestCost = costPerRise; bestRise = rise
+      }
     }
   }
   return best

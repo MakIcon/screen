@@ -66,7 +66,52 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   protected isComplete (startMove: Move, endMove?: Move, opts?: CompleteOpts): boolean {
+    if (this.toPlaceLen() > 0 || this.toBreakLen() > 0 || this.cI != null) return false
     return super.isComplete(startMove, endMove, { ticks: 2 })
+  }
+
+  private isBridge (move: Move): boolean {
+    return !this.doWaterLogic() && move.toPlace.length > 0 && move.toBreak.length === 0 &&
+      move.toPlace.every(place => place.type === 'solid' && Math.abs(place.y - (move.entryPos.y - 1)) < 0.01)
+  }
+
+  private async placeBridge (move: Move): Promise<void> {
+    for (const place of this.toPlace()) {
+      if (!place.needToPerform(this.bot)) continue
+      const anchors = [new Vec3(-1, 0, 0), new Vec3(1, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1)]
+        .map(dir => this.world.getBlockInfo(place.vec.plus(dir)))
+        .filter(block => block.solidFull && block.safe && Math.abs(block.height - move.entryPos.y) < 0.2)
+        .sort((a, b) => this.bot.entity.position.xzDistanceTo(a.position.offset(0.5, 1, 0.5)) -
+          this.bot.entity.position.xzDistanceTo(b.position.offset(0.5, 1, 0.5)))
+      const anchor = anchors[0]
+      if (anchor == null) throw new CancelError('Bridge: no confirmed placement support')
+      const center = anchor.position.offset(0.5, 1, 0.5)
+      const direction = place.vec.minus(anchor.position); direction.y = 0; direction.normalize()
+      const rim = center.plus(direction.scaled(0.72))
+      const deadline = performance.now() + this.settings.movementTimeoutMs
+      let info
+      do {
+        if (this.aborted || this.bot.pathfinder.abortCalculation) throw new CancelError('Bridge placement canceled')
+        if (performance.now() >= deadline) throw new CancelError('Bridge: cannot reach the exposed placement face')
+        if (!this.bot.entity.onGround || Math.abs(this.bot.entity.position.y - move.entryPos.y) > 0.2) {
+          throw new CancelError('Bridge: lost its supported approach')
+        }
+        this.bot.setControlState('sneak', true)
+        this.bot.setControlState('sprint', false)
+        this.bot.setControlState('jump', false)
+        info = await place.performInfo(this.bot, 0)
+        if (info.raycasts.length > 0) break
+        await this.lookAtPathPos(rim)
+        steerToPosition(this.bot, rim, 0.08, 0.025)
+        await this.bot.waitForTicks(1)
+      } while (true)
+      for (const control of ['forward', 'back', 'left', 'right'] as const) this.bot.setControlState(control, false)
+      // Never walk over a speculative bridge floor. Each next click face and
+      // the subsequent walking segment require the server-confirmed block.
+      await this.performInteraction(place, { info, predictBlock: false })
+      if (place.needToPerform(this.bot)) throw new CancelError('Bridge placement was not confirmed')
+    }
+    this.bot.setControlState('sneak', false)
   }
 
   private async faceForward (): Promise<boolean> {
@@ -82,6 +127,11 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   override async align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
+    if (this.isBridge(thisMove) && this.toPlaceLen() > 0) {
+      for (const control of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(control, false)
+      this.bot.setControlState('sneak', true)
+      return this.bot.entity.onGround && Math.abs(this.bot.entity.position.y - thisMove.entryPos.y) < 0.2
+    }
     if (await this.correctCorner(thisMove)) return false
     if (this.doWaterLogic()) {
       this.bot.setControlState('jump', false)
@@ -123,6 +173,7 @@ export class NewForwardExecutor extends MovementExecutor {
       this.bot.setControlState('back', false)
       this.bot.setControlState('left', false)
       this.bot.setControlState('right', false)
+      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', false)
       if (this.bot.food <= 6) this.bot.setControlState('sprint', false)
       else this.bot.setControlState('sprint', this.settings.allowSprinting)
     } else {
@@ -146,6 +197,8 @@ export class NewForwardExecutor extends MovementExecutor {
 
     if (this.doWaterLogic()) this.bot.setControlState('jump', false)
     else this.bot.clearControlStates()
+
+    if (this.isBridge(thisMove) && this.toPlaceLen() > 0) await this.placeBridge(thisMove)
 
     const faceForward = await this.faceForward()
 
@@ -254,6 +307,10 @@ export class NewForwardExecutor extends MovementExecutor {
     const faceForward = await this.faceForward()
 
     if (faceForward) {
+      // A previous rim/placement correction may have crouched while a camera
+      // callback was pending. Ordinary travel owns its controls again now;
+      // retaining that state silently cuts walking speed for the entire leg.
+      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', false)
       const jump = this.canJump(thisMove, currentIndex, path)
       this.bot.setControlState('jump', jump)
       await this.postInitAlignToPath(thisMove)
@@ -991,8 +1048,12 @@ export class ParkourForwardExecutor extends MovementExecutor {
   }
 
   protected isComplete (startMove: Move, endMove?: Move, opts: CompleteOpts = {}): boolean {
-    const ret = super.isComplete(startMove, endMove, opts)
-    return ret
+    // Predicting contact can finish the jump one tick before its real landing.
+    // Starting the next Neo's crouch/sideways alignment in that airborne tick
+    // cancels the remaining flight and can send a narrow landing into a fall.
+    const target = endMove ?? startMove
+    if (!this.bot.entity.onGround && !((this.bot.entity as any).isInWater && this.world.getBlockInfo(target.exitPos).water)) return false
+    return super.isComplete(startMove, endMove, { ...opts, ticks: 0 })
   }
 
   private _debugLog (...args: any[]): void {

@@ -11,6 +11,36 @@ the worker's dependencies. The downloaded source directory is left intact.
 
 Changes from the supplied source:
 
+- Version 1.12.3 gives ready traversal routes priority over construction with
+  digging/building enabled. The read-only probe includes every enabled parkour,
+  Neo, momentum and ladder provider, and runs before overhead construction even
+  when digging is disabled. Construction can reuse Neo and ladder movements too.
+  After repairing an initial gap, a read-only continuation avoids building around
+  the rest of an already usable course. Ordinary jumps retain control until real
+  supported landing before handing off to the next move. Physics regressions
+  cover ready mixed courses on 1.20.4 and 26.1.2, necessary first-gap repair and
+  ladder-assisted climbing with a full scaffold inventory.
+
+- Version 1.12.2 extends construction planning across the full approach, tower,
+  bridge and platform landing, including level and lower offset platforms.
+  Its bounded search prices missing bridge floors and uses ordinary gap jumps
+  when enabled, without running expensive ice/Neo simulations for every scaffold
+  branch. Existing routes and ice approaches retain priority. Bridge placement
+  approaches an exposed support face while crouching and confirms the real block
+  before using it as a floor or another placement anchor. Unfinished interactions
+  cannot complete a walking move; diagonal bridging respects the remaining stock.
+  Physics tests cover long straight and diagonal bridges, tower-to-bridge travel,
+  a lower platform, limited-block jump exits and delayed placement confirmations.
+
+- Version 1.12.1 tries existing open mine passages before planning a new exit.
+  Nearby overhead goals use a bounded construction search that validates the
+  whole tower and its platform exit together, respecting inventory, headroom,
+  protected floors and exclusions. Incomplete climbs retain efficient multi-step
+  ascents instead of stopping at the first rise. Ordinary walking releases stale
+  crouch input after corner or placement alignment. Physics regressions cover a
+  mine entrance facing away from the owner, a twenty-block tower and continuous
+  sprint through merged and short waypoints.
+
 - Version 1.8.12 applies the supplied Baritone 26.1 ascent, descent and partial
   search approach to Mineflayer. One-block jumps align laterally and respond to
   actual ground contact, with another attempt after a failed takeoff. Ascents

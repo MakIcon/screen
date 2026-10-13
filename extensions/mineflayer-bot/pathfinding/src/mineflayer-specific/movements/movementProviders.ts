@@ -149,6 +149,7 @@ export class Diagonal extends MovementProvider {
     }
 
     if (toPlace.length > 1 && !this.settings.allowDiagonalBridging) return
+    if (toPlace.length > node.remainingBlocks) return
 
     // expect these to all be relatively easy.
     cost += this.safeOrBreak(block0, toBreak)

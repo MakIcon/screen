@@ -682,6 +682,134 @@ export class ThePathfinder {
           (block: BlockInfo) => block.position.equals(destinationSupport) ? Infinity : 0] }
       : settings
 
+    const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4
+    const target = positionedGoal ? new Vec3(goal.x, goal.y, goal.z) : undefined
+    const horizontalDistance = target == null ? Infinity : startPos.xzDistanceTo(target)
+    let needsBridge = false
+    if (target != null && target.y >= startPos.y - settings.maxDropDown && horizontalDistance > 1) {
+      // Look beyond the current landing, including small platforms where the
+      // bot is not yet standing at the rim. Preserve verified ice approaches.
+      for (let step = 0; step <= Math.min(64, Math.ceil(horizontalDistance)); step++) {
+        const t = step / Math.ceil(horizontalDistance)
+        const floor = this.world.getBlockInfo(new Vec3(startPos.x + (target.x - startPos.x) * t,
+          startPos.y - 0.01, startPos.z + (target.z - startPos.z) * t))
+        if (isIceBlock(floor.block?.name)) break
+        if (floor.isInvalid || floor.liquid) break
+        if (!floor.physical) { needsBridge = true; break }
+      }
+    }
+    const constructionCandidate = target != null && !settings.allowExcavatedDescent && settings.canPlace &&
+      startMove.remainingBlocks > 0 && (elevatedGoal || needsBridge) && horizontalDistance <= 64 &&
+      !this.world.getBlockInfo(startPos).liquid && !this.world.getBlockInfo(target).isInvalid &&
+      !this.world.getBlockInfo(target).liquid
+    const constructionMoves = new Map([...movements].filter(([provider]) =>
+      [IdleMovement, Forward, Diagonal, ForwardJump, ForwardDropDown, StraightUp, Climb,
+        ParkourForward, ParkourDiagonal, NeoProvider, LadderForward, LadderDiagonal,
+        LadderLandingForward, LadderLandingDiagonal, AroundCornerDiagonal].includes(provider as any)))
+    const traversalSettings = { ...routeSettings, canDig: false, canPlace: false,
+      allowWaterDrop: false, allowBucketWaterDrop: false, infiniteLiquidDropdownDistance: false }
+    const probe = async (probeGoal: goals.Goal, probeSettings: MovementOptions, probeMovements: ExecutorMap,
+      timeoutMs: number, maxVisitedNodes: number, probeStart = startMove): Promise<ReturnType<ContinuousPathProducer['advance']>> => {
+      const producer = new ContinuousPathProducer(probeStart, probeGoal, probeSettings, this.bot, this.world,
+        probeMovements, searchScale, { timeoutMs: Math.min(timeoutMs, this.pathfinderSettings.searchTimeoutMs * searchScale),
+          maxVisitedNodes: Math.min(maxVisitedNodes, this.pathfinderSettings.maxVisitedNodes * searchScale) })
+      this._currentProducer = producer
+      let res
+      do {
+        res = producer.advance()
+        if (this.abortCalculation || this.disposed) res.result.status = 'canceled'
+        if (res.result.status !== 'partial') break
+        await new Promise<void>(resolve => setImmediate(resolve))
+      } while (true)
+      return res
+    }
+    if ((elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
+      // Always try the complete enabled traversal repertoire before editing
+      // terrain. Removing Neo/ladder providers here made a ready course appear
+      // disconnected and sent the bot into bridge/tower construction instead.
+      // This is a dry traversal probe: it cannot excavate or place a bucket,
+      // and does not scan deep water-drop columns from every exposed edge.
+      const existing = await probe(goal, traversalSettings, movements, 300, 6000)
+      if (existing.result.status === 'success' || existing.result.status === 'canceled') {
+        if (existing.result.status === 'success') this.bot.emit('pathGenerated', existing.result)
+        yield existing
+        return existing
+      }
+    }
+    if (constructionCandidate && target != null && positionedGoal) {
+      // Price the missing supports as well as the rise. A walking heuristic
+      // otherwise explores thousands of airborne stair/tower combinations at
+      // every bridge end. Keep one connected plan through the final landing.
+      const bridgeEstimate = (node: Move): number => {
+        const distance = node.exitPos.xzDistanceTo(target)
+        const steps = Math.ceil(distance)
+        const seen = new Set<string>()
+        let missing = 0
+        for (let step = 1; step <= steps; step++) {
+          const floorPos = new Vec3(node.exitPos.x + (target.x - node.exitPos.x) * step / steps,
+            node.exitPos.y - 0.01, node.exitPos.z + (target.z - node.exitPos.z) * step / steps).floored()
+          const key = floorPos.toString()
+          if (seen.has(key)) continue
+          seen.add(key)
+          const floor = this.world.getBlockInfo(floorPos)
+          if (!floor.physical || Math.abs(floor.height - node.exitPos.y) > 0.2) missing++
+        }
+        return missing * settings.placeCost
+      }
+      const constructionGoal: goals.Goal = {
+        isEnd: node => goal.isEnd(node),
+        heuristic: node => goal.heuristic(node) + 2 * (bridgeEstimate(node) +
+          Math.max(0, goal.y - node.exitPos.y - 1) * settings.placeCost),
+        distHeuristic: node => goal.distHeuristic(node),
+        onFinish: executor => goal.onFinish(executor)
+      }
+      const dx = target.x - startPos.x; const dz = target.z - startPos.z
+      const lengthSquared = dx * dx + dz * dz
+      const constructionSettings = { ...routeSettings, canDig: false,
+        exclusionAreasStep: [...routeSettings.exclusionAreasStep, (block: BlockInfo) => {
+          const x = block.position.x + 0.5; const z = block.position.z + 0.5
+          const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1,
+            ((x - startPos.x) * dx + (z - startPos.z) * dz) / lengthSquared))
+          return Math.hypot(x - startPos.x - dx * t, z - startPos.z - dz * t) > 4 ||
+            block.position.y < Math.min(startPos.y, Math.floor(goal.y)) ||
+            block.position.y > Math.max(startPos.y, Math.ceil(goal.y)) + 1 ? Infinity : 0
+        }] }
+      const construction = await probe(constructionGoal, constructionSettings, constructionMoves, 200, 4000)
+      if (construction.result.status === 'success' || construction.result.status === 'canceled') {
+        if (construction.result.status === 'success') {
+          // A missing first gap can make a complete read-only route impossible.
+          // After repairing that gap, reconnect to the ready course before
+          // accepting further towers around its Neo obstacles or ladders.
+          const plan = construction.result.path
+          const firstEdit = plan.findIndex(move => move.toPlace.length > 0)
+          const firstTraverse = plan.findIndex((move, index) => index > firstEdit && move.toPlace.length === 0)
+          if (firstEdit >= 0 && firstTraverse > firstEdit && plan.slice(firstTraverse).some(move => move.toPlace.length > 0)) {
+            const constructionProducer = this._currentProducer
+            const prefix = plan.slice(0, firstTraverse)
+            const last = prefix[prefix.length - 1]
+            const reconnectStart = new Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0,
+              new IdleMovement(this.bot, this.world), last.exitPos.clone(), last.exitVel.clone(),
+              last.exitPos.clone(), last.exitVel.clone(), last)
+            const reconnect = await probe(goal, traversalSettings, movements, 300, 6000, reconnectStart)
+            if (reconnect.result.status === 'success' || reconnect.result.status === 'canceled') {
+              if (reconnect.result.status === 'success') {
+                reconnect.result = { ...reconnect.result, path: [...prefix, ...reconnect.result.path],
+                  cost: prefix.reduce((cost, move) => cost + move.cost, 0) + reconnect.result.cost,
+                  calcTime: construction.result.calcTime + reconnect.result.calcTime }
+                this.bot.emit('pathGenerated', reconnect.result)
+              }
+              yield reconnect
+              return reconnect
+            }
+            this._currentProducer = constructionProducer
+          }
+        }
+        if (construction.result.status === 'success') this.bot.emit('pathGenerated', construction.result)
+        yield construction
+        return construction
+      }
+    }
+
     // Deep excavation makes every sideways tunnel a cheap alternative to
     // climbing. Prefer progress toward the exit instead of exhausting those
     // tunnels and committing a single stair on every search timeout. The

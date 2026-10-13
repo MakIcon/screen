@@ -40,3 +40,25 @@ test('an incomplete ascent requires a dry foothold and available scaffolding, an
     assert.equal(select(), undefined, 'two planned blocks cannot be built with one inventory block')
   } finally { rig.stopPassivePhysics(); cacheWorld.dispose() }
 })
+
+test('an incomplete ascent retains consecutive equally efficient tower steps', () => {
+  const startPos = new Vec3(0.5, 64, 0.5)
+  const { rig, cacheWorld } = createCacheWorld('1.20.4', 64, startPos)
+  try {
+    const provider = new IdleMovement(rig.bot, cacheWorld)
+    const start = Move.startMove(provider, startPos, new Vec3(0, 0, 0), 4)
+    const goal = new GoalBlock(0, 70, 0)
+    const handler = MovementHandler.create(rig.bot, cacheWorld, new Map(), {})
+    const context = new AStar(start, handler, goal, 100)
+    const steps: Move[] = []
+    let previous = start
+    for (let y = 64; y < 68; y++) {
+      previous = Move.fromPrevious(10, new Vec3(0.5, y + 1, 0.5), previous, provider,
+        [PlaceHandler.fromVec(new Vec3(0, y, 0), 'solid')])
+      steps.push(previous)
+    }
+    const result = { ...context.makeResult('timeout', context.bestNode), path: steps }
+    assert.deepEqual(selectAscentPrefix(result, cacheWorld, goal, startPos, 16, new Map()), steps)
+    assert.deepEqual(selectAscentPrefix(result, cacheWorld, goal, startPos, 2, new Map()), steps.slice(0, 2))
+  } finally { rig.stopPassivePhysics(); cacheWorld.dispose() }
+})

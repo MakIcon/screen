@@ -4292,7 +4292,53 @@ var require_movementExecutors = __commonJS({
         return true;
       }
       isComplete(startMove, endMove, opts) {
+        if (this.toPlaceLen() > 0 || this.toBreakLen() > 0 || this.cI != null)
+          return false;
         return super.isComplete(startMove, endMove, { ticks: 2 });
+      }
+      isBridge(move) {
+        return !this.doWaterLogic() && move.toPlace.length > 0 && move.toBreak.length === 0 && move.toPlace.every((place) => place.type === "solid" && Math.abs(place.y - (move.entryPos.y - 1)) < 0.01);
+      }
+      async placeBridge(move) {
+        for (const place of this.toPlace()) {
+          if (!place.needToPerform(this.bot))
+            continue;
+          const anchors = [new vec3_1.Vec3(-1, 0, 0), new vec3_1.Vec3(1, 0, 0), new vec3_1.Vec3(0, 0, -1), new vec3_1.Vec3(0, 0, 1)].map((dir) => this.world.getBlockInfo(place.vec.plus(dir))).filter((block) => block.solidFull && block.safe && Math.abs(block.height - move.entryPos.y) < 0.2).sort((a, b) => this.bot.entity.position.xzDistanceTo(a.position.offset(0.5, 1, 0.5)) - this.bot.entity.position.xzDistanceTo(b.position.offset(0.5, 1, 0.5)));
+          const anchor = anchors[0];
+          if (anchor == null)
+            throw new exceptions_1.CancelError("Bridge: no confirmed placement support");
+          const center = anchor.position.offset(0.5, 1, 0.5);
+          const direction = place.vec.minus(anchor.position);
+          direction.y = 0;
+          direction.normalize();
+          const rim = center.plus(direction.scaled(0.72));
+          const deadline = performance.now() + this.settings.movementTimeoutMs;
+          let info;
+          do {
+            if (this.aborted || this.bot.pathfinder.abortCalculation)
+              throw new exceptions_1.CancelError("Bridge placement canceled");
+            if (performance.now() >= deadline)
+              throw new exceptions_1.CancelError("Bridge: cannot reach the exposed placement face");
+            if (!this.bot.entity.onGround || Math.abs(this.bot.entity.position.y - move.entryPos.y) > 0.2) {
+              throw new exceptions_1.CancelError("Bridge: lost its supported approach");
+            }
+            this.bot.setControlState("sneak", true);
+            this.bot.setControlState("sprint", false);
+            this.bot.setControlState("jump", false);
+            info = await place.performInfo(this.bot, 0);
+            if (info.raycasts.length > 0)
+              break;
+            await this.lookAtPathPos(rim);
+            (0, controls_1.steerToPosition)(this.bot, rim, 0.08, 0.025);
+            await this.bot.waitForTicks(1);
+          } while (true);
+          for (const control of ["forward", "back", "left", "right"])
+            this.bot.setControlState(control, false);
+          await this.performInteraction(place, { info, predictBlock: false });
+          if (place.needToPerform(this.bot))
+            throw new exceptions_1.CancelError("Bridge placement was not confirmed");
+        }
+        this.bot.setControlState("sneak", false);
       }
       async faceForward() {
         if (this.doWaterLogic())
@@ -4303,6 +4349,12 @@ var require_movementExecutors = __commonJS({
         return this.currentMove?.toPlace.length === 0 || !near;
       }
       async align(thisMove, tickCount, goal) {
+        if (this.isBridge(thisMove) && this.toPlaceLen() > 0) {
+          for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+            this.bot.setControlState(control, false);
+          this.bot.setControlState("sneak", true);
+          return this.bot.entity.onGround && Math.abs(this.bot.entity.position.y - thisMove.entryPos.y) < 0.2;
+        }
         if (await this.correctCorner(thisMove))
           return false;
         if (this.doWaterLogic()) {
@@ -4333,6 +4385,8 @@ var require_movementExecutors = __commonJS({
           this.bot.setControlState("back", false);
           this.bot.setControlState("left", false);
           this.bot.setControlState("right", false);
+          if (this.toPlaceLen() === 0)
+            this.bot.setControlState("sneak", false);
           if (this.bot.food <= 6)
             this.bot.setControlState("sprint", false);
           else
@@ -4351,6 +4405,8 @@ var require_movementExecutors = __commonJS({
           this.bot.setControlState("jump", false);
         else
           this.bot.clearControlStates();
+        if (this.isBridge(thisMove) && this.toPlaceLen() > 0)
+          await this.placeBridge(thisMove);
         const faceForward = await this.faceForward();
         if (faceForward) {
           await this.postInitAlignToPath(thisMove);
@@ -4431,6 +4487,8 @@ var require_movementExecutors = __commonJS({
         }
         const faceForward = await this.faceForward();
         if (faceForward) {
+          if (this.toPlaceLen() === 0)
+            this.bot.setControlState("sneak", false);
           const jump = this.canJump(thisMove, currentIndex, path);
           this.bot.setControlState("jump", jump);
           await this.postInitAlignToPath(thisMove);
@@ -5086,8 +5144,10 @@ var require_movementExecutors = __commonJS({
         this.bot.prependListener("physicsTick", listener);
       }
       isComplete(startMove, endMove, opts = {}) {
-        const ret = super.isComplete(startMove, endMove, opts);
-        return ret;
+        const target = endMove ?? startMove;
+        if (!this.bot.entity.onGround && !(this.bot.entity.isInWater && this.world.getBlockInfo(target.exitPos).water))
+          return false;
+        return super.isComplete(startMove, endMove, { ...opts, ticks: 0 });
       }
       _debugLog(...args) {
         logParkour(...args);
@@ -8038,6 +8098,8 @@ var require_movementProviders = __commonJS({
         }
         if (toPlace.length > 1 && !this.settings.allowDiagonalBridging)
           return;
+        if (toPlace.length > node.remainingBlocks)
+          return;
         cost += this.safeOrBreak(block0, toBreak);
         cost += this.safeOrBreak(block1, toBreak);
         cost += this.safeOrBreak(this.getBlockInfo(node, dir.x, 0, 0), toBreak);
@@ -9570,8 +9632,9 @@ var require_continuousPathProducer = __commonJS({
     var algs_1 = require_algs();
     var movements_12 = require_movements();
     var ContinuousPathProducer = class {
-      constructor(start, goal, settings, bot, world, movements, searchScale = 1) {
+      constructor(start, goal, settings, bot, world, movements, searchScale = 1, limits) {
         this.searchScale = searchScale;
+        this.limits = limits;
         this._currentPath = [];
         this.gcInterval = 10;
         this.lastGc = 0;
@@ -9594,8 +9657,8 @@ var require_continuousPathProducer = __commonJS({
           const moveHandler = movements_12.MovementHandler.create(this.bot, this.world, this.movements, this.settings);
           moveHandler.loadGoal(this.goal);
           const opts = this.bot.pathfinder.pathfinderSettings;
-          this.astarContext = new algs_1.AStar(this.start, moveHandler, this.goal, opts.searchTimeoutMs * this.searchScale, opts.tickTimeoutMs, -1, 0);
-          this.astarContext.maxVisitedNodes = opts.maxVisitedNodes * this.searchScale;
+          this.astarContext = new algs_1.AStar(this.start, moveHandler, this.goal, this.limits?.timeoutMs ?? opts.searchTimeoutMs * this.searchScale, opts.tickTimeoutMs, -1, 0);
+          this.astarContext.maxVisitedNodes = this.limits?.maxVisitedNodes ?? opts.maxVisitedNodes * this.searchScale;
         }
         const result = this.astarContext.compute();
         this._currentPath = result.path;
@@ -10785,6 +10848,7 @@ var require_ascentPrefix = __commonJS({
       ].map((node) => (0, algorithms_1.reconstructPath)(node)), ...uphillFrontier.map((node) => (0, algorithms_1.reconstructPath)(node))];
       let best;
       let bestCost = Infinity;
+      let bestRise = 0;
       for (const candidate of candidates) {
         const first = candidate[0];
         if (first == null || first.entryPos.xzDistanceTo(start) > 0.8 || Math.abs(first.entryPos.y - start.y) > 0.2)
@@ -10819,11 +10883,13 @@ var require_ascentPrefix = __commonJS({
           const floor = getBlock(move.exitPos.offset(0, -0.01, 0));
           if (move.metadata?.waterLanding === true || !feet.walkthrough || !head.walkthrough || !feet.safe || !head.safe || feet.liquid || head.liquid || !floor.physical || !floor.safe || Math.abs(floor.height - move.exitPos.y) > 0.2)
             continue;
-          if (cost < bestCost) {
+          const rise = move.exitPos.y - start.y;
+          const costPerRise = cost / rise;
+          if (costPerRise < bestCost || Math.abs(costPerRise - bestCost) < 1e-6 && rise > bestRise) {
             best = candidate.slice(0, index + 1);
-            bestCost = cost;
+            bestCost = costPerRise;
+            bestRise = rise;
           }
-          break;
         }
       }
       return best;
@@ -12120,6 +12186,147 @@ var require_ThePathfinder = __commonJS({
           ...settings.exclusionAreasBreak,
           (block) => block.position.equals(destinationSupport) ? Infinity : 0
         ] } : settings;
+        const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4;
+        const target = positionedGoal ? new vec3_1.Vec3(goal.x, goal.y, goal.z) : void 0;
+        const horizontalDistance = target == null ? Infinity : startPos.xzDistanceTo(target);
+        let needsBridge = false;
+        if (target != null && target.y >= startPos.y - settings.maxDropDown && horizontalDistance > 1) {
+          for (let step = 0; step <= Math.min(64, Math.ceil(horizontalDistance)); step++) {
+            const t = step / Math.ceil(horizontalDistance);
+            const floor = this.world.getBlockInfo(new vec3_1.Vec3(startPos.x + (target.x - startPos.x) * t, startPos.y - 0.01, startPos.z + (target.z - startPos.z) * t));
+            if ((0, momentum_1.isIceBlock)(floor.block?.name))
+              break;
+            if (floor.isInvalid || floor.liquid)
+              break;
+            if (!floor.physical) {
+              needsBridge = true;
+              break;
+            }
+          }
+        }
+        const constructionCandidate = target != null && !settings.allowExcavatedDescent && settings.canPlace && startMove.remainingBlocks > 0 && (elevatedGoal || needsBridge) && horizontalDistance <= 64 && !this.world.getBlockInfo(startPos).liquid && !this.world.getBlockInfo(target).isInvalid && !this.world.getBlockInfo(target).liquid;
+        const constructionMoves = new Map([...movements].filter(([provider]) => [
+          movementProviders_1.IdleMovement,
+          movementProviders_1.Forward,
+          movementProviders_1.Diagonal,
+          movementProviders_1.ForwardJump,
+          movementProviders_1.ForwardDropDown,
+          movementProviders_1.StraightUp,
+          climb_1.Climb,
+          movementProviders_1.ParkourForward,
+          movementProviders_1.ParkourDiagonal,
+          neo_1.NeoProvider,
+          ladder_provider_1.LadderForward,
+          ladder_provider_1.LadderDiagonal,
+          ladder_provider_1.LadderLandingForward,
+          ladder_provider_1.LadderLandingDiagonal,
+          around_corner_provider_1.AroundCornerDiagonal
+        ].includes(provider)));
+        const traversalSettings = {
+          ...routeSettings,
+          canDig: false,
+          canPlace: false,
+          allowWaterDrop: false,
+          allowBucketWaterDrop: false,
+          infiniteLiquidDropdownDistance: false
+        };
+        const probe = async (probeGoal, probeSettings, probeMovements, timeoutMs, maxVisitedNodes, probeStart = startMove) => {
+          const producer = new pathProducers_1.ContinuousPathProducer(probeStart, probeGoal, probeSettings, this.bot, this.world, probeMovements, searchScale, {
+            timeoutMs: Math.min(timeoutMs, this.pathfinderSettings.searchTimeoutMs * searchScale),
+            maxVisitedNodes: Math.min(maxVisitedNodes, this.pathfinderSettings.maxVisitedNodes * searchScale)
+          });
+          this._currentProducer = producer;
+          let res;
+          do {
+            res = producer.advance();
+            if (this.abortCalculation || this.disposed)
+              res.result.status = "canceled";
+            if (res.result.status !== "partial")
+              break;
+            await new Promise((resolve) => setImmediate(resolve));
+          } while (true);
+          return res;
+        };
+        if (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
+          const existing = await probe(goal, traversalSettings, movements, 300, 6e3);
+          if (existing.result.status === "success" || existing.result.status === "canceled") {
+            if (existing.result.status === "success")
+              this.bot.emit("pathGenerated", existing.result);
+            yield existing;
+            return existing;
+          }
+        }
+        if (constructionCandidate && target != null && positionedGoal) {
+          const bridgeEstimate = (node) => {
+            const distance = node.exitPos.xzDistanceTo(target);
+            const steps = Math.ceil(distance);
+            const seen = /* @__PURE__ */ new Set();
+            let missing = 0;
+            for (let step = 1; step <= steps; step++) {
+              const floorPos = new vec3_1.Vec3(node.exitPos.x + (target.x - node.exitPos.x) * step / steps, node.exitPos.y - 0.01, node.exitPos.z + (target.z - node.exitPos.z) * step / steps).floored();
+              const key = floorPos.toString();
+              if (seen.has(key))
+                continue;
+              seen.add(key);
+              const floor = this.world.getBlockInfo(floorPos);
+              if (!floor.physical || Math.abs(floor.height - node.exitPos.y) > 0.2)
+                missing++;
+            }
+            return missing * settings.placeCost;
+          };
+          const constructionGoal = {
+            isEnd: (node) => goal.isEnd(node),
+            heuristic: (node) => goal.heuristic(node) + 2 * (bridgeEstimate(node) + Math.max(0, goal.y - node.exitPos.y - 1) * settings.placeCost),
+            distHeuristic: (node) => goal.distHeuristic(node),
+            onFinish: (executor) => goal.onFinish(executor)
+          };
+          const dx = target.x - startPos.x;
+          const dz = target.z - startPos.z;
+          const lengthSquared = dx * dx + dz * dz;
+          const constructionSettings = {
+            ...routeSettings,
+            canDig: false,
+            exclusionAreasStep: [...routeSettings.exclusionAreasStep, (block) => {
+              const x = block.position.x + 0.5;
+              const z = block.position.z + 0.5;
+              const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((x - startPos.x) * dx + (z - startPos.z) * dz) / lengthSquared));
+              return Math.hypot(x - startPos.x - dx * t, z - startPos.z - dz * t) > 4 || block.position.y < Math.min(startPos.y, Math.floor(goal.y)) || block.position.y > Math.max(startPos.y, Math.ceil(goal.y)) + 1 ? Infinity : 0;
+            }]
+          };
+          const construction = await probe(constructionGoal, constructionSettings, constructionMoves, 200, 4e3);
+          if (construction.result.status === "success" || construction.result.status === "canceled") {
+            if (construction.result.status === "success") {
+              const plan = construction.result.path;
+              const firstEdit = plan.findIndex((move) => move.toPlace.length > 0);
+              const firstTraverse = plan.findIndex((move, index) => index > firstEdit && move.toPlace.length === 0);
+              if (firstEdit >= 0 && firstTraverse > firstEdit && plan.slice(firstTraverse).some((move) => move.toPlace.length > 0)) {
+                const constructionProducer = this._currentProducer;
+                const prefix = plan.slice(0, firstTraverse);
+                const last = prefix[prefix.length - 1];
+                const reconnectStart = new move_12.Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0, new movementProviders_1.IdleMovement(this.bot, this.world), last.exitPos.clone(), last.exitVel.clone(), last.exitPos.clone(), last.exitVel.clone(), last);
+                const reconnect = await probe(goal, traversalSettings, movements, 300, 6e3, reconnectStart);
+                if (reconnect.result.status === "success" || reconnect.result.status === "canceled") {
+                  if (reconnect.result.status === "success") {
+                    reconnect.result = {
+                      ...reconnect.result,
+                      path: [...prefix, ...reconnect.result.path],
+                      cost: prefix.reduce((cost, move) => cost + move.cost, 0) + reconnect.result.cost,
+                      calcTime: construction.result.calcTime + reconnect.result.calcTime
+                    };
+                    this.bot.emit("pathGenerated", reconnect.result);
+                  }
+                  yield reconnect;
+                  return reconnect;
+                }
+                this._currentProducer = constructionProducer;
+              }
+            }
+            if (construction.result.status === "success")
+              this.bot.emit("pathGenerated", construction.result);
+            yield construction;
+            return construction;
+          }
+        }
         const excavationAscent = settings.canDig && !settings.allowExcavatedDescent && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y >= startPos.y + 4;
         let nearbyClimb = false;
         if (excavationAscent) {

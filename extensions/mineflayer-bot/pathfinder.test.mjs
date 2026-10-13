@@ -12,6 +12,86 @@ require("ts-node").register({
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 
+test("bundled come prioritizes a ready ladder, Neo and gap over building with a full scaffold stack", { timeout: 16000 }, async (t) => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 84, 0.5), { renderDistance: 1 });
+  for (let x = 0; x <= 3; x++) world.setBlock(new Vec3(x, 83, 0), "stone");
+  const Block = require("prismarine-block")(rig.mcData);
+  const ladder = rig.mcData.blocksByName.ladder;
+  let ladderState;
+  for (let state = ladder.minStateId; state <= ladder.maxStateId; state++) {
+    const props = Block.fromStateId(state, 0).getProperties();
+    if (props.facing === "west" && !props.waterlogged) { ladderState = state; break; }
+  }
+  for (let y = 84; y <= 87; y++) {
+    world.setBlock(new Vec3(4, y, 0), "stone");
+    world.setBlock(new Vec3(3, y, 0), ladderState);
+  }
+  for (const x of [4, 5, 6, 7, 10, 11, 12, 13]) world.setBlock(new Vec3(x, 87, 0), "stone");
+  for (const y of [88, 89]) world.setBlock(new Vec3(6, y, 0), "stone");
+  const Item = require("prismarine-item")(rig.mcData);
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+  rig.bot.inventory.slots[9].slot = 9;
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: true, maxDropDown: 3 });
+  const placed = [], dug = [], used = [];
+  const place = rig.bot._placeBlockWithOptions, dig = rig.bot.dig;
+  rig.bot._placeBlockWithOptions = (block, face, ...args) => { placed.push(block.position.plus(face)); return place(block, face, ...args); };
+  rig.bot.dig = (block, ...args) => { dug.push(block.position); return dig(block, ...args); };
+  rig.bot.on("pathGenerated", path => used.push(...path.path.map(move => move.moveType.constructor.name)));
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(12.5, 88, 0.5, 0.7));
+    assert.deepEqual(placed, []);
+    assert.deepEqual(dug, []);
+    for (const name of ["Climb", "NeoProvider", "ParkourForward"]) assert.ok(used.includes(name), used.join(","));
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(new Vec3(12.5, 88, 0.5)) < 0.8);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("bundled come finishes a diagonal bridge to the owner's lower platform", { timeout: 35000 }, async (t) => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 84, 0.5), { renderDistance: 1 });
+  for (let y = 64; y < 84; y++) world.setBlock(new Vec3(0, y, 0), "cobblestone");
+  for (let x = 12; x <= 15; x++) for (let z = 3; z <= 5; z++) world.setBlock(new Vec3(x, 81, z), "stone");
+  const Item = require("prismarine-item")(rig.mcData);
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+  rig.bot.inventory.slots[9].slot = 9;
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: true, maxDropDown: 3 });
+  const destination = new Vec3(14.5, 82, 4.5);
+  let firstRoute, lowest = 84;
+  const plans = [], resets = [], started = performance.now();
+  rig.bot.on("pathGenerated", path => { firstRoute ??= performance.now() - started; plans.push(path); });
+  rig.bot.on("resetPath", reason => resets.push(reason));
+  rig.bot.on("physicsTick", () => { lowest = Math.min(lowest, rig.bot.entity.position.y); });
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(pathfinder.goals.GoalNear.fromVec(destination, 0.7));
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(destination) < 0.8);
+    assert.ok(firstRoute < 700, `first route=${firstRoute}ms`);
+    assert.equal(plans.length, 1, "retain the plan through the bridge and its final descent");
+    assert.deepEqual(resets, []);
+    assert.ok(lowest >= 81.99, `lowest=${lowest}`);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("bundled come plans an entire tall tower and retains its platform floor", async () => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  for (let x = 1; x <= 5; x++) for (let z = -1; z <= 1; z++) world.setBlock(new Vec3(x, 83, z), "stone");
+  const Item = require("prismarine-item")(rig.mcData);
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+  rig.bot.inventory.slots[9].slot = 9;
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: false, canDig: true, maxDropDown: 3 });
+  try {
+    const started = performance.now();
+    const path = await navigator.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity,
+      new pathfinder.goals.GoalNear(2.5, 84, 0.5, 0.7));
+    assert.ok(path != null, "one connected route reaches the overhead platform");
+    assert.ok(performance.now() - started < 700, "the planner should not exhaust a ground search before towering");
+    assert.ok(path.path.filter(move => move.moveType.constructor.name === "StraightUp").length >= 18);
+    assert.ok(path.path.every(move => move.toBreak.length === 0 && move.remainingBlocks >= 0));
+    assert.ok(path.path.at(-1).exitPos.distanceTo(new Vec3(2.5, 84, 0.5)) < 0.8);
+    assert.equal(world.getBlock(new Vec3(2, 83, 0)).name, "stone");
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
 test("distant come advances through newly loaded chunks without waiting for an unavailable full route", { timeout: 42000 }, async (t) => {
   const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
   const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { world });
