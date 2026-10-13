@@ -14,7 +14,7 @@ function botFixture(version) {
   bot.inventory = new EventEmitter();
   Object.assign(bot.inventory, { id: 0, type: "minecraft:inventory", slots: Array(46).fill(null) });
   const original = {
-    type: bot.registry.itemsByName.spruce_log.id,
+    type: (bot.registry.itemsByName.spruce_log || bot.registry.itemsByName.log).id,
     name: "spruce_log",
     displayName: "Spruce Log",
     count: 12,
@@ -51,6 +51,28 @@ async function connect(url) {
     },
   };
 }
+for (const version of ["1.8.8", "1.20.4", "26.1.2"])
+  test(`search catalog includes the full live block/item registry and supported groups on ${version}`, () => {
+    const { bot } = botFixture(version);
+    let catalog;
+    const controller = viewer.startInventoryTelemetry(bot, { onCatalog: value => catalog = value });
+    try {
+      assert.equal(catalog.version, version);
+      const normal = catalog.entries.filter(entry => entry.kind !== "group");
+      assert.equal(normal.length, new Set([
+        ...Object.keys(bot.registry.blocksByName), ...Object.keys(bot.registry.itemsByName),
+      ]).size);
+      for (const name of ["diamond", "diamond_ore", "diamond_block", "diamond_pickaxe"])
+        assert.ok(normal.find(entry => entry.name === name)?.texture.startsWith("data:image/"));
+      assert.equal(normal.find(entry => entry.name === "diamond_pickaxe").mineable, false);
+      assert.equal(normal.find(entry => entry.name === "chest").mineable, false);
+      assert.equal(normal.find(entry => entry.name === "diamond_ore").mineable, true);
+      const diamond = catalog.entries.find(entry => entry.name === "diamond" && entry.kind === "group");
+      assert.ok(diamond.blocks.includes("diamond_ore"));
+      assert.equal(diamond.blocks.includes("deepslate_diamond_ore"), version !== "1.8.8");
+      if (version === "26.1.2") assert.ok(normal.find(entry => entry.name === "pale_oak_log"));
+    } finally { controller.stop(); }
+  });
 for (const version of ["1.20.4", "26.1.2"])
   test(`web inventory actually serves, streams items, updates and cleans reconnect listeners on ${version}`, async (t) => {
     const { bot, original } = botFixture(version);

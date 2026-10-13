@@ -109,6 +109,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     for (const [key, site] of task.digSites)
       if (now() - site.time > 5000) task.digSites.delete(key);
     task.digSites.set(plan.key(block.position), { position: lastBlock, time: now() });
+    task.lastDigAt = now();
   }
   function travelRouting() {
     return task?.kind === "deliver" || task?.kind === "deposit" ||
@@ -450,20 +451,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     return candidates[0];
   }
   async function awaitDrops(signal) {
-    if (drops().length || !settings.dropWaitMs) return;
-    let arrived;
-    const arrival = new Promise((resolve) => {
-      arrived = resolve;
-    });
-    const dropped = () => {
-      if (drops().length) arrived();
-    };
-    bot.on("itemDrop", dropped);
-    try {
-      await Promise.race([wait(settings.dropWaitMs, signal), arrival]);
-    } finally {
-      bot.off("itemDrop", dropped);
-    }
+    // A previous drop must not end the wait for the last block's delayed
+    // spawn/metadata. Wait once per batch, including blocks broken en route.
+    const remaining = (task.lastDigAt ?? -Infinity) + settings.dropWaitMs - now();
+    if (remaining > 0) await wait(remaining, signal);
+    guard(signal);
   }
   function acquireMovement() {
     if (movementSettings || !bot.pathfinder?.setMoveOptions) return;
@@ -619,6 +611,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     return { candidates, unloaded, remaining };
   }
   function drops() {
+    // Metadata can arrive after entity spawn, or before our itemDrop listener.
+    // Reconcile the live entities as well as retaining already tracked loot.
+    if (task.kind !== "collect")
+      for (const entity of Object.values(bot.entities || {})) itemDrop(entity);
     const entities =
       task.kind === "collect" ? Object.values(bot.entities || {}) : [...trackedDrops.values()];
     return entities
@@ -627,7 +623,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           entity.isValid !== false &&
           !picked.has(entity.id) &&
           entity.getDroppedItem?.() &&
-          plan.insideTask(task, entity.position) &&
+          (task.kind !== "collect" || plan.insideTask(task, entity.position)) &&
           (!task.item || entity.getDroppedItem().name === task.item) &&
           (task.failed.get(`item:${entity.id}`) || 0) < settings.maxAttempts,
       )
@@ -688,12 +684,18 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     if (task.count && task.mined >= task.count) {
       while (task.scaffold && (await descendScaffold(signal))) guard(signal);
+      await awaitDrops(signal);
       if (drops().length) {
         pickupOnly = false;
         desired = "pickup";
         return;
       }
       finish(task.missedDrops ? "частично" : "готово");
+      return;
+    }
+    if (drops().length) {
+      pickupOnly = false;
+      desired = "pickup";
       return;
     }
     let result;
@@ -742,6 +744,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           `Область не закончена: осталось ${result.remaining} блоков; не загружено ${result.unloaded}. Уберите препятствия и продолжите`,
         );
       while (task.scaffold && (await descendScaffold(signal))) guard(signal);
+      await awaitDrops(signal);
       if (drops().length) {
         pickupOnly = false;
         desired = "pickup";
@@ -945,27 +948,43 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       };
       bot.on("playerCollect", collectedEvent);
       try {
-        const until = now() + settings.pickupTimeoutMs;
+        // Reach the item's cell; a one-block stopping distance can leave the
+        // bot outside pickup range. Falling items can be collected by the body
+        // above the feet, so do not require standing at their fractional Y.
+        // 0.75 also includes a valid cell centre for items on cell corners
+        // (the furthest centre is sqrt(0.5^2 + 0.5^2) blocks away).
+        const goal = goals.GoalFollowEntity.fromEntity(entity, 0.75, { dynamic: true });
+        goal.distHeuristic = (node) => {
+          const pos = node.exitPos ?? node;
+          const dy = entity.position.y - pos.y;
+          return Math.hypot(entity.position.x - pos.x, entity.position.z - pos.z,
+            Math.max(0, -dy - 0.5, dy - 1.5));
+        };
         await navigate(
-          goals.GoalFollowEntity.fromEntity(entity, 1, { dynamic: true }),
+          goal,
           signal,
           settings.pickupTimeoutMs,
         );
+        const until = now() + settings.pickupTimeoutMs;
         while (!collected && entity.isValid !== false && now() < until) await wait(50, signal);
         if (!collected && !picked.has(entity.id)) {
-          task.failed.set(`item:${entity.id}`, settings.maxAttempts);
-          task.missedDrops++;
+          failedDrop(entity);
         }
       } catch (error) {
         if (collected || picked.has(entity.id)) continue;
         if (error instanceof Interrupted || error instanceof WorkError) throw error;
-        task.failed.set(`item:${entity.id}`, settings.maxAttempts);
-        task.missedDrops++;
+        failedDrop(entity);
       } finally {
         bot.off("playerCollect", collectedEvent);
       }
     }
     desired = "scan";
+  }
+  function failedDrop(entity) {
+    const key = `item:${entity.id}`;
+    const attempts = (task.failed.get(key) || 0) + 1;
+    task.failed.set(key, attempts);
+    if (attempts === settings.maxAttempts) task.missedDrops++;
   }
   async function deposit(signal) {
     if (!chest) throw new WorkError("Сначала задайте сундук: stash x y z");
@@ -1201,6 +1220,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   function itemDrop(entity) {
     if (
       task &&
+      entity.getDroppedItem?.() &&
+      !picked.has(entity.id) &&
       [...(task.digSites?.values() || [])].some(
         (site) =>
           now() - site.time <= 5000 &&
@@ -1221,6 +1242,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   function collected(collector, entity) {
     if (!task || collector.id !== bot.entity.id || picked.has(entity.id)) return;
+    itemDrop(entity);
     if (
       trackedDrops.has(entity.id) ||
       (task.kind === "collect" &&
@@ -1230,6 +1252,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       const count = entity.getDroppedItem?.()?.count || 1;
       picked.set(entity.id, count);
       trackedDrops.delete(entity.id);
+      const failedKey = `item:${entity.id}`;
+      if ((task.failed.get(failedKey) || 0) >= settings.maxAttempts) task.missedDrops--;
+      task.failed.delete(failedKey);
       task.collected += count;
       report();
     }

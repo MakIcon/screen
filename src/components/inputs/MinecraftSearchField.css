@@ -1,0 +1,158 @@
+.minecraft-search-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.minecraft-search-field > label {
+  color: var(--text-alt);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.minecraft-search-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+.minecraft-search-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-card);
+  color: var(--ink);
+  padding: 0 38px 0 12px;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition:
+    border-color 0.14s,
+    background 0.14s;
+}
+.minecraft-search-input-wrap input:focus {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+}
+.minecraft-search-input-wrap input:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+.minecraft-search-symbol {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-alt);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.minecraft-search-menu {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  font: 13px var(--font-ui, sans-serif);
+}
+.minecraft-search-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.minecraft-search-heading small {
+  color: var(--text-alt);
+  font-size: 10px;
+  font-weight: 500;
+}
+.minecraft-search-results {
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-soft) var(--bg);
+}
+.minecraft-search-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.minecraft-search-option:last-child {
+  border-bottom: 0;
+}
+.minecraft-search-option:hover,
+.minecraft-search-option[aria-selected="true"] {
+  background: var(--bg-hover);
+}
+.minecraft-search-option[aria-selected="true"] {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.minecraft-search-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: var(--bg-card);
+}
+.minecraft-search-icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.minecraft-search-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.minecraft-search-copy strong {
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.minecraft-search-copy small {
+  color: var(--text-alt);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.minecraft-search-kind {
+  flex-shrink: 0;
+  color: var(--text-alt);
+  font-size: 10px;
+}
+.minecraft-search-empty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--text-alt);
+  line-height: 1.5;
+}
+.minecraft-search-hint {
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-alt);
+  font-size: 10px;
+  flex-shrink: 0;
+}

@@ -12,7 +12,7 @@ const DEFAULTS = Object.freeze({
   operationTimeoutMs: 30000,
   moveTimeoutMs: 10000,
   pickupTimeoutMs: 5000,
-  dropWaitMs: 150,
+  dropWaitMs: 1000,
   rescanIntervalMs: 3000,
   digReach: 4.5,
   maxAttempts: 2,
@@ -87,7 +87,7 @@ function resolveBlocks(registry, input = "ores") {
   const names = Object.keys(registry.blocksByName);
   const chosen = new Set();
   for (let token of String(input).toLowerCase().split(",")) {
-    token = token.replace(/^minecraft:/, "");
+    token = token.trim().replace(/^minecraft:/, "");
     const matches = names.filter((name) =>
       token === "ores"
         ? isOre(name)

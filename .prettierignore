@@ -6,3 +6,4 @@ pnpm-lock.yaml
 extensions/mineflayer-bot/pathfinding
 extensions/mineflayer-bot/pathfinder.cjs
 extensions/mineflayer-bot/pathfinder-source.json
+src/data/minecraftCatalog.json

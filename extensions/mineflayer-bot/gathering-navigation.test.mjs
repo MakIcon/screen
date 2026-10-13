@@ -52,6 +52,46 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
   return { rig, bot, controller, messages };
 }
 
+for (const version of ["1.20.4", "26.1.2"])
+  test(`pickup physically reaches a moved diamond drop above the feet on ${version}`, { timeout: 12000 }, async (t) => {
+    const world = createFlatWorld(version, 64, { renderDistance: 1 });
+    const { rig, bot, controller } = prepare(version, world);
+    t.after(async () => {
+      await controller.dispose();
+      await bot.pathfinder.destroy();
+      rig.stopPassivePhysics();
+    });
+    const drop = { id: 990, position: new Vec3(4.5, 65.4, 0.5), isValid: true,
+      getDroppedItem: () => ({ name: "diamond", count: 3 }) };
+    bot.entities[drop.id] = drop;
+    let moved = false, collectedAt;
+    bot.on("physicsTick", () => {
+      if (!drop.isValid) return;
+      const feet = bot.entity.position;
+      if (!moved && feet.x > 1.5) {
+        moved = true;
+        drop.position.x = version === "26.1.2" ? 6.001 : 6.5;
+        drop.position.z = version === "26.1.2" ? 0.001 : 0.5;
+        bot.emit("entityMoved", drop);
+      }
+      if (Math.hypot(feet.x - drop.position.x, feet.z - drop.position.z) < 0.8 &&
+          drop.position.y - feet.y < 1.5) {
+        collectedAt = feet.clone();
+        bot.emit("playerCollect", bot.entity, drop);
+        drop.isValid = false;
+        delete bot.entities[drop.id];
+        bot.emit("entityGone", drop);
+      }
+    });
+    controller.enqueue({ kind: "collect", item: "diamond", radius: 8 });
+    await waitForJob(controller, 10000);
+    assert.equal(moved, true);
+    assert.ok(collectedAt?.x > 5.2, `position=${collectedAt}`);
+    assert.ok(Math.hypot(collectedAt.x - drop.position.x, collectedAt.z - drop.position.z) < 0.8);
+    assert.equal(controller.snapshot.history[0].collected, 3);
+    assert.equal(controller.snapshot.history[0].outcome, "готово");
+  });
+
 test(
   "ore mining lands before Mineflayer fixes the dig duration",
   { timeout: 6000 },

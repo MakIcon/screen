@@ -187,11 +187,99 @@ async function until(f, predicate, timeout = 3000) {
   assert.ok(predicate(), JSON.stringify(f.work.snapshot));
 }
 
+for (const kind of ["mine", "forest", "quarry"]) test(`${kind} collects its own drop after it falls beyond the task bounds`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const name = kind === "forest" ? "oak_log" : "diamond_ore";
+  f.put(name, 1);
+  f.items.push(f.item("iron_pickaxe"));
+  const dig = f.bot.dig;
+  f.bot.dig = async (...args) => {
+    await dig(...args);
+    const entity = Object.values(f.bot.entities).at(-1);
+    entity.position = new Vec3(3, 62, 0.5);
+  };
+  f.work.enqueue({ kind, blocks: "diamond", count: 1, radius: 1, scaffold: false,
+    ...(kind === "quarry" ? { area: { min: new Vec3(1, 64, 0), max: new Vec3(1, 64, 0) } } : {}) });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+test("the last delayed drop is awaited even when earlier drops are already tracked", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.dropWaitMs = 120;
+  f.put("oak_log", 1);
+  f.put("oak_log", 1, 65);
+  const dig = f.bot.dig;
+  f.bot.dig = async (block, ...args) => {
+    await dig(block, ...args);
+    if (block.position.y === 65) {
+      const entity = Object.values(f.bot.entities).at(-1);
+      // Simulate spawn metadata arriving after the server's block update.
+      delete f.bot.entities[entity.id];
+      const droppedItem = entity.getDroppedItem;
+      entity.getDroppedItem = () => null;
+      setTimeout(() => {
+        entity.getDroppedItem = droppedItem;
+        f.bot.entities[entity.id] = entity;
+        f.bot.emit("itemDrop", entity);
+      }, 80);
+    }
+  };
+  f.work.enqueue({ kind: "forest", count: 2, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].collected, 2);
+});
+
+test("live drop reconciliation recovers missing itemDrop events and retries transient noPath", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.put("oak_log", 1);
+  const emit = f.bot.emit.bind(f.bot);
+  f.bot.emit = (name, ...args) => name === "itemDrop" ? false : emit(name, ...args);
+  const goto = f.bot.pathfinder.goto;
+  let attempts = 0;
+  f.bot.pathfinder.goto = async goal => {
+    if (goal.trackedEntity && ++attempts === 1) throw new Error("Pathfinding failed: noPath");
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: "forest", count: 0, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(attempts, 2);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+  assert.equal(f.work.snapshot.history[0].missedDrops, 0);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+test("pickup reaches the item's horizontal cell and allows collection above the feet", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const entity = { id: 90, position: new Vec3(3.5, 65.4, 0.5), isValid: true,
+    getDroppedItem: () => ({ name: "diamond", count: 2 }) };
+  f.bot.entities[entity.id] = entity;
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async goal => {
+    if (goal.trackedEntity) {
+      assert.equal(goal.isEnd({ exitPos: new Vec3(2.5, 64, 0.5) }), false);
+      assert.equal(goal.isEnd({ exitPos: new Vec3(3.5, 64, 0.5) }), true);
+      assert.equal(goal.isEnd({ exitPos: new Vec3(3.5, 62, 0.5) }), false);
+    }
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: "collect", item: "diamond" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].collected, 2);
+});
+
 test("validates cuboids, aliases, dimensions and exact block counts before execution", () => {
   const f = fixture();
   assert.equal(plan.bounds(new Vec3(2, -3, 4), new Vec3(0, -1, 3)).volume, 18);
   assert.deepEqual(plan.resolveBlocks(f.bot.registry, "iron"), ["iron_ore", "deepslate_iron_ore"]);
   assert.ok(plan.resolveBlocks(f.bot.registry, "ores").includes("ancient_debris"));
+  assert.deepEqual(plan.resolveBlocks(f.bot.registry, "iron, minecraft:diamond_ore"),
+    ["iron_ore", "deepslate_iron_ore", "diamond_ore"]);
   assert.throws(() => f.work.enqueue({ kind: "mine", blocks: "unknown" }), /Неизвестный/);
   assert.throws(() => f.work.enqueue({ kind: "mine", count: "1.5" }), /целое число/);
   assert.throws(() => f.work.enqueue({ kind: "mine", blocks: "chest" }), /нельзя выбрать/);

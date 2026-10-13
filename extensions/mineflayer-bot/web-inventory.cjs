@@ -90,9 +90,44 @@ async function startWebInventory(bot, { onReady = () => {}, onError = () => {} }
     return { url: null, stop };
   }
 }
-function startInventoryTelemetry(bot, { onUpdate = () => {} } = {}) {
+function minecraftCatalog(bot, assets) {
+  const plan = require("./gathering-plan.cjs");
+  const entries = new Map();
+  const texture = name => assets?.textureContent?.[name]?.texture || FALLBACK;
+  for (const item of Object.values(bot.registry.itemsByName))
+    entries.set(item.name, {
+      name: item.name, displayName: item.displayName, texture: texture(item.name),
+      kind: "item", item: true, mineable: false,
+    });
+  for (const block of Object.values(bot.registry.blocksByName)) {
+    const mineable = block.hardness >= 0 && block.diggable !== false &&
+      !plan.AIR.has(block.name) && !plan.FLUIDS.has(block.name) && !plan.PROTECTED.test(block.name);
+    entries.set(block.name, {
+      ...entries.get(block.name), name: block.name, displayName: block.displayName,
+      texture: texture(block.name), kind: "block", item: entries.has(block.name), mineable,
+    });
+  }
+  const groups = [
+    ["ores", "Все руды", "diamond_ore"], ["logs", "Стволы деревьев", "oak_log"],
+    ["wood", "Древесина · все стволы", "oak_log"], ["leaves", "Листва", "oak_leaves"],
+    ["coal", "Уголь · все руды", "coal"], ["iron", "Железо · все руды", "iron_ingot"],
+    ["copper", "Медь · все руды", "copper_ingot"], ["gold", "Золото · все руды", "gold_ingot"],
+    ["redstone", "Редстоун · все руды", "redstone"], ["lapis", "Лазурит · все руды", "lapis_lazuli"],
+    ["diamond", "Алмазы · все руды", "diamond"], ["emerald", "Изумруды · все руды", "emerald"],
+    ["quartz", "Кварц · все руды", "quartz"],
+  ].flatMap(([name, displayName, icon]) => {
+    try {
+      const blocks = plan.resolveBlocks(bot.registry, name);
+      return [{ name, displayName, texture: texture(icon), kind: "group", item: false, mineable: true, blocks }];
+    } catch { return []; } // Only groups supported by this server's registry.
+  });
+  return { version: bot.version, entries: [...groups, ...entries.values()] };
+}
+
+function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {} } = {}) {
   const assets =
     dependency("minecraft-assets")(bot.version) || dependency("minecraft-assets")("1.18");
+  onCatalog(minecraftCatalog(bot, assets));
   let last = "",
     timer,
     stopped = false;
@@ -182,4 +217,4 @@ function startInventoryTelemetry(bot, { onUpdate = () => {} } = {}) {
   emitSnapshot();
   return { stop };
 }
-module.exports = { startWebInventory, startInventoryTelemetry, PAGE };
+module.exports = { startWebInventory, startInventoryTelemetry, minecraftCatalog, PAGE };

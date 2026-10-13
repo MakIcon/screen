@@ -456,6 +456,19 @@ export type MineflayerWorkTask = {
   outcome?: string;
   reason?: string;
 };
+export type MinecraftCatalogEntry = {
+  name: string;
+  displayName: string;
+  texture: string;
+  kind: "block" | "item" | "group";
+  item: boolean;
+  mineable: boolean;
+  blocks?: string[];
+};
+export type MinecraftCatalog = {
+  version: string;
+  entries: MinecraftCatalogEntry[];
+};
 export type MineflayerInventoryItem = {
   slot: number;
   name: string;

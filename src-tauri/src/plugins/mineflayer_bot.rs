@@ -46,6 +46,7 @@ struct MineflayerBotRuntime {
     inventory_url: Option<String>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
+    catalog: Option<serde_json::Value>,
 }
 
 impl Default for MineflayerBotRuntime {
@@ -63,6 +64,7 @@ impl Default for MineflayerBotRuntime {
             inventory_url: None,
             inventory: None,
             gathering: None,
+            catalog: None,
         }
     }
 }
@@ -159,6 +161,7 @@ struct WorkerEvent {
     inventory_url: Option<String>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
+    catalog: Option<serde_json::Value>,
 }
 
 fn write_worker_message(writer: &mut impl Write, payload: &impl Serialize) -> Result<(), String> {
@@ -241,6 +244,7 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
         runtime.inventory_url = None;
         runtime.inventory = None;
         runtime.gathering = None;
+        runtime.catalog = None;
         push_log(runtime, format!("process stopped: {status}"));
     }
 }
@@ -250,6 +254,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         "inventory" => runtime.inventory_url = event.inventory_url,
         "gathering" => runtime.gathering = event.gathering,
         "bot_inventory" => runtime.inventory = event.inventory,
+        "minecraft_catalog" => runtime.catalog = event.catalog,
         "chat_result" => {
             if let Some(request_id) = event.request_id {
                 if let Some(reply) = runtime.pending_chat.remove(&request_id) {
@@ -290,6 +295,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
             runtime.inventory_url = None;
             runtime.inventory = None;
             runtime.gathering = None;
+            runtime.catalog = None;
             fail_pending_chat(runtime);
             runtime.state = "stopped".to_string();
             if let Some(message) = event.message {
@@ -450,6 +456,18 @@ pub async fn get_mineflayer_bot_status(
     current_status(&state)
 }
 
+// Keep the full registry/textures out of the frequently polled status snapshot.
+#[tauri::command]
+pub async fn get_minecraft_catalog(
+    state: State<'_, MineflayerBotState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let runtime = state
+        .inner
+        .lock()
+        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+    Ok(runtime.catalog.clone())
+}
+
 #[tauri::command]
 pub async fn send_mineflayer_bot_chat(
     state: State<'_, MineflayerBotState>,
@@ -513,6 +531,7 @@ pub async fn stop_mineflayer_bot(
     runtime.inventory_url = None;
     runtime.inventory = None;
     runtime.gathering = None;
+    runtime.catalog = None;
     push_log(&mut runtime, "stop requested from launcher");
     Ok(snapshot_status(&runtime))
 }
@@ -694,6 +713,7 @@ pub async fn start_mineflayer_bot(
     runtime.inventory_url = None;
     runtime.inventory = None;
     runtime.gathering = None;
+    runtime.catalog = None;
     push_log(&mut runtime, "start requested from launcher");
 
     Ok(snapshot_status(&runtime))
@@ -729,6 +749,7 @@ mod tests {
             serde_json::json!({ "type": "gathering", "gathering": { "phase": "dig", "mined": 3 } }),
             serde_json::json!({ "type": "inventory", "inventoryUrl": "http://127.0.0.1:12345/" }),
             serde_json::json!({ "type": "bot_inventory", "inventory": { "health": 6, "food": 18, "armor": 12, "slots": [null] } }),
+            serde_json::json!({ "type": "minecraft_catalog", "catalog": { "version": "26.1.2", "entries": [{ "name": "diamond_ore" }] } }),
             serde_json::json!({ "type": "error", "error": "Нет добычи для передачи" }),
         ] {
             update_from_worker_event(&mut runtime, serde_json::from_value(json).unwrap());
@@ -738,10 +759,13 @@ mod tests {
         assert_eq!(runtime.inventory_url.as_deref(), Some("http://127.0.0.1:12345/"));
         assert_eq!(runtime.inventory.as_ref().unwrap()["health"], 6);
         assert_eq!(runtime.inventory.as_ref().unwrap()["food"], 18);
+        assert_eq!(runtime.catalog.as_ref().unwrap()["entries"][0]["name"], "diamond_ore");
+        assert!(serde_json::to_value(super::snapshot_status(&runtime)).unwrap().get("catalog").is_none());
         update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "end" })).unwrap());
         assert!(runtime.inventory_url.is_none());
         assert!(runtime.inventory.is_none());
         assert!(runtime.gathering.is_none());
+        assert!(runtime.catalog.is_none());
     }
 
     #[test]

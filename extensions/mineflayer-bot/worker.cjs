@@ -942,7 +942,10 @@ async function main () {
           onStatus: message => emit('status', { state: 'connected', message }),
           onProgress: gathering => emit('gathering', { gathering })
         })
-        startInventoryTelemetry(bot, { onUpdate: inventory => emit('bot_inventory', { inventory }) })
+        startInventoryTelemetry(bot, {
+          onUpdate: inventory => emit('bot_inventory', { inventory }),
+          onCatalog: catalog => emit('minecraft_catalog', { catalog })
+        })
         void startWebInventory(bot, {
           onReady: inventoryUrl => { bot.launcherInventoryUrl = inventoryUrl; emit('inventory', { inventoryUrl }) },
           onError: error => emit('log', { message: `Веб-инвентарь: ${error.message}` })

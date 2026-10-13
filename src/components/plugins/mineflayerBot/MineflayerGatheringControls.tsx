@@ -1,13 +1,16 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
+import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
+import bundledCatalog from "../../../data/minecraftCatalog.json";
 import type {
   MineflayerBotStatus,
   MineflayerWorkTask,
   MineflayerGatheringSettings,
+  MinecraftCatalog,
 } from "../../../types";
 
 type Mode = "mine" | "forest" | "quarry" | "collect" | "tunnel";
@@ -30,6 +33,7 @@ const PHASES: Record<string, string> = {
   return: "Возвращается",
   paused: "На паузе",
 };
+const OFFLINE_CATALOG = bundledCatalog as MinecraftCatalog;
 export function workTaskTitle(task: MineflayerWorkTask) {
   if (task.tunnel) return "Проходка тоннеля";
   if (task.kind === "forest") return "Заготовка леса";
@@ -103,6 +107,23 @@ export function MineflayerGatheringControls({
   const [showForm, setShowForm] = useState(true);
   const sendingRef = useRef(false);
   const disabled = !connected || sending;
+  const [liveCatalog, setLiveCatalog] = useState<MinecraftCatalog | null>(null);
+  const catalog = connected && liveCatalog ? liveCatalog : OFFLINE_CATALOG;
+  useEffect(() => {
+    let cancelled = false;
+    setLiveCatalog(null);
+    if (connected)
+      void invoke<MinecraftCatalog | null>("get_minecraft_catalog")
+        .then((value) => {
+          if (!cancelled && value) {
+            setLiveCatalog(value);
+          }
+        })
+        .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, status?.pid]);
   const command =
     mode === "mine"
       ? `mine ${blocks.trim()} ${count} ${radius}${autoDepth ? "" : ` ${minY} ${maxY}`}`
@@ -189,7 +210,8 @@ export function MineflayerGatheringControls({
     >
       {!connected && (
         <p role="status" className="mineflayer-bot-combat-note">
-          Сначала подключите бота: вкладка «Управление» → «Запустить».
+          Можно настроить задачу заранее. Для запуска подключите бота: вкладка «Управление» →
+          «Запустить».
         </p>
       )}
       <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
@@ -381,10 +403,20 @@ export function MineflayerGatheringControls({
               void send(command);
             }}
           >
-            <fieldset className="mineflayer-bot-gathering-fields" disabled={disabled}>
+            <fieldset className="mineflayer-bot-gathering-fields" disabled={sending}>
               <div className="mineflayer-bot-grid">
-                {mode === "mine" &&
-                  text("БЛОКИ ИЛИ ГРУППА", blocks, setBlocks, "iron,diamond / ores / stone")}
+                {mode === "mine" && (
+                  <MinecraftSearchField
+                    label="БЛОКИ ИЛИ ГРУППА"
+                    value={blocks}
+                    onChange={setBlocks}
+                    catalog={catalog}
+                    scope="blocks"
+                    multiple
+                    disabled={sending}
+                    placeholder="Название или ID · diamond, iron, ores"
+                  />
+                )}
                 {(mode === "mine" || mode === "forest") &&
                   number("КОЛИЧЕСТВО БЛОКОВ · 0 = ВСЕ", count, setCount, 0, 1000000)}
                 {mode !== "quarry" &&
@@ -402,7 +434,17 @@ export function MineflayerGatheringControls({
                     {number("МАКСИМАЛЬНАЯ ВЫСОТА Y", maxY, setMaxY, -64, 319)}
                   </>
                 )}
-                {mode === "collect" && text("ПРЕДМЕТ · ПУСТО = ВСЕ", item, setItem, "raw_iron")}
+                {mode === "collect" && (
+                  <MinecraftSearchField
+                    label="ПРЕДМЕТ · ПУСТО = ВСЕ"
+                    value={item}
+                    onChange={setItem}
+                    catalog={catalog}
+                    scope="items"
+                    disabled={sending}
+                    placeholder="Название или ID · diamond, raw_iron"
+                  />
+                )}
                 {mode === "quarry" && (
                   <>
                     {text("ПЕРВЫЙ УГОЛ · X Y Z", corner1, setCorner1, "100 64 100")}
