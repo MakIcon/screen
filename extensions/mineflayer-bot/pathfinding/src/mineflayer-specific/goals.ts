@@ -222,6 +222,14 @@ export class GoalCompositeAny<Gls extends readonly Goal[]> extends GoalComposite
   }
 }
 
+/** Reach a neighbouring feet cell before aiming at enclosed ore in the live world. */
+export class GoalMiningApproach extends GoalCompositeAny<GoalBlock[]> {
+  constructor (public readonly position: Vec3, public readonly y = position.y) {
+    super(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([x, z]) =>
+      new GoalBlock(position.x + x, y, position.z + z)))
+  }
+}
+
 export class GoalCompositeAll<Gls extends readonly Goal[]> extends GoalComposite<Gls> {
   static from<G extends readonly Goal[]>(...goals: G): GoalCompositeAll<G> {
     return new GoalCompositeAll(...goals)

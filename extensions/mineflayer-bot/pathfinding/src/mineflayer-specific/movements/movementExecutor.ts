@@ -529,6 +529,10 @@ export abstract class MovementExecutor extends Movement {
    * Generalized function to perform an interaction.
    */
   async performInteraction (interaction: PlaceHandler | BreakHandler, opts: InteractOpts = {}): Promise<void> {
+    if (opts.noAwait) {
+      this.startInteraction(interaction, { ...opts, noAwait: false })
+      return
+    }
     this._cI = interaction
     interaction.loadMove(this)
     try {

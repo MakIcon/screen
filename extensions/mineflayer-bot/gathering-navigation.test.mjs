@@ -53,6 +53,45 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
 }
 
 test(
+  "ore mining lands before Mineflayer fixes the dig duration",
+  { timeout: 6000 },
+  async (t) => {
+    const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+    const ore = world.setBlock(new Vec3(1, 64, 0), "diamond_ore");
+    const { rig, bot, controller } = prepare("26.1.2", world, true, new Vec3(0.5, 64.9, 0.5));
+    t.after(async () => {
+      await controller.dispose();
+      await bot.pathfinder.destroy();
+      rig.stopPassivePhysics();
+    });
+    const runtime = createRequire(new URL("./package.json", import.meta.url));
+    const Item = createRequire(runtime.resolve("mineflayer"))("prismarine-item")(bot.registry);
+    const pick = new Item(bot.registry.itemsByName.iron_pickaxe.id, 1, 0);
+    pick.slot = 36; bot.inventory.slots[36] = pick;
+    bot.updateHeldItem(); bot.pathingUtil.refresh();
+    bot.entity.onGround = false;
+    bot.entity.velocity.y = -0.1;
+    bot.setControlState("jump", true);
+    let started = 0, duration = 0, grounded = false, jumping = true;
+    bot._client.write = (name, packet) => {
+      if (name !== "block_dig") return;
+      if (packet.status === 0) {
+        started = performance.now();
+        grounded = bot.entity.onGround;
+        jumping = bot.getControlState("jump");
+      } else if (packet.status === 2) duration = performance.now() - started;
+    };
+    bot.findBlocks = () => bot.blockAt(ore.position).name === "diamond_ore" ? [ore.position] : [];
+    controller.enqueue({ kind: "mine", blocks: "diamond", count: 1, radius: 8 });
+    await waitForJob(controller, 5000);
+    assert.equal(controller.snapshot.history[0].mined, 1);
+    assert.equal(grounded, true, "start the dig after the actual landing");
+    assert.equal(jumping, false, "hold jump released during mining");
+    assert.ok(duration >= 500 && duration < 1100, `ore dig took ${duration}ms instead of the grounded duration`);
+  },
+);
+
+test(
   "an adjacent spruce trunk is chopped through its visible face without a detour",
   { timeout: 12000 },
   async (t) => {

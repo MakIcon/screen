@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Vec3 } from 'vec3'
-import { createPlugin, goals } from '../src'
+import { createPlugin, goals, waitForMiningGround } from '../src'
 import { BreakHandler } from '../src/mineflayer-specific/movements/interactionUtils'
 import { createCacheWorld } from './setup'
+
+test('canceling a landing wait settles even after physics has stopped', async () => {
+  const { rig } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 65, 0.5))
+  rig.stopPassivePhysics()
+  rig.bot.entity.onGround = false
+  let canceled = false
+  const waiting = waitForMiningGround(rig.bot, () => canceled)
+  canceled = true
+  await assert.rejects(waiting, /Mining canceled/)
+})
 
 test('mining waits for actual reach and an exposed face before starting a block', async () => {
   const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5))

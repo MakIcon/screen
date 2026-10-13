@@ -2,7 +2,12 @@ const { NestedStateMachine, StateTransition } = require("mineflayer-statemachine
 const { Tool } = require("mineflayer-tool");
 const { scanMine, createMineIndex } = require("./gathering-scan.cjs");
 const { Vec3 } = require("vec3");
-const { goals } = require("./pathfinder.cjs");
+const {
+  goals,
+  waitForMiningGround,
+  installMiningToolMaterials,
+  miningBlock,
+} = require("./pathfinder.cjs");
 const plan = require("./gathering-plan.cjs");
 
 class WorkError extends Error {
@@ -48,19 +53,23 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   const onStatus = hooks.onStatus || (() => {});
   const onProgress = hooks.onProgress || (() => {});
   const now = hooks.now || Date.now;
+  installMiningToolMaterials(bot);
   const tool = bot.tool || new Tool(bot);
   bot.tool = tool;
   // The published tool plugin predates item components. Use modern enchants
   // while retaining its getDigTime API and harvest-based selection.
-  tool.getDigTime = (block, item) =>
-    block.digTime(
+  tool.getDigTime = (block, item) => {
+    const eye = bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0));
+    const helmet = bot.inventory.slots?.[bot.getEquipmentDestSlot?.("head")];
+    return miningBlock(block, bot.registry).digTime(
       item?.type ?? null,
       bot.game?.gameMode === "creative",
-      Boolean(bot.entity.isInWater),
+      eye?.name === "water" || eye?.name === "flowing_water",
       !bot.entity.onGround,
-      item?.enchants || [],
+      (item?.enchants || []).concat(helmet?.enchants || []),
       bot.entity.effects || {},
     );
+  };
   let task = null,
     nextId = 1,
     desired = "idle",
@@ -144,6 +153,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         "Нет места для блоков при прокладке пути; выгрузите инвентарь и продолжите",
       );
     await selectTool(block, signal);
+    if (bot.setControlState)
+      await waitForMiningGround(bot, () => {
+        guard(signal);
+        return false;
+      });
     trackDig(block);
     await originalDig(block, true, visibleFace(block) || args[1] || "raycast");
     guard(signal);
@@ -792,17 +806,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     // for enclosed ore, then aim against the updated world.
     if (task.routeDig && !visibleFace(block) && bot.canSeeBlock?.(block) === false)
       await navigate(
-        new goals.GoalCompositeAny(
-          ...[
-            [1, 0],
-            [-1, 0],
-            [0, 1],
-            [0, -1],
-          ].map(
-            ([x, z]) =>
-              new goals.GoalBlock(block.position.x + x, task.tunnel ? task.area.min.y : block.position.y, block.position.z + z),
-          ),
-        ),
+        new goals.GoalMiningApproach(block.position, task.tunnel ? task.area.min.y : block.position.y),
         signal,
       );
     if (!allowed(bot.blockAt(target.position))) {
@@ -885,6 +889,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (!block.canHarvest(bot.heldItem?.type ?? null))
       throw new WorkError("Инструмент сменился; проверьте инвентарь");
     guard(signal);
+    if (bot.setControlState)
+      await waitForMiningGround(bot, () => {
+        guard(signal);
+        return false;
+      });
     trackDig(block);
     await operation(
       () => bot.dig(block, true, face),

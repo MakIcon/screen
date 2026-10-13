@@ -1,6 +1,7 @@
 import { Bot } from 'mineflayer'
 import type { Block } from './types'
 import type { Item } from 'prismarine-item'
+import { miningBlock } from './mineflayer-specific/miningTools'
 
 export interface DigEnvironment { inWater: boolean; notOnGround: boolean }
 
@@ -32,6 +33,7 @@ export class PathingUtil {
 
   public bestHarvestingTool (block: Block, environment = this.environment()): Item | null {
     if (block === null) return null
+    block = miningBlock(block, this.bot.registry)
     const key = `${block.type}:${Number(environment.inWater)}:${Number(environment.notOnGround)}`
     if (key in this.memoedBestTool) return this.memoedBestTool[key]
 

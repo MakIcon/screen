@@ -9,13 +9,16 @@ const debug = require('debug')
 const logStrafe = debug('minecraft-pathfinding:controls:strafe')
 
 /** Brake drift and correct position without changing the viewing direction. */
-export function steerToPosition (bot: Bot, target: Vec3, limit = 0.1, precision = 0.045): void {
+export function steerToPosition (bot: Bot, target: Vec3, limit = 0.1, precision = 0.045, continuous = false): void {
   const { position: pos, velocity: vel, yaw } = bot.entity
   const dx = target.x - pos.x; const dz = target.z - pos.z
   const sin = Math.sin(yaw); const cos = Math.cos(yaw)
   const choose = (delta: number, speed: number): number => {
     if (Math.abs(speed) > limit) return -Math.sign(speed)
     if (Math.abs(delta) < precision) return Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0
+    // Precision alignment coasts after each tap. Walking a step must keep
+    // accelerating until it enters the braking distance of its landing.
+    if (continuous && Math.abs(delta) > Math.abs(speed) * 2.5 + precision) return Math.sign(delta)
     return delta * speed < 0 || Math.abs(speed) < 0.02 ? Math.sign(delta) : 0
   }
   const forward = choose(-dx * sin - dz * cos, -vel.x * sin - vel.z * cos)

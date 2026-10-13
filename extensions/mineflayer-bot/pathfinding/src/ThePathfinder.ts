@@ -62,6 +62,7 @@ import { WaterDrop, WaterDropExecutor } from './mineflayer-specific/movements/wa
 import { findShoreGoal, ShoreRouteGoal } from './mineflayer-specific/shore'
 import { selectAscentPrefix } from './mineflayer-specific/ascentPrefix'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
+import { needsWalkSneak } from './mineflayer-specific/navigationGeometry'
 import { MomentumJump, MomentumJumpExecutor } from './mineflayer-specific/movements/momentum'
 import { LadderForward, LadderDiagonal, LadderLandingForward, LadderLandingDiagonal } from './mineflayer-specific/movements/advanced/ladder-provider'
 import { LadderForwardExecutor, LadderDiagonalExecutor, LadderLandingForwardExecutor, LadderLandingDiagonalExecutor } from './mineflayer-specific/movements/advanced/ladder-executor'
@@ -147,6 +148,11 @@ interface PerformOpts {
 
 export class ThePathfinder {
   public get navigationRevision (): number { return this.goalRequestId }
+  private readonly rejectedPlacements = new Set<string>()
+
+  rejectPlacement (pos: Vec3, revision: number): void {
+    if (revision === this.goalRequestId && this.currentGotoGoal != null) this.rejectedPlacements.add(pos.floored().toString())
+  }
   astar: AStar | null
   world: World
   movements: ExecutorMap
@@ -677,10 +683,14 @@ export class ThePathfinder {
     const supportInfo = destinationSupport == null ? undefined : this.world.getBlockInfo(destinationSupport)
     // Keep the destination's existing floor. Excavating a staircase through
     // it can remove the owner's footing and make the final goal unreachable.
-    const routeSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2
+    const protectedSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2
       ? { ...settings, exclusionAreasBreak: [...settings.exclusionAreasBreak,
           (block: BlockInfo) => block.position.equals(destinationSupport) ? Infinity : 0] }
       : settings
+    const routeSettings = this.rejectedPlacements.size > 0
+      ? { ...protectedSettings, exclusionAreasPlace: [...protectedSettings.exclusionAreasPlace,
+          (block: BlockInfo) => this.rejectedPlacements.has(block.position.toString()) ? Infinity : 0] }
+      : protectedSettings
 
     const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4
     const target = positionedGoal ? new Vec3(goal.x, goal.y, goal.z) : undefined
@@ -810,6 +820,25 @@ export class ThePathfinder {
       }
     }
 
+    const excavationDescent = settings.canDig && settings.allowExcavatedDescent &&
+      goal instanceof goals.GoalMiningApproach && goal.y <= startPos.y - 4
+    let descentCost = 0
+    if (excavationDescent) {
+      // Reuse an open cave or existing stair before estimating a new passage.
+      const existing = await probe(goal, traversalSettings, movements, 100, 2000)
+      if (existing.result.status === 'success' || existing.result.status === 'canceled') {
+        if (existing.result.status === 'success') this.bot.emit('pathGenerated', existing.result)
+        yield existing
+        return existing
+      }
+      const floor = this.world.getBlockInfo(startPos.offset(0, -0.05, 0)).block
+      if (floor != null) {
+        const digTicks = this.bot.pathingUtil.digCost(floor, { inWater: false, notOnGround: false }) / 50
+        if (Number.isFinite(digTicks)) descentCost = digTicks * settings.digCost *
+          Math.max(1, settings.excavationStairWidth) * settings.excavationStairHeight
+      }
+    }
+
     // Deep excavation makes every sideways tunnel a cheap alternative to
     // climbing. Prefer progress toward the exit instead of exhausting those
     // tunnels and committing a single stair on every search timeout. The
@@ -827,10 +856,11 @@ export class ThePathfinder {
     const configuredWeight = this.pathfinderSettings.heuristicWeight
     const heuristicWeight = nearbyClimb || this.world.getBlockInfo(startPos).water ? 1 : excavationAscent ? 3
       : Number.isFinite(configuredWeight) ? Math.max(1, Math.min(3, configuredWeight)) : 1
-    const searchGoal: goals.Goal = heuristicWeight !== 1
+    const searchGoal: goals.Goal = heuristicWeight !== 1 || descentCost > 0
       ? {
           isEnd: node => goal.isEnd(node),
-          heuristic: node => goal.heuristic(node) * heuristicWeight,
+          heuristic: node => (goal.heuristic(node) + (goal instanceof goals.GoalMiningApproach
+            ? Math.max(0, node.exitPos.y - goal.y) * descentCost : 0)) * heuristicWeight,
           distHeuristic: node => goal.distHeuristic(node),
           onFinish: executor => goal.onFinish(executor)
         }
@@ -926,6 +956,7 @@ export class ThePathfinder {
       log('Cancelled other goal! Beginning new one: %O', goal)
     }
     if (requestId !== this.goalRequestId || this.disposed) return
+    this.rejectedPlacements.clear()
 
     // Survival owns movement while eating or arresting an accidental fall.
     // A new command stays cancellable and starts from the recovered position.
@@ -1305,7 +1336,12 @@ export class ThePathfinder {
   }
 
   async cleanupBot (forceSafety = false, keepControls = false): Promise<void> {
-    if (!keepControls) this.bot.clearControlStates()
+    if (!keepControls) {
+      this.bot.clearControlStates()
+      if (this.bot.entity.onGround && !this.world.getBlockInfo(this.bot.entity.position).water) {
+        this.bot.setControlState('sneak', needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
+      }
+    }
 
     // rough code. just need any of them.
 
@@ -1335,11 +1371,13 @@ export class ThePathfinder {
         await this.waitForTick()
       } while (!this.abortCalculation && !this.disposed && performance.now() < safetyDeadline && normVel.norm() > 5e-4)
 
-      this.bot.setControlState('sneak', false)
+      this.bot.setControlState('sneak', this.bot.entity.onGround &&
+        needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
     }
   }
 
   cleanupClient (): void {
+    this.rejectedPlacements.clear()
     this.abortCalculation = false
     this.clearResetReason()
     delete this.currentGotoGoal

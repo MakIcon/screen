@@ -4,20 +4,29 @@ import type { World } from './world/worldInterface'
 /** Check feet support explicitly: raycasts do not intersect shapeless air/lava. */
 export function supportedWalkSegment (world: World, from: Vec3, to: Vec3): boolean {
   const delta = to.minus(from)
-  const steps = Math.max(1, Math.ceil(delta.norm() * 5))
+  const steps = Math.max(1, Math.ceil(delta.norm() * 10))
   for (let i = 0; i <= steps; i++) {
     const pos = from.plus(delta.scaled(i / steps))
     const feet = world.getBlockInfo(pos)
     if (feet.water) continue
-    // A diagonal corner can have support beneath part of the player's feet,
-    // even when the centre briefly crosses the empty neighbouring cell.
-    const supported = [[0, 0], [-0.28, -0.28], [-0.28, 0.28], [0.28, -0.28], [0.28, 0.28]].some(([x, z]) => {
-      const support = world.getBlockInfo(pos.offset(x, -0.05, z))
-      return support.physical && support.safe && support.height >= pos.y - 0.6
+    // Walking needs a continuous corridor for the feet, not a single corner
+    // hanging over a block. Partial overlap is valid while crouching at a rim,
+    // but cannot authorize a shortcut or releasing sneak with forward held.
+    const supported = [[0, 0], [-0.299, -0.299], [-0.299, 0.299], [0.299, -0.299], [0.299, 0.299]].every(([x, z]) => {
+      const sample = pos.offset(x, -0.05, z)
+      const support = world.getBlockInfo(sample)
+      return support.physical && support.safe && support.getBBs().some(box =>
+        box.maxY >= pos.y - 0.6 && box.maxY <= pos.y + 0.05 &&
+        sample.x >= box.minX && sample.x <= box.maxX && sample.z >= box.minZ && sample.z <= box.maxZ)
     })
     if (!supported) return false
   }
   return true
+}
+
+/** Keep a grounded handoff safe until its next executor has chosen controls. */
+export function needsWalkSneak (world: World, pos: Vec3, velocity: Vec3): boolean {
+  return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3))
 }
 
 /** Sweep the player's body, including its sides, through actual block shapes. */

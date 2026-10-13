@@ -716,6 +716,29 @@ var require_exceptions = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/miningGround.js
+var require_miningGround = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/miningGround.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.waitForMiningGround = waitForMiningGround;
+    var exceptions_1 = require_exceptions();
+    async function waitForMiningGround(bot, canceled = () => false) {
+      for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+        bot.setControlState(control, false);
+      for (let tick = 0; !bot.entity.onGround && !bot.entity.isInWater; tick++) {
+        if (canceled())
+          throw new exceptions_1.CancelError("Mining canceled before landing");
+        if (tick >= 20)
+          throw new exceptions_1.CancelError("Mining requires supported footing");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (canceled())
+        throw new exceptions_1.CancelError("Mining canceled before starting");
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/utils.js
 var require_utils = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/utils.js"(exports2) {
@@ -1321,6 +1344,7 @@ var require_interactionUtils = __commonJS({
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var exceptions_1 = require_exceptions();
     var climbablePhysics_12 = require_climbablePhysics();
+    var miningGround_12 = require_miningGround();
     var utils_1 = require_utils();
     var customBlockEvents_1 = require_customBlockEvents();
     var debug = require("debug");
@@ -1382,11 +1406,16 @@ var require_interactionUtils = __commonJS({
         this.performing = true;
         this._internalLock = true;
         this.task = new utils_1.Task();
+        const revision = bot.pathfinder.navigationRevision;
         const ret = await this.perform(bot, item, opts).catch((err) => {
           logBase(`Interaction failed at ${this.vec}: %O`, err);
           this._internalLock = true;
           this._done = false;
           this.performing = false;
+          if (this instanceof PlaceHandler && !this.cancelled && !this.move.aborted && !bot.pathfinder.abortCalculation) {
+            bot.pathfinder.rejectPlacement(this.vec, revision);
+            throw new exceptions_1.NavigationError("placement", `Placement failed at ${this.vec}: ${String(err)}`);
+          }
           throw new exceptions_1.CancelError(`Failed to perform ${this.constructor.name}`, err);
         });
         logBase(`Successfully completed interaction at ${this.vec}`);
@@ -1599,7 +1628,6 @@ var require_interactionUtils = __commonJS({
           case "solid": {
             if (this.getCurrentItem(bot) !== item)
               await this.equipItem(bot, item);
-            const predictBlock = opts.predictBlock ?? true;
             let works;
             if (opts.info === void 0) {
               works = await this.performInfo(bot);
@@ -1665,17 +1693,10 @@ var require_interactionUtils = __commonJS({
             const direction = (0, utils_1.faceToVec)(rayRes.face);
             logPlace(`Calling bot._placeBlockWithOptions at face ${rayRes.face}`);
             this._placeTask = bot._placeBlockWithOptions(rayRes, direction, { forceLook: "ignore", swingArm: "right" });
-            if (predictBlock) {
-              logPlace(`Predicting block placement at ${rayRes.position.plus(direction)}`);
-              bot.world.setBlock(rayRes.position.plus(direction), cacheWorld_12.BlockInfo.PBlock.fromStateId(cacheWorld_12.BlockInfo.substituteBlockStateId, 0));
-            }
-            this._internalLock = false;
-            if (opts.noAwait) {
-              this._placeTask.catch((err) => logPlace("Background place task failed: %O", err));
-            } else {
-              await this._placeTask;
-              logPlace("_placeTask resolved.");
-            }
+            await this._placeTask;
+            if (this.needToPerform(bot))
+              throw new exceptions_1.CancelError("Server did not confirm the placed block");
+            logPlace("_placeTask resolved.");
             this.task?.finish();
             break;
           }
@@ -1793,6 +1814,7 @@ var require_interactionUtils = __commonJS({
             break;
           }
           case "solid": {
+            await (0, miningGround_12.waitForMiningGround)(bot, () => this.cancelled || this.move.aborted || bot.pathfinder.abortCalculation);
             if (item === null) {
               if (this.getCurrentItem(bot) !== null)
                 await bot.unequip(this.offhand ? "off-hand" : "hand");
@@ -1873,7 +1895,7 @@ var require_goals = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/goals.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.GoalFollowEntity = exports2.GoalPlaceBlock = exports2.GoalMineBlock = exports2.GoalLookAt = exports2.GoalNearXZ = exports2.GoalNear = exports2.GoalBlock = exports2.GoalCompositeAll = exports2.GoalCompositeAny = exports2.GoalComposite = exports2.GoalInvert = exports2.GoalDynamic = exports2.Goal = void 0;
+    exports2.GoalFollowEntity = exports2.GoalPlaceBlock = exports2.GoalMineBlock = exports2.GoalLookAt = exports2.GoalNearXZ = exports2.GoalNear = exports2.GoalBlock = exports2.GoalCompositeAll = exports2.GoalMiningApproach = exports2.GoalCompositeAny = exports2.GoalComposite = exports2.GoalInvert = exports2.GoalDynamic = exports2.Goal = void 0;
     var vec3_1 = require("vec3");
     var costs_1 = require_costs();
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
@@ -2050,6 +2072,14 @@ var require_goals = __commonJS({
       }
     };
     exports2.GoalCompositeAny = GoalCompositeAny;
+    var GoalMiningApproach = class extends GoalCompositeAny {
+      constructor(position, y = position.y) {
+        super(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([x, z]) => new GoalBlock(position.x + x, y, position.z + z)));
+        this.position = position;
+        this.y = y;
+      }
+    };
+    exports2.GoalMiningApproach = GoalMiningApproach;
     var GoalCompositeAll = class _GoalCompositeAll extends GoalComposite {
       static from(...goals) {
         return new _GoalCompositeAll(...goals);
@@ -2761,7 +2791,7 @@ var require_controls = __commonJS({
     exports2.botSmartMovement = botSmartMovement;
     var debug = require("debug");
     var logStrafe = debug("minecraft-pathfinding:controls:strafe");
-    function steerToPosition(bot, target, limit = 0.1, precision = 0.045) {
+    function steerToPosition(bot, target, limit = 0.1, precision = 0.045, continuous = false) {
       const { position: pos, velocity: vel, yaw } = bot.entity;
       const dx = target.x - pos.x;
       const dz = target.z - pos.z;
@@ -2772,6 +2802,8 @@ var require_controls = __commonJS({
           return -Math.sign(speed);
         if (Math.abs(delta) < precision)
           return Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0;
+        if (continuous && Math.abs(delta) > Math.abs(speed) * 2.5 + precision)
+          return Math.sign(delta);
         return delta * speed < 0 || Math.abs(speed) < 0.02 ? Math.sign(delta) : 0;
       };
       const forward = choose(-dx * sin - dz * cos, -vel.x * sin - vel.z * cos);
@@ -3923,6 +3955,10 @@ var require_movementExecutor = __commonJS({
        * Generalized function to perform an interaction.
        */
       async performInteraction(interaction, opts = {}) {
+        if (opts.noAwait) {
+          this.startInteraction(interaction, { ...opts, noAwait: false });
+          return;
+        }
         this._cI = interaction;
         interaction.loadMove(this);
         try {
@@ -4155,24 +4191,29 @@ var require_navigationGeometry = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.supportedWalkSegment = supportedWalkSegment;
+    exports2.needsWalkSneak = needsWalkSneak;
     exports2.clearBodySegment = clearBodySegment;
     var vec3_1 = require("vec3");
     function supportedWalkSegment(world, from, to) {
       const delta = to.minus(from);
-      const steps = Math.max(1, Math.ceil(delta.norm() * 5));
+      const steps = Math.max(1, Math.ceil(delta.norm() * 10));
       for (let i = 0; i <= steps; i++) {
         const pos = from.plus(delta.scaled(i / steps));
         const feet = world.getBlockInfo(pos);
         if (feet.water)
           continue;
-        const supported = [[0, 0], [-0.28, -0.28], [-0.28, 0.28], [0.28, -0.28], [0.28, 0.28]].some(([x, z]) => {
-          const support = world.getBlockInfo(pos.offset(x, -0.05, z));
-          return support.physical && support.safe && support.height >= pos.y - 0.6;
+        const supported = [[0, 0], [-0.299, -0.299], [-0.299, 0.299], [0.299, -0.299], [0.299, 0.299]].every(([x, z]) => {
+          const sample = pos.offset(x, -0.05, z);
+          const support = world.getBlockInfo(sample);
+          return support.physical && support.safe && support.getBBs().some((box) => box.maxY >= pos.y - 0.6 && box.maxY <= pos.y + 0.05 && sample.x >= box.minX && sample.x <= box.maxX && sample.z >= box.minZ && sample.z <= box.maxZ);
         });
         if (!supported)
           return false;
       }
       return true;
+    }
+    function needsWalkSneak(world, pos, velocity) {
+      return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3));
     }
     function clearBodySegment(world, from, to, width = 0.62, height = 1.8) {
       const radius = width / 2;
@@ -4236,6 +4277,7 @@ var require_movementExecutors = __commonJS({
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
     var controls_1 = require_controls();
     var navigationGeometry_1 = require_navigationGeometry();
+    var utils_1 = require_utils();
     var debug = require("debug");
     var logIdle = debug("minecraft-pathfinding:movementExecutors:Idle");
     var logFwd = debug("minecraft-pathfinding:movementExecutors:NewForward");
@@ -4276,7 +4318,8 @@ var require_movementExecutors = __commonJS({
         }
         const entry = move.entryPos.clone();
         entry.y = pos.y;
-        const center = (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : pos.floored().offset(0.5, 0, 0.5);
+        const supportedEntry = (0, navigationGeometry_1.supportedWalkSegment)(this.world, entry, entry);
+        const center = supportedEntry && (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : (0, utils_1.getSupportedStartPos)(this.world, pos).floored().offset(0.5, 0, 0.5);
         center.y = pos.y;
         if (pos.xzDistanceTo(center) < 0.08)
           throw new exceptions_1.CancelError("Forward: waypoint is blocked from its approach");
@@ -4286,13 +4329,14 @@ var require_movementExecutors = __commonJS({
         (0, controls_1.steerToPosition)(this.bot, center, 0.1, 0.04);
         this.bot.setControlState("sprint", false);
         this.bot.setControlState("jump", false);
-        const projected = pos.offset(this.bot.entity.velocity.x * 3, 0, this.bot.entity.velocity.z * 3);
-        this.cornerSneaking = !(0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, projected);
+        this.cornerSneaking = (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity);
         this.bot.setControlState("sneak", this.cornerSneaking);
         return true;
       }
       isComplete(startMove, endMove, opts) {
         if (this.toPlaceLen() > 0 || this.toBreakLen() > 0 || this.cI != null)
+          return false;
+        if (!this.doWaterLogic() && (!this.bot.entity.onGround || !(0, navigationGeometry_1.supportedWalkSegment)(this.world, this.bot.entity.position, startMove.exitPos)))
           return false;
         return super.isComplete(startMove, endMove, { ticks: 2 });
       }
@@ -4300,13 +4344,18 @@ var require_movementExecutors = __commonJS({
         return !this.doWaterLogic() && move.toPlace.length > 0 && move.toBreak.length === 0 && move.toPlace.every((place) => place.type === "solid" && Math.abs(place.y - (move.entryPos.y - 1)) < 0.01);
       }
       async placeBridge(move) {
+        const revision = this.bot.pathfinder.navigationRevision;
+        const reject = (place, reason) => {
+          this.bot.pathfinder.rejectPlacement(place.vec, revision);
+          throw new exceptions_1.NavigationError("placement", reason);
+        };
         for (const place of this.toPlace()) {
           if (!place.needToPerform(this.bot))
             continue;
           const anchors = [new vec3_1.Vec3(-1, 0, 0), new vec3_1.Vec3(1, 0, 0), new vec3_1.Vec3(0, 0, -1), new vec3_1.Vec3(0, 0, 1)].map((dir) => this.world.getBlockInfo(place.vec.plus(dir))).filter((block) => block.solidFull && block.safe && Math.abs(block.height - move.entryPos.y) < 0.2).sort((a, b) => this.bot.entity.position.xzDistanceTo(a.position.offset(0.5, 1, 0.5)) - this.bot.entity.position.xzDistanceTo(b.position.offset(0.5, 1, 0.5)));
           const anchor = anchors[0];
           if (anchor == null)
-            throw new exceptions_1.CancelError("Bridge: no confirmed placement support");
+            reject(place, "Bridge: no confirmed placement support");
           const center = anchor.position.offset(0.5, 1, 0.5);
           const direction = place.vec.minus(anchor.position);
           direction.y = 0;
@@ -4318,7 +4367,7 @@ var require_movementExecutors = __commonJS({
             if (this.aborted || this.bot.pathfinder.abortCalculation)
               throw new exceptions_1.CancelError("Bridge placement canceled");
             if (performance.now() >= deadline)
-              throw new exceptions_1.CancelError("Bridge: cannot reach the exposed placement face");
+              reject(place, "Bridge: cannot reach the exposed placement face");
             if (!this.bot.entity.onGround || Math.abs(this.bot.entity.position.y - move.entryPos.y) > 0.2) {
               throw new exceptions_1.CancelError("Bridge: lost its supported approach");
             }
@@ -4336,9 +4385,9 @@ var require_movementExecutors = __commonJS({
             this.bot.setControlState(control, false);
           await this.performInteraction(place, { info, predictBlock: false });
           if (place.needToPerform(this.bot))
-            throw new exceptions_1.CancelError("Bridge placement was not confirmed");
+            reject(place, "Bridge placement was not confirmed");
         }
-        this.bot.setControlState("sneak", false);
+        this.bot.setControlState("sneak", (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
       }
       async faceForward() {
         if (this.doWaterLogic())
@@ -4386,7 +4435,7 @@ var require_movementExecutors = __commonJS({
           this.bot.setControlState("left", false);
           this.bot.setControlState("right", false);
           if (this.toPlaceLen() === 0)
-            this.bot.setControlState("sneak", false);
+            this.bot.setControlState("sneak", this.bot.entity.onGround && (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
           if (this.bot.food <= 6)
             this.bot.setControlState("sprint", false);
           else
@@ -4403,8 +4452,10 @@ var require_movementExecutors = __commonJS({
       async performInit(thisMove, currentIndex, path) {
         if (this.doWaterLogic())
           this.bot.setControlState("jump", false);
-        else
+        else {
           this.bot.clearControlStates();
+          this.bot.setControlState("sneak", this.bot.entity.onGround && (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
+        }
         if (this.isBridge(thisMove) && this.toPlaceLen() > 0)
           await this.placeBridge(thisMove);
         const faceForward = await this.faceForward();
@@ -4457,7 +4508,11 @@ var require_movementExecutors = __commonJS({
         }
         if (ctx.state.isCollidedHorizontally)
           return false;
-        return ctx.state.onGround;
+        if (!ctx.state.onGround)
+          return false;
+        const landing = ctx.state.pos.offset(0, thisMove.entryPos.y - ctx.state.pos.y, 0);
+        const brakingRoom = Math.hypot(ctx.state.vel.x, ctx.state.vel.z) * 3 + 0.3;
+        return landing.xzDistanceTo(thisMove.exitPos) > brakingRoom && (0, navigationGeometry_1.supportedWalkSegment)(this.world, this.bot.entity.position, landing);
       }
       async performPerTick(thisMove, tickCount, currentIndex, path) {
         if (this.cI == null && await this.correctCorner(thisMove))
@@ -4488,7 +4543,7 @@ var require_movementExecutors = __commonJS({
         const faceForward = await this.faceForward();
         if (faceForward) {
           if (this.toPlaceLen() === 0)
-            this.bot.setControlState("sneak", false);
+            this.bot.setControlState("sneak", this.bot.entity.onGround && (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
           const jump = this.canJump(thisMove, currentIndex, path);
           this.bot.setControlState("jump", jump);
           await this.postInitAlignToPath(thisMove);
@@ -4742,7 +4797,7 @@ var require_movementExecutors = __commonJS({
               approach.z = pos.z;
           }
           await this.lookAtPathPos(approach);
-          (0, controls_1.steerToPosition)(this.bot, approach, this.bot.entity.onGround ? 0.12 : 0.16);
+          (0, controls_1.steerToPosition)(this.bot, approach, this.bot.entity.onGround ? 0.18 : 0.2, 0.045, true);
           this.bot.setControlState("sprint", false);
           this.bot.setControlState("sneak", false);
           const jump = this.bot.entity.onGround && pos.y < thisMove.exitPos.y - 0.05 && pos.xzDistanceTo(thisMove.exitPos) <= 1.25 && side <= 0.2 && lateralSpeed <= 0.1 && !this.jumpRequested;
@@ -4867,7 +4922,7 @@ var require_movementExecutors = __commonJS({
         }
         if (!this.doWaterLogic()) {
           await this.lookAtPathPos(thisMove.exitPos);
-          (0, controls_1.steerToPosition)(this.bot, thisMove.exitPos, 0.15);
+          (0, controls_1.steerToPosition)(this.bot, thisMove.exitPos, 0.18, 0.045, true);
           this.bot.setControlState("sprint", false);
           this.bot.setControlState("sneak", false);
           this.bot.setControlState("jump", false);
@@ -8079,13 +8134,13 @@ var require_movementProviders = __commonJS({
           return;
         const block1 = this.getBlockInfo(node, dir.x, 1, dir.z);
         const blockN1 = this.getBlockInfo(node, dir.x, -1, dir.z);
+        const sideFloors = [this.getBlockInfo(node, 0, -1, dir.z), this.getBlockInfo(node, dir.x, -1, 0)];
+        if (!block0.liquid && blockN1.physical && sideFloors.some((block) => !block.physical || !block.safe))
+          return;
         if (!blockN1.physical && !block0.liquid) {
-          const blockCheck0 = this.getBlockInfo(node, 0, -1, dir.z);
-          const blockCheck1 = this.getBlockInfo(node, dir.x, -1, 0);
-          if (!blockCheck0.physical && !blockCheck1.physical) {
-            if (node.remainingBlocks <= 0)
-              return;
-            const wanted = blockCheck0;
+          for (const wanted of sideFloors) {
+            if (wanted.physical && wanted.safe)
+              continue;
             if (!wanted.replaceable) {
               if ((cost += this.safeOrBreak(wanted, toBreak)) > costs_1.COST_INF)
                 return;
@@ -10224,6 +10279,19 @@ var require_pathExecutor = __commonJS({
         let progressMove;
         let bestMoveDistance = Infinity;
         let productiveAt = lastProgressAt;
+        let stoppingAt;
+        const adjustStop = (target) => {
+          if (bot.entity.position.xzDistanceTo(target) <= 0.08) {
+            for (const control of ["forward", "back", "left", "right"])
+              bot.setControlState(control, false);
+          } else
+            stopController.adjustPosition(target, 0.08);
+          bot.setControlState("jump", false);
+          bot.setControlState("sprint", false);
+          const pos = bot.entity.position;
+          const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3);
+          bot.setControlState("sneak", !(0, navigationGeometry_1.supportedWalkSegment)(this.host.world, pos, projected));
+        };
         const completion = new Promise((resolve, reject) => {
           resolveCompletion = resolve;
           rejectCompletion = reject;
@@ -10399,17 +10467,14 @@ var require_pathExecutor = __commonJS({
                 const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm();
                 const needsCentering = (goal instanceof goals.GoalBlock || !atGoal) && bot.entity.position.xzDistanceTo(target) > 0.08;
                 if (speed > 0.025 || needsCentering) {
-                  stopController.adjustPosition(target, 0.08);
-                  bot.setControlState("jump", false);
-                  bot.setControlState("sprint", false);
-                  const pos = bot.entity.position;
-                  const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3);
-                  bot.setControlState("sneak", !(0, navigationGeometry_1.supportedWalkSegment)(this.host.world, pos, projected));
+                  stoppingAt = target;
+                  adjustStop(target);
                   return;
                 }
                 await finish();
                 return;
               }
+              stoppingAt = void 0;
               if (runnerStage === "idle") {
                 const hasWork = await prepareNextMove();
                 if (!hasWork) {
@@ -10525,6 +10590,8 @@ var require_pathExecutor = __commonJS({
               void finish();
             return;
           }
+          if (stoppingAt != null && tickInFlight && bot.entity.onGround)
+            adjustStop(stoppingAt);
           const interaction = this.getCurrentExecutor()?.cI;
           const block = bot.targetDigBlock;
           const now = performance.now();
@@ -10583,8 +10650,11 @@ var require_pathExecutor = __commonJS({
             void fail(err);
           }).finally(() => {
             tickInFlight = false;
-            if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId)
+            if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId) {
               bot.clearControlStates();
+              if (bot.entity.onGround)
+                bot.setControlState("sneak", (0, navigationGeometry_1.needsWalkSneak)(this.host.world, bot.entity.position, bot.entity.velocity));
+            }
           });
         };
         this.cancelActive = finish;
@@ -11722,6 +11792,7 @@ var require_ThePathfinder = __commonJS({
     var shore_1 = require_shore();
     var ascentPrefix_1 = require_ascentPrefix();
     var surfaceSwimming_12 = require_surfaceSwimming();
+    var navigationGeometry_1 = require_navigationGeometry();
     var momentum_2 = require_momentum();
     var ladder_provider_1 = require_ladder_provider();
     var ladder_executor_1 = require_ladder_executor();
@@ -11772,6 +11843,10 @@ var require_ThePathfinder = __commonJS({
     var ThePathfinder = class {
       get navigationRevision() {
         return this.goalRequestId;
+      }
+      rejectPlacement(pos, revision) {
+        if (revision === this.goalRequestId && this.currentGotoGoal != null)
+          this.rejectedPlacements.add(pos.floored().toString());
       }
       get currentAStar() {
         return this._currentProducer?.getAstarContext();
@@ -11826,6 +11901,7 @@ var require_ThePathfinder = __commonJS({
       }
       constructor(bot, opts = {}) {
         this.bot = bot;
+        this.rejectedPlacements = /* @__PURE__ */ new Set();
         this.executeTask = mineflayer_util_plugin_12.Task.createDoneTask();
         this.goalRequestId = 0;
         this.waiters = /* @__PURE__ */ new Set();
@@ -12182,10 +12258,14 @@ var require_ThePathfinder = __commonJS({
         const positionedGoal = goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity;
         const destinationSupport = positionedGoal ? new vec3_1.Vec3(Math.floor(goal.x), Math.floor(goal.y - 0.01), Math.floor(goal.z)) : void 0;
         const supportInfo = destinationSupport == null ? void 0 : this.world.getBlockInfo(destinationSupport);
-        const routeSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2 ? { ...settings, exclusionAreasBreak: [
+        const protectedSettings = destinationSupport != null && supportInfo?.physical && positionedGoal && Math.abs(supportInfo.height - goal.y) < 0.2 ? { ...settings, exclusionAreasBreak: [
           ...settings.exclusionAreasBreak,
           (block) => block.position.equals(destinationSupport) ? Infinity : 0
         ] } : settings;
+        const routeSettings = this.rejectedPlacements.size > 0 ? { ...protectedSettings, exclusionAreasPlace: [
+          ...protectedSettings.exclusionAreasPlace,
+          (block) => this.rejectedPlacements.has(block.position.toString()) ? Infinity : 0
+        ] } : protectedSettings;
         const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4;
         const target = positionedGoal ? new vec3_1.Vec3(goal.x, goal.y, goal.z) : void 0;
         const horizontalDistance = target == null ? Infinity : startPos.xzDistanceTo(target);
@@ -12327,6 +12407,23 @@ var require_ThePathfinder = __commonJS({
             return construction;
           }
         }
+        const excavationDescent = settings.canDig && settings.allowExcavatedDescent && goal instanceof goals.GoalMiningApproach && goal.y <= startPos.y - 4;
+        let descentCost = 0;
+        if (excavationDescent) {
+          const existing = await probe(goal, traversalSettings, movements, 100, 2e3);
+          if (existing.result.status === "success" || existing.result.status === "canceled") {
+            if (existing.result.status === "success")
+              this.bot.emit("pathGenerated", existing.result);
+            yield existing;
+            return existing;
+          }
+          const floor = this.world.getBlockInfo(startPos.offset(0, -0.05, 0)).block;
+          if (floor != null) {
+            const digTicks = this.bot.pathingUtil.digCost(floor, { inWater: false, notOnGround: false }) / 50;
+            if (Number.isFinite(digTicks))
+              descentCost = digTicks * settings.digCost * Math.max(1, settings.excavationStairWidth) * settings.excavationStairHeight;
+          }
+        }
         const excavationAscent = settings.canDig && !settings.allowExcavatedDescent && (goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear || goal instanceof goals.GoalFollowEntity) && goal.y >= startPos.y + 4;
         let nearbyClimb = false;
         if (excavationAscent) {
@@ -12342,9 +12439,9 @@ var require_ThePathfinder = __commonJS({
         }
         const configuredWeight = this.pathfinderSettings.heuristicWeight;
         const heuristicWeight = nearbyClimb || this.world.getBlockInfo(startPos).water ? 1 : excavationAscent ? 3 : Number.isFinite(configuredWeight) ? Math.max(1, Math.min(3, configuredWeight)) : 1;
-        const searchGoal = heuristicWeight !== 1 ? {
+        const searchGoal = heuristicWeight !== 1 || descentCost > 0 ? {
           isEnd: (node) => goal.isEnd(node),
-          heuristic: (node) => goal.heuristic(node) * heuristicWeight,
+          heuristic: (node) => (goal.heuristic(node) + (goal instanceof goals.GoalMiningApproach ? Math.max(0, node.exitPos.y - goal.y) * descentCost : 0)) * heuristicWeight,
           distHeuristic: (node) => goal.distHeuristic(node),
           onFinish: (executor) => goal.onFinish(executor)
         } : goal;
@@ -12414,6 +12511,7 @@ var require_ThePathfinder = __commonJS({
         }
         if (requestId !== this.goalRequestId || this.disposed)
           return;
+        this.rejectedPlacements.clear();
         this.abortCalculation = false;
         while (this.bot.launcherSurvival?.busy && requestId === this.goalRequestId && !this.disposed) {
           await this.waitForTick();
@@ -12773,8 +12871,12 @@ var require_ThePathfinder = __commonJS({
         return await this.executionRunner.recovery(move, path, goal, entry);
       }
       async cleanupBot(forceSafety = false, keepControls = false) {
-        if (!keepControls)
+        if (!keepControls) {
           this.bot.clearControlStates();
+          if (this.bot.entity.onGround && !this.world.getBlockInfo(this.bot.entity.position).water) {
+            this.bot.setControlState("sneak", (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
+          }
+        }
         let exec;
         for (const [, executor] of this.activeMappings.movements) {
           exec ?? (exec = executor);
@@ -12800,10 +12902,11 @@ var require_ThePathfinder = __commonJS({
             log(normVel, normVel.norm());
             await this.waitForTick();
           } while (!this.abortCalculation && !this.disposed && performance.now() < safetyDeadline && normVel.norm() > 5e-4);
-          this.bot.setControlState("sneak", false);
+          this.bot.setControlState("sneak", this.bot.entity.onGround && (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity));
         }
       }
       cleanupClient() {
+        this.rejectedPlacements.clear();
         this.abortCalculation = false;
         this.clearResetReason();
         delete this.currentGotoGoal;
@@ -12837,12 +12940,41 @@ var require_ThePathfinder = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/miningTools.js
+var require_miningTools = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/miningTools.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.miningBlock = miningBlock;
+    exports2.installMiningToolMaterials = installMiningToolMaterials;
+    function miningBlock(block, registry) {
+      if (!block.material?.startsWith("incorrect_for_") || block.harvestTools == null)
+        return block;
+      const tools = Object.keys(block.harvestTools);
+      if (tools.length === 0 || !tools.every((id) => registry.items[Number(id)]?.name.endsWith("_pickaxe")))
+        return block;
+      const corrected = Object.create(block);
+      corrected.material = "mineable/pickaxe";
+      return corrected;
+    }
+    var installed = /* @__PURE__ */ new WeakSet();
+    function installMiningToolMaterials(bot) {
+      if (installed.has(bot) || typeof bot.digTime !== "function")
+        return;
+      const original = bot.digTime.bind(bot);
+      bot.digTime = (block) => original(miningBlock(block, bot.registry));
+      installed.add(bot);
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js
 var require_PathingUtil = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.PathingUtil = void 0;
+    var miningTools_12 = require_miningTools();
     var PathingUtil = class {
       constructor(bot) {
         this.bot = bot;
@@ -12866,6 +12998,7 @@ var require_PathingUtil = __commonJS({
       bestHarvestingTool(block, environment = this.environment()) {
         if (block === null)
           return null;
+        block = (0, miningTools_12.miningBlock)(block, this.bot.registry);
         const key = `${block.type}:${Number(environment.inWater)}:${Number(environment.notOnGround)}`;
         if (key in this.memoedBestTool)
           return this.memoedBestTool[key];
@@ -12942,7 +13075,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -12951,6 +13084,7 @@ var mineflayer_physics_util_1 = __importStar(require("@nxg-org/mineflayer-physic
 var PathingUtil_1 = require_PathingUtil();
 var climbablePhysics_1 = require_climbablePhysics();
 var supportingBlockPhysics_1 = require_supportingBlockPhysics();
+var miningTools_1 = require_miningTools();
 var ThePathfinder_2 = require_ThePathfinder();
 Object.defineProperty(exports, "ThePathfinder", { enumerable: true, get: function() {
   return ThePathfinder_2.ThePathfinder;
@@ -12959,11 +13093,23 @@ var surfaceSwimming_1 = require_surfaceSwimming();
 Object.defineProperty(exports, "installSurfaceSwimming", { enumerable: true, get: function() {
   return surfaceSwimming_1.installSurfaceSwimming;
 } });
+var miningGround_1 = require_miningGround();
+Object.defineProperty(exports, "waitForMiningGround", { enumerable: true, get: function() {
+  return miningGround_1.waitForMiningGround;
+} });
+var miningTools_2 = require_miningTools();
+Object.defineProperty(exports, "installMiningToolMaterials", { enumerable: true, get: function() {
+  return miningTools_2.installMiningToolMaterials;
+} });
+Object.defineProperty(exports, "miningBlock", { enumerable: true, get: function() {
+  return miningTools_2.miningBlock;
+} });
 exports.waterDrop = __importStar(require_waterDrop());
 function createPlugin(opts) {
   return function(bot) {
     if (bot.pathfinder instanceof ThePathfinder_1.ThePathfinder)
       return;
+    (0, miningTools_1.installMiningToolMaterials)(bot);
     cacheWorld_1.BlockInfo.init(bot.registry);
     if (!bot.hasPlugin(mineflayer_util_plugin_1.default))
       bot.loadPlugin(mineflayer_util_plugin_1.default);

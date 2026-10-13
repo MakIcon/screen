@@ -393,6 +393,20 @@ test("quarry clears upper layers first and pauses with protected blocks remainin
   assert.equal(f.work.snapshot.history.length, 0);
 });
 
+test("ore harvesting selects an efficient iron pick over an unenchanted netherite pick", async (t) => {
+  const f = fixture("26.1.2");
+  t.after(() => f.work.dispose());
+  const ore = f.put("deepslate_diamond_ore", 1);
+  const enchanted = f.item("iron_pickaxe");
+  enchanted.enchants = [{ name: "efficiency", lvl: 5 }];
+  f.items.push(f.item("netherite_pickaxe"), enchanted);
+  f.work.enqueue({ kind: "mine", blocks: "diamond", count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.dug[0].hand, "iron_pickaxe");
+  assert.equal(f.bot.tool.getDigTime(ore, enchanted), 250);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+});
+
 test("quarry does not claim success for unloaded chunks", async (t) => {
   const f = fixture();
   t.after(() => f.work.dispose());

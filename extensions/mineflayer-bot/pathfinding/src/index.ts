@@ -12,6 +12,7 @@ import { HandlerOpts, PlaceBlockOptions } from './types'
 import { PathingUtil } from './PathingUtil'
 import { installClimbablePhysics } from './mineflayer-specific/climbablePhysics'
 import { installSupportingBlockPhysics } from './mineflayer-specific/supportingBlockPhysics'
+import { installMiningToolMaterials } from './mineflayer-specific/miningTools'
 
 import * as goals from './mineflayer-specific/goals'
 import { Path } from './mineflayer-specific/algs'
@@ -22,11 +23,14 @@ import type { OptimizationSetup } from './mineflayer-specific/post'
 export { ThePathfinder } from './ThePathfinder'
 export type { PathfinderOptions } from './ThePathfinder'
 export { installSurfaceSwimming } from './mineflayer-specific/surfaceSwimming'
+export { waitForMiningGround } from './mineflayer-specific/miningGround'
+export { installMiningToolMaterials, miningBlock } from './mineflayer-specific/miningTools'
 export * as waterDrop from './mineflayer-specific/movements/waterDrop'
 
 export function createPlugin (opts?: HandlerOpts) {
   return function (bot: Bot) {
     if (bot.pathfinder instanceof ThePathfinder) return
+    installMiningToolMaterials(bot)
     BlockInfo.init(bot.registry) // set up block info
     if (!bot.hasPlugin(utilPlugin)) bot.loadPlugin(utilPlugin)
     if (!bot.hasPlugin(physicsUtil)) bot.loadPlugin(physicsUtil)

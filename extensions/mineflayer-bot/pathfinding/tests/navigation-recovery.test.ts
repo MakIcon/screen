@@ -136,7 +136,7 @@ for (const version of ['1.20.4', '26.1.2']) {
       : new Item(rig.mcData.itemsByName.diamond_pickaxe.id, 1)
     rig.bot.inventory.slots[9]!.slot = 9
     rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: method !== 'building', canPlace: method === 'building', allowJumpSprint: false, movementTimeoutMs: 3000 },
-      pathfinderSettings: { searchTimeoutMs: 100, tickTimeoutMs: 3, routePrefixMs: 15, maxVisitedNodes: 1500 } }))
+      pathfinderSettings: { searchTimeoutMs: 100, tickTimeoutMs: 3, routePrefixMs: 15, routePrefixLength: 2, maxVisitedNodes: 1500 } }))
     const placed: Vec3[] = []
     const place = rig.bot._placeBlockWithOptions
     rig.bot._placeBlockWithOptions = (reference: any, face: Vec3, ...args: any[]) => {
@@ -152,7 +152,7 @@ for (const version of ['1.20.4', '26.1.2']) {
     let incompleteSearches = 0
     rig.bot.pathfinder.getPathTo = async function * (...args: Parameters<typeof getPathTo>) {
       for await (const result of getPathTo(...args)) {
-        if (['partial', 'success'].includes(result.result.status) && rig.bot.entity.position.y < target.y - 2 &&
+        if (['partial', 'success', 'timeout'].includes(result.result.status) && rig.bot.entity.position.y < target.y - 2 &&
             result.result.path.some((move: Move) => move.exitPos.y >= rig.bot.entity.position.y + 0.9)) {
           incompleteSearches++
           // Model a bounded search that verified the next few steps, but has

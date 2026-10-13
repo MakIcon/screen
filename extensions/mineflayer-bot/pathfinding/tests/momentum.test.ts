@@ -19,7 +19,7 @@ test('a blocked ice takeoff does not execute a walking prefix that stops on the 
   let jumped = false
   rig.bot.on('physicsTick', () => { jumped ||= rig.bot.getControlState('jump') })
   try {
-    await assert.rejects(rig.bot.pathfinder.goto(new goals.GoalNear(13.5, 71, 0.5, 1)), /no verified route beyond the ice/)
+    await assert.rejects(rig.bot.pathfinder.goto(new goals.GoalNear(13.5, 71, 0.5, 1)), { name: 'NavigationError', reason: 'noPath' })
     assert.equal(jumped, false, 'do not consume a runway hop before finding its continuation')
     assert.ok(rig.bot.entity.position.xzDistanceTo(start) < 0.01, `walked to ${rig.bot.entity.position}`)
   } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
@@ -391,7 +391,7 @@ test('incoming ice momentum survives catch-up ticks while the route starts', { t
       }
     }
     assert.equal(failure, undefined)
-    assert.equal(done, true, `route did not finish at ${rig.bot.entity.position}`)
+    assert.equal(done, true, `route did not finish at ${rig.bot.entity.position}; velocity=${rig.bot.entity.velocity}; index=${rig.bot.pathfinder.currentIndex}; executor=${rig.bot.pathfinder.currentExecutor?.constructor.name}`)
     assert.ok(lowest >= 63.99, `fell to ${lowest}`)
     assert.equal(rig.bot.entity.onGround, true)
     assert.ok(rig.bot.entity.position.floored().equals(new Vec3(13, 64, 0)))
@@ -546,7 +546,7 @@ test('a blocked second ice jump does not consume a momentum prefix', { timeout: 
   rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false },
     pathfinderSettings: { searchTimeoutMs: 2500, tickTimeoutMs: 0.1, routePrefixMs: 1, routePrefixLength: 16 } }))
   try {
-    await assert.rejects(rig.bot.pathfinder.goto(new goals.GoalBlock(22, 71, 0)), /no verified route beyond the ice/)
+    await assert.rejects(rig.bot.pathfinder.goto(new goals.GoalBlock(22, 71, 0)), { name: 'NavigationError', reason: 'noPath' })
     assert.ok(rig.bot.entity.position.xzDistanceTo(start) < 0.01, String(rig.bot.entity.position))
   } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
 })

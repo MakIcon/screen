@@ -19,7 +19,7 @@ import { printBotControls } from './utils'
 import { ClimbExecutor } from './mineflayer-specific/movements/climb'
 import { BreakHandler } from './mineflayer-specific/movements/interactionUtils'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
-import { supportedWalkSegment } from './mineflayer-specific/navigationGeometry'
+import { supportedWalkSegment, needsWalkSneak } from './mineflayer-specific/navigationGeometry'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -192,6 +192,20 @@ export class PathExecutor {
     let progressMove: Move | undefined
     let bestMoveDistance = Infinity
     let productiveAt = lastProgressAt
+    let stoppingAt: Vec3 | undefined
+    const adjustStop = (target: Vec3): void => {
+      if (bot.entity.position.xzDistanceTo(target) <= 0.08) {
+        // Let ground friction finish the stop inside the accepted position.
+        // Alternating full forward/back input here creates a small permanent
+        // oscillation, especially when catch-up ticks update every frame.
+        for (const control of ['forward', 'back', 'left', 'right'] as const) bot.setControlState(control, false)
+      } else stopController.adjustPosition(target, 0.08)
+      bot.setControlState('jump', false)
+      bot.setControlState('sprint', false)
+      const pos = bot.entity.position
+      const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3)
+      bot.setControlState('sneak', !supportedWalkSegment(this.host.world, pos, projected))
+    }
 
     const completion = new Promise<void>((resolve, reject) => {
       resolveCompletion = resolve
@@ -405,17 +419,14 @@ export class PathExecutor {
             const speed = bot.entity.velocity.offset(0, -bot.entity.velocity.y, 0).norm()
             const needsCentering = (goal instanceof goals.GoalBlock || !atGoal) && bot.entity.position.xzDistanceTo(target) > 0.08
             if (speed > 0.025 || needsCentering) {
-              stopController.adjustPosition(target, 0.08)
-              bot.setControlState('jump', false)
-              bot.setControlState('sprint', false)
-              const pos = bot.entity.position
-              const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3)
-              bot.setControlState('sneak', !supportedWalkSegment(this.host.world, pos, projected))
+              stoppingAt = target
+              adjustStop(target)
               return
             }
             await finish()
             return
           }
+          stoppingAt = undefined
 
           if (runnerStage === 'idle') {
             const hasWork = await prepareNextMove()
@@ -560,6 +571,10 @@ export class PathExecutor {
         if (!recoveryInFlight) void finish()
         return
       }
+      // Catch-up physics can run several ticks before an async movement call
+      // returns. Recompute braking each tick instead of holding the same
+      // correction through the target and oscillating on both sides of it.
+      if (stoppingAt != null && tickInFlight && bot.entity.onGround) adjustStop(stoppingAt)
       const interaction = this.getCurrentExecutor()?.cI
       const block = bot.targetDigBlock
       const now = performance.now()
@@ -626,7 +641,10 @@ export class PathExecutor {
         void fail(err)
       }).finally(() => {
         tickInFlight = false
-        if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId) bot.clearControlStates()
+        if (settled && !keptSwimming && this.getCurrentExecutionId() === myExecutionId) {
+          bot.clearControlStates()
+          if (bot.entity.onGround) bot.setControlState('sneak', needsWalkSneak(this.host.world, bot.entity.position, bot.entity.velocity))
+        }
       })
     }
 

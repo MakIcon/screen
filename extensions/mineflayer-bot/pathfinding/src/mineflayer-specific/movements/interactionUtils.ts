@@ -8,10 +8,11 @@ import { EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { World } from '../world/worldInterface'
 import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
 
-import { CancelError } from '../exceptions'
+import { CancelError, NavigationError } from '../exceptions'
 import { MovementOptions } from './movement'
 import { MovementExecutor } from './movementExecutor'
 import { ClimbAwarePhysics } from '../climbablePhysics'
+import { waitForMiningGround } from '../miningGround'
 import type { Block, RayType } from '../../types'
 import { faceToVec, Task } from '../../utils'
 import { handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
@@ -34,6 +35,7 @@ export interface InteractOpts {
   info?: InteractionPerformInfo
   returnToStart?: boolean
   returnToPos?: Vec3
+  /** Retained for callers; search terrain predictions never change the live world. */
   predictBlock?: boolean
   noAwait?: boolean
 }
@@ -126,13 +128,17 @@ export abstract class InteractHandler {
     this.performing = true
     this._internalLock = true
     this.task = new Task()
+    const revision = bot.pathfinder.navigationRevision
 
     const ret = await this.perform(bot, item, opts).catch((err) => {
       logBase(`Interaction failed at ${this.vec}: %O`, err)
       this._internalLock = true
       this._done = false
       this.performing = false
-
+      if (this instanceof PlaceHandler && !this.cancelled && !this.move.aborted && !bot.pathfinder.abortCalculation) {
+        bot.pathfinder.rejectPlacement(this.vec, revision)
+        throw new NavigationError('placement', `Placement failed at ${this.vec}: ${String(err)}`)
+      }
       throw new CancelError(`Failed to perform ${this.constructor.name}`, err)
     })
 
@@ -383,8 +389,6 @@ export class PlaceHandler extends InteractHandler {
       case 'solid': {
         if (this.getCurrentItem(bot) !== item) await this.equipItem(bot, item)
 
-        const predictBlock = opts.predictBlock ?? true
-
         let works
         if (opts.info === undefined) {
           works = await this.performInfo(bot)
@@ -468,19 +472,13 @@ export class PlaceHandler extends InteractHandler {
         logPlace(`Calling bot._placeBlockWithOptions at face ${rayRes.face}`)
         this._placeTask = bot._placeBlockWithOptions(rayRes, direction, { forceLook: 'ignore', swingArm: 'right' })
 
-        if (predictBlock) {
-          logPlace(`Predicting block placement at ${rayRes.position.plus(direction)}`)
-          bot.world.setBlock(rayRes.position.plus(direction), BlockInfo.PBlock.fromStateId(BlockInfo.substituteBlockStateId, 0))
-        }
-
-        this._internalLock = false
-
-        if (opts.noAwait) {
-          this._placeTask.catch((err) => logPlace('Background place task failed: %O', err))
-        } else {
-          await this._placeTask
-          logPlace('_placeTask resolved.')
-        }
+        // Mineflayer confirms placement by observing the live world. Writing
+        // a predicted floor there can satisfy its own confirmation, then leave
+        // a phantom support after the server rejects the click. Search branches
+        // already carry their virtual edits; execution waits for the real one.
+        await this._placeTask
+        if (this.needToPerform(bot)) throw new CancelError('Server did not confirm the placed block')
+        logPlace('_placeTask resolved.')
 
         this.task?.finish()
         break
@@ -611,6 +609,7 @@ export class BreakHandler extends InteractHandler {
       }
 
       case 'solid': {
+        await waitForMiningGround(bot, () => this.cancelled || this.move.aborted || bot.pathfinder.abortCalculation)
         if (item === null) {
           if (this.getCurrentItem(bot) !== null) await bot.unequip(this.offhand ? 'off-hand' : 'hand')
         } else if (this.getCurrentItem(bot) !== item) {

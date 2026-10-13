@@ -130,15 +130,13 @@ export class Diagonal extends MovementProvider {
     // const needSideClearance = block00.height - block0.height < 0
     const block1 = this.getBlockInfo(node, dir.x, 1, dir.z)
     const blockN1 = this.getBlockInfo(node, dir.x, -1, dir.z)
+    const sideFloors = [this.getBlockInfo(node, 0, -1, dir.z), this.getBlockInfo(node, dir.x, -1, 0)]
+    // A dry diagonal sweeps both sides of the corner. If the landing already
+    // exists, preserve the cardinal bend instead of filling its inside edge.
+    if (!block0.liquid && blockN1.physical && sideFloors.some(block => !block.physical || !block.safe)) return
     if (!blockN1.physical && !block0.liquid) {
-      const blockCheck0 = this.getBlockInfo(node, 0, -1, dir.z)
-      const blockCheck1 = this.getBlockInfo(node, dir.x, -1, 0)
-
-      // first sol.
-      if (!blockCheck0.physical && !blockCheck1.physical) {
-        if (node.remainingBlocks <= 0) return // not enough blocks to place
-
-        const wanted = blockCheck0
+      for (const wanted of sideFloors) {
+        if (wanted.physical && wanted.safe) continue
         if (!wanted.replaceable) {
           if ((cost += this.safeOrBreak(wanted, toBreak)) > COST_INF) return
         }

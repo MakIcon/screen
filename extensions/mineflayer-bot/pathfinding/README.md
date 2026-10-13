@@ -11,6 +11,20 @@ the worker's dependencies. The downloaded source directory is left intact.
 
 Changes from the supplied source:
 
+- Version 1.12.4 keeps the player's whole foot corridor supported through narrow
+  bends. Dry diagonal moves and straight-line optimization preserve missing
+  inside corners; rim handoffs retain crouch until both position and momentum
+  are safe. Optional sprint hops need a supported landing and braking room
+  before the next bend; airborne travel never inherits ground rim crouching.
+  Open-ground sprinting retains its speed. Placement waits for real
+  server confirmation instead of writing predicted blocks into Mineflayer's
+  live world. Background placements retain their completion/error tracking.
+  Rejected or inaccessible placement cells are excluded for the current goto,
+  so recovery plans toward the original destination from real terrain rather
+  than repeating a failed stair. Physics regressions on 1.20.4 and 26.1.2 cover
+  G-shaped one-block walkways in both directions, crouched outside rims and a
+  canopy-covered forest with a rejected placement and delayed confirmations.
+
 - Version 1.12.3 gives ready traversal routes priority over construction with
   digging/building enabled. The read-only probe includes every enabled parkour,
   Neo, momentum and ladder provider, and runs before overhead construction even

@@ -15,7 +15,7 @@ test('a rejected interaction cannot unlock or finish an absent step', async () =
   const placement = new RejectedPlacement(1, 64, 0, 'solid')
   placement.loadMove(rig.bot.pathfinder.movements.get(movementProviders.ForwardJump)!)
   try {
-    await assert.rejects(placement._perform(rig.bot, null), /Failed to perform RejectedPlacement/)
+    await assert.rejects(placement._perform(rig.bot, null), { name: 'NavigationError', reason: 'placement' })
     assert.equal(placement.done, false)
     assert.equal(placement.allowExit, false)
     assert.equal(placement.isPerforming, false)

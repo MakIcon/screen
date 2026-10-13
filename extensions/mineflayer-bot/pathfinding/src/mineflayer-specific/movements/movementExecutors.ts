@@ -2,7 +2,7 @@
 import { Vec3 } from 'vec3'
 import * as goals from '../goals'
 import { Move } from '../move'
-import { CancelError } from '../exceptions'
+import { CancelError, NavigationError } from '../exceptions'
 import { BlockInfo } from '../world/cacheWorld'
 import { BreakHandler, PlaceHandler } from './interactionUtils'
 import { AABB, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
@@ -12,7 +12,8 @@ import { ControlStateHandler, EPhysicsCtx } from '@nxg-org/mineflayer-physics-ut
 import { printBotControls } from '../../utils'
 import type { Block, RayType } from '../../types'
 import { botSmartMovement, botStrafeMovement, steerToPosition } from './controls'
-import { clearBodySegment, supportedWalkSegment } from '../navigationGeometry'
+import { clearBodySegment, supportedWalkSegment, needsWalkSneak } from '../navigationGeometry'
+import { getSupportedStartPos } from '../../utils'
 
 const debug = require('debug')
 const logIdle = debug('minecraft-pathfinding:movementExecutors:Idle')
@@ -50,8 +51,9 @@ export class NewForwardExecutor extends MovementExecutor {
     // Predicted completion may switch to the next leg while we still hug the
     // old block's edge. Centre on that supported cell before making the turn.
     const entry = move.entryPos.clone(); entry.y = pos.y
-    const center = clearBodySegment(this.world, pos, entry, 0.599)
-      ? entry : pos.floored().offset(0.5, 0, 0.5)
+    const supportedEntry = supportedWalkSegment(this.world, entry, entry)
+    const center = supportedEntry && clearBodySegment(this.world, pos, entry, 0.599)
+      ? entry : getSupportedStartPos(this.world, pos).floored().offset(0.5, 0, 0.5)
     center.y = pos.y
     if (pos.xzDistanceTo(center) < 0.08) throw new CancelError('Forward: waypoint is blocked from its approach')
     if (!clearBodySegment(this.world, pos, center, 0.599)) throw new CancelError('Forward: cannot recenter at a blocked corner')
@@ -59,14 +61,15 @@ export class NewForwardExecutor extends MovementExecutor {
     steerToPosition(this.bot, center, 0.1, 0.04)
     this.bot.setControlState('sprint', false)
     this.bot.setControlState('jump', false)
-    const projected = pos.offset(this.bot.entity.velocity.x * 3, 0, this.bot.entity.velocity.z * 3)
-    this.cornerSneaking = !supportedWalkSegment(this.world, pos, projected)
+    this.cornerSneaking = needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity)
     this.bot.setControlState('sneak', this.cornerSneaking)
     return true
   }
 
   protected isComplete (startMove: Move, endMove?: Move, opts?: CompleteOpts): boolean {
     if (this.toPlaceLen() > 0 || this.toBreakLen() > 0 || this.cI != null) return false
+    if (!this.doWaterLogic() && (!this.bot.entity.onGround ||
+        !supportedWalkSegment(this.world, this.bot.entity.position, startMove.exitPos))) return false
     return super.isComplete(startMove, endMove, { ticks: 2 })
   }
 
@@ -76,6 +79,11 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   private async placeBridge (move: Move): Promise<void> {
+    const revision = this.bot.pathfinder.navigationRevision
+    const reject = (place: PlaceHandler, reason: string): never => {
+      this.bot.pathfinder.rejectPlacement(place.vec, revision)
+      throw new NavigationError('placement', reason)
+    }
     for (const place of this.toPlace()) {
       if (!place.needToPerform(this.bot)) continue
       const anchors = [new Vec3(-1, 0, 0), new Vec3(1, 0, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1)]
@@ -84,7 +92,7 @@ export class NewForwardExecutor extends MovementExecutor {
         .sort((a, b) => this.bot.entity.position.xzDistanceTo(a.position.offset(0.5, 1, 0.5)) -
           this.bot.entity.position.xzDistanceTo(b.position.offset(0.5, 1, 0.5)))
       const anchor = anchors[0]
-      if (anchor == null) throw new CancelError('Bridge: no confirmed placement support')
+      if (anchor == null) reject(place, 'Bridge: no confirmed placement support')
       const center = anchor.position.offset(0.5, 1, 0.5)
       const direction = place.vec.minus(anchor.position); direction.y = 0; direction.normalize()
       const rim = center.plus(direction.scaled(0.72))
@@ -92,7 +100,7 @@ export class NewForwardExecutor extends MovementExecutor {
       let info
       do {
         if (this.aborted || this.bot.pathfinder.abortCalculation) throw new CancelError('Bridge placement canceled')
-        if (performance.now() >= deadline) throw new CancelError('Bridge: cannot reach the exposed placement face')
+        if (performance.now() >= deadline) reject(place, 'Bridge: cannot reach the exposed placement face')
         if (!this.bot.entity.onGround || Math.abs(this.bot.entity.position.y - move.entryPos.y) > 0.2) {
           throw new CancelError('Bridge: lost its supported approach')
         }
@@ -109,9 +117,9 @@ export class NewForwardExecutor extends MovementExecutor {
       // Never walk over a speculative bridge floor. Each next click face and
       // the subsequent walking segment require the server-confirmed block.
       await this.performInteraction(place, { info, predictBlock: false })
-      if (place.needToPerform(this.bot)) throw new CancelError('Bridge placement was not confirmed')
+      if (place.needToPerform(this.bot)) reject(place, 'Bridge placement was not confirmed')
     }
-    this.bot.setControlState('sneak', false)
+    this.bot.setControlState('sneak', needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
   }
 
   private async faceForward (): Promise<boolean> {
@@ -173,7 +181,8 @@ export class NewForwardExecutor extends MovementExecutor {
       this.bot.setControlState('back', false)
       this.bot.setControlState('left', false)
       this.bot.setControlState('right', false)
-      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', false)
+      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', this.bot.entity.onGround &&
+        needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
       if (this.bot.food <= 6) this.bot.setControlState('sprint', false)
       else this.bot.setControlState('sprint', this.settings.allowSprinting)
     } else {
@@ -196,7 +205,11 @@ export class NewForwardExecutor extends MovementExecutor {
     // console.log('ForwardMove', thisMove.exitPos, thisMove.toPlace.length, thisMove.toBreak.length)
 
     if (this.doWaterLogic()) this.bot.setControlState('jump', false)
-    else this.bot.clearControlStates()
+    else {
+      this.bot.clearControlStates()
+      this.bot.setControlState('sneak', this.bot.entity.onGround &&
+        needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
+    }
 
     if (this.isBridge(thisMove) && this.toPlaceLen() > 0) await this.placeBridge(thisMove)
 
@@ -263,7 +276,14 @@ export class NewForwardExecutor extends MovementExecutor {
     }
 
     if (ctx.state.isCollidedHorizontally) return false
-    return ctx.state.onGround
+    if (!ctx.state.onGround) return false
+    const landing = ctx.state.pos.offset(0, thisMove.entryPos.y - ctx.state.pos.y, 0)
+    // A ground-contact prediction alone also accepts a rim landing. Leave
+    // room to brake before the next bend, and keep the complete foot corridor
+    // supported during this optional sprint hop. Dedicated parkour owns gaps.
+    const brakingRoom = Math.hypot(ctx.state.vel.x, ctx.state.vel.z) * 3 + 0.3
+    return landing.xzDistanceTo(thisMove.exitPos) > brakingRoom &&
+      supportedWalkSegment(this.world, this.bot.entity.position, landing)
   }
 
   async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
@@ -307,10 +327,10 @@ export class NewForwardExecutor extends MovementExecutor {
     const faceForward = await this.faceForward()
 
     if (faceForward) {
-      // A previous rim/placement correction may have crouched while a camera
-      // callback was pending. Ordinary travel owns its controls again now;
-      // retaining that state silently cuts walking speed for the entire leg.
-      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', false)
+      // Release a previous placement's crouch only after the actual feet and
+      // momentum fit the walking corridor. Open ground still runs at full speed.
+      if (this.toPlaceLen() === 0) this.bot.setControlState('sneak', this.bot.entity.onGround &&
+        needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity))
       const jump = this.canJump(thisMove, currentIndex, path)
       this.bot.setControlState('jump', jump)
       await this.postInitAlignToPath(thisMove)
@@ -575,7 +595,7 @@ export class NewForwardJumpExecutor extends ForwardJumpExecutor {
         else approach.z = pos.z
       }
       await this.lookAtPathPos(approach)
-      steerToPosition(this.bot, approach, this.bot.entity.onGround ? 0.12 : 0.16)
+      steerToPosition(this.bot, approach, this.bot.entity.onGround ? 0.18 : 0.2, 0.045, true)
       this.bot.setControlState('sprint', false)
       this.bot.setControlState('sneak', false)
       // MovementAscend's approach rule, using actual ground contact rather
@@ -716,7 +736,7 @@ export class ForwardDropDownExecutor extends MovementExecutor {
       // Walk fully off the old support before centring on the lower landing.
       // Predictive walking/braking can reverse at the lip before the fall.
       await this.lookAtPathPos(thisMove.exitPos)
-      steerToPosition(this.bot, thisMove.exitPos, 0.15)
+      steerToPosition(this.bot, thisMove.exitPos, 0.18, 0.045, true)
       this.bot.setControlState('sprint', false)
       this.bot.setControlState('sneak', false)
       this.bot.setControlState('jump', false)

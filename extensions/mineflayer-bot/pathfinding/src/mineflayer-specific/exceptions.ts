@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import type { ResetReason } from '../types'
 
-/** A route can be retried; an interaction/API failure must still be reported. */
+/** A route can be retried from real terrain after a movement/placement failure. */
 export class NavigationError extends Error {
-  constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery', message: string) {
+  constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery' | 'placement', message: string) {
     super(message)
     this.name = 'NavigationError'
   }

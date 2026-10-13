@@ -12,6 +12,87 @@ require("ts-node").register({
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 
+test("bundled worker keeps diagonal sprint-hop speed without crouching in the air", { timeout: 9000 }, async (t) => {
+  const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: false, maxDropDown: 3 });
+  let samples = 0, airborne = 0, slow = 0, crouched = 0;
+  rig.bot.on("physicsTick", () => {
+    if (rig.bot.entity.position.x < 3 || rig.bot.entity.position.x > 12) return;
+    samples++;
+    if (!rig.bot.entity.onGround) airborne++;
+    if (rig.bot.getControlState("sneak")) crouched++;
+    if (Math.hypot(rig.bot.entity.velocity.x, rig.bot.entity.velocity.z) < 0.12) slow++;
+  });
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(15.5, 64, 15.5, 0.4));
+    assert.ok(samples > 25 && airborne > 10);
+    assert.equal(crouched, 0);
+    assert.ok(slow <= 2, `${slow}/${samples} slow ticks`);
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(new Vec3(15.5, 64, 15.5)) < 0.5);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("bundled come follows the corner blocks of a narrow G walkway with building enabled", { timeout: 14000 }, async (t) => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 84, 0.5), { renderDistance: 1 });
+  for (let x = 0; x <= 6; x++) world.setBlock(new Vec3(x, 83, 0), "cobblestone");
+  for (let z = 0; z <= 5; z++) world.setBlock(new Vec3(6, 83, z), "cobblestone");
+  for (let x = 1; x <= 6; x++) world.setBlock(new Vec3(x, 83, 5), "cobblestone");
+  for (let z = 2; z <= 5; z++) world.setBlock(new Vec3(1, 83, z), "cobblestone");
+  for (let z = 1; z <= 4; z++) for (let y = 84; y <= 85; y++) world.setBlock(new Vec3(5, y, z), "cobblestone");
+  const Item = require("prismarine-item")(rig.mcData);
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+  rig.bot.inventory.slots[9].slot = 9;
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: false, canDig: false, maxDropDown: 3 });
+  const bends = [new Vec3(6.5, 84, 0.5), new Vec3(6.5, 84, 5.5), new Vec3(1.5, 84, 5.5)];
+  const distances = bends.map(() => Infinity);
+  let lowest = 84, placements = 0;
+  const place = rig.bot._placeBlockWithOptions;
+  rig.bot._placeBlockWithOptions = (...args) => { placements++; return place(...args); };
+  rig.bot.on("physicsTick", () => {
+    lowest = Math.min(lowest, rig.bot.entity.position.y);
+    for (let i = 0; i < bends.length; i++) distances[i] = Math.min(distances[i], rig.bot.entity.position.xzDistanceTo(bends[i]));
+  });
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(1.5, 84, 2.5, 0.35));
+    assert.ok(lowest >= 83.99, `fell to ${lowest}`);
+    assert.ok(distances.every(distance => distance < 0.3), `corner distances=${distances}`);
+    assert.equal(placements, 0, "use the existing bend without filling it");
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(new Vec3(1.5, 84, 2.5)) < 0.45);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("bundled come avoids a rejected forest placement and finishes the ascent with real confirmations", { timeout: 40000 }, async (t) => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  for (let x = -3; x <= 5; x++) for (let z = -3; z <= 3; z++) world.setBlock(new Vec3(x, 67, z), "spruce_leaves");
+  for (let y = 64; y <= 70; y++) world.setBlock(new Vec3(2, y, 1), "spruce_log");
+  for (let x = 9; x <= 12; x++) for (let z = -1; z <= 1; z++) world.setBlock(new Vec3(x, 83, z), "stone");
+  const Item = require("prismarine-item")(rig.mcData);
+  rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64);
+  rig.bot.inventory.slots[9].slot = 9;
+  const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: false, canDig: false, maxDropDown: 3 });
+  const place = rig.bot._placeBlockWithOptions;
+  let denied, rejections = 0, confirmations = 0;
+  rig.bot._placeBlockWithOptions = async (block, face, ...args) => {
+    const destination = block.position.plus(face);
+    denied ??= destination.clone();
+    const oldState = world.getBlockStateId(destination);
+    await rig.bot.waitForTicks(2);
+    assert.equal(world.getBlockStateId(destination), oldState, "the live world must contain only confirmed terrain");
+    if (destination.equals(denied)) { rejections++; throw new Error("Server rejected the placement"); }
+    confirmations++;
+    return place(block, face, ...args);
+  };
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(10.5, 84, 0.5, 0.7));
+    assert.equal(rejections, 1, "replan around the failed placement instead of repeating it");
+    assert.ok(confirmations > 15);
+    assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.distanceTo(new Vec3(10.5, 84, 0.5)) < 0.8);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
 test("bundled come prioritizes a ready ladder, Neo and gap over building with a full scaffold stack", { timeout: 16000 }, async (t) => {
   const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 84, 0.5), { renderDistance: 1 });
   for (let x = 0; x <= 3; x++) world.setBlock(new Vec3(x, 83, 0), "stone");
