@@ -457,9 +457,24 @@
   width: 28px;
   height: 28px;
 }
-.launcher-plugins-dialog :is(button, input, textarea):focus-visible {
+.launcher-plugins-dialog button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.launcher-plugins-dialog :is(input, textarea):focus,
+.launcher-plugins-dialog .cni-root:focus-within {
+  outline: none;
+  outline-offset: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* The number input and its arrows share one focus frame. */
+.launcher-plugins-dialog .cni-root .cni-input:focus,
+.launcher-plugins-dialog .cni-root .nsa-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .launcher-plugins-dialog :is(input, textarea, button, fieldset) {
   border-radius: 0;
