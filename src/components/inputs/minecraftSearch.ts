@@ -46,7 +46,7 @@ export function searchMinecraft(
       const aliases = MATERIALS.filter(([part]) => entry.name.includes(part))
         .map(([, alias]) => alias)
         .join(" ");
-      const haystack = `${name} ${title} ${aliases}`;
+      const haystack = `${name} ${title} ${normalize(entry.description || "")} ${aliases}`;
       return { entry, name, title, matches: words.every((word) => haystack.includes(word)) };
     })
     .filter((result) => result.matches)
@@ -86,4 +86,69 @@ export function selectMinecraftToken(
 ) {
   const { start, end } = minecraftToken(value, caret, multiple);
   return value.slice(0, start) + name + value.slice(end);
+}
+
+export type MinecraftSearchSection = { id: string; label: string };
+
+export const MINECRAFT_SEARCH_SECTIONS: MinecraftSearchSection[] = [
+  { id: "collections", label: "Сборные группы" },
+  { id: "resources", label: "Руды по материалу" },
+  { id: "group", label: "Группы" },
+  { id: "block", label: "Отдельные блоки" },
+  { id: "item", label: "Предметы" },
+];
+
+export function minecraftResultSections(
+  entries: MinecraftCatalogEntry[],
+  sections = MINECRAFT_SEARCH_SECTIONS,
+) {
+  const grouped = new Map<string, MinecraftCatalogEntry[]>();
+  for (const entry of entries) {
+    const id = entry.section || entry.kind;
+    const group = grouped.get(id) || [];
+    group.push(entry);
+    grouped.set(id, group);
+  }
+  const order = [
+    ...sections,
+    ...Array.from(grouped.keys())
+      .filter((id) => !sections.some((section) => section.id === id))
+      .map((id) => ({ id, label: id })),
+  ];
+  return order
+    .filter(({ id }) => grouped.has(id))
+    .map((section) => ({ ...section, entries: grouped.get(section.id)! }));
+}
+
+export function minecraftSelectedNames(value: string) {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((name) => name.trim().replace(/^minecraft:/, ""))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+export function selectMinecraftEntries(
+  value: string,
+  caret: number,
+  names: string[],
+  mode: "single" | "toggle" | "range" | "add",
+  validNames: Set<string>,
+) {
+  if (mode === "single") return names[0] || "";
+  if (mode === "range") return [...new Set(names)].join(", ");
+  const token = minecraftToken(value, caret, true);
+  // A partially typed search is not a selected block. Preserve other tokens,
+  // including manually entered IDs that are absent from this server's catalog.
+  const base =
+    validNames.has(token.query.replace(/^minecraft:/, "")) || token.query.includes("*")
+      ? value
+      : value.slice(0, token.start) + value.slice(token.end);
+  const selected = minecraftSelectedNames(base);
+  if (mode === "toggle" && selected.includes(names[0]))
+    return selected.filter((name) => name !== names[0]).join(", ");
+  return [...new Set([...selected, ...names])].join(", ");
 }

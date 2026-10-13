@@ -69,6 +69,10 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"])
       assert.equal(normal.find(entry => entry.name === "diamond_ore").mineable, true);
       const diamond = catalog.entries.find(entry => entry.name === "diamond" && entry.kind === "group");
       assert.ok(diamond.blocks.includes("diamond_ore"));
+      assert.equal(diamond.section, "resources");
+      assert.equal(diamond.displayName, "Алмазы");
+      assert.equal(diamond.description, "все руды");
+      assert.equal(catalog.entries.find(entry => entry.name === "ores" && entry.kind === "group").section, "collections");
       assert.equal(diamond.blocks.includes("deepslate_diamond_ore"), version !== "1.8.8");
       if (version === "26.1.2") assert.ok(normal.find(entry => entry.name === "pale_oak_log"));
     } finally { controller.stop(); }

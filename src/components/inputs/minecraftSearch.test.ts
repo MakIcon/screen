@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { MinecraftCatalogEntry } from "../../types";
-import { minecraftToken, searchMinecraft, selectMinecraftToken } from "./minecraftSearch";
+import {
+  minecraftToken,
+  searchMinecraft,
+  selectMinecraftToken,
+  selectMinecraftEntries,
+  minecraftResultSections,
+} from "./minecraftSearch";
 
 const entry = (
   name: string,
@@ -53,5 +59,49 @@ describe("Minecraft catalogue search", () => {
     expect(selectMinecraftToken("iron,DIA", 8, "diamond_ore", true)).toBe("iron,diamond_ore");
     expect(selectMinecraftToken("DIA", 3, "diamond", false)).toBe("diamond");
     expect(minecraftToken("iron,", 5, true).query).toBe("");
+  });
+  it("replaces selection on a plain click, toggles with Ctrl, and selects Shift ranges", () => {
+    const valid = new Set(entries.map((entry) => entry.name));
+    expect(selectMinecraftEntries("diamond, dirt", 13, ["iron_ore"], "single", valid)).toBe(
+      "iron_ore",
+    );
+    expect(selectMinecraftEntries("DIA", 3, ["diamond"], "toggle", valid)).toBe("diamond");
+    expect(selectMinecraftEntries("dirt, DIA", 9, ["diamond"], "toggle", valid)).toBe(
+      "dirt, diamond",
+    );
+    expect(selectMinecraftEntries("diamond, dirt", 13, ["diamond"], "toggle", valid)).toBe("dirt");
+    expect(selectMinecraftEntries("diamond", 7, ["diamond"], "toggle", valid)).toBe("");
+    expect(
+      selectMinecraftEntries("dirt", 4, ["diamond", "diamond_ore", "diamond"], "range", valid),
+    ).toBe("diamond, diamond_ore");
+    expect(selectMinecraftEntries("dirt", 4, ["diamond", "diamond_ore"], "add", valid)).toBe(
+      "dirt, diamond, diamond_ore",
+    );
+    expect(
+      selectMinecraftEntries(
+        "minecraft:diamond, mod:block, DIA",
+        33,
+        ["diamond_ore"],
+        "toggle",
+        valid,
+      ),
+    ).toBe("diamond, mod:block, diamond_ore");
+  });
+  it("supports explicit section labels, separates groups from blocks and searches descriptions", () => {
+    const catalog = [
+      entry("dirt", "block"),
+      { ...entry("ores", "group", "Руды"), section: "bundles", description: "Все ресурсы" },
+      entry("diamond", "group"),
+    ];
+    const sections = minecraftResultSections(catalog, [
+      { id: "bundles", label: "Наборы" },
+      { id: "group", label: "Материалы" },
+      { id: "block", label: "Блоки" },
+    ]);
+    expect(sections.map((section) => section.label)).toEqual(["Наборы", "Материалы", "Блоки"]);
+    expect(sections[0].entries.map((entry) => entry.name)).toEqual(["ores"]);
+    expect(searchMinecraft(catalog, "ресурсы", "blocks").map((entry) => entry.name)).toEqual([
+      "ores",
+    ]);
   });
 });

@@ -23,6 +23,22 @@ function coordinates(args) {
     throw new Error("Нужны три координаты x y z");
   return position(new Vec3(...args.map(Number)));
 }
+function ownerPosition(bot, source, owner) {
+  const entity = owner ? owner() : bot.players?.[bot.launcherOwnerName]?.entity;
+  if (!entity || entity.isValid === false)
+    throw new Error("Владелец не виден боту. Подойдите ближе к боту и повторите выбор.");
+  if (source === "owner") return position(entity.position);
+  if (![entity.yaw, entity.pitch].every(Number.isFinite))
+    throw new Error("Направление взгляда ещё недоступно. Повернитесь в игре и повторите выбор.");
+  const direction = new Vec3(-Math.sin(entity.yaw) * Math.cos(entity.pitch),
+    Math.sin(entity.pitch), -Math.cos(entity.yaw) * Math.cos(entity.pitch));
+  // The upstream cursor helper rejects zero yaw/pitch. Raycast directly so
+  // looking horizontally or due north remains a valid selection.
+  const eyeHeight = entity.eyeHeight ?? (entity.height ? entity.height * 0.9 : 1.62);
+  const block = bot.world.raycast(entity.position.offset(0, eyeHeight, 0), direction, 6);
+  if (!block) throw new Error("Наведите прицел на блок в пределах 6 блоков и повторите выбор.");
+  return position(block.position);
+}
 function taskFromCommand(bot, work, command, args) {
   if (command === "mine" || command === "ores") {
     if (command === "mine" && !args[0])
@@ -97,7 +113,7 @@ function taskFromCommand(bot, work, command, args) {
 
 // Shared by owner chat and the launcher's local command surface. Validate a
 // complete job before stopping movement, so a typo cannot cancel a good job.
-async function handleGatheringCommand(bot, work, command, args, { prepare, reply }) {
+async function handleGatheringCommand(bot, work, command, args, { prepare, reply, owner }) {
   if (!COMMANDS.has(command)) return false;
   if (!work) throw new Error("Система добычи ещё не готова");
   if (["deliver", "bring", "give"].includes(command)) {
@@ -145,7 +161,11 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
       work.setChest(null);
       reply("Сундук отключён");
     } else {
-      const pos = work.setChest(coordinates(args));
+      const picked = args.length === 1 && args[0] === "look";
+      const target = picked ? ownerPosition(bot, "look", owner) : coordinates(args);
+      if (picked && !/^(?:chest|trapped_chest|barrel|(?:[a-z]+_)?shulker_box)$/.test(bot.blockAt(target)?.name || ""))
+        throw new Error("Наведите прицел на сундук, бочку или шалкеровый ящик.");
+      const pos = work.setChest(target);
       reply(`Сундук: ${pos.x} ${pos.y} ${pos.z}`);
     }
     return true;
@@ -155,15 +175,16 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
       reply(work.areas.join("; ") || "Нет готовых областей");
       return true;
     }
-    if (![2, 5].includes(args.length)) throw new Error("area имя 1|2 [x y z]");
+    if (![2, 5].includes(args.length) && !(args.length === 3 && ["owner", "look"].includes(args[2])))
+      throw new Error("area имя 1|2 [x y z|owner|look]");
     const area = work.setCorner(
       args[0],
       integer(args[1], "Угол", 1, 2),
-      args.length === 5 ? coordinates(args.slice(2)) : undefined,
+      args.length === 5 ? coordinates(args.slice(2)) : args.length === 3 ? ownerPosition(bot, args[2], owner) : undefined,
     );
     reply(
       area
-        ? `Область ${args[0]}: ${area.volume} блоков`
+        ? `Область ${args[0]}: ${area.volume} блоков${area.volume > work.settings.maxAreaVolume ? `; максимум ${work.settings.maxAreaVolume}, выберите углы ближе` : ""}`
         : `Угол ${args[1]} области ${args[0]} задан`,
     );
     return true;
@@ -176,4 +197,4 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
   return true;
 }
 
-module.exports = { COMMANDS, coordinates, taskFromCommand, handleGatheringCommand };
+module.exports = { COMMANDS, coordinates, taskFromCommand, handleGatheringCommand, ownerPosition };

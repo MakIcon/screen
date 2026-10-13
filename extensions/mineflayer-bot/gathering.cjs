@@ -213,8 +213,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         queue: queue.map(taskSummary),
         history: [...history],
         suspended: taskSummary(deliveryContext?.task),
+        selection: selectionSnapshot(),
       });
     }
+  }
+  function selectionSnapshot() {
+    return { chest, areas: Object.fromEntries(corners) };
   }
   function guard(signal = abort.signal) {
     if (signal.aborted || disposed || !task) throw new Interrupted();
@@ -1324,6 +1328,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         queue: queue.map(taskSummary),
         history: [...history],
         reason: pausedReason,
+        selection: selectionSnapshot(),
       };
     },
     validate: (input) => plan.normalizeTask(bot, input, settings),
@@ -1424,6 +1429,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     },
     setChest(value) {
       chest = value ? plan.position(value) : null;
+      report(true);
       return chest;
     },
     setCorner(name, corner, value) {
@@ -1434,14 +1440,17 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         [corner]: plan.position(value || bot.entity.position),
       };
       if (selection[1] && selection[2])
-        areas.set(name, plan.bounds(selection[1], selection[2], settings.maxAreaVolume));
+        // Picking a new area may temporarily combine a new corner with an old
+        // distant one. Validate the volume when starting work, not while picking.
+        areas.set(name, plan.bounds(selection[1], selection[2], Number.MAX_SAFE_INTEGER));
       corners.set(name, selection);
+      report(true);
       return areas.get(name) || null;
     },
     getArea(name) {
       const area = areas.get(name);
       if (!area) throw new Error(`Область ${name} не задана двумя углами`);
-      return area;
+      return plan.bounds(area.min, area.max, settings.maxAreaVolume);
     },
     get areas() {
       return [...areas.entries()].map(([name, area]) => `${name}: ${area.min} → ${area.max}`);

@@ -745,7 +745,8 @@ async function main () {
           return
         }
         if (await handleGatheringCommand(bot, gathering, command, args, {
-          prepare: () => stopMovement(false), reply: text => reply(username, source, text)
+          prepare: () => stopMovement(false), reply: text => reply(username, source, text),
+          owner: () => ownerEntity(username)
         })) return
 
         if (command === 'help') {

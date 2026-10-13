@@ -3,9 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
+import { ExpandablePanel } from "../../layout/ExpandablePanel";
+import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
+import {
+  formatBlockCoordinates,
+  parseBlockCoordinates,
+  gatheringAreaPreview,
+} from "./gatheringCoordinates";
 import type {
   MineflayerBotStatus,
   MineflayerWorkTask,
@@ -34,6 +41,21 @@ const PHASES: Record<string, string> = {
   paused: "На паузе",
 };
 const OFFLINE_CATALOG = bundledCatalog as MinecraftCatalog;
+function WorkCancelIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      aria-hidden="true"
+    >
+      <path d="m4 4 8 8m0-8-8 8" />
+    </svg>
+  );
+}
 export function workTaskTitle(task: MineflayerWorkTask) {
   if (task.tunnel) return "Проходка тоннеля";
   if (task.kind === "forest") return "Заготовка леса";
@@ -100,7 +122,6 @@ export function MineflayerGatheringControls({
   const [sending, setSending] = useState(false),
     [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
-  const [advanced, setAdvanced] = useState(false);
   const [autoDepth, setAutoDepth] = useState(true),
     [minY, setMinY] = useState(-64),
     [maxY, setMaxY] = useState(64);
@@ -109,6 +130,22 @@ export function MineflayerGatheringControls({
   const disabled = !connected || sending;
   const [liveCatalog, setLiveCatalog] = useState<MinecraftCatalog | null>(null);
   const catalog = connected && liveCatalog ? liveCatalog : OFFLINE_CATALOG;
+  const selection = connected ? status?.gathering?.selection : undefined;
+  const capturedFirst = formatBlockCoordinates(selection?.areas.launcher?.[1]);
+  const capturedSecond = formatBlockCoordinates(selection?.areas.launcher?.[2]);
+  const capturedChest = selection ? formatBlockCoordinates(selection.chest) : undefined;
+  useEffect(() => {
+    if (capturedFirst) setCorner1(capturedFirst);
+  }, [capturedFirst]);
+  useEffect(() => {
+    if (capturedSecond) setCorner2(capturedSecond);
+  }, [capturedSecond]);
+  useEffect(() => {
+    if (capturedChest !== undefined) setStash(capturedChest);
+  }, [capturedChest]);
+  const first = parseBlockCoordinates(corner1),
+    second = parseBlockCoordinates(corner2);
+  const areaPreview = gatheringAreaPreview(corner1, corner2);
   useEffect(() => {
     let cancelled = false;
     setLiveCatalog(null);
@@ -126,11 +163,11 @@ export function MineflayerGatheringControls({
   }, [connected, status?.pid]);
   const command =
     mode === "mine"
-      ? `mine ${blocks.trim()} ${count} ${radius}${autoDepth ? "" : ` ${minY} ${maxY}`}`
+      ? `mine ${minecraftSelectedNames(blocks).join(",")} ${count} ${radius}${autoDepth ? "" : ` ${minY} ${maxY}`}`
       : mode === "forest"
         ? `forest ${radius} ${count} ${leaves ? "leaves" : "logs"} ${scaffold ? "scaffold" : "plain"}`
         : mode === "quarry"
-          ? `quarry ${corner1.trim()} ${corner2.trim()}`
+          ? `quarry ${formatBlockCoordinates(first)} ${formatBlockCoordinates(second)}`
           : mode === "tunnel"
             ? `tunnel ${length} ${settings.tunnelWidth} ${settings.tunnelHeight}`
             : `collect ${radius} ${item.trim()}`;
@@ -138,7 +175,7 @@ export function MineflayerGatheringControls({
   const passageCommand = `work tunnels ${settings.tunnelWidth} ${settings.tunnelHeight} ${settings.stairWidth} ${settings.stairHeight} ${settings.placeTorches ? "on" : "off"} ${settings.torchInterval}`;
   const updatePassages = (patch: Partial<MineflayerGatheringSettings>) =>
     onSettingsChange({ ...settings, ...patch });
-  async function send(value: string) {
+  async function send(value: string, capture?: "chest" | "1" | "2") {
     if (!connected || sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
@@ -148,12 +185,30 @@ export function MineflayerGatheringControls({
       if (/^(mine|tunnel) /.test(value))
         await invoke("send_mineflayer_bot_chat", { message: passageCommand, command: true });
       await invoke("send_mineflayer_bot_chat", { message: value.trim(), command: true });
+      if (capture) {
+        const updated = await invoke<MineflayerBotStatus>("get_mineflayer_bot_status");
+        const picked =
+          capture === "chest"
+            ? updated.gathering?.selection?.chest
+            : updated.gathering?.selection?.areas.launcher?.[capture];
+        if (!picked)
+          throw new Error(
+            "Не удалось получить выбранную точку. Переподключите бота и повторите выбор.",
+          );
+        (capture === "chest" ? setStash : capture === "1" ? setCorner1 : setCorner2)(
+          formatBlockCoordinates(picked),
+        );
+      }
       setFeedback(
-        value === passageCommand
-          ? "Настройки применены. Следующий проход будет нового размера."
-          : value === "deliver"
-            ? "Бот несёт добычу к вам, затем вернётся к работе."
-            : "Команда принята. Текущий этап показан ниже.",
+        capture === "chest"
+          ? "Сундук выбран и сохранён. Можно выгружать добычу."
+          : capture
+            ? `Угол ${capture} выбран. Координаты подставлены в форму.`
+            : value === passageCommand
+              ? "Настройки применены. Следующий проход будет нового размера."
+              : value === "deliver"
+                ? "Бот несёт добычу к вам, затем вернётся к работе."
+                : "Команда принята. Текущий этап показан ниже.",
       );
       await refresh();
     } catch (failure) {
@@ -197,6 +252,32 @@ export function MineflayerGatheringControls({
         onChange={(event) => change(event.target.value)}
       />
     </label>
+  );
+  const coordinateField = (corner: "1" | "2", value: string, change: (value: string) => void) => (
+    <div className="mineflayer-coordinate-field">
+      {text(
+        corner === "1" ? "ПЕРВЫЙ УГОЛ · X Y Z" : "ВТОРОЙ УГОЛ · X Y Z",
+        value,
+        change,
+        "Выберите точку в игре или введите X Y Z",
+      )}
+      <div className="mineflayer-coordinate-actions">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => void send(`area launcher ${corner} owner`, corner)}
+        >
+          Моя позиция
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => void send(`area launcher ${corner} look`, corner)}
+        >
+          Блок под прицелом
+        </button>
+      </div>
+    </div>
   );
   const progress = status?.gathering;
   const active = progress?.active;
@@ -279,7 +360,7 @@ export function MineflayerGatheringControls({
               title="Отменить текущую задачу"
               onClick={() => void send(`work cancel ${active.id}`)}
             >
-              ×
+              <WorkCancelIcon />
             </button>
           </article>
         )}
@@ -337,7 +418,7 @@ export function MineflayerGatheringControls({
                   title="Удалить"
                   onClick={() => void send(`work remove ${task.id}`)}
                 >
-                  ×
+                  <WorkCancelIcon />
                 </button>
               </div>
             </li>
@@ -447,12 +528,34 @@ export function MineflayerGatheringControls({
                 )}
                 {mode === "quarry" && (
                   <>
-                    {text("ПЕРВЫЙ УГОЛ · X Y Z", corner1, setCorner1, "100 64 100")}
-                    {text("ВТОРОЙ УГОЛ · X Y Z", corner2, setCorner2, "110 70 110")}
+                    {coordinateField("1", corner1, setCorner1)}
+                    {coordinateField("2", corner2, setCorner2)}
                   </>
                 )}
                 {mode === "tunnel" && <>{number("ДЛИНА", length, setLength, 1, 128)}</>}
               </div>
+              {mode === "quarry" && (
+                <div className="mineflayer-coordinate-guide">
+                  <p>
+                    Встаньте в нужном углу или наведитесь на его блок, затем выберите точку. Бот
+                    должен видеть вас; блок под прицелом — не дальше 6 блоков.
+                  </p>
+                  <p>
+                    Можно отметить оба угла прямо в игровом чате: <code>!area launcher 1 look</code>{" "}
+                    и <code>!area launcher 2 look</code>. Вместо <code>!</code> используйте свой
+                    префикс.
+                  </p>
+                  {areaPreview ? (
+                    <strong className={areaPreview.valid ? "" : "is-error"}>
+                      {areaPreview.size.x} × {areaPreview.size.y} × {areaPreview.size.z} ·{" "}
+                      {areaPreview.volume.toLocaleString("ru-RU")} блоков
+                      {!areaPreview.valid && " · превышен лимит 32 768"}
+                    </strong>
+                  ) : (corner1.trim() && !first) || (corner2.trim() && !second) ? (
+                    <strong className="is-error">Нужны три числа X Y Z для каждого угла.</strong>
+                  ) : null}
+                </div>
+              )}
               {mode === "mine" && (
                 <ElementToggle
                   title="ИСКАТЬ ПО ВСЕЙ ГЛУБИНЕ"
@@ -494,7 +597,7 @@ export function MineflayerGatheringControls({
                   disabled={
                     disabled ||
                     (mode === "mine" && !blocks.trim()) ||
-                    (mode === "quarry" && (!corner1.trim() || !corner2.trim()))
+                    (mode === "quarry" && !areaPreview?.valid)
                   }
                 >
                   {active ? "ДОБАВИТЬ В ОЧЕРЕДЬ" : "ДОБАВИТЬ И НАЧАТЬ"}
@@ -587,22 +690,33 @@ export function MineflayerGatheringControls({
           </button>
         </div>
       </PluginSettingsGroup>
-      <button
-        type="button"
-        className="mineflayer-bot-gathering-advanced"
-        aria-expanded={advanced}
-        onClick={() => setAdvanced(!advanced)}
+      <ExpandablePanel
+        title="ДОПОЛНИТЕЛЬНО: СУНДУК"
+        icon={<span className="mineflayer-chest-icon" />}
       >
-        {advanced ? "СКРЫТЬ НАСТРОЙКУ СУНДУКА" : "ДОПОЛНИТЕЛЬНО: СУНДУК"}
-      </button>
-      {advanced && (
-        <div className="mineflayer-bot-grid">
+        <div className="mineflayer-chest-panel">
+          <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => void send("stash look", "chest")}
+            >
+              ВЫБРАТЬ СУНДУК ПОД ПРИЦЕЛОМ
+            </button>
+          </div>
+          <p className="mineflayer-bot-combat-note">
+            Наведитесь на сундук в игре и нажмите кнопку, либо отправьте <code>!stash look</code> в
+            игровой чат со своим префиксом. Сундук должен быть не дальше 6 блоков, а вы — видны
+            боту. Также подходят бочки и шалкеровые ящики.
+          </p>
           {text("СУНДУК ДЛЯ ВЫГРУЗКИ · X Y Z", stash, setStash, "100 64 98")}
           <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
             <button
               type="button"
-              disabled={disabled || !stash.trim()}
-              onClick={() => void send(`stash ${stash}`)}
+              disabled={disabled || !parseBlockCoordinates(stash)}
+              onClick={() =>
+                void send(`stash ${formatBlockCoordinates(parseBlockCoordinates(stash))}`)
+              }
             >
               ЗАДАТЬ СУНДУК
             </button>
@@ -611,7 +725,7 @@ export function MineflayerGatheringControls({
             </button>
           </div>
         </div>
-      )}
+      </ExpandablePanel>
       <p className="mineflayer-bot-combat-note">
         Добыча хранится в инвентаре бота. «Принести мне добычу» — подходит к владельцу, выбрасывает
         добычу перед ним и возвращается. Инструменты, броня, еда и до 64 строительных блоков для

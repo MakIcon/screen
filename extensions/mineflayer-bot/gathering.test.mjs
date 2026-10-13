@@ -61,6 +61,7 @@ function fixture(version = "26.1.2") {
   const blocks = new Map(),
     items = [],
     events = [],
+    progress = [],
     dug = [],
     equipped = [];
   bot.entity = { id: 1, position: new Vec3(0.5, 64, 0.5), yaw: 0, effects: {}, onGround: true };
@@ -153,7 +154,7 @@ function fixture(version = "26.1.2") {
   const work = gathering.createGatheringController(
     bot,
     { dropWaitMs: 0, pickupTimeoutMs: 200, operationTimeoutMs: 500, reserveSlots: 2 },
-    { onStatus: (message) => events.push(message) },
+    { onStatus: (message) => events.push(message), onProgress: (snapshot) => progress.push(snapshot) },
   );
   const item = (name, durabilityUsed = 0) => ({
     name,
@@ -168,6 +169,7 @@ function fixture(version = "26.1.2") {
     blocks,
     items,
     events,
+    progress,
     dug,
     equipped,
     put,
@@ -716,6 +718,52 @@ test("named areas and tunnel direction are validated before stopping active move
   assert.equal(tunnel.area.min.y, 64);
   assert.equal(tunnel.area.max.y, 66);
   assert.equal(tunnel.area.volume, 60);
+});
+
+test("owner position and crosshair selections fill launcher corners and chest without interrupting work", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const owner = { position: new Vec3(-0.2, 64.8, 2.9), eyeHeight: 1.62, yaw: 0, pitch: 0 };
+  const lookedAt = f.put("chest", 0, 65, -2);
+  let rayOrigin, rayDirection;
+  f.bot.world = { raycast(origin, direction, distance) {
+    rayOrigin = origin; rayDirection = direction;
+    assert.equal(distance, 6);
+    return lookedAt;
+  } };
+  let preparations = 0;
+  const hooks = { owner: () => owner, prepare: () => { preparations++; }, reply: () => {} };
+  await commands.handleGatheringCommand(f.bot, f.work, "area", ["launcher", "1", "owner"], hooks);
+  await commands.handleGatheringCommand(f.bot, f.work, "area", ["launcher", "2", "look"], hooks);
+  await commands.handleGatheringCommand(f.bot, f.work, "stash", ["look"], hooks);
+  const selection = f.work.snapshot.selection;
+  assert.deepEqual(selection.areas.launcher[1], new Vec3(-1, 64, 2));
+  assert.deepEqual(selection.areas.launcher[2], lookedAt.position);
+  assert.deepEqual(selection.chest, lookedAt.position);
+  assert.equal(rayOrigin.y, owner.position.y + 1.62);
+  assert.equal(Math.abs(rayDirection.x), 0);
+  assert.equal(rayDirection.z, -1, "zero yaw and pitch remain valid");
+  assert.equal(preparations, 0);
+  assert.deepEqual(f.progress.at(-1).selection, selection, "launcher receives coordinates immediately");
+  const before = selection.chest;
+  f.bot.world.raycast = () => f.put("stone", 2, 64, 0);
+  await assert.rejects(commands.handleGatheringCommand(f.bot, f.work, "stash", ["look"], hooks), /сундук/);
+  assert.deepEqual(f.work.snapshot.selection.chest, before, "an invalid target preserves the saved chest");
+  f.bot.world.raycast = () => null;
+  await assert.rejects(commands.handleGatheringCommand(f.bot, f.work, "area", ["launcher", "1", "look"], hooks), /прицел/);
+  await assert.rejects(commands.handleGatheringCommand(f.bot, f.work, "area", ["launcher", "1", "owner"], { ...hooks, owner: () => null }), /не виден/);
+});
+
+test("reselecting a distant area can replace both corners while oversized work stays blocked", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.setCorner("launcher", 1, new Vec3(0, 64, 0));
+  f.work.setCorner("launcher", 2, new Vec3(2, 66, 2));
+  f.work.setCorner("launcher", 1, new Vec3(10000, 64, 10000));
+  assert.equal(f.work.snapshot.selection.areas.launcher[1].x, 10000);
+  assert.throws(() => commands.taskFromCommand(f.bot, f.work, "quarry", ["launcher"]), /слишком большая/);
+  f.work.setCorner("launcher", 2, new Vec3(10002, 66, 10002));
+  assert.equal(commands.taskFromCommand(f.bot, f.work, "quarry", ["launcher"]).area.volume, 27);
 });
 
 test("explicit local commands use the running prefix and can never fall through to public chat", async () => {

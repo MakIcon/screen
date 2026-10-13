@@ -76,19 +76,37 @@
   font-size: 10px;
   font-weight: 500;
 }
-.minecraft-search-results {
-  overflow-y: auto;
+.minecraft-search-scroll {
+  flex: 1 1 auto;
   min-height: 0;
+}
+.minecraft-search-scroll > .csa-content {
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--muted-soft) var(--bg);
+}
+.minecraft-search-results {
+  min-height: 0;
+}
+.minecraft-search-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px 9px 12px;
+  border-block: 1px solid var(--line);
+  background: var(--bg-panel);
+  color: var(--text-alt);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.minecraft-search-results > div:first-child .minecraft-search-section {
+  border-top: 0;
 }
 .minecraft-search-option {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 8px 16px 8px 12px;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
@@ -102,11 +120,21 @@
   border-bottom: 0;
 }
 .minecraft-search-option:hover,
-.minecraft-search-option[aria-selected="true"] {
+.minecraft-search-option[data-active="true"] {
   background: var(--bg-hover);
+  box-shadow: inset 3px 0 var(--text-alt);
 }
 .minecraft-search-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
   box-shadow: inset 3px 0 var(--accent);
+}
+.minecraft-search-option.is-group .minecraft-search-icon {
+  border: 1px solid var(--line-strong);
+  background: var(--bg-panel);
+}
+.minecraft-search-description {
+  color: var(--text-alt);
+  font-size: 11px;
 }
 .minecraft-search-icon {
   display: grid;

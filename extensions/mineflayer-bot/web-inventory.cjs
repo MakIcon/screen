@@ -118,7 +118,10 @@ function minecraftCatalog(bot, assets) {
   ].flatMap(([name, displayName, icon]) => {
     try {
       const blocks = plan.resolveBlocks(bot.registry, name);
-      return [{ name, displayName, texture: texture(icon), kind: "group", item: false, mineable: true, blocks }];
+      const [title, description] = displayName.split(" · ");
+      return [{ name, displayName: title, description: description || `${blocks.length} видов блоков`,
+        section: ["ores", "logs", "wood", "leaves"].includes(name) ? "collections" : "resources",
+        texture: texture(icon), kind: "group", item: false, mineable: true, blocks }];
     } catch { return []; } // Only groups supported by this server's registry.
   });
   return { version: bot.version, entries: [...groups, ...entries.values()] };

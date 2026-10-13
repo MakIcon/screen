@@ -464,6 +464,9 @@ export type MinecraftCatalogEntry = {
   item: boolean;
   mineable: boolean;
   blocks?: string[];
+  /** Optional section and secondary label for search menus. */
+  section?: string;
+  description?: string;
 };
 export type MinecraftCatalog = {
   version: string;
@@ -516,6 +519,10 @@ export type MineflayerBotStatus = {
     suspended?: MineflayerWorkTask | null;
     queue?: MineflayerWorkTask[];
     history?: MineflayerWorkTask[];
+    selection?: {
+      chest: { x: number; y: number; z: number } | null;
+      areas: Record<string, Partial<Record<"1" | "2", { x: number; y: number; z: number }>>>;
+    };
   } | null;
 };
 
