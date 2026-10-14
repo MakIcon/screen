@@ -1370,7 +1370,7 @@ export class ThePathfinder {
         const arrived = this.bot.entity.position
         const actual = { ...path.path[path.path.length - 1], x: Math.floor(arrived.x), y: Math.floor(arrived.y + 1e-4),
           z: Math.floor(arrived.z), exitPos: arrived } as Move
-        if ((shore != null || goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear) && !routingGoal.isEnd(actual)) {
+        if (!(routingGoal instanceof goals.GoalFollowEntity) && !routingGoal.isEnd(actual)) {
           throw new NavigationError('recovery', 'Movement ended before reaching the route goal.')
         }
         if (shore != null) {

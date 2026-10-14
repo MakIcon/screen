@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import type { ResetReason } from '../types'
 
+/** An owning task must handle this failure; movement recovery cannot fix it. */
+export class NavigationTaskError extends Error {}
+
 /** A route can be retried from real terrain after a movement/placement failure. */
 export class NavigationError extends Error {
   constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery' | 'placement', message: string) {

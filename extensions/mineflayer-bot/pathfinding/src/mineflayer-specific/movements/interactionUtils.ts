@@ -8,7 +8,7 @@ import { EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { World } from '../world/worldInterface'
 import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
 
-import { CancelError, NavigationError } from '../exceptions'
+import { CancelError, NavigationError, NavigationTaskError } from '../exceptions'
 import { MovementOptions } from './movement'
 import { MovementExecutor } from './movementExecutor'
 import { ClimbAwarePhysics } from '../climbablePhysics'
@@ -135,6 +135,9 @@ export abstract class InteractHandler {
       this._internalLock = true
       this._done = false
       this.performing = false
+      // Inventory, tool, health and task safety failures belong to the owner.
+      // Retrying a movement here would hide them behind generic cancellation.
+      if (err instanceof NavigationTaskError) throw err
       if (this instanceof PlaceHandler && !this.cancelled && !this.move.aborted && !bot.pathfinder.abortCalculation) {
         bot.pathfinder.rejectPlacement(this.vec, revision)
         throw new NavigationError('placement', `Placement failed at ${this.vec}: ${String(err)}`)

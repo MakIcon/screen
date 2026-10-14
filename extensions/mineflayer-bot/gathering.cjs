@@ -8,24 +8,46 @@ const {
   installMiningToolMaterials,
   miningBlock,
   getItemEnchantments,
+  NavigationError,
+  NavigationTaskError,
 } = require("./pathfinder.cjs");
 const plan = require("./gathering-plan.cjs");
 const { createGatheringDefense } = require("./gathering-defense.cjs");
 const storage = require("./gathering-storage.cjs");
 
-class WorkError extends Error {
+class WorkError extends NavigationTaskError {
   constructor(message, resumeOnRecovery = false) {
     super(message);
     this.name = "WorkError";
     this.resumeOnRecovery = resumeOnRecovery;
   }
 }
-class Interrupted extends Error {
+class Interrupted extends NavigationTaskError {
   constructor() {
     super("Задача прервана");
     this.name = "Interrupted";
   }
 }
+class InventoryFull extends NavigationTaskError {
+  constructor() {
+    super("Нет места для блоков при прокладке пути");
+    this.name = "InventoryFull";
+  }
+}
+const CONTAINER_REACH = 4;
+
+class GoalContainerAccess extends goals.GoalNear {
+  constructor(position, canInteractAt) {
+    const center = position.offset(0.5, 0.5, 0.5);
+    super(center.x, center.y, center.z, CONTAINER_REACH);
+    this.canInteractAt = canInteractAt;
+  }
+  isEnd(node) {
+    const feet = node.exitPos || new Vec3(node.x + 0.5, node.y, node.z + 0.5);
+    return this.canInteractAt(feet);
+  }
+}
+
 const PHASES = [
   "idle",
   "scan",
@@ -142,7 +164,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     return null;
   }
   async function routeDig(block, ...args) {
-    if (!task || (!travelRouting() && (!task.routeDig || machine.activeState !== states.move)))
+    if (!task || (!travelRouting() && (!task.routeDig ||
+        ![states.move, states.pickup].includes(machine.activeState))))
       return originalDig(block, ...args);
     const signal = abort.signal;
     guard(signal);
@@ -157,10 +180,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       throw new Error("Количество целевых блоков уже достигнуто");
     const unsafe = routeBreakReason(block);
     if (unsafe) throw new WorkError(`Нельзя безопасно проложить путь: ${unsafe}`);
-    if (!travel && inventoryFull())
-      throw new WorkError(
-        "Нет места для блоков при прокладке пути; выгрузите инвентарь и продолжите",
-      );
+    if (!travel && inventoryFull()) throw new InventoryFull();
     await selectTool(block, signal);
     if (bot.setControlState)
       await waitForMiningGround(bot, () => {
@@ -276,7 +296,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           if (now() >= deadline)
             reject(
               recoverable
-                ? new Error("Не удалось подойти к цели за отведённое время")
+                ? new NavigationError("timeout", "Не удалось подойти к цели за отведённое время")
                 : new WorkError("Операция заняла слишком много времени"),
             );
         },
@@ -307,28 +327,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       signal.removeEventListener("abort", cancel);
     }
   }
-  function navigate(goal, signal, timeout = settings.moveTimeoutMs) {
-    let position = bot.entity.position.clone(),
-      digging = null;
+  function navigateOnce(goal, signal, timeout, allowMiningPrefix = false) {
+    let position = bot.entity.position.clone(), digging = null;
     return operation(
-      async () => {
-        const travel = travelRouting();
-        if (travel) {
-          // Ordinary A* over the current world finds the already excavated
-          // stairs and passages. Only search with construction if walking fails.
-          bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
-          try {
-            return await bot.pathfinder.goto(goal);
-          } catch (error) {
-            guard(signal);
-            if (!/Pathfinding failed: (?:noPath|timeout)/.test(error.message)) throw error;
-          } finally {
-            if (!signal.aborted)
-              bot.pathfinder.setMoveOptions?.({ canDig: true, canPlace: true, allow1by1towers: true });
-          }
-        }
-        return bot.pathfinder.goto(goal, { allowMiningPrefix: Boolean(task?.routeDig) || travel });
-      },
+      () => bot.pathfinder.goto(goal, { allowMiningPrefix }),
       signal,
       Math.min(timeout, settings.operationTimeoutMs),
       false,
@@ -348,6 +350,37 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         return 0;
       },
     );
+  }
+  function travelMoveOptions() {
+    const base = movementSettings || bot.pathfinder.defaultMoveSettings;
+    return {
+      canDig: Boolean(base.canDig),
+      canPlace: base.canPlace ?? true,
+      allow1by1towers: base.allow1by1towers ?? true,
+      maxDropDown: base.maxDropDown ?? 3,
+      allowWaterDrop: base.allowWaterDrop ?? false,
+      allowBucketWaterDrop: base.allowBucketWaterDrop ?? false,
+    };
+  }
+  async function navigate(goal, signal, timeout = settings.moveTimeoutMs) {
+    if (!travelRouting()) return navigateOnce(goal, signal, timeout, Boolean(task?.routeDig));
+    const phaseSettings = { ...bot.pathfinder.defaultMoveSettings };
+    try {
+      try {
+        return await navigateOnce(goal, signal, timeout);
+      } catch (error) {
+        guard(signal);
+        if (!(error instanceof NavigationError)) throw error;
+        // The failed operation has stopped before this one bounded retry.
+        // Task guards and break exclusions still validate any route excavation.
+        onStatus("Путь прервался; строю маршрут заново из текущей позиции");
+        guard(signal);
+        bot.pathfinder.setMoveOptions?.({ canDig: true });
+        return await navigateOnce(goal, signal, timeout);
+      }
+    } finally {
+      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(phaseSettings);
+    }
   }
   // A trunk can hide the center of its lower log while the side is exposed.
   // Test the same face we will actually aim at instead of requiring a center ray.
@@ -987,7 +1020,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         }
       } catch (error) {
         if (collected || picked.has(entity.id)) continue;
-        if (error instanceof Interrupted || error instanceof WorkError) throw error;
+        if (error instanceof Interrupted || error instanceof WorkError || error instanceof InventoryFull) throw error;
         failedDrop(entity);
       } finally {
         bot.off("playerCollect", collectedEvent);
@@ -1022,6 +1055,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     const blocked = [];
     for (const { group, entries } of buckets.values()) {
+      const failures = [];
+      let fullChests = 0;
       for (const position of group.chests) {
         guard(signal);
         if (!entries.some((entry) => entry.remaining)) break;
@@ -1044,18 +1079,25 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             report(true);
           }
           const full = entries.some((entry) => entry.remaining);
+          if (full) fullChests++;
           storageStatus.set(statusKey, { state: full ? "full" : "ok",
             message: full ? "Нет места для оставшейся добычи" : "Выгрузка выполнена" });
         } catch (error) {
           if (signal.aborted || error instanceof Interrupted) throw error;
           storageStatus.set(statusKey, { state: "unavailable", message: error.message });
+          failures.push(`${storage.key(position)}: ${error.message}`);
           onStatus(`${group.name}: ${error.message}; пробую следующий сундук`);
         } finally { closeStorageWindow(); report(true); }
       }
       const left = entries.reduce((count, entry) => count + entry.remaining, 0);
-      if (left) blocked.push(`${group.name}: ${left} предметов`);
+      if (left) {
+        const reasons = [];
+        if (fullChests) reasons.push("нет места; освободите или добавьте сундуки");
+        if (failures.length) reasons.push(`сундуки недоступны (${failures.join("; ")})`);
+        blocked.push(`${group.name}: ${left} предметов — ${reasons.join("; ")}`);
+      }
     }
-    if (blocked.length) throw new WorkError(`Не удалось выгрузить ${blocked.join("; ")}. Освободите или добавьте сундуки и продолжите`);
+    if (blocked.length) throw new WorkError(`Не удалось выгрузить ${blocked.join("; ")}. После устранения причины продолжите задачу`);
     if (task.kind === "deposit") {
       finish("готово", unmatched ? `Без подходящей группы у бота осталось ${unmatched} предметов` : "");
       return;
@@ -1073,18 +1115,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   async function approachStorage(position, signal) {
     const chestPosition = plan.position(position);
     let block = bot.blockAt(chestPosition);
-    if (!block) {
+    if (!block || bot.entity.position.distanceTo(chestPosition) > 6) {
+      // A distant container is a travel destination first. The positional
+      // goal enables remembered cave exits and ascent planning even when its
+      // chunk is already loaded above us. Use face visibility only nearby.
       await navigate(new goals.GoalNear(chestPosition.x, chestPosition.y, chestPosition.z, 3), signal);
       block = bot.blockAt(chestPosition);
     }
     if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
       throw new Error("Сундук не загружен или отсутствует");
-    const goal = goals.GoalLookAt.fromBlock(bot.pathfinder.world, block, 4);
-    // GoalLookAt assumes a full cube. Chests have inset collision shapes;
-    // validate the actual clickable surface at the candidate standing position.
-    goal.isEnd = (node) => Boolean(containerClick(block,
-      node.exitPos || new Vec3(node.x + 0.5, node.y, node.z + 0.5)));
-    goal.onFinish = async () => {};
+    // Retain a positional goal through the final approach so ascent, remembered
+    // exits and chunk-frontier routing still work if the chest is above us.
+    // Chests have inset collision shapes; arrival requires a clickable surface.
+    const goal = new GoalContainerAccess(block.position, (feet) => Boolean(containerClick(block, feet)));
     await navigate(goal, signal);
     bot.clearControlStates?.();
     bot.setControlState?.("sneak", false);
@@ -1095,7 +1138,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
       throw new Error("Контейнер исчез во время подхода");
     const click = containerClick(block);
-    if (!click) throw new Error("Нет доступной грани сундука в пределах 4 блоков");
+    if (!click) throw new Error(`Нет доступной грани сундука в пределах ${CONTAINER_REACH} блоков`);
     if (bot.currentWindow) throw new Error("Закройте открытое окно перед выгрузкой");
     const opening = new AbortController();
     const cancelled = () => opening.abort();
@@ -1117,13 +1160,13 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const center = block.position.offset(0.5, 0.5, 0.5);
     const delta = center.minus(eye), length = delta.norm();
     if (!bot.world?.raycast) {
-      if (length > 4) return null;
+      if (length > CONTAINER_REACH) return null;
       const face = new Vec3(0, 0, 0);
       const axis = ["x", "y", "z"].sort((a, b) => Math.abs(delta[b]) - Math.abs(delta[a]))[0];
       face[axis] = -Math.sign(delta[axis]) || 1;
       return { face, cursor: new Vec3(0.5, 0.5, 0.5) };
     }
-    const hit = bot.world.raycast(eye, delta.normalize(), Math.min(4, length + 0.1));
+    const hit = bot.world.raycast(eye, delta.normalize(), Math.min(CONTAINER_REACH, length + 0.1));
     if (!hit?.position.equals(block.position) || !hit.intersect) return null;
     const faces = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1),
       new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)];
@@ -1201,7 +1244,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     try {
       await navigate(goal, signal);
     } catch (error) {
-      if (/Pathfinding failed: (?:noPath|timeout)/.test(error.message)) {
+      if (error instanceof NavigationError && ["noPath", "timeout"].includes(error.reason)) {
         const blocks = bot.inventory.items().some((item) => plan.SCAFFOLD_ITEMS.has(item.name));
         throw new WorkError(blocks
           ? "Не найден безопасный выход к владельцу; проверьте препятствия и продолжите"
@@ -1279,15 +1322,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const travel = ["deliver", "return", "deposit"].includes(name);
     const passage = name === "move" && (task.kind === "mine" || task.tunnel) && task.routeDig;
     bot.pathfinder.setMoveOptions?.({
-      canDig: (name === "move" && task.routeDig) || travel,
       allowExcavatedDescent: name === "move" && task.kind === "mine" && task.routeDig,
       excavationWidth: passage ? task.tunnelWidth || settings.tunnelWidth : 0,
       excavationHeight: task.tunnelHeight || settings.tunnelHeight,
       excavationStairWidth: passage ? settings.stairWidth : 0,
       excavationStairHeight: settings.stairHeight,
-      maxDropDown: passage ? 1 : Math.min(2, movementSettings?.maxDropDown ?? 2),
-      canPlace: Boolean(task.scaffold) || travel,
-      allow1by1towers: Boolean(task.scaffold) || travel,
+      ...(travel ? travelMoveOptions() : {
+        canDig: ["move", "pickup"].includes(name) && task.routeDig,
+        canPlace: Boolean(task.scaffold),
+        allow1by1towers: Boolean(task.scaffold),
+        maxDropDown: passage ? 1 : Math.min(2, movementSettings?.maxDropDown ?? 2),
+        allowWaterDrop: false,
+        allowBucketWaterDrop: false,
+      }),
     });
     const generation = revision,
       signal = abort.signal;
@@ -1301,6 +1348,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         if (generation !== revision || disposed) return;
         if (error instanceof Interrupted) {
           requestPause("Движение прервано; восстанавливаю работу", true);
+          return;
+        }
+        if (error instanceof InventoryFull) {
+          if (hasStorage()) desired = "deposit";
+          else requestPause(`${error.message}; добавьте сундук или освободите инвентарь и продолжите`);
           return;
         }
         if (error instanceof WorkError || ["scan", "deposit", "deliver", "return"].includes(name)) {

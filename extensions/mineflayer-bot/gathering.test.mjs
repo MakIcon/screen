@@ -9,6 +9,7 @@ import commands from "./gathering-commands.cjs";
 import worker from "./worker.cjs";
 import { createCombatController } from "./combat.cjs";
 import { key as storageKey } from "./gathering-storage.cjs";
+import { NavigationError } from "./pathfinder.cjs";
 
 const require = createRequire(import.meta.url);
 const { Vec3 } = require("vec3");
@@ -488,6 +489,91 @@ test("a full resource group pauses without sending its loot to the general chest
   assert.equal(s.transfers.length, 0);
   assert.equal(s.stores.get("5,64,0").opened, 0);
   assert.equal(f.items[0].count, 20);
+  assert.match(f.work.snapshot.reason, /нет места; освободите/);
+});
+
+test("an unreachable loaded chest reports the route failure instead of claiming that it is full", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[2, Array(27).fill(null)]]);
+  f.bot.entity.position.y = 14;
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  const routes = [];
+  f.bot.pathfinder.goto = async (goal) => {
+    routes.push(goal.constructor.name.replace(/^_/, ""));
+    throw new NavigationError("noPath", "Pathfinding failed: noPath");
+  };
+  f.work.configureStorage([{ id: "gems", name: "Руда", filters: ["#ores"], chests: [{ x: 2, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  assert.deepEqual(routes, ["GoalNear", "GoalNear"], "both walking and excavation route to the chest's level before looking at its face");
+  assert.match(f.work.snapshot.reason, /Руда: 5 предметов.*сундуки недоступны.*2,64,0: Pathfinding failed: noPath/);
+  assert.doesNotMatch(f.work.snapshot.reason, /освободите|нет места/i);
+  assert.equal(s.stores.get("2,64,0").opened, 0);
+  assert.equal(f.items[0].count, 5);
+});
+
+test("an owner pause prevents a recovery retry from starting another storage route", async (t) => {
+  let current;
+  const f = fixture("1.20.4", { onStatus: (message) => {
+    if (message.includes("Путь прервался")) current.work.pause();
+  } });
+  current = f;
+  t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  let attempts = 0;
+  f.bot.pathfinder.goto = async () => { attempts++; throw new NavigationError("recovery", "Too many failures, exiting performing."); };
+  f.work.configureStorage([{ id: "gems", name: "Руда", filters: ["#ores"], chests: [{ x: 5, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  await f.work.task;
+  assert.equal(attempts, 1);
+  assert.equal(s.stores.get("5,64,0").opened, 0);
+  assert.equal(f.items[0].count, 5);
+  assert.deepEqual(f.bot.pathfinder.defaultMoveSettings.exclusionAreasBreak, []);
+});
+
+test("storage does not retry an unrelated failure merely because its message resembles a navigation error", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  let attempts = 0;
+  f.bot.pathfinder.goto = async () => { attempts++; throw new Error("Too many failures, exiting performing."); };
+  f.work.configureStorage([{ id: "gems", name: "Руда", filters: ["#ores"], chests: [{ x: 5, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  assert.equal(attempts, 1);
+  assert.equal(s.stores.get("5,64,0").opened, 0);
+  assert.equal(f.items[0].count, 5);
+  assert.match(f.work.snapshot.reason, /Too many failures/);
+});
+
+test("an inventory filled during route excavation unloads and resumes the same ore job", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const pickup = f.bot.pathfinder.goto;
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push(f.item("iron_pickaxe"));
+  const ore = f.put("diamond_ore", 2), obstruction = f.put("stone", 1, 65);
+  const navigate = f.bot.pathfinder.goto;
+  let filled = false;
+  f.bot.canSeeBlock = () => filled;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) return pickup(goal);
+    if (!filled && goal.constructor.name === "GoalMiningApproach") {
+      filled = true; f.items.push({ ...f.item("cobblestone"), count: 64 }); f.setSlots(2);
+      await f.bot.dig(obstruction, true, "raycast");
+    }
+    await navigate(goal);
+  };
+  f.work.configureStorage([{ id: "all", name: "Всё", filters: ["#all"], chests: [{ x: 5, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "mine", blocks: "diamond", count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+  assert.equal(f.work.snapshot.history[0].deposited, 64);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+  assert.equal(s.transfers[0].name, "cobblestone");
+  assert.equal(f.bot.blockAt(ore.position).name, "air");
+  assert.equal(f.progress.some(snapshot => snapshot.phase === "paused"), false);
 });
 
 test("an unresponsive chest opening times out locally and does not cancel the next chest in the group", async (t) => {
@@ -624,7 +710,7 @@ test("live drop reconciliation recovers missing itemDrop events and retries tran
   const goto = f.bot.pathfinder.goto;
   let attempts = 0;
   f.bot.pathfinder.goto = async goal => {
-    if (goal.trackedEntity && ++attempts === 1) throw new Error("Pathfinding failed: noPath");
+    if (goal.trackedEntity && ++attempts === 1) throw new NavigationError("noPath", "Pathfinding failed: noPath");
     return goto(goal);
   };
   f.work.enqueue({ kind: "forest", count: 0, scaffold: false });
@@ -731,9 +817,10 @@ for (const mode of ["on", "off", "empty", "rejected"]) test(`wall lighting ${mod
   if (mode === "rejected") assert.ok(f.events.some(value => value.includes("Факел не установлен")));
 });
 
-test("delivery and return search existing passages before allowing construction", async (t) => {
+test("delivery and return preserve the configured traversal options used by come", async (t) => {
   const f = fixture();
   t.after(() => f.work.dispose());
+  f.bot.pathfinder.setMoveOptions({ canDig: false });
   f.items.push(f.item("diamond"));
   const start = f.bot.entity.position.clone();
   const owner = { position: new Vec3(10, 64, 0.5), isValid: true };
@@ -743,7 +830,9 @@ test("delivery and return search existing passages before allowing construction"
   f.bot.pathfinder.goto = async goal => {
     routes.push(goal);
     assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, false);
-    assert.equal(f.bot.pathfinder.defaultMoveSettings.canPlace, false);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.canPlace, true);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.maxDropDown, 3);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.allowWaterDrop, true);
     assert.equal(f.bot.pathfinder.defaultMoveSettings.excavationWidth, 0);
     f.bot.entity.position = goal.trackedEntity ? owner.position.clone() : start.clone();
   };
@@ -1319,14 +1408,14 @@ test("delivery builds outside the mining radius, retains construction blocks and
   f.bot.pathfinder.goto = async (goal, options) => {
     const movement = f.bot.pathfinder.defaultMoveSettings;
     if (!movement.canDig) {
-      assert.equal(movement.canPlace, false);
-      assert.equal(movement.allow1by1towers, false);
-      throw new Error("Pathfinding failed: noPath");
+      assert.equal(movement.canPlace, true);
+      assert.equal(movement.allow1by1towers, true);
+      throw new NavigationError("noPath", "Pathfinding failed: noPath");
     }
     assert.equal(movement.canDig, true);
     assert.equal(movement.canPlace, true);
     assert.equal(movement.allow1by1towers, true);
-    assert.equal(options.allowMiningPrefix, true);
+    assert.equal(options.allowMiningPrefix, false);
     assert.equal(movement.exclusionAreasPlace.at(-1)(obstacle), 0);
     assert.equal(movement.exclusionAreasBreak.at(-1)(chest), 1000000);
     if (goal.trackedEntity === owner) {
@@ -1358,7 +1447,7 @@ test("delivery reserves a partial stack and reports missing building material on
   await until(f, () => f.work.snapshot.history.length === 1);
   assert.deepEqual(partial, [[f.bot.registry.itemsByName.cobbled_deepslate.id, 36]]);
   f.items.splice(0, 2);
-  f.bot.pathfinder.goto = async () => { throw new Error("Pathfinding failed: noPath"); };
+  f.bot.pathfinder.goto = async () => { throw new NavigationError("noPath", "Pathfinding failed: noPath"); };
   await f.work.deliver(() => owner);
   await until(f, () => f.work.snapshot.phase === "paused");
   assert.match(f.work.snapshot.reason, /строительные блоки/);

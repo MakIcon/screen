@@ -293,6 +293,109 @@ test(
   },
 );
 
+test('a full inventory interrupts a real excavation route for storage without losing its ore task', { timeout: 25000 }, async (t) => {
+  const version = '26.1.2';
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  for (let x = 3; x <= 5; x++) for (let y = 64; y <= 66; y++)
+    for (let z = -1; z <= 1; z++) world.setBlock(new Vec3(x, y, z), 'stone');
+  world.setBlock(new Vec3(4, 64, 0), 'diamond_ore');
+  world.setBlock(new Vec3(-2, 64, 0), 'chest');
+  const { rig, bot, controller, messages } = prepare(version, world);
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const Item = require('prismarine-item')(bot.registry);
+  const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1, 0);
+  Object.defineProperty(pick, 'enchants', { value: [{ name: 'efficiency', lvl: 5 }] });
+  pick.slot = 36; bot.inventory.slots[36] = pick;
+  bot.updateHeldItem(); bot.pathingUtil.refresh();
+  let filled = false, full = false, deposited = 0;
+  bot.inventory.emptySlotCount = () => full ? 2 : 30;
+  bot.on('pathGenerated', (path) => {
+    if (filled || controller.snapshot.phase !== 'move' || !path.path.some(move => move.toBreak.length)) return;
+    filled = full = true;
+    const stone = new Item(bot.registry.itemsByName.cobblestone.id, 64, 0);
+    stone.slot = 37; bot.inventory.slots[37] = stone;
+  });
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => ({ close() {}, async deposit(_type, _metadata, count) {
+    deposited += count; full = false; bot.inventory.slots[37] = null;
+  } });
+  controller.configureStorage([{ id: 'all', name: 'Склад', filters: ['#all'], chests: [{ x: -2, y: 64, z: 0 }] }]);
+  controller.enqueue({ kind: 'mine', blocks: 'diamond', count: 1, radius: 8 });
+  await waitForJob(controller, 20000);
+  assert.equal(filled, true);
+  assert.equal(deposited, 64);
+  assert.equal(controller.snapshot.history[0].mined, 1, messages.join('\n'));
+  assert.equal(controller.snapshot.history[0].outcome, 'готово', messages.join('\n'));
+  assert.equal(messages.some(message => message.includes('пропуск цели')), false, messages.join('\n'));
+});
+
+test('storage uses the same configured three-block descent as a successful come route', { timeout: 25000 }, async (t) => {
+  const world = createFlatWorld('26.1.2', 61, { renderDistance: 2 });
+  const start = new Vec3(0.5, 64, 0.5);
+  for (let x = -1; x <= 0; x++) for (let z = -1; z <= 1; z++)
+    world.setBlock(new Vec3(x, 63, z), 'bedrock');
+  for (let x = 4; x <= 15; x++) for (let z = -1; z <= 1; z++)
+    for (let y = 61; y < Math.min(69, 58 + x); y++) world.setBlock(new Vec3(x, y, z), 'bedrock');
+  world.setBlock(new Vec3(14, 69, 0), 'chest');
+  const { rig, bot, controller, messages } = prepare('26.1.2', world, false, start, { maxDropDown: 3 });
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const { goals } = require('../pathfinder.cjs');
+  await bot.pathfinder.goto(new goals.GoalNear(14.5, 69, 0.5, 3));
+  assert.ok(bot.entity.position.y >= 68, `come reached ${bot.entity.position}`);
+  bot.entity.position.set(start.x, start.y, start.z); bot.entity.velocity.set(0, 0, 0);
+  await bot.waitForTicks(2);
+  const Item = require('prismarine-item')(bot.registry);
+  const diamonds = new Item(bot.registry.itemsByName.diamond.id, 5, 0);
+  diamonds.slot = 36; bot.inventory.slots[36] = diamonds; bot.updateHeldItem();
+  let deposited = 0;
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => ({ close() {}, async deposit(_type, _metadata, count) {
+    deposited += count; bot.inventory.slots[36] = null; bot.updateHeldItem();
+  } });
+  controller.configureStorage([{ id: 'all', name: 'Склад', filters: ['#all'], chests: [{ x: 14, y: 69, z: 0 }] }]);
+  controller.enqueue({ kind: 'deposit' });
+  await waitForJob(controller, 15000);
+  assert.equal(deposited, 5, messages.join('\n'));
+  assert.equal(bot.pathfinder.defaultMoveSettings.maxDropDown, 3);
+});
+
+for (const automatic of [false, true]) test(`storage replans its original destination after exhausted movement recovery${automatic ? ' during automatic unloading beyond 32 blocks' : ''}`, { timeout: automatic ? 30000 : 15000 }, async (t) => {
+  const chestX = automatic ? 80 : 18;
+  const world = createFlatWorld('26.1.2', 64, { renderDistance: 1 });
+  world.setBlock(new Vec3(chestX, 64, 0), 'chest');
+  // The fake world's chunk generator only persists loaded columns. Model the
+  // server supplying the saved chest when its distant column arrives.
+  const loadChest = (point) => {
+    if (point.x === chestX && point.z === 0) world.setBlock(new Vec3(chestX, 64, 0), 'chest');
+  };
+  if (automatic) world.on('chunkColumnLoad', loadChest);
+  t.after(() => world.off('chunkColumnLoad', loadChest));
+  const { rig, bot, controller, messages } = prepare('26.1.2', world, false, new Vec3(0.5, 64, 0.5), { allowSprinting: true });
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const Item = require('prismarine-item')(bot.registry);
+  const diamonds = new Item(bot.registry.itemsByName.diamond.id, 5, 0);
+  diamonds.slot = 36; bot.inventory.slots[36] = diamonds; bot.updateHeldItem();
+  let full = automatic, deposited = 0, executions = 0;
+  bot.inventory.emptySlotCount = () => full ? 2 : 30;
+  const perform = bot.pathfinder.perform.bind(bot.pathfinder);
+  bot.pathfinder.perform = async (path, goal, entry, ...rest) =>
+    perform(path, goal, ++executions <= 3 ? 3 : entry, ...rest);
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => ({ close() {}, async deposit(_type, _metadata, count) {
+    deposited += count; full = false; bot.inventory.slots[36] = null; bot.updateHeldItem();
+  } });
+  controller.configureStorage([{ id: 'all', name: 'Все остальное', filters: ['#all'], chests: [{ x: chestX, y: 64, z: 0 }] }]);
+  controller.enqueue(automatic ? { kind: 'mine', blocks: 'diamond', radius: 2 } : { kind: 'deposit' });
+  await waitForJob(controller, automatic ? 25000 : 10000);
+  assert.equal(deposited, 5, messages.join('\n'));
+  assert.ok(executions > 3);
+  assert.equal(controller.snapshot.history[0].deposited, 5);
+  if (automatic) assert.ok(bot.entity.position.x > 75, 'unloading is independent of the two-block mining radius');
+});
+
 test("forest reaches a tall trunk using inventory scaffolding", { timeout: 35000 }, async (t) => {
   const version = "26.1.2";
   const world = createFlatWorld(version, 64, { renderDistance: 2 });
@@ -473,6 +576,41 @@ test(
     assert.ok(Date.now() - comeStarted < 90000, `come duration=${Date.now() - comeStarted}`);
   },
 );
+
+test('mined drops below a head-height obstruction are reached without a manual push', { timeout: 15000 }, async (t) => {
+  const world = createFlatWorld('26.1.2', 62, { renderDistance: 1 });
+  for (let x = -1; x <= 3; x++) for (let z = -1; z <= 1; z++) {
+    for (let y = 62; y <= 66; y++) world.setBlock(new Vec3(x, y, z), 'stone');
+    if (z === 0) for (let y = 64; y <= 65; y++) world.setBlock(new Vec3(x, y, z), 'air');
+  }
+  world.setBlock(new Vec3(1, 65, 0), 'stone');
+  world.setBlock(new Vec3(1, 63, 0), 'diamond_ore');
+  const { rig, bot, controller, messages } = prepare('26.1.2', world);
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const Item = require('prismarine-item')(bot.registry);
+  const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1, 0);
+  pick.slot = 36; bot.inventory.slots[36] = pick; bot.updateHeldItem(); bot.pathingUtil.refresh();
+  const drop = { id: 991, position: new Vec3(1.5, 63.15, 0.5), isValid: true,
+    getDroppedItem: () => ({ name: 'diamond', count: 1 }) };
+  bot.on('blockUpdate', (before, after) => {
+    if (before?.name !== 'diamond_ore' || after?.name !== 'air') return;
+    bot.entities[drop.id] = drop; bot.emit('itemDrop', drop);
+  });
+  bot.on('physicsTick', () => {
+    if (!bot.entities[drop.id]) return;
+    const feet = bot.entity.position;
+    if (feet.xzDistanceTo(drop.position) < 0.8 && Math.abs(feet.y - drop.position.y) < 0.6) {
+      bot.emit('playerCollect', bot.entity, drop); drop.isValid = false;
+      delete bot.entities[drop.id]; bot.emit('entityGone', drop);
+    }
+  });
+  controller.enqueue({ kind: 'mine', blocks: 'diamond', count: 1, radius: 6 });
+  await waitForJob(controller, 12000);
+  assert.equal(controller.snapshot.history[0].collected, 1, messages.join('\n'));
+  assert.equal(controller.snapshot.history[0].missedDrops, 0);
+  assert.equal(world.getBlock(new Vec3(1, 65, 0)).name, 'air', 'clear the head obstruction before descending');
+});
 
 test('forest recovers from a terrain fall and continues to the trunk', { timeout: 25000 }, async (t) => {
   const version = '26.1.2';
@@ -775,7 +913,7 @@ for (const roof of [false, true]) test(`delivery escapes a shaft using deepslate
   assert.equal(bot.pathfinder.isPathing, false);
 });
 
-test('delivery crosses a broad cave through its remembered stairs and returns to the mining site', { timeout: 80000 }, async (t) => {
+for (const storageTrip of [false, true]) test(storageTrip ? 'storage climbs remembered cave stairs to an already loaded surface chest' : 'delivery crosses a broad cave through its remembered stairs and returns to the mining site', { timeout: 80000 }, async (t) => {
   const version = '26.1.2';
   const world = createFlatWorld(version, 64, { renderDistance: 2 });
   for (let x = -30; x <= 8; x++) for (let z = -24; z <= 24; z++) {
@@ -820,7 +958,16 @@ test('delivery crosses a broad cave through its remembered stairs and returns to
     bot.inventory.slots[item.slot] = null;
     bot.updateHeldItem();
   };
-  await controller.deliver(() => owner);
+  if (storageTrip) {
+    world.setBlock(new Vec3(0, 75, 0), 'chest');
+    bot.activateBlock = undefined;
+    bot.openContainer = async () => ({ close() {}, async deposit(_type, _metadata, count) {
+      assert.ok(bot.entity.position.y >= 73, `chest must be reached before depositing: ${bot.entity.position}`);
+      delivered += count; bot.inventory.slots[diamonds.slot] = null; bot.updateHeldItem();
+    } });
+    controller.configureStorage([{ id: 'gems', name: 'Руда', filters: ['#ores'], chests: [{ x: 0, y: 75, z: 0 }] }]);
+    controller.enqueue({ kind: 'deposit' });
+  } else await controller.deliver(() => owner);
   try { await waitForJob(controller, 60000); }
   catch (error) {
     throw new Error(JSON.stringify({ snapshot: controller.snapshot, position: bot.entity.position,
@@ -829,6 +976,6 @@ test('delivery crosses a broad cave through its remembered stairs and returns to
   }
   assert.equal(delivered, 7, messages.join('\n'));
   assert.equal(edits, 0, 'both delivery legs reuse the cave and stairs without changing terrain');
-  assert.ok(bot.entity.position.distanceTo(origin) <= 0.8, `position=${bot.entity.position}`);
+  if (!storageTrip) assert.ok(bot.entity.position.distanceTo(origin) <= 0.8, `position=${bot.entity.position}`);
   assert.equal(controller.snapshot.history[0].outcome, 'готово');
 });

@@ -54,6 +54,31 @@ test('vertical movement alignment uses the horizontal approach direction', async
 })
 
 for (const version of ['1.20.4', '26.1.2']) {
+  for (const midRoute of [false, true]) test(`descent resumes from a crouched stair rim${midRoute ? ' after a step during planning' : ''} on ${version}`, { timeout: 10000 }, async (t) => {
+    const { rig, world } = createCacheWorld(version, 64, new Vec3(-19.299, 71, -19.49))
+    for (let x = -24; x <= -17; x++) for (let z = -21; z <= -19; z++) {
+      for (let y = 64; y < x + 90; y++) world.setBlock(new Vec3(x, y, z), 'stone')
+      if (z !== -20) for (let y = x + 90; y <= 76; y++) world.setBlock(new Vec3(x, y, z), 'stone')
+    }
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, allowSprinting: false, allowJumpSprint: false, movementTimeoutMs: 1200 } }))
+    rig.bot.setControlState('sneak', true)
+    rig.bot.entity.onGround = true
+    let recoveries = 0
+    rig.bot.on('enteredRecovery', () => recoveries++)
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+    try {
+      const goal = new goals.GoalBlock(-22, 68, -20)
+      if (midRoute) {
+        const route = await rig.bot.pathfinder.getPathFromToRaw(new Vec3(-17.5, 72, -19.5), new Vec3(0, 0, 0), goal)
+        assert.ok(route)
+        await rig.bot.pathfinder.perform(route, goal)
+      } else await rig.bot.pathfinder.goto(goal)
+      assert.ok(rig.bot.entity.position.distanceTo(new Vec3(-21.5, 68, -19.5)) < 0.4, `position=${rig.bot.entity.position}`)
+      assert.equal(rig.bot.entity.onGround, true)
+      assert.equal(recoveries, 0, 'a valid stair must enter descent directly, without falling during alignment and abandoning its plan')
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+
   test(`one-block descent followed by a turn and ascent on ${version}`, { timeout: 8500 }, async (t) => {
     const { rig, world } = createCacheWorld(version, 64, new Vec3(0.8, 65, 0.8))
     for (let x = -2; x <= 1; x++) for (let z = -2; z <= 2; z++) world.setBlock(new Vec3(x, 64, z), 'grass_block')

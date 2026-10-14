@@ -22,6 +22,7 @@ import { MovementProvider } from './mineflayer-specific/movements'
 import type { OptimizationSetup } from './mineflayer-specific/post'
 
 export { ThePathfinder } from './ThePathfinder'
+export { NavigationError, NavigationTaskError } from './mineflayer-specific/exceptions'
 export type { PathfinderOptions } from './ThePathfinder'
 export { installSurfaceSwimming } from './mineflayer-specific/surfaceSwimming'
 export { waitForMiningGround } from './mineflayer-specific/miningGround'

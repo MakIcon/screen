@@ -665,7 +665,10 @@ var require_exceptions = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/exceptions.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.TickAdvanceError = exports2.ManualResetError = exports2.ResetError = exports2.AbortError = exports2.CancelError = exports2.NavigationError = void 0;
+    exports2.TickAdvanceError = exports2.ManualResetError = exports2.ResetError = exports2.AbortError = exports2.CancelError = exports2.NavigationError = exports2.NavigationTaskError = void 0;
+    var NavigationTaskError = class extends Error {
+    };
+    exports2.NavigationTaskError = NavigationTaskError;
     var NavigationError = class extends Error {
       constructor(reason, message) {
         super(message);
@@ -722,19 +725,19 @@ var require_miningGround = __commonJS({
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.waitForMiningGround = waitForMiningGround;
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     async function waitForMiningGround(bot, canceled = () => false) {
       for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
         bot.setControlState(control, false);
       for (let tick = 0; !bot.entity.onGround && !bot.entity.isInWater; tick++) {
         if (canceled())
-          throw new exceptions_1.CancelError("Mining canceled before landing");
+          throw new exceptions_12.CancelError("Mining canceled before landing");
         if (tick >= 20)
-          throw new exceptions_1.CancelError("Mining requires supported footing");
+          throw new exceptions_12.CancelError("Mining requires supported footing");
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       if (canceled())
-        throw new exceptions_1.CancelError("Mining canceled before starting");
+        throw new exceptions_12.CancelError("Mining canceled before starting");
     }
   }
 });
@@ -1342,7 +1345,7 @@ var require_interactionUtils = __commonJS({
     var cacheWorld_12 = require_cacheWorld();
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var climbablePhysics_12 = require_climbablePhysics();
     var miningGround_12 = require_miningGround();
     var utils_1 = require_utils();
@@ -1412,11 +1415,13 @@ var require_interactionUtils = __commonJS({
           this._internalLock = true;
           this._done = false;
           this.performing = false;
+          if (err instanceof exceptions_12.NavigationTaskError)
+            throw err;
           if (this instanceof PlaceHandler && !this.cancelled && !this.move.aborted && !bot.pathfinder.abortCalculation) {
             bot.pathfinder.rejectPlacement(this.vec, revision);
-            throw new exceptions_1.NavigationError("placement", `Placement failed at ${this.vec}: ${String(err)}`);
+            throw new exceptions_12.NavigationError("placement", `Placement failed at ${this.vec}: ${String(err)}`);
           }
-          throw new exceptions_1.CancelError(`Failed to perform ${this.constructor.name}`, err);
+          throw new exceptions_12.CancelError(`Failed to perform ${this.constructor.name}`, err);
         });
         logBase(`Successfully completed interaction at ${this.vec}`);
         this._internalLock = false;
@@ -1636,9 +1641,9 @@ var require_interactionUtils = __commonJS({
             let waitTicks = 0;
             while (works.raycasts.length === 0) {
               if (this.cancelled || this.move.aborted || bot.pathfinder.abortCalculation)
-                throw new exceptions_1.CancelError("Block placement canceled");
+                throw new exceptions_12.CancelError("Block placement canceled");
               if (waitTicks >= Math.ceil(this.settings.movementTimeoutMs / 50))
-                throw new exceptions_1.CancelError(`No reachable placement face for ${this.vec}`);
+                throw new exceptions_12.CancelError(`No reachable placement face for ${this.vec}`);
               waitTicks++;
               await bot.waitForTicks(1);
               works = await this.performInfo(bot);
@@ -1688,14 +1693,14 @@ var require_interactionUtils = __commonJS({
             if (invalidPlacement) {
               logPlace(`Error: Invalid placement! Bot AABB intersects target placement AABB at ${posBl.bottomMiddlePoint()}. Age: ${i}, bot: ${bot.entity.position}, sim: ${botBB.bottomMiddlePoint()}`);
               await bot.lookAt(rayRes.intersect, this.settings.forceLook);
-              throw new exceptions_1.CancelError("Invalid placement");
+              throw new exceptions_12.CancelError("Invalid placement");
             }
             const direction = (0, utils_1.faceToVec)(rayRes.face);
             logPlace(`Calling bot._placeBlockWithOptions at face ${rayRes.face}`);
             this._placeTask = bot._placeBlockWithOptions(rayRes, direction, { forceLook: "ignore", swingArm: "right" });
             await this._placeTask;
             if (this.needToPerform(bot))
-              throw new exceptions_1.CancelError("Server did not confirm the placed block");
+              throw new exceptions_12.CancelError("Server did not confirm the placed block");
             logPlace("_placeTask resolved.");
             this.task?.finish();
             break;
@@ -1828,7 +1833,7 @@ var require_interactionUtils = __commonJS({
             }
             const info = await this.performInfo(bot, 0);
             if (info.ticks === Infinity)
-              throw new exceptions_1.CancelError("Block is outside mining reach or its face is obstructed");
+              throw new exceptions_12.CancelError("Block is outside mining reach or its face is obstructed");
             const hit = info.raycasts[0];
             const aim = hit != null ? hit.intersect.minus((0, utils_1.faceToVec)(hit.face).scaled(1e-3)) : this.vec.offset(0.5, 0.5, 0.5);
             logBreak(`Looking at the reachable face of ${this.vec} to start digging.`);
@@ -3607,7 +3612,7 @@ var require_movementExecutor = __commonJS({
     var move_12 = require_move();
     var goals = __importStar2(require_goals());
     var interactionUtils_1 = require_interactionUtils();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var movement_1 = require_movement();
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
@@ -3658,7 +3663,7 @@ var require_movementExecutor = __commonJS({
         const botY = this.bot.entity.position.y + 0.6;
         const block = this.getBlockInfo(this.bot.entity.position, 0, 0, 0);
         if (botY < thisMove.exitPos.y && botY < thisMove.entryPos.y) {
-          throw new exceptions_1.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
+          throw new exceptions_12.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
         }
       }
       /**
@@ -3706,7 +3711,7 @@ var require_movementExecutor = __commonJS({
         if (this.resetReason != null)
           throw this.resetReason;
         if (this.aborted)
-          throw new exceptions_1.AbortError("Movement aborted.");
+          throw new exceptions_12.AbortError("Movement aborted.");
       }
       /**
        * TODO: potentially buggy code. Check.
@@ -3717,13 +3722,13 @@ var require_movementExecutor = __commonJS({
         if (this.resetReason != null)
           throw this.resetReason;
         if (this.aborted)
-          throw new exceptions_1.AbortError("Movement aborted.");
+          throw new exceptions_12.AbortError("Movement aborted.");
         await this._performInit(thisMove, currentIndex, path);
         let result = false;
         await new Promise((resolve, reject) => {
           const listener = async () => {
             if (this.aborted) {
-              reject(new exceptions_1.AbortError("Movement aborted."));
+              reject(new exceptions_12.AbortError("Movement aborted."));
             }
             if (this.resetReason != null) {
               reject(this.resetReason);
@@ -3865,7 +3870,7 @@ var require_movementExecutor = __commonJS({
         const off0 = thisMove.exitPos.minus(this.bot.entity.position);
         const off1 = thisMove.exitPos.minus(target);
         if (this.bot.entity.position.y < thisMove.entryPos.y - 1)
-          throw new exceptions_1.CancelError("MovementExecutor: bot is too low.");
+          throw new exceptions_12.CancelError("MovementExecutor: bot is too low.");
         log("isInitAligned: off0.dot(off1)=%d", off0.dot(off1));
         off0.translate(0, -off0.y, 0);
         off1.translate(0, -off1.y, 0);
@@ -3982,7 +3987,7 @@ var require_movementExecutor = __commonJS({
       async performPlace(place, opts = {}) {
         const item = place.getItem(this.bot);
         if (item == null)
-          throw new exceptions_1.CancelError("MovementExecutor: no item to place");
+          throw new exceptions_12.CancelError("MovementExecutor: no item to place");
         log("performPlace: placing item %s", item.name);
         await place._perform(this.bot, item, opts);
         this._cI = void 0;
@@ -3990,7 +3995,7 @@ var require_movementExecutor = __commonJS({
       async performBreak(breakTarget, opts = {}) {
         const block = breakTarget.getBlock(this.bot.pathfinder.world);
         if (block == null)
-          throw new exceptions_1.CancelError("MovementExecutor: no block to break");
+          throw new exceptions_12.CancelError("MovementExecutor: no block to break");
         const item = breakTarget.getItem(this.bot, block);
         log("performBreak: breaking block %s", block.name);
         await breakTarget._perform(this.bot, item, opts);
@@ -4269,7 +4274,7 @@ var require_movementExecutors = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ParkourDiagonalExecutor = exports2.ParkourForwardExecutor = exports2.StraightUpExecutor = exports2.StraightDownExecutor = exports2.ForwardDropDownExecutor = exports2.NewForwardJumpExecutor = exports2.ForwardJumpExecutor = exports2.NewForwardExecutor = exports2.IdleMovementExecutor = void 0;
     var vec3_1 = require("vec3");
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var interactionUtils_1 = require_interactionUtils();
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var movementExecutor_1 = require_movementExecutor();
@@ -4322,9 +4327,9 @@ var require_movementExecutors = __commonJS({
         const center = supportedEntry && (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : (0, utils_1.getSupportedStartPos)(this.world, pos).floored().offset(0.5, 0, 0.5);
         center.y = pos.y;
         if (pos.xzDistanceTo(center) < 0.08)
-          throw new exceptions_1.CancelError("Forward: waypoint is blocked from its approach");
+          throw new exceptions_12.CancelError("Forward: waypoint is blocked from its approach");
         if (!(0, navigationGeometry_1.clearBodySegment)(this.world, pos, center, 0.599))
-          throw new exceptions_1.CancelError("Forward: cannot recenter at a blocked corner");
+          throw new exceptions_12.CancelError("Forward: cannot recenter at a blocked corner");
         await this.lookAtPathPos(center);
         (0, controls_1.steerToPosition)(this.bot, center, 0.1, 0.04);
         this.bot.setControlState("sprint", false);
@@ -4347,7 +4352,7 @@ var require_movementExecutors = __commonJS({
         const revision = this.bot.pathfinder.navigationRevision;
         const reject = (place, reason) => {
           this.bot.pathfinder.rejectPlacement(place.vec, revision);
-          throw new exceptions_1.NavigationError("placement", reason);
+          throw new exceptions_12.NavigationError("placement", reason);
         };
         for (const place of this.toPlace()) {
           if (!place.needToPerform(this.bot))
@@ -4365,11 +4370,11 @@ var require_movementExecutors = __commonJS({
           let info;
           do {
             if (this.aborted || this.bot.pathfinder.abortCalculation)
-              throw new exceptions_1.CancelError("Bridge placement canceled");
+              throw new exceptions_12.CancelError("Bridge placement canceled");
             if (performance.now() >= deadline)
               reject(place, "Bridge: cannot reach the exposed placement face");
             if (!this.bot.entity.onGround || Math.abs(this.bot.entity.position.y - move.entryPos.y) > 0.2) {
-              throw new exceptions_1.CancelError("Bridge: lost its supported approach");
+              throw new exceptions_12.CancelError("Bridge: lost its supported approach");
             }
             this.bot.setControlState("sneak", true);
             this.bot.setControlState("sprint", false);
@@ -4538,7 +4543,7 @@ var require_movementExecutors = __commonJS({
         if (this.doWaterLogic() && this.isComplete(thisMove))
           return true;
         if (!this.bot.entity.onGround && !this.bot.getControlState("jump") && !this.doWaterLogic() && this.canJump(thisMove, currentIndex, path) || this.bot.entity.position.y < Math.round(thisMove.entryPos.y) - 1) {
-          throw new exceptions_1.CancelError(`ForwardMove: not on ground. Target pos: ${thisMove.exitPos}, us: ${this.bot.entity.position}`);
+          throw new exceptions_12.CancelError(`ForwardMove: not on ground. Target pos: ${thisMove.exitPos}, us: ${this.bot.entity.position}`);
         }
         const faceForward = await this.faceForward();
         if (faceForward) {
@@ -4612,7 +4617,7 @@ var require_movementExecutors = __commonJS({
             const center = thisMove.entryPos.floored().offset(0.5, 0, 0.5);
             while (this.bot.entity.position.xzDistanceTo(center) > 0.07 || Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) > 0.015) {
               if (this.aborted || this.bot.pathfinder.abortCalculation)
-                throw new exceptions_1.CancelError("Stair placement canceled");
+                throw new exceptions_12.CancelError("Stair placement canceled");
               (0, controls_1.steerToPosition)(this.bot, center, 0.035);
               this.bot.setControlState("sneak", true);
               this.bot.setControlState("jump", false);
@@ -4679,12 +4684,12 @@ var require_movementExecutors = __commonJS({
           }
         }
         if (this.bot.entity.position.y - thisMove.exitPos.y < -1.25)
-          throw new exceptions_1.CancelError("ForwardJumpMove: too low (1)");
+          throw new exceptions_12.CancelError("ForwardJumpMove: too low (1)");
         if (tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround) {
           this.bot.setControlState("jump", false);
           this.bot.setControlState("sprint", true);
           if (this.bot.entity.position.y - thisMove.exitPos.y < -0.25) {
-            throw new exceptions_1.CancelError(`ForwardJumpMove: too low (2) ${this.bot.entity.position.y} ${thisMove.exitPos.y}`);
+            throw new exceptions_12.CancelError(`ForwardJumpMove: too low (2) ${this.bot.entity.position.y} ${thisMove.exitPos.y}`);
           }
         }
         return this.isComplete(thisMove);
@@ -4741,7 +4746,7 @@ var require_movementExecutors = __commonJS({
             await this.lookAtPathPos(center);
             while (this.bot.entity.position.xzDistanceTo(center) > 0.12 || Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) > 0.035) {
               if (this.aborted || this.bot.pathfinder.abortCalculation)
-                throw new exceptions_1.CancelError("Water step placement canceled");
+                throw new exceptions_12.CancelError("Water step placement canceled");
               (0, controls_1.steerToPosition)(this.bot, center, 0.06);
               this.bot.setControlState("sprint", false);
               await this.bot.waitForTicks(1);
@@ -4759,7 +4764,7 @@ var require_movementExecutors = __commonJS({
           while (this.toBreakLen() > 0) {
             const target = await this.interactNeeded(0);
             if (!(target instanceof interactionUtils_1.BreakHandler))
-              throw new exceptions_1.CancelError("No exposed block in the planned ascent");
+              throw new exceptions_12.CancelError("No exposed block in the planned ascent");
             await this.performInteraction(target);
           }
           this.jumpRequested = false;
@@ -4783,7 +4788,7 @@ var require_movementExecutors = __commonJS({
           }
           const pos = this.bot.entity.position;
           if (pos.y < thisMove.entryPos.y - 0.5)
-            throw new exceptions_1.CancelError("ForwardJump: fell below the takeoff");
+            throw new exceptions_12.CancelError("ForwardJump: fell below the takeoff");
           const direction = thisMove.exitPos.minus(thisMove.entryPos);
           direction.y = 0;
           direction.normalize();
@@ -4853,6 +4858,22 @@ var require_movementExecutors = __commonJS({
           this.bot.setControlState("jump", false);
           return this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(center) < 0.1 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02;
         }
+        const pos = this.bot.entity.position;
+        const direction = thisMove.exitPos.minus(thisMove.entryPos);
+        const length = Math.hypot(direction.x, direction.z);
+        if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 && length > 0 && pos.y <= thisMove.entryPos.y + 0.15 && pos.y > thisMove.exitPos.y + 0.15) {
+          const dx = pos.x - thisMove.entryPos.x;
+          const dz = pos.z - thisMove.entryPos.z;
+          const along = (dx * direction.x + dz * direction.z) / length;
+          const side = Math.abs(dx * direction.z - dz * direction.x) / length;
+          if (along >= -0.3 && along <= length + 0.3 && side <= 0.18) {
+            for (const control of ["forward", "back", "left", "right", "sprint", "jump"])
+              this.bot.setControlState(control, false);
+            this.bot.setControlState("sneak", (0, navigationGeometry_1.needsWalkSneak)(this.world, pos, this.bot.entity.velocity));
+            await this.lookAtPathPos(thisMove.exitPos);
+            return true;
+          }
+        }
         this.handleSneak(thisMove);
         return await super.align(thisMove, tickCount, goal, lookTarget);
       }
@@ -4890,7 +4911,7 @@ var require_movementExecutors = __commonJS({
           if (remainingBreaks.length > 0) {
             const breakTarget = await this.interactNeeded(0);
             if (!(breakTarget instanceof interactionUtils_1.BreakHandler))
-              throw new exceptions_1.CancelError("No exposed block in the planned descending step");
+              throw new exceptions_12.CancelError("No exposed block in the planned descending step");
             logDrop(`[ForwardDrop] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`);
             this.holdExcavation();
             this.startInteraction(breakTarget);
@@ -4973,7 +4994,7 @@ var require_movementExecutors = __commonJS({
           return tickCount > 0 && this.bot.entity.position.y <= thisMove.exitPos.y;
         }
         if (this.bot.entity.position.y < thisMove.exitPos.y)
-          throw new exceptions_1.CancelError("StraightDown: too low");
+          throw new exceptions_12.CancelError("StraightDown: too low");
         return tickCount > 0 && this.bot.entity.onGround && this.bot.entity.position.y === thisMove.exitPos.y;
       }
     };
@@ -5090,7 +5111,7 @@ var require_movementExecutors = __commonJS({
           await this.performInteraction(breakH);
         }
         if (thisMove.toPlace.length > 1) {
-          throw new exceptions_1.CancelError("StraightUp: toPlace.length > 1");
+          throw new exceptions_12.CancelError("StraightUp: toPlace.length > 1");
         }
         const place = thisMove.toPlace[0];
         if (place != null) {
@@ -5101,7 +5122,7 @@ var require_movementExecutors = __commonJS({
       }
       performPerTick(thisMove, tickCount, currentIndex, path) {
         if (this.bot.entity.position.y < thisMove.entryPos.y) {
-          throw new exceptions_1.CancelError("StraightUp: too low");
+          throw new exceptions_12.CancelError("StraightUp: too low");
         }
         const inWater = this.bot.entity.isInWater;
         if (!this.bot.entity.onGround || inWater) {
@@ -5171,7 +5192,7 @@ var require_movementExecutors = __commonJS({
               if (state === "backing")
                 return;
               if (state === "failed")
-                throw new exceptions_1.CancelError("ParkourExecutor: backup failed");
+                throw new exceptions_12.CancelError("ParkourExecutor: backup failed");
               this._tryApproachWhenAligned(target);
             }
             if (!this.executing) {
@@ -5410,7 +5431,7 @@ var require_movementExecutors = __commonJS({
         while (true) {
           if (this.tooLowCheck(thisMove)) {
             const botY = this.getTooLowCheckY();
-            throw new exceptions_1.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
+            throw new exceptions_12.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
           }
           if (this.backingUp) {
             const backupState = this._advanceBackup(thisMove);
@@ -5420,7 +5441,7 @@ var require_movementExecutors = __commonJS({
               continue;
             if (backupState === "failed") {
               this.bot.clearControlStates();
-              throw new exceptions_1.CancelError("ParkourExecutor: backup failed");
+              throw new exceptions_12.CancelError("ParkourExecutor: backup failed");
             }
           }
           const jumpState = this._getJumpState(thisMove);
@@ -5450,7 +5471,7 @@ var require_movementExecutors = __commonJS({
           }
           if (!this.bot.entity.onGround && this.tooLowCheck(thisMove)) {
             const botY = this.getTooLowCheckY();
-            throw new exceptions_1.CancelError(`Too low y level! bot: ${botY} | target: ${thisMove.entryPos.y}`);
+            throw new exceptions_12.CancelError(`Too low y level! bot: ${botY} | target: ${thisMove.entryPos.y}`);
           }
           if (this.bot.entity.onGround) {
             this.bot.clearControlStates();
@@ -5460,13 +5481,13 @@ var require_movementExecutors = __commonJS({
             this.bot.clearControlStates();
             this.bot.setControlState("sneak", true);
             if (this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0).norm() < 3e-3) {
-              throw new exceptions_1.CancelError("ParkourExecutor: will not make this jump after backing up!");
+              throw new exceptions_12.CancelError("ParkourExecutor: will not make this jump after backing up!");
             }
           }
           if (this._startBackup(thisMove))
             return false;
           this.bot.clearControlStates();
-          throw new exceptions_1.CancelError("ParkourExecutor: will not make this jump!");
+          throw new exceptions_12.CancelError("ParkourExecutor: will not make this jump!");
         }
       }
       async performInit(thisMove, currentIndex, path) {
@@ -5483,7 +5504,7 @@ var require_movementExecutors = __commonJS({
         const target = this._getTargetBlock(thisMove);
         const targetEyeVec = this._getTargetEyeVec(target);
         if (this.tooLowCheck(thisMove))
-          throw new exceptions_1.CancelError("ParkourExecutor: missed the landing");
+          throw new exceptions_12.CancelError("ParkourExecutor: missed the landing");
         if (this.executing) {
           if (!this.bot.entity.onGround && this.bot.entity.position.y > thisMove.entryPos.y + 0.05)
             this.hasLeftGround = true;
@@ -5522,18 +5543,18 @@ var require_movementExecutors = __commonJS({
         }
         if (!this.bot.entity.onGround) {
           this._clearLockedYaw();
-          throw new exceptions_1.CancelError("ParkourExecutor: missed jump window");
+          throw new exceptions_12.CancelError("ParkourExecutor: missed jump window");
         }
         if (this.backupAttempted) {
           this._clearBackupState();
           this.bot.clearControlStates();
-          throw new exceptions_1.CancelError("ParkourExecutor: will not make this jump after backing up!");
+          throw new exceptions_12.CancelError("ParkourExecutor: will not make this jump after backing up!");
         }
         if (this._startBackup(thisMove))
           return false;
         this._clearLockedYaw();
         this.bot.clearControlStates();
-        throw new exceptions_1.CancelError("ParkourExecutor: will not make this jump!");
+        throw new exceptions_12.CancelError("ParkourExecutor: will not make this jump!");
       }
     };
     exports2.ParkourForwardExecutor = ParkourForwardExecutor;
@@ -5905,7 +5926,7 @@ var require_neo = __commonJS({
     var movement_1 = require_movement();
     var movementProvider_1 = require_movementProvider();
     var movementExecutor_1 = require_movementExecutor();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var costs_1 = require_costs();
     var utils_1 = require_utils();
     var { PlayerState } = require("prismarine-physics");
@@ -6011,7 +6032,7 @@ var require_neo = __commonJS({
         for (const control of ["forward", "back", "left", "right"])
           this.bot.setControlState(control, input[control] && Math.hypot(aim.x, aim.z) > 0.015);
         if (this.bot.entity.position.y < move.entryPos.y - 0.2)
-          throw new exceptions_1.CancelError("Neo: takeoff support was lost");
+          throw new exceptions_12.CancelError("Neo: takeoff support was lost");
         return false;
       }
       async performInit(move) {
@@ -6021,7 +6042,7 @@ var require_neo = __commonJS({
         if (this.aborted || this.bot.pathfinder.abortCalculation)
           return;
         if (this.flight.length === 0)
-          throw new exceptions_1.CancelError("Neo: no collision-free flight to the landing block");
+          throw new exceptions_12.CancelError("Neo: no collision-free flight to the landing block");
         this.step = 0;
         this.applyStep(this.flight[this.step++], move);
         const flightListener = () => {
@@ -6063,14 +6084,14 @@ var require_neo = __commonJS({
           return;
         }
         if (this.bot.entity.position.y < move.exitPos.y - 0.2)
-          throw new exceptions_1.CancelError("Neo: landing was missed");
+          throw new exceptions_12.CancelError("Neo: landing was missed");
         const previous = this.flight[this.step - 1];
         if (previous != null && previous.position.distanceTo(this.bot.entity.position) > 0.4) {
-          throw new exceptions_1.CancelError("Neo: server position differs from the predicted flight");
+          throw new exceptions_12.CancelError("Neo: server position differs from the predicted flight");
         }
         const next = this.flight[this.step++];
         if (next == null)
-          throw new exceptions_1.CancelError("Neo: flight ended without landing");
+          throw new exceptions_12.CancelError("Neo: flight ended without landing");
         this.applyStep(next, move);
       }
       async planFlight(move) {
@@ -6275,7 +6296,7 @@ var require_momentum = __commonJS({
     var movementProvider_1 = require_movementProvider();
     var movementExecutor_1 = require_movementExecutor();
     var controls_1 = require_controls();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var costs_1 = require_costs();
     var supportingBlockPhysics_12 = require_supportingBlockPhysics();
     var { PlayerState } = require("prismarine-physics");
@@ -6809,14 +6830,14 @@ var require_momentum = __commonJS({
       }
       async performInit(_move) {
         if (this.listener == null && !this.landed)
-          throw this.failure ?? new exceptions_1.CancelError("Momentum jump: flight interrupted before initialization");
+          throw this.failure ?? new exceptions_12.CancelError("Momentum jump: flight interrupted before initialization");
       }
       startFlight(move) {
         this.index = 0;
         const apply = () => {
           const step = this.steps[this.index++];
           if (step == null) {
-            this.failure = new exceptions_1.CancelError("Momentum jump: missed the landing");
+            this.failure = new exceptions_12.CancelError("Momentum jump: missed the landing");
             return;
           }
           this.face(step.yaw);
@@ -6835,7 +6856,7 @@ var require_momentum = __commonJS({
           }
           const previous = this.steps[this.index - 1];
           if (previous != null && previous.position.distanceTo(this.bot.entity.position) > (move.metadata.momentumAirStrafe ? 0.02 : 0.4))
-            this.failure = new exceptions_1.CancelError("Momentum jump: server position differs from the predicted flight");
+            this.failure = new exceptions_12.CancelError("Momentum jump: server position differs from the predicted flight");
           if (this.index > 0 && this.bot.entity.onGround && this.bot.entity.position.floored().equals(move.exitPos.floored()))
             this.landed = true;
           if (this.landed || this.failure != null) {
@@ -6879,7 +6900,7 @@ var require_climb = __commonJS({
     var movementProvider_1 = require_movementProvider();
     var movementExecutor_1 = require_movementExecutor();
     var costs_1 = require_costs();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var controls_1 = require_controls();
     var entryDirs = [...movement_1.Movement.cardinalDirs, ...movement_1.Movement.diagonalDirs];
     var Climb = class extends movementProvider_1.MovementProvider {
@@ -7009,7 +7030,7 @@ var require_climb = __commonJS({
           return true;
         }
         if (performance.now() - this.started > this.settings.movementTimeoutMs + 1e3)
-          throw new exceptions_1.CancelError("Climbing failed to reach the next step");
+          throw new exceptions_12.CancelError("Climbing failed to reach the next step");
         const pos = this.bot.entity.position;
         const mode = move.metadata?.climbMode;
         const up = mode === "up" || mode === "enter-up" || mode === "crest" || mode === "exit" && move.exitPos.y > move.entryPos.y;
@@ -7024,7 +7045,7 @@ var require_climb = __commonJS({
         this.bot.setControlState("sneak", false);
         this.bot.setControlState("jump", up && (!this.leaving || pos.y < move.exitPos.y));
         if (pos.y < Math.min(move.entryPos.y, move.exitPos.y) - 1.25)
-          throw new exceptions_1.CancelError("Lost the climbable column");
+          throw new exceptions_12.CancelError("Lost the climbable column");
         return false;
       }
     };
@@ -7047,7 +7068,7 @@ var require_waterDrop = __commonJS({
     var movement_1 = require_movement();
     var movementProvider_1 = require_movementProvider();
     var movementExecutor_1 = require_movementExecutor();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var costs_1 = require_costs();
     var { PlayerState } = require("prismarine-physics");
     var Block = require("prismarine-block");
@@ -7227,7 +7248,7 @@ var require_waterDrop = __commonJS({
       align(move) {
         const pos = this.bot.entity.position;
         if (!this.bot.entity.onGround)
-          throw new exceptions_1.CancelError("Water drop needs a supported takeoff");
+          throw new exceptions_12.CancelError("Water drop needs a supported takeoff");
         if (pos.xzDistanceTo(move.entryPos) < 0.2 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.03)
           return true;
         const input = flightControls(pos, this.bot.entity.velocity, move.entryPos, false, false);
@@ -7240,14 +7261,14 @@ var require_waterDrop = __commonJS({
         if (bucket) {
           const item = waterBucket(this.bot);
           if (!permitsWater(this.bot) || item == null || this.world.getBlock(move.exitPos)?.name !== "air" || !this.world.getBlockInfo(move.exitPos.offset(0, -1, 0)).solidFull)
-            throw new exceptions_1.CancelError("Water bucket landing unavailable for drop");
+            throw new exceptions_12.CancelError("Water bucket landing unavailable for drop");
           this.previousItem = this.bot.heldItem ?? void 0;
           await this.bot.equip(item, "hand");
           if (generation !== this.generation)
             return;
         }
         if (predictWaterDrop(this.bot, this.world, this.bot.entity.position, this.bot.entity.velocity, move.exitPos, bucket, this.settings.allowSprinting, true) == null) {
-          throw new exceptions_1.CancelError("Water drop trajectory is no longer safe");
+          throw new exceptions_12.CancelError("Water drop trajectory is no longer safe");
         }
         this.started = performance.now();
       }
@@ -7282,7 +7303,7 @@ var require_waterDrop = __commonJS({
         log("execute pos=%O wet=%s ground=%s collected=%s item=%s", pos, this.wet, this.bot.entity.onGround, this.collected, this.bot.heldItem?.name);
         const bucket = move.metadata?.bucketWaterDrop === true;
         if (performance.now() - this.started > MAX_TICKS * 50 + this.settings.movementTimeoutMs)
-          throw new exceptions_1.CancelError("Water drop timed out");
+          throw new exceptions_12.CancelError("Water drop timed out");
         this.wet || (this.wet = this.bot.entity.isInWater === true || this.bot.entity.onGround && this.world.getBlockInfo(pos.offset(0, 0.1, 0)).water);
         const input = flightControls(pos, vel, move.exitPos, this.settings.allowSprinting, !this.launched);
         if (this.wet) {
@@ -7294,7 +7315,7 @@ var require_waterDrop = __commonJS({
         this.flightTicks++;
         if (bucket && !this.placed && vel.y < -0.1 && pos.y - move.exitPos.y < 3.1 && supportHit(this.world, pos, move.exitPos)) {
           if (this.bot.heldItem?.name !== "water_bucket")
-            throw new exceptions_1.CancelError("Water bucket lost during drop");
+            throw new exceptions_12.CancelError("Water bucket lost during drop");
           this.placed = true;
           await this.useBucket(move.exitPos.offset(0, -0.01, 0), generation);
         }
@@ -7312,17 +7333,17 @@ var require_waterDrop = __commonJS({
           }
           const source = this.world.getBlock(move.exitPos.floored());
           if (source?.name !== "water" || Number(source.getProperties().level) !== 0)
-            throw new exceptions_1.CancelError("Placed water source was removed");
+            throw new exceptions_12.CancelError("Placed water source was removed");
           if (this.bot.heldItem?.name === "bucket" && this.flightTicks - this.lastUse >= 6) {
             if (this.attempts >= 3)
-              throw new exceptions_1.CancelError("Server did not confirm water collection");
+              throw new exceptions_12.CancelError("Server did not confirm water collection");
             this.lastUse = this.flightTicks;
             this.attempts++;
             await this.useBucket(move.exitPos.offset(0, 0.5, 0), generation);
           }
         }
         if (!this.wet && this.bot.entity.onGround && this.flightTicks > 3)
-          throw new exceptions_1.CancelError("Water drop missed its landing");
+          throw new exceptions_12.CancelError("Water drop missed its landing");
         return false;
       }
     };
@@ -10151,7 +10172,7 @@ var require_pathExecutor = __commonJS({
     var vec3_1 = require("vec3");
     var goals = __importStar2(require_goals());
     var move_12 = require_move();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var post_12 = require_post();
     var utils_1 = require_utils();
     var climb_1 = require_climb();
@@ -10237,7 +10258,7 @@ var require_pathExecutor = __commonJS({
       async perform(path, goal, entry = 0, continueSwimming) {
         const MAX_RECOVERY_DEPTH = 2;
         if (entry > MAX_RECOVERY_DEPTH) {
-          throw new exceptions_1.NavigationError("recovery", "Too many failures, exiting performing.");
+          throw new exceptions_12.NavigationError("recovery", "Too many failures, exiting performing.");
         }
         const bot = this.bot;
         const myExecutionId = this.bumpExecutionId();
@@ -10349,22 +10370,22 @@ var require_pathExecutor = __commonJS({
           if (settled || this.getCurrentExecutionId() !== myExecutionId)
             return;
           log(`Error: ${err}`);
-          if (err instanceof exceptions_1.AbortError) {
+          if (err instanceof exceptions_12.AbortError) {
             executorSafeReset(this.getCurrentExecutor());
             await finish();
             return;
           }
-          if (err instanceof exceptions_1.ManualResetError) {
+          if (err instanceof exceptions_12.ManualResetError) {
             executorSafeReset(this.getCurrentExecutor());
             await finish();
             return;
           }
-          if (err instanceof exceptions_1.ResetError) {
+          if (err instanceof exceptions_12.ResetError) {
             executorSafeReset(this.getCurrentExecutor());
             await finish();
             return;
           }
-          if (err instanceof exceptions_1.CancelError) {
+          if (err instanceof exceptions_12.CancelError) {
             executorSafeReset(this.getCurrentExecutor());
             if (err.message.includes("superseded")) {
               await finish();
@@ -10555,22 +10576,22 @@ var require_pathExecutor = __commonJS({
             if (settled || this.getCurrentExecutionId() !== myExecutionId)
               return;
             log(`Error: ${err}`);
-            if (err instanceof exceptions_1.AbortError) {
+            if (err instanceof exceptions_12.AbortError) {
               executorSafeReset(this.getCurrentExecutor());
               await finish();
               return;
             }
-            if (err instanceof exceptions_1.ManualResetError) {
+            if (err instanceof exceptions_12.ManualResetError) {
               executorSafeReset(this.getCurrentExecutor());
               await finish();
               return;
             }
-            if (err instanceof exceptions_1.ResetError) {
+            if (err instanceof exceptions_12.ResetError) {
               executorSafeReset(this.getCurrentExecutor());
               await finish();
               return;
             }
-            if (err instanceof exceptions_1.CancelError) {
+            if (err instanceof exceptions_12.CancelError) {
               executorSafeReset(this.getCurrentExecutor());
               if (err.message.includes("superseded")) {
                 await finish();
@@ -10626,7 +10647,7 @@ var require_pathExecutor = __commonJS({
               bestMoveDistance = remaining;
               productiveAt = now;
             } else if (now - productiveAt >= Math.max(2e3, this.host.defaultMoveSettings.movementTimeoutMs * 2)) {
-              void fail(new exceptions_1.NavigationError("stalled", "Movement stalled: repeated motion without advancing to the waypoint."));
+              void fail(new exceptions_12.NavigationError("stalled", "Movement stalled: repeated motion without advancing to the waypoint."));
               return;
             }
           } else
@@ -10637,12 +10658,12 @@ var require_pathExecutor = __commonJS({
             lastProgressAt = now;
             collisionTicks = 0;
           } else if (now - lastProgressAt >= this.host.defaultMoveSettings.movementTimeoutMs) {
-            void fail(new exceptions_1.NavigationError("stalled", "Movement stalled: no progress within the movement timeout."));
+            void fail(new exceptions_12.NavigationError("stalled", "Movement stalled: no progress within the movement timeout."));
             return;
           }
           if (bot.entity.isCollidedHorizontally && interaction == null && this.getCurrentExecutor()?.canInterrupt !== false && (bot.entity.onGround || horizontalStroke) && (bot.getControlState("forward") || bot.getControlState("back") || bot.getControlState("left") || bot.getControlState("right"))) {
             if (++collisionTicks >= 12) {
-              void fail(new exceptions_1.NavigationError("stalled", "Movement stalled: blocked by a wall or corner."));
+              void fail(new exceptions_12.NavigationError("stalled", "Movement stalled: blocked by a wall or corner."));
               return;
             }
           } else
@@ -10717,7 +10738,7 @@ var require_pathExecutor = __commonJS({
         if (path1 === null) {
           log(" recovery pathfinding returned null");
           bot.emit("exitedRecovery", entry);
-        } else if (no) {
+        } else if (no || nextMove == null) {
           log(" executing full recovery path");
           bot.emit("exitedRecovery", entry);
           await this.perform(path1, goal, entry + 1);
@@ -10726,16 +10747,17 @@ var require_pathExecutor = __commonJS({
           await this.perform(path1, newGoal, entry + 1);
           if (canceled())
             return;
-          path.path.splice(0, ind + 1);
+          path.path.splice(0, path.path.indexOf(nextMove) + 1);
           log(" continuing original goal after partial recovery");
           bot.emit("exitedRecovery", entry);
-          await this.perform(path, goal, 0);
+          if (path.path.length > 0)
+            await this.perform(path, goal, 0);
         }
       }
       check() {
         const resetReason = this.getResetReason();
         if (resetReason != null) {
-          throw new exceptions_1.ResetError(resetReason);
+          throw new exceptions_12.ResetError(resetReason);
         }
       }
     };
@@ -11049,7 +11071,7 @@ var require_ladder_executor = __commonJS({
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
     var vec3_1 = require("vec3");
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var controls_1 = require_controls();
     var movementExecutor_1 = require_movementExecutor();
     var movementUtils_1 = require_movementUtils();
@@ -11313,7 +11335,7 @@ var require_ladder_executor = __commonJS({
         while (true) {
           if (this.tooLowCheck(thisMove)) {
             const botY = this.getTooLowCheckY();
-            throw new exceptions_1.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
+            throw new exceptions_12.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
           }
           if (this.backingUp) {
             const backupState = this._advanceBackup(thisMove);
@@ -11348,7 +11370,7 @@ var require_ladder_executor = __commonJS({
             this._clearBackupState();
             this._clearLockedYaw();
             this.bot.clearControlStates();
-            throw new exceptions_1.CancelError("LadderExecutor: will not make this jump after backing up!");
+            throw new exceptions_12.CancelError("LadderExecutor: will not make this jump after backing up!");
           }
           if (this.bot.entity.onGround) {
             this.bot.clearControlStates();
@@ -11357,7 +11379,7 @@ var require_ladder_executor = __commonJS({
             return false;
           this._clearLockedYaw();
           this.bot.clearControlStates();
-          throw new exceptions_1.CancelError("LadderExecutor: will not make this jump!");
+          throw new exceptions_12.CancelError("LadderExecutor: will not make this jump!");
         }
       }
       async performInit(thisMove, _currentIndex, _path) {
@@ -11367,7 +11389,7 @@ var require_ladder_executor = __commonJS({
       }
       performPerTick(thisMove, _tickCount, _currentIndex, _path) {
         if (this.tooLowCheck(thisMove))
-          throw new exceptions_1.CancelError("Ladder: missed the landing");
+          throw new exceptions_12.CancelError("Ladder: missed the landing");
         const target = this._getTargetBlock(thisMove);
         const targetEyeVec = this._getTargetEyeVec(thisMove);
         if (this.backingUp) {
@@ -11412,13 +11434,13 @@ var require_ladder_executor = __commonJS({
           this._clearBackupState();
           this._clearLockedYaw();
           this.bot.clearControlStates();
-          throw new exceptions_1.CancelError("LadderExecutor: will not make this jump after backing up!");
+          throw new exceptions_12.CancelError("LadderExecutor: will not make this jump after backing up!");
         }
         if (this._startBackup(thisMove))
           return false;
         this._clearLockedYaw();
         this.bot.clearControlStates();
-        throw new exceptions_1.CancelError("LadderExecutor: will not make this jump!");
+        throw new exceptions_12.CancelError("LadderExecutor: will not make this jump!");
       }
     };
     exports2.LadderForwardExecutor = LadderForwardExecutor;
@@ -11469,7 +11491,7 @@ var require_around_corner_executor = __commonJS({
     var mineflayer_util_plugin_12 = require("@nxg-org/mineflayer-util-plugin");
     var mineflayer_physics_util_12 = require("@nxg-org/mineflayer-physics-util");
     var vec3_1 = require("vec3");
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var controls_1 = require_controls();
     var movementExecutor_1 = require_movementExecutor();
     var movementUtils_1 = require_movementUtils();
@@ -11702,7 +11724,7 @@ var require_around_corner_executor = __commonJS({
         while (true) {
           if (this.tooLowCheck(thisMove)) {
             const botY = this.getTooLowCheckY();
-            throw new exceptions_1.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
+            throw new exceptions_12.CancelError(`y level: too low! ${botY}, ${thisMove.entryPos.y} ${thisMove.exitPos.y}`);
           }
           if (this.backingUp) {
             const backupState = this._advanceBackup(thisMove);
@@ -11734,7 +11756,7 @@ var require_around_corner_executor = __commonJS({
           }
           if (this.backupAttempted) {
             this._clearBackupState();
-            throw new exceptions_1.CancelError("AroundCorner: no feasible jump after backing up");
+            throw new exceptions_12.CancelError("AroundCorner: no feasible jump after backing up");
           }
           if (this.bot.entity.onGround) {
             this.bot.clearControlStates();
@@ -11742,7 +11764,7 @@ var require_around_corner_executor = __commonJS({
           if (this._startBackup(thisMove))
             return false;
           this.bot.clearControlStates();
-          throw new exceptions_1.CancelError("AroundCorner: no feasible jump");
+          throw new exceptions_12.CancelError("AroundCorner: no feasible jump");
         }
       }
       async performInit(thisMove, _currentIndex, _path) {
@@ -11752,7 +11774,7 @@ var require_around_corner_executor = __commonJS({
       }
       performPerTick(thisMove, _tickCount, _currentIndex, _path) {
         if (this.tooLowCheck(thisMove))
-          throw new exceptions_1.CancelError("AroundCorner: missed the landing");
+          throw new exceptions_12.CancelError("AroundCorner: missed the landing");
         const target = this._getTargetBlock(thisMove);
         const targetEyeVec = this._getTargetEyeVec(thisMove);
         if (this.backingUp) {
@@ -11785,12 +11807,12 @@ var require_around_corner_executor = __commonJS({
         }
         if (this.backupAttempted) {
           this._clearBackupState();
-          throw new exceptions_1.CancelError("AroundCorner: no feasible jump after backing up");
+          throw new exceptions_12.CancelError("AroundCorner: no feasible jump after backing up");
         }
         if (this._startBackup(thisMove))
           return false;
         this.bot.clearControlStates();
-        throw new exceptions_1.CancelError("AroundCorner: no feasible jump");
+        throw new exceptions_12.CancelError("AroundCorner: no feasible jump");
       }
     };
     exports2.AroundCornerDiagonalExecutor = AroundCornerDiagonalExecutor;
@@ -11845,7 +11867,7 @@ var require_ThePathfinder = __commonJS({
     var vec3_1 = require("vec3");
     var move_12 = require_move();
     var cacheWorld_12 = require_cacheWorld();
-    var exceptions_1 = require_exceptions();
+    var exceptions_12 = require_exceptions();
     var movements_12 = require_movements();
     var movementProviders_1 = require_movementProviders();
     var movementExecutors_1 = require_movementExecutors();
@@ -12108,7 +12130,7 @@ var require_ThePathfinder = __commonJS({
           wake();
         const currentExecutor = this.currentExecutor;
         const currentMove = this.currentMove;
-        const reason = reasonStr ? exceptions_1.ResetError.fromReason(reasonStr) : void 0;
+        const reason = reasonStr ? exceptions_12.ResetError.fromReason(reasonStr) : void 0;
         const abort = currentExecutor != null && currentMove != null ? currentExecutor.abort(currentMove, { timeout, reason }) : Promise.resolve();
         await this.executionRunner.cancelExecution();
         currentExecutor?.reset();
@@ -12923,7 +12945,7 @@ var require_ThePathfinder = __commonJS({
                   }
                   if (unverifiedIceTakeoff)
                     throw new Error(`Pathfinding failed: ${res.result.status}; no verified route beyond the ice with the available runway and speed`);
-                  throw new exceptions_1.NavigationError(res.result.status, `Pathfinding failed: ${res.result.status}`);
+                  throw new exceptions_12.NavigationError(res.result.status, `Pathfinding failed: ${res.result.status}`);
                 }
                 if (res.result.status === "canceled")
                   break;
@@ -12982,8 +13004,8 @@ var require_ThePathfinder = __commonJS({
               z: Math.floor(arrived.z),
               exitPos: arrived
             };
-            if ((shore != null || goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear) && !routingGoal.isEnd(actual)) {
-              throw new exceptions_1.NavigationError("recovery", "Movement ended before reaching the route goal.");
+            if (!(routingGoal instanceof goals.GoalFollowEntity) && !routingGoal.isEnd(actual)) {
+              throw new exceptions_12.NavigationError("recovery", "Movement ended before reaching the route goal.");
             }
             if (shore != null) {
               if (shore instanceof shore_1.ShoreRouteGoal)
@@ -13009,7 +13031,7 @@ var require_ThePathfinder = __commonJS({
             await this.pendingReset;
             if (canceled())
               return;
-            if (!(error instanceof exceptions_1.NavigationError) || performOpts.errorOnReset || !doForever && failures >= 2)
+            if (!(error instanceof exceptions_12.NavigationError) || performOpts.errorOnReset || !doForever && failures >= 2)
               throw error;
             failures++;
             if (shore != null && error.reason === "noPath") {
@@ -13314,7 +13336,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.NavigationTaskError = exports.NavigationError = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -13328,6 +13350,13 @@ var itemEnchantments_1 = require_itemEnchantments();
 var ThePathfinder_2 = require_ThePathfinder();
 Object.defineProperty(exports, "ThePathfinder", { enumerable: true, get: function() {
   return ThePathfinder_2.ThePathfinder;
+} });
+var exceptions_1 = require_exceptions();
+Object.defineProperty(exports, "NavigationError", { enumerable: true, get: function() {
+  return exceptions_1.NavigationError;
+} });
+Object.defineProperty(exports, "NavigationTaskError", { enumerable: true, get: function() {
+  return exceptions_1.NavigationTaskError;
 } });
 var surfaceSwimming_1 = require_surfaceSwimming();
 Object.defineProperty(exports, "installSurfaceSwimming", { enumerable: true, get: function() {

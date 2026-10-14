@@ -655,6 +655,26 @@ export class ForwardDropDownExecutor extends MovementExecutor {
       return this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(center) < 0.1 &&
         Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02
     }
+    const pos = this.bot.entity.position
+    const direction = thisMove.exitPos.minus(thisMove.entryPos)
+    const length = Math.hypot(direction.x, direction.z)
+    if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 &&
+        length > 0 && pos.y <= thisMove.entryPos.y + 0.15 && pos.y > thisMove.exitPos.y + 0.15) {
+      const dx = pos.x - thisMove.entryPos.x; const dz = pos.z - thisMove.entryPos.z
+      const along = (dx * direction.x + dz * direction.z) / length
+      const side = Math.abs(dx * direction.z - dz * direction.x) / length
+      if (along >= -0.3 && along <= length + 0.3 && side <= 0.18) {
+        // At a crouched rim the feet can be over the next cell while their
+        // hitbox still rests on the old step. Generic alignment requires the
+        // floor under that next cell and never finishes. A supported point on
+        // this verified descent is already aligned, including an intermediate
+        // stair reached while planning. Let the descent executor release sneak.
+        for (const control of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(control, false)
+        this.bot.setControlState('sneak', needsWalkSneak(this.world, pos, this.bot.entity.velocity))
+        await this.lookAtPathPos(thisMove.exitPos)
+        return true
+      }
+    }
     this.handleSneak(thisMove)
     return await super.align(thisMove, tickCount, goal, lookTarget)
   }

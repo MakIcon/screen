@@ -712,7 +712,7 @@ export class PathExecutor {
     if (path1 === null) {
       log(' recovery pathfinding returned null')
       bot.emit('exitedRecovery', entry)
-    } else if (no) {
+    } else if (no || nextMove == null) {
       log(' executing full recovery path')
       bot.emit('exitedRecovery', entry)
       await this.perform(path1, goal, entry + 1)
@@ -721,12 +721,14 @@ export class PathExecutor {
       await this.perform(path1, newGoal, entry + 1)
       if (canceled()) return
 
-      // We only need to splice the unoptimized path directly!
-      path.path.splice(0, ind + 1)
+      // Recovery reached nextMove's destination, which may be several steps
+      // beyond the failed move. Do not replay those steps from their old
+      // takeoffs (especially an upper stair after we have already descended).
+      path.path.splice(0, path.path.indexOf(nextMove) + 1)
 
       log(' continuing original goal after partial recovery')
       bot.emit('exitedRecovery', entry)
-      await this.perform(path, goal, 0)
+      if (path.path.length > 0) await this.perform(path, goal, 0)
     }
   }
 

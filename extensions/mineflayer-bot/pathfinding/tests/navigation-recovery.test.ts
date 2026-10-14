@@ -123,6 +123,46 @@ test('an interrupted execution cannot report arrival before reaching the come go
   } finally { await navigator.destroy(); rig.stopPassivePhysics() }
 })
 
+test('recovery resumes beyond the reached bend without replaying the old corridor', { timeout: 12000 }, async (t) => {
+  const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5))
+  for (let x = -1; x <= 8; x++) for (let z = -1; z <= 4; z++) for (let y = 64; y <= 65; y++) {
+    const passage = (z === 0 && x >= 0 && x <= 3) || (x === 3 && z >= 0 && z <= 3) || (z === 3 && x >= 3 && x <= 7)
+    if (!passage) world.setBlock(new Vec3(x, y, z), 'stone')
+  }
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, allowJumpSprint: false } }))
+  const navigator = rig.bot.pathfinder
+  const goal = new goals.GoalBlock(7, 64, 3)
+  t.signal.addEventListener('abort', () => { void navigator.stop() }, { once: true })
+  try {
+    const route = await navigator.getPathFromToRaw(rig.bot.entity.position, new Vec3(0, 0, 0), goal)
+    assert.ok(route && route.path.length > 5)
+    const failed = route.path[0]
+    rig.bot.entity.position.set(3.5, 64, 2.5)
+    rig.bot.entity.velocity.set(0, 0, 0)
+    rig.bot.entity.onGround = true
+    let lowestZ = 2.5
+    rig.bot.on('physicsTick', () => { lowestZ = Math.min(lowestZ, rig.bot.entity.position.z) })
+    await navigator.recovery(failed, route, goal)
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(7.5, 64, 3.5)) < 0.4)
+    assert.ok(lowestZ >= 2.3, `recovery walked back toward an already completed bend: z=${lowestZ}`)
+  } finally { await navigator.destroy(); rig.stopPassivePhysics() }
+})
+
+test('a container approach retries execution that stopped before reaching its visible face', { timeout: 6000 }, async (t) => {
+  const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5))
+  const chest = world.setBlock(new Vec3(8, 64, 0), 'chest')
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, allowJumpSprint: false } }))
+  const navigator = rig.bot.pathfinder, perform = navigator.perform.bind(navigator)
+  let attempts = 0
+  navigator.perform = async (...args: Parameters<typeof perform>) => { if (++attempts > 1) await perform(...args) }
+  t.signal.addEventListener('abort', () => { void navigator.stop() }, { once: true })
+  try {
+    await navigator.goto(goals.GoalLookAt.fromBlock(navigator.world, chest, 4))
+    assert.equal(attempts, 2)
+    assert.ok(rig.bot.entity.position.x > 4, `position=${rig.bot.entity.position}`)
+  } finally { await navigator.destroy(); rig.stopPassivePhysics() }
+})
+
 for (const version of ['1.20.4', '26.1.2']) {
   for (const method of ['building', 'digging', 'digging below the player'] as const) test(`a mountain ledge continues by ${method} even when the full ascent search times out on ${version}`, { timeout: 24000 }, async (t) => {
     const world = createFlatWorld(version, 56, { renderDistance: 2 })
