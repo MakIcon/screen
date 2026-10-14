@@ -12367,11 +12367,11 @@ var require_ThePathfinder = __commonJS({
         goal.cleanup = cleanup;
         return cleanup;
       }
-      getPathTo(goal, settings = this.defaultMoveSettings, searchScale = 1) {
+      getPathTo(goal, settings = this.defaultMoveSettings, searchScale = 1, routeOpts = {}) {
         const { movements } = this.activeMappings;
-        return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements, searchScale);
+        return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements, searchScale, routeOpts);
       }
-      async *getPathFromTo(startPos, startVel, goal, settings = this.defaultMoveSettings, movements = this.activeMappings.movements, searchScale = 1) {
+      async *getPathFromTo(startPos, startVel, goal, settings = this.defaultMoveSettings, movements = this.activeMappings.movements, searchScale = 1, routeOpts = {}) {
         this.abortCalculation = false;
         this.clearResetReason();
         const actualStartPos = (0, utils_1.getNormalizedPos)(this.bot, startPos).clone();
@@ -12428,13 +12428,14 @@ var require_ThePathfinder = __commonJS({
           ladder_provider_1.LadderLandingDiagonal,
           around_corner_provider_1.AroundCornerDiagonal
         ].includes(provider)));
+        const preferExistingTerrain = routeOpts.preferExistingTerrain === true && (settings.canDig || settings.canPlace);
         const traversalSettings = {
           ...routeSettings,
           canDig: false,
           canPlace: false,
-          allowWaterDrop: false,
+          allowWaterDrop: preferExistingTerrain && settings.allowWaterDrop,
           allowBucketWaterDrop: false,
-          infiniteLiquidDropdownDistance: false
+          infiniteLiquidDropdownDistance: preferExistingTerrain && settings.infiniteLiquidDropdownDistance
         };
         const probe = async (probeGoal, probeSettings, probeMovements, timeoutMs, maxVisitedNodes, probeStart = startMove) => {
           const producer = new pathProducers_1.ContinuousPathProducer(probeStart, probeGoal, probeSettings, this.bot, this.world, probeMovements, searchScale, {
@@ -12496,11 +12497,11 @@ var require_ThePathfinder = __commonJS({
           }
           this._currentProducer = previousProducer;
         };
-        if (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
-          let existing = await probe(goal, traversalSettings, movements, 300, 6e3);
+        if (preferExistingTerrain || elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
+          let existing = await probe(goal, traversalSettings, movements, preferExistingTerrain ? this.pathfinderSettings.searchTimeoutMs * searchScale : 300, preferExistingTerrain ? this.pathfinderSettings.maxVisitedNodes * searchScale : 6e3);
           if (existing.result.status !== "success" && existing.result.status !== "canceled")
             existing = await rememberedPath() ?? existing;
-          if (existing.result.status === "success" || existing.result.status === "canceled") {
+          if (existing.result.status === "success" || existing.result.status === "canceled" || preferExistingTerrain && existing.result.status !== "noPath") {
             if (existing.result.status === "success")
               this.bot.emit("pathGenerated", existing.result);
             yield existing;
@@ -12874,7 +12875,7 @@ var require_ThePathfinder = __commonJS({
             if (path != null)
               this.bot.emit("pathGenerated", path);
             else
-              for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1))) {
+              for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1), performOpts)) {
                 if (canceled())
                   return;
                 if (res.result.status === "success")

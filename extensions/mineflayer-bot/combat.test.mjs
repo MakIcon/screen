@@ -39,8 +39,8 @@ function fixture(settings = {}, options = {}) {
       stop: async () => {
         calls.push(["stop"]);
       },
-      goto: async (goal) => {
-        calls.push(["goto", goal]);
+      goto: async (goal, options) => {
+        calls.push(["goto", goal, options]);
       },
     },
     tracker: {
@@ -341,6 +341,7 @@ test("classic follow goals use the native planner and repeated goals do not rest
   const goal = f.calls.find((call) => call[0] === "goto")[1];
   assert.equal(goal.dynamic, true);
   assert.equal(goal.neverfinish, true);
+  assert.equal(f.calls.find((call) => call[0] === "goto")[2].preferExistingTerrain, true);
   await f.bot.pathfinder.stop();
   assert.equal(f.bot.pathfinder.goal, null);
   f.controller.dispose();
@@ -354,6 +355,72 @@ rigRequire("ts-node").register({
 const { createCacheWorld } = rigRequire("./tests/setup.ts");
 const mineflayerRequire = createRequire(runtimeRequire.resolve("mineflayer"));
 const protocol = mineflayerRequire("minecraft-protocol");
+
+for (const engine of ["custom", "basic"]) {
+  test(`${engine} PvP jumps a dirt ledge and chases around a tree without editing terrain`, { timeout: 18000 }, async (t) => {
+    const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+    const bot = rig.bot;
+    bot.supportFeature = bot.registry.supportFeature;
+    bot.loadPlugin(runtimeRequire("mineflayer/lib/plugins/entities"));
+    bot.loadPlugin(runtimeRequire("mineflayer/lib/plugins/time"));
+    for (let x = 2; x <= 14; x++) for (let z = -4; z <= 4; z++)
+      world.setBlock(new Vec3(x, 64, z), "dirt");
+    for (let y = 65; y <= 68; y++) world.setBlock(new Vec3(8, y, 0), "oak_log");
+    const Item = mineflayerRequire("prismarine-item")(bot.registry);
+    for (const [slot, name, count] of [[36, "diamond_sword", 1], [37, "diamond_shovel", 1], [38, "dirt", 64]]) {
+      const item = new Item(bot.registry.itemsByName[name].id, count);
+      item.slot = slot;
+      bot.inventory.slots[slot] = item;
+    }
+    const target = {
+      id: 2, username: "Enemy", name: "player", type: "player",
+      position: new Vec3(7.5, 65, 0.5), velocity: new Vec3(0, 0, 0),
+      width: 0.6, height: 1.8, isValid: true, metadata: [], equipment: Array(6).fill(null), yaw: 0, pitch: 0,
+    };
+    bot.entities[target.id] = target;
+    const dug = [], placed = [], hits = [], errors = [], moves = [];
+    const dig = bot.dig, place = bot._placeBlockWithOptions, write = bot._client.write;
+    bot.dig = (block, ...args) => { dug.push(block.position.clone()); return dig(block, ...args); };
+    bot._placeBlockWithOptions = (block, face, ...args) => { placed.push(block.position.plus(face)); return place(block, face, ...args); };
+    bot._client.write = (name, packet) => {
+      if (name === "attack") hits.push(bot.entity.position.clone());
+      return write(name, packet);
+    };
+    bot.on("pathGenerated", path => moves.push(...path.path.map(move => move.moveType.constructor.name)));
+    worker.configurePathfinder(bot, { allowSprinting: true, allowParkour: false, canDig: true, maxDropDown: 3 });
+    const controller = combat.createCombatController(bot, {
+      engine, style: "melee", reactionMs: 0, meleeSkill: 100, criticals: "off", strafe: "off",
+      sprintTap: "off", shield: false, shieldBreak: false, smoothAim: false, bowEnabled: false,
+    }, { onError: error => errors.push(error) });
+    t.signal.addEventListener("abort", () => controller.stop(), { once: true });
+    const waitForHit = async (firstHit) => {
+      for (let tick = 0; tick < 130; tick++) {
+        if (hits.length > firstHit && bot.entity.onGround && bot.entity.position.y > 64.99) return;
+        await bot.waitForTicks(1);
+      }
+      assert.fail(`did not reach and hit the target: ${bot.entity.position}; moves=${moves}; errors=${errors}`);
+    };
+    try {
+      controller.select(target);
+      await waitForHit(0);
+      assert.ok(moves.includes("ForwardJump"), `jump onto the ledge: ${moves}`);
+      const firstHit = hits.length;
+      target.position = new Vec3(12.5, 65, 0.5);
+      bot.emit("entityMoved", target);
+      await waitForHit(firstHit);
+      assert.ok(bot.entity.position.x > 9, "pursue the moving enemy past the tree");
+      assert.deepEqual(dug, [], "do not mine the dirt ledge or tree to shorten a usable route");
+      assert.deepEqual(placed, [], "do not build while chasing across reachable terrain");
+      assert.deepEqual(errors, []);
+      assert.equal(bot.pathfinder.defaultMoveSettings.canDig, true, "combat keeps the user's mining permission");
+      assert.equal(bot.pathfinder.defaultMoveSettings.canPlace, true);
+    } finally {
+      controller.dispose();
+      await bot.pathfinder.destroy();
+      rig.stopPassivePhysics();
+    }
+  });
+}
 
 for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
   test(`real plugins, visibility, melee and bow packets serialize on ${version}`, async () => {

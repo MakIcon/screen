@@ -633,7 +633,7 @@ export function MineflayerGatheringControls({
         />
         <ElementToggle
           title="ЗАЩИЩАТЬСЯ ОТ ИГРОКОВ"
-          note="Отвечает на нападение; владельцев и мирных игроков не трогает"
+          note="Отвечает на удары; через 3 секунды без новых ударов возвращается к работе"
           enabled={settings.defendPlayers}
           onToggle={() => updatePassages({ defendPlayers: !settings.defendPlayers })}
         />

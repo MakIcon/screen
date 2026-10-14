@@ -254,8 +254,9 @@ test("player defense requires an actual attacker and respects its switch and own
   f.work.enqueue({ kind: "collect", radius: 16 });
   // Keep the work active without allowing its asynchronous scan to finish.
   const player = c.enemy(2, "player", "Enemy");
+  f.work.configureDefense({ defendPlayers: false });
   f.bot.emit("entityHurt", f.bot.entity, player);
-  assert.equal(c.combat.workTarget, null, "player defense defaults off");
+  assert.equal(c.combat.workTarget, null, "explicitly disabled player defense stays off");
   f.work.configureDefense({ defendPlayers: true });
   assert.equal(c.combat.workTarget, null, "a nearby player alone is not an attacker");
   f.bot.emit("entityHurt", f.bot.entity);
@@ -269,6 +270,151 @@ test("player defense requires an actual attacker and respects its switch and own
   for (let i = 0; i < 10; i++) { f.bot.emit("physicsTick"); await delay(5); }
   assert.equal(f.work.snapshot.reason, "Пауза владельца");
   assert.equal(c.combat.workTarget, null);
+});
+
+for (const kind of ["mine", "forest"]) test(`${kind} stops digging to retaliate and resumes after the player's last hit`, async (t) => {
+  let time = 1000;
+  const f = fixture("26.1.2", { now: () => time }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"), f.item("iron_pickaxe"));
+  f.put(kind === "mine" ? "iron_ore" : "oak_log", 2);
+  f.put("dirt", 1);
+  const dig = f.bot.dig;
+  let cancelDig, interrupted = false;
+  f.bot.dig = async (...args) => {
+    if (!interrupted) await new Promise((_, reject) => { cancelDig = reject; });
+    else await dig(...args);
+  };
+  f.bot.stopDigging = () => {
+    if (cancelDig) {
+      interrupted = true;
+      cancelDig(new Error("Digging aborted"));
+      cancelDig = null;
+    }
+  };
+  delete f.bot.world;
+  const id = f.work.enqueue({ kind, blocks: "iron_ore", count: 1 });
+  f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
+  await until(f, () => Boolean(cancelDig));
+  f.bot.world = { raycast: () => null };
+  const player = c.enemy(2, "player", "Enemy");
+  f.bot.emit("entityHurt", f.bot.entity, player);
+  assert.equal(interrupted, true, "damage cancels the in-flight dig immediately");
+  await until(f, () => c.attacks.length === 1);
+  assert.equal(f.dug.length, 0);
+  assert.equal(c.combat.workTarget, player);
+  assert.equal(f.work.snapshot.active.id, id);
+  assert.equal(f.work.snapshot.queue.length, 1);
+  time += 2500;
+  f.bot.emit("physicsTick");
+  assert.equal(c.combat.workTarget, player);
+  f.bot.emit("entityHurt", f.bot.entity, player);
+  time += 2500;
+  f.bot.emit("physicsTick");
+  assert.equal(c.combat.workTarget, player, "another hit extends retaliation");
+  // Leave the player alive and nearby while the bot finishes both jobs.
+  delete f.bot.world;
+  time += 501;
+  await until(f, () => f.work.snapshot.history.length === 2);
+  assert.equal(c.combat.workTarget, null);
+  assert.equal(f.bot.swordpvp.target, null);
+  assert.equal(c.attacks.length, 1, "proximity does not restart the duel");
+  assert.equal(f.bot.entities[player.id], player);
+  assert.equal(f.work.snapshot.history[0].id, id);
+  assert.deepEqual(f.work.snapshot.history.map((job) => job.outcome), ["готово", "готово"]);
+});
+
+test("a confirmed mob attack pauses mining through cover and keeps fighting until the mob dies", async (t) => {
+  let time = 1000;
+  const f = fixture("26.1.2", { now: () => time }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.put("oak_log", 2);
+  const id = f.work.enqueue({ kind: "forest", count: 1 });
+  const mob = c.enemy(2, "enderman");
+  f.bot.world = { raycast: () => ({}) };
+  f.bot.emit("entityHurt", f.bot.entity, mob);
+  assert.match(f.work.snapshot.reason, /Защищаюсь/);
+  await until(f, () => c.attacks.length === 1);
+  time += 20000;
+  f.bot.emit("physicsTick");
+  assert.equal(c.combat.workTarget, mob, "mobs do not use the player's ceasefire timeout");
+  assert.equal(f.dug.length, 0);
+  delete f.bot.world;
+  delete f.bot.entities[mob.id];
+  f.bot.emit("entityDead", mob);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].id, id);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+test("player retaliation expires while the interrupted gathering equip is still pending", async (t) => {
+  let time = 1000;
+  const f = fixture("26.1.2", { now: () => time }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.put("dirt", 1);
+  const equip = f.bot.equip;
+  let release;
+  f.bot.equip = async (...args) => {
+    await new Promise((resolve) => { release = resolve; });
+    await equip(...args);
+  };
+  delete f.bot.world;
+  f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
+  await until(f, () => Boolean(release));
+  f.bot.world = { raycast: () => null };
+  const player = c.enemy(2, "player", "Enemy");
+  f.bot.emit("entityHurt", f.bot.entity, player);
+  assert.match(f.work.snapshot.reason, /Защищаюсь/);
+  time += 3001;
+  f.bot.emit("physicsTick");
+  delete f.bot.world;
+  f.bot.equip = equip;
+  release();
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(c.attacks.length, 0, "a late equip cannot start an expired duel");
+  assert.equal(c.combat.workTarget, null);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+test("legacy damage can precede the attacker's swing animation", async (t) => {
+  let time = 1000;
+  const f = fixture("1.8.8", { now: () => time }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.work.configureDefense({ defendPlayers: true });
+  f.work.enqueue({ kind: "collect" });
+  const player = c.enemy(2, "player", "Enemy");
+  player.yaw = Math.PI / 2; player.pitch = -0.3;
+  f.bot.emit("entityHurt", f.bot.entity);
+  assert.equal(c.combat.workTarget, null);
+  time += 50;
+  f.bot.emit("entitySwingArm", player);
+  await until(f, () => c.attacks.length === 1);
+  assert.equal(c.combat.workTarget, player);
+  time += 50;
+  f.bot.emit("entityHurt", f.bot.entity);
+  delete f.bot.world;
+  time += 2951;
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(c.combat.workTarget, null, "the same swing cannot attribute later environmental damage");
+});
+
+test("legacy damage does not attribute a swing outside the damage window", async (t) => {
+  let time = 1000;
+  const f = fixture("1.8.8", { now: () => time }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.work.enqueue({ kind: "collect" });
+  const player = c.enemy(2, "player", "Enemy");
+  player.yaw = Math.PI / 2; player.pitch = -0.3;
+  f.bot.emit("entityHurt", f.bot.entity);
+  time += 501;
+  f.bot.emit("entitySwingArm", player);
+  await f.work.task;
+  assert.equal(c.combat.workTarget, null);
+  assert.equal(f.work.snapshot.reason, "");
 });
 
 test("creeper and low-health defense retreat on safe terrain without digging and restore movement", async (t) => {

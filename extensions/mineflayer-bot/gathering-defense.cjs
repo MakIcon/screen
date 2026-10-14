@@ -4,6 +4,9 @@ const { HOSTILES, canSeeTarget } = require("./combat.cjs");
 const { bestMeleeWeapon } = require("./combat-inventory.cjs");
 const plan = require("./gathering-plan.cjs");
 
+const PLAYER_RETALIATION_MS = 3000;
+const MELEE_SWING_WINDOW_MS = 500;
+
 function createGatheringDefense(
   bot,
   work,
@@ -17,10 +20,12 @@ function createGatheringDefense(
     nextCheck = 0,
     actionId = 0;
   let movement = null;
+  let unattributedHitAt = -Infinity;
   const attackers = new Map(),
     dead = new Set();
   const swings = new Map();
   const projectile = (entity) => /arrow/i.test(entity?.name || "");
+  const player = (entity) => Boolean(entity?.username || entity?.type === "player");
   const distance = (entity) => bot.entity.position.distanceTo(entity.position);
   function permitted(entity) {
     if (
@@ -31,7 +36,7 @@ function createGatheringDefense(
     )
       return false;
     if (projectile(entity)) return work.settings.defendArrows;
-    if (entity.username || entity.type === "player")
+    if (player(entity))
       return (
         work.settings.defendPlayers &&
         !isOwner(entity.username) &&
@@ -39,18 +44,24 @@ function createGatheringDefense(
       );
     return work.settings.defendMobs;
   }
+  function attacking(entity) {
+    return (attackers.get(entity?.id)?.until ?? -Infinity) > now();
+  }
   function threat() {
-    for (const [id, value] of swings) if (now() - value.at > 500) swings.delete(id);
+    for (const [id, value] of swings)
+      if (now() - value.at > MELEE_SWING_WINDOW_MS) swings.delete(id);
     for (const [id, value] of attackers)
-      if (value.until < now() || !permitted(value.entity)) attackers.delete(id);
+      if (value.until <= now() || !permitted(value.entity)) attackers.delete(id);
     const bow = bot.launcherCombat?.bowThreat;
-    if (work.settings.defendArrows && permitted(bow)) return bow;
+    if (work.settings.defendArrows && permitted(bow) && (!player(bow) || attacking(bow)))
+      return bow;
     const candidates = Object.values(bot.entities || {}).filter(
       (entity) =>
         permitted(entity) &&
         distance(entity) <= (attackers.has(entity.id) ? 12 : 6) &&
-        (attackers.has(entity.id) || (!entity.username && HOSTILES.has(entity.name))) &&
-        canSeeTarget(bot, entity),
+        (attackers.has(entity.id) || (!player(entity) && HOSTILES.has(entity.name))) &&
+        // A confirmed hit interrupts work even if cover briefly hides its source.
+        (attackers.has(entity.id) || canSeeTarget(bot, entity)),
     );
     candidates.sort(
       (a, b) =>
@@ -129,6 +140,8 @@ function createGatheringDefense(
   function stop() {
     if (!session && !pending) return task;
     generation++;
+    attackers.delete(session?.entity.id);
+    unattributedHitAt = -Infinity;
     session = null;
     bot.launcherCombat?.stopWorkDefense();
     const previous = task;
@@ -145,12 +158,15 @@ function createGatheringDefense(
   function tick() {
     if (disposed || !bot.entity?.position) return;
     if (!work.protecting || bot.health <= 0) {
+      unattributedHitAt = -Infinity;
+      swings.clear();
       if (session) void stop();
       return;
     }
     if (
       session &&
       (!permitted(session.entity) ||
+        (player(session.entity) && !attacking(session.entity)) ||
         distance(session.entity) > 12 ||
         bot.entity.position.distanceTo(session.origin) > 16)
     ) {
@@ -263,21 +279,31 @@ function createGatheringDefense(
       Math.sin(entity.pitch),
       -Math.cos(entity.yaw) * Math.cos(entity.pitch),
     );
-    if (view.dot(delta) > 0.9) swings.set(entity.id, { entity, at: now() });
+    if (view.dot(delta) <= 0.9) return;
+    swings.set(entity.id, { entity, at: now() });
+    // Some legacy servers send the hurt status before the swing animation.
+    if (now() - unattributedHitAt <= MELEE_SWING_WINDOW_MS) hurt(bot.entity);
   }
   function hurt(entity, source) {
     if (entity?.id !== bot.entity.id || !work.protecting) return;
     // Older servers omit the source. Require one unambiguous, aimed melee
-    // swing immediately before damage, never mere player proximity.
+    // swing next to the damage event, never mere player proximity.
+    unattributedHitAt = -Infinity;
     if (!source) {
       const recent = [...swings.values()].filter(
         (value) =>
-          now() - value.at <= 500 && permitted(value.entity) && distance(value.entity) <= 3.5,
+          now() - value.at <= MELEE_SWING_WINDOW_MS &&
+          permitted(value.entity) && distance(value.entity) <= 3.5,
       );
       if (recent.length === 1) source = recent[0].entity;
+      else if (!recent.length) unattributedHitAt = now();
     }
     if (!permitted(source)) return;
-    attackers.set(source.id, { entity: source, until: now() + 10000 });
+    swings.delete(source.id);
+    attackers.set(source.id, {
+      entity: source,
+      until: player(source) ? now() + PLAYER_RETALIATION_MS : Infinity,
+    });
     nextCheck = 0;
     tick();
   }

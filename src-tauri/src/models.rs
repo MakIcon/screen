@@ -646,7 +646,7 @@ impl Default for MineflayerGatheringSettings {
             place_torches: false,
             torch_interval: 8,
             defend_mobs: true,
-            defend_players: false,
+            defend_players: true,
             defend_arrows: true,
             storage_groups: Vec::new(),
         }

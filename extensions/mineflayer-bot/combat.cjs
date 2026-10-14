@@ -184,7 +184,7 @@ function installCombatNavigation(bot, onError) {
       dynamic: true,
       neverfinish: true,
     });
-    void pathfinder.goto(nativeGoal).catch((error) => {
+    void pathfinder.goto(nativeGoal, { preferExistingTerrain: true }).catch((error) => {
       if (revision === generation) {
         follow = null;
         onError(error);

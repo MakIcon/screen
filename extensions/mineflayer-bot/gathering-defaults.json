@@ -6,7 +6,7 @@
   "placeTorches": false,
   "torchInterval": 8,
   "defendMobs": true,
-  "defendPlayers": false,
+  "defendPlayers": true,
   "defendArrows": true,
   "storageGroups": []
 }

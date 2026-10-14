@@ -140,7 +140,12 @@ interface PathGeneratorResult {
   astarContext: AAStar<Move, MovementHandler>
 }
 
-interface PerformOpts {
+interface RouteOpts {
+  /** Try movement without block edits first; only an exhausted search permits edits. */
+  preferExistingTerrain?: boolean
+}
+
+interface PerformOpts extends RouteOpts {
   /** Commit short excavated routes during gathering, with the caller's exclusions. */
   allowMiningPrefix?: boolean
   errorOnReset?: boolean
@@ -677,9 +682,9 @@ export class ThePathfinder {
     return cleanup
   }
 
-  getPathTo (goal: goals.Goal, settings = this.defaultMoveSettings, searchScale = 1): PathGenerator {
+  getPathTo (goal: goals.Goal, settings = this.defaultMoveSettings, searchScale = 1, routeOpts: RouteOpts = {}): PathGenerator {
     const { movements } = this.activeMappings
-    return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements, searchScale)
+    return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements, searchScale, routeOpts)
   }
 
   async * getPathFromTo (
@@ -688,7 +693,8 @@ export class ThePathfinder {
     goal: goals.Goal,
     settings = this.defaultMoveSettings,
     movements = this.activeMappings.movements,
-    searchScale = 1
+    searchScale = 1,
+    routeOpts: RouteOpts = {}
   ): PathGenerator {
     this.abortCalculation = false
     this.clearResetReason()
@@ -746,8 +752,10 @@ export class ThePathfinder {
       [IdleMovement, Forward, Diagonal, ForwardJump, ForwardDropDown, StraightUp, Climb,
         ParkourForward, ParkourDiagonal, NeoProvider, LadderForward, LadderDiagonal,
         LadderLandingForward, LadderLandingDiagonal, AroundCornerDiagonal].includes(provider as any)))
+    const preferExistingTerrain = routeOpts.preferExistingTerrain === true && (settings.canDig || settings.canPlace)
     const traversalSettings = { ...routeSettings, canDig: false, canPlace: false,
-      allowWaterDrop: false, allowBucketWaterDrop: false, infiniteLiquidDropdownDistance: false }
+      allowWaterDrop: preferExistingTerrain && settings.allowWaterDrop, allowBucketWaterDrop: false,
+      infiniteLiquidDropdownDistance: preferExistingTerrain && settings.infiniteLiquidDropdownDistance }
     const probe = async (probeGoal: goals.Goal, probeSettings: MovementOptions, probeMovements: ExecutorMap,
       timeoutMs: number, maxVisitedNodes: number, probeStart = startMove): Promise<ReturnType<ContinuousPathProducer['advance']>> => {
       const producer = new ContinuousPathProducer(probeStart, probeGoal, probeSettings, this.bot, this.world,
@@ -808,15 +816,20 @@ export class ThePathfinder {
       }
       this._currentProducer = previousProducer
     }
-    if ((elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
+    if (preferExistingTerrain || (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
       // Always try the complete enabled traversal repertoire before editing
       // terrain. Removing Neo/ladder providers here made a ready course appear
       // disconnected and sent the bot into bridge/tower construction instead.
-      // This is a dry traversal probe: it cannot excavate or place a bucket,
-      // and does not scan deep water-drop columns from every exposed edge.
-      let existing = await probe(goal, traversalSettings, movements, 300, 6000)
+      // Combat also probes ordinary ledges and detours. A search timeout is
+      // not evidence that digging/building is necessary: retry traversal with
+      // a larger budget instead of committing edits to a reachable battlefield.
+      // Other callers keep their bounded dry probe without deep water scans.
+      let existing = await probe(goal, traversalSettings, movements,
+        preferExistingTerrain ? this.pathfinderSettings.searchTimeoutMs * searchScale : 300,
+        preferExistingTerrain ? this.pathfinderSettings.maxVisitedNodes * searchScale : 6000)
       if (existing.result.status !== 'success' && existing.result.status !== 'canceled') existing = await rememberedPath() ?? existing
-      if (existing.result.status === 'success' || existing.result.status === 'canceled') {
+      if (existing.result.status === 'success' || existing.result.status === 'canceled' ||
+          (preferExistingTerrain && existing.result.status !== 'noPath')) {
         if (existing.result.status === 'success') this.bot.emit('pathGenerated', existing.result)
         yield existing
         return existing
@@ -1224,7 +1237,7 @@ export class ThePathfinder {
         const searchOrigin = pos.clone()
         const searchStarted = performance.now()
         if (path != null) this.bot.emit('pathGenerated', path)
-        else for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1))) {
+        else for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1), performOpts)) {
           if (canceled()) return
           if (res.result.status === 'success') path = res.result
           const opts = this.pathfinderSettings

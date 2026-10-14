@@ -35,6 +35,11 @@ cooldowns still apply. Custom PvP supports circle/random/intelligent strafing,
 jump/short-hop critical hits, sprint resets, shields, axe shield breaking and smooth
 aim. Basic Mineflayer PvP uses skill, CPS, weapon, reach and shield settings; the
 Custom tactics do not apply to that engine. Reach is limited to 3 blocks.
+Both melee engines and crystal pursuit first search for a route without breaking
+or placing terrain blocks, including one-block jumps and walking around obstacles.
+Navigation digs or builds only after that search finds no route, subject to the
+existing movement permissions and carried materials. A planning timeout retries
+movement without treating the time limit as a reason to alter the battlefield.
 Custom axe shield breaking reads active-hand metadata for the current Minecraft
 version, charges the axe cooldown, jumps and strikes while falling independently
 of the general critical-hit setting. Stop, target loss and bow defense cancel

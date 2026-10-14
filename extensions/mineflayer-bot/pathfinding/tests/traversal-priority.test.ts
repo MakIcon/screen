@@ -98,3 +98,50 @@ test('a ladder-assisted jump uses the existing ladder when building is allowed a
     assert.ok(rig.bot.entity.onGround && rig.bot.entity.position.y === 86)
   } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
 })
+
+for (const permission of ['canDig', 'canPlace'] as const) {
+  test(`terrain-preserving pursuit permits necessary ${permission === 'canDig' ? 'digging' : 'building'} after exhausting traversal`, async () => {
+    const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 })
+    if (permission === 'canDig') {
+      // The bot is enclosed under a roof. Jumping, walking and detouring cannot exit.
+      for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
+        world.setBlock(new Vec3(x, 66, z), 'dirt')
+        if (x === 0 && z === 0) continue
+        for (const y of [64, 65]) world.setBlock(new Vec3(x, y, z), 'dirt')
+      }
+    } else {
+      // Isolated high platforms are separated by more than a normal jump.
+      rig.bot.entity.position.set(0.5, 84, 0.5)
+      world.setBlock(new Vec3(0, 83, 0), 'stone')
+      for (let x = 7; x <= 9; x++) world.setBlock(new Vec3(x, 83, 0), 'stone')
+      const Item = require('prismarine-item')(rig.mcData)
+      rig.bot.inventory.slots[9] = new Item(rig.mcData.itemsByName.cobblestone.id, 64)
+      rig.bot.inventory.slots[9].slot = 9
+    }
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: permission === 'canDig', canPlace: permission === 'canPlace',
+      maxDropDown: 3, allowWaterDrop: false, allowBucketWaterDrop: false },
+      pathfinderSettings: { searchTimeoutMs: 2500, maxVisitedNodes: 20000 } }))
+    try {
+      const target = new Vec3(8.5, permission === 'canDig' ? 64 : 84, 0.5)
+      let result: any
+      for await (const path of rig.bot.pathfinder.getPathTo(goals.GoalFollowEntity.fromEntity({ position: target }, 2.5, {}),
+        undefined, 1, { preferExistingTerrain: true })) result = path.result
+      assert.equal(result.status, 'success')
+      assert.ok(result.path.some((move: any) => permission === 'canDig' ? move.toBreak.length > 0 : move.toPlace.length > 0),
+        'an exhausted traversal search must still allow the required block interaction')
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+}
+
+test('a pursuit search timeout does not authorize terrain edits', async () => {
+  const { rig } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 })
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: true, canPlace: true },
+    pathfinderSettings: { searchTimeoutMs: 2500, maxVisitedNodes: 1 } }))
+  try {
+    let result: any
+    for await (const path of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(12, 64, 0), undefined, 1,
+      { preferExistingTerrain: true })) result = path.result
+    assert.equal(result.status, 'timeout')
+    assert.ok(result.path.every((move: any) => move.toBreak.length === 0 && move.toPlace.length === 0))
+  } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})

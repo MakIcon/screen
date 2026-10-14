@@ -102,7 +102,7 @@ describe("normalizeMineflayerBotSettings", () => {
       placeTorches: false,
       torchInterval: 8,
       defendMobs: true,
-      defendPlayers: false,
+      defendPlayers: true,
       defendArrows: true,
       storageGroups: [],
     });
@@ -115,7 +115,7 @@ describe("normalizeMineflayerBotSettings", () => {
         placeTorches: true,
         torchInterval: 99,
         defendMobs: false,
-        defendPlayers: true,
+        defendPlayers: false,
         defendArrows: false,
       },
     });
@@ -127,7 +127,7 @@ describe("normalizeMineflayerBotSettings", () => {
       placeTorches: true,
       torchInterval: 16,
       defendMobs: false,
-      defendPlayers: true,
+      defendPlayers: false,
       defendArrows: false,
       storageGroups: [],
     });
