@@ -7,8 +7,11 @@ const {
   waitForMiningGround,
   installMiningToolMaterials,
   miningBlock,
+  getItemEnchantments,
 } = require("./pathfinder.cjs");
 const plan = require("./gathering-plan.cjs");
+const { createGatheringDefense } = require("./gathering-defense.cjs");
+const storage = require("./gathering-storage.cjs");
 
 class WorkError extends Error {
   constructor(message, resumeOnRecovery = false) {
@@ -49,7 +52,8 @@ const LABELS = {
 };
 
 function createGatheringController(bot, options = {}, hooks = {}) {
-  const settings = { ...plan.DEFAULTS, ...options, ...plan.passageSettings(options) };
+  const settings = { ...plan.DEFAULTS, ...options, ...plan.passageSettings(options), ...plan.defenseSettings(options) };
+  settings.storageGroups = storage.normalizeStorageGroups(options.storageGroups);
   const onStatus = hooks.onStatus || (() => {});
   const onProgress = hooks.onProgress || (() => {});
   const now = hooks.now || Date.now;
@@ -66,7 +70,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       bot.game?.gameMode === "creative",
       eye?.name === "water" || eye?.name === "flowing_water",
       !bot.entity.onGround,
-      (item?.enchants || []).concat(helmet?.enchants || []),
+      getItemEnchantments(item, bot.registry).concat(getItemEnchantments(helmet, bot.registry)),
       bot.entity.effects || {},
     );
   };
@@ -89,6 +93,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     chestWindow = null,
     reportAt = 0;
   let deliveryContext = null;
+  let clearCancelledOpen = () => {};
+  let storagePick = null, transferTask = Promise.resolve();
+  const storageStatus = new Map();
+  const hasStorage = () => Boolean(chest) || settings.storageGroups.some((group) => group.enabled && group.chests.length && group.filters.length);
   const queue = [],
     history = [],
     areas = new Map(),
@@ -218,14 +226,15 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
   }
   function selectionSnapshot() {
-    return { chest, areas: Object.fromEntries(corners) };
+    return { chest, storagePick, storageGroups: settings.storageGroups,
+      storageStatus: Object.fromEntries(storageStatus), areas: Object.fromEntries(corners) };
   }
   function guard(signal = abort.signal) {
     if (signal.aborted || disposed || !task) throw new Interrupted();
     if (bot.health <= 0 || bot.isAlive === false) throw new WorkError("Бот погиб");
     if (bot.health <= settings.minHealth)
       throw new WorkError(`Мало здоровья (${bot.health}); жду восстановления`, true);
-    if (bot.launcherSurvival?.busy || bot.launcherDefendingBow)
+    if (defense.busy || bot.launcherSurvival?.busy || bot.launcherDefendingBow)
       throw new WorkError("Еда или аварийное спасение; затем продолжу работу", true);
   }
   function wait(ms, signal) {
@@ -501,10 +510,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   async function halt() {
     bot.stopDigging?.();
-    chestWindow?.close();
-    chestWindow = null;
     await bot.pathfinder?.stop();
     bot.clearControlStates?.();
+    // Finish an already issued inventory click sequence before another
+    // controller can close its window and take ownership of the inventory.
+    await transferTask.catch(() => {});
+    closeStorageWindow();
   }
   function requestPause(reason, survival = false) {
     if (!task && !queue.length) return;
@@ -666,7 +677,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   async function scan(signal) {
     guard(signal);
     if (inventoryFull()) {
-      if (!chest)
+      if (!hasStorage())
         throw new WorkError(
           "Инвентарь заполнен. Нажмите «Принести мне добычу» или освободите место и продолжите",
         );
@@ -939,7 +950,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       guard(signal);
       if (entity.isValid === false || picked.has(entity.id)) continue;
       if (inventoryFull()) {
-        if (!chest)
+        if (!hasStorage())
           throw new WorkError(
             "Нет места для дропа. Нажмите «Принести мне добычу» или освободите инвентарь",
           );
@@ -991,49 +1002,184 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (attempts === settings.maxAttempts) task.missedDrops++;
   }
   async function deposit(signal) {
-    if (!chest) throw new WorkError("Сначала задайте сундук: stash x y z");
+    if (!hasStorage()) throw new WorkError("Добавьте сундук или группу сундуков во вкладке «Добыча»");
     const before = bot.inventory.emptySlotCount();
-    const block = bot.blockAt(chest);
-    if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
-      throw new WorkError("Сундук не загружен или отсутствует");
-    await navigate(goals.GoalLookAt.fromBlock(bot.pathfinder.world, block, 4), signal);
-    chestWindow = await operation(
-      () => bot.openContainer(block),
-      signal,
-      settings.operationTimeoutMs,
-      true,
-    );
-    try {
-      let scaffoldReserve = task.scaffold ? settings.travelBlockReserve : 0;
-      for (const item of [...bot.inventory.items()]) {
-        guard(signal);
-        if (plan.keepItem(bot, item)) continue;
-        const keep = plan.SCAFFOLD_ITEMS.has(item.name)
-          ? Math.min(item.count, scaffoldReserve)
-          : 0;
-        scaffoldReserve -= keep;
-        const amount = item.count - keep;
-        if (!amount) continue;
-        await operation(
-          () => chestWindow.deposit(item.type, item.metadata, amount, item.nbt),
-          signal,
-        );
-        task.deposited += amount;
-      }
-    } catch (error) {
-      if (error instanceof Interrupted) throw error;
-      throw new WorkError(`Выгрузка не закончена: ${error.message}. Проверьте место в сундуке`);
-    } finally {
-      chestWindow?.close();
-      chestWindow = null;
+    const groups = settings.storageGroups.length ? storage.normalizeStorageGroups(settings.storageGroups) :
+      [{ id: "legacy", name: "Сундук", enabled: true, filters: ["#all"], chests: [chest] }];
+    let scaffoldReserve = task.scaffold ? settings.travelBlockReserve : 0;
+    const buckets = new Map();
+    let unmatched = 0;
+    for (const item of [...bot.inventory.items()]) {
+      if (plan.keepItem(bot, item)) continue;
+      const keep = plan.SCAFFOLD_ITEMS.has(item.name) ? Math.min(item.count, scaffoldReserve) : 0;
+      scaffoldReserve -= keep;
+      const remaining = item.count - keep;
+      if (!remaining) continue;
+      const group = storage.storageGroupForItem(groups, item, bot.registry);
+      if (!group) { unmatched += remaining; continue; }
+      if (!buckets.has(group.id)) buckets.set(group.id, { group, entries: [] });
+      buckets.get(group.id).entries.push({ item, remaining });
     }
+    const blocked = [];
+    for (const { group, entries } of buckets.values()) {
+      for (const position of group.chests) {
+        guard(signal);
+        if (!entries.some((entry) => entry.remaining)) break;
+        const statusKey = `${group.id}:${storage.key(position)}`;
+        try {
+          await approachStorage(position, signal);
+          onStatus(`Выгружаю: ${group.name} · ${storage.key(position)}`);
+          for (const entry of entries) {
+            guard(signal);
+            const amount = Math.min(entry.remaining, storage.containerCapacity(chestWindow, entry.item, bot.registry));
+            if (!amount) continue;
+            await operation(() => {
+              const job = task;
+              transferTask = Promise.resolve(chestWindow.deposit(entry.item.type, entry.item.metadata, amount, entry.item.nbt)).then(() => {
+                entry.remaining -= amount;
+                job.deposited += amount;
+              });
+              return transferTask;
+            }, signal);
+            report(true);
+          }
+          const full = entries.some((entry) => entry.remaining);
+          storageStatus.set(statusKey, { state: full ? "full" : "ok",
+            message: full ? "Нет места для оставшейся добычи" : "Выгрузка выполнена" });
+        } catch (error) {
+          if (signal.aborted || error instanceof Interrupted) throw error;
+          storageStatus.set(statusKey, { state: "unavailable", message: error.message });
+          onStatus(`${group.name}: ${error.message}; пробую следующий сундук`);
+        } finally { closeStorageWindow(); report(true); }
+      }
+      const left = entries.reduce((count, entry) => count + entry.remaining, 0);
+      if (left) blocked.push(`${group.name}: ${left} предметов`);
+    }
+    if (blocked.length) throw new WorkError(`Не удалось выгрузить ${blocked.join("; ")}. Освободите или добавьте сундуки и продолжите`);
     if (task.kind === "deposit") {
-      finish("готово");
+      finish("готово", unmatched ? `Без подходящей группы у бота осталось ${unmatched} предметов` : "");
       return;
     }
     if (bot.inventory.emptySlotCount() <= before || inventoryFull())
-      throw new WorkError("Не удалось освободить достаточно места; инструменты и еда сохранены");
+      throw new WorkError(unmatched ? `Нет места: ${unmatched} предметов без подходящей группы сундуков` :
+        "Не удалось освободить достаточно места; инструменты и еда сохранены");
     desired = trackedDrops.size ? "pickup" : "scan";
+  }
+  function closeStorageWindow() {
+    const window = chestWindow;
+    chestWindow = null;
+    if (window && (!bot.currentWindow || bot.currentWindow === window)) window.close();
+  }
+  async function approachStorage(position, signal) {
+    const chestPosition = plan.position(position);
+    let block = bot.blockAt(chestPosition);
+    if (!block) {
+      await navigate(new goals.GoalNear(chestPosition.x, chestPosition.y, chestPosition.z, 3), signal);
+      block = bot.blockAt(chestPosition);
+    }
+    if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
+      throw new Error("Сундук не загружен или отсутствует");
+    const goal = goals.GoalLookAt.fromBlock(bot.pathfinder.world, block, 4);
+    // GoalLookAt assumes a full cube. Chests have inset collision shapes;
+    // validate the actual clickable surface at the candidate standing position.
+    goal.isEnd = (node) => Boolean(containerClick(block,
+      node.exitPos || new Vec3(node.x + 0.5, node.y, node.z + 0.5)));
+    goal.onFinish = async () => {};
+    await navigate(goal, signal);
+    bot.clearControlStates?.();
+    bot.setControlState?.("sneak", false);
+    // Sneaking with a tool suppresses container interaction. Give Mineflayer
+    // one physics tick to publish the released sneak flag to the server.
+    if (bot.waitForTicks) await operation(() => bot.waitForTicks(1), signal);
+    block = bot.blockAt(chestPosition);
+    if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
+      throw new Error("Контейнер исчез во время подхода");
+    const click = containerClick(block);
+    if (!click) throw new Error("Нет доступной грани сундука в пределах 4 блоков");
+    if (bot.currentWindow) throw new Error("Закройте открытое окно перед выгрузкой");
+    const opening = new AbortController();
+    const cancelled = () => opening.abort();
+    signal.addEventListener("abort", cancelled, { once: true });
+    const timer = setTimeout(cancelled, settings.operationTimeoutMs);
+    try {
+      chestWindow = await operation(() => openContainer(block, click, opening.signal), signal, settings.operationTimeoutMs + 1000);
+    } catch (error) {
+      if (opening.signal.aborted && !signal.aborted) throw new Error("Сундук не открылся: проверьте крышку и доступ на сервере", { cause: error });
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancelled);
+    }
+  }
+  function containerClick(block, feet = bot.entity.position) {
+    if (!block) return null;
+    const eye = feet.offset(0, bot.entity.eyeHeight || 1.62, 0);
+    const center = block.position.offset(0.5, 0.5, 0.5);
+    const delta = center.minus(eye), length = delta.norm();
+    if (!bot.world?.raycast) {
+      if (length > 4) return null;
+      const face = new Vec3(0, 0, 0);
+      const axis = ["x", "y", "z"].sort((a, b) => Math.abs(delta[b]) - Math.abs(delta[a]))[0];
+      face[axis] = -Math.sign(delta[axis]) || 1;
+      return { face, cursor: new Vec3(0.5, 0.5, 0.5) };
+    }
+    const hit = bot.world.raycast(eye, delta.normalize(), Math.min(4, length + 0.1));
+    if (!hit?.position.equals(block.position) || !hit.intersect) return null;
+    const faces = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1),
+      new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)];
+    return faces[hit.face] ? { face: faces[hit.face], cursor: hit.intersect.minus(block.position) } : null;
+  }
+  async function openContainer(block, click, signal) {
+    // Mineflayer's openContainer leaves its windowOpen listener alive after a
+    // cancelled request. A later retry can then resolve both calls and close
+    // the new window under deposit. Own only this opening's event listeners.
+    if (!bot.activateBlock) return bot.openContainer(block, click.face, click.cursor);
+    clearCancelledOpen();
+    let cancelOpening = () => {};
+    const opening = new Promise((resolve, reject) => {
+      const cleanup = () => {
+        bot.off("windowOpen", opened);
+        bot.off("end", cancel);
+        signal.removeEventListener("abort", cancel);
+      };
+      const opened = (window) => { cleanup(); resolve(window); };
+      const cancel = () => {
+        cleanup();
+        const late = (window) => {
+          clearCancelledOpen();
+          if (bot.currentWindow === window) window.close();
+        };
+        const timer = setTimeout(() => clearCancelledOpen(), 2500);
+        timer.unref?.();
+        clearCancelledOpen = () => {
+          clearTimeout(timer);
+          bot.off("windowOpen", late);
+          clearCancelledOpen = () => {};
+        };
+        bot.on("windowOpen", late);
+        reject(new Interrupted());
+      };
+      cancelOpening = cancel;
+      bot.on("windowOpen", opened);
+      bot.once("end", cancel);
+      signal.addEventListener("abort", cancel, { once: true });
+    });
+    const activation = Promise.resolve().then(() => {
+      guard(signal);
+      return bot.activateBlock(block, click.face, click.cursor);
+    });
+    try {
+      const [window] = await Promise.all([opening, activation]);
+      if (!/minecraft:(?:generic|container|.*chest|barrel|.*shulker_box)/.test(window.type || "")) {
+        window.close();
+        throw new Error("Сервер открыл другое меню вместо контейнера");
+      }
+      return window;
+    } catch (error) {
+      if (!signal.aborted) cancelOpening();
+      await activation.catch(() => {});
+      throw error;
+    }
   }
   async function deliver(signal) {
     guard(signal);
@@ -1202,6 +1348,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   machine.onStateEntered();
   function tick() {
     if (disposed) return;
+    defense.tick();
     if (task && !pauseRequested && bot.health <= settings.minHealth)
       requestPause(`Мало здоровья (${bot.health}); жду восстановления`, bot.health > 0);
     if (task && bot.launcherSurvival?.busy && !pauseRequested)
@@ -1211,6 +1358,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       survivalPaused &&
       !bot.launcherSurvival?.busy &&
       !bot.launcherDefendingBow &&
+      !defense.busy &&
       !pending &&
       bot.health > settings.minHealth
     )
@@ -1268,6 +1416,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (pending) throw new Error("Дождитесь остановки текущей операции");
     if (bot.launcherSurvival?.busy) throw new Error("Бот занят едой или спасением");
     if (bot.launcherDefendingBow) throw new Error("Бот защищается от стрел");
+    if (defense.busy) throw new Error("Бот защищается или отходит от опасности");
     if (bot.health <= settings.minHealth) throw new Error("Сначала восстановите здоровье");
     revision++;
     abort = new AbortController();
@@ -1291,6 +1440,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     revision++;
     abort.abort();
     pauseRequested = true;
+    await defense.stop();
     queue.length = 0;
     deliveryContext = null;
     await halt();
@@ -1311,6 +1461,27 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       Object.assign(settings, plan.passageSettings(input, settings));
       torchAttempt = null;
       return plan.passageSettings(settings);
+    },
+    configureDefense(input) {
+      Object.assign(settings, plan.defenseSettings(input, settings));
+      defense.tick();
+      return plan.defenseSettings(settings);
+    },
+    configureStorage(input) {
+      const groups = storage.normalizeStorageGroups(input);
+      const keys = new Set(groups.flatMap((group) => group.chests.map((point) => `${group.id}:${storage.key(point)}`)));
+      for (const key of storageStatus.keys()) if (!keys.has(key)) storageStatus.delete(key);
+      settings.storageGroups = groups;
+      report(true);
+      return groups;
+    },
+    captureChest(value) {
+      storagePick = plan.position(value);
+      report(true);
+      return storagePick;
+    },
+    get protecting() {
+      return !disposed && Boolean(task) && (!pauseRequested || survivalPaused);
     },
     get busy() {
       return busy();
@@ -1351,7 +1522,10 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       report(true);
       return entry.id;
     },
-    pause: (reason) => requestPause(reason || "Пауза владельца"),
+    pause(reason) {
+      requestPause(reason || "Пауза владельца");
+      void defense.stop();
+    },
     resume,
     stop,
     async deliver(owner) {
@@ -1362,6 +1536,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           !pending &&
           bot.health > settings.minHealth &&
           !bot.launcherSurvival?.busy &&
+          !defense.busy &&
           !bot.launcherDefendingBow
         )
           resume(false);
@@ -1377,6 +1552,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         pauseRequested && !survivalPaused && !/Инвентарь|места для дропа/.test(pausedReason);
       const reason = paused ? pausedReason : "";
       requestPause("Подготовка передачи добычи");
+      await defense.stop();
       await halt();
       await work;
       revision++;
@@ -1414,8 +1590,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     pauseForSurvival() {
       if (task && !pauseRequested) requestPause("Еда или аварийное спасение", true);
     },
-    pauseForDefense() {
-      if (task && !pauseRequested) requestPause("Защита от стрел", true);
+    pauseForDefense(reason = "Защита от стрел") {
+      if (task && !pauseRequested) requestPause(reason, true);
+      else if (task && survivalPaused) { pausedReason = reason; report(true); }
     },
     resumeAfterSurvival() {
       if (
@@ -1423,6 +1600,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         !pending &&
         !bot.launcherSurvival?.busy &&
         !bot.launcherDefendingBow &&
+        !defense.busy &&
         bot.health > settings.minHealth
       )
         resume(false);
@@ -1479,6 +1657,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       revision++;
       abort.abort();
       pauseRequested = true;
+      await defense.stop();
       await halt();
       await work;
       finish("отменено");
@@ -1498,6 +1677,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     async dispose() {
       if (disposed) return;
       disposed = true;
+      await defense.dispose();
       mineIndex.dispose();
       if (bot.dig === routeDig) bot.dig = originalDig;
       bot.off("physicsTick", tick);
@@ -1505,10 +1685,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       bot.off("playerCollect", collected);
       bot.off("blockPlaced", blockPlaced);
       await stop();
+      clearCancelledOpen();
       machine.onStateExited();
     },
   };
   const mineIndex = createMineIndex(bot);
+  const defense = createGatheringDefense(bot, controller, { isOwner: hooks.isOwner, now, onStatus });
   bot.on("physicsTick", tick);
   bot.on("itemDrop", itemDrop);
   bot.on("playerCollect", collected);

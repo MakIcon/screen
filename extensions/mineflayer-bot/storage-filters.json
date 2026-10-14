@@ -1,0 +1,108 @@
+[
+  {
+    "name": "#all",
+    "displayName": "Всё остальное",
+    "description": "Добыча, для которой нет отдельной группы",
+    "icon": "chest"
+  },
+  {
+    "name": "#wood",
+    "displayName": "Всё деревянное",
+    "description": "Древесина: брёвна, доски, листва и деревянные изделия",
+    "icon": "oak_log"
+  },
+  {
+    "name": "#logs",
+    "displayName": "Брёвна и стволы",
+    "description": "Все породы, включая обтёсанные стволы",
+    "icon": "spruce_log"
+  },
+  {
+    "name": "#leaves",
+    "displayName": "Листва и саженцы",
+    "description": "Все породы деревьев",
+    "icon": "oak_sapling"
+  },
+  {
+    "name": "#ores",
+    "displayName": "Руды и минералы",
+    "description": "Рудные блоки, сырьё, слитки и добытые минералы",
+    "icon": "diamond"
+  },
+  {
+    "name": "#stone",
+    "displayName": "Камень и породы",
+    "description": "Камень, булыжник, глубинный сланец и другие породы",
+    "icon": "cobblestone"
+  },
+  {
+    "name": "#coal",
+    "displayName": "Уголь",
+    "description": "Уголь, угольные руды и блоки",
+    "icon": "coal",
+    "material": "coal"
+  },
+  {
+    "name": "#iron",
+    "displayName": "Железо",
+    "description": "Руды, сырое железо, слитки и блоки",
+    "icon": "iron_ingot",
+    "material": "iron"
+  },
+  {
+    "name": "#copper",
+    "displayName": "Медь",
+    "description": "Руды, сырая медь, слитки и блоки",
+    "icon": "copper_ingot",
+    "material": "copper"
+  },
+  {
+    "name": "#gold",
+    "displayName": "Золото",
+    "description": "Руды, сырое золото, слитки и блоки",
+    "icon": "gold_ingot",
+    "material": "gold"
+  },
+  {
+    "name": "#diamond",
+    "displayName": "Алмазы",
+    "description": "Алмазы, алмазные руды и блоки",
+    "icon": "diamond",
+    "material": "diamond"
+  },
+  {
+    "name": "#emerald",
+    "displayName": "Изумруды",
+    "description": "Изумруды, изумрудные руды и блоки",
+    "icon": "emerald",
+    "material": "emerald"
+  },
+  {
+    "name": "#redstone",
+    "displayName": "Редстоун",
+    "description": "Красная пыль, редстоуновые руды и блоки",
+    "icon": "redstone",
+    "material": "redstone"
+  },
+  {
+    "name": "#lapis",
+    "displayName": "Лазурит",
+    "description": "Лазурит, лазуритовые руды и блоки",
+    "icon": "lapis_lazuli",
+    "material": "lapis"
+  },
+  {
+    "name": "#quartz",
+    "displayName": "Кварц",
+    "description": "Кварц, кварцевые руды и блоки",
+    "icon": "quartz",
+    "material": "quartz"
+  },
+  {
+    "name": "#netherite",
+    "displayName": "Незерит",
+    "description": "Древние обломки, лом, слитки и блоки",
+    "icon": "netherite_ingot",
+    "material": "netherite"
+  }
+]

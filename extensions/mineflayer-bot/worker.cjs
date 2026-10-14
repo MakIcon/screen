@@ -45,6 +45,10 @@ const { Vec3 } = require('vec3')
 const { GoalFollowEntity, GoalNear } = goals
 
 function configurePathfinder (bot, movement, behavior = {}) {
+  // Navigation, survival, combat and gathering have independent tick hooks.
+  // Reserve a bounded listener budget for the managed bot's controllers.
+  const listenerLimit = bot.getMaxListeners()
+  if (listenerLimit > 0 && listenerLimit < 32) bot.setMaxListeners(32)
   bot.loadPlugin(createPlugin({
     moveSettings: {
       allowSprinting: Boolean(movement.allowSprinting),
@@ -405,10 +409,17 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       sendEvent('log', { message: 'invalid launcher message' })
       continue
     }
-    if (!['chat', 'command'].includes(request?.type) || typeof request.requestId !== 'string') continue
+    if (!['chat', 'command', 'storage_config'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
       const bot = getBot()
       if (!bot) throw new Error('Бот не подключён к серверу')
+      if (request.type === 'storage_config') {
+        if (!bot.launcherGathering) throw new Error('Система добычи ещё не готова')
+        if (bot.launcherConfigureStorage) await bot.launcherConfigureStorage(request.groups)
+        else bot.launcherGathering.configureStorage(request.groups)
+        sendEvent('chat_result', { requestId: request.requestId, message: 'Группы сундуков применены' })
+        continue
+      }
       if (typeof request.message !== 'string' || !request.message.trim()) {
         throw new Error('Введите сообщение')
       }
@@ -940,9 +951,15 @@ async function main () {
         })
         bot.launcherTravel = travel
         gathering = createGatheringController(bot, config.gathering, {
+          isOwner,
           onStatus: message => emit('status', { state: 'connected', message }),
           onProgress: gathering => emit('gathering', { gathering })
         })
+        bot.launcherConfigureStorage = groups => {
+          const normalized = gathering.configureStorage(groups)
+          config.gathering = { ...config.gathering, storageGroups: normalized }
+          return normalized
+        }
         startInventoryTelemetry(bot, {
           onUpdate: inventory => emit('bot_inventory', { inventory }),
           onCatalog: catalog => emit('minecraft_catalog', { catalog })

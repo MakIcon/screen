@@ -4,5 +4,9 @@
   "stairWidth": 2,
   "stairHeight": 3,
   "placeTorches": false,
-  "torchInterval": 8
+  "torchInterval": 8,
+  "defendMobs": true,
+  "defendPlayers": false,
+  "defendArrows": true,
+  "storageGroups": []
 }

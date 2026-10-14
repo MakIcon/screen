@@ -1,5 +1,6 @@
 const http = require("node:http");
 const { createRequire } = require("node:module");
+const { getItemEnchantments } = require("./pathfinder.cjs");
 const dependency = createRequire(require.resolve("mineflayer-web-inventory"));
 const express = dependency("express");
 const { Server } = dependency("socket.io");
@@ -162,7 +163,7 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
         texture: item.texture || assets?.textureContent?.[item.name]?.texture || FALLBACK,
         durability: maximum ? Math.max(0, maximum - (item.durabilityUsed || 0)) : null,
         maxDurability: maximum || null,
-        enchants: (item.enchants || []).map((e) => ({ name: e.name, level: e.lvl ?? e.level })),
+        enchants: getItemEnchantments(item, bot.registry).map((e) => ({ name: e.name, level: e.lvl })),
       };
     });
     const armorPoints = {

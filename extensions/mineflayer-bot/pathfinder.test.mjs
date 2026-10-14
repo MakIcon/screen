@@ -12,6 +12,20 @@ require("ts-node").register({
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 
+test("managed bot reserves tick listeners for its controllers and preserves custom limits", async () => {
+  for (const [initial, expected] of [[10, 32], [64, 64], [0, 0]]) {
+    const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+    rig.bot.setMaxListeners(initial);
+    try {
+      worker.configurePathfinder(rig.bot, { allowParkour: false, canDig: false });
+      const listeners = rig.bot.listenerCount("physicsTick");
+      worker.configurePathfinder(rig.bot, { allowParkour: false, canDig: false });
+      assert.equal(rig.bot.getMaxListeners(), expected);
+      assert.equal(rig.bot.listenerCount("physicsTick"), listeners, "reconfiguration does not accumulate tick hooks");
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+  }
+});
+
 test("bundled worker keeps diagonal sprint-hop speed without crouching in the air", { timeout: 9000 }, async (t) => {
   const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
   const navigator = worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: true, canDig: false, maxDropDown: 3 });

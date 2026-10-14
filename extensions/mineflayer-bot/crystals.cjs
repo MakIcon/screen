@@ -1,4 +1,5 @@
 const { Vec3 } = require("vec3");
+const { getItemEnchantments } = require("./pathfinder.cjs");
 const { carriedItems } = require("./combat-inventory.cjs");
 const { groundAt, walkSegment } = require("./crystal-movement.cjs");
 
@@ -71,7 +72,7 @@ function armourReduction(bot, entity, damage) {
       points += tiers[tier][index];
       toughness += tier === "netherite" ? 3 : tier === "diamond" ? 2 : 0;
     }
-    for (const enchantment of item.enchants ?? []) {
+    for (const enchantment of getItemEnchantments(item, bot.registry)) {
       const name = String(enchantment.name ?? "").replace(/^minecraft:/, "");
       protection +=
         (enchantment.lvl ?? enchantment.level ?? 0) *

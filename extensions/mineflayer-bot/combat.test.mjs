@@ -451,11 +451,16 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
         bot.hawkEye.getMasterGrade(target, new Vec3(0, 0, 0), "bow"),
         `HawkEye bow ${version}`,
       );
-      for (const engine of ["custom", "basic"]) {
+      for (const engine of ["custom", "basic"]) for (const enabled of [true, false]) {
         controller.dispose();
-        controller = combat.createCombatController(bot, { ...settings, engine }, options);
+        controller = combat.createCombatController(bot, { ...settings, engine, enabled }, options);
         target.position.x = 2.5;
-        controller.select(target);
+        target.username = enabled ? "Owner" : "Enemy";
+        if (enabled) controller.select(target);
+        else {
+          assert.throws(() => controller.select(target), /disabled/);
+          controller.defend(target);
+        }
         bot.emit("physicsTick");
         await flush();
         const before = packets.length;
@@ -468,7 +473,7 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
               ? packet.name === "attack"
               : packet.name === "use_entity" && packet.params.mouse === 1,
           );
-        assert.ok(attack, `${engine} sent an actual attack`);
+        assert.ok(attack, `${engine} sent an actual attack with PvP ${enabled ? "on" : "off"}`);
         assert.equal(attack.params.entityId ?? attack.params.target, target.id);
         assert.equal(
           packets[packets.indexOf(attack) - 1].name,
@@ -477,6 +482,7 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
         );
         controller.stop();
       }
+      target.username = "Owner";
       for (const bowEngine of ["custom", "hawkeye"]) {
         controller.dispose();
         controller = combat.createCombatController(

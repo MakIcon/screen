@@ -52,6 +52,40 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
   return { rig, bot, controller, messages };
 }
 
+test('26.1.2 command-enchanted axe and shovel load after login and dig with Efficiency 20', { timeout: 8000 }, async (t) => {
+  const world = createFlatWorld('26.1.2', 64, { renderDistance: 1 });
+  const target = world.setBlock(new Vec3(1, 64, 0), 'dirt');
+  const { rig, bot, controller, messages } = prepare('26.1.2', world, true);
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const runtime = createRequire(new URL('./package.json', import.meta.url));
+  const Item = runtime('prismarine-item')(bot.registry);
+  for (const [slot, name] of [[36, 'netherite_axe'], [37, 'netherite_shovel']]) {
+    const item = Item.fromNotch({ itemCount: 1, itemId: bot.registry.itemsByName[name].id,
+      components: [{ type: 'enchantments', data: { enchantments: [
+        { id: bot.registry.enchantmentsByName.efficiency.id, level: 20 },
+        { id: bot.registry.enchantmentsByName.unbreaking.id, level: 100 },
+      ] } }], removeComponents: [] });
+    item.slot = slot;
+    bot.inventory.slots[slot] = item;
+    bot.inventory.emit('updateSlot', slot, null, item);
+  }
+  bot.updateHeldItem(); bot.pathingUtil.refresh();
+  let usedTool, duration;
+  bot._client.write = (name, packet) => {
+    if (name === 'block_dig' && packet.status === 0) {
+      usedTool = bot.heldItem.name;
+      duration = bot.digTime(target);
+    }
+  };
+  controller.enqueue({ kind: 'quarry', area: { min: target.position, max: target.position } });
+  await waitForJob(controller, 6000);
+  assert.equal(usedTool, 'netherite_shovel', messages.join('\n'));
+  assert.ok(duration <= 50, `native dig duration=${duration}ms`);
+  assert.equal(world.getBlock(target.position).name, 'air');
+  assert.equal(controller.snapshot.history[0].mined, 1);
+  assert.deepEqual(bot.inventory.slots[37].enchants, [{ name: 'efficiency', lvl: 20 }, { name: 'unbreaking', lvl: 100 }]);
+});
+
 for (const version of ["1.20.4", "26.1.2"])
   test(`pickup physically reaches a moved diamond drop above the feet on ${version}`, { timeout: 12000 }, async (t) => {
     const world = createFlatWorld(version, 64, { renderDistance: 1 });
@@ -541,6 +575,9 @@ test('excavation executes several tunnel steps without replanning after each bro
     world.setBlock(new Vec3(x, 66, 0), 'bedrock');
     if (x >= 1 && x <= 12) for (let y = 64; y <= 65; y++) world.setBlock(new Vec3(x, y, 0), 'stone');
   }
+  // Keep this a sealed excavation fixture. An open rear entrance lets the
+  // cave-first approach walk around the entire corridor instead of mining it.
+  for (const y of [64, 65]) world.setBlock(new Vec3(-1, y, 0), 'bedrock');
   world.setBlock(new Vec3(14, 64, 0), 'diamond_ore');
   const { rig, bot, controller, messages } = prepare(version, world);
   bot.pathfinder.setOptions({ tickTimeoutMs: 1, routePrefixMs: 1, routePrefixLength: 4 });
@@ -736,4 +773,62 @@ for (const roof of [false, true]) test(`delivery escapes a shaft using deepslate
   assert.ok(bot.entity.position.distanceTo(origin) <= 0.8, `position=${bot.entity.position}`);
   assert.equal(bot.pathfinder.defaultMoveSettings.canDig, false);
   assert.equal(bot.pathfinder.isPathing, false);
+});
+
+test('delivery crosses a broad cave through its remembered stairs and returns to the mining site', { timeout: 80000 }, async (t) => {
+  const version = '26.1.2';
+  const world = createFlatWorld(version, 64, { renderDistance: 2 });
+  for (let x = -30; x <= 8; x++) for (let z = -24; z <= 24; z++) {
+    for (let y = 64; y <= 74; y++) world.setBlock(new Vec3(x, y, z), 'stone');
+    if (x >= -27 && x <= 5 && Math.abs(z) <= 21)
+      for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(x, y, z), 'cave_air');
+  }
+  for (let step = 0; step <= 11; step++) {
+    const x = -26 + step;
+    world.setBlock(new Vec3(x, 63 + step, -20), 'stone');
+    for (let y = 64 + step; y <= 67 + step; y++) world.setBlock(new Vec3(x, y, -20), 'air');
+  }
+  const { rig, bot, controller, messages } = prepare(version, world, false, new Vec3(0.5, 75, 0.5));
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const runtime = createRequire(new URL('./package.json', import.meta.url));
+  const { goals } = runtime('./pathfinder.cjs');
+  bot.pathfinder.setMoveOptions({ canDig: false, canPlace: false });
+  await bot.pathfinder.goto(new goals.GoalBlock(-15, 75, -20));
+  await bot.pathfinder.goto(new goals.GoalBlock(-26, 64, -20));
+  await bot.pathfinder.goto(new goals.GoalBlock(0, 64, 0));
+  bot.pathfinder.setOptions({ searchTimeoutMs: 300, maxVisitedNodes: 1000, routePrefixMs: 0 });
+  const Item = createRequire(runtime.resolve('mineflayer'))('prismarine-item')(bot.registry);
+  const diamonds = new Item(bot.registry.itemsByName.diamond.id, 7, 0);
+  diamonds.slot = 36; bot.inventory.slots[36] = diamonds;
+  bot.updateHeldItem();
+  const origin = bot.entity.position.clone();
+  const owner = { id: 2, position: new Vec3(0.5, 75, 0.5), isValid: true };
+  let delivered = 0, edits = 0;
+  const routes = [];
+  bot.on('pathGenerated', (route) => {
+    routes.push(route.path.map(move => [move.x, move.y, move.z, move.moveType.constructor.name]));
+    if (routes.length > 6) routes.shift();
+  });
+  const dig = bot.dig;
+  bot.dig = (...args) => { edits++; return dig(...args); };
+  bot.on('blockPlaced', () => { edits++; });
+  bot.tossStack = async (item) => {
+    assert.ok(bot.entity.position.distanceTo(owner.position) <= 3.5);
+    assert.ok(Math.abs(bot.entity.position.y - owner.position.y) <= 1);
+    delivered += item.count;
+    bot.inventory.slots[item.slot] = null;
+    bot.updateHeldItem();
+  };
+  await controller.deliver(() => owner);
+  try { await waitForJob(controller, 60000); }
+  catch (error) {
+    throw new Error(JSON.stringify({ snapshot: controller.snapshot, position: bot.entity.position,
+      move: bot.pathfinder.currentMove?.exitPos, index: bot.pathfinder.currentIndex, routes,
+      messages: messages.slice(-6) }), { cause: error });
+  }
+  assert.equal(delivered, 7, messages.join('\n'));
+  assert.equal(edits, 0, 'both delivery legs reuse the cave and stairs without changing terrain');
+  assert.ok(bot.entity.position.distanceTo(origin) <= 0.8, `position=${bot.entity.position}`);
+  assert.equal(controller.snapshot.history[0].outcome, 'готово');
 });

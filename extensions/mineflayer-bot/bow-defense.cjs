@@ -158,6 +158,7 @@ function createBowDefense(
     onError = () => {},
     beforeDefend = () => {},
     afterDefend = () => {},
+    enabled = () => settings.enabled && settings.bowDefense,
   } = {},
 ) {
   let generation = 0,
@@ -199,7 +200,7 @@ function createBowDefense(
     if (wasDefending) afterDefend();
   }
   function tick(canUseItem, immediate = false) {
-    if (!settings.enabled || !settings.bowDefense || bot.health <= 0 || bot.launcherSurvival?.busy) {
+    if (!enabled() || bot.health <= 0 || bot.launcherSurvival?.busy) {
       if (active || busy) stop();
       return false;
     }
@@ -241,7 +242,10 @@ function createBowDefense(
         stop();
         return false;
       }
-      if (!active || !threat) return active;
+      if (!active || !threat) {
+        if (!active) { threat = null; defensePoint = null; }
+        return active;
+      }
       if (/arrow/i.test(threat.name ?? "")) {
         const motion = motions.get(threat.id);
         // A moved arrow whose trajectory now misses/passes the bot, or an
@@ -303,7 +307,7 @@ function createBowDefense(
     return true;
   }
   function changed(entity) {
-    if (!settings.bowDefense || entity?.id === bot.entity.id) return;
+    if (!enabled() || entity?.id === bot.entity.id) return;
     sampleArrow(entity);
     if (
       /arrow/i.test(entity?.name ?? "") ||

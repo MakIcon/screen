@@ -165,3 +165,28 @@ test("launcher inventory snapshots include live survival stats, all slots and eq
   assert.equal(bot.inventory.listenerCount("updateSlot"), 0);
   assert.equal(bot.listenerCount("health"), 0);
 });
+
+test("launcher starts with real 26.1.2 enchanted command items and keeps high levels", async (t) => {
+  const { bot } = botFixture("26.1.2");
+  const Item = require("prismarine-item")(bot.registry);
+  const expected = [{ name: "efficiency", level: 20 }, { name: "unbreaking", level: 100 }];
+  for (const [slot, name] of [[36, "netherite_axe"], [37, "netherite_shovel"]]) {
+    bot.inventory.slots[slot] = Item.fromNotch({ itemCount: 1, itemId: bot.registry.itemsByName[name].id,
+      components: [{ type: "enchantments", data: { enchantments: expected.map(({ name, level }) =>
+        ({ id: bot.registry.enchantmentsByName[name].id, level })) } }], removeComponents: [] });
+  }
+  const wire = structuredClone(Item.toNotch(bot.inventory.slots[37]));
+  const updates = [];
+  const controller = viewer.startInventoryTelemetry(bot, { onUpdate: snapshot => updates.push(snapshot) });
+  t.after(() => controller.stop());
+  assert.equal(updates.length, 1, "initial telemetry succeeds instead of aborting plugin initialization");
+  assert.deepEqual(updates[0].slots[36].enchants, expected);
+  assert.deepEqual(updates[0].slots[37].enchants, expected);
+  bot.inventory.slots[36] = null;
+  bot.inventory.emit("updateSlot", 36, null, null);
+  await sleep(100);
+  assert.equal(updates.at(-1).slots[36], null);
+  assert.deepEqual(updates.at(-1).slots[37].enchants, expected);
+  assert.deepEqual(Item.toNotch(bot.inventory.slots[37]), wire,
+    "inventory telemetry retains the shovel's original enchantment component");
+});

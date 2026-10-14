@@ -2,6 +2,7 @@ import { Bot } from 'mineflayer'
 import type { Block } from './types'
 import type { Item } from 'prismarine-item'
 import { miningBlock } from './mineflayer-specific/miningTools'
+import { getItemEnchantments } from './mineflayer-specific/itemEnchantments'
 
 export interface DigEnvironment { inWater: boolean; notOnGround: boolean }
 
@@ -43,13 +44,13 @@ export class PathingUtil {
     const creative = this.bot.game.gameMode === 'creative'
 
     const helmet = this.bot.inventory.slots[this.bot.getEquipmentDestSlot('head')]
-    const helmetEnchants = helmet?.enchants ?? []
+    const helmetEnchants = getItemEnchantments(helmet, this.bot.registry)
     let fastest = block.digTime(null, creative, environment.inWater, environment.notOnGround, helmetEnchants, effects)
     let bestTool: Item | null = null
 
     // if (creative === false)
     for (const tool of availableTools) {
-      const enchants = (tool.enchants ?? []).concat(helmetEnchants)
+      const enchants = getItemEnchantments(tool, this.bot.registry).concat(helmetEnchants)
       const digTime = block.digTime(tool.type, creative, environment.inWater, environment.notOnGround, enchants, effects)
       if (digTime < fastest) {
         fastest = digTime

@@ -608,6 +608,32 @@ pub struct MineflayerGatheringSettings {
     pub stair_height: u32,
     pub place_torches: bool,
     pub torch_interval: u32,
+    pub defend_mobs: bool,
+    pub defend_players: bool,
+    pub defend_arrows: bool,
+    pub storage_groups: Vec<MineflayerStorageGroup>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineflayerStorageGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "storage_group_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub filters: Vec<String>,
+    #[serde(default)]
+    pub chests: Vec<MineflayerStoragePosition>,
+}
+
+fn storage_group_enabled() -> bool { true }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MineflayerStoragePosition {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
 }
 
 impl Default for MineflayerGatheringSettings {
@@ -619,6 +645,10 @@ impl Default for MineflayerGatheringSettings {
             stair_height: 3,
             place_torches: false,
             torch_interval: 8,
+            defend_mobs: true,
+            defend_players: false,
+            defend_arrows: true,
+            storage_groups: Vec::new(),
         }
     }
 }
@@ -1519,13 +1549,23 @@ mod loader_schema_tests {
         )).unwrap();
         assert_eq!(serde_json::to_value(legacy.gathering).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
-            "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12 }
+            "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12,
+                "defendMobs": false, "defendPlayers": true, "defendArrows": false,
+                "storageGroups": [{ "id": "wood", "name": "Древесина", "filters": ["#wood"],
+                    "chests": [{ "x": -12, "y": 64, "z": 3 }, { "x": 4, "y": 65, "z": 5 }] }] }
         })).unwrap();
         let saved = serde_json::to_value(parsed).unwrap();
         assert_eq!(saved["gathering"]["placeTorches"], true);
         assert_eq!(saved["gathering"]["tunnelWidth"], 3);
         assert_eq!(saved["gathering"]["stairHeight"], 3);
         assert_eq!(saved["gathering"]["torchInterval"], 12);
+        assert_eq!(saved["gathering"]["defendMobs"], false);
+        assert_eq!(saved["gathering"]["defendPlayers"], true);
+        assert_eq!(saved["gathering"]["defendArrows"], false);
+        assert_eq!(saved["gathering"]["storageGroups"][0]["enabled"], true);
+        assert_eq!(saved["gathering"]["storageGroups"][0]["filters"][0], "#wood");
+        assert_eq!(saved["gathering"]["storageGroups"][0]["chests"][0]["x"], -12);
+        assert_eq!(saved["gathering"]["storageGroups"][0]["chests"].as_array().unwrap().len(), 2);
     }
 
     #[test]

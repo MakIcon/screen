@@ -80,6 +80,24 @@ test("keeps legacy config input ending at EOF compatible", async () => {
   assert.equal((await lines.next()).done, true);
 });
 
+test("structured storage requests apply complete groups privately, acknowledge errors and do not use the chat limit", async () => {
+  const { normalizeStorageGroups } = require("./gathering-storage.cjs");
+  let saved = [], remembered = null;
+  const events = [], bot = { chat() { assert.fail("storage settings must never enter server chat"); },
+    launcherGathering: { configureStorage(groups) { saved = normalizeStorageGroups(groups); return saved; } },
+    launcherConfigureStorage(groups) { remembered = this.launcherGathering.configureStorage(groups); },
+  };
+  const groups = Array.from({ length: 10 }, (_, index) => ({ id: `group-${index}`, name: `Склад ${index}`, filters: ["#wood"],
+    chests: [{ x: index, y: 64, z: 0 }, { x: index, y: 64, z: 2 }] }));
+  await worker.handleLauncherMessages([
+    JSON.stringify({ type: "storage_config", requestId: "good", groups }),
+    JSON.stringify({ type: "storage_config", requestId: "bad", groups: [{ ...groups[0], filters: ["#invalid"] }] }),
+  ], () => bot, (type, payload) => events.push({ type, ...payload }));
+  assert.equal(saved.length, 10); assert.equal(remembered, saved);
+  assert.equal(events[0].requestId, "good"); assert.equal(events[0].error, undefined);
+  assert.match(events[1].error, /фильтр/);
+});
+
 test("rejects disconnected sends and uses the current bot after reconnection", async () => {
   let bot = null;
   const sent = [];

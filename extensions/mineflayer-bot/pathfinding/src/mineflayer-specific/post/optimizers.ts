@@ -203,10 +203,18 @@ export class DropDownOpt extends MovementOptimizer {
     if (nextMove === undefined) return --currentIndex
 
     const firstPos = lastMove.exitPos
+    const entryPos = lastMove.entryPos
+    const direction = firstPos.minus(entryPos)
 
     let flag0 = false
     let flag1 = false
     while (currentIndex < path.length) {
+      // Steering a merged descent aims directly at its final landing. A
+      // sideways turn at a cave/stair exit must remain a separate move;
+      // otherwise that diagonal cuts across the rim instead of descending.
+      const offset = nextMove.exitPos.minus(entryPos)
+      if (Math.abs(direction.x * offset.z - direction.z * offset.x) > 1e-6 ||
+          direction.x * offset.x + direction.z * offset.z <= 0) return --currentIndex
       if (nextMove.exitPos.y > lastMove.exitPos.y) {
         log(`[DropDownOpt] Index ${currentIndex}: nextMove goes UP. Aborting.`)
         return --currentIndex

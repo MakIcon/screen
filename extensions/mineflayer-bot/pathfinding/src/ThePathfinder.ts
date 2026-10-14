@@ -61,6 +61,7 @@ import { Climb, ClimbExecutor } from './mineflayer-specific/movements/climb'
 import { WaterDrop, WaterDropExecutor } from './mineflayer-specific/movements/waterDrop'
 import { findShoreGoal, ShoreRouteGoal } from './mineflayer-specific/shore'
 import { selectAscentPrefix } from './mineflayer-specific/ascentPrefix'
+import { TraversalMemory } from './mineflayer-specific/traversalMemory'
 import { canContinueSwimming } from './mineflayer-specific/surfaceSwimming'
 import { needsWalkSneak } from './mineflayer-specific/navigationGeometry'
 import { MomentumJump, MomentumJumpExecutor } from './mineflayer-specific/movements/momentum'
@@ -149,6 +150,7 @@ interface PerformOpts {
 export class ThePathfinder {
   public get navigationRevision (): number { return this.goalRequestId }
   private readonly rejectedPlacements = new Set<string>()
+  private readonly traversalMemory = new TraversalMemory()
 
   rejectPlacement (pos: Vec3, revision: number): void {
     if (revision === this.goalRequestId && this.currentGotoGoal != null) this.rejectedPlacements.add(pos.floored().toString())
@@ -440,6 +442,34 @@ export class ThePathfinder {
   }
 
   setupListeners (): void {
+    let memoryDimension = this.bot.game.dimension
+    let memoryCell: string | undefined
+    const clearMemory = (): void => { this.traversalMemory.clear(); memoryCell = undefined }
+    const rememberGround = (): void => {
+      if (this.bot.game.dimension !== memoryDimension) {
+        clearMemory()
+        memoryDimension = this.bot.game.dimension
+      }
+      const entity = this.bot.entity
+      if (entity == null || (entity as any).isInWater || (entity as any).isInLava ||
+          (!entity.onGround && !(this.currentMove?.moveType instanceof Climb))) return
+      // Observe physics without reading/populating the world's block cache on
+      // every tick. The corridor tolerates edge offsets; planning revalidates
+      // support, headroom and liquids before it can reuse any of these hints.
+      const position = entity.position
+      const cell = position.floored().toString()
+      if (cell === memoryCell) return
+      memoryCell = cell
+      this.traversalMemory.remember(position)
+    }
+    this.bot.on('physicsTick', rememberGround)
+    this.bot.on('respawn', clearMemory)
+    rememberGround()
+    this.disposeListeners.push(() => {
+      this.bot.off('physicsTick', rememberGround)
+      this.bot.off('respawn', clearMemory)
+      clearMemory()
+    })
     const blockAbort = new AbortController()
     const acknowledgedEdits = new Map<string, number>()
     const rememberEdit = (_old: Block | null, block: Block | null): void => {
@@ -733,13 +763,59 @@ export class ThePathfinder {
       } while (true)
       return res
     }
+    let triedMemory = false
+    const rememberedPath = async (): Promise<ReturnType<ContinuousPathProducer['advance']> | undefined> => {
+      if (triedMemory || this.traversalMemory.size < 8 || !this.traversalMemory.contains(startPos)) return
+      const memoryTarget = target ?? (goal instanceof goals.GoalMiningApproach
+        ? new Vec3(goal.position.x, goal.y, goal.position.z) : undefined)
+      // Unknown, still enclosed ore has no remembered dry connection. Do not
+      // spend a second walking budget on every new excavation segment.
+      if (goal instanceof goals.GoalMiningApproach && memoryTarget != null && !this.traversalMemory.near(memoryTarget, 6)) return
+      triedMemory = true
+      const previousProducer = this._currentProducer
+      const corridor = (destination: Vec3 | undefined): MovementOptions => ({ ...traversalSettings,
+        exclusionAreasStep: [...traversalSettings.exclusionAreasStep, (block: BlockInfo) =>
+          block.position.distanceTo(startPos) <= 4 ||
+          (destination != null && block.position.distanceTo(destination) <= 6) ? 0 : this.traversalMemory.stepCost(block.position)] })
+      // Prefer a complete ordinary route, then narrow a retry to known
+      // passages. This prevents a broad cave from flooding the search before
+      // it reaches the remembered stairs in the opposite direction.
+      if (memoryTarget == null || this.traversalMemory.near(memoryTarget, 6)) {
+        const known = await probe(goal, corridor(memoryTarget), movements, 500, 8000)
+        if (known.result.status === 'success' || known.result.status === 'canceled') return known
+      } else {
+        // The owner can move away from the mine entrance. Rejoin the known
+        // exit on the destination's level, then validate a fresh walking tail.
+        const anchor = this.traversalMemory.levelAnchor(memoryTarget)
+        if (anchor != null) {
+          const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, 500, 8000)
+          if (known.result.status === 'canceled') return known
+          if (known.result.status === 'success' && known.result.path.length > 0) {
+            const last = known.result.path[known.result.path.length - 1]
+            const reconnectStart = new Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0,
+              new IdleMovement(this.bot, this.world), last.exitPos.clone(), last.exitVel.clone(),
+              last.exitPos.clone(), last.exitVel.clone(), last)
+            const tail = await probe(goal, traversalSettings, movements, 300, 6000, reconnectStart)
+            if (tail.result.status === 'canceled') return tail
+            if (tail.result.status === 'success') {
+              tail.result = { ...tail.result, path: [...known.result.path, ...tail.result.path],
+                cost: known.result.cost + tail.result.cost,
+                calcTime: known.result.calcTime + tail.result.calcTime }
+              return tail
+            }
+          }
+        }
+      }
+      this._currentProducer = previousProducer
+    }
     if ((elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
       // Always try the complete enabled traversal repertoire before editing
       // terrain. Removing Neo/ladder providers here made a ready course appear
       // disconnected and sent the bot into bridge/tower construction instead.
       // This is a dry traversal probe: it cannot excavate or place a bucket,
       // and does not scan deep water-drop columns from every exposed edge.
-      const existing = await probe(goal, traversalSettings, movements, 300, 6000)
+      let existing = await probe(goal, traversalSettings, movements, 300, 6000)
+      if (existing.result.status !== 'success' && existing.result.status !== 'canceled') existing = await rememberedPath() ?? existing
       if (existing.result.status === 'success' || existing.result.status === 'canceled') {
         if (existing.result.status === 'success') this.bot.emit('pathGenerated', existing.result)
         yield existing
@@ -820,17 +896,20 @@ export class ThePathfinder {
       }
     }
 
-    const excavationDescent = settings.canDig && settings.allowExcavatedDescent &&
-      goal instanceof goals.GoalMiningApproach && goal.y <= startPos.y - 4
+    const miningApproach = settings.canDig && goal instanceof goals.GoalMiningApproach
+    const excavationDescent = miningApproach && settings.allowExcavatedDescent && goal.y <= startPos.y - 4
     let descentCost = 0
-    if (excavationDescent) {
-      // Reuse an open cave or existing stair before estimating a new passage.
-      const existing = await probe(goal, traversalSettings, movements, 100, 2000)
+    if (miningApproach) {
+      // Caves can shorten shallow, horizontal and upward mining approaches too.
+      let existing = await probe(goal, traversalSettings, movements, 100, 2000)
+      if (existing.result.status !== 'success' && existing.result.status !== 'canceled') existing = await rememberedPath() ?? existing
       if (existing.result.status === 'success' || existing.result.status === 'canceled') {
         if (existing.result.status === 'success') this.bot.emit('pathGenerated', existing.result)
         yield existing
         return existing
       }
+    }
+    if (excavationDescent) {
       const floor = this.world.getBlockInfo(startPos.offset(0, -0.05, 0)).block
       if (floor != null) {
         const digTicks = this.bot.pathingUtil.digCost(floor, { inWater: false, notOnGround: false }) / 50
@@ -897,6 +976,11 @@ export class ThePathfinder {
       astarContext = res.astarContext
 
       if (this.abortCalculation || this.disposed) result.status = 'canceled'
+
+      if (!settings.canDig && !settings.canPlace && (result.status === 'noPath' || result.status === 'timeout')) {
+        const known = await rememberedPath()
+        if (known != null) { result = known.result; astarContext = known.astarContext }
+      }
 
       if (result.status === 'success') {
         this.bot.emit('pathGenerated', result)

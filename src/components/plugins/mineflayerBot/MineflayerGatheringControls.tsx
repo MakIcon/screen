@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
-import { ExpandablePanel } from "../../layout/ExpandablePanel";
+import { MineflayerStorageGroups } from "./MineflayerStorageGroups";
 import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
@@ -116,8 +116,7 @@ export function MineflayerGatheringControls({
     [scaffold, setScaffold] = useState(true);
   const [corner1, setCorner1] = useState(""),
     [corner2, setCorner2] = useState("");
-  const [item, setItem] = useState(""),
-    [stash, setStash] = useState("");
+  const [item, setItem] = useState("");
   const [length, setLength] = useState(16);
   const [sending, setSending] = useState(false),
     [feedback, setFeedback] = useState("");
@@ -133,16 +132,12 @@ export function MineflayerGatheringControls({
   const selection = connected ? status?.gathering?.selection : undefined;
   const capturedFirst = formatBlockCoordinates(selection?.areas.launcher?.[1]);
   const capturedSecond = formatBlockCoordinates(selection?.areas.launcher?.[2]);
-  const capturedChest = selection ? formatBlockCoordinates(selection.chest) : undefined;
   useEffect(() => {
     if (capturedFirst) setCorner1(capturedFirst);
   }, [capturedFirst]);
   useEffect(() => {
     if (capturedSecond) setCorner2(capturedSecond);
   }, [capturedSecond]);
-  useEffect(() => {
-    if (capturedChest !== undefined) setStash(capturedChest);
-  }, [capturedChest]);
   const first = parseBlockCoordinates(corner1),
     second = parseBlockCoordinates(corner2);
   const areaPreview = gatheringAreaPreview(corner1, corner2);
@@ -173,37 +168,40 @@ export function MineflayerGatheringControls({
             : `collect ${radius} ${item.trim()}`;
 
   const passageCommand = `work tunnels ${settings.tunnelWidth} ${settings.tunnelHeight} ${settings.stairWidth} ${settings.stairHeight} ${settings.placeTorches ? "on" : "off"} ${settings.torchInterval}`;
+  const defenseCommand = `work defense ${settings.defendMobs ? "on" : "off"} ${settings.defendPlayers ? "on" : "off"} ${settings.defendArrows ? "on" : "off"}`;
   const updatePassages = (patch: Partial<MineflayerGatheringSettings>) =>
     onSettingsChange({ ...settings, ...patch });
-  async function send(value: string, capture?: "chest" | "1" | "2") {
+  async function send(value: string, capture?: "1" | "2") {
     if (!connected || sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
     setError("");
     setFeedback("");
     try {
+      if (
+        /^(mine|forest|quarry|collect|tunnel|deposit|deliver)( |$)/.test(value) ||
+        value === "work resume"
+      ) {
+        await invoke("configure_mineflayer_bot_storage", { groups: settings.storageGroups });
+        await invoke("send_mineflayer_bot_chat", { message: defenseCommand, command: true });
+      }
       if (/^(mine|tunnel) /.test(value))
         await invoke("send_mineflayer_bot_chat", { message: passageCommand, command: true });
       await invoke("send_mineflayer_bot_chat", { message: value.trim(), command: true });
       if (capture) {
         const updated = await invoke<MineflayerBotStatus>("get_mineflayer_bot_status");
-        const picked =
-          capture === "chest"
-            ? updated.gathering?.selection?.chest
-            : updated.gathering?.selection?.areas.launcher?.[capture];
+        const picked = updated.gathering?.selection?.areas.launcher?.[capture];
         if (!picked)
           throw new Error(
             "Не удалось получить выбранную точку. Переподключите бота и повторите выбор.",
           );
-        (capture === "chest" ? setStash : capture === "1" ? setCorner1 : setCorner2)(
-          formatBlockCoordinates(picked),
-        );
+        (capture === "1" ? setCorner1 : setCorner2)(formatBlockCoordinates(picked));
       }
       setFeedback(
-        capture === "chest"
-          ? "Сундук выбран и сохранён. Можно выгружать добычу."
-          : capture
-            ? `Угол ${capture} выбран. Координаты подставлены в форму.`
+        capture
+          ? `Угол ${capture} выбран. Координаты подставлены в форму.`
+          : value === defenseCommand
+            ? "Защита при добыче применена к боту."
             : value === passageCommand
               ? "Настройки применены. Следующий проход будет нового размера."
               : value === "deliver"
@@ -624,6 +622,39 @@ export function MineflayerGatheringControls({
         </details>
       )}
       <PluginSettingsGroup
+        title="ЗАЩИТА ПРИ ДОБЫЧЕ"
+        description="Самозащита во время добычи руды, заготовки леса, сбора и выгрузки"
+      >
+        <ElementToggle
+          title="ЗАЩИЩАТЬСЯ ОТ МОБОВ"
+          note="Отбивается от опасных мобов рядом и тех, кто напал на бота"
+          enabled={settings.defendMobs}
+          onToggle={() => updatePassages({ defendMobs: !settings.defendMobs })}
+        />
+        <ElementToggle
+          title="ЗАЩИЩАТЬСЯ ОТ ИГРОКОВ"
+          note="Отвечает на нападение; владельцев и мирных игроков не трогает"
+          enabled={settings.defendPlayers}
+          onToggle={() => updatePassages({ defendPlayers: !settings.defendPlayers })}
+        />
+        <ElementToggle
+          title="ЗАЩИЩАТЬСЯ ОТ СТРЕЛ"
+          note="Использует имеющуюся защиту щитом, а без щита ищет безопасный отход"
+          enabled={settings.defendArrows}
+          onToggle={() => updatePassages({ defendArrows: !settings.defendArrows })}
+        />
+        <p className="mineflayer-bot-combat-note">
+          Использует текущие настройки ближнего боя. При низком здоровье, без оружия или рядом с
+          крипером отходит по безопасному пути. После опасности продолжает ту же задачу. Ручная
+          пауза сохраняется. Настройки действуют и при выключенном автоматическом PvP.
+        </p>
+        <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
+          <button type="button" disabled={disabled} onClick={() => void send(defenseCommand)}>
+            ПРИМЕНИТЬ К БОТУ
+          </button>
+        </div>
+      </PluginSettingsGroup>
+      <PluginSettingsGroup
         title="ТОННЕЛИ И ОСВЕЩЕНИЕ"
         description="Размер проходов при добыче руды, лестницы и факелы на стенах"
       >
@@ -690,47 +721,21 @@ export function MineflayerGatheringControls({
           </button>
         </div>
       </PluginSettingsGroup>
-      <ExpandablePanel
-        title="ДОПОЛНИТЕЛЬНО: СУНДУК"
-        icon={<span className="mineflayer-chest-icon" />}
-      >
-        <div className="mineflayer-chest-panel">
-          <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => void send("stash look", "chest")}
-            >
-              ВЫБРАТЬ СУНДУК ПОД ПРИЦЕЛОМ
-            </button>
-          </div>
-          <p className="mineflayer-bot-combat-note">
-            Наведитесь на сундук в игре и нажмите кнопку, либо отправьте <code>!stash look</code> в
-            игровой чат со своим префиксом. Сундук должен быть не дальше 6 блоков, а вы — видны
-            боту. Также подходят бочки и шалкеровые ящики.
-          </p>
-          {text("СУНДУК ДЛЯ ВЫГРУЗКИ · X Y Z", stash, setStash, "100 64 98")}
-          <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
-            <button
-              type="button"
-              disabled={disabled || !parseBlockCoordinates(stash)}
-              onClick={() =>
-                void send(`stash ${formatBlockCoordinates(parseBlockCoordinates(stash))}`)
-              }
-            >
-              ЗАДАТЬ СУНДУК
-            </button>
-            <button type="button" disabled={disabled} onClick={() => void send("deposit")}>
-              ВЫГРУЗИТЬ
-            </button>
-          </div>
-        </div>
-      </ExpandablePanel>
+      <MineflayerStorageGroups
+        groups={settings.storageGroups}
+        onChange={(storageGroups) => updatePassages({ storageGroups })}
+        catalog={catalog}
+        connected={connected}
+        disabled={sending}
+        status={status}
+        refresh={refresh}
+        onDeposit={() => void send("deposit")}
+      />
       <p className="mineflayer-bot-combat-note">
         Добыча хранится в инвентаре бота. «Принести мне добычу» — подходит к владельцу, выбрасывает
         добычу перед ним и возвращается. Инструменты, броня, еда и до 64 строительных блоков для
-        пути сохраняются. Если инвентарь заполнен, бот ждёт передачи добычи. Сундук можно настроить
-        дополнительно.
+        пути сохраняются. При заполнении инвентаря бот раскладывает добычу по настроенным группам
+        сундуков. Предметы без подходящей группы остаются у бота.
       </p>
       {(error || feedback) && (
         <p

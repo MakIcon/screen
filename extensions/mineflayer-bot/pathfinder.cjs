@@ -8947,9 +8947,14 @@ var require_optimizers = __commonJS({
         if (nextMove === void 0)
           return --currentIndex;
         const firstPos = lastMove.exitPos;
+        const entryPos = lastMove.entryPos;
+        const direction = firstPos.minus(entryPos);
         let flag0 = false;
         let flag1 = false;
         while (currentIndex < path.length) {
+          const offset = nextMove.exitPos.minus(entryPos);
+          if (Math.abs(direction.x * offset.z - direction.z * offset.x) > 1e-6 || direction.x * offset.x + direction.z * offset.z <= 0)
+            return --currentIndex;
           if (nextMove.exitPos.y > lastMove.exitPos.y) {
             log(`[DropDownOpt] Index ${currentIndex}: nextMove goes UP. Aborting.`);
             return --currentIndex;
@@ -10967,6 +10972,74 @@ var require_ascentPrefix = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/traversalMemory.js
+var require_traversalMemory = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/traversalMemory.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.TraversalMemory = void 0;
+    var TraversalMemory = class {
+      constructor(capacity = 4096) {
+        this.capacity = capacity;
+        this.cells = /* @__PURE__ */ new Map();
+      }
+      get size() {
+        return this.cells.size;
+      }
+      clear() {
+        this.cells.clear();
+      }
+      remember(position) {
+        const cell = position.floored();
+        const key = `${cell.x},${cell.y},${cell.z}`;
+        if (this.cells.has(key))
+          return;
+        this.cells.set(key, cell);
+        if (this.cells.size > this.capacity)
+          this.cells.delete(this.cells.keys().next().value);
+      }
+      contains(position) {
+        const cell = position.floored();
+        for (let x = -1; x <= 1; x++)
+          for (let z = -1; z <= 1; z++)
+            for (let y = -1; y <= 1; y++) {
+              if (this.cells.has(`${cell.x + x},${cell.y + y},${cell.z + z}`))
+                return true;
+            }
+        return false;
+      }
+      stepCost(position) {
+        const cell = position.floored();
+        if (this.cells.has(`${cell.x},${cell.y},${cell.z}`))
+          return 0;
+        return this.contains(position) ? 4 : Infinity;
+      }
+      near(position, radius) {
+        for (const cell of this.cells.values())
+          if (cell.offset(0.5, 0, 0.5).distanceTo(position) <= radius)
+            return true;
+        return false;
+      }
+      levelAnchor(target) {
+        let best;
+        let distance = Infinity;
+        for (const cell of this.cells.values()) {
+          if (Math.abs(cell.y - target.y) > 2)
+            continue;
+          const center = cell.offset(0.5, 0, 0.5);
+          const next = center.distanceTo(target);
+          if (next < distance) {
+            best = center;
+            distance = next;
+          }
+        }
+        return best;
+      }
+    };
+    exports2.TraversalMemory = TraversalMemory;
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js
 var require_ladder_executor = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/advanced/ladder-executor.js"(exports2) {
@@ -11791,6 +11864,7 @@ var require_ThePathfinder = __commonJS({
     var waterDrop_1 = require_waterDrop();
     var shore_1 = require_shore();
     var ascentPrefix_1 = require_ascentPrefix();
+    var traversalMemory_1 = require_traversalMemory();
     var surfaceSwimming_12 = require_surfaceSwimming();
     var navigationGeometry_1 = require_navigationGeometry();
     var momentum_2 = require_momentum();
@@ -11902,6 +11976,7 @@ var require_ThePathfinder = __commonJS({
       constructor(bot, opts = {}) {
         this.bot = bot;
         this.rejectedPlacements = /* @__PURE__ */ new Set();
+        this.traversalMemory = new traversalMemory_1.TraversalMemory();
         this.executeTask = mineflayer_util_plugin_12.Task.createDoneTask();
         this.goalRequestId = 0;
         this.waiters = /* @__PURE__ */ new Set();
@@ -12056,6 +12131,35 @@ var require_ThePathfinder = __commonJS({
         return pending;
       }
       setupListeners() {
+        let memoryDimension = this.bot.game.dimension;
+        let memoryCell;
+        const clearMemory = () => {
+          this.traversalMemory.clear();
+          memoryCell = void 0;
+        };
+        const rememberGround = () => {
+          if (this.bot.game.dimension !== memoryDimension) {
+            clearMemory();
+            memoryDimension = this.bot.game.dimension;
+          }
+          const entity = this.bot.entity;
+          if (entity == null || entity.isInWater || entity.isInLava || !entity.onGround && !(this.currentMove?.moveType instanceof climb_1.Climb))
+            return;
+          const position = entity.position;
+          const cell = position.floored().toString();
+          if (cell === memoryCell)
+            return;
+          memoryCell = cell;
+          this.traversalMemory.remember(position);
+        };
+        this.bot.on("physicsTick", rememberGround);
+        this.bot.on("respawn", clearMemory);
+        rememberGround();
+        this.disposeListeners.push(() => {
+          this.bot.off("physicsTick", rememberGround);
+          this.bot.off("respawn", clearMemory);
+          clearMemory();
+        });
         const blockAbort = new AbortController();
         const acknowledgedEdits = /* @__PURE__ */ new Map();
         const rememberEdit = (_old, block) => {
@@ -12327,8 +12431,53 @@ var require_ThePathfinder = __commonJS({
           } while (true);
           return res;
         };
+        let triedMemory = false;
+        const rememberedPath = async () => {
+          if (triedMemory || this.traversalMemory.size < 8 || !this.traversalMemory.contains(startPos))
+            return;
+          const memoryTarget = target ?? (goal instanceof goals.GoalMiningApproach ? new vec3_1.Vec3(goal.position.x, goal.y, goal.position.z) : void 0);
+          if (goal instanceof goals.GoalMiningApproach && memoryTarget != null && !this.traversalMemory.near(memoryTarget, 6))
+            return;
+          triedMemory = true;
+          const previousProducer = this._currentProducer;
+          const corridor = (destination) => ({
+            ...traversalSettings,
+            exclusionAreasStep: [...traversalSettings.exclusionAreasStep, (block) => block.position.distanceTo(startPos) <= 4 || destination != null && block.position.distanceTo(destination) <= 6 ? 0 : this.traversalMemory.stepCost(block.position)]
+          });
+          if (memoryTarget == null || this.traversalMemory.near(memoryTarget, 6)) {
+            const known = await probe(goal, corridor(memoryTarget), movements, 500, 8e3);
+            if (known.result.status === "success" || known.result.status === "canceled")
+              return known;
+          } else {
+            const anchor = this.traversalMemory.levelAnchor(memoryTarget);
+            if (anchor != null) {
+              const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, 500, 8e3);
+              if (known.result.status === "canceled")
+                return known;
+              if (known.result.status === "success" && known.result.path.length > 0) {
+                const last = known.result.path[known.result.path.length - 1];
+                const reconnectStart = new move_12.Move(last.x, last.y, last.z, [], [], last.remainingBlocks, 0, new movementProviders_1.IdleMovement(this.bot, this.world), last.exitPos.clone(), last.exitVel.clone(), last.exitPos.clone(), last.exitVel.clone(), last);
+                const tail = await probe(goal, traversalSettings, movements, 300, 6e3, reconnectStart);
+                if (tail.result.status === "canceled")
+                  return tail;
+                if (tail.result.status === "success") {
+                  tail.result = {
+                    ...tail.result,
+                    path: [...known.result.path, ...tail.result.path],
+                    cost: known.result.cost + tail.result.cost,
+                    calcTime: known.result.calcTime + tail.result.calcTime
+                  };
+                  return tail;
+                }
+              }
+            }
+          }
+          this._currentProducer = previousProducer;
+        };
         if (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
-          const existing = await probe(goal, traversalSettings, movements, 300, 6e3);
+          let existing = await probe(goal, traversalSettings, movements, 300, 6e3);
+          if (existing.result.status !== "success" && existing.result.status !== "canceled")
+            existing = await rememberedPath() ?? existing;
           if (existing.result.status === "success" || existing.result.status === "canceled") {
             if (existing.result.status === "success")
               this.bot.emit("pathGenerated", existing.result);
@@ -12407,16 +12556,21 @@ var require_ThePathfinder = __commonJS({
             return construction;
           }
         }
-        const excavationDescent = settings.canDig && settings.allowExcavatedDescent && goal instanceof goals.GoalMiningApproach && goal.y <= startPos.y - 4;
+        const miningApproach = settings.canDig && goal instanceof goals.GoalMiningApproach;
+        const excavationDescent = miningApproach && settings.allowExcavatedDescent && goal.y <= startPos.y - 4;
         let descentCost = 0;
-        if (excavationDescent) {
-          const existing = await probe(goal, traversalSettings, movements, 100, 2e3);
+        if (miningApproach) {
+          let existing = await probe(goal, traversalSettings, movements, 100, 2e3);
+          if (existing.result.status !== "success" && existing.result.status !== "canceled")
+            existing = await rememberedPath() ?? existing;
           if (existing.result.status === "success" || existing.result.status === "canceled") {
             if (existing.result.status === "success")
               this.bot.emit("pathGenerated", existing.result);
             yield existing;
             return existing;
           }
+        }
+        if (excavationDescent) {
           const floor = this.world.getBlockInfo(startPos.offset(0, -0.05, 0)).block;
           if (floor != null) {
             const digTicks = this.bot.pathingUtil.digCost(floor, { inWater: false, notOnGround: false }) / 50;
@@ -12458,6 +12612,13 @@ var require_ThePathfinder = __commonJS({
           astarContext = res.astarContext;
           if (this.abortCalculation || this.disposed)
             result.status = "canceled";
+          if (!settings.canDig && !settings.canPlace && (result.status === "noPath" || result.status === "timeout")) {
+            const known = await rememberedPath();
+            if (known != null) {
+              result = known.result;
+              astarContext = known.astarContext;
+            }
+          }
           if (result.status === "success") {
             this.bot.emit("pathGenerated", result);
             movements_12.MovementHandler.count = 0;
@@ -12968,6 +13129,83 @@ var require_miningTools = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/itemEnchantments.js
+var require_itemEnchantments = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/itemEnchantments.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.normalizeEnchantments = normalizeEnchantments;
+    exports2.getItemEnchantments = getItemEnchantments;
+    exports2.installItemEnchantmentCompatibility = installItemEnchantmentCompatibility;
+    function normalizeEnchantments(value, registry) {
+      if (value == null || typeof value !== "object")
+        return [];
+      const data = value;
+      const entries = Array.isArray(value) ? value : Array.isArray(data.enchantments) ? data.enchantments : Object.entries(data.levels ?? data).map(([id, level]) => ({ id, level }));
+      const result = [];
+      for (const entry of entries) {
+        if (entry == null || typeof entry !== "object")
+          continue;
+        const id = entry.name ?? entry.id;
+        const numericId = typeof id === "number" ? id : typeof id === "string" && /^\d+$/.test(id) ? Number(id) : void 0;
+        const rawName = numericId != null ? registry?.enchantments?.[numericId]?.name : id;
+        const name = typeof rawName === "string" ? rawName.replace(/^minecraft:/, "") : "";
+        const level = entry.lvl ?? entry.level;
+        if (!name || typeof level !== "number" || !Number.isInteger(level) || level <= 0)
+          continue;
+        result.push({ name, lvl: level });
+      }
+      return result;
+    }
+    function componentEnchantments(item) {
+      const type = item?.name === "enchanted_book" ? "stored_enchantments" : "enchantments";
+      return item?.componentMap?.get(type)?.data ?? item?.componentMap?.get(`minecraft:${type}`)?.data;
+    }
+    function getItemEnchantments(item, registry) {
+      return normalizeEnchantments(componentEnchantments(item) ?? item?.enchants, registry);
+    }
+    var installed = /* @__PURE__ */ new WeakSet();
+    var patched = /* @__PURE__ */ new WeakSet();
+    function installItemEnchantmentCompatibility(bot) {
+      if (installed.has(bot))
+        return;
+      const registry = bot.registry;
+      const inventory = bot.inventory;
+      const patch = (item) => {
+        if (item == null)
+          return;
+        let prototype = Object.getPrototypeOf(item);
+        while (prototype != null && prototype !== Object.prototype) {
+          const descriptor = Object.getOwnPropertyDescriptor(prototype, "enchants");
+          if (descriptor?.get != null) {
+            if (patched.has(prototype) || descriptor.configurable === false)
+              return;
+            const original = descriptor.get;
+            Object.defineProperty(prototype, "enchants", { ...descriptor, get() {
+              return normalizeEnchantments(componentEnchantments(this) ?? original.call(this), registry);
+            } });
+            patched.add(prototype);
+            return;
+          }
+          prototype = Object.getPrototypeOf(prototype);
+        }
+      };
+      for (const item of inventory.slots)
+        patch(item);
+      patch(bot.heldItem);
+      const onSlot = (_slot, _old, item) => {
+        patch(item);
+      };
+      const cleanup = () => {
+        inventory.off("updateSlot", onSlot);
+      };
+      inventory.on("updateSlot", onSlot);
+      bot.once("end", cleanup);
+      installed.add(bot);
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js
 var require_PathingUtil = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/PathingUtil.js"(exports2) {
@@ -12975,6 +13213,7 @@ var require_PathingUtil = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.PathingUtil = void 0;
     var miningTools_12 = require_miningTools();
+    var itemEnchantments_12 = require_itemEnchantments();
     var PathingUtil = class {
       constructor(bot) {
         this.bot = bot;
@@ -13006,11 +13245,11 @@ var require_PathingUtil = __commonJS({
         const effects = this.bot.entity.effects;
         const creative = this.bot.game.gameMode === "creative";
         const helmet = this.bot.inventory.slots[this.bot.getEquipmentDestSlot("head")];
-        const helmetEnchants = helmet?.enchants ?? [];
+        const helmetEnchants = (0, itemEnchantments_12.getItemEnchantments)(helmet, this.bot.registry);
         let fastest = block.digTime(null, creative, environment.inWater, environment.notOnGround, helmetEnchants, effects);
         let bestTool = null;
         for (const tool of availableTools) {
-          const enchants = (tool.enchants ?? []).concat(helmetEnchants);
+          const enchants = (0, itemEnchantments_12.getItemEnchantments)(tool, this.bot.registry).concat(helmetEnchants);
           const digTime = block.digTime(tool.type, creative, environment.inWater, environment.notOnGround, enchants, effects);
           if (digTime < fastest) {
             fastest = digTime;
@@ -13075,7 +13314,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -13085,6 +13324,7 @@ var PathingUtil_1 = require_PathingUtil();
 var climbablePhysics_1 = require_climbablePhysics();
 var supportingBlockPhysics_1 = require_supportingBlockPhysics();
 var miningTools_1 = require_miningTools();
+var itemEnchantments_1 = require_itemEnchantments();
 var ThePathfinder_2 = require_ThePathfinder();
 Object.defineProperty(exports, "ThePathfinder", { enumerable: true, get: function() {
   return ThePathfinder_2.ThePathfinder;
@@ -13104,11 +13344,22 @@ Object.defineProperty(exports, "installMiningToolMaterials", { enumerable: true,
 Object.defineProperty(exports, "miningBlock", { enumerable: true, get: function() {
   return miningTools_2.miningBlock;
 } });
+var itemEnchantments_2 = require_itemEnchantments();
+Object.defineProperty(exports, "getItemEnchantments", { enumerable: true, get: function() {
+  return itemEnchantments_2.getItemEnchantments;
+} });
+Object.defineProperty(exports, "normalizeEnchantments", { enumerable: true, get: function() {
+  return itemEnchantments_2.normalizeEnchantments;
+} });
+Object.defineProperty(exports, "installItemEnchantmentCompatibility", { enumerable: true, get: function() {
+  return itemEnchantments_2.installItemEnchantmentCompatibility;
+} });
 exports.waterDrop = __importStar(require_waterDrop());
 function createPlugin(opts) {
   return function(bot) {
     if (bot.pathfinder instanceof ThePathfinder_1.ThePathfinder)
       return;
+    (0, itemEnchantments_1.installItemEnchantmentCompatibility)(bot);
     (0, miningTools_1.installMiningToolMaterials)(bot);
     cacheWorld_1.BlockInfo.init(bot.registry);
     if (!bot.hasPlugin(mineflayer_util_plugin_1.default))

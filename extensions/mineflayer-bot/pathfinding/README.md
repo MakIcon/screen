@@ -358,6 +358,26 @@ Already arriving with speed, other surfaces, headhitters and effects change the
 range. Legacy 1.19.4 tests retain the older eight-block, opt-in 45-degree setup.
 The planner tests each available runway and input timing through collisions.
 
+Dry traversal remembers up to 4096 grounded/climbable cells for the current
+connection and dimension. When an ordinary search exhausts its budget in a broad
+cave, a bounded retry narrows exploration to corridors near those visited cells.
+All movements are regenerated with the current terrain, enabled providers and
+exclusions; memory never implies a reversible drop or a crossing through a
+blocked/unloaded cell. A same-level exit can reconnect to a fresh dry route when
+the owner has moved beyond the remembered area. Complete ordinary routes take
+priority, so new cave shortcuts can replace older detours. Respawn and dimension
+changes clear the hints. Mining also probes ready passages for horizontal and
+upward approaches before excavating.
+Descent smoothing merges only collinear horizontal steps, preserving the turn
+where a staircase meets a cave instead of steering diagonally across its rim.
+
+Component-based item enchantments are exposed to Mineflayer/dependency plugins
+as named `{ name, lvl }` arrays. The adapter resolves component registry IDs,
+keeps command-provided levels and supports stored enchantments in books, while
+preserving original wire components and legacy NBT. Inventory updates install
+the getter for items received after an empty login; the update listener is
+removed on disconnect.
+
 Commands from the repository root:
 
 ```powershell

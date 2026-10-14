@@ -273,7 +273,9 @@ export function MinecraftSearchField({
                           </span>
                           <span className="minecraft-search-kind">
                             {entry.kind === "group"
-                              ? `${entry.blocks?.length ?? ""} блоков`
+                              ? entry.blocks
+                                ? `${entry.blocks.length} блоков`
+                                : "Группа"
                               : entry.kind === "block"
                                 ? "Блок"
                                 : "Предмет"}

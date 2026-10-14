@@ -129,6 +129,13 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
   }
   if (command === "work") {
     const action = args[0] || "status";
+    if (action === "defense") {
+      if (args.length !== 4 || !args.slice(1).every((value) => ["on", "off"].includes(value)))
+        throw new Error("work defense on|off on|off on|off — мобы, игроки, стрелы");
+      work.configureDefense({ defendMobs: args[1] === "on", defendPlayers: args[2] === "on", defendArrows: args[3] === "on" });
+      reply("Защита при добыче настроена");
+      return true;
+    }
     if (action === "tunnels") {
       if (args.length !== 7 || !["on", "off"].includes(args[5]))
         throw new Error("work tunnels ширина высота ширинаЛестницы просветЛестницы on|off интервалФакелов");
@@ -157,6 +164,14 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
     return true;
   }
   if (command === "stash") {
+    if (args.length === 1 && args[0] === "pick") {
+      const point = ownerPosition(bot, "look", owner);
+      if (!/^(?:chest|trapped_chest|barrel|(?:[a-z]+_)?shulker_box)$/.test(bot.blockAt(point)?.name || ""))
+        throw new Error("Наведите прицел на сундук, бочку или шалкеровый ящик.");
+      work.captureChest(point);
+      reply(`Сундук выбран: ${point.x} ${point.y} ${point.z}`);
+      return true;
+    }
     if (args[0] === "clear" && args.length === 1) {
       work.setChest(null);
       reply("Сундук отключён");

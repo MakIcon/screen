@@ -34,6 +34,15 @@ function passageSettings(input = {}, defaults = DEFAULTS) {
   result.placeTorches = input.placeTorches ?? defaults.placeTorches;
   return result;
 }
+function defenseSettings(input = {}, defaults = DEFAULTS) {
+  const result = {};
+  for (const key of ["defendMobs", "defendPlayers", "defendArrows"]) {
+    if (input[key] != null && typeof input[key] !== "boolean")
+      throw new Error("Защита при добыче: включено или выключено");
+    result[key] = input[key] ?? defaults[key];
+  }
+  return result;
+}
 const SCAFFOLD_ITEMS = new Set([
   "dirt", "cobblestone", "cobbled_deepslate", "netherrack",
   "stone", "deepslate", "tuff", "andesite", "diorite", "granite",
@@ -227,6 +236,7 @@ function keepItem(bot, item) {
 module.exports = {
   DEFAULTS,
   passageSettings,
+  defenseSettings,
   SCAFFOLD_ITEMS,
   AIR,
   FLUIDS,

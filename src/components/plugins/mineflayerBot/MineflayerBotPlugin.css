@@ -37,13 +37,6 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.mineflayer-chest-icon {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: currentColor;
-  mask: url("../../../assets/chest-outline.svg") center / contain no-repeat;
-}
 .mineflayer-coordinate-field,
 .mineflayer-chest-panel {
   display: grid;

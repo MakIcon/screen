@@ -531,7 +531,26 @@ pub async fn send_mineflayer_bot_chat(
     command: Option<bool>,
 ) -> Result<(), String> {
     let message = validate_chat_message(&message)?;
+    send_worker_request(state, serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "message": message })).await
+}
+
+#[tauri::command]
+pub async fn configure_mineflayer_bot_storage(
+    state: State<'_, MineflayerBotState>,
+    groups: Vec<crate::models::MineflayerStorageGroup>,
+) -> Result<(), String> {
+    if groups.len() > 32 || groups.iter().any(|group| group.chests.len() > 32 || group.filters.len() > 64 || group.name.chars().count() > 64) {
+        return Err("Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой".to_string());
+    }
+    send_worker_request(state, serde_json::json!({ "type": "storage_config", "groups": groups })).await
+}
+
+async fn send_worker_request(
+    state: State<'_, MineflayerBotState>,
+    mut payload: serde_json::Value,
+) -> Result<(), String> {
     let request_id = uuid::Uuid::new_v4().to_string();
+    payload["requestId"] = serde_json::json!(request_id);
     let (reply, response) = oneshot::channel();
     {
         let mut runtime = state
@@ -549,7 +568,7 @@ pub async fn send_mineflayer_bot_chat(
             .ok_or_else(|| "Канал отправки сообщений боту недоступен".to_string())?;
         write_worker_message(
             stdin,
-            &serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "requestId": request_id, "message": message }),
+            &payload,
         )?;
         runtime.pending_chat.insert(request_id.clone(), reply);
     }
@@ -697,6 +716,10 @@ pub async fn start_mineflayer_bot(
             stair_height: plugin.gathering.stair_height.clamp(3, 4),
             place_torches: plugin.gathering.place_torches,
             torch_interval: plugin.gathering.torch_interval.clamp(4, 16),
+            defend_mobs: plugin.gathering.defend_mobs,
+            defend_players: plugin.gathering.defend_players,
+            defend_arrows: plugin.gathering.defend_arrows,
+            storage_groups: plugin.gathering.storage_groups.clone(),
         },
     };
 

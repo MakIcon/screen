@@ -417,6 +417,18 @@ export type MineflayerGatheringSettings = {
   stairHeight: number;
   placeTorches: boolean;
   torchInterval: number;
+  defendMobs: boolean;
+  defendPlayers: boolean;
+  defendArrows: boolean;
+  storageGroups: MineflayerStorageGroup[];
+};
+
+export type MineflayerStorageGroup = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  filters: string[];
+  chests: Array<{ x: number; y: number; z: number }>;
 };
 
 export type BlueMapPluginSettings = {
@@ -522,6 +534,9 @@ export type MineflayerBotStatus = {
     history?: MineflayerWorkTask[];
     selection?: {
       chest: { x: number; y: number; z: number } | null;
+      storagePick?: { x: number; y: number; z: number } | null;
+      storageGroups?: MineflayerStorageGroup[];
+      storageStatus?: Record<string, { state: "full" | "ok" | "unavailable"; message: string }>;
       areas: Record<string, Partial<Record<"1" | "2", { x: number; y: number; z: number }>>>;
     };
   } | null;

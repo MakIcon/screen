@@ -11,6 +11,7 @@ import type {
 import combatDefaults from "../../../extensions/mineflayer-bot/combat-defaults.json";
 import survivalDefaults from "../../../extensions/mineflayer-bot/survival-defaults.json";
 import gatheringDefaults from "../../../extensions/mineflayer-bot/gathering-defaults.json";
+import { normalizeStorageGroups } from "./mineflayerBot/storageGroups";
 
 export const DEFAULT_MINEFLAYER_COMBAT_SETTINGS = combatDefaults as MineflayerCombatSettings;
 export const DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS = survivalDefaults as MineflayerSurvivalSettings;
@@ -29,6 +30,10 @@ export function normalizeMineflayerGatheringSettings(value: unknown): Mineflayer
     stairHeight: normalizeInteger(draft.stairHeight, defaults.stairHeight, 3, 4),
     placeTorches: normalizeBoolean(draft.placeTorches, defaults.placeTorches),
     torchInterval: normalizeInteger(draft.torchInterval, defaults.torchInterval, 4, 16),
+    defendMobs: normalizeBoolean(draft.defendMobs, defaults.defendMobs),
+    defendPlayers: normalizeBoolean(draft.defendPlayers, defaults.defendPlayers),
+    defendArrows: normalizeBoolean(draft.defendArrows, defaults.defendArrows),
+    storageGroups: normalizeStorageGroups(draft.storageGroups),
   };
 }
 

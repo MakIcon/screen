@@ -47,13 +47,29 @@ describe("normalizeMineflayerBotSettings", () => {
   });
 
   it("saves survival preferences independently and bounds eating and rescue thresholds", () => {
-    const normalized = normalizeMineflayerBotSettings({ survival: {
-      autoEat: false, emergencyMlg: false, mlgPickupWater: false,
-      autoEatMinHunger: 50, autoEatMinHealth: -1, mlgMinFallHeight: 0, autoEatPriority: "foodPoints",
-    } });
-    expect(normalized.survival).toEqual({ autoEat: false, emergencyMlg: false, mlgPickupWater: false,
-      autoEatMinHunger: 19, autoEatMinHealth: 1, mlgMinFallHeight: 4, autoEatPriority: "foodPoints" });
-    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(normalized)))).toEqual(normalized);
+    const normalized = normalizeMineflayerBotSettings({
+      survival: {
+        autoEat: false,
+        emergencyMlg: false,
+        mlgPickupWater: false,
+        autoEatMinHunger: 50,
+        autoEatMinHealth: -1,
+        mlgMinFallHeight: 0,
+        autoEatPriority: "foodPoints",
+      },
+    });
+    expect(normalized.survival).toEqual({
+      autoEat: false,
+      emergencyMlg: false,
+      mlgPickupWater: false,
+      autoEatMinHunger: 19,
+      autoEatMinHealth: 1,
+      mlgMinFallHeight: 4,
+      autoEatPriority: "foodPoints",
+    });
+    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(normalized)))).toEqual(
+      normalized,
+    );
     expect(normalized.allowBucketWaterDrop).toBe(true);
   });
 
@@ -78,14 +94,43 @@ describe("normalizeMineflayerBotSettings", () => {
 
   it("preserves passage settings and enforces three-block stair clearance", () => {
     const legacy = normalizeMineflayerBotSettings({}).gathering;
-    expect(legacy).toEqual({ tunnelWidth: 2, tunnelHeight: 2, stairWidth: 2,
-      stairHeight: 3, placeTorches: false, torchInterval: 8 });
-    const saved = normalizeMineflayerBotSettings({ gathering: {
-      tunnelWidth: 99, tunnelHeight: 1, stairWidth: 0, stairHeight: 2,
-      placeTorches: true, torchInterval: 99,
-    } });
-    expect(saved.gathering).toEqual({ tunnelWidth: 3, tunnelHeight: 2, stairWidth: 1,
-      stairHeight: 3, placeTorches: true, torchInterval: 16 });
+    expect(legacy).toEqual({
+      tunnelWidth: 2,
+      tunnelHeight: 2,
+      stairWidth: 2,
+      stairHeight: 3,
+      placeTorches: false,
+      torchInterval: 8,
+      defendMobs: true,
+      defendPlayers: false,
+      defendArrows: true,
+      storageGroups: [],
+    });
+    const saved = normalizeMineflayerBotSettings({
+      gathering: {
+        tunnelWidth: 99,
+        tunnelHeight: 1,
+        stairWidth: 0,
+        stairHeight: 2,
+        placeTorches: true,
+        torchInterval: 99,
+        defendMobs: false,
+        defendPlayers: true,
+        defendArrows: false,
+      },
+    });
+    expect(saved.gathering).toEqual({
+      tunnelWidth: 3,
+      tunnelHeight: 2,
+      stairWidth: 1,
+      stairHeight: 3,
+      placeTorches: true,
+      torchInterval: 16,
+      defendMobs: false,
+      defendPlayers: true,
+      defendArrows: false,
+      storageGroups: [],
+    });
     expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
 

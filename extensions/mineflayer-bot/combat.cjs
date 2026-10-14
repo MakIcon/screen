@@ -361,6 +361,7 @@ const HOSTILES = new Set([
   "magma_cube",
   "piglin_brute",
   "breeze",
+  "warden",
   "wither",
   "ender_dragon",
 ]);
@@ -381,6 +382,8 @@ function createCombatController(
   installCombatNavigation(bot, onError);
   if (loadPlugins) configureCombatPlugins(bot, settings, onError);
   let target = null;
+  let workTarget = false;
+  let workSuspended = false;
   let mode = null;
   let requestedStyle = settings.style;
   let generation = 0;
@@ -406,6 +409,8 @@ function createCombatController(
     now,
     onStatus,
     onError,
+    enabled: () => (settings.enabled && settings.bowDefense) ||
+      Boolean(bot.launcherGathering?.protecting && bot.launcherGathering.settings.defendArrows),
     beforeDefend() {
       generation++;
       pending = false;
@@ -470,6 +475,8 @@ function createCombatController(
     bot._client.write("look", combatLookPacket(bot, yaw, pitch));
   }
   function stop(suspendAuto = true) {
+    suspended = suspendAuto || (workTarget && workSuspended);
+    workTarget = false;
     generation++;
     defense.stop();
     crystals.clear();
@@ -480,20 +487,23 @@ function createCombatController(
     if (target) bot.tracker?.stopTrackingEntity(target);
     target = null;
     pending = false;
-    suspended = suspendAuto;
     stopEngines();
     void bot.pathfinder.stop();
     bot.clearControlStates();
   }
-  function select(entity, style = settings.style) {
-    if (!settings.enabled) throw new Error("PvP is disabled in extension settings");
+  function select(entity, style = settings.style, forWork = false) {
+    if (!settings.enabled && !forWork) throw new Error("PvP is disabled in extension settings");
     if (!allowed(entity)) throw new Error("Target is missing or is the bot itself");
     if (style === "crystal" && !settings.crystalEnabled)
       throw new Error("Auto Crystal is disabled in extension settings");
-    const maxRange =
+    const maxRange = forWork ? Math.max(12, settings.targetRange) :
       style === "melee" ? settings.targetRange : Math.max(settings.targetRange, settings.bowRange);
     if (distance(entity) > maxRange) throw new Error("Target is too far away");
+    const previousSuspended = suspended;
     stop(false);
+    suspended = false;
+    workTarget = forWork;
+    workSuspended = previousSuspended;
     target = entity;
     lastEnemyPosition = entity.position.clone();
     observePearlHand(entity);
@@ -931,10 +941,10 @@ function createCombatController(
     return false;
   }
   function tick() {
-    if (disposed || !settings.enabled || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy) return;
+    if (disposed || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy) return;
     try {
-      if (defense.tick(true) || suspended) return;
-      if (!target && autoEnabled && now() >= nextActionAt) {
+      if (defense.tick(true) || (suspended && !workTarget) || (!settings.enabled && !workTarget)) return;
+      if (!target && autoEnabled && !bot.launcherGathering?.busy && now() >= nextActionAt) {
         const entity = bot.nearestEntity(
           (entity) =>
             allowed(entity) &&
@@ -947,10 +957,12 @@ function createCombatController(
         else nextActionAt = now() + 500;
       }
       if (!target) return;
-      sampleEnemyTeleport();
-      observePearlHand();
-      if (pursuePearl()) return;
-      const maxRange =
+      if (!workTarget) {
+        sampleEnemyTeleport();
+        observePearlHand();
+        if (pursuePearl()) return;
+      }
+      const maxRange = workTarget ? Math.max(12, settings.targetRange) :
         requestedStyle === "melee"
           ? settings.targetRange
           : Math.max(settings.targetRange, settings.bowRange);
@@ -1044,6 +1056,21 @@ function createCombatController(
   return {
     select,
     stop,
+    defend(entity) {
+      // Gathering owns threat selection and uses the existing melee engine.
+      // Crystal placement and pursuit do not belong in a temporary work defense.
+      if (entity?.username && isOwner(entity.username)) throw new Error("Owners are protected during gathering");
+      select(entity, "melee", true);
+    },
+    stopWorkDefense() {
+      if (workTarget) stop(false);
+    },
+    get workTarget() {
+      return workTarget ? target : null;
+    },
+    get bowThreat() {
+      return defense.threat;
+    },
     pauseForSurvival() {
       generation++;
       pending = false;
@@ -1078,6 +1105,7 @@ function createCombatController(
     auto(enabled) {
       if (enabled && !settings.enabled) throw new Error("PvP is disabled in extension settings");
       stop(!enabled);
+      suspended = !enabled;
       autoEnabled = enabled;
       nextActionAt = now() + settings.reactionMs;
     },
@@ -1110,6 +1138,7 @@ function createCombatController(
 }
 
 module.exports = {
+  HOSTILES,
   canSeeTarget,
   installCombatProtocol,
   normalizeCombat,

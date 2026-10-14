@@ -7,6 +7,8 @@ import gathering from "./gathering.cjs";
 import { scanMine, createMineIndex } from "./gathering-scan.cjs";
 import commands from "./gathering-commands.cjs";
 import worker from "./worker.cjs";
+import { createCombatController } from "./combat.cjs";
+import { key as storageKey } from "./gathering-storage.cjs";
 
 const require = createRequire(import.meta.url);
 const { Vec3 } = require("vec3");
@@ -54,7 +56,7 @@ test("ore index reuses sections, tracks edits and refreshes reloaded columns", a
   assert.equal(bot.listenerCount("chunkColumnLoad"), 0);
 });
 
-function fixture(version = "26.1.2") {
+function fixture(version = "26.1.2", hooks = {}) {
   const bot = new EventEmitter();
   bot.registry = mcData(version);
   const Block = blockFactory(bot.registry);
@@ -154,7 +156,7 @@ function fixture(version = "26.1.2") {
   const work = gathering.createGatheringController(
     bot,
     { dropWaitMs: 0, pickupTimeoutMs: 200, operationTimeoutMs: 500, reserveSlots: 2 },
-    { onStatus: (message) => events.push(message), onProgress: (snapshot) => progress.push(snapshot) },
+    { onStatus: (message) => events.push(message), onProgress: (snapshot) => progress.push(snapshot), ...hooks },
   );
   const item = (name, durabilityUsed = 0) => ({
     name,
@@ -188,6 +190,384 @@ async function until(f, predicate, timeout = 3000) {
   }
   assert.ok(predicate(), JSON.stringify(f.work.snapshot));
 }
+
+function addWorkCombat(f, settings = {}) {
+  const { bot } = f, attacks = [];
+  bot.username = "Bot";
+  bot.world = { raycast: () => null };
+  bot.supportFeature = bot.registry.supportFeature;
+  bot.lookAt = async () => {};
+  bot.deactivateItem = () => { bot.usingHeldItem = false; };
+  bot.activateItem = () => { bot.usingHeldItem = true; };
+  bot.swordpvp = { target: null,
+    async attack(entity) { this.target = entity; attacks.push(entity.id); },
+    stop() { this.target = null; },
+  };
+  bot.pvp = { target: null, forceStop() { this.target = null; } };
+  bot.nearestEntity = (predicate) => Object.values(bot.entities).find(predicate);
+  const combat = createCombatController(bot, { enabled: false, reactionMs: 0, ...settings }, { loadPlugins: false });
+  bot.launcherCombat = combat;
+  const enemy = (id = 2, name = "zombie", username) => {
+    const entity = { id, name, username, type: username ? "player" : "mob", isValid: true,
+      position: new Vec3(2.5, 64, 0.5), height: 1.8, width: 0.6 };
+    bot.entities[id] = entity;
+    return entity;
+  };
+  return { combat, attacks, enemy };
+}
+
+test("work defense interrupts equipment, uses the existing melee engine with PvP off and resumes the same queue", async (t) => {
+  const f = fixture(), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.put("dirt", 1); f.put("oak_log", 2);
+  f.items.push(f.item("iron_axe"));
+  let release, equipping = false;
+  const equip = f.bot.equip;
+  f.bot.equip = async (...args) => { equipping = true; await new Promise((resolve) => { release = resolve; }); await equip(...args); };
+  delete f.bot.world;
+  const id = f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
+  f.work.enqueue({ kind: "forest", count: 1 });
+  await until(f, () => equipping);
+  f.bot.world = { raycast: () => null };
+  const zombie = c.enemy();
+  await until(f, () => /Защищаюсь/.test(f.work.snapshot.reason));
+  assert.equal(c.attacks.length, 0, "pending gathering equip owns inventory until it settles");
+  assert.equal(f.work.snapshot.active.id, id);
+  assert.equal(f.work.snapshot.queue.length, 1);
+  f.bot.equip = equip; release();
+  await until(f, () => c.attacks.length === 1);
+  assert.equal(f.dug.length, 0);
+  assert.equal(c.combat.workTarget, zombie);
+  delete f.bot.world; delete f.bot.entities[zombie.id]; f.bot.emit("entityDead", zombie);
+  await until(f, () => f.work.snapshot.history.length === 2);
+  assert.deepEqual(f.work.snapshot.history.map((job) => job.outcome), ["готово", "готово"]);
+  assert.equal(f.work.snapshot.history[0].id, id);
+  for (const [key, value] of Object.entries(f.originalSettings))
+    assert.deepEqual(f.bot.pathfinder.defaultMoveSettings[key], value);
+});
+
+test("player defense requires an actual attacker and respects its switch and owners", async (t) => {
+  const f = fixture(), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.work.enqueue({ kind: "collect", radius: 16 });
+  // Keep the work active without allowing its asynchronous scan to finish.
+  const player = c.enemy(2, "player", "Enemy");
+  f.bot.emit("entityHurt", f.bot.entity, player);
+  assert.equal(c.combat.workTarget, null, "player defense defaults off");
+  f.work.configureDefense({ defendPlayers: true });
+  assert.equal(c.combat.workTarget, null, "a nearby player alone is not an attacker");
+  f.bot.emit("entityHurt", f.bot.entity);
+  assert.equal(c.combat.workTarget, null, "unknown damage does not guess a player");
+  f.bot.emit("entityHurt", f.bot.entity, player);
+  await until(f, () => c.attacks.length === 1);
+  f.work.pause();
+  await c.combat.idleTask;
+  delete f.bot.entities[player.id];
+  await until(f, () => f.work.snapshot.phase === "paused");
+  for (let i = 0; i < 10; i++) { f.bot.emit("physicsTick"); await delay(5); }
+  assert.equal(f.work.snapshot.reason, "Пауза владельца");
+  assert.equal(c.combat.workTarget, null);
+});
+
+test("creeper and low-health defense retreat on safe terrain without digging and restore movement", async (t) => {
+  for (const lowHealth of [false, true]) {
+    const f = fixture(), c = addWorkCombat(f);
+    t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+    f.items.push(f.item("iron_axe"));
+    for (let x = -8; x <= 8; x++) for (let z = -8; z <= 8; z++) f.put("stone", x, 63, z);
+    // A lava floor must never be chosen as an escape destination.
+    f.put("lava", -6, 63, 0);
+    const enemy = c.enemy(2, lowHealth ? "zombie" : "creeper");
+    if (lowHealth) f.bot.health = 6;
+    const moves = [];
+    f.bot.pathfinder.goto = async (goal) => {
+      moves.push(goal);
+      assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, false);
+      assert.equal(f.bot.pathfinder.defaultMoveSettings.canPlace, false);
+      assert.equal(f.bot.blockAt(new Vec3(goal.x, goal.y - 1, goal.z)).name, "stone");
+      f.bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    };
+    f.work.enqueue({ kind: "collect", radius: 16 });
+    await until(f, () => moves.length > 0);
+    assert.equal(c.attacks.length, 0);
+    assert.ok(f.bot.entity.position.distanceTo(enemy.position) > 6);
+    delete f.bot.entities[enemy.id]; f.bot.emit("entityDead", enemy);
+    f.bot.health = 20;
+    await until(f, () => f.work.snapshot.history.length === 1);
+    for (const [key, value] of Object.entries(f.originalSettings))
+      assert.deepEqual(f.bot.pathfinder.defaultMoveSettings[key], value);
+  }
+});
+
+test("gathering defense settings apply atomically through local commands", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const hooks = { prepare: async () => assert.fail("configuration must not cancel a job"), reply: () => {} };
+  await commands.handleGatheringCommand(f.bot, f.work, "work", ["defense", "off", "on", "off"], hooks);
+  assert.deepEqual(plan.defenseSettings(f.work.settings), { defendMobs: false, defendPlayers: true, defendArrows: false });
+  await assert.rejects(commands.handleGatheringCommand(f.bot, f.work, "work", ["defense", "on", "bad", "on"], hooks));
+  assert.equal(f.work.settings.defendMobs, false);
+});
+
+test("owner damage is ignored and legacy player damage needs an unambiguous aimed swing", async (t) => {
+  const f = fixture("1.8.8", { isOwner: (name) => name === "Owner" }), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("iron_axe"));
+  f.work.configureDefense({ defendPlayers: true });
+  f.work.enqueue({ kind: "collect", radius: 16 });
+  const owner = c.enemy(3, "player", "Owner");
+  f.bot.emit("entityHurt", f.bot.entity, owner);
+  assert.equal(c.combat.workTarget, null);
+  assert.equal(f.work.snapshot.reason, "");
+  const attacker = c.enemy(2, "player", "Enemy");
+  attacker.yaw = Math.PI / 2; attacker.pitch = -0.3;
+  f.bot.emit("entitySwingArm", attacker);
+  f.bot.emit("entityHurt", f.bot.entity);
+  await until(f, () => c.attacks.length === 1);
+  assert.equal(c.combat.workTarget, attacker);
+});
+
+test("work-only bow protection raises the existing shield with PvP disabled and clears after the threat", async (t) => {
+  const f = fixture(), c = addWorkCombat(f);
+  t.after(async () => { await f.work.dispose(); c.combat.dispose(); });
+  f.items.push(f.item("shield"));
+  f.work.enqueue({ kind: "collect", radius: 16 });
+  const archer = c.enemy(2, "player", "Enemy");
+  archer.position.x = 10.5; archer.yaw = Math.PI / 2; archer.pitch = 0;
+  archer.heldItem = { name: "bow" };
+  archer.metadata = [];
+  const index = f.bot.registry.entitiesByName.player.metadataKeys.indexOf("living_entity_flags");
+  archer.metadata[index] = 1;
+  f.bot.emit("entityUpdate", archer);
+  await until(f, () => f.bot.launcherDefendingBow === true);
+  await c.combat.idleTask;
+  assert.equal(f.bot.usingHeldItem, true);
+  assert.equal(c.attacks.length, 0, "shielding does not attack a peaceful player");
+  delete f.bot.entities[archer.id]; f.bot.emit("entityGone", archer);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.bot.launcherDefendingBow, false);
+  assert.equal(c.combat.workTarget, null);
+});
+
+for (const lateReply of [true, false]) test(`cancelled chest opening cannot consume or close a retry window (late reply ${lateReply})`, async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const chest = f.put("chest", 1);
+  f.work.setChest(chest.position);
+  f.items.push({ ...f.item("cobblestone"), count: 16 });
+  let opens = 0, closes = 0;
+  function window() {
+    return { type: "minecraft:chest",
+      close() { closes++; f.bot.currentWindow = null; },
+      async deposit(_type, _metadata, count) { assert.equal(count, 16); f.items.length = 0; f.setSlots(30); },
+    };
+  }
+  f.bot.activateBlock = async () => {
+    if (++opens === 2) {
+      const next = window(); f.bot.currentWindow = next;
+      f.bot.emit("windowOpen", next);
+    }
+  };
+  const id = f.work.enqueue({ kind: "deposit" });
+  await until(f, () => opens === 1);
+  f.work.pause(); await f.work.task;
+  if (lateReply) {
+    const late = window(); f.bot.currentWindow = late;
+    f.bot.emit("windowOpen", late);
+    assert.equal(f.bot.currentWindow, null);
+  }
+  f.work.resume();
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].id, id);
+  assert.equal(f.work.snapshot.history[0].deposited, 16);
+  assert.equal(closes, lateReply ? 2 : 1);
+  assert.equal(f.bot.listenerCount("windowOpen"), 0);
+});
+
+function setupStorage(f, specs) {
+  const stores = new Map(), transfers = [];
+  for (const [x, slots] of specs) {
+    const block = f.put("chest", x);
+    stores.set(storageKey(block.position), { slots, position: block.position, opened: 0, closed: 0 });
+  }
+  f.bot.pathfinder.goto = async (goal) => { f.bot.entity.position = new Vec3(goal.x - 2, goal.y - 0.5, goal.z); };
+  function take(type, amount) {
+    for (let index = 0; index < f.items.length && amount; index++) {
+      const item = f.items[index]; if (item.type !== type) continue;
+      const count = Math.min(amount, item.count); item.count -= count; amount -= count;
+      if (!item.count) { f.items.splice(index--, 1); f.setSlots(20); }
+    }
+    assert.equal(amount, 0, "does not request more than the inventory contains");
+  }
+  f.bot.openContainer = async (block) => {
+    const store = stores.get(storageKey(block.position)); store.opened++;
+    const window = { slots: store.slots, inventoryStart: store.slots.length, type: "minecraft:chest",
+      close() { store.closed++; f.bot.currentWindow = null; },
+      async deposit(type, _metadata, count) {
+        const source = f.items.find((item) => item.type === type);
+        transfers.push({ x: block.position.x, name: source.name, count });
+        let remaining = count;
+        for (let index = 0; index < store.slots.length && remaining; index++) {
+          const item = store.slots[index];
+          if (item && item.type !== type) continue;
+          const size = f.bot.registry.itemsByName[source.name].stackSize;
+          const amount = Math.min(remaining, size - (item?.count || 0));
+          if (!amount) continue;
+          store.slots[index] = { ...source, count: (item?.count || 0) + amount };
+          remaining -= amount;
+        }
+        assert.equal(remaining, 0, "transfer amount respects container capacity");
+        take(type, count);
+      },
+    };
+    f.bot.currentWindow = window;
+    return window;
+  };
+  return { stores, transfers };
+}
+
+test("grouped storage splits a stack over full and free chests, sorts resources and retains unmatched loot", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const log = f.item("oak_log"), stone = f.item("stone");
+  const s = setupStorage(f, [[2, [{ ...log, count: 60 }, ...Array(26).fill({ ...stone, count: 64 })]], [5, Array(27).fill(null)], [8, Array(27).fill(null)]]);
+  f.items.push({ ...log, count: 64 }, { ...log, count: 16 }, { ...f.item("raw_iron"), count: 12 },
+    { ...f.item("diamond"), count: 5 }, f.item("iron_pickaxe"), f.item("bread"));
+  f.work.configureStorage([
+    { id: "wood", name: "Древесина", filters: ["#wood"], chests: [{ x: 2, y: 64, z: 0 }, { x: 5, y: 64, z: 0 }] },
+    { id: "iron", name: "Железо", filters: ["iron_ore"], chests: [{ x: 8, y: 64, z: 0 }] },
+  ]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(s.transfers.map(({ x, name, count }) => [x, name, count]), [[2, "oak_log", 4], [5, "oak_log", 60], [5, "oak_log", 16], [8, "raw_iron", 12]]);
+  assert.equal(f.work.snapshot.history[0].deposited, 92);
+  assert.deepEqual(f.items.map((item) => item.name), ["diamond", "iron_pickaxe", "bread"]);
+  assert.match(f.work.snapshot.history[0].reason, /5 предметов/);
+  assert.equal(f.work.snapshot.selection.storageStatus["wood:2,64,0"].state, "full");
+  assert.equal([...s.stores.values()].every((store) => store.opened === store.closed), true);
+});
+
+test("a missing chest falls through to the next destination in its group; configuration errors preserve the old groups", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  const groups = [{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 2, y: 64, z: 0 }, { x: 5, y: 64, z: 0 }] }];
+  f.work.configureStorage(groups);
+  assert.throws(() => f.work.configureStorage([{ ...groups[0], filters: ["#wrong"] }]), /фильтр/);
+  assert.equal(f.work.settings.storageGroups[0].name, "Алмазы");
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(s.transfers[0].x, 5);
+  assert.equal(f.work.snapshot.selection.storageStatus["gems:2,64,0"].state, "unavailable");
+});
+
+test("a saved chest outside loaded chunks is approached before its container block is checked", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  let loaded = false, moves = 0;
+  const blockAt = f.bot.blockAt, navigate = f.bot.pathfinder.goto;
+  f.bot.blockAt = (point) => point.x === 5 && !loaded ? null : blockAt(point);
+  f.bot.pathfinder.goto = async (goal) => { loaded = true; moves++; await navigate(goal); };
+  f.work.configureStorage([{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 5, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(moves, 2);
+  assert.equal(s.transfers[0].count, 5);
+});
+
+test("a full resource group pauses without sending its loot to the general chest", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[2, Array(27).fill({ ...f.item("stone"), count: 64 })], [5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("oak_log"), count: 20 });
+  f.work.configureStorage([
+    { id: "general", name: "Остальное", filters: ["#all"], chests: [{ x: 5, y: 64, z: 0 }] },
+    { id: "wood", name: "Древесина", filters: ["#wood"], chests: [{ x: 2, y: 64, z: 0 }] },
+  ]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  assert.match(f.work.snapshot.reason, /Древесина: 20/);
+  assert.equal(s.transfers.length, 0);
+  assert.equal(s.stores.get("5,64,0").opened, 0);
+  assert.equal(f.items[0].count, 20);
+});
+
+test("an unresponsive chest opening times out locally and does not cancel the next chest in the group", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[2, Array(27).fill(null)], [5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  f.work.settings.operationTimeoutMs = 80;
+  const open = f.bot.openContainer;
+  f.bot.activateBlock = async (block) => {
+    if (block.position.x === 5) {
+      const window = await open(block);
+      f.bot.emit("windowOpen", window);
+    }
+  };
+  f.work.configureStorage([{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 2, y: 64, z: 0 }, { x: 5, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(s.transfers[0].x, 5);
+  assert.equal(f.work.snapshot.selection.storageStatus["gems:2,64,0"].state, "unavailable");
+  assert.equal(f.bot.listenerCount("windowOpen"), 0);
+});
+
+test("inventory-full mining automatically uses configured storage groups and then resumes the ore job", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[5, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("raw_iron"), count: 64 }, f.item("iron_pickaxe"));
+  f.put("iron_ore", 1);
+  f.setSlots(2);
+  f.work.configureStorage([{ id: "iron", name: "Железо", filters: ["iron"], chests: [{ x: 5, y: 64, z: 0 }] }]);
+  const navigate = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) {
+      const entity = goal.trackedEntity;
+      f.items.push({ ...entity.getDroppedItem() });
+      f.bot.emit("playerCollect", f.bot.entity, entity);
+      entity.isValid = false; delete f.bot.entities[entity.id];
+    } else await navigate(goal);
+  };
+  f.work.enqueue({ kind: "mine", blocks: "iron", count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(s.transfers[0].name, "raw_iron");
+  assert.equal(f.work.snapshot.history[0].deposited, 64);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+});
+
+test("pausing during a container transfer waits for its clicks before closing and credits the deposited items", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const chest = f.put("chest", 1); f.work.setChest(chest.position);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  let release, started = false, closed = false;
+  f.bot.openContainer = async () => ({ close() { closed = true; }, async deposit() {
+    started = true; await new Promise((resolve) => { release = resolve; });
+    assert.equal(closed, false); f.items.length = 0;
+  } });
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => started);
+  f.work.pause(); await delay(10);
+  assert.equal(closed, false);
+  release(); await f.work.task;
+  assert.equal(closed, true);
+  assert.equal(f.work.snapshot.active.deposited, 5);
+  f.work.resume();
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].deposited, 5);
+});
+
+test("picking a chest for a saved group keeps the legacy chest and existing group definitions intact", async (t) => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  f.work.setChest({ x: 5, y: 64, z: 0 });
+  const groups = [{ id: "wood", name: "Древесина", filters: ["#wood"], chests: [{ x: 1, y: 64, z: 0 }] }];
+  f.work.configureStorage(groups);
+  const target = f.put("barrel", 2);
+  f.bot.world = { raycast: () => target };
+  const owner = { position: new Vec3(0.5, 64, 0.5), yaw: 0, pitch: 0, isValid: true };
+  await commands.handleGatheringCommand(f.bot, f.work, "stash", ["pick"], { owner: () => owner, reply: () => {}, prepare: async () => assert.fail("selection must not cancel work") });
+  assert.equal(f.work.snapshot.selection.chest.x, 5);
+  assert.deepEqual(f.work.snapshot.selection.storagePick, target.position);
+  assert.deepEqual(f.work.settings.storageGroups[0].chests, groups[0].chests);
+});
 
 for (const kind of ["mine", "forest", "quarry"]) test(`${kind} collects its own drop after it falls beyond the task bounds`, async (t) => {
   const f = fixture();
@@ -578,6 +958,7 @@ test("inventory pause survives, then auto-deposit preserves food, tools, equipme
   await until(f, () => f.work.snapshot.phase === "paused");
   assert.match(f.work.snapshot.reason, /Инвентарь/);
   const transferred = [];
+  f.bot.pathfinder.goto = async () => { f.bot.entity.position = new Vec3(3.5, 64, 0.5); };
   f.bot.openContainer = async () => ({
     close() {},
     async deposit(type) {

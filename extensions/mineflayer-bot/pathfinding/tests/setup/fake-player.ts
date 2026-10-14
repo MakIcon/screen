@@ -23,7 +23,7 @@ export type EventedMutableWorld = World & EventEmitter & {
   clearBlock: (pos: Vec3) => Block | null
 }
 
-type FakeInventory = {
+type FakeInventory = EventEmitter & {
   slots: Array<Item | null>
   hotbarStart: number
   inventoryStart: number
@@ -36,8 +36,10 @@ type FakeInventory = {
 }
 
 function setInventorySlot(inventory: FakeInventory, slot: number, item: Item | null): void {
+  const old = inventory.slots[slot]
   inventory.slots[slot] = item
   if (item != null) item.slot = slot
+  if (old !== item) inventory.emit('updateSlot', slot, old, item)
 }
 
 function inventoryItemsFromSlots(inventory: FakeInventory): Item[] {
@@ -50,7 +52,7 @@ function inventoryItemsFromSlots(inventory: FakeInventory): Item[] {
 }
 
 function createFakeInventory(items: Item[] = []): FakeInventory {
-  const inventory: FakeInventory = {
+  const inventory: FakeInventory = Object.assign(new EventEmitter(), {
     slots: Array<Item | null>(46).fill(null),
     hotbarStart: QUICK_BAR_START,
     inventoryStart: 9,
@@ -74,7 +76,7 @@ function createFakeInventory(items: Item[] = []): FakeInventory {
       return null
     },
     firstEmptyInventorySlot: () => inventory.firstEmptySlotRange(inventory.inventoryStart, inventory.inventoryEnd)
-  }
+  })
 
   let nextSlot = inventory.inventoryStart
   for (const item of items) {
