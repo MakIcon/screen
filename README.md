@@ -8,7 +8,7 @@
 
 **Your Minecraft. Your builds. Your rules.**
 
-A customizable desktop Minecraft launcher that brings your builds, mods and settings together.
+A desktop Minecraft launcher that brings your builds, mods and settings together.
 
 <br />
 
@@ -24,92 +24,15 @@ A customizable desktop Minecraft launcher that brings your builds, mods and sett
 
 </div>
 
-![ScreenLauncher overview with a custom Aurora gradient and dark base theme](docs/assets/screenshots/launcher-overview.jpg)
-
-<p align="center"><sub>Your launcher, your design. An example made with Appearance Studio.</sub></p>
-
 ## Your Minecraft, all in one place
 
 ScreenLauncher makes it easier to organize different Minecraft setups without having to manage their files by hand. Create a build for the way you want to play, install content from Modrinth and launch it from one place.
 
 - **Separate builds, no compromises.** Set up Vanilla, Fabric, Quilt, Forge or NeoForge installations independently. Each build keeps its own configuration.
 - **Mods without leaving the launcher.** Discover mods, resource packs and shaders through Modrinth. Required mod dependencies are resolved when installing compatible projects.
-- **A look that feels like yours.** Start with Light, Dark or Void, then use Appearance Studio to design the window and customize individual build cards.
-- **Extensions when you want more.** Manage Discord RPC, Mineflayer Bot, BlueMap, OBS telemetry and proxy downloads from the launcher.
+- **A look that feels like yours.** Customize the launcher appearance and build cards instead of settling for the same layout everywhere.
 - **Control over your game.** Choose Java settings, allocated memory and other options for individual builds.
 - **Pick up where you left off.** See your recent build and playtime information, then get back into the game.
-
-## Make the launcher yours
-
-**Appearance** gives you quick theme switching. **Appearance Studio** opens a separate design window with a live preview in the launcher, so you can see your changes as you make them.
-
-- **Design the window.** Use a solid color, a gradient, a local image or your own drawing as the background. Choose gradient palettes and fine-tune their color stops and direction.
-- **Set the mood.** Adjust the palette, interface and display fonts, corner rounding, and the opacity of the window, panels and controls. Custom fonts are supported too.
-- **Choose how it moves.** Customize interface motion, tab transitions, and opening and closing animations.
-- **Go element by element.** Pick a button, card or text element in the launcher and give it its own style. Review edited elements, undo or redo changes, then save and apply your design.
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>Backgrounds & gradients</b></td>
-    <td width="50%" align="center"><b>Themes & custom palettes</b></td>
-  </tr>
-  <tr>
-    <td><img src="docs/assets/screenshots/appearance-studio.jpg" alt="Appearance Studio background editor with solid, gradient, image and drawing options and gradient palettes" width="100%" /></td>
-    <td><img src="docs/assets/screenshots/appearance-studio-colors.jpg" alt="Appearance Studio color editor with base themes and custom background, surface, text and accent colors" width="100%" /></td>
-  </tr>
-</table>
-
-**Open it:** go to **Settings**, enable **Advanced Settings**, then choose **Appearance → Studio**. You can also open Studio with **Ctrl+Shift+A**.
-
-<details>
-<summary><b>Where to find Appearance, Studio and Extensions</b></summary>
-
-![Launcher settings with Light, Dark, Void and Studio appearance options, Advanced Settings enabled, and the Extensions button](docs/assets/screenshots/appearance-settings.jpg)
-
-</details>
-
-## Give every build its own identity
-
-Keep your survival world, modded setup and vanilla installation in separate builds, each with its own configuration.
-
-![Build library with separate Vanilla, Create & Explore and Survival configurations](docs/assets/screenshots/build-library.jpg)
-
-The **card editor** lets you customize how each build looks in your library:
-
-- **Backgrounds:** a color, local image, image URL or a drawing, with opacity controls.
-- **Layout:** adjust the card height and vertical alignment, then use the grid to move and resize text, tags and the pin.
-- **Labels & badges:** customize text, colors and badge visibility. Use plain text or tags, with placeholders for values such as the build version, loader, memory and last played time.
-
-With **Advanced Settings** enabled, open a build's **Build settings → Card** tab to edit its appearance and preview the result before saving.
-
-![Build card editor previewing a blue card with an editable grid, background controls and layout settings](docs/assets/screenshots/build-card-editor.jpg)
-
-Build customization also covers the game itself: memory, Java paths, JVM arguments, environment variables, window size and fullscreen settings can be configured per build.
-
-<details>
-<summary><b>See the per-build runtime settings</b></summary>
-
-![Per-build settings with JVM argument editing, memory allocation, Java selection, environment variables and window options](docs/assets/screenshots/build-settings.jpg)
-
-</details>
-
-## Extend your setup
-
-Open **Settings → Extensions → Manage** with **Advanced Settings** enabled to browse integrations and configure them in one place.
-
-![Extensions manager showing Discord RPC settings and the Mineflayer Bot, BlueMap, OBS Telemetry and Proxy entries](docs/assets/screenshots/extensions.jpg)
-
-| Extension          | What it adds                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| **Discord RPC**    | Show your build, Minecraft version and playtime in your Discord profile, with customizable status templates. |
-| **Mineflayer Bot** | A Minecraft companion with movement, gathering, crafting and smelting workflows.                             |
-| **BlueMap**        | Create and view an interactive map of a world.                                                               |
-| **OBS Telemetry**  | Send player health, armor, food and coordinates to an OBS overlay.                                           |
-| **Proxy**          | Route launcher downloads through an HTTP, HTTPS or SOCKS5 proxy.                                             |
-
-Mineflayer Bot and the BlueMap server are optional packages installed from the extensions manager. Each integration has its own settings; enable the ones you want to use.
-
-<sub>Screenshots were captured from the running desktop app with a demonstration profile and custom appearance. Features shown here may differ from the published installer.</sub>
 
 ## Download & installation
 
@@ -130,7 +53,7 @@ Want to add mods? Open the **Modrinth** section after creating a compatible buil
 - **Microsoft and offline account workflows** — manage supported ways to start the game.
 - **Flexible runtime settings** — configure Java, JVM arguments and per-build environment variables.
 - **Safer downloads** — verify downloaded Minecraft files using available checksums and reuse valid cached files.
-- **Optional integrations** — configure the extensions shown above for your own setup.
+- **Optional integrations** — Discord Rich Presence, OBS telemetry and a Mineflayer bot extension for more advanced setups.
 
 These extras are available when you need them; you can also keep things simple and just play.
 
