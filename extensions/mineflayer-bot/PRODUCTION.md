@@ -1,10 +1,51 @@
 # Crafting, smelting and workstations
 
-The launcher has a **Крафт и станки** tab. The same commands work in owner chat,
+The launcher opens on **Сценарий**, with manual production under **Рабочие блоки**.
+The same commands work in owner chat,
 whispers and launcher commands, with or without the configured prefix. Existing
 owner, channel and cooldown restrictions apply. Requests are validated before
 replacing movement/gathering. Long jobs acknowledge immediately so `stop` stays
 available. Resources must already be in the bot's inventory.
+
+## Launcher scenarios
+
+Build a sequence of up to 100 mining, forestry, crafting, smelting, collection,
+storage and return steps on one screen. The iron tools template gathers coal
+and iron, returns to the launch position, gathers wood, returns again, crafts
+sticks, smelts iron and crafts four tools. Start beside an empty furnace with
+a stone pickaxe or better; suitable deposits and trees must be accessible.
+Crafting resolves intermediate recipes, including whichever planks the carried
+logs can produce, and finds or creates a crafting table.
+
+Drag an action row to insert it anywhere in the sequence; the insertion line
+shows its destination and the list scrolls at the viewport edge. Arrow controls
+remain available for keyboard use. Reordering is disabled during execution.
+The draft is saved locally and can be edited offline. Execution belongs to the
+worker and continues when the settings window closes. Each step waits for the
+previous one to finish successfully. Names and limits are validated before
+starting; inventory-dependent recipes are planned at the start of their step.
+Partial gathering and blocked tasks stop the scenario with a reason. Automatic
+survival recovery keeps waiting. Pause takes effect after the current step;
+stop cancels active work and navigation immediately. Manual commands that would
+interfere are rejected while a scenario is active. Disconnecting cancels the run.
+Restarting a completed or failed scenario runs its entire sequence again.
+
+Runs have a name, stable ID, start/end timestamps and a snapshot of every step.
+Short plans use descriptive names; long plans combine material and purpose words.
+The single Auto button restores automatic naming and cycles alternatives; the selected variant survives
+reopening the editor. Different wood species, food, equipment, machinery,
+building materials, dimensions and delivery routes have their own vocabulary.
+The worker retains the latest 30 results in telemetry; the launcher merges them
+by ID and saves the latest 50 locally. Successful runs move out of the matching
+draft into **Завершённые сценарии**. **Все запуски** also shows stopped and failed
+runs. Repeating loads a copy into the editor and requires pressing Start again.
+Crafting waits for inventory updates between recipes and checks newly produced
+output rather than counting an already carried tool as success. Cancellation
+returns unused crafting inputs before releasing the inventory queue.
+
+Scenarios use the launcher's structured local `workflow` protocol, rather than
+server chat. The `start`, `pause`, `resume` and `stop` actions are acknowledged
+through the normal request channel; progress is included in inventory telemetry.
 
 ## Crafting
 

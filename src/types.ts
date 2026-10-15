@@ -520,6 +520,7 @@ export type MineflayerStorageScan = {
   }>;
 };
 export type MineflayerInventory = {
+  workflow?: MineflayerWorkflowStatus | null;
   username: string;
   health: number;
   maxHealth: number;
@@ -545,6 +546,33 @@ export type MineflayerInventory = {
       properties: Record<string, number>;
     } | null;
   } | null;
+};
+export type MineflayerWorkflowStep = {
+  kind: "mine" | "forest" | "craft" | "smelt" | "collect" | "deposit" | "return";
+  item?: string;
+  count?: number;
+  radius?: number;
+  mode?: string;
+};
+export type MineflayerWorkflowStatus = {
+  id?: string | null;
+  name?: string;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  history?: MineflayerWorkflowRun[];
+  phase: "idle" | "starting" | "running" | "pausing" | "paused" | "stopping" | "stopped" | "complete" | "error";
+  message: string;
+  current: number;
+  steps: Array<MineflayerWorkflowStep & { state: "waiting" | "running" | "complete" | "error" | "stopped" }>;
+};
+export type MineflayerWorkflowRun = {
+  id: string;
+  name: string;
+  startedAt: number;
+  finishedAt: number;
+  phase: "complete" | "stopped" | "error";
+  message: string;
+  steps: MineflayerWorkflowStatus["steps"];
 };
 export type MineflayerBotStatus = {
   revision: number;

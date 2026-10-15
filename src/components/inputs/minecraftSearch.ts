@@ -2,7 +2,7 @@ import type { MinecraftCatalogEntry } from "../../types";
 
 const MATERIALS: Array<[string, string]> = [
   ["diamond", "алмаз алмазы алмазный"],
-  ["iron", "желез железо железный"],
+  ["iron", "желез железо железный железная железные"],
   ["gold", "золот золото золотой"],
   ["copper", "мед медь"],
   ["coal", "уголь угля"],
@@ -22,6 +22,14 @@ const MATERIALS: Array<[string, string]> = [
   ["dirt", "земля"],
   ["sand", "песок песчан"],
   ["netherite", "незерит"],
+  ["stick", "палка палки палок"],
+  ["pickaxe", "кирка кирки кирку"],
+  ["axe", "топор топоры"],
+  ["sword", "меч мечи"],
+  ["shovel", "лопата лопаты лопату"],
+  ["hoe", "мотыга мотыги"],
+  ["ingot", "слиток слитки слитков"],
+  ["raw_", "рудное рудный сырое сырой"],
 ];
 const normalize = (value: string) =>
   value

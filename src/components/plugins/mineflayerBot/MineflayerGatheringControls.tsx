@@ -289,8 +289,7 @@ export function MineflayerGatheringControls({
     >
       {!connected && (
         <p role="status" className="mineflayer-bot-combat-note">
-          Можно настроить задачу заранее. Для запуска подключите бота: вкладка «Управление» →
-          «Запустить».
+          Можно настроить задачу заранее. Для запуска нажмите «Подключить бота».
         </p>
       )}
       <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
@@ -355,7 +354,7 @@ export function MineflayerGatheringControls({
               className="mineflayer-work-icon is-danger"
               disabled={disabled}
               aria-label={`Отменить задачу ${active.id}`}
-              title="Отменить текущую задачу"
+              data-tooltip="Отменить текущую задачу"
               onClick={() => void send(`work cancel ${active.id}`)}
             >
               <WorkCancelIcon />
@@ -393,7 +392,7 @@ export function MineflayerGatheringControls({
                   className="mineflayer-work-icon"
                   disabled={disabled || index === 0}
                   aria-label={`Поднять задачу ${task.id}`}
-                  title="Выше"
+                  data-tooltip="Выше"
                   onClick={() => void send(`work move ${task.id} up`)}
                 >
                   ↑
@@ -403,7 +402,7 @@ export function MineflayerGatheringControls({
                   className="mineflayer-work-icon"
                   disabled={disabled || index === queue.length - 1}
                   aria-label={`Опустить задачу ${task.id}`}
-                  title="Ниже"
+                  data-tooltip="Ниже"
                   onClick={() => void send(`work move ${task.id} down`)}
                 >
                   ↓
@@ -413,7 +412,7 @@ export function MineflayerGatheringControls({
                   className="mineflayer-work-icon is-danger"
                   disabled={disabled}
                   aria-label={`Удалить задачу ${task.id}`}
-                  title="Удалить"
+                  data-tooltip="Удалить"
                   onClick={() => void send(`work remove ${task.id}`)}
                 >
                   <WorkCancelIcon />

@@ -40,7 +40,10 @@ export function PluginSettingsGroup({
             onToggleExpanded={collapsible ? () => setExpanded((current) => !current) : undefined}
           />
         ) : !collapsible ? (
-          <h4 className="plugin-settings-group-title">{title}</h4>
+          <div className="plugin-settings-group-copy">
+            <h4 className="plugin-settings-group-title">{title}</h4>
+            {description && <span>{description}</span>}
+          </div>
         ) : (
           <button
             type="button"

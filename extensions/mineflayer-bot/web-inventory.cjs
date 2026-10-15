@@ -195,6 +195,7 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
       occupied: slots.slice(9, 45).filter(Boolean).length,
       capacity: 36,
       production: bot.launcherProduction?.snapshot() || null,
+      workflow: bot.launcherWorkflow?.snapshot() || null,
     };
     const encoded = JSON.stringify(snapshot);
     if (encoded !== last) {

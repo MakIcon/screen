@@ -49,6 +49,7 @@ function createProductionController(bot, hooks = {}) {
   const {
     onStatus = () => {},
     onError = () => {},
+    onStart = () => {},
     operationTimeoutMs = 20000,
     moveTimeoutMs = 60000,
     smeltTimeoutMs = 900000,
@@ -60,6 +61,7 @@ function createProductionController(bot, hooks = {}) {
     disposed = false;
   let message = "Готов к работе",
     phase = "idle";
+  let outcome = null;
   const properties = new Map();
   let scanSequence = 0,
     nearbyScan = null,
@@ -329,9 +331,30 @@ function createProductionController(bot, hooks = {}) {
     require("mineflayer/lib/plugins/craft")(managed);
     await managed.craft(recipe, 1, table ? { name: "crafting_table" } : null);
   }
+  async function recoverCraftInputs(window, size) {
+    // Still inside the shared inventory queue: finish returning the cursor and
+    // unused inputs before a stopped job releases ownership to the next job.
+    // Never use putSelectedItemRange without room: it drops surplus on the ground.
+    const current = () => !disposed && bot.health > 0 &&
+      (bot.currentWindow || bot.inventory) === window;
+    const free = () => window.slots.findIndex((item, index) =>
+      index >= window.inventoryStart && index < window.inventoryEnd && !item);
+    if (!current() || !bot.clickWindow) return;
+    if (window.selectedItem) {
+      const destination = free();
+      if (destination < 0) return;
+      await bot.clickWindow(destination, 0, 0);
+    }
+    for (let slot = 1; slot <= size; slot++) {
+      if (!current() || free() < 0) return;
+      if (window.slots[slot]) await bot.putAway(slot);
+    }
+  }
   async function executeCraft(steps, signal, mode, table) {
     for (const step of steps) {
-      const needsTable = step.recipe.requiresTable || mode === "table";
+      // Keep recursive recipes in the same window. Closing a table between
+      // planks, sticks and the tool lets late server packets overwrite stock.
+      const needsTable = step.recipe.requiresTable || mode === "table" || Boolean(table);
       if (needsTable) {
         if (!table) table = find(["crafting_table"])[0] || (await placeTable(signal));
         await openAt(table, signal);
@@ -347,7 +370,36 @@ function createProductionController(bot, hooks = {}) {
           );
         if (emptySlots(bot) === 0)
           throw new Error("Освободите хотя бы один слот для результата крафта");
-        await craftOne(step.recipe, needsTable ? session.window : null, signal);
+        const outputCount = () => inventoryItems(bot).reduce(
+          (sum, item) => sum + (item.type === step.recipe.result.id ? item.count : 0), 0,
+        );
+        const before = outputCount();
+        let failure;
+        try {
+          await craftOne(step.recipe, needsTable ? session.window : null, signal);
+        } catch (error) {
+          failure = error;
+          try {
+            await recoverCraftInputs(window, needsTable ? 9 : 4);
+          } catch (cleanupError) {
+            report(`Возврат ингредиентов: ${cleanupError.message}`);
+          }
+        }
+        // Mineflayer predicts inventory clicks locally. Let server updates
+        // settle before another recipe, and reconcile only newly made output.
+        if (bot.waitForTicks) await atomic(() => bot.waitForTicks(2), signal);
+        guard(signal);
+        const produced = outputCount() - before;
+        if (failure) {
+          if (produced < step.recipe.result.count || window.selectedItem ||
+              window.slots?.slice(1, needsTable ? 10 : 5).some(Boolean)) {
+            if (/missing ingredient/i.test(failure.message))
+              throw new Error(`Не хватает ингредиентов для ${step.name}. Изготовлено в этой операции: ${Math.max(0, produced)}`, { cause: failure });
+            throw failure;
+          }
+        } else if (produced < step.recipe.result.count) {
+          throw new Error(`Сервер не подтвердил результат крафта ${step.name}`);
+        }
       }
     }
     return table;
@@ -375,15 +427,20 @@ function createProductionController(bot, hooks = {}) {
     if (job) throw new Error("Бот уже работает; сначала остановите текущую задачу");
     const controller = new AbortController();
     job = controller;
+    onStart();
+    outcome = null;
     phase = "queued";
     report(label);
     pending = queueInventoryTask(bot, async () => {
       try {
         guard(controller.signal);
         await action(controller.signal);
+        guard(controller.signal);
+        outcome = "complete";
       } catch (error) {
-        if (error instanceof Cancelled || controller.signal.aborted) report("Работа остановлена");
+        if (error instanceof Cancelled || controller.signal.aborted) { outcome = "stopped"; report("Работа остановлена"); }
         else {
+          outcome = "error";
           phase = "error";
           report(error.message);
           onError(error);
@@ -780,6 +837,7 @@ function createProductionController(bot, hooks = {}) {
       return {
         busy: Boolean(job),
         phase,
+        outcome,
         message,
         nearbyScan,
         storageScan,

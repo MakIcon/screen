@@ -41,6 +41,7 @@ const { createGatheringController } = require('./gathering.cjs')
 const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gathering-commands.cjs')
 const { createProductionController } = require('./production.cjs')
 const { COMMANDS: PRODUCTION_COMMANDS, handleProductionCommand } = require('./production-commands.cjs')
+const { createWorkflowController } = require('./workflow.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
@@ -411,10 +412,16 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       sendEvent('log', { message: 'invalid launcher message' })
       continue
     }
-    if (!['chat', 'command', 'storage_config'].includes(request?.type) || typeof request.requestId !== 'string') continue
+    if (!['chat', 'command', 'storage_config', 'workflow'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
       const bot = getBot()
       if (!bot) throw new Error('Бот не подключён к серверу')
+      if (request.type === 'workflow') {
+        if (!bot.launcherWorkflow) throw new Error('Сценарии ещё не готовы. Обновите расширение и перезапустите бота')
+        const message = await bot.launcherWorkflow.dispatch(request.action, request.steps, request.name)
+        sendEvent('chat_result', { requestId: request.requestId, message })
+        continue
+      }
       if (request.type === 'storage_config') {
         if (!bot.launcherGathering) throw new Error('Система добычи ещё не готова')
         if (bot.launcherConfigureStorage) await bot.launcherConfigureStorage(request.groups)
@@ -638,6 +645,7 @@ async function main () {
     let travel = null
     let gathering = null
     let production = null
+    let workflow = null
     bot.launcherOwnerName = ownerName
 
     function reply (username, source, text) {
@@ -657,8 +665,9 @@ async function main () {
       }
     }
 
-    async function stopMovement (cancelGathering = true) {
+    async function stopMovement (cancelGathering = true, cancelWorkflow = true) {
       const generation = ++goalGeneration
+      if (cancelWorkflow) await workflow?.stop()
       combat?.stop(true)
       await production?.stop()
       if (cancelGathering) await gathering?.stop()
@@ -762,6 +771,9 @@ async function main () {
       const command = commandRaw.toLowerCase()
 
       try {
+        if (workflow?.busy && !['stop', 'status', 'where', 'help', 'inventory'].includes(command)) {
+          throw new Error('Бот выполняет сценарий. Остановите его перед другой командой')
+        }
         if (command === 'inventory') {
           reply(username, source, bot.launcherInventoryUrl || 'Веб-инвентарь ещё запускается')
           return
@@ -971,8 +983,13 @@ async function main () {
           onProgress: gathering => emit('gathering', { gathering })
         })
         production = createProductionController(bot, {
+          onStart: () => emit('production_started'),
           onStatus: message => emit('status', { state: 'connected', message }),
           onError: error => emit('error', { error: `production: ${error.message || String(error)}` })
+        })
+        workflow = createWorkflowController({ bot, gathering, production,
+          prepare: () => stopMovement(true, false),
+          onStatus: message => { if (chatReady && !ended) emit('status', { state: 'connected', message }) }
         })
         bot.launcherConfigureStorage = groups => {
           const normalized = gathering.configureStorage(groups)
@@ -1012,7 +1029,7 @@ async function main () {
         let attempts = 0
         const tryFollow = () => {
           if (activeBot !== bot || ended || stopping) return
-          if (gathering?.busy || production?.busy) return
+          if (gathering?.busy || production?.busy || workflow?.busy) return
           attempts += 1
           if (startFollowingOwner(false)) {
             emit('status', {
@@ -1088,6 +1105,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      void workflow?.stop().catch(error => emit('log', { message: `scenario shutdown: ${error.message}` }))
       void production?.dispose().catch(error => emit('log', { message: `production shutdown: ${error.message}` }))
       void gathering?.dispose().catch(error => emit('log', { message: `gathering shutdown: ${error.message}` }))
       bot.launcherSurvival?.dispose()
@@ -1110,6 +1128,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      void activeBot.launcherWorkflow?.stop().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherProduction?.dispose().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherGathering?.dispose().catch(error => emit('log', { message: error.message }))
       activeBot.launcherSurvival?.dispose()

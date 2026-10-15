@@ -438,7 +438,7 @@ export function MineflayerStorageGroups({
                             {progress && (
                               <span
                                 className={`mineflayer-storage-chest-state is-${progress.state}`}
-                                title={progress.message}
+                                data-tooltip={progress.message}
                               >
                                 {progress.state === "ok"
                                   ? "Выгружено"

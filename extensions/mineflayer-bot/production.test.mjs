@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { planCraft, smeltingRecipe } from "./production-plan.cjs";
 import { createProductionController } from "./production.cjs";
+import { createWorkflowController } from "./workflow.cjs";
 import { handleProductionCommand } from "./production-commands.cjs";
 import worker from "./worker.cjs";
 
@@ -150,6 +151,85 @@ function fixture(inventory = {}, hooks = {}, version = "26.1.2") {
     },
   };
 }
+
+test("craft reconciles a late error only when the new result is present", async (t) => {
+  const f = fixture({ stick: 2, oak_planks: 1 }, {
+    craft: async () => {
+      f.add("wooden_spear", 1);
+      throw new Error("Error: missing ingredient");
+    },
+  });
+  t.after(() => f.production.dispose());
+  f.block("crafting_table");
+  f.production.craft(f.production.prepareCraft("wooden_spear", 1));
+  await f.production.task;
+  assert.equal(f.production.snapshot().outcome, "complete");
+  assert.equal(f.errors.length, 0);
+});
+
+test("an existing crafted item never hides a real missing ingredient failure", async (t) => {
+  const f = fixture({ wooden_spear: 1, stick: 2, oak_planks: 1 }, {
+    craft: async () => { throw new Error("missing ingredient"); },
+  });
+  t.after(() => f.production.dispose());
+  f.block("crafting_table");
+  f.production.craft(f.production.prepareCraft("wooden_spear", 1));
+  await f.production.task;
+  assert.equal(f.production.snapshot().outcome, "error");
+  assert.match(f.errors[0].message, /Не хватает ингредиентов/);
+});
+
+test("a craft without a server result is not reported complete", async (t) => {
+  const f = fixture({ stick: 1, coal: 1 }, { craft: async () => {} });
+  t.after(() => f.production.dispose());
+  f.production.craft(f.production.prepareCraft("torch", 4));
+  await f.production.task;
+  assert.equal(f.production.snapshot().outcome, "error");
+  assert.match(f.errors[0].message, /не подтвердил результат/);
+});
+
+test("stopping a craft after the current click does not report an ingredient error", async (t) => {
+  let release;
+  const f = fixture({ stick: 1, coal: 1 }, {
+    craft: async () => { await new Promise(resolve => { release = resolve; }); f.add("torch", 4); throw new Error("missing ingredient"); },
+  });
+  t.after(() => f.production.dispose());
+  f.production.craft(f.production.prepareCraft("torch", 4));
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  const stopped = f.production.stop();
+  release();
+  await stopped;
+  assert.equal(f.production.snapshot().outcome, "stopped");
+  assert.equal(f.errors.length, 0);
+});
+
+test("scenario resolves real wood recipes after gathering and creates a table for iron tools", async () => {
+  const f = fixture({ iron_ingot: 9 });
+  f.block("stone", 1, 63, 0);
+  f.bot.placeBlock = async (support) => {
+    f.items.find(item => item.name === "crafting_table").count--;
+    f.block("crafting_table", support.position.x, support.position.y + 1, support.position.z);
+  };
+  const history = [];
+  const gathering = {
+    busy: false,
+    snapshot: { history },
+    validate() {},
+    enqueue() { f.add("spruce_log", 4); history.push({ id: 1, outcome: "готово" }); return 1; },
+    async stop() {},
+  };
+  const workflow = createWorkflowController({ bot: f.bot, gathering, production: f.production, prepare: async () => true });
+  await workflow.start([{ kind: "forest", count: 4, radius: 16 }, { kind: "craft", item: "stick", count: 8 }, ...["iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel"].map(item => ({ kind: "craft", item, count: 1 }))]);
+  await workflow.task;
+  assert.equal(workflow.snapshot().phase, "complete", workflow.snapshot().message);
+  assert.ok(f.crafted.some(step => step.name === "spruce_planks"));
+  assert.ok(f.crafted.some(step => step.name === "crafting_table"));
+  for (const item of ["iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel"]) {
+    assert.equal(f.items.find(entry => entry.name === item)?.count, 1);
+  }
+  assert.deepEqual(f.errors, []);
+  await f.production.dispose();
+});
 
 for (const version of ["1.20.4", "26.1.2"]) {
   test(`recursive crafting reserves ingredients and rounds output batches on ${version}`, async (t) => {

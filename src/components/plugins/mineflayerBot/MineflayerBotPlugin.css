@@ -175,19 +175,19 @@
   top: -16px;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 8px 0;
-  margin-top: -8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding: 8px 0 0;
+  border-bottom: 1px solid var(--line-strong);
   background: var(--bg);
 }
 .mineflayer-bot-tabs button {
   min-width: 0;
   min-height: 38px;
   padding: 8px;
-  border: 1px solid var(--line-strong);
-  background: var(--bg-card);
-  color: var(--ink);
+  border: 0;
+  background: transparent;
+  color: var(--text-alt);
   text-align: center;
   font-family: inherit;
   cursor: pointer;
@@ -202,8 +202,7 @@
   border-color: var(--ink);
 }
 .mineflayer-bot-tabs button.active {
-  background: var(--bg-hover-strong);
-  border-color: var(--accent);
+  background: transparent;
   box-shadow: inset 0 -2px 0 var(--accent);
   color: var(--accent);
 }
@@ -354,7 +353,7 @@
 .mineflayer-bot-field > input:focus,
 .mineflayer-bot-field > select:focus,
 .mineflayer-bot-field > textarea:focus {
-  border-color: rgba(194, 65, 12, 0.5);
+  border-color: var(--accent);
   background: var(--bg-panel);
 }
 
@@ -665,9 +664,6 @@
 }
 
 @container (min-width: 840px) {
-  .mineflayer-bot-tabs {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-  }
   .mineflayer-bot-combat-groups .mineflayer-bot-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -706,7 +702,12 @@
 }
 @container (max-width: 400px) {
   .mineflayer-bot-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    overflow-x: auto;
+  }
+  .mineflayer-bot-tabs button {
+    flex: 0 0 auto;
+    padding: 8px;
   }
   .mineflayer-bot-grid,
   .mineflayer-bot-grid--three,

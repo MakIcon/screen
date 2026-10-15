@@ -1547,6 +1547,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     get snapshot() {
       return {
         phase: machine.activeState?.stateName,
+        automaticPause: survivalPaused,
         active: taskSummary(task),
         queue: queue.map(taskSummary),
         history: [...history],

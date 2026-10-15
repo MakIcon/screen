@@ -13,22 +13,29 @@ import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import { MineflayerGatheringControls } from "./MineflayerGatheringControls";
 import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
 import { MineflayerProductionControls } from "./MineflayerProductionControls";
+import { MineflayerWorkflow } from "./MineflayerWorkflow";
 import { mergeScannedStorageGroups } from "./storageGroups";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
-type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control" | "gathering" | "inventory" | "production";
+type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "gathering";
+type WorkspaceView = "scenario" | "inventory" | "production" | "settings" | "control";
+
+const WORKSPACE_VIEWS: Array<{ id: WorkspaceView; label: string }> = [
+  { id: "scenario", label: "Сценарий" },
+  { id: "inventory", label: "Инвентарь" },
+  { id: "production", label: "Рабочие блоки" },
+  { id: "settings", label: "Настройки" },
+  { id: "control", label: "Журнал и чат" },
+];
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "connection", label: "Подключение" },
-  { id: "behavior", label: "Поведение" },
+  { id: "behavior", label: "Движение" },
   { id: "survival", label: "Выживание" },
   { id: "combat", label: "Бой и предметы" },
-  { id: "gathering", label: "Добыча" },
-  { id: "production", label: "Крафт и станки" },
-  { id: "inventory", label: "Инвентарь" },
+  { id: "gathering", label: "Добыча и склад" },
   { id: "commands", label: "Команды" },
-  { id: "control", label: "Управление" },
 ];
 
 const MOVEMENT_PRESETS: Array<{
@@ -141,7 +148,10 @@ function MineflayerBotSettingsEditor({
     void invoke("send_mineflayer_bot_chat", { message: `stash scan saved ${storageScan.id}`, command: true })
       .catch(error => setActionError(toErrorMessage(error)));
   }, [storageScan, status?.pid, settings, onChange]);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("connection");
+  const [activeView, setActiveView] = useState<WorkspaceView>("scenario");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("connection");
+  const activeSection = activeView === "settings" ? settingsSection : activeView;
+  const openSettings = (section: SettingsSection) => { setSettingsSection(section); setActiveView("settings"); };
   const activeBotMsAccount = context.microsoftAccounts.find(
     (account) => account.id === settings.botMicrosoftAccountId,
   );
@@ -212,6 +222,19 @@ function MineflayerBotSettingsEditor({
     }
   };
 
+  const refreshBotStatus = async () => {
+    if (busyAction) return;
+    try {
+      setBusyAction("REFRESHING");
+      setActionError("");
+      await monitor.refresh();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      setBusyAction("");
+    }
+  };
+
   const sendChatMessage = async () => {
     const draft = chatMessage;
     const message = draft.trim();
@@ -234,17 +257,45 @@ function MineflayerBotSettingsEditor({
     }
   };
 
+  const connectionControls = (
+    <>
+      {status?.running && (
+        <button type="button" className="mf-button" disabled={Boolean(busyAction)} onClick={() => void restartBot()}>
+          Перезапустить
+        </button>
+      )}
+      <button
+        type="button"
+        className={`mf-button${status?.running ? "" : " mf-button--primary"}`}
+        disabled={status?.running ? Boolean(busyAction) : !canStart}
+        onClick={() => void (status?.running ? stopBot() : startBot())}
+      >
+        {busyAction ? "Подождите…" : status?.running ? "Отключить" : "Подключить бота"}
+      </button>
+    </>
+  );
+
   return (
     <div className="mineflayer-bot-settings">
-      <nav className="mineflayer-bot-tabs" aria-label="Разделы настроек Mineflayer">
-        {SETTINGS_SECTIONS.map((section) => (
+      <header className="mf-bot-toolbar">
+        <div className={`mf-bot-identity${chatConnected ? " is-connected" : ""}`}>
+          <span className="mf-bot-connection-dot" aria-hidden="true" />
+          <div><strong>{status?.botUsername || activeBotMsAccount?.username || settings.botNickname || "Mineflayer Bot"}</strong><span>{chatConnected ? "Подключён" : status?.state === "reconnecting" ? "Переподключается…" : status?.running ? "Подключается…" : "Не подключён"}<span aria-hidden="true"> · </span>{settings.host || "Сервер не указан"}{settings.host ? `:${settings.port}` : ""}</span></div>
+        </div>
+        <div className="mf-bot-toolbar-actions">
+          {connectionControls}
+        </div>
+      </header>
+      {!status?.running && (!settings.enabled || !settings.host.trim() || sameAsLauncherAccount || (settings.botAccountMode === "microsoft" && !settings.botMicrosoftAccountId)) && <p className="mf-bot-connection-hint">{!settings.enabled ? "Включите расширение переключателем выше." : sameAsLauncherAccount ? "Выберите для бота отдельный Microsoft-аккаунт." : "Укажите сервер и аккаунт бота в настройках подключения."}<button type="button" className="mf-text-button" onClick={() => openSettings("connection")}>Открыть настройки ↗</button></p>}
+      <nav className="mineflayer-bot-tabs" aria-label="Рабочая область бота">
+        {WORKSPACE_VIEWS.map((section) => (
           <button
             key={section.id}
             type="button"
-            aria-current={activeSection === section.id ? "page" : undefined}
-            className={activeSection === section.id ? "active" : ""}
+            aria-current={activeView === section.id ? "page" : undefined}
+            className={activeView === section.id ? "active" : ""}
             onClick={(event) => {
-              setActiveSection(section.id);
+              setActiveView(section.id);
               event.currentTarget.closest(".csa-content")?.scrollTo({ top: 0 });
             }}
           >
@@ -253,9 +304,13 @@ function MineflayerBotSettingsEditor({
         ))}
       </nav>
 
+      <div hidden={activeView !== "scenario"}>
+        <MineflayerWorkflow connected={chatConnected} status={status} gatheringSettings={settings.gathering} refresh={monitor.refresh} onOpenConnection={() => openSettings("connection")} onOpenStorage={() => openSettings("gathering")} />
+      </div>
+      {activeView === "settings" && <nav className="mf-settings-nav" aria-label="Разделы настроек">{SETTINGS_SECTIONS.map(section => <button key={section.id} type="button" aria-current={settingsSection === section.id ? "page" : undefined} className={settingsSection === section.id ? "active" : ""} onClick={() => setSettingsSection(section.id)}>{section.label}</button>)}</nav>}
       <div className="mineflayer-bot-section" key={activeSection}>
-        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} settings={settings.gathering} onSettingsChange={(gathering) => update({ gathering })} onOpenInventory={() => setActiveSection("inventory")} />}
-        {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveSection("gathering")} />}
+        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} settings={settings.gathering} onSettingsChange={(gathering) => update({ gathering })} onOpenInventory={() => setActiveView("inventory")} />}
+        {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveView("scenario")} />}
         {activeSection === "production" && <MineflayerProductionControls connected={chatConnected} refresh={monitor.refresh} status={status} />}
         {activeSection === "connection" && (
           <div className="mineflayer-bot-connection-grid">
@@ -769,60 +824,12 @@ function MineflayerBotSettingsEditor({
 
         {activeSection === "control" && (
           <>
-            <div
-              className={`mineflayer-bot-live ${status?.running ? "mineflayer-bot-live--online" : ""}`}
-            >
-              <span className="mineflayer-bot-live-dot" aria-hidden="true" />
-              <div>
-                <span>СОСТОЯНИЕ</span>
-                <strong>{formatStatusValue(status?.state)}</strong>
-              </div>
-              <div>
-                <span>СЕРВЕР</span>
-                <strong>{formatStatusValue(status?.server || settings.host)}</strong>
-              </div>
-              <div>
-                <span>БОТ</span>
-                <strong>
-                  {formatStatusValue(
-                    status?.botUsername ?? activeBotMsAccount?.username ?? settings.botNickname,
-                  )}
-                </strong>
-              </div>
-            </div>
-
-            <div className="mineflayer-bot-subhead">
-              <span>УПРАВЛЕНИЕ БОТОМ</span>
-              <small>{busyAction || "ГОТОВ"}</small>
-            </div>
-
-            <div className="mineflayer-bot-controls">
-              <button type="button" disabled={!canStart} onClick={() => void startBot()}>
-                ЗАПУСТИТЬ
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(busyAction) || !status?.running}
-                onClick={() => void restartBot()}
-              >
-                ПЕРЕЗАПУСТИТЬ
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(busyAction) || !status?.running}
-                onClick={() => void stopBot()}
-              >
-                ОСТАНОВИТЬ
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(busyAction)}
-                onClick={() => void monitor.refresh()}
-              >
-                ОБНОВИТЬ
+            <div className="mf-journal-controls" role="group" aria-label="Подключение бота">
+              {connectionControls}
+              <button type="button" className="mf-button" disabled={Boolean(busyAction)} onClick={() => void refreshBotStatus()}>
+                Обновить статус
               </button>
             </div>
-
             <div className="mineflayer-bot-status">
               <div>
                 <span>СОСТОЯНИЕ</span>

@@ -9,6 +9,23 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("structured scenarios bypass chat length limits and acknowledge worker validation errors", async () => {
+  const events = [], received = [];
+  const steps = Array.from({ length: 100 }, () => ({ kind: "craft", item: "stick", count: 8, mode: "auto" }));
+  const requests = [{ action: "start", steps }, { action: "pause" }, { action: "bad" }];
+  const lines = requests.map((request, index) => JSON.stringify({ type: "workflow", requestId: `scenario-${index}`, ...request }));
+  const bot = { chat() { assert.fail("Scenario must never enter game chat"); }, launcherWorkflow: { dispatch(action, input) {
+    if (action === "bad") throw new Error("Unknown action");
+    received.push([action, input]);
+    return "Accepted";
+  } } };
+  await worker.handleLauncherMessages(lines, () => bot, (type, value) => events.push({ type, ...value }));
+  assert.deepEqual(received, [["start", steps], ["pause", undefined]]);
+  assert.equal(events.length, 3);
+  assert.equal(events[0].message, "Accepted");
+  assert.equal(events[2].error, "Unknown action");
+});
+
 test('worker preserves separate survival switches and bounds thresholds', () => {
   const config = worker.parseConfig(JSON.stringify({ server: { host: 'localhost' }, account: { username: 'Bot' },
     survival: { autoEat: false, emergencyMlg: false, mlgPickupWater: false, autoEatMinHunger: 21, mlgMinFallHeight: 2 } }));

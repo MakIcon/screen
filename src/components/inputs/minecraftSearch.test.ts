@@ -31,6 +31,12 @@ const entries = [
   entry("dirt", "block", "Dirt"),
 ];
 describe("Minecraft catalogue search", () => {
+  it("finds crafting inputs and tools by their Russian names", () => {
+    const items = [entry("stick", "item"), entry("iron_pickaxe", "item"), entry("iron_ingot", "item")];
+    expect(searchMinecraft(items, "палки", "items")[0].name).toBe("stick");
+    expect(searchMinecraft(items, "железная кирка", "items")[0].name).toBe("iron_pickaxe");
+    expect(searchMinecraft(items, "слиток", "items")[0].name).toBe("iron_ingot");
+  });
   it("finds every diamond match for DIA and keeps mining and item selection usable", () => {
     expect(searchMinecraft(entries, "DIA", "blocks").map((value) => value.name)).toEqual([
       "diamond",

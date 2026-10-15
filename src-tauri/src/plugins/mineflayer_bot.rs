@@ -28,6 +28,7 @@ use crate::{
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const MAX_LOG_LINES: usize = 80;
 const STATUS_EVENT: &str = "mineflayer-bot-status";
+const WORKFLOW_STEP_LIMIT: usize = 100;
 
 #[derive(Clone, Default)]
 pub struct MineflayerBotState {
@@ -302,6 +303,11 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
                 push_log(runtime, message);
             }
         }
+        "production_started" => {
+            if runtime.last_error.as_deref().is_some_and(|message| message.starts_with("production:")) {
+                runtime.last_error = None;
+            }
+        }
         "error" => {
             let message = event
                 .error
@@ -532,6 +538,28 @@ pub async fn send_mineflayer_bot_chat(
 ) -> Result<(), String> {
     let message = validate_chat_message(&message)?;
     send_worker_request(state, serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "message": message })).await
+}
+
+#[tauri::command]
+pub async fn control_mineflayer_bot_workflow(
+    state: State<'_, MineflayerBotState>,
+    action: String,
+    steps: Option<serde_json::Value>,
+    name: Option<String>,
+) -> Result<(), String> {
+    validate_workflow_request(&action, steps.as_ref())?;
+    send_worker_request(state, serde_json::json!({ "type": "workflow", "action": action, "steps": steps, "name": name })).await
+}
+
+fn validate_workflow_request(action: &str, steps: Option<&serde_json::Value>) -> Result<(), String> {
+    if !["start", "pause", "resume", "stop"].contains(&action) {
+        return Err("Неизвестное действие сценария".to_string());
+    }
+    if action == "start" && !steps.and_then(|value| value.as_array())
+        .map(|items| !items.is_empty() && items.len() <= WORKFLOW_STEP_LIMIT).unwrap_or(false) {
+        return Err("Добавьте от 1 до 100 шагов".to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -947,6 +975,26 @@ mod tests {
         assert!(runtime.inventory.is_none());
         assert!(runtime.gathering.is_none());
         assert!(runtime.catalog.is_none());
+    }
+
+    #[test]
+    fn a_new_production_job_clears_only_the_previous_production_error() {
+        let mut runtime = MineflayerBotRuntime { state: "connected".into(), last_error: Some("production: missing ingredient".into()), ..Default::default() };
+        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap());
+        assert!(runtime.last_error.is_none());
+        runtime.last_error = Some("connection failed".into());
+        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap());
+        assert_eq!(runtime.last_error.as_deref(), Some("connection failed"));
+    }
+
+    #[test]
+    fn workflow_accepts_100_steps_and_rejects_101_before_sending_to_worker() {
+        let steps = serde_json::json!(vec![serde_json::json!({ "kind": "craft", "item": "stick", "count": 8 }); 100]);
+        assert!(super::validate_workflow_request("start", Some(&steps)).is_ok());
+        let oversized = serde_json::json!(vec![serde_json::json!({ "kind": "return" }); 101]);
+        assert!(super::validate_workflow_request("start", Some(&oversized)).is_err());
+        assert!(super::validate_workflow_request("start", Some(&serde_json::json!([]))).is_err());
+        assert!(super::validate_workflow_request("stop", None).is_ok());
     }
 
     #[test]

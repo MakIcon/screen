@@ -38,7 +38,7 @@ export function MineflayerInventoryPanel({
             : `${label || `Слот ${index}`}: пусто`
         }
         aria-pressed={selected === index}
-        title={item ? itemTitle(item) : label || "Пустой слот"}
+        data-tooltip={item ? itemTitle(item) : label || "Пустой слот"}
         onClick={() => setSelected(selected === index ? null : index)}
       >
         {item ? (
@@ -111,7 +111,7 @@ export function MineflayerInventoryPanel({
           <p>
             {connected
               ? "Показатели появятся после загрузки персонажа."
-              : "Запустите его во вкладке «Управление», чтобы видеть предметы и состояние."}
+              : "Нажмите «Подключить бота», чтобы видеть предметы и состояние."}
           </p>
         </div>
       ) : (

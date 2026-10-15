@@ -105,7 +105,7 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
     mark: "BOT",
     icon: { src: steveFaceIcon, alt: "Steve face" },
     description:
-      "Бот-компаньон для вашего сервера. Настройте подключение, поведение и команды владельца.",
+      "Собирайте сценарии добычи, крафта и переплавки. Бот выполнит действия по порядку.",
     optionalExtensionId: "mineflayer-bot",
     getEnabled: (plugins) => plugins.mineflayerBot.enabled,
     getStatus: (plugins) => {

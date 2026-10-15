@@ -157,6 +157,63 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
 }
 
 for (const version of ["1.20.4", "26.1.2"]) {
+  test(`logs become a complete weapon through a newly placed table on ${version}`, { timeout: 8000 }, async (t) => {
+    const f = rigFor(t, version);
+    f.add(36, "oak_log", 4);
+    f.world.setBlock(new Vec3(1, 63, 0), "stone");
+    let table;
+    f.bot.findBlocks = () => table ? [table.position] : [];
+    f.bot.placeBlock = async support => {
+      const item = f.bot.inventory.findInventoryItem(f.bot.registry.itemsByName.crafting_table.id);
+      assert.ok(item);
+      f.bot.inventory.updateSlot(item.slot, null);
+      table = f.world.setBlock(support.position.offset(0, 1, 0), "crafting_table");
+    };
+    f.target({ type: "minecraft:crafting", inventoryStart: 10 });
+    const item = version === "26.1.2" ? "wooden_spear" : "wooden_sword";
+    f.production.craft(f.production.prepareCraft(item, 1));
+    await f.production.task;
+    assert.equal(f.errors.length, 0, f.errors[0]?.message);
+    assert.equal(f.bot.inventory.count(f.bot.registry.itemsByName[item].id), 1);
+    assert.equal(f.production.snapshot().outcome, "complete");
+  });
+
+  test(`stopping inventory crafting returns its cursor and grid on ${version}`, { timeout: 5000 }, async (t) => {
+    const f = rigFor(t, version);
+    f.add(36, "coal", 2);
+    f.add(37, "stick", 3);
+    const click = f.bot.clickWindow;
+    let stopping;
+    f.bot.clickWindow = async (...args) => {
+      await click(...args);
+      if (args[0] === 1 && !stopping) stopping = f.production.stop();
+    };
+    f.production.craft(f.production.prepareCraft("torch", 4, "inventory"));
+    await f.production.task;
+    await stopping;
+    assert.equal(f.production.snapshot().outcome, "stopped");
+    assert.equal(f.errors.length, 0, f.errors[0]?.message);
+    assert.equal(f.bot.inventory.selectedItem, null);
+    assert.ok(f.bot.inventory.slots.slice(1, 5).every(item => !item));
+    assert.equal(f.bot.inventory.count(f.bot.registry.itemsByName.coal.id), 2);
+    assert.equal(f.bot.inventory.count(f.bot.registry.itemsByName.stick.id), 3);
+    assert.ok(!f.packets.some(packet => packet.name === "window_click" && packet.params.slot === -999));
+  });
+
+  test(`recursive table crafting uses newly made sticks on ${version}`, { timeout: 5000 }, async (t) => {
+    const f = rigFor(t, version);
+    f.add(36, "oak_log", 4);
+    const block = f.world.setBlock(new Vec3(2, 64, 0), "crafting_table");
+    f.bot.findBlocks = () => [block.position];
+    f.target({ type: "minecraft:crafting", inventoryStart: 10 });
+    const item = version === "26.1.2" ? "wooden_spear" : "wooden_sword";
+    f.production.craft(f.production.prepareCraft(item, 1));
+    await f.production.task;
+    assert.equal(f.errors.length, 0, f.errors[0]?.message);
+    assert.equal(f.bot.inventory.count(f.bot.registry.itemsByName[item].id), 1);
+    assert.equal(f.production.snapshot().outcome, "complete");
+  });
+
   test(
     `chest scan reads actual window packets and never transfers stored items on ${version}`,
     { timeout: 5000 },
