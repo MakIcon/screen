@@ -121,6 +121,38 @@ function materialMatches(material, name) {
 }
 function matchesFilter(token, name, registry) {
   if (token === "#all") return true;
+  if (token === "#valuable")
+    return (
+      ["diamond", "emerald", "gold", "netherite"].some((material) =>
+        materialMatches(material, name),
+      ) ||
+      /^(?:diamond|netherite)_/.test(name) ||
+      /^golden_(?:helmet|chestplate|leggings|boots|axe|pickaxe|shovel|hoe|sword|horse_armor)$/.test(
+        name,
+      ) ||
+      [
+        "enchanted_book",
+        "enchanted_golden_apple",
+        "totem_of_undying",
+        "nether_star",
+        "dragon_egg",
+        "elytra",
+        "heart_of_the_sea",
+        "nautilus_shell",
+        "shulker_shell",
+        "echo_shard",
+        "heavy_core",
+        "mace",
+      ].includes(name)
+    );
+  if (token === "#bulk")
+    return (
+      (stones.test(name) && !/_ore$/.test(name)) ||
+      /^(?:dirt|coarse_dirt|rooted_dirt|grass_block|gravel|sand|red_sand|flint|clay|clay_ball|mud|snowball|snow_block|rotten_flesh)$/.test(
+        name,
+      )
+    );
+  if (token === "#food") return Boolean(registry?.foodsByName?.[name]);
   if (token === "#wood")
     return timber.test(name) || woodItems.has(name) || name.startsWith("wooden_");
   if (token === "#logs") return /(?:_log|_wood|_stem|_hyphae)$/.test(name);

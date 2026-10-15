@@ -152,7 +152,11 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
   }
   function emitSnapshot() {
     if (stopped) return;
-    const slots = (bot.inventory.slots || []).map((item, slot) => {
+    const inventorySlots = [...(bot.inventory.slots || [])];
+    const window = bot.currentWindow;
+    if (window) for (let index = window.inventoryStart; index < window.inventoryEnd; index++)
+      inventorySlots[index - window.inventoryStart + 9] = window.slots[index];
+    const slots = inventorySlots.map((item, slot) => {
       if (!item) return null;
       const maximum = bot.registry.itemsByName[item.name]?.maxDurability;
       return {
@@ -190,6 +194,7 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
       slots,
       occupied: slots.slice(9, 45).filter(Boolean).length,
       capacity: 36,
+      production: bot.launcherProduction?.snapshot() || null,
     };
     const encoded = JSON.stringify(snapshot);
     if (encoded !== last) {

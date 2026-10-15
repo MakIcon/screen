@@ -11,6 +11,47 @@
   gap: 14px;
   min-width: 0;
 }
+.mineflayer-storage-scan {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-panel);
+}
+.mineflayer-storage-scan > strong {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.mineflayer-storage-scan p {
+  margin: 0;
+  line-height: 1.5;
+  font-size: 12px;
+}
+.mineflayer-storage-scan small,
+.mineflayer-storage-scan-results span {
+  color: var(--text-alt);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.mineflayer-storage-scan-results {
+  display: grid;
+  gap: 7px;
+  max-height: 340px;
+  overflow: auto;
+}
+.mineflayer-storage-scan-results > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+}
+.mineflayer-storage-scan-results strong {
+  font-size: 12px;
+}
+.mineflayer-storage-scan-results .is-error {
+  border-color: var(--danger);
+}
 .mineflayer-storage-toolbar,
 .mineflayer-storage-group-header,
 .mineflayer-storage-group-footer,

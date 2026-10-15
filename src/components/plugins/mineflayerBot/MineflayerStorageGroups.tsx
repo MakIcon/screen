@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExpandablePanel } from "../../layout/ExpandablePanel";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
+import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { toErrorMessage } from "../../../utils/errors";
 import { formatBlockCoordinates, parseBlockCoordinates } from "./gatheringCoordinates";
@@ -42,12 +43,16 @@ export function MineflayerStorageGroups({
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const [scanRadius, setScanRadius] = useState(32);
   const latest = useRef(groups);
   latest.current = groups;
   const change = useRef(onChange);
   change.current = onChange;
   const options = useMemo(() => storageCatalog(catalog), [catalog]);
-  const pending = disabled || Boolean(busy);
+  const production = connected ? status?.inventory?.production : null;
+  const scan = production?.storageScan;
+  const scanning = scan?.state === "running";
+  const pending = disabled || Boolean(busy) || Boolean(production?.busy);
   const total = groups.reduce((count, group) => count + group.chests.length, 0);
   const legacy = status?.gathering?.selection?.chest;
   const liveStatus = status?.gathering?.selection?.storageStatus;
@@ -123,6 +128,35 @@ export function MineflayerStorageGroups({
       setBusy("");
     }
   }
+  async function scanChests() {
+    if (pending || !connected) return;
+    setBusy("scan");
+    setError("");
+    setFeedback("");
+    try {
+      await invoke("configure_mineflayer_bot_storage", { groups: latest.current });
+      await invoke("send_mineflayer_bot_chat", {
+        message: `stash scan ${scanRadius}`,
+        command: true,
+      });
+      await refresh();
+      setFeedback(
+        "Бот проверяет содержимое сундуков. Найденные назначения сохранятся автоматически.",
+      );
+    } catch (failure) {
+      setError(toErrorMessage(failure));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function stopScan() {
+    try {
+      await invoke("send_mineflayer_bot_chat", { message: "station stop", command: true });
+      await refresh();
+    } catch (failure) {
+      setError(toErrorMessage(failure));
+    }
+  }
   function preset(group: MineflayerStorageGroup, token: string) {
     const next =
       token === "#all"
@@ -148,6 +182,96 @@ export function MineflayerStorageGroups({
           <button type="button" disabled={pending || groups.length >= 32} onClick={() => create()}>
             <span aria-hidden="true">＋</span> ДОБАВИТЬ ГРУППУ
           </button>
+        </div>
+        <div className="mineflayer-storage-scan">
+          <strong>АВТОСКАНИРОВАНИЕ СУНДУКОВ</strong>
+          <p>
+            Бот найдёт сундуки, бочки и шалкеры, подойдёт к ним и определит назначение по
+            содержимому. Из пустых выделит больше места под массовые блоки и мусор, отдельный склад
+            — под ценности. Настроенные группы сохраняются.
+          </p>
+          <div className="mineflayer-bot-grid">
+            <label className="mineflayer-bot-field">
+              <span>РАДИУС ВОКРУГ БОТА · БЛОКОВ</span>
+              <CustomNumberInput
+                ariaLabel="Радиус сканирования сундуков"
+                background="transparent"
+                min={4}
+                max={64}
+                step={1}
+                value={scanRadius}
+                onChange={setScanRadius}
+                disabled={pending}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={pending || !connected}
+              onClick={() => void scanChests()}
+            >
+              {busy === "scan" || scanning ? "СКАНИРУЮ…" : "СКАНИРОВАТЬ И РАСПРЕДЕЛИТЬ"}
+            </button>
+          </div>
+          <small>
+            Двойной сундук считается одним хранилищем. За проход проверяется до 64 контейнеров.
+            Назначение определяет дальнейшую выгрузку добычи; содержимое сундуков остаётся на месте.
+          </small>
+          {scan && (
+            <>
+              <p role="status" aria-live="polite">
+                {scanning
+                  ? `Проверено ${scan.records.length}/${scan.total}. ${production?.message || ""}`
+                  : scan.state === "complete"
+                    ? `Сканирование завершено: найдено ${scan.total}, добавлено ${scan.added}.`
+                    : scan.state === "cancelled"
+                      ? "Сканирование остановлено. Группы сохранены."
+                      : "Сканирование не завершилось; проверьте журнал бота."}
+              </p>
+              {scanning && (
+                <button type="button" disabled={!connected} onClick={() => void stopScan()}>
+                  ОСТАНОВИТЬ СКАНИРОВАНИЕ
+                </button>
+              )}
+              <div className="mineflayer-storage-scan-results" aria-label="Найденные сундуки">
+                {scan.records.map((record) => (
+                  <div
+                    key={storagePositionKey(record.position)}
+                    className={record.error ? "is-error" : ""}
+                  >
+                    <strong>
+                      {record.label}
+                      {record.configured ? " · уже настроен" : ""}
+                    </strong>
+                    <span>
+                      {formatBlockCoordinates(record.position)} ·{" "}
+                      {record.positions.length === 2
+                        ? "Двойной сундук"
+                        : record.name === "barrel"
+                          ? "Бочка"
+                          : "Контейнер"}{" "}
+                      · {record.distance} бл.
+                    </span>
+                    <small>
+                      {record.error ||
+                        `Свободно слотов: ${record.freeSlots}/${record.totalSlots}${
+                          record.contents?.length
+                            ? ` · ${record.contents
+                                .slice(0, 3)
+                                .map((item) => `${label(item.name)} × ${item.count}`)
+                                .join(", ")}`
+                            : ""
+                        }`}
+                    </small>
+                  </div>
+                ))}
+              </div>
+              {scan.warnings.map((warning) => (
+                <p key={warning} className="mineflayer-bot-combat-note">
+                  {warning}
+                </p>
+              ))}
+            </>
+          )}
         </div>
         {!groups.length && (
           <div className="mineflayer-storage-empty">

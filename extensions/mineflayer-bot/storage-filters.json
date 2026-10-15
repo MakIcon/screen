@@ -1,5 +1,23 @@
 [
   {
+    "name": "#valuable",
+    "displayName": "Ценные ресурсы",
+    "description": "Алмазы, изумруды, золото, незерит и редкие предметы",
+    "icon": "diamond"
+  },
+  {
+    "name": "#bulk",
+    "displayName": "Массовые блоки и мусор",
+    "description": "Камень, земля, песок, гравий и другие массовые материалы",
+    "icon": "cobblestone"
+  },
+  {
+    "name": "#food",
+    "displayName": "Еда",
+    "description": "Продукты и готовая еда",
+    "icon": "bread"
+  },
+  {
     "name": "#all",
     "displayName": "Всё остальное",
     "description": "Добыча, для которой нет отдельной группы",

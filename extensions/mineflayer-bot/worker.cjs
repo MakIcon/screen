@@ -39,6 +39,8 @@ const { installKnockback } = require('./knockback.cjs')
 const { normalizeSurvival, createSurvivalController } = require('./survival.cjs')
 const { createGatheringController } = require('./gathering.cjs')
 const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gathering-commands.cjs')
+const { createProductionController } = require('./production.cjs')
+const { COMMANDS: PRODUCTION_COMMANDS, handleProductionCommand } = require('./production-commands.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
@@ -635,6 +637,7 @@ async function main () {
     let combat = null
     let travel = null
     let gathering = null
+    let production = null
     bot.launcherOwnerName = ownerName
 
     function reply (username, source, text) {
@@ -657,6 +660,7 @@ async function main () {
     async function stopMovement (cancelGathering = true) {
       const generation = ++goalGeneration
       combat?.stop(true)
+      await production?.stop()
       if (cancelGathering) await gathering?.stop()
       await travel?.stop()
       await combat?.idleTask
@@ -673,7 +677,7 @@ async function main () {
       const generation = ++goalGeneration
       combat?.stop(true)
       currentGoal = label
-      void Promise.all([gathering?.stop(), travel?.stop()]).then(async () => {
+      void Promise.all([production?.stop(), gathering?.stop(), travel?.stop()]).then(async () => {
         await bot.pathfinder.stop()
         if (generation !== goalGeneration || ended) return
         if (travel && destination) {
@@ -725,6 +729,13 @@ async function main () {
         'mine блок [кол-во]',
         'forest',
         'deliver',
+        'craft предмет [кол-во]',
+        'recipes предмет [кол-во]',
+        'smelt предмет [кол-во]',
+        'station open блок',
+        'station scan [радиус]',
+        'stash scan [радиус]',
+        'station put|take|select|rename|close',
         'inventory'
       ]
       if (config.commands.allowSay) commands.push('say text')
@@ -737,7 +748,7 @@ async function main () {
 
     async function handleCommand (username, rawMessage, source) {
       if (activeBot !== bot || !isOwner(username) || (source !== 'launcher' && !sourceEnabled(source))) return
-      if (!rawMessage.startsWith(prefix) && !GATHERING_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase())) return
+      if (!rawMessage.startsWith(prefix) && !GATHERING_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase()) && !PRODUCTION_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase())) return
 
       const body = (rawMessage.startsWith(prefix) ? rawMessage.slice(prefix.length) : rawMessage).trim()
       if (!body) return
@@ -755,6 +766,9 @@ async function main () {
           reply(username, source, bot.launcherInventoryUrl || 'Веб-инвентарь ещё запускается')
           return
         }
+        if (await handleProductionCommand(production, command, args, {
+          prepare: () => stopMovement(), reply: text => reply(username, source, text)
+        })) return
         if (await handleGatheringCommand(bot, gathering, command, args, {
           prepare: () => stopMovement(false), reply: text => reply(username, source, text),
           owner: () => ownerEntity(username)
@@ -773,6 +787,7 @@ async function main () {
             `Bot ${bot.username} on ${serverLabel}; pos ${pos}; hp ${bot.health ?? '?'}; food ${bot.food ?? '?'}; goal ${currentGoal}; pvp ${combat?.status || 'not ready'}`
           )
           if (gathering?.busy) reply(username, source, gathering.status)
+          if (production?.busy) reply(username, source, production.status)
           return
         }
 
@@ -924,7 +939,7 @@ async function main () {
     loadMovementExtras(bot)
     const queuedCommand = createCommandQueue(handleCommand)
     bot.launcherCommandPrefix = prefix
-    bot.launcherBareCommands = new Set([...GATHERING_COMMANDS, 'inventory'])
+    bot.launcherBareCommands = new Set([...GATHERING_COMMANDS, ...PRODUCTION_COMMANDS, 'inventory'])
     bot.launcherCommand = message => queuedCommand(ownerName, message, 'launcher')
 
     bot.once('spawn', () => {
@@ -954,6 +969,10 @@ async function main () {
           isOwner,
           onStatus: message => emit('status', { state: 'connected', message }),
           onProgress: gathering => emit('gathering', { gathering })
+        })
+        production = createProductionController(bot, {
+          onStatus: message => emit('status', { state: 'connected', message }),
+          onError: error => emit('error', { error: `production: ${error.message || String(error)}` })
         })
         bot.launcherConfigureStorage = groups => {
           const normalized = gathering.configureStorage(groups)
@@ -993,7 +1012,7 @@ async function main () {
         let attempts = 0
         const tryFollow = () => {
           if (activeBot !== bot || ended || stopping) return
-          if (gathering?.busy) return
+          if (gathering?.busy || production?.busy) return
           attempts += 1
           if (startFollowingOwner(false)) {
             emit('status', {
@@ -1069,6 +1088,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      void production?.dispose().catch(error => emit('log', { message: `production shutdown: ${error.message}` }))
       void gathering?.dispose().catch(error => emit('log', { message: `gathering shutdown: ${error.message}` }))
       bot.launcherSurvival?.dispose()
       travel?.dispose()
@@ -1090,6 +1110,7 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      void activeBot.launcherProduction?.dispose().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherGathering?.dispose().catch(error => emit('log', { message: error.message }))
       activeBot.launcherSurvival?.dispose()
       activeBot.launcherTravel?.dispose()

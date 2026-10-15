@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { MineflayerBotPluginSettings, MineflayerBotStatus } from "../../../types";
 import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
@@ -12,10 +12,12 @@ import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import { MineflayerGatheringControls } from "./MineflayerGatheringControls";
 import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
+import { MineflayerProductionControls } from "./MineflayerProductionControls";
+import { mergeScannedStorageGroups } from "./storageGroups";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
-type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control" | "gathering" | "inventory";
+type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "control" | "gathering" | "inventory" | "production";
 
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "connection", label: "Подключение" },
@@ -23,6 +25,7 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "survival", label: "Выживание" },
   { id: "combat", label: "Бой и предметы" },
   { id: "gathering", label: "Добыча" },
+  { id: "production", label: "Крафт и станки" },
   { id: "inventory", label: "Инвентарь" },
   { id: "commands", label: "Команды" },
   { id: "control", label: "Управление" },
@@ -126,6 +129,18 @@ function MineflayerBotSettingsEditor({
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatSendingRef = useRef(false);
   const chatConnected = Boolean(status?.running && status.state === "connected");
+  const savedScan = useRef("");
+  const storageScan = chatConnected ? status?.inventory?.production?.storageScan : null;
+  useEffect(() => {
+    if (!storageScan || storageScan.state !== "complete" || storageScan.saved) return;
+    const key = `${status?.pid}:${storageScan.id}`;
+    if (savedScan.current === key) return;
+    savedScan.current = key;
+    if (storageScan.added) onChange(normalizeMineflayerBotSettings({ ...settings,
+      gathering: { ...settings.gathering, storageGroups: mergeScannedStorageGroups(settings.gathering.storageGroups, storageScan.groups) } }));
+    void invoke("send_mineflayer_bot_chat", { message: `stash scan saved ${storageScan.id}`, command: true })
+      .catch(error => setActionError(toErrorMessage(error)));
+  }, [storageScan, status?.pid, settings, onChange]);
   const [activeSection, setActiveSection] = useState<SettingsSection>("connection");
   const activeBotMsAccount = context.microsoftAccounts.find(
     (account) => account.id === settings.botMicrosoftAccountId,
@@ -241,6 +256,7 @@ function MineflayerBotSettingsEditor({
       <div className="mineflayer-bot-section" key={activeSection}>
         {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} settings={settings.gathering} onSettingsChange={(gathering) => update({ gathering })} onOpenInventory={() => setActiveSection("inventory")} />}
         {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveSection("gathering")} />}
+        {activeSection === "production" && <MineflayerProductionControls connected={chatConnected} refresh={monitor.refresh} status={status} />}
         {activeSection === "connection" && (
           <div className="mineflayer-bot-connection-grid">
             <PluginSettingsGroup title="СЕРВЕР" collapsible={false}>
@@ -724,6 +740,16 @@ function MineflayerBotSettingsEditor({
                   "work pause",
                   "work resume",
                   "work stop",
+                  "craft stone_pickaxe 1",
+                  "recipes torch 64",
+                  "smelt raw_iron 16 auto auto",
+                  "station open stonecutter",
+                  "station scan 32",
+                  "stash scan 32",
+                  "station put 0 stone 16",
+                  "station select 0",
+                  "station take 1",
+                  "station close",
                 ].map((command) => (
                   <span key={command}>
                     {settings.commandPrefix || "!"}
@@ -824,7 +850,7 @@ function MineflayerBotSettingsEditor({
               </div>
             </div>
 
-            <PluginSettingsGroup title="ЧАТ И КОМАНДЫ БОТА" description="forest — рубить лес, deliver — принести добычу. Команды добычи работают и без префикса. Остальной текст идёт в игровой чат." collapsible={false}>
+            <PluginSettingsGroup title="ЧАТ И КОМАНДЫ БОТА" description="forest — рубить лес, deliver — принести добычу, craft — крафтить, smelt — переплавлять, station — работать со станками. Эти команды работают и без префикса. Остальной текст идёт в игровой чат." collapsible={false}>
               <form
                 className="mineflayer-bot-chat"
                 onSubmit={(event) => {

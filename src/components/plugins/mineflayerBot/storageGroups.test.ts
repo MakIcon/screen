@@ -1,8 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { moveStorageGroup, normalizeStorageGroups, storageCatalog } from "./storageGroups";
+import {
+  moveStorageGroup,
+  normalizeStorageGroups,
+  storageCatalog,
+  mergeScannedStorageGroups,
+} from "./storageGroups";
 import { normalizeMineflayerGatheringSettings } from "../pluginSettings";
 
 describe("storage groups", () => {
+  it("merges scan results once, keeps edits and disabled groups, and puts auto valuables before auto ores", () => {
+    const current = normalizeStorageGroups([
+      {
+        id: "manual",
+        name: "Мои настройки",
+        enabled: false,
+        filters: ["#wood"],
+        chests: [{ x: 1, y: 64, z: 0 }],
+      },
+      { id: "auto-scan-ores", name: "Руды", filters: ["#ores"], chests: [{ x: 2, y: 64, z: 0 }] },
+    ]);
+    const scanned = normalizeStorageGroups([
+      { ...current[0], name: "Старое имя", enabled: true },
+      {
+        id: "auto-scan-valuable",
+        name: "Ценные ресурсы",
+        filters: ["#valuable"],
+        chests: [{ x: 3, y: 64, z: 0 }],
+      },
+      {
+        id: "auto-scan-bulk",
+        name: "Мусор",
+        filters: ["#bulk", "#all"],
+        chests: [
+          { x: 1, y: 64, z: 0 },
+          { x: 4, y: 64, z: 0 },
+        ],
+      },
+    ]);
+    const merged = mergeScannedStorageGroups(current, scanned);
+    expect(merged[0]).toEqual(current[0]);
+    expect(merged.map((group) => group.id)).toEqual([
+      "manual",
+      "auto-scan-valuable",
+      "auto-scan-ores",
+      "auto-scan-bulk",
+    ]);
+    expect(merged[3].chests).toEqual([{ x: 4, y: 64, z: 0 }]);
+    expect(mergeScannedStorageGroups(merged, scanned)).toEqual(merged);
+    expect(current).toHaveLength(2);
+  });
   it("survives settings serialization with order, filters, destinations and disabled groups", () => {
     const groups = normalizeStorageGroups([
       {

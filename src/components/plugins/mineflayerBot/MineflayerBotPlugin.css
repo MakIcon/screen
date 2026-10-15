@@ -3,6 +3,33 @@
   gap: 12px;
 }
 
+.mineflayer-production-hint {
+  color: var(--text-alt);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.mineflayer-production-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+}
+.mineflayer-production-slots button {
+  display: grid;
+  gap: 6px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.mineflayer-production-slots button.active {
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+}
+.mineflayer-production-slots small { color: var(--text-alt); }
+
 .mineflayer-bot-gathering-fields {
   border: 0;
   padding: 0;
@@ -253,6 +280,7 @@
 }
 
 .mineflayer-bot-field > input,
+.mineflayer-bot-field > select,
 .mineflayer-bot-field > textarea {
   width: 100%;
   min-width: 0;
@@ -271,7 +299,8 @@
     opacity 0.14s;
 }
 
-.mineflayer-bot-field > input {
+.mineflayer-bot-field > input,
+.mineflayer-bot-field > select {
   min-height: 36px;
 }
 
@@ -323,12 +352,14 @@
 }
 
 .mineflayer-bot-field > input:focus,
+.mineflayer-bot-field > select:focus,
 .mineflayer-bot-field > textarea:focus {
   border-color: rgba(194, 65, 12, 0.5);
   background: var(--bg-panel);
 }
 
-.mineflayer-bot-field > input:disabled {
+.mineflayer-bot-field > input:disabled,
+.mineflayer-bot-field > select:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }

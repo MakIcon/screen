@@ -494,6 +494,31 @@ export type MineflayerInventoryItem = {
   maxDurability: number | null;
   enchants: Array<{ name: string; level: number }>;
 };
+export type MineflayerDiscoveredBlock = {
+  name: string;
+  position: { x: number; y: number; z: number };
+  positions: Array<{ x: number; y: number; z: number }>;
+  distance: number;
+};
+export type MineflayerStorageScan = {
+  id: number;
+  state: "running" | "complete" | "cancelled" | "error";
+  saved: boolean;
+  radius: number;
+  total: number;
+  added: number;
+  groups: MineflayerStorageGroup[];
+  warnings: string[];
+  records: Array<MineflayerDiscoveredBlock & {
+    category?: string | null;
+    label: string;
+    configured?: boolean;
+    totalSlots?: number;
+    freeSlots?: number;
+    contents?: Array<{ name: string; count: number }>;
+    error?: string;
+  }>;
+};
 export type MineflayerInventory = {
   username: string;
   health: number;
@@ -506,6 +531,20 @@ export type MineflayerInventory = {
   slots: Array<MineflayerInventoryItem | null>;
   occupied: number;
   capacity: number;
+  production?: {
+    busy: boolean;
+    phase: string;
+    message: string;
+    nearbyScan?: { id: number; radius: number; blocks: MineflayerDiscoveredBlock[] } | null;
+    storageScan?: MineflayerStorageScan | null;
+    station: {
+      name: string;
+      position: { x: number; y: number; z: number };
+      type: string;
+      slots: Array<{ slot: number; name: string; count: number } | null>;
+      properties: Record<string, number>;
+    } | null;
+  } | null;
 };
 export type MineflayerBotStatus = {
   revision: number;

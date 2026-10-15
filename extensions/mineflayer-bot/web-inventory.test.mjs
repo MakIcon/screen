@@ -23,6 +23,24 @@ function botFixture(version) {
   bot.inventory.slots[9] = original;
   return { bot, original };
 }
+
+test("telemetry shows current workstation inventory and production without mutating the base window", async t => {
+  const { bot, original } = botFixture("26.1.2");
+  const slots = Array(39).fill(null);
+  slots[3] = { ...original, count: 4 };
+  bot.currentWindow = { inventoryStart: 3, inventoryEnd: 39, slots };
+  const production = { busy: true, phase: "smelt", message: "Переплавляю", station: { name: "furnace" } };
+  bot.launcherProduction = { snapshot: () => production };
+  const updates = [];
+  const controller = viewer.startInventoryTelemetry(bot, { onUpdate: value => updates.push(value) });
+  t.after(() => controller.stop());
+  assert.equal(updates[0].slots[9].count, 4);
+  assert.equal(updates[0].production, production);
+  assert.equal(bot.inventory.slots[9].count, 12);
+  bot.currentWindow.slots[3] = null; bot.emit("health"); await sleep(100);
+  assert.equal(updates.at(-1).slots[9], null);
+  assert.equal(original.count, 12);
+});
 async function connect(url) {
   const path = url + "socket.io/?EIO=4&transport=polling";
   const handshake = await (await fetch(path, { signal: AbortSignal.timeout(3000) })).text();

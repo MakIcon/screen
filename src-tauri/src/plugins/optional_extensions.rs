@@ -51,6 +51,11 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
 
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("worker.cjs", MINEFLAYER_WORKER),
+    ("production.cjs", include_str!("../../../extensions/mineflayer-bot/production.cjs")),
+    ("production-plan.cjs", include_str!("../../../extensions/mineflayer-bot/production-plan.cjs")),
+    ("storage-scan.cjs", include_str!("../../../extensions/mineflayer-bot/storage-scan.cjs")),
+    ("production-commands.cjs", include_str!("../../../extensions/mineflayer-bot/production-commands.cjs")),
+    ("PRODUCTION.md", include_str!("../../../extensions/mineflayer-bot/PRODUCTION.md")),
     ("web-inventory.cjs", include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs")),
     ("gathering.cjs", include_str!("../../../extensions/mineflayer-bot/gathering.cjs")),
     ("gathering-defense.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-defense.cjs")),

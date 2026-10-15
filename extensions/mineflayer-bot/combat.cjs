@@ -941,7 +941,7 @@ function createCombatController(
     return false;
   }
   function tick() {
-    if (disposed || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy) return;
+    if (disposed || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy || bot.launcherProduction?.busy) return;
     try {
       if (defense.tick(true) || (suspended && !workTarget) || (!settings.enabled && !workTarget)) return;
       if (!target && autoEnabled && !bot.launcherGathering?.busy && now() >= nextActionAt) {

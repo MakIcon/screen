@@ -105,3 +105,26 @@ export function moveStorageGroup(groups: MineflayerStorageGroup[], id: string, d
   [copy[index], copy[next]] = [copy[next], copy[index]];
   return copy;
 }
+
+export function mergeScannedStorageGroups(
+  current: MineflayerStorageGroup[],
+  scanned: MineflayerStorageGroup[],
+) {
+  const groups = normalizeStorageGroups(current);
+  const owned = new Set(groups.flatMap((group) => group.chests.map(storagePositionKey)));
+  for (const discovered of normalizeStorageGroups(scanned)) {
+    const chests = discovered.chests.filter((point) => !owned.has(storagePositionKey(point)));
+    if (!chests.length) continue;
+    const existing = groups.find((group) => group.id === discovered.id);
+    if (existing) existing.chests.push(...chests.slice(0, 32 - existing.chests.length));
+    else if (groups.length < 32) groups.push({ ...discovered, chests });
+    for (const point of chests) owned.add(storagePositionKey(point));
+  }
+  const precious = groups.filter(
+    (group) => group.id.startsWith("auto-scan-") && group.filters.includes("#valuable"),
+  );
+  const ordered = groups.filter((group) => !precious.includes(group));
+  const firstAuto = ordered.findIndex((group) => group.id.startsWith("auto-scan-"));
+  ordered.splice(firstAuto < 0 ? ordered.length : firstAuto, 0, ...precious);
+  return ordered;
+}

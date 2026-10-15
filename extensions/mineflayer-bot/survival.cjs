@@ -28,6 +28,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     bot.launcherTravel?.pauseForSurvival();
     bot.launcherCombat?.pauseForSurvival();
     bot.launcherGathering?.pauseForSurvival();
+    bot.launcherProduction?.pauseForSurvival();
     if (bot.usingHeldItem) bot.deactivateItem();
     autoEat.cancelEat();
     bot.clearControlStates();

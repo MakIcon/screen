@@ -34,7 +34,7 @@ function queueInventoryTask(bot, action) {
 
 function equipCombatItem(bot, item, hand, current = () => true) {
   return queueInventoryTask(bot, async () => {
-    if (!current() || bot.launcherSurvival?.busy) return;
+    if (!current() || bot.launcherSurvival?.busy || bot.launcherProduction?.busy) return;
     if (!item) throw new Error(`Missing item for ${hand}`);
     const equipped = hand === "off-hand" ? offhandItem(bot) : bot.heldItem;
     if (equipped?.name === item.name) return;
