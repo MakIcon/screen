@@ -114,32 +114,51 @@ function createMaceCombat(
     const eyes = position.offset(0, bot.entity.height ?? 1.8, 0);
     return !bot.world?.raycast(eyes, new Vec3(0, 1, 0), 4);
   }
+  function abortLaunch() {
+    controlsOff();
+    state = null;
+    retryAt = now() + 1000;
+  }
+  function beginJump() {
+    if (!bot.entity.onGround || !launchSite() || now() - state.started > 1000) {
+      abortLaunch();
+      return;
+    }
+    // Releasing forward does not remove sprint momentum. Let ground friction
+    // brake it before leaving the floor, where horizontal drag is much weaker.
+    if (Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) > 0.025) return;
+    state.phase = "jump";
+    state.started = now();
+    bot.setControlState("jump", true);
+  }
   async function prepareJump(revision) {
+    // Own the entire launch, including asynchronous inventory/pathfinder work,
+    // so the combat director cannot switch engines halfway through it.
+    const action = (state = { phase: "prepare", started: now(), peak: bot.entity.position.y });
+    controlsOff();
     await bot.pathfinder.stop();
     approaching = false;
-    if (!current(revision) || !bot.entity.onGround) return;
+    if (!current(revision) || state !== action) return;
     controlsOff();
     if (bot.usingHeldItem) bot.deactivateItem();
     const charge = carriedItems(bot).find((entry) => entry.name === "wind_charge");
     await equipCombatItem(bot, charge, "hand", () => current(revision));
-    if (!current(revision) || bot.heldItem?.name !== "wind_charge") return;
-    // Slightly behind the feet also sends the burst toward the opponent.
-    const toward = target.position.minus(bot.entity.position);
-    const horizontal = Math.hypot(toward.x, toward.z) || 1;
-    const point = bot.entity.position.offset(
-      (-toward.x / horizontal) * 0.2,
-      -0.05,
-      (-toward.z / horizontal) * 0.2,
-    );
-    await bot.lookAt(point, true);
-    if (!current(revision)) return;
-    state = { phase: "jump", started: now(), peak: bot.entity.position.y };
-    bot.setControlState("jump", true);
+    if (!current(revision) || state !== action) return;
+    if (bot.heldItem?.name !== "wind_charge") return abortLaunch();
+    action.phase = "settle";
+    action.started = now();
+    beginJump();
   }
   async function throwWind(revision) {
-    bot.setControlState("jump", false);
+    controlsOff();
     const action = state;
-    if (!current(revision) || bot.heldItem?.name !== "wind_charge") return;
+    if (!current(revision)) return;
+    if (bot.heldItem?.name !== "wind_charge") return abortLaunch();
+    // Aim vertically below the CURRENT feet after takeoff. Reusing a grounded
+    // aim or aiming behind the player moves the impact away from the launch.
+    await bot.lookAt(bot.entity.position.offset(0, -1, 0), true);
+    if (!current(revision) || state !== action) return;
+    if (bot.entity.onGround || bot.entity.velocity.y <= 0) return abortLaunch();
     // physicsTick precedes Mineflayer's movement publication. Send the observed
     // jump position and downward view before use_item so the server sees the
     // same jump -> throw order, not a throw from the old grounded position.
@@ -147,11 +166,16 @@ function createMaceCombat(
     bot.activateItem(false);
     bot.deactivateItem();
     nextWindAt = now() + 500;
-    action.phase = "flight";
+    action.phase = "burst";
     action.started = now();
     action.peak = Math.max(action.peak, bot.entity.position.y);
+    action.lastVy = bot.entity.velocity.y;
+    action.unboostedPeak = bot.entity.position.y;
+    // Ordinary ballistic motion is not confirmation of a wind jump. The peak
+    // fallback also detects a boost if a slow inventory operation skipped ticks.
+    for (let vy = action.lastVy, tick = 0; vy > 0 && tick < 60; tick++, vy = (vy - 0.08) * 0.98)
+      action.unboostedPeak += vy;
     await equipMace(revision);
-    if (current(revision)) onStatus("mace: wind jump, tracking target");
   }
   function steer() {
     const motion = bot.tracker?.getEntitySpeed(target) ?? target.velocity ?? new Vec3(0, 0, 0);
@@ -220,10 +244,16 @@ function createMaceCombat(
       stop();
       return;
     }
+    if (state?.phase === "prepare" || state?.phase === "settle" || state?.phase === "burst")
+      controlsOff();
     if (busy) return;
     const entity = bot.entity,
       time = now();
     if (state) state.peak = Math.max(state.peak, entity.position.y);
+    if (state?.phase === "settle") {
+      beginJump();
+      return;
+    }
     if (state?.phase === "jump") {
       if (!entity.onGround && entity.velocity.y > 0) run(throwWind);
       else if (time - state.started > 400) {
@@ -231,6 +261,22 @@ function createMaceCombat(
         state = null;
         retryAt = time + 1000;
       }
+      return;
+    }
+    if (state?.phase === "burst") {
+      if (entity.onGround || time - state.started > 1000 || entity.isInWater || entity.isInLava) {
+        abortLaunch();
+      } else if (
+        (entity.velocity.y > 0.1 && entity.velocity.y > state.lastVy + 0.08) ||
+        entity.position.y > state.unboostedPeak + 0.35
+      ) {
+        // Keep horizontal controls released until an actual upward impulse is
+        // observed, including projectile travel time and server response delay.
+        state.phase = "flight";
+        state.started = time;
+        onStatus("mace: wind boost confirmed, tracking target");
+        run(flight);
+      } else state.lastVy = entity.velocity.y;
       return;
     }
     if (state?.phase === "confirm") {
@@ -302,6 +348,7 @@ function createMaceCombat(
   bot.on("entityHurt", hurt);
   return {
     available,
+    canLaunch: () => bot.entity.onGround && now() >= retryAt && now() >= nextWindAt && launchSite(),
     start,
     stop,
     tick,

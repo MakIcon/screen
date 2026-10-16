@@ -199,7 +199,7 @@ function overlay(bot, blocks) {
   };
 }
 
-function createCrystalPlanner(bot, settings, isOwner = () => false) {
+function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreAction = null } = {}) {
   const pendingPlaces = new Map(),
     pendingBreaks = new Map(),
     pendingBlocks = new Map();
@@ -557,6 +557,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
       return reject("waiting for server crystal removal");
     const order = { break: 0, cover: 1, place: 2, build: 3 };
     const compare = (a, b) =>
+      (scoreAction?.(b) ?? 0) - (scoreAction?.(a) ?? 0) ||
       order[a.type] - order[b.type] ||
       (settings.crystalPriority === "closest"
         ? a.range - b.range || b.damage - a.damage
@@ -597,7 +598,11 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
           if (choice.finish) break;
         }
       }
-    if (candidates.length) return candidates.sort(compare)[0];
+    const best = () =>
+      candidates.filter((action) => scoreAction?.(action) !== -Infinity).sort(compare)[0] ?? null;
+    const immediate = best();
+    if (immediate) return immediate;
+    candidates.length = 0;
     // A confirmed crystal is the current job even when the opponent runs away.
     // Keep it available for a safer/visible approach instead of replacing its
     // cycle with another foundation and accumulating explosive leftovers.
@@ -650,14 +655,14 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
           build ? [base] : [],
           build && coverItem?.name === "obsidian" ? 1 : 0,
         );
-        if (choice)
-          candidates.push(
-            build
-              ? { ...choice, ...build }
-              : choice.nextCover
-                ? { ...choice, ...choice.nextCover }
-                : choice,
-          );
+        if (choice) {
+          const action = build
+            ? { ...choice, ...build }
+            : choice.nextCover
+              ? { ...choice, ...choice.nextCover }
+              : choice;
+          if (scoreAction?.(action) !== -Infinity) candidates.push(action);
+        }
       }
       if (cycle && !candidates.length && time - cycle.progressAt >= settings.crystalIntervalMs) {
         failedBases.set(cycle.base.toString(), time + 1000);
@@ -672,8 +677,10 @@ function createCrystalPlanner(bot, settings, isOwner = () => false) {
     }
     if (!candidates.length && settings.crystalBuildBase && !obsidian && !reason.includes("damage"))
       reason += "; no obsidian for a new base";
-    candidates.sort(compare);
-    return candidates[0] ?? null;
+    const selected = best();
+    if (!selected && candidates.length)
+      reason = "no profitable crystal trade; maintain weapon pressure";
+    return selected;
   }
   function aimed(action) {
     if (!action) return null;

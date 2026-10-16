@@ -24,8 +24,32 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.autoTarget).toBe("manual");
     expect(normalized.combat.smoothAimSpeed).toBe(100);
     expect(normalized.combat.pearlChase).toBe(false);
+    expect(normalized.combat.adaptiveCombat).toBe(true);
+    expect(normalized.combat.combatHealing).toBe(true);
+    expect(normalized.combat.pearlEscape).toBe(true);
     expect(normalized.survival.autoEat).toBe(true);
     expect(normalized.survival.emergencyMlg).toBe(true);
+  });
+
+  it("keeps explicit director permissions and reaction settings when loading existing bots", () => {
+    const { combat } = normalizeMineflayerBotSettings({
+      combat: {
+        adaptiveCombat: false,
+        combatHealing: false,
+        pearlEscape: false,
+        pearlEnabled: false,
+        crystalEnabled: false,
+        reactionMs: 500,
+        meleeSkill: 60,
+      },
+    });
+    expect(combat.adaptiveCombat).toBe(false);
+    expect(combat.combatHealing).toBe(false);
+    expect(combat.pearlEscape).toBe(false);
+    expect(combat.pearlEnabled).toBe(false);
+    expect(combat.crystalEnabled).toBe(false);
+    expect(combat.reactionMs).toBe(500);
+    expect(combat.meleeSkill).toBe(60);
   });
 
   it("clamps numeric values and rejects unknown command sources", () => {

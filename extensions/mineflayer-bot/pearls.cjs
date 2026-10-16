@@ -198,7 +198,8 @@ function createTravelController(
   };
   bot.launcherResumeTravelAfterDefense = () => {
     defensePaused = false;
-    if (active && !waiting && !disposed && bot.health > 0 && !survivalPaused) walk(active, generation);
+    if (active && !waiting && !disposed && bot.health > 0 && !survivalPaused)
+      walk(active, generation);
   };
   const valid = (task, rev) =>
     !disposed &&
@@ -207,7 +208,7 @@ function createTravelController(
     bot.health > 0 &&
     (!task.current || task.current());
   function walk(task, rev, arrived = false) {
-    if (task.kind === "chase") {
+    if (task.kind === "chase" || task.kind === "escape") {
       active = null;
       bot.launcherPearling = false;
       task.onResult?.({ thrown: task.throws > 0, arrived });
@@ -278,12 +279,27 @@ function createTravelController(
     launch(task, generation, shot);
     return true;
   }
+  function escape(destination, current, onResult) {
+    if (!settings.enabled || !settings.pearlEscape || !canThrow(true) || active) return false;
+    const shot = planPearl(bot, destination(), settings, 2.5, true);
+    if (!shot) return false;
+    const task = { destination, current, onResult, kind: "escape", radius: 2.5, throws: 0 };
+    active = task;
+    launch(task, generation, shot);
+    return true;
+  }
   function plan(task) {
-    return planPearl(bot, task.destination(), settings, task.radius, task.kind === "chase");
+    return planPearl(
+      bot,
+      task.destination(),
+      settings,
+      task.radius,
+      task.kind === "chase" || task.kind === "escape",
+    );
   }
   async function throwPearl(task, rev, shot) {
     walkRevision++;
-    if (task.kind === "chase") await bot.launcherCombat?.idleTask;
+    if (task.kind === "chase" || task.kind === "escape") await bot.launcherCombat?.idleTask;
     await bot.pathfinder.stop();
     if (!valid(task, rev)) return;
     bot.clearControlStates();
@@ -313,7 +329,8 @@ function createTravelController(
         !hasPearls() ||
         !verified ||
         verified.landing.distanceTo(shot.landing) > 1 ||
-        (task.kind === "chase" && verified.landing.distanceTo(task.destination()) > task.radius)
+        (["chase", "escape"].includes(task.kind) &&
+          verified.landing.distanceTo(task.destination()) > task.radius)
       ) {
         walk(task, rev);
         return;
@@ -411,8 +428,9 @@ function createTravelController(
       })
       .finally(() => {
         busy = false;
-        if (task.kind === "chase" && valid(task, rev) && !waiting) walk(task, rev);
-        bot.launcherPearling = active?.kind === "chase" && Boolean(waiting);
+        if (["chase", "escape"].includes(task.kind) && valid(task, rev) && !waiting)
+          walk(task, rev);
+        bot.launcherPearling = ["chase", "escape"].includes(active?.kind) && Boolean(waiting);
       });
   }
   bot.on("physicsTick", tick);
@@ -426,18 +444,20 @@ function createTravelController(
     stop,
     pauseForSurvival() {
       survivalPaused = true;
-      generation++; walkRevision++;
+      generation++;
+      walkRevision++;
       waiting = null;
       bot.launcherPearling = false;
-      if (active?.kind === 'chase') active = null;
+      if (["chase", "escape"].includes(active?.kind)) active = null;
     },
     resumeAfterSurvival() {
       survivalPaused = false;
       if (active && !disposed && bot.health > 0 && !defensePaused) walk(active, generation);
     },
     chase,
+    escape,
     stopChase() {
-      if (active?.kind === "chase") stop();
+      if (["chase", "escape"].includes(active?.kind)) stop();
     },
     get chasing() {
       return active?.kind === "chase";

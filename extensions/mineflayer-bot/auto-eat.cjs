@@ -38,10 +38,11 @@ class AutoEat extends EventEmitter {
     this.revision++;
     this.cancel?.(new Error('Eating cancelled'));
   }
-  async eat({ current = () => true, restore = true } = {}) {
+  async eat({ current = () => true, restore = true, item = null } = {}) {
     if (this.isEating) return false;
-    const food = this.bestFood();
-    if (!food || this.bot.food >= 20 || this.bot.health <= 0) return false;
+    const food = item ?? this.bestFood();
+    const golden = /^(enchanted_)?golden_apple$/.test(food?.name ?? '');
+    if (!food || (!golden && this.bot.food >= 20) || this.bot.health <= 0) return false;
     const bot = this.bot, revision = ++this.revision, previous = bot.heldItem;
     const valid = () => revision === this.revision && current() && bot.health > 0;
     this.isEating = true;

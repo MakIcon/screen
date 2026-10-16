@@ -11,7 +11,11 @@ function targetBlocking(bot, entity) {
     const item = flags & 2 ? entity.equipment?.[1] : (entity.heldItem ?? entity.equipment?.[0]);
     return Boolean(flags & 1) && item?.name === "shield";
   }
-  return bot.util?.entity?.isOffHandActive(entity) && entity.equipment?.[1]?.name === "shield";
+  return Boolean(
+    entity.metadata &&
+    entity.equipment?.[1]?.name === "shield" &&
+    bot.util?.entity?.isOffHandActive(entity),
+  );
 }
 
 function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
@@ -71,7 +75,8 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       attackReason(action.target) &&
       engine.botReach() <= settings.attackRange &&
       bot.health > 0 &&
-      !bot.launcherDefendingBow && !bot.launcherSurvival?.busy
+      !bot.launcherDefendingBow &&
+      !bot.launcherSurvival?.busy
     );
   }
   function prepare() {
@@ -79,7 +84,8 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       bot.supportFeature("doesntHaveOffHandSlot") ||
       !engine.target ||
       bot.health <= 0 ||
-      bot.launcherDefendingBow || bot.launcherSurvival?.busy
+      bot.launcherDefendingBow ||
+      bot.launcherSurvival?.busy
     ) {
       reset();
       return;

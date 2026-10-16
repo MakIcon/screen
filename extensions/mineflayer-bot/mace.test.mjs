@@ -176,6 +176,153 @@ async function launch(f) {
   assert.equal(f.bot.heldItem.name, "mace");
 }
 
+test("wind launch brakes sprint momentum before jumping and re-aims at the current feet", async () => {
+  const f = fixture();
+  try {
+    f.bot.entity.velocity.x = 0.28;
+    f.controls.forward = f.controls.sprint = true;
+    f.mace.start(f.enemy);
+    await f.tick(0);
+    assert.equal(f.mace.airborne, true, "the launch owns movement while braking");
+    assert.equal(f.controls.jump, false, "does not jump with residual sprint velocity");
+    f.bot.entity.position.x = 0.3;
+    f.bot.entity.velocity.x = 0.08;
+    await f.tick(100);
+    assert.equal(f.controls.jump, false);
+    f.bot.entity.velocity.x = 0.02;
+    await f.tick(200);
+    assert.equal(f.controls.jump, true);
+    f.bot.entity.position.x = 0.32;
+    await f.tick(250, 64.42, 0.33);
+    const useIndex = f.calls.findIndex(([name]) => name === "use");
+    const aim = f.calls.slice(0, useIndex).findLast(([name]) => name === "aim")[1];
+    assert.equal(aim.x, f.bot.entity.position.x);
+    assert.equal(aim.z, f.bot.entity.position.z);
+    assert.ok(aim.y < f.bot.entity.position.y);
+    assert.equal(f.calls[useIndex - 1][1].pitch, 90, "throws straight down");
+    assert.ok(Object.values(f.controls).every((value) => value === false));
+  } finally {
+    f.mace.dispose();
+  }
+});
+
+test("wind launch holds its blast position through delayed boost then pursues a moving target", async () => {
+  const f = fixture();
+  try {
+    await launch(f);
+    f.enemy.position.x = 3;
+    f.enemy.velocity.x = 0.1;
+    for (const [at, y, vy] of [
+      [100, 64.75, 0.248],
+      [150, 65, 0.165],
+      [200, 65.16, 0.083],
+    ]) {
+      await f.tick(at, y, vy);
+      assert.ok(
+        Object.values(f.controls).every((value) => value === false),
+        "no pursuit before boost",
+      );
+    }
+    await f.tick(250, 66.2, 0.95);
+    assert.equal(f.controls.forward, true, "starts tracking as soon as upward impulse is observed");
+    assert.equal(f.calls.filter(([name]) => name === "use").length, 1);
+  } finally {
+    f.mace.dispose();
+  }
+});
+
+test("an ordinary jump without a wind impulse never becomes a smash and retries are bounded", async () => {
+  const f = fixture();
+  try {
+    await launch(f);
+    for (const [at, y, vy] of [
+      [100, 64.75, 0.248],
+      [150, 65, 0.165],
+      [250, 65.25, 0],
+      [400, 64.4, -0.3],
+    ]) {
+      await f.tick(at, y, vy);
+      assert.equal(f.mace.imminentSmash, false);
+      assert.ok(Object.values(f.controls).every((value) => value === false));
+    }
+    await f.tick(500, 64, 0, true);
+    assert.equal(f.mace.airborne, false);
+    await f.tick(1000);
+    assert.equal(f.controls.jump, false);
+    assert.equal(f.calls.filter(([name]) => name === "use").length, 1);
+    assert.equal(f.calls.filter(([name]) => name === "hit").length, 0);
+  } finally {
+    f.mace.dispose();
+  }
+});
+
+test("braking is bounded and launch clearance is checked again after equipping", async () => {
+  for (const reason of ["sliding", "falling", "roof"]) {
+    const f = fixture();
+    try {
+      f.bot.entity.velocity.x = 0.28;
+      f.mace.start(f.enemy);
+      await f.tick(0);
+      if (reason === "falling") f.bot.entity.onGround = false;
+      if (reason === "roof")
+        f.bot.world.raycast = (_origin, direction) => (direction.y > 0.9 ? {} : null);
+      await f.tick(reason === "sliding" ? 1100 : 100);
+      assert.equal(f.mace.airborne, false, reason);
+      assert.equal(f.controls.jump, false, reason);
+      assert.equal(
+        f.calls.some(([name]) => name === "use"),
+        false,
+        reason,
+      );
+    } finally {
+      f.mace.dispose();
+    }
+  }
+});
+
+test("launch owns movement during slow equip and stop cancels a delayed downward aim", async () => {
+  const f = fixture();
+  let release;
+  const equip = f.bot.equip;
+  f.bot.equip = async (...args) => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    await equip(...args);
+  };
+  try {
+    f.mace.start(f.enemy);
+    f.mace.tick();
+    await flush();
+    assert.equal(f.mace.airborne, true);
+    assert.ok(Object.values(f.controls).every((value) => value === false));
+    release();
+    await f.mace.task;
+    f.bot.equip = equip;
+    assert.equal(f.controls.jump, true);
+    const look = f.bot.lookAt;
+    f.bot.lookAt = async (...args) => {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      await look(...args);
+    };
+    const jumping = f.tick(50, 64.42, 0.33);
+    await flush();
+    f.mace.stop();
+    release();
+    await jumping;
+    assert.equal(f.mace.airborne, false);
+    assert.equal(
+      f.calls.some(([name]) => name === "use"),
+      false,
+    );
+    assert.ok(Object.values(f.controls).every((value) => value === false));
+  } finally {
+    f.mace.dispose();
+  }
+});
+
 test("wind jump waits for real descent, fall distance, hitbox reach and confirmed Wind Burst", async () => {
   const f = fixture();
   try {
@@ -580,46 +727,83 @@ for (const version of ["1.21.1", "26.1.2"]) {
       assert.equal(attack.params.entityId ?? attack.params.target, 2);
       mace.stop();
 
-      // Run a complete jump/descent with the real movement simulator. Only the
-      // server's burst impulse is supplied; controls must do the rest of the
-      // approach and the attack must occur before the physical landing.
-      bot.entity.position.set(0.5, 64, 0.5);
-      bot.entity.velocity.set(0, 0, 0);
-      bot.entity.onGround = true;
-      enemy.position.x = 3.5;
-      const beforeFlight = packets.length;
-      let boosted = false,
-        physicsHit = false;
-      time = 2000;
-      mace.start(enemy);
-      for (let tick = 0; tick < 65; tick++) {
-        time = 2000 + tick * 50;
-        bot.physics
-          .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
-          .apply(bot);
-        mace.tick();
-        await mace.task;
-        const flightPackets = packets.slice(beforeFlight);
-        if (!boosted && flightPackets.some((packet) => packet.name === "use_item")) {
-          bot.entity.velocity.y = 1.05;
-          boosted = true;
+      // Real movement physics with residual sprint momentum and delayed server
+      // impulses. The simulated burst only reaches a bot still above its impact
+      // point; an immediate unconditional boost would hide premature pursuit.
+      for (const [delayTicks, momentum] of [
+        [1, 0],
+        [3, 0.28],
+        [5, -0.28],
+      ]) {
+        bot.entity.position.set(0.5, 64, 0.5);
+        bot.entity.velocity.set(momentum, 0, 0);
+        bot.entity.onGround = true;
+        enemy.position.x = 3.5;
+        const beforeFlight = packets.length;
+        let boosted = false,
+          physicsHit = false,
+          thrownAt = null,
+          impact = null;
+        const started = 2000 + delayTicks * 5000;
+        time = started;
+        mace.start(enemy);
+        for (let tick = 0; tick < 80; tick++) {
+          time = started + tick * 50;
+          bot.physics
+            .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+            .apply(bot);
+          mace.tick();
+          await mace.task;
+          const flightPackets = packets.slice(beforeFlight);
+          if (thrownAt === null && flightPackets.some((packet) => packet.name === "use_item")) {
+            thrownAt = tick;
+            impact = bot.entity.position.clone();
+            const useIndex = flightPackets.findIndex((packet) => packet.name === "use_item");
+            assert.equal(flightPackets[useIndex - 1].params.pitch, 90);
+            assert.ok(Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) < 0.025);
+          }
+          if (thrownAt !== null && !boosted) {
+            assert.ok(
+              Object.values(bot.controlState).every((value) => value === false),
+              "holds for the server burst",
+            );
+            if (tick === thrownAt + delayTicks) {
+              const drift = Math.hypot(
+                bot.entity.position.x - impact.x,
+                bot.entity.position.z - impact.z,
+              );
+              assert.ok(
+                drift < 0.15,
+                `stays above impact during ${delayTicks * 50} ms delay: ${drift}`,
+              );
+              if (drift < 0.3) {
+                bot.entity.velocity.y = 1.05;
+                boosted = true;
+              }
+            }
+          }
+          if (
+            flightPackets.some(
+              (packet) =>
+                packet.name === "attack" ||
+                (packet.name === "use_entity" && packet.params.mouse === 1),
+            )
+          ) {
+            physicsHit = true;
+            assert.equal(bot.entity.onGround, false);
+            assert.ok(bot.entity.velocity.y < 0);
+            assert.ok(bot.entity.position.x > 0.5, "moves toward the enemy after the burst");
+            break;
+          }
         }
-        if (
-          flightPackets.some(
-            (packet) =>
-              packet.name === "attack" ||
-              (packet.name === "use_entity" && packet.params.mouse === 1),
-          )
-        ) {
-          physicsHit = true;
-          assert.equal(bot.entity.onGround, false);
-          assert.ok(bot.entity.velocity.y < 0);
-          assert.ok(bot.entity.position.x > 0.5, "moves toward the enemy in the air");
-          break;
-        }
+        assert.ok(boosted, "a delayed burst reaches the bot");
+        assert.ok(physicsHit, "the complete physical wind jump reaches a smash opportunity");
+        assert.equal(
+          packets.slice(beforeFlight).filter((packet) => packet.name === "use_item").length,
+          1,
+        );
+        mace.stop();
       }
-      assert.ok(physicsHit, "the complete physical wind jump reaches a smash opportunity");
-      mace.stop();
       enemy.heldItem = { name: "mace" };
       enemy.position.y = 74;
       enemy.velocity.y = -0.6;

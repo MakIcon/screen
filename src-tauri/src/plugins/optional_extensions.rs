@@ -21,6 +21,8 @@ pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
 const MINEFLAYER_KNOCKBACK: &str = include_str!("../../../extensions/mineflayer-bot/knockback.cjs");
 const MINEFLAYER_COMBAT: &str = include_str!("../../../extensions/mineflayer-bot/combat.cjs");
+const MINEFLAYER_COMBAT_BRAIN: &str = include_str!("../../../extensions/mineflayer-bot/combat-brain.cjs");
+const MINEFLAYER_COMBAT_FOOTWORK: &str = include_str!("../../../extensions/mineflayer-bot/combat-footwork.cjs");
 const MINEFLAYER_PEARLS: &str = include_str!("../../../extensions/mineflayer-bot/pearls.cjs");
 const MINEFLAYER_CRYSTALS: &str = include_str!("../../../extensions/mineflayer-bot/crystals.cjs");
 const MINEFLAYER_CRYSTAL_MOVEMENT: &str =
@@ -70,6 +72,8 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("GATHERING.md", include_str!("../../../extensions/mineflayer-bot/GATHERING.md")),
     ("knockback.cjs", MINEFLAYER_KNOCKBACK),
     ("combat.cjs", MINEFLAYER_COMBAT),
+    ("combat-brain.cjs", MINEFLAYER_COMBAT_BRAIN),
+    ("combat-footwork.cjs", MINEFLAYER_COMBAT_FOOTWORK),
     ("pearls.cjs", MINEFLAYER_PEARLS),
     ("crystals.cjs", MINEFLAYER_CRYSTALS),
     ("crystal-movement.cjs", MINEFLAYER_CRYSTAL_MOVEMENT),

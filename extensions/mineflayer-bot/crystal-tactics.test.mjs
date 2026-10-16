@@ -74,6 +74,15 @@ function fixture(version, settings = {}, onCrystal = () => {}) {
       return new Promise(() => {});
     },
   };
+  bot.swordpvp = {
+    target: null,
+    attack: async (entity) => {
+      bot.swordpvp.target = entity;
+    },
+    stop: () => {
+      bot.swordpvp.target = null;
+    },
+  };
   const enemy = {
     id: 2,
     username: "Enemy",
@@ -171,6 +180,65 @@ const readControls = (bot) =>
       bot.getControlState(name),
     ]),
   );
+
+for (const version of ["1.20.4", "26.1.2"]) {
+  test(`auto director commits a profitable crystal combo and finishes after the target flees on ${version}`, async () => {
+    const f = fixture(version, { style: "auto" }, ({ enemy }) => {
+      enemy.position.x = 13;
+    });
+    try {
+      f.controller.select(f.enemy);
+      for (let tick = 0; tick < 35 && !attacks(f).length; tick++) await f.tick(tick * 50);
+      assert.deepEqual(f.errors, []);
+      assert.equal(placements(f).length, 1, f.statuses.join("; "));
+      assert.equal(attacks(f).length, 1, "complete the confirmed explosion before chasing");
+      assert.ok(attacks(f)[0].time - placements(f)[0].time <= 100);
+    } finally {
+      f.close();
+    }
+  });
+
+  test(`auto director keeps melee when crystals have no profitable safe setup on ${version}`, async () => {
+    const f = fixture(version, { style: "auto", crystalMaxSelfDamage: 0, crystalCover: false });
+    try {
+      f.controller.select(f.enemy);
+      await f.tick(0);
+      await f.tick(50);
+      assert.deepEqual(f.errors, []);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      assert.equal(placements(f).length, 0);
+      assert.equal(f.packets.filter((p) => p.name === "block_place").length, 0);
+      assert.equal(f.controller.decision.crystal.use, false);
+    } finally {
+      f.close();
+    }
+  });
+
+  test(`auto director refuses setup during close pressure and checks HP again after equip on ${version}`, async () => {
+    const f = fixture(version, { style: "auto" });
+    try {
+      f.bot.health = 12;
+      f.enemy.position.x = 3.4;
+      f.controller.select(f.enemy);
+      await f.tick(0);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      assert.equal(placements(f).length, 0);
+      f.bot.health = 20;
+      f.enemy.position.x = 5.5;
+      const equip = f.bot.equip;
+      f.bot.equip = async (item) => {
+        await equip(item);
+        f.bot.health = 5;
+      };
+      for (let tick = 1; tick <= 12; tick++) await f.tick(tick * 50);
+      assert.deepEqual(f.errors, []);
+      assert.equal(placements(f).length, 0, "health loss invalidates the prepared explosion");
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+    } finally {
+      f.close();
+    }
+  });
+}
 
 for (const version of ["1.20.4", "26.1.2"]) {
   test(`crystal finishes its explosion when the target flees during spawn on ${version}`, async () => {

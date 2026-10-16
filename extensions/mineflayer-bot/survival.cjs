@@ -20,10 +20,11 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     minHealth: settings.autoEatMinHealth, priority: settings.autoEatPriority });
   const mlg = createEmergencyMlg(bot, settings, { now, onStatus });
   let kind = null, generation = 0, disposed = false, peakY = bot.entity.position.y;
+  let combatMeal = null;
   let nextEatAt = 0, nextMlgAt = 0, tickingMlg = false, task = Promise.resolve();
   const alive = () => !disposed && bot.health > 0 && bot.isAlive !== false;
   function acquire(nextKind) {
-    kind = nextKind; generation++;
+    kind = nextKind; combatMeal = null; generation++;
     // Set ownership first, invalidating queued combat/pearl equips immediately.
     bot.launcherTravel?.pauseForSurvival();
     bot.launcherCombat?.pauseForSurvival();
@@ -38,6 +39,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
   async function release(current) {
     if (!current()) return;
     kind = null;
+    combatMeal = null;
     bot.clearControlStates();
     bot.launcherCombat?.resumeAfterSurvival();
     bot.launcherTravel?.resumeAfterSurvival();
@@ -55,6 +57,11 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
       entity.velocity.y < -0.1 && !entity.elytraFlying &&
       !['creative', 'spectator'].includes(bot.game?.gameMode);
     try {
+      if (combatMeal && !combatMeal.current()) {
+        generation++; kind = null; combatMeal = null; autoEat.cancelEat();
+        if (bot.usingHeldItem) bot.deactivateItem();
+        bot.clearControlStates();
+      }
       if (kind !== 'mlg' && settings.emergencyMlg && falling && !plannedDrop &&
         !bot.launcherCombat?.imminentMaceSmash && now() >= nextMlgAt) {
         const plan = mlg.plan(peakY);
@@ -82,6 +89,9 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
       }
       if (kind || !entity.onGround || climb || plannedDrop || bot.launcherPearling ||
         bot.launcherDefendingBow || now() < nextEatAt || !autoEat.needsFood()) return;
+      // The combat director first creates room to eat. Ordinary hunger must not
+      // make a healthy bot put away its weapon in the middle of a duel.
+      if (bot.launcherCombat?.managesHealing) return;
       nextEatAt = now() + 1000; // No inventory scan/error loop on every empty tick.
       if (!autoEat.bestFood()) return;
       const current = acquire('eat');
@@ -108,7 +118,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
   }
   function reset() {
     const wasBusy = kind !== null;
-    generation++; kind = null;
+    generation++; kind = null; combatMeal = null;
     if (wasBusy && bot._client?.state === 'play' && bot.usingHeldItem) bot.deactivateItem();
     autoEat.cancelEat(); mlg.cancel();
     peakY = bot.entity.position.y;
@@ -120,6 +130,33 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
   const controller = {
     get busy() { return kind !== null; }, get kind() { return kind; },
     get task() { return task; },
+    requestCombatHeal(item, valid, onFinished = () => {}) {
+      if (!alive() || kind || autoEat.isEating || !item || bot.launcherPearling ||
+        bot.launcherDefendingBow || !bot.entity.onGround) return false;
+      const current = acquire('eat');
+      combatMeal = { current: valid };
+      let succeeded = false;
+      const eatingCurrent = () => current() && valid();
+      task = Promise.resolve(bot.pathfinder.stop()).then(async () => {
+        if (!eatingCurrent()) return;
+        onStatus(`combat heal: ${item.name}`);
+        succeeded = await autoEat.eat({ item, current: eatingCurrent });
+      }).catch(error => { if (eatingCurrent()) onError(error); }).finally(async () => {
+        if (current()) {
+          onFinished(succeeded);
+          nextEatAt = now() + 1000;
+          await release(current);
+        }
+      });
+      return true;
+    },
+    cancelCombatHeal() {
+      if (!combatMeal) return;
+      generation++; kind = null; combatMeal = null;
+      autoEat.cancelEat();
+      if (bot.usingHeldItem) bot.deactivateItem();
+      bot.clearControlStates();
+    },
     dispose() {
       if (disposed) return;
       disposed = true; reset(); autoEat.dispose();

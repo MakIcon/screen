@@ -1,6 +1,101 @@
 # PvP, mace and bow combat
 
-Mineflayer Bot 1.8.13 includes the locked published packages:
+## Adaptive combat director (1.15.0)
+
+The **АГРЕССИВНЫЙ** preset enables adaptive combat, combat healing, crystal
+tactics and pearl travel/escape, zero initial reaction delay, full melee skill,
+fast aim and sprint resets. Inventory and the existing damage, health and travel
+permission limits still apply. New settings alone do not enable crystals/pearls;
+select this preset or enable those features explicitly.
+Existing explicit reaction/skill settings remain editable. New configurations
+default to zero reaction delay and 100% melee skill. `adaptiveCombat` can be
+disabled to retain the original distance-based engine selection.
+
+The director runs before the attack engines on every physics tick (normally
+50 ms). It reads current health, damage received over the last two seconds,
+distance, visibility, active enemy items, blocking, equipment and available
+healing/pearls. Inventory is cached for 250 ms and invalidated by slot updates.
+Decision evaluation is synchronous; it does not wait for aim, inventory swaps,
+critical-hit timers or path searches. Execution still respects real weapon
+cooldowns, the configured CPS, reach, visibility and the server's confirmations.
+
+Priorities and commitments:
+
+- At 12 HP or below, create space for healing if supplies are available. At 7 HP
+  or below, survival takes priority over finishing the opponent.
+- A visible, unshielded enemy reporting at most 4 effective HP within four blocks
+  triggers finishing pressure when the bot has more than 5 HP. No additional
+  critical jump is started for that finish; a hit still needs actual reach and aim.
+- A raised shield selects the existing charged axe shield-break cycle. Enemy
+  food/potion/bow use triggers pressure instead of a switch to ranged combat.
+- Open, level ground uses direct forward pursuit. Close combat uses short,
+  stable lateral bursts while maintaining pressure. Each diagonal corridor is
+  checked for support/headroom. Walls, steps, gaps, water and unknown terrain
+  remain the existing navigator's responsibility. Taking damage does not
+  automatically stop forward movement or start an asynchronous critical wait.
+- Auto style stays in melee up to 14 blocks, and leaves ranged mode at ten blocks.
+  This margin avoids repeated swaps at one distance threshold. Mace plus wind
+  charge is selected with at least 12 HP, an available launch site and a target
+  within eight blocks. Airborne sequences retain ownership until completion;
+  low ceilings and unavailable launches retain ordinary melee. Explicit weapon,
+  ranged and crystal modes remain supported.
+- Recovery chooses a checked waypoint away from the target. At six blocks of
+  separation or behind cover it consumes a golden apple (including at full
+  hunger) or ordinary safe food. It waits for server consumption confirmation,
+  then resumes the same target without another reaction delay. Apples have a
+  five-second reuse window to allow their effects to work. Ordinary hunger uses
+  ordinary food. Combat healing currently supports food and golden apples;
+  potion selection/use is not implemented.
+- `pearlEscape` uses the existing trajectory planner to create healing distance
+  when `pearlEnabled` is also enabled. Health, inventory reserve, cooldown,
+  loaded terrain, safe landing and one-flight limits still apply. It does not
+  require `pearlChase`. A failed pearl plan falls back to retreat on foot.
+- Retreat is bounded to 2.2 seconds; a failed route returns to combat with a
+  two-second retry delay. Critically low health permits a last-resort meal when
+  the retreat times out. Empty supplies never start an endless retreat loop.
+  Stop, target loss, death and a new command cancel queued healing and throws.
+
+Enemy health comes only from the current version's named entity metadata,
+including reported absorption. Missing values are **unknown**, not an assumed
+20 HP or a guess based on hit animations. Vanilla servers or server plugins can
+hide or substitute this information; the director uses distance, shields, item
+use and its own health when enemy HP is unavailable. It does not treat arbitrary
+scoreboard points as HP. `pvp status` includes the action and observed HP.
+
+`combat-brain.test.mjs` covers decision priorities, unknown HP/absorption, cache
+invalidation, food selection, checked footwork and a decision microbenchmark.
+Combat/survival/utility tests cover retreat → confirmed meal → immediate combat,
+cancellation, mode hysteresis, bounded recovery and safe escape pearls.
+The microbenchmark measures only the decision layer, not pathfinding or network
+latency. Live duel performance still needs verification on the intended server.
+
+### Crystal decisions in adaptive Auto style
+
+Carrying crystals no longer forces the bot to stay in crystal mode. It compares
+feasible explosions with weapon pressure: enemy damage, self damage, known enemy
+HP, recent incoming damage and the number of setup steps. It ranks an immediate
+break above equal damage requiring construction, rewards a predicted lethal
+blast, and prefers an immediate weapon finish over building a new base.
+Nonlethal trades exceeding 65% self/enemy damage are rejected; recent burst damage
+or low HP at melee distance prevents starting a foundation/cover sequence.
+Lethal predictions never override minimum health, maximum self damage or owner
+protection. Available lower-damage but more profitable layouts can outrank the
+largest raw explosion. All geometry, prediction, armour and chain-explosion
+checks remain active.
+
+The expensive layout probe is shared by selection and execution, normally every
+150 ms under pressure or 300 ms otherwise. Confirmed spawn/removal, block changes
+and incoming hits invalidate it. Immediately before execution, geometry, health,
+damage and profitability are checked again. The bot holds the current sequence
+through bounded server confirmations and promptly breaks its confirmed crystal.
+If finishing becomes unsafe/blocked it tries repositioning for up to 1.2 seconds,
+then returns to weapon pressure while retaining the crystal for later safe cleanup.
+An unavailable or poor setup keeps the bot attacking instead of waiting with a
+crystal in its hand. Explicit **Кристаллы Края** mode remains dedicated crystal
+combat and still obeys all safety limits; the profitability comparison belongs
+to adaptive **Авто** mode.
+
+Mineflayer Bot includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.
 - `mineflayer-pvp` 1.3.2: selectable basic melee combat.
@@ -26,10 +121,15 @@ folder or on TypeScript compilation during installation.
 Select **Ближний бой → Оружие → Булава + заряд ветра** and carry a mace and
 wind charges. The mace controller works with both engine selections. It follows
 the target using the normal terrain planner, finds solid ground with headroom,
-jumps first, then throws a charge below its feet during the initial ascent.
+jumps after braking residual horizontal momentum, then aims straight down below
+its current feet and throws a charge during the initial ascent.
 The shield stays in the offhand; the controller switches its main hand back to
-the mace and steers toward the target. The server receives the downward look
-before the charge use packet.
+the mace while keeping movement released until an observed upward impulse
+confirms the boost. Only then does it steer toward the target, so projectile
+travel and server response delay cannot make it run away from the blast point.
+The server receives the current airborne position and downward look before the
+charge use packet. Braking and boost confirmation each have a one-second limit;
+failed launches use a one-second retry delay instead of spending more charges.
 
 An airborne strike requires a real descent of more than 1.5 blocks, line of sight
 and eye-to-hitbox reach within the configured maximum of 3 blocks. Grounded mace
@@ -113,8 +213,9 @@ On clear level ground it turns toward the enemy and walks forward, releasing
 forward to stop at placement distance with a restart margin. It does not brake
 backward or repeatedly strafe to center on each block. Obstacles, gaps, liquids,
 unloaded terrain and elevation changes use the existing pathfinder.
-When no crystals are carried it prioritizes a safe crystal break, then
-uses a bow beyond melee range plus two blocks, and melee nearby.
+When no crystals are carried it prioritizes a safe crystal break, then uses the
+director's pressure/ranged decisions. With the director disabled it uses a bow
+beyond melee range plus two blocks, and melee nearby.
 The ranged style stays with the bow; its optional melee fallback applies when a
 bow or arrows are missing. Equip a bow and normal, spectral or tipped arrows in
 the inventory. Bow range is limited to 120 blocks. The offhand option is effective

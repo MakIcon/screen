@@ -296,6 +296,9 @@ export type DiscordRpcPluginSettings = {
 
 export type MineflayerCombatSettings = {
   enabled: boolean;
+  adaptiveCombat: boolean;
+  combatHealing: boolean;
+  pearlEscape: boolean;
   engine: "custom" | "basic";
   style: "auto" | "melee" | "ranged" | "crystal";
   autoTarget: "manual" | "hostile";

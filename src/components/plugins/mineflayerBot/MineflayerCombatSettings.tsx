@@ -65,6 +65,27 @@ const PRESETS: Array<{ label: string; patch: Partial<MineflayerCombatSettings> }
       bowIntervalMs: 1200,
     },
   },
+  {
+    label: "АГРЕССИВНЫЙ",
+    patch: {
+      adaptiveCombat: true,
+      combatHealing: true,
+      pearlEscape: true,
+      pearlEnabled: true,
+      crystalEnabled: true,
+      style: "auto",
+      engine: "custom",
+      reactionMs: 0,
+      meleeSkill: 100,
+      cps: 20,
+      smoothAimSpeed: 175,
+      strafe: "intelligent",
+      criticals: "hop",
+      sprintTap: "sprintcancel",
+      shield: true,
+      shieldBreak: true,
+    },
+  },
 ];
 
 function CombatSettingsGroup({
@@ -173,6 +194,23 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
       <div className="mineflayer-bot-toggle-grid">{toggle("enabled", "ВКЛЮЧИТЬ PVP", "")}</div>
       <div className="mineflayer-bot-combat-groups">
         <CombatSettingsGroup disabled={!settings.enabled} title="ТАКТИКА И УРОВЕНЬ">
+          <div className="mineflayer-bot-toggle-grid">
+            {toggle(
+              "adaptiveCombat",
+              "АДАПТИВНЫЙ БОЙ",
+              "Агрессивное сближение, добивание и выбор действий по здоровью и ситуации. Решения обновляются каждый игровой тик.",
+            )}
+            {toggle(
+              "combatHealing",
+              "ЛЕЧЕНИЕ В БОЮ",
+              "Отойти для золотого яблока или еды и вернуться в бой. Требуется адаптивный бой.",
+            )}
+            {toggle(
+              "pearlEscape",
+              "ЖЕМЧУГ ДЛЯ ОТХОДА",
+              "Создать дистанцию для лечения. Требует включённого жемчуга и соблюдает запас, здоровье и безопасное приземление.",
+            )}
+          </div>
           <div className="mineflayer-bot-presets">
             {PRESETS.map((preset) => (
               <button type="button" key={preset.label} onClick={() => update(preset.patch)}>
@@ -182,7 +220,7 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
           </div>
           <div className="mineflayer-bot-grid">
             {choice("style", "ТАКТИКА", [
-              ["auto", "Лук вдали, ближнее оружие вблизи"],
+              ["auto", "Авто: давление и выбор оружия"],
               ["melee", "Только ближний бой"],
               ["ranged", "Только лук"],
               ["crystal", "Кристаллы Края"],

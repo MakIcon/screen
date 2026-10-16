@@ -683,6 +683,9 @@ impl Default for MineflayerSurvivalSettings {
 #[serde(default, rename_all = "camelCase")]
 pub struct MineflayerCombatSettings {
     pub enabled: bool,
+    pub adaptive_combat: bool,
+    pub combat_healing: bool,
+    pub pearl_escape: bool,
     pub engine: String,
     pub style: String,
     pub auto_target: String,
@@ -752,12 +755,15 @@ impl Default for MineflayerCombatSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            adaptive_combat: true,
+            combat_healing: true,
+            pearl_escape: true,
             engine: "custom".into(),
             style: "auto".into(),
             auto_target: "manual".into(),
             target_range: 24.0,
-            reaction_ms: 250,
-            melee_skill: 80,
+            reaction_ms: 0,
+            melee_skill: 100,
             cps: 12,
             attack_range: 3.0,
             weapon: "sword".into(),

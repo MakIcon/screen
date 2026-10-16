@@ -119,6 +119,102 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
   });
 }
 
+for (const version of ["1.20.4", "26.1.2"]) {
+  test(`combat escape respects permissions, HP, one-flight ownership and arrival on ${version}`, async () => {
+    const f = travelFixture({}, version);
+    const destination = new Vec3(-20.5, 64, 0.5),
+      results = [];
+    try {
+      f.bot.health = 5;
+      assert.equal(
+        f.travel.escape(
+          () => destination,
+          () => true,
+        ),
+        false,
+      );
+      f.bot.health = 10;
+      const shot = planPearl(f.bot, destination, f.settings, 2.5, true);
+      assert.ok(shot);
+      assert.equal(
+        f.travel.escape(
+          () => destination,
+          () => true,
+          (result) => results.push(result),
+        ),
+        true,
+      );
+      await flush();
+      await flush();
+      assert.equal(f.travel.waiting, true);
+      assert.equal(f.bot.launcherPearling, true);
+      assert.equal(
+        f.travel.escape(
+          () => destination,
+          () => true,
+        ),
+        false,
+      );
+      assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+      f.bot.entity.position = shot.landing.clone();
+      await f.tick(500);
+      assert.equal(f.travel.waiting, false);
+      assert.equal(f.bot.launcherPearling, false);
+      assert.deepEqual(results, [{ thrown: true, arrived: true }]);
+      assert.equal(
+        f.travel.escape(
+          () => new Vec3(0.5, 64, 0.5),
+          () => true,
+        ),
+        false,
+        "cooldown survives arrival",
+      );
+    } finally {
+      f.close();
+    }
+    for (const patch of [{ pearlEnabled: false }, { pearlEscape: false }, { pearlReserve: 4 }]) {
+      const disabled = travelFixture(patch, version);
+      try {
+        assert.equal(
+          disabled.travel.escape(
+            () => destination,
+            () => true,
+          ),
+          false,
+        );
+      } finally {
+        disabled.close();
+      }
+    }
+  });
+}
+
+test("escape cancelled during equip cannot throw after a new command", async () => {
+  const f = travelFixture();
+  let release;
+  f.bot.equip = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  try {
+    assert.equal(
+      f.travel.escape(
+        () => new Vec3(-20.5, 64, 0.5),
+        () => true,
+      ),
+      true,
+    );
+    await flush();
+    const task = f.travel.stop();
+    release();
+    await task;
+    assert.equal(f.calls.includes("throw"), false);
+    assert.equal(f.bot.launcherPearling, false);
+  } finally {
+    f.close();
+  }
+});
+
 test("pearl solver rejects water, unloaded terrain, obstructed arcs and entity collisions", () => {
   const f = worldFixture(),
     settings = normalizeCombat({ pearlEnabled: true });
@@ -1106,11 +1202,13 @@ for (const version of ["1.20.4", "26.1.2"]) {
       time = 3000;
       // Mineflayer can flush its last look packet on a timer after stop.
       // Count crystal clicks, attacks and swings independently of that flush.
-      const actionPackets = () => packets.filter(packet =>
-        ["block_place", "attack", "use_entity", "arm_animation"].includes(packet.name));
+      const actionPackets = () =>
+        packets.filter((packet) =>
+          ["block_place", "attack", "use_entity", "arm_animation"].includes(packet.name),
+        );
       const count = actionPackets().length;
       bot.emit("physicsTick");
-      await new Promise(resolve => setTimeout(resolve, 65));
+      await new Promise((resolve) => setTimeout(resolve, 65));
       await flush();
       assert.equal(actionPackets().length, count, "stop cancels all crystal actions");
     } finally {

@@ -3,7 +3,9 @@ const { Vec3 } = require("vec3");
 const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
 const { goals } = require("./pathfinder.cjs");
 const { createCrystalPlanner, isCrystal } = require("./crystals.cjs");
-const { createCrystalMovement } = require("./crystal-movement.cjs");
+const { createCrystalMovement, groundAt, walkSegment } = require("./crystal-movement.cjs");
+const { createCombatBrain, crystalOpportunity, observedHealth } = require("./combat-brain.cjs");
+const { createCombatFootwork } = require("./combat-footwork.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
 const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
 const { installArmorManager } = require("./armor-manager.cjs");
@@ -263,7 +265,13 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   options.critConfig.enabled = settings.criticals !== "off";
   options.critConfig.mode = settings.criticals === "off" ? "hop" : settings.criticals;
   options.critConfig.reaction.enabled =
-    settings.meleeSkill >= 70 && !bot.supportFeature("doesntHaveOffHandSlot");
+    !settings.adaptiveCombat &&
+    settings.meleeSkill >= 70 &&
+    !bot.supportFeature("doesntHaveOffHandSlot");
+  if (settings.adaptiveCombat) {
+    options.onHitConfig.enabled = false;
+    options.onHitConfig.kbCancel.enabled = false;
+  }
   options.tapConfig.enabled = settings.sprintTap !== "off";
   options.tapConfig.mode = settings.sprintTap === "off" ? "wtap" : settings.sprintTap;
   options.shieldConfig.enabled = settings.shield && !bot.supportFeature("doesntHaveOffHandSlot");
@@ -301,6 +309,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     if (bot.launcherAxeAttacking && !["disableshield", "axecritical"].includes(reason))
       return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
+    if (settings.adaptiveCombat && bot.swordpvp.ticksToNextAttack > 0) return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
       bot.swordpvp.ticksToNextAttack = 1;
       return Promise.resolve();
@@ -404,8 +413,41 @@ function createCombatController(
   let pearlIntent = null;
   let lastEnemyPosition = null;
   let nextPursuitPlanAt = 0;
+  let recovery = null,
+    decision = null,
+    recoveryMoving = false;
+  const brain = createCombatBrain(bot, settings, { now });
+  const footwork = createCombatFootwork(bot, settings, { now, onError });
+  const recoveryMovement = createCrystalMovement(bot, { now });
+  const nativeMove = bot.swordpvp?.doMove?.bind(bot.swordpvp);
+  const nativeStrafe = bot.swordpvp?.doStrafe?.bind(bot.swordpvp);
+  const nativeTap = bot.swordpvp?.sprintTap?.bind(bot.swordpvp);
+  const nativeCritical = bot.swordpvp?.causeCritical?.bind(bot.swordpvp);
+  let directFootwork = false;
+  if (settings.adaptiveCombat && nativeMove) {
+    bot.swordpvp.doMove = () => {
+      directFootwork = footwork.tick(bot.swordpvp.target, decision);
+      if (!directFootwork) return nativeMove();
+    };
+    bot.swordpvp.doStrafe = () => {
+      // Navigation owns all movement outside a checked combat corridor.
+      if (!directFootwork && !bot.pathfinder.goal) return nativeStrafe();
+    };
+    bot.swordpvp.sprintTap = () => (directFootwork ? Promise.resolve() : nativeTap());
+    bot.swordpvp.causeCritical = () =>
+      decision?.action === "finish" ? Promise.resolve(false) : nativeCritical();
+    bot.swordpvp.on("attackedTarget", footwork.attacked);
+  }
   const mace = createMaceCombat(bot, settings, { now, random, onStatus, onError });
-  const crystals = createCrystalPlanner(bot, settings, isOwner);
+  let crystalProbeAt = -Infinity,
+    crystalProbe = null,
+    crystalStalledAt = null;
+  const crystals = createCrystalPlanner(bot, settings, isOwner, {
+    scoreAction: (action) =>
+      settings.adaptiveCombat && requestedStyle === "auto" && decision
+        ? crystalOpportunity(decision, action, settings).score
+        : 0,
+  });
   const crystalMovement = createCrystalMovement(bot, { now });
   const defense = createBowDefense(bot, settings, {
     now,
@@ -421,6 +463,8 @@ function createCombatController(
       generation++;
       pending = false;
       stopEngines();
+      recoveryMovement.cancel();
+      recovery = null;
       bot.launcherPauseTravelForDefense?.();
       bot.launcherGathering?.pauseForDefense();
       bot.clearControlStates();
@@ -451,6 +495,7 @@ function createCombatController(
     );
   }
   function stopEngines() {
+    footwork.reset();
     mace.stop();
     crystalMovement.cancel();
     crystalReposition = null;
@@ -485,6 +530,14 @@ function createCombatController(
     suspended = suspendAuto || (workTarget && workSuspended);
     workTarget = false;
     generation++;
+    recovery = null;
+    decision = null;
+    crystalProbe = null;
+    crystalProbeAt = -Infinity;
+    crystalStalledAt = null;
+    brain.reset();
+    recoveryMovement.cancel();
+    bot.launcherSurvival?.cancelCombatHeal?.();
     defense.stop();
     crystals.clear();
     pursuit = null;
@@ -534,7 +587,17 @@ function createCombatController(
     // Finish an airborne sequence before distance-based bow/crystal selection.
     if (mode === "mace" && mace.airborne) return "mace";
     const meleeMode = () => {
-      if (workTarget || settings.weapon !== "mace" || !mace.available()) return "melee";
+      if (workTarget) return "melee";
+      const autoMace =
+        settings.adaptiveCombat &&
+        requestedStyle === "auto" &&
+        decision?.mace &&
+        decision.wind &&
+        decision.health >= 12 &&
+        decision.distance <= 8 &&
+        mace.canLaunch() &&
+        !["finish", "punish", "break_shield"].includes(decision.action);
+      if ((!autoMace && settings.weapon !== "mace") || !mace.available()) return "melee";
       const axe = carriedItems(bot).some((item) => item.name.endsWith("_axe"));
       return settings.engine === "custom" &&
         settings.shieldBreak &&
@@ -549,12 +612,45 @@ function createCombatController(
     const crystalAvailable = settings.crystalEnabled && (settings.crystalBreak || hasCrystals);
     if (requestedStyle === "crystal")
       return crystalAvailable ? "crystal" : settings.meleeFallback ? meleeMode() : null;
+    if (settings.adaptiveCombat && requestedStyle === "auto" && crystalAvailable) {
+      const action = probeCrystal();
+      const opportunity = crystalOpportunity(decision, action, settings);
+      if (decision)
+        decision.crystal = {
+          ...opportunity,
+          action: action?.type,
+          damage: action?.damage,
+          selfDamage: action?.selfDamage,
+        };
+      if (opportunity.use || crystals.waiting) {
+        crystalStalledAt = null;
+        if (decision) {
+          decision.action = crystals.waiting
+            ? "crystal_confirm"
+            : action.finish
+              ? "crystal_finish"
+              : "crystal_burst";
+          decision.reason = crystals.waiting ? "wait for server confirmation" : opportunity.reason;
+        }
+        return "crystal";
+      }
+      if (crystals.finishing) {
+        crystalStalledAt ??= now();
+        if (now() - crystalStalledAt < 1200) return "crystal";
+      } else crystalStalledAt = null;
+    }
     // Approach with the crystal controller from the start. Starting melee while
     // a base is out of reach adds strafing/criticals before the first placement.
-    if (requestedStyle === "auto" && crystalAvailable && (hasCrystals || crystals.active))
+    if (
+      !settings.adaptiveCombat &&
+      requestedStyle === "auto" &&
+      crystalAvailable &&
+      (hasCrystals || crystals.active)
+    )
       return "crystal";
     if (
       requestedStyle === "auto" &&
+      !settings.adaptiveCombat &&
       crystalAvailable &&
       distance(target) <= 10 &&
       crystals.plan(target, now())
@@ -565,7 +661,125 @@ function createCombatController(
     if (requestedStyle === "ranged")
       return ranged ? "ranged" : settings.meleeFallback ? meleeMode() : null;
     if (meleeMode() === "mace" && distance(target) <= 8) return "mace";
+    if (settings.adaptiveCombat) {
+      // Keep pressure through short retreats and punish item use. Separate enter
+      // and exit distances avoid resetting equips/attack strength at the boundary.
+      const bowDistance = mode === "ranged" ? 10 : 14;
+      const push = ["finish", "punish"].includes(decision?.action) && distance(target) <= 18;
+      return ranged && !push && distance(target) > bowDistance ? "ranged" : meleeMode();
+    }
     return ranged && distance(target) > settings.attackRange + 2 ? "ranged" : meleeMode();
+  }
+
+  function probeCrystal() {
+    if (now() < crystalProbeAt) return crystalProbe;
+    const near = distance(target) <= 3.5 || now() < crystalPressureUntil;
+    crystalProbeAt = now() + (near ? 150 : 300);
+    crystalProbe = distance(target) <= 12 || crystals.active ? crystals.plan(target, now()) : null;
+    return crystalProbe;
+  }
+  function invalidateCrystal() {
+    crystalProbeAt = -Infinity;
+    crystalProbe = null;
+  }
+
+  function recoveryPoint(range, pearl = false) {
+    const from = bot.entity.position,
+      away = from.minus(target.position);
+    const length = Math.hypot(away.x, away.z) || 1;
+    for (const angle of [0, 0.65, -0.65, 1.2, -1.2]) {
+      const x = (away.x * Math.cos(angle) - away.z * Math.sin(angle)) / length;
+      const z = (away.z * Math.cos(angle) + away.x * Math.sin(angle)) / length;
+      const point = groundAt(bot, from.offset(x * range, 0, z * range));
+      if (
+        point &&
+        point.distanceTo(target.position) >= distance(target) + range * 0.5 &&
+        (pearl || walkSegment(bot, point, 0, range))
+      )
+        return point;
+    }
+    return null;
+  }
+  function recover() {
+    if (!recovery && !["heal", "retreat", "escape"].includes(decision?.action)) return false;
+    if (!recovery) {
+      generation++;
+      pending = false;
+      stopEngines();
+      crystals.clear();
+      recovery = { target, until: now() + 2200, nextPlanAt: 0, waypoint: null, pearlTried: false };
+      onStatus(`combat ${decision.action}: ${decision.reason}; hp ${bot.health}`);
+    }
+    const state = recovery;
+    if (bot.launcherPearling) return true;
+    if (!decision.heal || (bot.health > 14 && !decision.needsFood)) {
+      recovery = null;
+      recoveryMovement.cancel();
+      brain.deferRecovery();
+      return false;
+    }
+    if (decision.action === "escape" && !state.pearlTried) {
+      state.pearlTried = true;
+      const point = recoveryPoint(
+        Math.min(settings.pearlMaxDistance, Math.max(12, settings.pearlMinDistance + 2)),
+        true,
+      );
+      if (
+        point &&
+        bot.launcherTravel?.escape?.(
+          () => point,
+          () => target === state.target && recovery === state && !disposed,
+          () => {
+            state.until = now() + 1800;
+            queueMicrotask(tick);
+          },
+        )
+      ) {
+        recoveryMovement.cancel();
+        return true;
+      }
+    }
+    if (decision.distance >= 6 || !decision.visible || (now() >= state.until && bot.health <= 7)) {
+      const item = decision.heal;
+      if (
+        bot.launcherSurvival?.requestCombatHeal(
+          item,
+          () => target === state.target && !disposed,
+          (succeeded) => brain.recovered(item, succeeded),
+        )
+      ) {
+        recovery = null;
+        recoveryMovement.cancel();
+        return true;
+      }
+    }
+    if (now() >= state.until) {
+      recovery = null;
+      recoveryMovement.cancel();
+      brain.deferRecovery();
+      return false;
+    }
+    if (now() >= state.nextPlanAt) {
+      state.nextPlanAt = now() + 400;
+      const point = recoveryPoint(4);
+      if (point) state.waypoint = { position: point };
+    }
+    if (!state.waypoint) {
+      recovery = null;
+      recoveryMovement.cancel();
+      brain.deferRecovery();
+      return false;
+    }
+    if (state.waypoint && !recoveryMoving) {
+      recoveryMoving = true;
+      void recoveryMovement
+        .setGoal(state.waypoint, 0.5, "heal retreat")
+        .catch(onError)
+        .finally(() => {
+          recoveryMoving = false;
+        });
+    }
+    return true;
   }
   async function prepare(nextMode) {
     const revision = ++generation;
@@ -683,7 +897,10 @@ function createCombatController(
       enemy = target;
     const pressure = distance(enemy) <= 3.2 || now() < crystalPressureUntil;
     nextCrystalPlanAt = now() + (pressure ? 100 : 250);
-    const action = crystals.plan(enemy, now());
+    const action =
+      settings.adaptiveCombat && requestedStyle === "auto"
+        ? probeCrystal()
+        : crystals.plan(enemy, now());
     if (!action) {
       if (now() >= nextCrystalStatusAt) {
         onStatus(`crystal waiting: ${crystals.reason}`);
@@ -752,9 +969,27 @@ function createCombatController(
     // Recheck cover, target motion, owner positions and health after asynchronous aiming.
     const verified = crystals.verify(enemy, action, now());
     if (!verified) return;
+    if (
+      settings.adaptiveCombat &&
+      requestedStyle === "auto" &&
+      !crystalOpportunity(
+        {
+          ...decision,
+          health: bot.health,
+          enemyHealth: observedHealth(bot, enemy).effective,
+          distance: distance(enemy),
+        },
+        verified,
+        settings,
+      ).use
+    ) {
+      invalidateCrystal();
+      return;
+    }
     flushBowLook(bot.entity.yaw, bot.entity.pitch);
     nextCrystalAt = now() + settings.crystalIntervalMs;
     crystals.commit(verified, now());
+    invalidateCrystal();
     try {
       if (verified.type === "break") bot.attack(verified.crystal);
       else {
@@ -955,6 +1190,7 @@ function createCombatController(
             if (pursuit !== flight) return;
             flight.attempted = thrown;
             nextPursuitPlanAt = now() + 250;
+            queueMicrotask(tick);
           },
         )
       ) {
@@ -1009,7 +1245,15 @@ function createCombatController(
         stop(false);
         return;
       }
-      if (pending || bowBusy || now() < nextActionAt) return;
+      if (settings.adaptiveCombat && !workTarget) {
+        decision = brain.evaluate(target, {
+          visible: canSeeTarget(bot, target),
+          airborne: mace.airborne,
+        });
+        // Healing preempts slow aim/equip work, but not a live airborne smash.
+        if (recover()) return;
+      }
+      if (bot.launcherPearling || pending || bowBusy || now() < nextActionAt) return;
       if (mode === "crystal") void crystalMovement.tick().catch(onError);
       const nextMode = chooseMode();
       if (!nextMode) {
@@ -1053,6 +1297,7 @@ function createCombatController(
     }
   }
   function removed(entity) {
+    if (isCrystal(entity)) invalidateCrystal();
     if (entity === target) {
       bot.tracker?.stopTrackingEntity(entity);
       if ((pursuit && now() < pursuit.until) || recentPearlHand()) {
@@ -1067,7 +1312,9 @@ function createCombatController(
       onStatus("combat target lost");
     }
   }
-  bot.on("physicsTick", tick);
+  // Decide before the attack plugins, so a health emergency cancels their
+  // outgoing strike/equip in this physics tick instead of the next one.
+  bot.prependListener("physicsTick", tick);
   bot.on("entityGone", removed);
   const dead = (entity) => {
     if (entity === target) {
@@ -1081,13 +1328,18 @@ function createCombatController(
   bot.on("entityEquip", observePearlHand);
   bot.on("entityUpdate", observePearlHand);
   const crystalSpawned = (entity) => {
-    if (isCrystal(entity)) nextCrystalPlanAt = 0;
+    if (isCrystal(entity)) {
+      nextCrystalPlanAt = 0;
+      invalidateCrystal();
+    }
   };
   const hurt = (entity) => {
     if (entity?.id !== bot.entity.id || !target) return;
     crystalPressureUntil = now() + 1500;
     nextCrystalPlanAt = 0;
+    invalidateCrystal();
   };
+  bot.on("blockUpdate", invalidateCrystal);
   bot.on("entitySpawn", crystalSpawned);
   bot.on("entityHurt", hurt);
   bot._client?.on?.("spawn_entity", enemyPearl);
@@ -1116,15 +1368,23 @@ function createCombatController(
     get imminentMaceSmash() {
       return mace.imminentSmash;
     },
+    get decision() {
+      return decision;
+    },
+    get managesHealing() {
+      return Boolean(target && !workTarget && settings.adaptiveCombat && settings.combatHealing);
+    },
     pauseForSurvival() {
       generation++;
       pending = false;
       defense.stop();
       crystals.clear();
       stopEngines();
+      recoveryMovement.cancel();
+      recovery = null;
     },
     resumeAfterSurvival() {
-      if (!disposed && bot.health > 0) nextActionAt = now() + settings.reactionMs;
+      if (!disposed && bot.health > 0) nextActionAt = now();
     },
     get idleTask() {
       return Promise.all([
@@ -1157,7 +1417,7 @@ function createCombatController(
     },
     get status() {
       return target
-        ? `${mode || "preparing"} ${target.username || target.name || target.id}`
+        ? `${mode || "preparing"} ${target.username || target.name || target.id}${decision ? `; ${decision.action}; hp ${decision.health}; enemy hp ${decision.enemyHealth ?? "unknown"}` : ""}`
         : autoEnabled && !suspended
           ? "hostile mobs"
           : defense.threat
@@ -1169,6 +1429,14 @@ function createCombatController(
       stop(true);
       defense.dispose();
       mace.dispose();
+      brain.dispose();
+      if (settings.adaptiveCombat && nativeMove) {
+        bot.swordpvp.doMove = nativeMove;
+        bot.swordpvp.doStrafe = nativeStrafe;
+        bot.swordpvp.sprintTap = nativeTap;
+        bot.swordpvp.causeCritical = nativeCritical;
+        bot.swordpvp.off("attackedTarget", footwork.attacked);
+      }
       bot.removeListener("physicsTick", tick);
       bot.removeListener("entityGone", removed);
       bot.removeListener("entityDead", dead);
@@ -1177,6 +1445,7 @@ function createCombatController(
       bot.removeListener("entityUpdate", observePearlHand);
       bot.removeListener("entitySpawn", crystalSpawned);
       bot.removeListener("entityHurt", hurt);
+      bot.removeListener("blockUpdate", invalidateCrystal);
       bot._client?.off?.("spawn_entity", enemyPearl);
       bot._client?.off?.("entity_velocity", pearlVelocity);
       bot.removeListener("death", died);
