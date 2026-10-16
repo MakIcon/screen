@@ -95,6 +95,21 @@ crystal in its hand. Explicit **Кристаллы Края** mode remains dedic
 combat and still obeys all safety limits; the profitability comparison belongs
 to adaptive **Авто** mode.
 
+### Crystal movement (1.15.2)
+
+Layout searches use copies of the player's coordinates. They never round or
+write the live physics position, so repeated planning cannot snap a walking bot
+back to a block corner. Approach movement updates once per tick, and an active
+turn finishes before placement takes ownership of the aim. A reachable action
+holds position through its cooldown, equipment change and server confirmation.
+
+The controller keeps a useful reposition waypoint until arrival or a bounded
+three-second deadline. It only chooses positions that permit a real next action;
+an unavailable layout does not trigger arbitrary sidesteps or retreats. On a
+checked direct approach, less than 0.12 blocks of progress over 650 ms hands
+movement to the terrain planner for at least 1.8 seconds. Reaching the desired
+range releases movement before testing obstacles farther ahead.
+
 Mineflayer Bot includes the locked published packages:
 
 - `@nxg-org/mineflayer-custom-pvp` 1.7.16: sword tactics and bow trajectory planner.

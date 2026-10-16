@@ -610,7 +610,9 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
       return reject("finishing placed crystal: reposition for reach, visibility or self damage");
     }
     if (settings.crystalPlace && items.some((i) => i.name === "end_crystal")) {
-      const origin = bot.entity.position.floor(),
+      // Vec3.floor() mutates its receiver: never snap the live physics position
+      // back to a block corner on every planning tick.
+      const origin = bot.entity.position.floored(),
         radius = Math.ceil(settings.crystalPlaceRange);
       const positions = [];
       for (let x = -radius; x <= radius; x++)
@@ -753,17 +755,8 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
       if (action && (!focus || action.crystal?.id === focus.id))
         return { position, reason: focus ? "finish crystal" : "make room for crystal" };
     }
-    // At point-blank range release occupied placement space even when a hit has
-    // temporarily lowered health below the action threshold. Movement continues
-    // and the planner will reconsider as soon as there is a viable layout.
-    if (
-      positions.length &&
-      (pressure || focus || carriedItems(bot).some((item) => item.name === "obsidian"))
-    )
-      return {
-        position: positions[0],
-        reason: pressure ? "make room under attack" : "find crystal angle",
-      };
+    // No useful layout at any candidate: moving to an arbitrary side/retreat
+    // point just creates an endless shuffle without improving the next action.
     return null;
   }
   return {

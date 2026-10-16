@@ -468,7 +468,11 @@ function createCombatController(
       bot.launcherPauseTravelForDefense?.();
       bot.launcherGathering?.pauseForDefense();
       bot.clearControlStates();
-      return Promise.all([bot.pathfinder.stop(), bot.launcherGathering?.task]);
+      return Promise.all([
+        bot.pathfinder.stop(),
+        crystalMovement.task,
+        bot.launcherGathering?.task,
+      ]);
     },
     afterDefend() {
       bot.launcherResumeTravelAfterDefense?.();
@@ -793,7 +797,7 @@ function createCombatController(
     try {
       if (revision !== generation || !target) return;
       stopEngines();
-      await bot.pathfinder.stop();
+      await Promise.all([bot.pathfinder.stop(), crystalMovement.task]);
       if (revision !== generation || !target) return;
       bot.clearControlStates();
       const items = carriedItems(bot);
@@ -892,7 +896,8 @@ function createCombatController(
     }
   }
   async function updateCrystal() {
-    if (now() < nextCrystalPlanAt && !crystals.waiting && !crystals.finishing) return;
+    if (now() < nextCrystalPlanAt && !crystals.waiting && !crystals.finishing)
+      return crystalMovement.tick();
     const rev = generation,
       enemy = target;
     const pressure = distance(enemy) <= 3.2 || now() < crystalPressureUntil;
@@ -907,18 +912,27 @@ function createCombatController(
         nextCrystalStatusAt = now() + 2000;
       }
       const range = Math.max(1, Math.min(3, settings.crystalPlaceRange - 0.5));
+      const focusId = crystals.focus?.id ?? null;
+      const continuingReposition =
+        crystalReposition &&
+        crystalReposition.focusId === focusId &&
+        now() < crystalReposition.until &&
+        bot.entity.position.distanceTo(crystalReposition.entity.position) > 0.45;
       if (crystals.waiting) {
         await crystalMovement.stop();
+      } else if (continuingReposition) {
+        // Finish the useful waypoint before choosing another approach. Crossing
+        // a distance/pressure threshold halfway there must not reverse the walk.
+        await crystalMovement.setGoal(crystalReposition.entity, 0.4, crystalReposition.reason);
       } else if (!crystals.finishing && distance(enemy) > range + 0.6 && !pressure) {
         crystalReposition = null;
         await crystalMovement.setGoal(enemy, range);
       } else {
-        const focusId = crystals.focus?.id ?? null;
         if (
           !crystalReposition ||
           crystalReposition.focusId !== focusId ||
           now() >= crystalReposition.until ||
-          bot.entity.position.distanceTo(crystalReposition.entity.position) < 0.65
+          bot.entity.position.distanceTo(crystalReposition.entity.position) <= 0.45
         ) {
           const move = crystals.reposition(enemy, now(), pressure);
           crystalReposition = move
@@ -926,27 +940,23 @@ function createCombatController(
                 entity: { position: move.position },
                 focusId,
                 reason: move.reason,
-                until: now() + 1500,
+                until: now() + 3000,
               }
             : null;
           if (move) onStatus(`crystal reposition: ${move.reason}`);
         }
         if (crystalReposition)
           await crystalMovement.setGoal(crystalReposition.entity, 0.4, crystalReposition.reason);
-        else if (crystals.focus)
-          await crystalMovement.setGoal(
-            crystals.focus,
-            Math.min(2.5, settings.crystalBreakRange - 0.5),
-            "finish crystal",
-          );
         else await crystalMovement.stop();
       }
       return;
     }
-    if (now() < nextCrystalAt && !action.finish) return;
     crystalReposition = null;
     await crystalMovement.stop();
     if (rev !== generation || target !== enemy) return;
+    // A valid layout is already reachable. Hold this position through cooldown,
+    // equip, aim and server confirmation instead of resuming an old walk goal.
+    if (now() < nextCrystalAt && !action.finish) return;
     bot.clearControlStates();
     if (action.type !== "break") {
       const item =
@@ -1254,7 +1264,6 @@ function createCombatController(
         if (recover()) return;
       }
       if (bot.launcherPearling || pending || bowBusy || now() < nextActionAt) return;
-      if (mode === "crystal") void crystalMovement.tick().catch(onError);
       const nextMode = chooseMode();
       if (!nextMode) {
         stop(true);
@@ -1392,6 +1401,7 @@ function createCombatController(
         actionTask,
         defense.task,
         mace.task,
+        crystalMovement.task,
         bot.swordpvp?.launcherShieldBreak?.task,
       ]);
     },

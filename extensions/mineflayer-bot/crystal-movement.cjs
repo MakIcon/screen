@@ -56,59 +56,105 @@ function walkSegment(bot, destination, range = 0, maxDistance = Infinity) {
 function createCrystalMovement(bot, { now = Date.now } = {}) {
   let goal = null,
     walking = false,
+    arrived = false,
     revision = 0,
-    stopping = null;
-  let routeUntil = 0;
+    stopping = null,
+    task = null,
+    route = null,
+    progress = null;
 
   function release() {
     walking = false;
+    progress = null;
     bot.clearControlStates();
   }
   function cancel() {
     revision++;
     goal = null;
+    route = null;
+    arrived = false;
     release();
   }
-  function stop() {
+  function stopRoute() {
+    route = null;
+    if (!stopping)
+      stopping = Promise.resolve(bot.pathfinder.stop()).finally(() => {
+        stopping = null;
+      });
+    return stopping;
+  }
+  async function stop() {
+    const pending = task;
+    const needsStop = goal || route || bot.pathfinder.goal || stopping;
     cancel();
-    return bot.pathfinder.stop();
+    // A cancelled asynchronous look still changes local yaw when it resolves.
+    // Placement must wait for it before taking ownership of the next aim.
+    await Promise.all([pending, needsStop ? stopRoute() : null]);
+    if (!goal) release();
   }
   function setGoal(entity, range, reason = "approach") {
     if (goal?.entity !== entity || goal.range !== range) {
       revision++;
       walking = false;
-      routeUntil = 0;
+      arrived = false;
+      progress = null;
+      route = null;
     }
     goal = { entity, range, reason };
     return tick();
   }
-  async function tick() {
+  function tick() {
+    if (task) return task;
+    task = step().finally(() => {
+      task = null;
+    });
+    return task;
+  }
+  async function step() {
     if (!goal || bot.launcherDefendingBow || bot.launcherPearling) return;
     const current = goal,
       rev = revision;
+    const valid = () =>
+      rev === revision &&
+      goal?.entity === current.entity &&
+      !bot.launcherDefendingBow &&
+      !bot.launcherPearling;
     const delta = current.entity.position.minus(bot.entity.position);
     const distance = Math.hypot(delta.x, delta.z);
-    const segment = distance <= 16 && walkSegment(bot, current.entity.position, current.range, 1.5);
-    if (!segment || now() < routeUntil) {
-      if (walking) release();
-      if (!segment) routeUntil = now() + 600;
-      bot.pathfinder.setGoal({ entity: current.entity, rangeSq: current.range * current.range });
+    if (distance <= current.range + (arrived ? 0.35 : 0) && Math.abs(delta.y) <= 1.1) {
+      arrived = true;
+      release();
+      if (route || bot.pathfinder.goal) await stopRoute();
       return;
     }
-    if (bot.pathfinder.goal && !stopping)
-      stopping = bot.pathfinder.stop().finally(() => {
-        stopping = null;
-      });
+    arrived = false;
+    const segment = distance <= 16 && walkSegment(bot, current.entity.position, current.range, 1.5);
+    const stalled =
+      progress &&
+      now() - progress.at >= 650 &&
+      bot.entity.position.distanceTo(progress.position) < 0.12;
+    if (!segment || stalled || (route && now() < route.until)) {
+      if (walking || !route) release();
+      if (!route || route.entity !== current.entity || route.range !== current.range) {
+        route = { entity: current.entity, range: current.range, until: now() + 1800 };
+        bot.pathfinder.setGoal({ entity: current.entity, rangeSq: current.range * current.range });
+      }
+      return;
+    }
+    if (route || bot.pathfinder.goal) await stopRoute();
     if (stopping) await stopping;
-    if (rev !== revision || goal?.entity !== current.entity || bot.launcherDefendingBow) return;
+    if (!valid()) return;
     const yaw = Math.atan2(-delta.x, -delta.z);
     const turn = Math.atan2(Math.sin(yaw - bot.entity.yaw), Math.cos(yaw - bot.entity.yaw));
     // Turn to the travel direction, then use forward. Retreats are deliberate
     // walks to one fixed waypoint, never rapid forward/back velocity braking.
     await bot.look(bot.entity.yaw + Math.max(-0.4, Math.min(0.4, turn)), 0, true);
-    if (rev !== revision || goal?.entity !== current.entity) return;
-    walking = distance > current.range + (walking ? 0 : 0.45);
+    if (!valid()) return;
+    walking = true;
     const forward = walking && Math.abs(turn) < 0.65;
+    if (!forward) progress = null;
+    else if (!progress || bot.entity.position.distanceTo(progress.position) >= 0.12)
+      progress = { at: now(), position: bot.entity.position.clone() };
     for (const control of ["back", "left", "right", "sneak"]) bot.setControlState(control, false);
     bot.setControlState("forward", forward);
     bot.setControlState("jump", forward && segment.jump && bot.entity.onGround);
@@ -127,6 +173,9 @@ function createCrystalMovement(bot, { now = Date.now } = {}) {
     tick,
     get goal() {
       return goal;
+    },
+    get task() {
+      return task;
     },
   };
 }

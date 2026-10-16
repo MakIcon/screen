@@ -181,7 +181,155 @@ const readControls = (bot) =>
     ]),
   );
 
+test("crystal planning never snaps live player coordinates to block corners", () => {
+  const f = fixture("26.1.2");
+  const planner = createCrystalPlanner(f.bot, normalizeCombat({ crystalEnabled: true }));
+  try {
+    f.bot.entity.position.set(0.72, 64.25, -0.35);
+    const own = f.bot.entity.position.clone();
+    const enemy = f.enemy.position.clone();
+    const velocity = f.bot.entity.velocity.clone();
+    const action = planner.plan(f.enemy, 0);
+    assert.deepEqual(
+      f.bot.entity.position,
+      own,
+      "planning is a read of live physics, not a teleport",
+    );
+    if (action) planner.verify(f.enemy, action, 50);
+    planner.reposition(f.enemy, 100, true);
+    assert.deepEqual(f.bot.entity.position, own);
+    assert.deepEqual(f.enemy.position, enemy);
+    assert.deepEqual(f.bot.entity.velocity, velocity);
+  } finally {
+    f.close();
+  }
+});
+
+test("crystal movement holds an already reached position even with a wall ahead", async () => {
+  const f = fixture("26.1.2");
+  const movement = createCrystalMovement(f.bot);
+  try {
+    f.enemy.position.set(2.5, 64, 0.5);
+    f.world.setBlock(new Vec3(1, 64, 0), "stone");
+    f.world.setBlock(new Vec3(1, 65, 0), "stone");
+    await movement.setGoal(f.enemy, 3);
+    assert.equal(f.routes.length, 0, "arrival is checked before routing around obstacles");
+    assert.ok(Object.values(readControls(f.bot)).every((value) => !value));
+  } finally {
+    movement.cancel();
+    f.close();
+  }
+});
+
+test("crystal movement serializes turns and stopping waits for an outstanding aim", async () => {
+  const f = fixture("26.1.2");
+  const movement = createCrystalMovement(f.bot);
+  const look = f.bot.look;
+  const releases = [];
+  f.bot.look = async (...args) => {
+    await new Promise((resolve) => releases.push(resolve));
+    return look(...args);
+  };
+  try {
+    const first = movement.setGoal(f.enemy, 2);
+    const second = movement.tick();
+    assert.equal(releases.length, 1, "only one movement turn may be in flight");
+    let stopped = false;
+    const stopping = movement.stop().then(() => {
+      stopped = true;
+    });
+    await flush();
+    assert.equal(stopped, false, "placement cannot aim until the old movement aim is done");
+    for (const release of releases) release();
+    await Promise.all([first, second, stopping]);
+    assert.ok(Object.values(readControls(f.bot)).every((value) => !value));
+  } finally {
+    for (const release of releases) release();
+    movement.cancel();
+    f.close();
+  }
+});
+
+test("crystal movement detects walking in place and gives the route time to bypass it", async () => {
+  const f = fixture("26.1.2");
+  let time = 0;
+  const movement = createCrystalMovement(f.bot, { now: () => time });
+  try {
+    f.enemy.position.x = 8.5;
+    f.bot.entity.yaw = -Math.PI / 2;
+    await movement.setGoal(f.enemy, 3);
+    assert.equal(f.bot.controlState.forward, true);
+    for (time = 50; time <= 900; time += 50) await movement.tick();
+    assert.equal(f.routes.length, 1, "stalled direct walking hands off to the terrain planner");
+    assert.equal(f.bot.controlState.forward, false);
+    for (; time <= 1600; time += 50) await movement.tick();
+    assert.equal(f.routes.length, 1, "does not cancel/restart the route every tick");
+    assert.equal(f.bot.controlState.forward, false);
+  } finally {
+    movement.cancel();
+    f.close();
+  }
+});
+
+test("crystal reposition requires a usable action instead of an endless retreat", () => {
+  const f = fixture("26.1.2");
+  const planner = createCrystalPlanner(
+    f.bot,
+    normalizeCombat({
+      crystalEnabled: true,
+      crystalMaxSelfDamage: 0,
+      crystalCover: false,
+    }),
+  );
+  try {
+    f.enemy.position.x = 1.8;
+    assert.equal(planner.plan(f.enemy, 0), null);
+    assert.equal(
+      planner.reposition(f.enemy, 0, true),
+      null,
+      "unsafe layouts do not create blind movement goals",
+    );
+  } finally {
+    f.close();
+  }
+});
+
 for (const version of ["1.20.4", "26.1.2"]) {
+  test(`crystal approach reaches a complete physical combo without snapping or shuffle on ${version}`, async () => {
+    const f = fixture(version, { crystalBuildBase: false });
+    try {
+      f.world.setBlock(new Vec3(8, 64, 0), "obsidian");
+      f.enemy.position.x = 10.5;
+      f.controller.select(f.enemy);
+      const start = f.bot.entity.position.clone();
+      const controls = [];
+      for (let tick = 0; tick < 120 && !attacks(f).length; tick++) {
+        const before = f.bot.entity.position.clone();
+        await f.tick(tick * 50);
+        assert.deepEqual(
+          f.bot.entity.position,
+          before,
+          "only movement physics can advance position",
+        );
+        controls.push(readControls(f.bot));
+        f.bot.physics
+          .simulatePlayer(new PlayerState(f.bot, f.bot.controlState), f.world)
+          .apply(f.bot);
+      }
+      assert.ok(f.bot.entity.position.x - start.x > 2, "walks toward a useful crystal position");
+      assert.equal(placements(f).length, 1, f.statuses.join("; "));
+      assert.equal(attacks(f).length, 1, "finishes the approached crystal cycle");
+      assert.equal(
+        controls.some((c) => c.back || c.left || c.right),
+        false,
+      );
+      assert.equal(f.routes.length, 0, "flat approach needs no repeated pathfinding");
+      assert.deepEqual(f.errors, []);
+    } finally {
+      f.close();
+    }
+  });
+
   test(`auto director commits a profitable crystal combo and finishes after the target flees on ${version}`, async () => {
     const f = fixture(version, { style: "auto" }, ({ enemy }) => {
       enemy.position.x = 13;
