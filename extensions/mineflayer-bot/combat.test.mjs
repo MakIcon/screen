@@ -380,6 +380,57 @@ const { createCacheWorld } = rigRequire("./tests/setup.ts");
 const mineflayerRequire = createRequire(runtimeRequire.resolve("mineflayer"));
 const protocol = mineflayerRequire("minecraft-protocol");
 
+for (const engine of ["custom", "basic"]) for (const terrain of ["water", "canopy"]) {
+  test(`${engine} PvP ${terrain === "water" ? "enters swimming promptly from shore" : "uses low-ceiling jumps under leaves"}`, { timeout: 10000 }, async t => {
+    const { rig, world } = createCacheWorld("26.1.2", terrain === "water" ? 56 : 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+    const bot = rig.bot;
+    bot.supportFeature = bot.registry.supportFeature;
+    bot.loadPlugin(runtimeRequire("mineflayer/lib/plugins/entities"));
+    bot.loadPlugin(runtimeRequire("mineflayer/lib/plugins/time"));
+    for (let x = -3; x <= 22; x++) for (let z = -3; z <= 3; z++) {
+      if (terrain === "water") for (let y = 56; y <= 63; y++)
+        world.setBlock(new Vec3(x, y, z), x < 2 ? "stone" : "water");
+      else world.setBlock(new Vec3(x, 66, z), "oak_leaves");
+    }
+    if (terrain === "canopy") for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(6, y, -1), "oak_log");
+    const Item = mineflayerRequire("prismarine-item")(bot.registry);
+    const sword = new Item(bot.registry.itemsByName.diamond_sword.id, 1);
+    sword.slot = 36;
+    bot.inventory.slots[36] = sword;
+    const target = {
+      id: 2, username: "Enemy", name: "player", type: "player",
+      position: new Vec3(15.5, terrain === "water" ? 63 : 64, 0.5), velocity: new Vec3(0, 0, 0),
+      width: 0.6, height: 1.8, isValid: true, metadata: [], equipment: Array(6).fill(null), yaw: 0, pitch: 0,
+    };
+    bot.entities[target.id] = target;
+    worker.configurePathfinder(bot, { allowSprinting: true, allowParkour: false, allowLowCeilingJumps: true, canDig: false, maxDropDown: 3 });
+    const errors = [];
+    const controller = combat.createCombatController(bot, {
+      engine, style: "melee", reactionMs: 0, meleeSkill: 100, strafe: "off", smoothAim: false,
+      bowEnabled: false, shield: false, shieldBreak: false,
+    }, { onError: error => errors.push(error) });
+    t.signal.addEventListener("abort", () => controller.stop(), { once: true });
+    let waterEntry, swimEntry, swimTicks = 0, hops = 0;
+    const observe = () => {
+      const entity = bot.entity;
+      if (entity.isInWater) waterEntry ??= entity.position.x;
+      if (entity.swimming) { swimEntry ??= entity.position.x; swimTicks++; }
+      if (entity.position.y > 64.01 && entity.position.x > 2) hops++;
+    };
+    bot.on("physicsTick", observe);
+    try {
+      controller.select(target);
+      for (let tick = 0; tick < 150 && bot.entity.position.x < 9; tick++) await bot.waitForTicks(1);
+      assert.ok(bot.entity.position.x >= 9, `chase position=${bot.entity.position}, errors=${errors}`);
+      if (terrain === "water") {
+        assert.ok(swimEntry != null && swimEntry - waterEntry < 1.3, `water=${waterEntry}, swim=${swimEntry}`);
+        assert.ok(swimTicks >= 20, `swim ticks=${swimTicks}`);
+      } else assert.ok(hops >= 10, `head-hit jump ticks=${hops}`);
+      assert.deepEqual(errors, []);
+    } finally { bot.off("physicsTick", observe); controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+  });
+}
+
 for (const engine of ["custom", "basic"]) {
   test(
     `${engine} PvP jumps a dirt ledge and chases around a tree without editing terrain`,

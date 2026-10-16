@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/consistent-type-assertions, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, no-unmodified-loop-condition */
 import { Bot, BotEvents } from 'mineflayer'
+import { installLowCeilingJumps } from './mineflayer-specific/lowCeilingJumps'
 import { AStarBackOff as AAStar } from './abstract/algorithms/astar'
 import { AStar, Path, PathProducer } from './mineflayer-specific/algs'
 import * as goals from './mineflayer-specific/goals'
@@ -341,6 +342,7 @@ export class ThePathfinder {
     for (const [, executor] of this.movements) {
       executor.settings = this.defaultMoveSettings
     }
+    installLowCeilingJumps(this.bot, this.defaultMoveSettings.allowLowCeilingJumps)
   }
 
   setOptions (settings: Partial<PathfinderOptions>): void {

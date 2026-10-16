@@ -11,6 +11,263 @@ require("ts-node").register({
 });
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
+const { PlayerState: LivePlayerState } = require("prismarine-physics");
+
+function physicsStep(rig, world) {
+  const controls = Object.fromEntries(["forward", "back", "left", "right", "jump", "sprint", "sneak"]
+    .map(key => [key, rig.bot.getControlState(key)]));
+  rig.bot.physics.simulatePlayer(new LivePlayerState(rig.bot, controls), world).apply(rig.bot);
+  rig.bot.emit("physicsTick");
+}
+
+for (const version of ["1.20.4", "26.1.2"]) {
+  test(`water entry keeps one dive despite competing PvP jump inputs on ${version}`, async () => {
+    const world = createFlatWorld(version, 56, { renderDistance: 1 });
+    for (let x = -3; x <= 25; x++) for (let z = -2; z <= 2; z++)
+      for (let y = 56; y <= 63; y++) world.setBlock(new Vec3(x, y, z), "water");
+    const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 63.1, 0.5), { world });
+    rig.bot.physicsEnabled = false;
+    worker.configurePathfinder(rig.bot, { allowSprinting: true, allowParkour: false });
+    let firstSwim, diveStarts = 0, previousSneak = false, swimTicks = 0;
+    try {
+      await rig.bot.look(-Math.PI / 2, 0, true);
+      for (let tick = 0; tick < 85; tick++) {
+        rig.bot.setControlState("forward", true);
+        rig.bot.setControlState("jump", true);
+        rig.bot.setControlState("sneak", false);
+        rig.bot.setControlState("sprint", false);
+        const sneak = rig.bot.getControlState("sneak");
+        if (sneak && !previousSneak) diveStarts++;
+        previousSneak = sneak;
+        physicsStep(rig, world);
+        if (rig.bot.entity.swimming) {
+          firstSwim ??= { tick, x: rig.bot.entity.position.x };
+          swimTicks++;
+          assert.equal(rig.bot.getControlState("sneak"), false);
+        }
+      }
+      assert.ok(firstSwim && firstSwim.tick <= 15, `first swim=${JSON.stringify(firstSwim)}`);
+      assert.ok(firstSwim.x < 1.6, `entry distance=${firstSwim.x - 0.5}`);
+      assert.equal(diveStarts, 1, "no crouch/stand oscillation before swimming");
+      assert.ok(swimTicks >= 65, `swimming ticks=${swimTicks}`);
+      assert.ok(rig.bot.entity.position.x > 10);
+      rig.bot.clearControlStates();
+      for (let tick = 0; tick < 25; tick++) physicsStep(rig, world);
+      assert.equal(rig.bot.entity.swimming, false);
+      assert.equal(rig.bot.getControlState("sprint"), false);
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+  });
+
+  for (const roof of ["stone", "oak_leaves"]) {
+    test(`low-ceiling jumps accelerate ${roof === "stone" ? "a mined tunnel" : "leaf canopy pursuit"} and honor the switch on ${version}`, async t => {
+      const samples = [];
+      for (const enabled of [false, true]) {
+        const { rig, world } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5), { renderDistance: 2 });
+        rig.bot.physicsEnabled = false;
+        for (let x = -2; x <= 40; x++) {
+          for (let z = -1; z <= 1; z++) world.setBlock(new Vec3(x, 66, z), roof);
+          if (roof === "stone") for (const z of [-1, 1]) for (const y of [64, 65])
+            world.setBlock(new Vec3(x, y, z), "stone");
+        }
+        worker.configurePathfinder(rig.bot, {
+          allowSprinting: true, allowParkour: false, allowLowCeilingJumps: enabled,
+        });
+        let takeoffs = 0, previousGround = true, lastTakeoff = -100, longestInterval = 0, top = 64;
+        try {
+          await rig.bot.look(-Math.PI / 2, 0, true);
+          for (let tick = 0; tick < 70; tick++) {
+            rig.bot.setControlState("forward", true);
+            rig.bot.setControlState("sprint", true);
+            rig.bot.setControlState("jump", false); // Navigator/combat retains its own input.
+            physicsStep(rig, world);
+            if (previousGround && !rig.bot.entity.onGround && rig.bot.entity.position.y > 64.01) {
+              if (takeoffs) longestInterval = Math.max(longestInterval, tick - lastTakeoff);
+              takeoffs++; lastTakeoff = tick;
+            }
+            previousGround = rig.bot.entity.onGround;
+            top = Math.max(top, rig.bot.entity.position.y);
+          }
+          samples.push({ x: rig.bot.entity.position.x, takeoffs, longestInterval, top });
+          rig.bot.clearControlStates();
+          for (let tick = 0; tick < 20; tick++) physicsStep(rig, world);
+          assert.equal(rig.bot.getControlState("jump"), false);
+          assert.equal(rig.bot.getControlState("forward"), false);
+          assert.ok(Math.hypot(rig.bot.entity.velocity.x, rig.bot.entity.velocity.z) < 0.01);
+        } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+      }
+      t.diagnostic(JSON.stringify(samples));
+      assert.equal(samples[0].takeoffs, 0);
+      assert.ok(samples[1].takeoffs >= 15, `takeoffs=${samples[1].takeoffs}`);
+      assert.ok(samples[1].longestInterval <= 5, `jump interval=${samples[1].longestInterval}`);
+      assert.ok(samples[1].top <= 64.201, `head collision height=${samples[1].top}`);
+      assert.ok(samples[1].x > samples[0].x * 1.2, `distances=${samples.map(sample => sample.x)}`);
+    });
+  }
+}
+
+test("low-ceiling jumps yield to unsafe ground, eating, combat actions and disabled sprint", async () => {
+  for (const condition of ["gap", "lava", "water", "wall", "open sky", "hunger", "sneak", "sprint off", "turn", "axe", "pearl", "survival", "item", "mining"]) {
+    const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+    const bot = rig.bot;
+    bot.physicsEnabled = false;
+    for (let x = -1; x <= 5; x++) world.setBlock(new Vec3(x, 66, 0), "stone");
+    if (condition === "gap") world.setBlock(new Vec3(1, 63, 0), "air");
+    if (condition === "lava") world.setBlock(new Vec3(1, 63, 0), "lava");
+    if (condition === "water") world.setBlock(new Vec3(1, 64, 0), "water");
+    if (condition === "wall") world.setBlock(new Vec3(1, 65, 0), "stone");
+    if (condition === "open sky") world.setBlock(new Vec3(0, 66, 0), "air");
+    if (condition === "hunger") bot.food = 6;
+    if (condition === "turn") bot.entity.velocity.z = 0.3;
+    if (condition === "axe") bot.launcherAxeAttacking = true;
+    if (condition === "pearl") bot.launcherPearling = true;
+    if (condition === "survival") bot.launcherSurvival = { busy: true };
+    if (condition === "item") bot.usingHeldItem = true;
+    if (condition === "mining") bot.targetDigBlock = world.getBlock(new Vec3(1, 66, 0));
+    worker.configurePathfinder(bot, { allowSprinting: condition !== "sprint off", allowParkour: false });
+    try {
+      await bot.look(-Math.PI / 2, 0, true);
+      bot.setControlState("sneak", condition === "sneak");
+      bot.setControlState("forward", true);
+      bot.setControlState("sprint", true);
+      bot.setControlState("jump", false);
+      assert.equal(bot.getControlState("jump"), false, condition);
+    } finally { await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+  }
+});
+
+test("low-ceiling jumps follow the actual forward/strafe corridor and dispose cleanly", async () => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  const bot = rig.bot;
+  bot.physicsEnabled = false;
+  for (let x = -2; x <= 20; x++) for (let z = -15; z <= 3; z++) world.setBlock(new Vec3(x, 66, z), "oak_leaves");
+  worker.configurePathfinder(bot, { allowSprinting: true, allowParkour: false, allowLowCeilingJumps: false });
+  const original = bot.setControlState;
+  const listeners = bot.listenerCount("physicsTick");
+  bot.pathfinder.setMoveOptions({ allowLowCeilingJumps: true });
+  const dispose = pathfinder.installLowCeilingJumps(bot);
+  try {
+    await bot.look(-Math.PI / 2, 0, true);
+    bot.setControlState("forward", true);
+    bot.setControlState("left", true);
+    bot.setControlState("sprint", true);
+    let hops = 0;
+    for (let tick = 0; tick < 30; tick++) {
+      bot.setControlState("jump", false);
+      physicsStep(rig, world);
+      if (bot.entity.position.y > 64.01) hops++;
+    }
+    assert.ok(hops >= 10, `diagonal hop ticks=${hops}`);
+    assert.ok(bot.entity.position.x > 7 && bot.entity.position.z < -3);
+    bot.clearControlStates();
+    dispose(); dispose();
+    assert.equal(bot.setControlState, original);
+    assert.equal(bot.listenerCount("physicsTick"), listeners);
+    bot.setControlState("jump", true);
+    assert.equal(bot.getControlState("jump"), true, "manual jump remains available after disabling");
+  } finally { dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("native pathfinder options enable and disable low-ceiling jumps without the worker", async () => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  const bot = rig.bot;
+  bot.physicsEnabled = false;
+  for (let x = -2; x <= 25; x++) world.setBlock(new Vec3(x, 66, 0), "stone");
+  bot.loadPlugin(pathfinder.createPlugin({ moveSettings: { allowLowCeilingJumps: true, allowSprinting: true } }));
+  try {
+    await bot.look(-Math.PI / 2, 0, true);
+    bot.setControlState("forward", true);
+    bot.setControlState("sprint", true);
+    let hops = 0;
+    for (let tick = 0; tick < 18; tick++) { physicsStep(rig, world); if (bot.entity.position.y > 64.01) hops++; }
+    assert.ok(hops >= 8, `native hop ticks=${hops}`);
+    bot.pathfinder.setMoveOptions({ allowLowCeilingJumps: false });
+    for (let tick = 0; tick < 12; tick++) physicsStep(rig, world);
+    assert.equal(bot.entity.onGround, true);
+    assert.equal(bot.getControlState("jump"), false);
+    bot.pathfinder.setMoveOptions({ allowLowCeilingJumps: true });
+    assert.equal(bot.getControlState("jump"), false);
+    physicsStep(rig, world); physicsStep(rig, world);
+    assert.ok(bot.entity.position.y > 64.01, "native option resumes hopping on the next grounded tick");
+  } finally { bot.clearControlStates(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("low-ceiling jumps hand airborne control to a stair jump immediately", async () => {
+  const { rig, world } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+  const bot = rig.bot;
+  bot.physicsEnabled = false;
+  for (let x = -2; x <= 5; x++) world.setBlock(new Vec3(x, 66, 0), "stone");
+  bot.loadPlugin(pathfinder.createPlugin({ moveSettings: { allowLowCeilingJumps: true } }));
+  try {
+    await bot.look(-Math.PI / 2, 0, true);
+    physicsStep(rig, world); physicsStep(rig, world);
+    bot.setControlState("forward", true);
+    bot.setControlState("sprint", true);
+    physicsStep(rig, world);
+    assert.equal(bot.entity.onGround, false);
+    const provider = bot.pathfinder.movements.get(pathfinder.movementProviders.ForwardJump);
+    bot.pathfinder.currentMove = { moveType: provider, toBreak: [], toPlace: [] };
+    bot.setControlState("jump", true);
+    assert.equal(bot.getControlState("jump"), true, "a stair takeoff must not inherit the hop's airborne release");
+    bot.pathfinder.currentMove = undefined;
+  } finally { bot.pathfinder.currentMove = undefined; bot.clearControlStates(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }
+});
+
+test("native navigation switches between low-ceiling sprint jumps and mined stairs", { timeout: 12000 }, async t => {
+  const world = createFlatWorld("26.1.2", 48, { renderDistance: 1 });
+  const height = x => 64 + Math.max(0, Math.min(4, Math.floor((x - 5) / 2)));
+  for (let x = -2; x <= 24; x++) for (let z = 0; z <= 1; z++) {
+    for (let y = 48; y < height(x); y++) world.setBlock(new Vec3(x, y, z), "stone");
+    world.setBlock(new Vec3(x, height(x) + (x < 4 || x >= 15 ? 2 : 3), z), "stone");
+  }
+  const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5), { world });
+  const bot = rig.bot;
+  const navigator = worker.configurePathfinder(bot, { allowSprinting: true, allowParkour: false, canDig: false, maxDropDown: 3 });
+  navigator.setMoveOptions({ canPlace: false });
+  const resets = [];
+  bot.on("resetPath", reason => resets.push(reason));
+  t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+  try {
+    await navigator.goto(new pathfinder.goals.GoalNear(21.5, 68, 0.5, 0.7));
+    assert.ok(bot.entity.position.distanceTo(new Vec3(21.5, 68, 0.5)) < 0.8);
+    assert.equal(bot.entity.onGround, true);
+    assert.equal(bot.getControlState("jump"), false);
+    assert.deepEqual(resets, []);
+  } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+});
+
+for (const version of ["1.20.4", "26.1.2"]) {
+  test(`navigation uses low-ceiling jumps through a mined tunnel and stops at its goal on ${version}`, { timeout: 10000 }, async t => {
+    const results = [];
+    for (const enabled of [false, true]) {
+      const { rig, world } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 });
+      for (let x = -2; x <= 22; x++) {
+        world.setBlock(new Vec3(x, 66, 0), "stone");
+        for (const z of [-1, 1]) for (const y of [64, 65]) world.setBlock(new Vec3(x, y, z), "stone");
+      }
+      const navigator = worker.configurePathfinder(rig.bot, {
+        allowSprinting: true, allowParkour: true, allowLowCeilingJumps: enabled, canDig: false, maxDropDown: 3,
+      });
+      navigator.setMoveOptions({ canPlace: false });
+      let ticks = 0, hops = 0;
+      const observe = () => { ticks++; if (rig.bot.entity.position.y > 64.01) hops++; };
+      rig.bot.on("physicsTick", observe);
+      t.signal.addEventListener("abort", () => { void navigator.stop(); }, { once: true });
+      try {
+        await navigator.goto(new pathfinder.goals.GoalNear(18.5, 64, 0.5, 0.6));
+        results.push({ ticks, hops });
+        assert.ok(rig.bot.entity.position.x > 17.9 && rig.bot.entity.position.x < 19.3);
+        assert.equal(rig.bot.getControlState("forward"), false);
+        assert.equal(rig.bot.getControlState("jump"), false);
+        await rig.bot.waitForTicks(8);
+        assert.equal(rig.bot.entity.onGround, true);
+      } finally { await navigator.destroy(); rig.stopPassivePhysics(); }
+    }
+    t.diagnostic(JSON.stringify(results));
+    assert.equal(results[0].hops, 0, "the switch also disables optional navigator head-hit jumps");
+    assert.ok(results[1].hops >= 12, `hops=${results[1].hops}`);
+    assert.ok(results[1].ticks < results[0].ticks * 0.85, `ticks=${results.map(result => result.ticks)}`);
+  });
+}
 
 test("managed bot reserves tick listeners for its controllers and preserves custom limits", async () => {
   for (const [initial, expected] of [[10, 32], [64, 64], [0, 0]]) {

@@ -55,6 +55,7 @@ function configurePathfinder (bot, movement, behavior = {}) {
   bot.loadPlugin(createPlugin({
     moveSettings: {
       allowSprinting: Boolean(movement.allowSprinting),
+      allowLowCeilingJumps: movement.allowLowCeilingJumps !== false,
       allowJumpSprint: Boolean(movement.allowParkour && movement.allowSprinting),
       allowAirStrafe: movement.allowAirStrafe === true,
       canDig: Boolean(movement.canDig),
@@ -325,6 +326,7 @@ function parseConfig (raw) {
     followDistance: 3,
     gotoRadius: 1,
     allowSprinting: true,
+    allowLowCeilingJumps: true,
     allowParkour: true,
     allowAirStrafe: false,
     canDig: false,

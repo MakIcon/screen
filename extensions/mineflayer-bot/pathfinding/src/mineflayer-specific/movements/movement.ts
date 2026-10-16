@@ -49,6 +49,8 @@ export interface MovementOptions {
   allowBucketWaterDrop: boolean
   infiniteLiquidDropdownDistance: boolean
   allowSprinting: boolean
+  /** Repeated head-hit sprint jumps in supported two-block-high passages. */
+  allowLowCeilingJumps: boolean
   careAboutLookAlignment: boolean
 
   movementTimeoutMs: number
@@ -92,6 +94,7 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowBucketWaterDrop: true,
   infiniteLiquidDropdownDistance: true,
   allowSprinting: true,
+  allowLowCeilingJumps: false,
   // Extra time water adds over walking the same block on land (~4.46 ticks).
   liquidCost: WALK_ONE_IN_WATER_COST - WALK_ONE_BLOCK_COST,
   // Baritone's block-placement penalty: building a block to stand on is slow.

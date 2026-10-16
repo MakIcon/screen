@@ -127,6 +127,7 @@ struct WorkerMovementConfig {
     follow_distance: u32,
     goto_radius: u32,
     allow_sprinting: bool,
+    allow_low_ceiling_jumps: bool,
     allow_parkour: bool,
     allow_air_strafe: bool,
     can_dig: bool,
@@ -713,6 +714,7 @@ pub async fn start_mineflayer_bot(
             follow_distance: plugin.follow_distance.clamp(1, 16),
             goto_radius: plugin.goto_radius.clamp(1, 16),
             allow_sprinting: plugin.allow_sprinting,
+            allow_low_ceiling_jumps: plugin.allow_low_ceiling_jumps,
             allow_parkour: plugin.allow_parkour,
             allow_air_strafe: plugin.allow_air_strafe,
             can_dig: plugin.can_dig,
@@ -1094,6 +1096,7 @@ mod tests {
             follow_distance: 3,
             goto_radius: 1,
             allow_sprinting: true,
+            allow_low_ceiling_jumps: true,
             allow_parkour: true,
             allow_air_strafe: true,
             can_dig: false,
@@ -1103,6 +1106,7 @@ mod tests {
         };
         let serialized = serde_json::to_value(settings).unwrap();
         assert_eq!(serialized["allowAirStrafe"], true);
+        assert_eq!(serialized["allowLowCeilingJumps"], true);
         assert_eq!(serialized["allowWaterDrop"], true);
         assert_eq!(serialized["allowBucketWaterDrop"], true);
     }

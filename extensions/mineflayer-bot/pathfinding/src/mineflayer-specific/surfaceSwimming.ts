@@ -150,7 +150,10 @@ export function installSurfaceSwimming (bot: Bot, enabled = true): () => void {
     const eyeY = bot.entity.position.y + ((bot.entity as any).eyeHeight ?? 1.62)
     const headWet = water(bot.blockAt(bot.entity.position.offset(0, (bot.entity as any).eyeHeight ?? 1.62, 0))) &&
       (surface == null || eyeY < surface)
-    // Briefly dive to submerge the head and enter vanilla's swim pose.
+    // Keep diving until the physics engine confirms the swim pose. Crouching
+    // lowers the eyes before swimming starts: releasing sneak as soon as those
+    // eyes get wet stands us back up and repeats the same entry stroke.
+    const diving = swim && !(bot.entity as any).swimming
     // Once swimming, rise only while the eyes are submerged, instead of bobbing.
     // Brake the upward stroke before inertia carries the entire body out of
     // water. Keep the eyes just above the fluid surface so sprint-swim persists.
@@ -159,12 +162,15 @@ export function installSurfaceSwimming (bot: Bot, enabled = true): () => void {
           ? headWet
           : eyeY + Math.max(0, bot.entity.velocity.y) * 4 < surface + 0.04)
       : float
-    originalSetControl.call(bot, 'jump', wantedJump || rise)
-    originalSetControl.call(bot, 'sneak', (wantedSneak && !float) || (swim && !(bot.entity as any).swimming && !headWet))
+    // Walking/critical-jump inputs must not fight the entry dive or lift the
+    // swimmer out of the water. Shore climbing retains the requested jump.
+    originalSetControl.call(bot, 'jump', swim ? !diving && rise : wantedJump || rise)
+    originalSetControl.call(bot, 'sneak', diving)
     originalSetControl.call(bot, 'sprint', swim || wantedSprint)
     waterSprint = swim
   }
   const setControl = (control: ControlState, value: boolean): void => {
+    if (disposed) { originalSetControl.call(bot, control, value); return }
     if (control === 'jump') wantedJump = value
     else if (control === 'sneak') wantedSneak = value
     else if (control === 'sprint') wantedSprint = value

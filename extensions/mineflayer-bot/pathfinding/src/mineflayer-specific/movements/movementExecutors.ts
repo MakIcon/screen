@@ -236,6 +236,8 @@ export class NewForwardExecutor extends MovementExecutor {
 
     if (!this.settings.allowJumpSprint) return false
     if (!this.bot.entity.onGround) return false
+    // The shared low-ceiling controller owns head-hit jumps and its toggle.
+    if (!clearBodySegment(this.world, this.bot.entity.position, this.bot.entity.position, 0.599, 2.25)) return false
     if (this.toBreakLen() > 0 || this.toPlaceLen() > 0) return false
 
     const xzVel = this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0)

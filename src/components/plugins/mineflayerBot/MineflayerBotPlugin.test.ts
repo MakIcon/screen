@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MINEFLAYER_BOT_SETTINGS, normalizeMineflayerBotSettings } from "../pluginSettings";
 
 describe("normalizeMineflayerBotSettings", () => {
+  it("preserves the low-ceiling jump switch separately from parkour", () => {
+    for (const allowLowCeilingJumps of [true, false]) {
+      const saved = JSON.parse(JSON.stringify(normalizeMineflayerBotSettings({
+        allowLowCeilingJumps, allowParkour: false,
+      })));
+      expect(normalizeMineflayerBotSettings(saved).allowLowCeilingJumps).toBe(allowLowCeilingJumps);
+    }
+  });
   it("adds safe defaults to legacy settings", () => {
     const normalized = normalizeMineflayerBotSettings({
       enabled: true,
@@ -14,6 +22,7 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.autoReconnect).toBe(true);
     expect(normalized.canDig).toBe(false);
     expect(normalized.allowAirStrafe).toBe(false);
+    expect(normalized.allowLowCeilingJumps).toBe(true);
     expect(normalized.stayOnWater).toBe(true);
     expect(normalized.allowWaterDrop).toBe(true);
     expect(normalized.allowBucketWaterDrop).toBe(true);

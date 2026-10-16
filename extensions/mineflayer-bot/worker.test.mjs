@@ -54,6 +54,15 @@ test("preserves independent water drop switches in saved worker config", () => {
   assert.equal(explicit.movement.allowBucketWaterDrop, false);
 });
 
+test("low-ceiling jumps default on and can be disabled independently of parkour", () => {
+  for (const enabled of [undefined, true, false]) {
+    const config = worker.parseConfig(JSON.stringify({ server: { host: "localhost" }, account: { username: "Bot" },
+      movement: { allowParkour: false, ...(enabled === undefined ? {} : { allowLowCeilingJumps: enabled }) } }));
+    assert.equal(config.movement.allowLowCeilingJumps, enabled !== false);
+    assert.equal(config.movement.allowParkour, false);
+  }
+});
+
 test("reads config without closing stdin and keeps later chat messages, including split packets", async () => {
   const stream = new PassThrough();
   const lines = worker.createLauncherInput(stream);

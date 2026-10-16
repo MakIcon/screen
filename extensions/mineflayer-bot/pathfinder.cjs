@@ -602,6 +602,207 @@ var require_cacheWorld = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/navigationGeometry.js
+var require_navigationGeometry = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/navigationGeometry.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.supportedWalkSegment = supportedWalkSegment;
+    exports2.needsWalkSneak = needsWalkSneak;
+    exports2.clearBodySegment = clearBodySegment;
+    var vec3_1 = require("vec3");
+    function supportedWalkSegment(world, from, to) {
+      const delta = to.minus(from);
+      const steps = Math.max(1, Math.ceil(delta.norm() * 10));
+      for (let i = 0; i <= steps; i++) {
+        const pos = from.plus(delta.scaled(i / steps));
+        const feet = world.getBlockInfo(pos);
+        if (feet.water)
+          continue;
+        const supported = [[0, 0], [-0.299, -0.299], [-0.299, 0.299], [0.299, -0.299], [0.299, 0.299]].every(([x, z]) => {
+          const sample = pos.offset(x, -0.05, z);
+          const support = world.getBlockInfo(sample);
+          return support.physical && support.safe && support.getBBs().some((box) => box.maxY >= pos.y - 0.6 && box.maxY <= pos.y + 0.05 && sample.x >= box.minX && sample.x <= box.maxX && sample.z >= box.minZ && sample.z <= box.maxZ);
+        });
+        if (!supported)
+          return false;
+      }
+      return true;
+    }
+    function needsWalkSneak(world, pos, velocity) {
+      return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3));
+    }
+    function clearBodySegment(world, from, to, width = 0.62, height = 1.8) {
+      const radius = width / 2;
+      const delta = to.minus(from);
+      const steps = Math.max(1, Math.ceil(delta.norm() * 2));
+      const visited = /* @__PURE__ */ new Set();
+      for (let i = 0; i <= steps; i++) {
+        const p = from.plus(delta.scaled(i / steps));
+        for (let x = Math.floor(p.x - radius); x <= Math.floor(p.x + radius); x++) {
+          for (let z = Math.floor(p.z - radius); z <= Math.floor(p.z + radius); z++) {
+            for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + height - 1e-5); y++) {
+              const key = `${x}:${y}:${z}`;
+              if (visited.has(key))
+                continue;
+              visited.add(key);
+              const block = world.getBlockInfo(new vec3_1.Vec3(x, y, z));
+              if (block.isInvalid || !block.safe)
+                return false;
+              for (const box of block.getBBs()) {
+                let enter = 0, leave = 1;
+                const mins = [box.minX - radius, box.minY - height + 1e-5, box.minZ - radius];
+                const maxs = [box.maxX + radius, box.maxY - 1e-5, box.maxZ + radius];
+                const origin = [from.x, from.y, from.z], direction = [delta.x, delta.y, delta.z];
+                for (let axis = 0; axis < 3; axis++) {
+                  if (Math.abs(direction[axis]) < 1e-9) {
+                    if (origin[axis] <= mins[axis] || origin[axis] >= maxs[axis]) {
+                      enter = 2;
+                      break;
+                    }
+                  } else {
+                    const a = (mins[axis] - origin[axis]) / direction[axis];
+                    const b = (maxs[axis] - origin[axis]) / direction[axis];
+                    enter = Math.max(enter, Math.min(a, b));
+                    leave = Math.min(leave, Math.max(a, b));
+                  }
+                }
+                if (enter < leave && leave > 0 && enter < 1)
+                  return false;
+              }
+            }
+          }
+        }
+      }
+      return true;
+    }
+  }
+});
+
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/lowCeilingJumps.js
+var require_lowCeilingJumps = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/lowCeilingJumps.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.installLowCeilingJumps = installLowCeilingJumps;
+    var navigationGeometry_1 = require_navigationGeometry();
+    var climbablePhysics_12 = require_climbablePhysics();
+    var controllers = /* @__PURE__ */ new WeakMap();
+    function installLowCeilingJumps(bot, enabled = true) {
+      const existing = controllers.get(bot);
+      if (existing != null) {
+        if (!enabled)
+          existing();
+        else
+          return existing;
+      }
+      if (!enabled)
+        return () => {
+        };
+      const originalSet = bot.setControlState;
+      let wantedJump = bot.getControlState("jump");
+      let injecting = false;
+      let alive = true;
+      let disposed = false;
+      const ownsMovement = () => {
+        const entity = bot.entity;
+        const move = bot.pathfinder?.currentMove;
+        return alive && bot.health !== 0 && bot.food > 6 && !bot.usingHeldItem && !entity?.isInWater && !entity?.isInLava && !entity?.isInWeb && !entity?.elytraFlying && !bot.launcherSurvival?.busy && !bot.launcherAxeAttacking && !bot.launcherPearling && !bot.launcherDefendingBow && !bot.targetDigBlock && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false && bot.pathfinder?.defaultMoveSettings.allowLowCeilingJumps !== false && bot.getControlState("forward") && bot.getControlState("sprint") && !bot.getControlState("back") && !bot.getControlState("sneak") && (move == null || move.toBreak.length === 0 && move.toPlace.length === 0 && ["Forward", "Diagonal"].includes(move.moveType.constructor.name));
+      };
+      const canHop = () => {
+        const entity = bot.entity;
+        if (!entity?.onGround || !ownsMovement())
+          return false;
+        const world = bot.pathfinder?.world;
+        if (world == null)
+          return false;
+        const pos = entity.position;
+        if (world.getBlockInfo(pos).climbable || climbablePhysics_12.climbableNames.has(world.getBlockInfo(pos).block?.name ?? ""))
+          return false;
+        const strafe = Number(bot.getControlState("right")) - Number(bot.getControlState("left"));
+        const direction = pos.scaled(0);
+        direction.set(-Math.sin(entity.yaw) + Math.cos(entity.yaw) * strafe, 0, -Math.cos(entity.yaw) - Math.sin(entity.yaw) * strafe).normalize();
+        const speed = Math.hypot(entity.velocity.x, entity.velocity.z);
+        if (speed > 0.08 && entity.velocity.x * direction.x + entity.velocity.z * direction.z < speed * 0.8)
+          return false;
+        const distance = Math.max(1.4, speed * 4 + 0.6);
+        const ahead = pos.plus(direction.scaled(distance));
+        if (!(0, navigationGeometry_1.clearBodySegment)(world, pos, ahead) || !(0, navigationGeometry_1.supportedWalkSegment)(world, pos, ahead))
+          return false;
+        for (let d = 0; d <= distance; d += 0.2) {
+          const feet = world.getBlockInfo(pos.plus(direction.scaled(d)));
+          if (feet.liquid || feet.climbable)
+            return false;
+        }
+        for (let x = Math.floor(pos.x - 0.299); x <= Math.floor(pos.x + 0.299); x++) {
+          for (let z = Math.floor(pos.z - 0.299); z <= Math.floor(pos.z + 0.299); z++) {
+            for (let y = Math.floor(pos.y + 1.8); y <= Math.floor(pos.y + 2.25); y++) {
+              const block = world.getBlockInfo(pos.offset(x - pos.x, y - pos.y, z - pos.z));
+              if (block.isInvalid || !block.safe)
+                return false;
+              if (block.getBBs().some((box) => box.minY >= pos.y + 1.8 - 1e-5 && box.minY <= pos.y + 2.25 && box.maxX > pos.x - 0.299 && box.minX < pos.x + 0.299 && box.maxZ > pos.z - 0.299 && box.minZ < pos.z + 0.299))
+                return true;
+            }
+          }
+        }
+        return false;
+      };
+      const apply = () => {
+        const hop = canHop();
+        if (hop) {
+          injecting = true;
+          originalSet.call(bot, "jump", true);
+        } else if (injecting && !bot.entity.onGround && ownsMovement()) {
+          originalSet.call(bot, "jump", false);
+        } else {
+          injecting = false;
+          originalSet.call(bot, "jump", wantedJump);
+        }
+      };
+      const setControl = (control, value) => {
+        if (disposed) {
+          originalSet.call(bot, control, value);
+          return;
+        }
+        if (control === "jump")
+          wantedJump = value;
+        else
+          originalSet.call(bot, control, value);
+        apply();
+      };
+      const death = () => {
+        alive = false;
+        wantedJump = false;
+        injecting = false;
+        originalSet.call(bot, "jump", false);
+      };
+      const spawn = () => {
+        alive = true;
+      };
+      const dispose = () => {
+        if (disposed)
+          return;
+        disposed = true;
+        bot.off("physicsTick", apply);
+        bot.off("death", death);
+        bot.off("spawn", spawn);
+        bot.off("end", dispose);
+        if (bot.setControlState === setControl)
+          bot.setControlState = originalSet;
+        originalSet.call(bot, "jump", wantedJump);
+        controllers.delete(bot);
+      };
+      bot.setControlState = setControl;
+      bot.on("physicsTick", apply);
+      bot.on("death", death);
+      bot.on("spawn", spawn);
+      bot.once("end", dispose);
+      controllers.set(bot, dispose);
+      return dispose;
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/costs.js
 var require_costs = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/costs.js"(exports2) {
@@ -2518,6 +2719,7 @@ var require_movement = __commonJS({
       allowBucketWaterDrop: true,
       infiniteLiquidDropdownDistance: true,
       allowSprinting: true,
+      allowLowCeilingJumps: false,
       // Extra time water adds over walking the same block on land (~4.46 ticks).
       liquidCost: costs_1.WALK_ONE_IN_WATER_COST - costs_1.WALK_ONE_BLOCK_COST,
       // Baritone's block-placement penalty: building a block to stand on is slow.
@@ -4190,83 +4392,6 @@ var require_movementExecutor = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/navigationGeometry.js
-var require_navigationGeometry = __commonJS({
-  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/navigationGeometry.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.supportedWalkSegment = supportedWalkSegment;
-    exports2.needsWalkSneak = needsWalkSneak;
-    exports2.clearBodySegment = clearBodySegment;
-    var vec3_1 = require("vec3");
-    function supportedWalkSegment(world, from, to) {
-      const delta = to.minus(from);
-      const steps = Math.max(1, Math.ceil(delta.norm() * 10));
-      for (let i = 0; i <= steps; i++) {
-        const pos = from.plus(delta.scaled(i / steps));
-        const feet = world.getBlockInfo(pos);
-        if (feet.water)
-          continue;
-        const supported = [[0, 0], [-0.299, -0.299], [-0.299, 0.299], [0.299, -0.299], [0.299, 0.299]].every(([x, z]) => {
-          const sample = pos.offset(x, -0.05, z);
-          const support = world.getBlockInfo(sample);
-          return support.physical && support.safe && support.getBBs().some((box) => box.maxY >= pos.y - 0.6 && box.maxY <= pos.y + 0.05 && sample.x >= box.minX && sample.x <= box.maxX && sample.z >= box.minZ && sample.z <= box.maxZ);
-        });
-        if (!supported)
-          return false;
-      }
-      return true;
-    }
-    function needsWalkSneak(world, pos, velocity) {
-      return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3));
-    }
-    function clearBodySegment(world, from, to, width = 0.62, height = 1.8) {
-      const radius = width / 2;
-      const delta = to.minus(from);
-      const steps = Math.max(1, Math.ceil(delta.norm() * 2));
-      const visited = /* @__PURE__ */ new Set();
-      for (let i = 0; i <= steps; i++) {
-        const p = from.plus(delta.scaled(i / steps));
-        for (let x = Math.floor(p.x - radius); x <= Math.floor(p.x + radius); x++) {
-          for (let z = Math.floor(p.z - radius); z <= Math.floor(p.z + radius); z++) {
-            for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + height - 1e-5); y++) {
-              const key = `${x}:${y}:${z}`;
-              if (visited.has(key))
-                continue;
-              visited.add(key);
-              const block = world.getBlockInfo(new vec3_1.Vec3(x, y, z));
-              if (block.isInvalid || !block.safe)
-                return false;
-              for (const box of block.getBBs()) {
-                let enter = 0, leave = 1;
-                const mins = [box.minX - radius, box.minY - height + 1e-5, box.minZ - radius];
-                const maxs = [box.maxX + radius, box.maxY - 1e-5, box.maxZ + radius];
-                const origin = [from.x, from.y, from.z], direction = [delta.x, delta.y, delta.z];
-                for (let axis = 0; axis < 3; axis++) {
-                  if (Math.abs(direction[axis]) < 1e-9) {
-                    if (origin[axis] <= mins[axis] || origin[axis] >= maxs[axis]) {
-                      enter = 2;
-                      break;
-                    }
-                  } else {
-                    const a = (mins[axis] - origin[axis]) / direction[axis];
-                    const b = (maxs[axis] - origin[axis]) / direction[axis];
-                    enter = Math.max(enter, Math.min(a, b));
-                    leave = Math.min(leave, Math.max(a, b));
-                  }
-                }
-                if (enter < leave && leave > 0 && enter < 1)
-                  return false;
-              }
-            }
-          }
-        }
-      }
-      return true;
-    }
-  }
-});
-
 // extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutors.js
 var require_movementExecutors = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/movements/movementExecutors.js"(exports2) {
@@ -4483,6 +4608,8 @@ var require_movementExecutors = __commonJS({
         if (!this.settings.allowJumpSprint)
           return false;
         if (!this.bot.entity.onGround)
+          return false;
+        if (!(0, navigationGeometry_1.clearBodySegment)(this.world, this.bot.entity.position, this.bot.entity.position, 0.599, 2.25))
           return false;
         if (this.toBreakLen() > 0 || this.toPlaceLen() > 0)
           return false;
@@ -10061,13 +10188,18 @@ var require_surfaceSwimming = __commonJS({
         const surface = surfaceHeight(bot);
         const eyeY = bot.entity.position.y + (bot.entity.eyeHeight ?? 1.62);
         const headWet = water(bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0))) && (surface == null || eyeY < surface);
+        const diving = swim && !bot.entity.swimming;
         const rise = swim ? bot.entity.swimming === true && (surface == null ? headWet : eyeY + Math.max(0, bot.entity.velocity.y) * 4 < surface + 0.04) : float;
-        originalSetControl.call(bot, "jump", wantedJump || rise);
-        originalSetControl.call(bot, "sneak", wantedSneak && !float || swim && !bot.entity.swimming && !headWet);
+        originalSetControl.call(bot, "jump", swim ? !diving && rise : wantedJump || rise);
+        originalSetControl.call(bot, "sneak", diving);
         originalSetControl.call(bot, "sprint", swim || wantedSprint);
         waterSprint = swim;
       };
       const setControl = (control, value) => {
+        if (disposed) {
+          originalSetControl.call(bot, control, value);
+          return;
+        }
         if (control === "jump")
           wantedJump = value;
         else if (control === "sneak")
@@ -11863,6 +11995,7 @@ var require_ThePathfinder = __commonJS({
     })();
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ThePathfinder = void 0;
+    var lowCeilingJumps_12 = require_lowCeilingJumps();
     var goals = __importStar2(require_goals());
     var vec3_1 = require("vec3");
     var move_12 = require_move();
@@ -12052,6 +12185,7 @@ var require_ThePathfinder = __commonJS({
         for (const [, executor] of this.movements) {
           executor.settings = this.defaultMoveSettings;
         }
+        (0, lowCeilingJumps_12.installLowCeilingJumps)(this.bot, this.defaultMoveSettings.allowLowCeilingJumps);
       }
       setOptions(settings) {
         this.pathfinderSettings = Object.assign({}, DEFAULT_PATHFINDER_OPTS, this.pathfinderSettings, settings);
@@ -13337,7 +13471,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installSurfaceSwimming = exports.NavigationTaskError = exports.NavigationError = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installLowCeilingJumps = exports.installSurfaceSwimming = exports.NavigationTaskError = exports.NavigationError = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -13345,6 +13479,7 @@ var mineflayer_util_plugin_1 = __importDefault(require("@nxg-org/mineflayer-util
 var mineflayer_physics_util_1 = __importStar(require("@nxg-org/mineflayer-physics-util"));
 var PathingUtil_1 = require_PathingUtil();
 var climbablePhysics_1 = require_climbablePhysics();
+var lowCeilingJumps_1 = require_lowCeilingJumps();
 var supportingBlockPhysics_1 = require_supportingBlockPhysics();
 var miningTools_1 = require_miningTools();
 var itemEnchantments_1 = require_itemEnchantments();
@@ -13362,6 +13497,10 @@ Object.defineProperty(exports, "NavigationTaskError", { enumerable: true, get: f
 var surfaceSwimming_1 = require_surfaceSwimming();
 Object.defineProperty(exports, "installSurfaceSwimming", { enumerable: true, get: function() {
   return surfaceSwimming_1.installSurfaceSwimming;
+} });
+var lowCeilingJumps_2 = require_lowCeilingJumps();
+Object.defineProperty(exports, "installLowCeilingJumps", { enumerable: true, get: function() {
+  return lowCeilingJumps_2.installLowCeilingJumps;
 } });
 var miningGround_1 = require_miningGround();
 Object.defineProperty(exports, "waitForMiningGround", { enumerable: true, get: function() {
@@ -13401,6 +13540,7 @@ function createPlugin(opts) {
     (0, supportingBlockPhysics_1.installSupportingBlockPhysics)(bot);
     bot.pathfinder = new ThePathfinder_1.ThePathfinder(bot, opts);
     bot.pathingUtil = new PathingUtil_1.PathingUtil(bot);
+    (0, lowCeilingJumps_1.installLowCeilingJumps)(bot, bot.pathfinder.defaultMoveSettings.allowLowCeilingJumps);
   };
 }
 exports.goals = __importStar(require_goals());

@@ -1,5 +1,27 @@
 # PvP, mace and bow combat
 
+## Water entry and low-ceiling sprint jumps (1.15.5)
+
+Water entry keeps one continuous dive until physics confirms the swimming pose.
+Navigation and combat jump inputs yield during entry and surface cruising, so
+crouching cannot repeatedly raise the eyes and cancel the dive. Shallow water,
+shore climbing, low hunger and legacy flotation retain their previous controls.
+
+The movement setting `allowLowCeilingJumps` (enabled by default in the worker) repeats normal
+sprint jumps beneath a two-block ceiling, releasing jump in the air to jump
+again on landing. It works independently of parkour in mined tunnels, ordinary
+navigation and either PvP engine's pursuit under leaves. It requires sprint,
+food and a clear supported corridor, and yields to crouching, digging, terrain
+interactions, item use, axe attacks, pearls and survival actions. Turning it off
+also prevents the navigator's optional sprint hops beneath low ceilings. Saved
+movement settings apply after restarting the bot. The native pathfinder option
+can also be enabled or disabled with `pathfinder.setMoveOptions()`.
+
+Physics regressions on 1.20.4 and 26.1.2 cover competing jump inputs during water
+entry, enabled/disabled tunnel and canopy travel, repeated head collisions,
+navigation arrival and hazards. Both PvP engines also chase from shore into
+water and under leaves using the bundled worker.
+
 ## Stable melee focus and shield timing (1.15.4)
 
 Melee aim follows the live target once per tick along the shortest yaw change,

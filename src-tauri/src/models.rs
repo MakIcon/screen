@@ -558,6 +558,8 @@ pub struct MineflayerBotPluginSettings {
     #[serde(default = "default_true")]
     pub allow_sprinting: bool,
     #[serde(default = "default_true")]
+    pub allow_low_ceiling_jumps: bool,
+    #[serde(default = "default_true")]
     pub allow_parkour: bool,
     #[serde(default)]
     pub allow_air_strafe: bool,
@@ -1142,6 +1144,7 @@ impl Default for MineflayerBotPluginSettings {
             follow_distance: default_mineflayer_bot_follow_distance(),
             goto_radius: default_mineflayer_bot_goto_radius(),
             allow_sprinting: true,
+            allow_low_ceiling_jumps: true,
             allow_parkour: true,
             allow_air_strafe: false,
             can_dig: false,
@@ -1462,6 +1465,7 @@ mod loader_schema_tests {
         assert_eq!(parsed.host, "localhost");
         assert_eq!(parsed.follow_distance, 5);
         assert!(!parsed.allow_air_strafe);
+        assert!(parsed.allow_low_ceiling_jumps);
         assert!(parsed.auto_reconnect);
         assert!(parsed.auto_respawn);
         assert!(!parsed.can_dig);
@@ -1530,6 +1534,18 @@ mod loader_schema_tests {
             true
         );
         assert!(!MineflayerBotPluginSettings::default().allow_air_strafe);
+    }
+
+    #[test]
+    fn preserves_low_ceiling_jump_switch_independently_of_parkour() {
+        for enabled in [true, false] {
+            let parsed: MineflayerBotPluginSettings = serde_json::from_value(
+                serde_json::json!({ "allowLowCeilingJumps": enabled, "allowParkour": false }),
+            ).unwrap();
+            assert_eq!(parsed.allow_low_ceiling_jumps, enabled);
+            assert!(!parsed.allow_parkour);
+            assert_eq!(serde_json::to_value(parsed).unwrap()["allowLowCeilingJumps"], enabled);
+        }
     }
 
     #[test]

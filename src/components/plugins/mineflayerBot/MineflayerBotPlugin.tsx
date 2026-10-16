@@ -538,6 +538,12 @@ function MineflayerBotSettingsEditor({
                   onChange={(allowSprinting) => update({ allowSprinting })}
                 />
                 <SettingToggle
+                  label="ПРЫЖКИ ПОД НИЗКИМ ПОТОЛКОМ"
+                  description="Частые спринт-прыжки в тоннелях высотой два блока и под листвой · нужен спринт"
+                  checked={settings.allowLowCeilingJumps}
+                  onChange={(allowLowCeilingJumps) => update({ allowLowCeilingJumps })}
+                />
+                <SettingToggle
                   label="ПАРКУР"
                   description="Перепрыгивать небольшие разрывы"
                   checked={settings.allowParkour}

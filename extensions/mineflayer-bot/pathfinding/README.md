@@ -11,6 +11,15 @@ the worker's dependencies. The downloaded source directory is left intact.
 
 Changes from the supplied source:
 
+- Version 1.15.5 keeps the entry dive active until swimming starts and prevents
+  competing jump inputs from cancelling entry or lifting a cruising swimmer.
+  The worker installs optional low-ceiling sprint jumps for navigation and direct
+  pursuit, with full-footprint support/clearance checks and airborne jump release.
+  The native `allowLowCeilingJumps` option can be changed with `setMoveOptions`.
+  The worker enables it by default independently of parkour; disabling it
+  also suppresses optional navigator head-hit jumps. Normal step, gap, climb,
+  interaction and combat-action controllers retain their own jump inputs.
+
 - Version 1.12.4 keeps the player's whole foot corridor supported through narrow
   bends. Dry diagonal moves and straight-line optimization preserve missing
   inside corners; rim handoffs retain crouch until both position and momentum

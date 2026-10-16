@@ -11,6 +11,7 @@ import type { Block, ResetReason } from './types'
 import { HandlerOpts, PlaceBlockOptions } from './types'
 import { PathingUtil } from './PathingUtil'
 import { installClimbablePhysics } from './mineflayer-specific/climbablePhysics'
+import { installLowCeilingJumps } from './mineflayer-specific/lowCeilingJumps'
 import { installSupportingBlockPhysics } from './mineflayer-specific/supportingBlockPhysics'
 import { installMiningToolMaterials } from './mineflayer-specific/miningTools'
 import { installItemEnchantmentCompatibility } from './mineflayer-specific/itemEnchantments'
@@ -25,6 +26,7 @@ export { ThePathfinder } from './ThePathfinder'
 export { NavigationError, NavigationTaskError } from './mineflayer-specific/exceptions'
 export type { PathfinderOptions } from './ThePathfinder'
 export { installSurfaceSwimming } from './mineflayer-specific/surfaceSwimming'
+export { installLowCeilingJumps } from './mineflayer-specific/lowCeilingJumps'
 export { waitForMiningGround } from './mineflayer-specific/miningGround'
 export { installMiningToolMaterials, miningBlock } from './mineflayer-specific/miningTools'
 export { getItemEnchantments, normalizeEnchantments, installItemEnchantmentCompatibility } from './mineflayer-specific/itemEnchantments'
@@ -43,6 +45,7 @@ export function createPlugin (opts?: HandlerOpts) {
     installSupportingBlockPhysics(bot)
     bot.pathfinder = new ThePathfinder(bot, opts)
     bot.pathingUtil = new PathingUtil(bot)
+    installLowCeilingJumps(bot, bot.pathfinder.defaultMoveSettings.allowLowCeilingJumps)
   }
 }
 
