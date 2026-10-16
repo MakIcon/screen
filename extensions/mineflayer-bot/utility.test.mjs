@@ -454,6 +454,29 @@ function chaseFixture(patch = {}, version = "26.1.2") {
 }
 
 for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+  test(`distant enemy without a pearl triggers proactive pursuit and resumes melee on ${version}`, async () => {
+    const f = chaseFixture({ pearlEnabled: false }, version);
+    try {
+      f.enemy.position.x = 30.5;
+      const shot = planPearl(f.bot, f.enemy.position, f.settings, 2.5, true);
+      assert.ok(shot);
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      assert.equal(f.calls.filter((c) => c === "throw").length, 1);
+      assert.equal(f.travel.chasing, true);
+      await f.tick(100);
+      assert.equal(f.calls.filter((c) => c === "throw").length, 1, "only one active throw");
+      f.bot.entity.position = shot.landing.clone();
+      await f.tick(150);
+      await f.tick(200);
+      assert.equal(f.travel.chasing, false);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      assert.equal(f.calls.filter((c) => c === "throw").length, 1);
+    } finally {
+      f.close();
+    }
+  });
+
   test(`enemy pearl is chased to its landing and melee resumes on ${version}`, async () => {
     const f = chaseFixture({}, version);
     try {
@@ -483,6 +506,70 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
     }
   });
 }
+
+test("proactive pearls keep walking when disabled, too close, unsafe or reserved", async () => {
+  for (const patch of [
+    { pearlChase: false },
+    { pearlMinDistance: 24 },
+    { pearlReserve: 4 },
+    { pearlMinHealth: 20 },
+    { pearlMaxDistance: 12 },
+  ]) {
+    const f = chaseFixture(patch);
+    try {
+      f.bot.health = 19;
+      f.enemy.position.x = 20.5;
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      await f.tick(1000);
+      assert.equal(f.calls.includes("throw"), false, JSON.stringify(patch));
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+    } finally {
+      f.close();
+    }
+  }
+  const f = chaseFixture();
+  try {
+    f.enemy.position.x = 20.5;
+    for (let x = 16; x < 25; x++)
+      for (let z = -4; z <= 4; z++) f.world.setBlock(new Vec3(x, 63, z), "lava");
+    f.combat.select(f.enemy);
+    await f.tick(0);
+    assert.equal(f.calls.includes("throw"), false, "no safe landing near the enemy");
+    assert.equal(f.bot.swordpvp.target, f.enemy);
+  } finally {
+    f.close();
+  }
+});
+
+test("proactive pearl aim is revalidated and a new target cancels the old throw", async () => {
+  for (const cancel of ["move", "stop"]) {
+    const f = chaseFixture();
+    let release;
+    const look = f.bot.look.bind(f.bot);
+    f.bot.look = async (...args) => {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      await look(...args);
+    };
+    try {
+      f.enemy.position.x = 20.5;
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      assert.ok(release);
+      if (cancel === "move") f.enemy.position.z += 8;
+      else f.combat.stop();
+      release();
+      await flush();
+      await flush();
+      assert.equal(f.calls.includes("throw"), false);
+      assert.equal(f.travel.chasing, false);
+    } finally {
+      f.close();
+    }
+  }
+});
 
 for (const patch of [{ pearlChase: false }, { pearlReserve: 4 }, { pearlMinHealth: 20 }]) {
   test(`combat does not throw when ${JSON.stringify(patch)}`, async () => {
@@ -654,8 +741,8 @@ test("separate enemy pearls obey the shared cooldown even when travel chaining i
     await f.tick(12000);
     assert.equal(
       f.bot.swordpvp.target,
-      null,
-      "a missing bot teleport eventually stops a distant fight",
+      f.enemy,
+      "a failed teleport resumes pursuit of a loaded enemy within pearl range",
     );
   } finally {
     f.close();

@@ -166,7 +166,7 @@ function normalizeCombat(value = {}) {
 
 // Translate the small classic Pathfinder surface used by both melee plugins
 // to the launcher's dynamic entity goals. Keep the existing planner and controls.
-function installCombatNavigation(bot, onError) {
+function installCombatNavigation(bot, onError, now = Date.now) {
   const pathfinder = bot.pathfinder;
   const stop = pathfinder.stop.bind(pathfinder);
   let generation = 0;
@@ -187,9 +187,24 @@ function installCombatNavigation(bot, onError) {
       dynamic: true,
       neverfinish: true,
     });
+    let updatedAt = now();
+    nativeGoal.hasChanged = (_event, entity) => {
+      if (entity !== goal.entity) return false;
+      const drift = entity.position.distanceTo(new Vec3(nativeGoal.x, nativeGoal.y, nativeGoal.z));
+      const remaining = bot.entity.position.distanceTo(entity.position);
+      // Preserve useful route segments while a distant opponent runs. Near the
+      // attack radius (or after a teleport), retarget immediately.
+      const close = remaining <= range + 2;
+      if (drift < (close ? 0.5 : Math.min(4, Math.max(2, remaining / 4)))) return false;
+      if (!close && drift < 8 && now() - updatedAt < 600) return false;
+      updatedAt = now();
+      return true;
+    };
     void pathfinder.goto(nativeGoal, { preferExistingTerrain: true }).catch((error) => {
       if (revision === generation) {
         follow = null;
+        pathfinder.goal = null;
+        if (bot.swordpvp) bot.swordpvp.targetGoal = undefined;
         onError(error);
       }
     });
@@ -249,7 +264,12 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   const options = bot.swordpvp.options;
   options.cps = settings.cps;
   options.genericConfig.attackRange = settings.attackRange;
-  options.genericConfig.viewDistance = settings.targetRange;
+  const viewDistance = Math.max(
+    settings.targetRange,
+    settings.bowRange,
+    settings.pearlChase ? settings.pearlMaxDistance : 0,
+  );
+  options.genericConfig.viewDistance = viewDistance;
   options.genericConfig.tooCloseRange = Math.max(0.5, settings.attackRange - 0.5);
   options.genericConfig.hitThroughWalls = false;
   // The upstream miss implementation recursively waits for another tick.
@@ -319,7 +339,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   installShieldBreak(bot, settings, aimedAt, onError);
   bot.pvp.attackRange = settings.attackRange;
   bot.pvp.followRange = Math.max(1, settings.attackRange - 0.5);
-  bot.pvp.viewDistance = settings.targetRange;
+  bot.pvp.viewDistance = viewDistance;
   bot.pvp.movements = undefined;
   // The old plugin waits for classic path_stop for five seconds. Our planner
   // has a different lifecycle; forceStop cancels its goal immediately.
@@ -389,7 +409,7 @@ function createCombatController(
   } = {},
 ) {
   const settings = normalizeCombat(value);
-  installCombatNavigation(bot, onError);
+  installCombatNavigation(bot, onError, now);
   if (loadPlugins) configureCombatPlugins(bot, settings, onError);
   let target = null;
   let workTarget = false;
@@ -413,6 +433,7 @@ function createCombatController(
   let pearlIntent = null;
   let lastEnemyPosition = null;
   let nextPursuitPlanAt = 0;
+  let nextClosingPlanAt = 0;
   let recovery = null,
     decision = null,
     recoveryMoving = false;
@@ -423,19 +444,36 @@ function createCombatController(
   const nativeStrafe = bot.swordpvp?.doStrafe?.bind(bot.swordpvp);
   const nativeTap = bot.swordpvp?.sprintTap?.bind(bot.swordpvp);
   const nativeCritical = bot.swordpvp?.causeCritical?.bind(bot.swordpvp);
+  const nativeRotate = bot.swordpvp?.rotate?.bind(bot.swordpvp);
   let directFootwork = false;
   if (settings.adaptiveCombat && nativeMove) {
     bot.swordpvp.doMove = () => {
+      if (!bot.swordpvp.target) return nativeMove();
       directFootwork = footwork.tick(bot.swordpvp.target, decision);
-      if (!directFootwork) return nativeMove();
+      if (!directFootwork) {
+        const routing = Boolean(bot.pathfinder.goal);
+        // Even at melee distance a wall or ledge still needs a terrain route.
+        bot.pathfinder.setGoal({ entity: bot.swordpvp.target, rangeSq: 2 ** 2 });
+        if (!routing) {
+          bot.smoothLook?._cleanupTasks(true);
+          if (bot.smoothLook) bot.smoothLook._pendingTask = null;
+        }
+      }
     };
     bot.swordpvp.doStrafe = () => {
       // Navigation owns all movement outside a checked combat corridor.
       if (!directFootwork && !bot.pathfinder.goal) return nativeStrafe();
     };
-    bot.swordpvp.sprintTap = () => (directFootwork ? Promise.resolve() : nativeTap());
+    bot.swordpvp.sprintTap = () =>
+      directFootwork || bot.pathfinder.goal ? Promise.resolve() : nativeTap();
     bot.swordpvp.causeCritical = () =>
-      decision?.action === "finish" ? Promise.resolve(false) : nativeCritical();
+      decision?.action === "finish" || bot.pathfinder.goal
+        ? Promise.resolve(false)
+        : nativeCritical();
+    if (nativeRotate)
+      bot.swordpvp.rotate = () => {
+        if (!bot.pathfinder.goal) return nativeRotate();
+      };
     bot.swordpvp.on("attackedTarget", footwork.attacked);
   }
   const mace = createMaceCombat(bot, settings, { now, random, onStatus, onError });
@@ -499,6 +537,7 @@ function createCombatController(
     );
   }
   function stopEngines() {
+    directFootwork = false;
     footwork.reset();
     mace.stop();
     crystalMovement.cancel();
@@ -547,6 +586,7 @@ function createCombatController(
     pursuit = null;
     pearlIntent = null;
     lastEnemyPosition = null;
+    nextClosingPlanAt = 0;
     bot.launcherTravel?.stopChase();
     if (target) bot.tracker?.stopTrackingEntity(target);
     target = null;
@@ -560,11 +600,7 @@ function createCombatController(
     if (!allowed(entity)) throw new Error("Target is missing or is the bot itself");
     if (style === "crystal" && !settings.crystalEnabled)
       throw new Error("Auto Crystal is disabled in extension settings");
-    const maxRange = forWork
-      ? Math.max(12, settings.targetRange)
-      : style === "melee"
-        ? settings.targetRange
-        : Math.max(settings.targetRange, settings.bowRange);
+    const maxRange = combatRange(style, forWork);
     if (distance(entity) > maxRange) throw new Error("Target is too far away");
     const previousSuspended = suspended;
     stop(false);
@@ -578,6 +614,14 @@ function createCombatController(
     nextActionAt = now() + settings.reactionMs;
     nextShotAt = now();
     onStatus(`combat target: ${entity.username || entity.name || entity.id}; ${style}`);
+  }
+  function combatRange(style = requestedStyle, forWork = workTarget) {
+    const range = forWork
+      ? Math.max(12, settings.targetRange)
+      : style === "melee"
+        ? settings.targetRange
+        : Math.max(settings.targetRange, settings.bowRange);
+    return !forWork && settings.pearlChase ? Math.max(range, settings.pearlMaxDistance) : range;
   }
   function hasBow() {
     const items = carriedItems(bot);
@@ -676,7 +720,7 @@ function createCombatController(
   }
 
   function probeCrystal() {
-    if (now() < crystalProbeAt) return crystalProbe;
+    if (now() < crystalProbeAt && !crystals.waiting && !crystals.finishing) return crystalProbe;
     const near = distance(target) <= 3.5 || now() < crystalPressureUntil;
     crystalProbeAt = now() + (near ? 150 : 300);
     crystalProbe = distance(target) <= 12 || crystals.active ? crystals.plan(target, now()) : null;
@@ -820,9 +864,6 @@ function createCombatController(
         const shield = items.find((item) => item.name === "shield");
         if (settings.shield && shield && !bot.supportFeature("doesntHaveOffHandSlot"))
           await equipCombatItem(bot, shield, "off-hand", current);
-      } else if (nextMode === "crystal") {
-        const crystal = items.find((item) => item.name === "end_crystal");
-        if (settings.crystalPlace && crystal) await equipCombatItem(bot, crystal, "hand", current);
       }
       if (revision !== generation || !target) return;
       mode = nextMode;
@@ -843,6 +884,15 @@ function createCombatController(
         nextCrystalAt = now();
       }
       if (revision === generation) pending = false;
+      // Start the selected sequence immediately; the action itself still waits
+      // for item swaps, cooldowns and server confirmation.
+      if (revision === generation && mode === "crystal") {
+        bowBusy = true;
+        actionTask = updateCrystal().finally(() => {
+          bowBusy = false;
+        });
+        await actionTask;
+      } else if (revision === generation && mode === "mace") mace.tick();
     } finally {
       release();
     }
@@ -1216,6 +1266,46 @@ function createCombatController(
     // Continue ordinary combat until there is a reachable, safe landing.
     return false;
   }
+  function closeWithPearl() {
+    if (
+      workTarget ||
+      !settings.pearlChase ||
+      requestedStyle === "ranged" ||
+      pursuit ||
+      recovery ||
+      mace.airborne ||
+      (mode === "crystal" && crystals.active) ||
+      now() < nextActionAt ||
+      now() < nextClosingPlanAt ||
+      distance(target) < Math.max(8, settings.pearlMinDistance) ||
+      distance(target) > settings.pearlMaxDistance
+    )
+      return false;
+    nextClosingPlanAt = now() + 750;
+    const enemy = target;
+    const flight = { enemy, teleported: true, attempted: false, until: now() + 9000 };
+    if (
+      !bot.launcherTravel?.chase(
+        () => enemy.position,
+        () => pursuit === flight && target === enemy && allowed(enemy),
+        ({ thrown }) => {
+          if (pursuit !== flight) return;
+          flight.attempted = thrown;
+          // An unsuccessful plan must resume foot pursuit, not wait in place.
+          if (!thrown) pursuit = null;
+          queueMicrotask(tick);
+        },
+      )
+    )
+      return false;
+    pursuit = flight;
+    generation++;
+    pending = false;
+    stopEngines();
+    bot.clearControlStates();
+    onStatus(`pearl close: ${enemy.username || enemy.name}`);
+    return true;
+  }
   function tick() {
     if (
       disposed ||
@@ -1244,13 +1334,10 @@ function createCombatController(
       if (!workTarget) {
         sampleEnemyTeleport();
         observePearlHand();
-        if (pursuePearl()) return;
+        const finishingCrystal = mode === "crystal" && (crystals.waiting || crystals.finishing);
+        if (!mace.airborne && !finishingCrystal && pursuePearl()) return;
       }
-      const maxRange = workTarget
-        ? Math.max(12, settings.targetRange)
-        : requestedStyle === "melee"
-          ? settings.targetRange
-          : Math.max(settings.targetRange, settings.bowRange);
+      const maxRange = combatRange();
       if (!allowed(target) || (distance(target) > maxRange && !pursuit)) {
         stop(false);
         return;
@@ -1263,6 +1350,7 @@ function createCombatController(
         // Healing preempts slow aim/equip work, but not a live airborne smash.
         if (recover()) return;
       }
+      if (closeWithPearl()) return;
       if (bot.launcherPearling || pending || bowBusy || now() < nextActionAt) return;
       const nextMode = chooseMode();
       if (!nextMode) {
@@ -1445,6 +1533,7 @@ function createCombatController(
         bot.swordpvp.doStrafe = nativeStrafe;
         bot.swordpvp.sprintTap = nativeTap;
         bot.swordpvp.causeCritical = nativeCritical;
+        if (nativeRotate) bot.swordpvp.rotate = nativeRotate;
         bot.swordpvp.off("attackedTarget", footwork.attacked);
       }
       bot.removeListener("physicsTick", tick);

@@ -94,15 +94,17 @@ function crystalOpportunity(s, action, settings) {
     (lethal ? 30 : 0) +
     (action.type === "break" ? 2 : 0) +
     (s.enemyUsingItem ? 2 : 0);
-  return score >= 2
+  return score >= 2 || action.committed
     ? {
         use: true,
-        score,
-        reason: lethal
-          ? "safe predicted crystal finish"
-          : action.type === "break"
-            ? "profitable immediate explosion"
-            : "profitable crystal setup",
+        score: score + (action.committed ? 8 : 0),
+        reason: action.committed
+          ? "complete committed crystal setup"
+          : lethal
+            ? "safe predicted crystal finish"
+            : action.type === "break"
+              ? "profitable immediate explosion"
+              : "profitable crystal setup",
       }
     : reject("weapon pressure is more valuable than this setup");
 }

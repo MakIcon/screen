@@ -347,6 +347,30 @@ test("classic follow goals use the native planner and repeated goals do not rest
   f.controller.dispose();
 });
 
+test("combat navigation tolerates small distant updates but reacts to teleports and close targets", async () => {
+  const f = fixture();
+  try {
+    f.bot.pathfinder.setGoal({ entity: f.enemy, rangeSq: 4 });
+    const goal = f.calls.find(([name]) => name === "goto")[1];
+    f.enemy.position.x += 1.5;
+    await f.tick(650);
+    assert.equal(goal._hasChanged("entityMoved", f.enemy), false);
+    f.enemy.position.x += 3;
+    assert.equal(goal._hasChanged("entityMoved", f.enemy), true);
+    f.enemy.position.x += 9;
+    assert.equal(goal._hasChanged("entityMoved", f.enemy), true, "teleports bypass replan spacing");
+    f.bot.entity.position.x = f.enemy.position.x - 2.5;
+    f.enemy.position.x += 0.6;
+    assert.equal(
+      goal._hasChanged("entityMoved", f.enemy),
+      true,
+      "close escape wakes the follow goal",
+    );
+  } finally {
+    f.controller.dispose();
+  }
+});
+
 const rigRequire = createRequire(new URL("./pathfinding/package.json", import.meta.url));
 rigRequire("ts-node").register({
   project: fileURLToPath(new URL("./pathfinding/tsconfig.json", import.meta.url)),
@@ -457,7 +481,9 @@ for (const engine of ["custom", "basic"]) {
       try {
         controller.select(target);
         await waitForHit(0);
-        assert.ok(moves.includes("ForwardJump"), `jump onto the ledge: ${moves}`);
+        if (engine === "basic")
+          assert.ok(moves.includes("ForwardJump"), `jump onto the ledge: ${moves}`);
+        assert.ok(bot.entity.position.y >= 65, "direct pursuit or the route jumps onto the ledge");
         const firstHit = hits.length;
         target.position = new Vec3(12.5, 65, 0.5);
         bot.emit("entityMoved", target);
@@ -853,8 +879,12 @@ function recoveryFixture(settings = {}) {
   };
 }
 
-for (const version of ["1.20.4", "26.1.2"]) {
-  test(`aggressive pursuit repeatedly hits a moving player with real physics on ${version}`, async () => {
+for (const [version, startDistance] of [
+  ["1.20.4", 8],
+  ["26.1.2", 8],
+  ["26.1.2", 30],
+]) {
+  test(`aggressive pursuit repeatedly hits a moving player from ${startDistance} blocks on ${version}`, async () => {
     const { rig, world } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5), {
       renderDistance: 2,
     });
@@ -878,7 +908,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
       username: "Runner",
       isValid: true,
       type: "player",
-      position: new Vec3(8.5, 64, 0.5),
+      position: new Vec3(startDistance + 0.5, 64, 0.5),
       velocity: new Vec3(0.08, 0, 0),
       width: 0.6,
       height: 1.8,
@@ -910,12 +940,13 @@ for (const version of ["1.20.4", "26.1.2"]) {
         shield: false,
         shieldBreak: false,
         sprintTap: "sprintcancel",
+        pearlChase: true,
       },
       { now: () => time, onError: (error) => errors.push(error) },
     );
     try {
       controller.select(enemy);
-      for (let tick = 0; tick < 110; tick++) {
+      for (let tick = 0; tick < (startDistance > 24 ? 240 : 110); tick++) {
         time += 50;
         enemy.position.x += 0.08;
         bot.emit("physicsTick");

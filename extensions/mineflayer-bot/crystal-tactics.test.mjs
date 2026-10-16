@@ -221,6 +221,55 @@ test("crystal movement holds an already reached position even with a wall ahead"
   }
 });
 
+test("auto starts a crystal setup immediately and keeps it ahead of wind/mace selection", async () => {
+  const f = fixture("26.1.2", { style: "auto", crystalIntervalMs: 50 });
+  const Item = mf("prismarine-item")(f.bot.registry);
+  for (const [slot, name] of [
+    [38, "mace"],
+    [39, "wind_charge"],
+    [40, "diamond_axe"],
+  ]) {
+    const item = new Item(f.bot.registry.itemsByName[name].id, 1);
+    item.slot = slot;
+    f.bot.inventory.slots[slot] = item;
+  }
+  const equips = [],
+    equip = f.bot.equip;
+  f.bot.equip = async (item) => {
+    equips.push(item.name);
+    await equip(item);
+  };
+  // Starting with a weapon exposes redundant crystal -> obsidian swaps.
+  await equip(f.bot.inventory.slots[38]);
+  try {
+    f.controller.select(f.enemy);
+    await f.tick(0);
+    assert.equal(
+      f.packets.filter((p) => p.name === "block_place").length,
+      1,
+      "first action on selection tick",
+    );
+    assert.equal(equips[0], "obsidian", "equip the actual next construction item");
+    for (let tick = 1; tick < 16 && !attacks(f).length; tick++) {
+      await f.tick(tick * 50);
+      assert.match(f.controller.status, /^crystal /);
+    }
+    assert.equal(placements(f).length, 1);
+    assert.equal(attacks(f).length, 1);
+    assert.ok(
+      attacks(f)[0].time <= 300,
+      `confirmed chain has no extra planner waits: ${attacks(f)[0].time}`,
+    );
+    assert.equal(
+      f.packets.some((p) => p.held === "wind_charge" && p.name === "use_item"),
+      false,
+    );
+    assert.deepEqual(f.errors, []);
+  } finally {
+    f.close();
+  }
+});
+
 test("crystal movement serializes turns and stopping waits for an outstanding aim", async () => {
   const f = fixture("26.1.2");
   const movement = createCrystalMovement(f.bot);

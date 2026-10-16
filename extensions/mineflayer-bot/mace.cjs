@@ -116,7 +116,14 @@ function createMaceCombat(
   }
   function abortLaunch() {
     controlsOff();
-    state = null;
+    state =
+      bot.entity.onGround || state?.phase !== "burst"
+        ? null
+        : {
+            phase: "land",
+            started: now(),
+            peak: bot.entity.position.y,
+          };
     retryAt = now() + 1000;
   }
   function beginJump() {
@@ -286,8 +293,19 @@ function createMaceCombat(
         state = { phase: "flight", peak: entity.position.y, started: time };
       } else if (entity.onGround || time - state.hitAt > 650) {
         retryAt = Math.max(retryAt, state.confirmed ? nextWindAt : time + 1000);
-        state = null;
+        state = entity.onGround ? null : { phase: "land", peak: state.peak, started: time };
       }
+      return;
+    }
+    if (state?.phase === "land") {
+      if (entity.onGround || entity.isInWater || entity.isInLava || time - state.started > 8000) {
+        controlsOff();
+        state = null;
+      } else
+        run(async (revision) => {
+          await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.8, 0), true);
+          if (current(revision)) steer();
+        });
       return;
     }
     if (state?.phase === "flight") {

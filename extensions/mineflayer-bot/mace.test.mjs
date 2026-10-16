@@ -580,6 +580,57 @@ test("mace defense predicts interception and ignores a pass, grounded carrier, w
   }
 });
 
+test("auto keeps its mace after the hit confirmation expires until landing, even against a raised shield", async () => {
+  const f = fixture({ style: "auto", weapon: "sword", pearlChase: true });
+  f.items.push({ name: "diamond_sword" }, { name: "diamond_axe" });
+  f.mace.dispose();
+  const controller = createCombatController(f.bot, f.settings, {
+    ...f.options,
+    loadPlugins: false,
+  });
+  let pearlAttempts = 0;
+  f.bot.launcherTravel = {
+    chase: () => {
+      pearlAttempts++;
+      return false;
+    },
+    stopChase() {},
+  };
+  const step = async (time, y, vy, onGround = false) => {
+    f.setTime(time);
+    Object.assign(f.bot.entity, { onGround });
+    f.bot.entity.position.y = y;
+    f.bot.entity.velocity.y = vy;
+    f.bot.emit("physicsTick");
+    await controller.idleTask;
+    await flush();
+  };
+  try {
+    controller.select(f.enemy);
+    await step(0, 64, 0, true);
+    await step(50, 64.42, 0.33);
+    await step(100, 71, 0);
+    await step(200, 65.5, -0.9);
+    assert.equal(f.calls.filter(([name]) => name === "hit").length, 1);
+    f.enemy.equipment[1] = { name: "shield" };
+    f.enemy.metadata[0] = 3;
+    await step(900, 65.4, -0.3);
+    await step(950, 65.2, -0.4);
+    assert.match(controller.status, /^mace /);
+    assert.equal(f.bot.heldItem.name, "mace");
+    f.enemy.position.x = 20;
+    await step(1000, 65, -0.5);
+    assert.equal(pearlAttempts, 0, "pearl pursuit cannot replace the airborne sequence");
+    f.enemy.position.x = 2;
+    await step(1050, 64, 0, true);
+    await step(1100, 64, 0, true);
+    assert.match(controller.status, /^melee /, "shield breaking may take over after landing");
+    assert.deepEqual(f.errors, []);
+  } finally {
+    controller.dispose();
+  }
+});
+
 test("mace shield works with arrow defense off, samples motion and resumes after the landing", async () => {
   const f = fixture({ maceDefense: true, bowDefense: false });
   f.mace.dispose();

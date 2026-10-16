@@ -10,7 +10,8 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
     lastHit = -Infinity;
   let routeUntil = 0,
     direct = false,
-    obstacleJump = false;
+    obstacleJump = false,
+    progress = null;
   function reset() {
     revision++;
     direct = false;
@@ -18,6 +19,7 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
     nextSideAt = 0;
     lastHit = -Infinity;
     obstacleJump = false;
+    progress = null;
   }
   function tick(target, decision) {
     if (!target || !bot.setControlState || !bot.blockAt) return false;
@@ -26,16 +28,21 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
       delta = target.position.minus(position);
     const distance = Math.hypot(delta.x, delta.z);
     const segment =
-      distance <= 16 &&
       !bot.entity.isInWater &&
       !bot.entity.isInLava &&
-      Math.abs(delta.y) < 0.6 &&
-      walkSegment(bot, target.position, 1.8, 1.2);
-    if (!segment || now() < routeUntil) {
-      if (!segment) routeUntil = now() + 300;
+      Math.abs(delta.y) <= 1.1 &&
+      walkSegment(bot, target.position, 1.8, direct ? 1.5 : 6);
+    const stalled =
+      progress && now() - progress.at >= 650 && position.distanceTo(progress.position) < 0.12;
+    if (!segment || stalled || now() < routeUntil) {
+      // Give the route enough time to clear a corner before reclaiming it.
+      if ((direct && !segment) || stalled) routeUntil = now() + 1800;
+      progress = null;
       if (direct) {
         for (const key of ["forward", "left", "right", "back", "sprint"])
           bot.setControlState(key, false);
+        if (obstacleJump) bot.setControlState("jump", false);
+        obstacleJump = false;
         direct = false;
       }
       return false;
@@ -61,6 +68,9 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
       "forward",
       pressing && Math.abs(turn) < 0.65 && !(tap && settings.sprintTap === "wtap"),
     );
+    if (!pressing || Math.abs(turn) >= 0.65) progress = null;
+    else if (!progress || position.distanceTo(progress.position) >= 0.12)
+      progress = { at: now(), position: position.clone() };
     bot.setControlState(
       "sprint",
       pressing &&

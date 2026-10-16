@@ -190,6 +190,55 @@ test("director decision cost stays comfortably below a physics tick", (t) => {
   }
 });
 
+test("a committed crystal setup survives score fluctuations but still obeys safety and pressure", () => {
+  const action = { type: "cover", damage: 5, selfDamage: 2, nextCover: {}, committed: true };
+  assert.equal(crystalOpportunity(situation, { ...action, committed: false }, defaults).use, false);
+  assert.equal(crystalOpportunity(situation, action, defaults).use, true);
+  for (const [snapshot, blast] of [
+    [{ health: 8 }, {}],
+    [{ damage: 6 }, {}],
+    [{ action: "finish" }, {}],
+    [{}, { selfDamage: 7 }],
+    [{}, { damage: 2 }],
+  ])
+    assert.equal(
+      crystalOpportunity({ ...situation, ...snapshot }, { ...action, ...blast }, defaults).use,
+      false,
+    );
+});
+
+test("stalled direct pursuit yields to a route long enough to clear the obstacle", () => {
+  const f = fixture(),
+    controls = {};
+  let time = 0;
+  Object.assign(f.bot.entity, { yaw: -Math.PI / 2, width: 0.6, onGround: true });
+  f.bot.setControlState = (key, value) => {
+    controls[key] = value;
+  };
+  f.bot.pathfinder = { defaultMoveSettings: {} };
+  f.bot.blockAt = (p) => ({
+    name: p.y < 64 ? "stone" : "air",
+    boundingBox: p.y < 64 ? "block" : "empty",
+  });
+  f.target.position.x = 30;
+  const movement = createCombatFootwork(f.bot, defaults, { now: () => time });
+  try {
+    assert.equal(movement.tick(f.target), true, "distant flat targets use continuous sprint");
+    assert.equal(controls.sprint, true);
+    time = 700;
+    assert.equal(movement.tick(f.target), false, "collision without progress triggers routing");
+    assert.equal(controls.forward, false);
+    f.bot.entity.position.x += 1;
+    time = 1500;
+    assert.equal(movement.tick(f.target), false, "one clear metre does not cancel the bypass");
+    time = 2600;
+    assert.equal(movement.tick(f.target), true);
+    assert.equal(controls.forward, true);
+  } finally {
+    f.brain.dispose();
+  }
+});
+
 test("crystals compete with weapon pressure by damage, health, setup time and known lethal damage", () => {
   const assess = (snapshot = {}, action = {}) =>
     crystalOpportunity(

@@ -1,5 +1,33 @@
 # PvP, mace and bow combat
 
+## Continuous pursuit and committed combinations (1.15.3)
+
+Adaptive melee sprints along checked open ground even beyond 16 blocks. When
+progress stalls for 650 ms, or an obstacle blocks the corridor, navigation owns
+movement and aim for at least 1.8 seconds before a clear six-block corridor can
+return control to direct pursuit. Combat rotation, strafing, critical jumps and
+sprint taps yield to that route. Distant entity updates use a 2–4 block margin
+and at least 600 ms between replans; close escapes and large teleports update
+immediately. Both attack engines retain selected enemies through the director's
+allowed range, including pearl range when chase is enabled.
+
+A crystal setup equips its next required item and starts on the selection tick.
+Pending confirmations are checked each tick rather than waiting for the layout
+cache. A committed base/cover sequence may finish despite a marginal score change,
+with a bounded commitment; damage, health, pressure, owner and geometry checks
+still apply. The configured action interval remains enforced. Confirmed crystals
+finish before pearl pursuit. After a mace strike, an expired hit-confirmation
+window retains the airborne controller until landing, so Auto cannot swap to an
+axe or initiate another pearl in midair. Survival rescue can still take over.
+
+With `pearlChase`, melee/auto/crystal combat also tries a safe throw at a distant
+selected opponent who has never used a pearl. The threshold is
+`max(8, pearlMinDistance)` and the maximum is `pearlMaxDistance`. Failed plans
+continue on foot and are reconsidered at most once per 750 ms. A throw requires
+a landing within 2.5 blocks of the current destination, checked again after aim.
+Only one throw may be active; arrival resumes combat against the same enemy.
+Explicit ranged style retains its distance unless following an enemy teleport.
+
 ## Adaptive combat director (1.15.0)
 
 The **АГРЕССИВНЫЙ** preset enables adaptive combat, combat healing, crystal
@@ -370,8 +398,9 @@ and disconnect cancel pending throws; a pearl already thrown cannot be recalled.
 Projectile randomness and server plugins can change the actual landing, so
 server testing is still needed for edge/platform throws.
 
-`pearlChase` (disabled by default) enables the **ПРЕСЛЕДОВАТЬ ЖЕМЧУГ ПРОТИВНИКА**
-toggle. With PvP and pearl use enabled, the bot recognizes the selected player's
+`pearlChase` (disabled by default) enables the **ПРЕСЛЕДОВАНИЕ ЖЕМЧУГОМ**
+toggle. It works with PvP enabled independently of `pearlEnabled`, which controls
+ordinary travel. In addition to closing long distances, the bot recognizes the selected player's
 pearl from its spawn packet and predicts its impact. Modern owner IDs are checked;
 legacy ownerless packets require an unambiguous nearby thrower. Spawn velocity,
 velocity updates and observed projectile movement drive the prediction.

@@ -598,8 +598,12 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
           if (choice.finish) break;
         }
       }
+    const continuing = (action) => ({ ...action, committed: committed(action, time) });
     const best = () =>
-      candidates.filter((action) => scoreAction?.(action) !== -Infinity).sort(compare)[0] ?? null;
+      candidates
+        .map(continuing)
+        .filter((action) => scoreAction?.(action) !== -Infinity)
+        .sort(compare)[0] ?? null;
     const immediate = best();
     if (immediate) return immediate;
     candidates.length = 0;
@@ -663,7 +667,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
             : choice.nextCover
               ? { ...choice, ...choice.nextCover }
               : choice;
-          if (scoreAction?.(action) !== -Infinity) candidates.push(action);
+          if (scoreAction?.(continuing(action)) !== -Infinity) candidates.push(action);
         }
       }
       if (cycle && !candidates.length && time - cycle.progressAt >= settings.crystalIntervalMs) {
@@ -759,6 +763,15 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
     // point just creates an endless shuffle without improving the next action.
     return null;
   }
+  function committed(action, time) {
+    const base = action.base?.position ?? action.source?.offset(-0.5, -1, -0.5).floored();
+    return Boolean(
+      cycle &&
+      base?.equals(cycle.base) &&
+      time - cycle.startedAt < Math.max(4000, settings.crystalIntervalMs * 6) &&
+      time - cycle.progressAt <= settings.crystalSpawnTimeoutMs + settings.crystalIntervalMs,
+    );
+  }
   return {
     plan,
     placement,
@@ -786,8 +799,10 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
       return reason;
     },
     verify(target, action, time) {
-      if (action.type === "place")
-        return aimed(placement(target, bot.blockAt(action.base.position), time));
+      if (action.type === "place") {
+        const verified = aimed(placement(target, bot.blockAt(action.base.position), time));
+        return verified && { ...verified, committed: committed(verified, time) };
+      }
       if (action.type === "break") return aimed(breaking(target, action.crystal, time));
       const current = plan(target, time);
       return current?.type === action.type && current.position.equals(action.position)
@@ -803,6 +818,7 @@ function createCrystalPlanner(bot, settings, isOwner = () => false, { scoreActio
             covers: 0,
             attempts: 0,
             blockAttempts: 0,
+            startedAt: time,
             progressAt: time,
             crystalId: action.crystal?.id,
           };
