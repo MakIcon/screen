@@ -37,6 +37,21 @@ function queueInventoryTask(bot, action) {
   return operation;
 }
 
+function meleeCooldownTicks(bot, item = bot.heldItem) {
+  if (bot.supportFeature("doesntHaveOffHandSlot")) return 0;
+  const speeds = {
+    wooden_axe: 0.8,
+    stone_axe: 0.8,
+    iron_axe: 0.9,
+    golden_axe: 1,
+    diamond_axe: 1,
+    netherite_axe: 1,
+    mace: 0.6,
+  };
+  const speed = item?.name.endsWith("_sword") ? 1.6 : speeds[item?.name];
+  return speed ? Math.ceil(20 / speed) : 0;
+}
+
 function equipCombatItem(bot, item, hand, current = () => true) {
   return queueInventoryTask(bot, async () => {
     if (!current() || bot.launcherSurvival?.busy || bot.launcherProduction?.busy) return;
@@ -55,6 +70,7 @@ module.exports = {
   offhandItem,
   carriedItems,
   bestMeleeWeapon,
+  meleeCooldownTicks,
   equipCombatItem,
   queueInventoryTask,
 };

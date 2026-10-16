@@ -1,4 +1,10 @@
-const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
+const {
+  carriedItems,
+  bestMeleeWeapon,
+  equipCombatItem,
+  offhandItem,
+  meleeCooldownTicks,
+} = require("./combat-inventory.cjs");
 
 const originals = Symbol("launcherShieldBreakOriginals");
 
@@ -18,7 +24,13 @@ function targetBlocking(bot, entity) {
   );
 }
 
-function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
+function installShieldBreak(
+  bot,
+  settings,
+  aimedAt,
+  onError = () => {},
+  focus = () => Promise.resolve(),
+) {
   const engine = bot.swordpvp;
   const preferredWeapon = settings.weapon === "mace" ? "sword" : settings.weapon;
   engine.launcherShieldBreak?.dispose();
@@ -27,37 +39,52 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
     stop: engine.stop.bind(engine),
     causeCritical: engine.causeCritical.bind(engine),
     toggleShield: engine.toggleShield.bind(engine),
+    doMove: engine.doMove.bind(engine),
+    doStrafe: engine.doStrafe.bind(engine),
   };
   const original = engine[originals];
   let state = null;
   let task = Promise.resolve();
   let disposed = false;
   let attacks = 0;
+  let ownsShield = false;
+  let restoring = false;
+  let revision = 0;
   const attacked = () => {
     attacks++;
   };
   engine.on("attackedTarget", attacked);
   function cooldown() {
-    const speeds = {
-      wooden_axe: 0.8,
-      stone_axe: 0.8,
-      iron_axe: 0.9,
-      golden_axe: 1,
-      diamond_axe: 1,
-      netherite_axe: 1,
-    };
-    return Math.max(
-      engine.meleeAttackRate.getTicks(bot.heldItem),
-      Math.ceil(20 / (speeds[bot.heldItem?.name] ?? 1)),
-    );
+    return Math.max(engine.meleeAttackRate.getTicks(bot.heldItem), meleeCooldownTicks(bot));
   }
 
   function reset() {
-    if (state) engine.tickOverride = false;
+    revision++;
+    if (state || restoring) engine.tickOverride = false;
+    restoring = false;
     state = null;
     bot.launcherBreakingShield = false;
     bot.launcherAxeAttacking = false;
     engine.weaponOfChoice = preferredWeapon;
+    shield(false);
+    engine.clearShieldToggleListener();
+  }
+  function shield(raise) {
+    const available =
+      settings.shield &&
+      !bot.supportFeature("doesntHaveOffHandSlot") &&
+      offhandItem(bot)?.name === "shield";
+    if (raise && available) {
+      if (!bot.usingHeldItem) bot.activateItem(true);
+      ownsShield = true;
+    } else if (ownsShield) {
+      ownsShield = false;
+      if (bot.usingHeldItem) bot.deactivateItem();
+    }
+  }
+  function holdPosition() {
+    for (const control of ["forward", "back", "left", "right", "sprint"])
+      bot.setControlState(control, false);
   }
   function attackReason(target) {
     if (settings.shieldBreak && targetBlocking(bot, target)) return "disableshield";
@@ -72,8 +99,8 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       !disposed &&
       state === action &&
       engine.target === action.target &&
-      attackReason(action.target) &&
-      engine.botReach() <= settings.attackRange &&
+      action.target.isValid !== false &&
+      engine.botReach() <= settings.attackRange + (bot.entity.onGround ? 0.4 : 1.5) &&
       bot.health > 0 &&
       !bot.launcherDefendingBow &&
       !bot.launcherSurvival?.busy
@@ -92,20 +119,45 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
     }
     const target = engine.target;
     const reason = attackReason(target);
-    if (state && (state.target !== target || !reason || engine.botReach() > settings.attackRange)) {
+    if (
+      state &&
+      (state.target !== target ||
+        (!reason && bot.entity.onGround) ||
+        engine.botReach() > settings.attackRange + (bot.entity.onGround ? 0.4 : 1.5))
+    ) {
       reset();
       const preferred = bestMeleeWeapon(bot, preferredWeapon);
-      if (preferred)
-        task = equipCombatItem(
-          bot,
-          preferred,
-          "hand",
-          () => !disposed && !state && engine.target === target && !bot.launcherDefendingBow,
-        ).catch(onError);
+      if (preferred) {
+        const rev = revision;
+        const valid = () =>
+          !disposed &&
+          rev === revision &&
+          !state &&
+          engine.target === target &&
+          !bot.launcherDefendingBow &&
+          !bot.launcherSurvival?.busy;
+        restoring = true;
+        engine.tickOverride = true;
+        task = equipCombatItem(bot, preferred, "hand", valid)
+          .then(() => {
+            if (valid())
+              engine.ticksToNextAttack = Math.max(
+                engine.ticksToNextAttack,
+                engine.meleeAttackRate.getTicks(bot.heldItem),
+              );
+          })
+          .catch(onError)
+          .finally(() => {
+            if (rev === revision && !state) {
+              restoring = false;
+              engine.tickOverride = false;
+            }
+          });
+      }
     }
     if (state) {
-      state.reason = reason;
-      bot.launcherBreakingShield = reason === "disableshield";
+      if (reason) state.reason = reason;
+      bot.launcherBreakingShield = state.reason === "disableshield";
     }
     if (state || !reason || engine.botReach() > settings.attackRange || engine.tickOverride) return;
     const axe = bot.heldItem?.name.endsWith("_axe") ? bot.heldItem : bestMeleeWeapon(bot, "axe");
@@ -132,15 +184,25 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
       });
   }
   function tick() {
-    if (!state || !current(state) || state.phase === "equip") return;
+    if (!state || !current(state) || ["equip", "strike"].includes(state.phase)) return;
     const action = state;
     bot.setControlState("sprint", false);
-    if (bot.usingHeldItem) bot.deactivateItem();
     // Shield breaking owns its critical jump independently of the general crit
     // option. Ordinary axe combat also waits for a falling hit on every cycle.
     if (!bot.entity.isInWater && !bot.entity.isInLava) {
       if (action.phase === "charge") {
-        if (engine.ticksToNextAttack > 8) return;
+        if (
+          engine.ticksToNextAttack > 8 ||
+          engine.botReach() > Math.min(settings.attackRange - 0.2, 2.5) ||
+          !aimedAt(action.target) ||
+          bot.pathfinder.goal
+        ) {
+          shield(true);
+          return;
+        }
+        holdPosition();
+        shield(false);
+        if (bot.usingHeldItem) bot.deactivateItem();
         if (bot.entity.onGround) {
           bot.setControlState("jump", true);
           bot.setControlState("jump", false);
@@ -149,24 +211,41 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
         action.airTicks = 0;
         return;
       }
+      holdPosition();
+      shield(false);
       action.airTicks++;
       if (bot.entity.onGround || bot.entity.velocity.y >= 0) {
         if (action.airTicks >= 12) action.phase = "charge";
         return;
       }
     }
-    if (engine.ticksToNextAttack > 0 || !aimedAt(action.target)) return;
+    if (engine.ticksToNextAttack > 0 || engine.botReach() > settings.attackRange) return;
     // The regular update still maintains range, visibility, aim and timers.
     // Only this branch may strike while the axe cycle owns the attack.
     const before = attacks;
-    void engine
-      .attemptAttack(action.reason)
-      .then(() => {
+    action.phase = "strike";
+    task = Promise.resolve(focus(action.target, true))
+      .then(async () => {
+        if (
+          !current(action) ||
+          engine.botReach() > settings.attackRange ||
+          !aimedAt(action.target) ||
+          (!bot.entity.isInWater &&
+            !bot.entity.isInLava &&
+            (bot.entity.onGround || bot.entity.velocity.y >= 0))
+        )
+          return;
+        shield(false);
+        if (bot.usingHeldItem) bot.deactivateItem();
+        await engine.attemptAttack(action.reason);
         if (current(action) && attacks > before)
           engine.ticksToNextAttack = Math.max(engine.ticksToNextAttack, cooldown());
       })
-      .catch(onError);
-    action.phase = "charge";
+      .catch(onError)
+      .finally(() => {
+        if (state === action)
+          action.phase = attacks > before || bot.entity.onGround ? "charge" : "fall";
+      });
   }
   function update() {
     prepare();
@@ -179,9 +258,32 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
   engine.update = update;
   engine.checkForShield = checkForShield;
   engine.causeCritical = (...args) =>
-    state ? Promise.resolve(false) : original.causeCritical(...args);
-  engine.toggleShield = (...args) =>
-    state ? Promise.resolve(false) : original.toggleShield(...args);
+    state || restoring || ownsShield || targetBlocking(bot, engine.target)
+      ? Promise.resolve(false)
+      : original.causeCritical(...args);
+  engine.doMove = (...args) => {
+    if (state && ["fall", "strike"].includes(state.phase)) return holdPosition();
+    return original.doMove(...args);
+  };
+  engine.doStrafe = (...args) => {
+    if (state || ownsShield || targetBlocking(bot, engine.target)) return;
+    return original.doStrafe(...args);
+  };
+  engine.toggleShield = () => {
+    if (state) return Promise.resolve(false);
+    engine.clearShieldToggleListener();
+    const target = engine.target;
+    shield(
+      Boolean(
+        target &&
+        !bot.pathfinder.goal &&
+        engine.wasVisible &&
+        engine.botReach() <= settings.attackRange + 1 &&
+        (restoring || engine.ticksToNextAttack > 0 || targetBlocking(bot, target)),
+      ),
+    );
+    return Promise.resolve();
+  };
   engine.stop = () => {
     reset();
     return original.stop();

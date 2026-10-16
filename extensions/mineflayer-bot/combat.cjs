@@ -7,7 +7,12 @@ const { createCrystalMovement, groundAt, walkSegment } = require("./crystal-move
 const { createCombatBrain, crystalOpportunity, observedHealth } = require("./combat-brain.cjs");
 const { createCombatFootwork } = require("./combat-footwork.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
-const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
+const {
+  carriedItems,
+  bestMeleeWeapon,
+  equipCombatItem,
+  meleeCooldownTicks,
+} = require("./combat-inventory.cjs");
 const { installArmorManager } = require("./armor-manager.cjs");
 const { installShieldBreak, targetBlocking } = require("./melee-shield.cjs");
 const { createMaceCombat } = require("./mace.cjs");
@@ -239,14 +244,33 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     (smoothLook[originalTurnTime](yaw, pitch) * 100) /
     (settings.smoothAimSpeed ?? defaults.smoothAimSpeed);
 
-  function rotateTowardTarget(target) {
-    if (bot.launcherDefendingBow) return;
-    if (!target || !canSeeTarget(bot, target)) return;
-    const point = target.position.offset(0, (target.height ?? 1.8) * 0.9, 0);
-    const rotation = settings.smoothAim
-      ? bot.smoothLook.lookAt(point, true)
-      : bot.lookAt(point, true);
+  function rotateTowardTarget(target, exact = false) {
+    if (bot.launcherDefendingBow || !target || !canSeeTarget(bot, target)) return Promise.resolve();
+    const eyes = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
+    const point = target.position.offset(
+      0,
+      Math.max(0.15, Math.min((target.height ?? 1.8) - 0.15, eyes.y - target.position.y)),
+      0,
+    );
+    const delta = point.minus(eyes);
+    const horizontal = Math.hypot(delta.x, delta.z);
+    const yaw = horizontal < 0.05 ? bot.entity.yaw : Math.atan2(-delta.x, -delta.z);
+    const turn = Math.atan2(Math.sin(yaw - bot.entity.yaw), Math.cos(yaw - bot.entity.yaw));
+    const pitch = Math.atan2(delta.y, horizontal);
+    const limit =
+      settings.smoothAim && !exact ? (0.65 * settings.smoothAimSpeed) / 100 : Math.PI * 2;
+    const clamp = (angle) => Math.max(-limit, Math.min(limit, angle));
+    // Melee updates from the live view once per tick. No queued tween may
+    // continue from an old angle after navigation, shield use or a target turn.
+    bot.smoothLook._cleanupTasks(true);
+    bot.smoothLook._pendingTask = null;
+    const rotation = bot.look(
+      bot.entity.yaw + clamp(turn),
+      bot.entity.pitch + clamp(pitch - bot.entity.pitch),
+      true,
+    );
     void rotation.catch(onError);
+    return rotation;
   }
   function aimedAt(target) {
     if (!target || !canSeeTarget(bot, target)) return false;
@@ -322,12 +346,13 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   }
   const customTiming = bot.swordpvp.meleeAttackRate.getTicks.bind(bot.swordpvp.meleeAttackRate);
   bot.swordpvp.meleeAttackRate.getTicks = (...args) =>
-    Math.max(customTiming(...args), Math.ceil(20 / settings.cps));
+    Math.max(customTiming(...args), meleeCooldownTicks(bot, args[0]), Math.ceil(20 / settings.cps));
   const customAttempt = bot.swordpvp.attemptAttack.bind(bot.swordpvp);
   bot.swordpvp.attemptAttack = (reason) => {
     if (bot.launcherDefendingBow || bot.launcherSurvival?.busy) return Promise.resolve();
     if (bot.launcherAxeAttacking && !["disableshield", "axecritical"].includes(reason))
       return Promise.resolve();
+    if (reason === "normal" && targetBlocking(bot, bot.swordpvp.target)) return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
     if (settings.adaptiveCombat && bot.swordpvp.ticksToNextAttack > 0) return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
@@ -336,7 +361,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     }
     return customAttempt(reason);
   };
-  installShieldBreak(bot, settings, aimedAt, onError);
+  installShieldBreak(bot, settings, aimedAt, onError, rotateTowardTarget);
   bot.pvp.attackRange = settings.attackRange;
   bot.pvp.followRange = Math.max(1, settings.attackRange - 0.5);
   bot.pvp.viewDistance = viewDistance;
@@ -363,7 +388,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   };
   const timing = bot.pvp.meleeAttackRate.getTicks.bind(bot.pvp.meleeAttackRate);
   bot.pvp.meleeAttackRate.getTicks = (...args) =>
-    Math.max(timing(...args), Math.ceil(20 / settings.cps));
+    Math.max(timing(...args), meleeCooldownTicks(bot), Math.ceil(20 / settings.cps));
 }
 
 const HOSTILES = new Set([
@@ -634,6 +659,7 @@ function createCombatController(
   function chooseMode() {
     // Finish an airborne sequence before distance-based bow/crystal selection.
     if (mode === "mace" && mace.airborne) return "mace";
+    if (mode === "melee" && bot.launcherAxeAttacking) return "melee";
     const meleeMode = () => {
       if (workTarget) return "melee";
       const autoMace =

@@ -21,10 +21,15 @@ function groundAt(bot, point) {
   return null;
 }
 
-function walkSegment(bot, destination, range = 0, maxDistance = Infinity) {
+function walkSegment(
+  bot,
+  destination,
+  range = 0,
+  maxDistance = Infinity,
+  start = bot.entity.position,
+) {
   if (!bot.setControlState || !bot.blockAt) return null;
-  const start = bot.entity.position,
-    delta = destination.minus(start);
+  const delta = destination.minus(start);
   const length = Math.hypot(delta.x, delta.z);
   if (length < 0.01) return { jump: false };
   const direction = delta.scaled(1 / length);

@@ -1,4 +1,5 @@
 const { walkSegment } = require("./crystal-movement.cjs");
+const { targetBlocking } = require("./melee-shield.cjs");
 
 // Short, checked movement on open ground. The existing navigator owns walls,
 // water, gaps and elevation changes; sideways movement never delays pursuit.
@@ -11,7 +12,8 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
   let routeUntil = 0,
     direct = false,
     obstacleJump = false,
-    progress = null;
+    progress = null,
+    grounded = null;
   function reset() {
     revision++;
     direct = false;
@@ -20,18 +22,29 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
     lastHit = -Infinity;
     obstacleJump = false;
     progress = null;
+    grounded = null;
   }
   function tick(target, decision) {
     if (!target || !bot.setControlState || !bot.blockAt) return false;
     if (bot.launcherDefendingBow || bot.launcherPearling || bot.launcherSurvival?.busy) return true;
     const position = bot.entity.position,
       delta = target.position.minus(position);
+    if (bot.entity.onGround) grounded = { y: position.y, at: now() };
+    // A normal critical jump is still the same checked ground corridor. Using
+    // the rising feet as ground height used to start a route at every apex.
+    const shortJump =
+      direct &&
+      grounded &&
+      now() - grounded.at < 1000 &&
+      position.y >= grounded.y - 0.1 &&
+      position.y <= grounded.y + 1.6;
+    const groundPosition = shortJump ? position.offset(0, grounded.y - position.y, 0) : position;
     const distance = Math.hypot(delta.x, delta.z);
     const segment =
       !bot.entity.isInWater &&
       !bot.entity.isInLava &&
-      Math.abs(delta.y) <= 1.1 &&
-      walkSegment(bot, target.position, 1.8, direct ? 1.5 : 6);
+      Math.abs(target.position.y - groundPosition.y) <= 1.1 &&
+      walkSegment(bot, target.position, 1.8, direct ? 1.5 : 6, groundPosition);
     const stalled =
       progress && now() - progress.at >= 650 && position.distanceTo(progress.position) < 0.12;
     if (!segment || stalled || now() < routeUntil) {
@@ -61,7 +74,10 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
     direct = true;
     const yaw = Math.atan2(-delta.x, -delta.z);
     const turn = Math.atan2(Math.sin(yaw - bot.entity.yaw), Math.cos(yaw - bot.entity.yaw));
-    const pressing = distance > Math.min(2.1, settings.attackRange - 0.25);
+    const committed = bot.launcherAxeAttacking;
+    const blocking = bot.usingHeldItem && bot.inventory?.slots?.[45]?.name === "shield";
+    const pressing =
+      !(committed && !bot.entity.onGround) && distance > Math.min(2.1, settings.attackRange - 0.25);
     const tap = now() - lastHit < 50 && settings.sprintTap !== "off";
     bot.setControlState("back", false);
     bot.setControlState(
@@ -83,6 +99,9 @@ function createCombatFootwork(bot, settings, { now = Date.now, onError = () => {
     obstacleJump = Boolean(jump);
     const strafe =
       settings.strafe !== "off" &&
+      !committed &&
+      !blocking &&
+      !targetBlocking(bot, target) &&
       distance < settings.attackRange + 0.5 &&
       distance > 1.2 &&
       Math.abs(turn) < 0.4 &&

@@ -768,10 +768,10 @@ for (const engine of ["custom", "basic"]) {
         "turn has intermediate angles",
       );
       tween.update(tween.now() + 1000);
-      bot.emit("physicsTick");
-      await flush();
-      bot.emit("physicsTick");
-      await flush();
+      for (let tick = 0; tick < 12; tick++) {
+        bot.emit("physicsTick");
+        await flush();
+      }
       assert.ok(
         packets.some((packet) => packet.name === "attack"),
         "strike after facing enemy",

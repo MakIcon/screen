@@ -54,6 +54,19 @@ function fixture(version) {
       onGround: bot.entity.onGround,
       vy: bot.entity.velocity.y,
       sprint: bot.getControlState("sprint"),
+      yaw: bot.entity.yaw,
+      pitch: bot.entity.pitch,
+      usingItem: bot.usingHeldItem,
+      aimHit:
+        (name === "attack" || (name === "use_entity" && params.mouse === 1)) &&
+        Number.isFinite(bot.entity.yaw) &&
+        Number.isFinite(bot.entity.pitch) &&
+        bot.util?.raytrace?.entityRaytrace(
+          bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0),
+          bot.util.getViewDir(),
+          3,
+          (entity) => entity.id === 2,
+        )?.id === 2,
       tick: bot.defenseTestTick,
     });
   };
@@ -101,16 +114,31 @@ test("mace combat finishes its airborne axe shield break before resuming wind ju
   enemy.metadata[f.flagsIndex] = 3;
   let time = 0;
   const errors = [];
-  const controller = createCombatController(bot, {
-    weapon: "mace", style: "melee", reactionMs: 0, meleeSkill: 100,
-    smoothAim: false, strafe: "off", sprintTap: "off", criticals: "off",
-    maceDefense: false, shieldBreak: true,
-  }, { now: () => time, onError: (error) => errors.push(error) });
+  const controller = createCombatController(
+    bot,
+    {
+      weapon: "mace",
+      style: "melee",
+      reactionMs: 0,
+      meleeSkill: 100,
+      smoothAim: false,
+      strafe: "off",
+      sprintTap: "off",
+      criticals: "off",
+      maceDefense: false,
+      shieldBreak: true,
+    },
+    { now: () => time, onError: (error) => errors.push(error) },
+  );
   try {
     controller.select(enemy);
     for (let tick = 0; tick < 40; tick++) {
-      bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt }).apply(bot);
-      bot.emit("physicsTick"); await controller.idleTask; await flush();
+      bot.physics
+        .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+        .apply(bot);
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      await flush();
       time += 50;
     }
     const hits = packets.filter((packet) => packet.name === "attack");
@@ -118,18 +146,222 @@ test("mace combat finishes its airborne axe shield break before resuming wind ju
     assert.ok(hits.every((hit) => hit.held === "diamond_axe" && !hit.onGround && hit.vy < 0));
     enemy.metadata[f.flagsIndex] = 0;
     for (let tick = 0; tick < 20; tick++) {
-      bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt }).apply(bot);
-      bot.emit("physicsTick"); await controller.idleTask; await flush();
+      bot.physics
+        .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+        .apply(bot);
+      bot.emit("physicsTick");
+      await controller.idleTask;
+      await flush();
       time += 50;
-      if (packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge")) break;
+      if (packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge"))
+        break;
     }
     assert.match(controller.status, /^mace /);
-    assert.ok(packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge"));
+    assert.ok(
+      packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge"),
+    );
     assert.deepEqual(errors, []);
-  } finally { controller.dispose(); f.rig.stopPassivePhysics(); }
+  } finally {
+    controller.dispose();
+    f.rig.stopPassivePhysics();
+  }
 });
 
 for (const version of ["1.20.4", "26.1.2"]) {
+  test(
+    `default shield/axe combat stays focused across the yaw seam and lands its first falling hit on ${version}`,
+    { timeout: 5000 },
+    async () => {
+      const f = fixture(version),
+        { bot, enemy, packets } = f;
+      f.item(36, "diamond_sword");
+      f.item(37, "diamond_axe");
+      f.item(45, "shield");
+      enemy.position.set(0.51, 64, 2.5);
+      enemy.equipment[1] = { name: "shield" };
+      enemy.metadata[f.flagsIndex] = 3;
+      let time = 0,
+        routes = 0;
+      bot.pathfinder.goto = () => {
+        routes++;
+        return new Promise(() => {});
+      };
+      const errors = [],
+        frames = [];
+      const controller = createCombatController(
+        bot,
+        {
+          style: "melee",
+          reactionMs: 0,
+          meleeSkill: 100,
+          maceDefense: false,
+        },
+        { now: () => time, onError: (error) => errors.push(error) },
+      );
+      try {
+        await bot.look(Math.PI - 0.02, 0, true);
+        controller.select(enemy);
+        for (let tick = 0; tick < 55; tick++) {
+          time = tick * 50;
+          bot.defenseTestTick = tick;
+          enemy.position.x = 0.5 + Math.sin(tick * 0.35) * 0.06;
+          if (
+            packets.some(
+              (p) =>
+                (p.held === "diamond_axe" && p.name === "attack") ||
+                (p.held === "diamond_axe" && p.name === "use_entity" && p.params.mouse === 1),
+            )
+          )
+            enemy.metadata[f.flagsIndex] = 0;
+          bot.physics
+            .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+            .apply(bot);
+          bot.emit("physicsTick");
+          await controller.idleTask;
+          await flush();
+          frames.push({
+            yaw: bot.entity.yaw,
+            airborne: !bot.entity.onGround,
+            left: bot.getControlState("left"),
+            right: bot.getControlState("right"),
+            axe: bot.launcherAxeAttacking,
+          });
+        }
+        const hits = packets.filter(
+          (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+        );
+        const axeHits = hits.filter((p) => p.held === "diamond_axe");
+        assert.equal(
+          axeHits.length,
+          1,
+          "the first server-confirmed shield break completes the axe cycle",
+        );
+        assert.equal(hits[0], axeHits[0], "do not waste a sword hit against the shield");
+        assert.equal(axeHits[0].onGround, false);
+        assert.ok(axeHits[0].vy < 0);
+        assert.equal(
+          axeHits[0].aimHit,
+          true,
+          "the actual view ray hits the enemy at attack publication",
+        );
+        assert.equal(axeHits[0].usingItem, false, "release our shield before striking");
+        assert.ok(
+          axeHits[0].tick <= 25,
+          `lands in the first charged jump, tick=${axeHits[0].tick}`,
+        );
+        assert.equal(
+          frames.some((frame) => frame.axe && (frame.left || frame.right)),
+          false,
+        );
+        assert.ok(frames.some((frame) => frame.axe && frame.airborne));
+        assert.equal(routes, 0, "the jump apex never transfers the camera to pathfinding");
+        for (let tick = 1; tick < frames.length; tick++) {
+          if (tick > axeHits[0].tick) break;
+          assert.ok(
+            Math.abs(frames[tick].yaw - frames[tick - 1].yaw) < 0.2,
+            "no seam snap or full spin",
+          );
+        }
+        assert.ok(
+          hits.some((p) => p.held === "diamond_sword"),
+          "resume sword attacks after the shield drops",
+        );
+        assert.deepEqual(errors, []);
+      } finally {
+        controller.dispose();
+        f.rig.stopPassivePhysics();
+      }
+    },
+  );
+
+  test(
+    `holding our shield keeps focus and cancels cleanly without a delayed re-raise on ${version}`,
+    { timeout: 5000 },
+    async () => {
+      const f = fixture(version),
+        { bot, enemy, packets } = f;
+      f.item(36, "diamond_sword");
+      f.item(45, "shield");
+      enemy.equipment[1] = { name: "shield" };
+      enemy.metadata[f.flagsIndex] = 3;
+      const errors = [];
+      let time = 0;
+      const controller = createCombatController(
+        bot,
+        {
+          style: "melee",
+          reactionMs: 0,
+          meleeSkill: 100,
+          shieldBreak: false,
+        },
+        { now: () => time, onError: (error) => errors.push(error) },
+      );
+      try {
+        controller.select(enemy);
+        for (let tick = 0; tick < 25; tick++) {
+          time = tick * 50;
+          bot.physics
+            .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+            .apply(bot);
+          bot.emit("physicsTick");
+          await controller.idleTask;
+          await flush();
+          if (tick > 4) {
+            assert.equal(bot.usingHeldItem, true);
+            assert.equal(bot.getControlState("left") || bot.getControlState("right"), false);
+            assert.equal(
+              bot.entity.onGround,
+              true,
+              "wait behind the shield without critical jumps",
+            );
+            assert.ok(
+              Math.abs(
+                Math.atan2(
+                  Math.sin(bot.entity.yaw + Math.PI / 2),
+                  Math.cos(bot.entity.yaw + Math.PI / 2),
+                ),
+              ) < 0.03,
+            );
+          }
+        }
+        assert.equal(
+          packets.some(
+            (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+          ),
+          false,
+        );
+        assert.equal(
+          packets.filter((p) => p.name === "use_item" && p.params.hand === 1).length,
+          1,
+          "hold the shield instead of toggling every tick",
+        );
+        enemy.metadata[f.flagsIndex] = 0;
+        bot.emit("physicsTick");
+        await controller.idleTask;
+        await flush();
+        assert.ok(
+          packets.some(
+            (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+          ),
+        );
+        controller.stop();
+        const stopped = packets.length;
+        await new Promise((resolve) => setTimeout(resolve, 180));
+        bot.emit("physicsTick");
+        await flush();
+        assert.equal(bot.usingHeldItem, false);
+        assert.equal(
+          packets.slice(stopped).some((p) => p.name === "use_item"),
+          false,
+        );
+        assert.deepEqual(errors, []);
+      } finally {
+        controller.dispose();
+        f.rig.stopPassivePhysics();
+      }
+    },
+  );
+
   test(`shield survives bow release, delayed arrow updates and actual impact on ${version}`, async () => {
     const f = fixture(version),
       { bot, enemy, packets } = f;
@@ -204,6 +436,54 @@ for (const version of ["1.20.4", "26.1.2"]) {
       assert.equal(bot.launcherDefendingBow, false, "gone arrows cannot keep renewing the hold");
     } finally {
       defense.dispose();
+      f.rig.stopPassivePhysics();
+    }
+  });
+
+  test(`lowering the enemy shield cancels the axe setup and charges the restored sword on ${version}`, async () => {
+    const f = fixture(version),
+      { bot, enemy, packets } = f;
+    f.item(36, "diamond_sword");
+    f.item(37, "diamond_axe");
+    f.item(45, "shield");
+    enemy.equipment[1] = { name: "shield" };
+    enemy.metadata[f.flagsIndex] = 3;
+    let time = 0;
+    const errors = [];
+    const controller = createCombatController(
+      bot,
+      {
+        style: "melee",
+        reactionMs: 0,
+        meleeSkill: 100,
+        criticals: "off",
+      },
+      { now: () => time, onError: (error) => errors.push(error) },
+    );
+    try {
+      controller.select(enemy);
+      for (let tick = 0; tick < 35; tick++) {
+        time = tick * 50;
+        bot.defenseTestTick = tick;
+        if (tick === 10) enemy.metadata[f.flagsIndex] = 0;
+        bot.physics
+          .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+          .apply(bot);
+        bot.emit("physicsTick");
+        await controller.idleTask;
+        await flush();
+      }
+      const hits = packets.filter(
+        (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+      );
+      assert.ok(hits.length > 0);
+      assert.ok(hits.every((hit) => hit.held === "diamond_sword"));
+      assert.ok(hits[0].tick >= 23, `charge the sword after its equip: tick=${hits[0].tick}`);
+      assert.equal(hits[0].usingItem, false);
+      assert.equal(hits[0].aimHit, true);
+      assert.deepEqual(errors, []);
+    } finally {
+      controller.dispose();
       f.rig.stopPassivePhysics();
     }
   });
@@ -320,6 +600,15 @@ for (const version of ["1.20.4", "26.1.2"]) {
           assert.ok(hit.vy < 0, "attack lands while falling");
         }
         enemy.metadata[f.flagsIndex] = 0;
+        for (let tick = 0; tick < 20 && !bot.entity.onGround; tick++) {
+          bot.physics
+            .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+            .apply(bot);
+          bot.emit("physicsTick");
+          await controller.idleTask;
+          await flush();
+          time += 50;
+        }
         bot.emit("physicsTick");
         await bot.swordpvp.launcherShieldBreak.task;
         assert.equal(

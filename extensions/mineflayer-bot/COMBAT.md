@@ -1,5 +1,30 @@
 # PvP, mace and bow combat
 
+## Stable melee focus and shield timing (1.15.4)
+
+Melee aim follows the live target once per tick along the shortest yaw change,
+including the -180/180 degree seam. It does not restart a smooth-look tween on
+each update. The aim point remains inside the target's hitbox while jumping;
+immediately before an axe strike it is checked again against actual reach and
+the current view ray. The outgoing attack publishes that rotation first.
+
+A normal critical jump keeps its checked ground corridor through the apex, so
+pathfinding cannot turn the camera towards a route node halfway through the hit.
+Axe cycles disable strafing, stop horizontal input for the jump and keep ownership
+until landing. Auto mode retains that axe sequence. The bot holds its shield
+while charging, lowers it before jumping/striking, and restores the preferred
+weapon after the enemy lowers its shield. Restoring a sword waits for the real
+weapon cooldown; sword and axe minimum cooldowns also correct the upstream timing
+table. Without an available shield break, it holds its shield and faces a blocking
+opponent without pointless critical jumps. Shield use has no delayed re-raise
+callback that can survive stop, target loss or another combat mode.
+
+`defense.test.mjs` checks default smooth aim/strafe settings with a moving target
+at the yaw seam, the first charged falling axe hit, shield release at the attack,
+the absence of routing at the jump apex, steady blocking and sword restoration.
+These use Mineflayer physics and real versioned packet serialization on 1.20.4
+and 26.1.2; they do not confirm a live server's damage or shield-disable rules.
+
 ## Continuous pursuit and committed combinations (1.15.3)
 
 Adaptive melee sprints along checked open ground even beyond 16 blocks. When
@@ -241,12 +266,13 @@ mode. Water/lava do not allow these criticals and use charged ordinary attacks.
 ArmorManager runs even with PvP disabled. Armour swaps share the combat inventory
 queue, and its offhand selection is excluded so a totem cannot replace the shield
 during defense. Equipment errors are reported through the worker.
-Smooth aiming uses Custom PvP's smooth-look plugin with an easing curve without
+Smooth melee aiming uses a bounded turn from the current view on every tick;
+bow aiming uses Custom PvP's smooth-look plugin with an easing curve without
 overshoot. Both melee engines wait until the view ray reaches the enemy before
-attacking, and bow aiming also turns smoothly. Stopping cancels pending turns.
+attacking. Stopping cancels pending turns.
 Aim speed (`smoothAimSpeed`) is adjustable from 10% to 300% while smooth aiming
-is enabled. 100% preserves the original speed; 50% doubles turn duration and
-200% halves it. It affects both melee and bow aiming, without changing navigation
+is enabled. 50% halves the turn rate and 200% doubles it. It affects both melee
+and bow aiming, without changing navigation
 rotation speed. The Novice/Normal/Expert presets use 50%/100%/175% respectively.
 Existing settings default to 100%; changes apply on the next bot start.
 
