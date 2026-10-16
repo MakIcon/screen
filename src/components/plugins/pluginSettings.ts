@@ -58,7 +58,7 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
     engine: ["custom", "basic"],
     style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
-    weapon: ["sword", "axe"],
+    weapon: ["sword", "axe", "mace"],
     strafe: ["off", "intelligent", "circle", "random"],
     criticals: ["off", "hop", "shorthop"],
     sprintTap: ["off", "wtap", "stap", "sprintcancel"],

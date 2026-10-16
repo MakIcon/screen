@@ -55,7 +55,8 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
       entity.velocity.y < -0.1 && !entity.elytraFlying &&
       !['creative', 'spectator'].includes(bot.game?.gameMode);
     try {
-      if (kind !== 'mlg' && settings.emergencyMlg && falling && !plannedDrop && now() >= nextMlgAt) {
+      if (kind !== 'mlg' && settings.emergencyMlg && falling && !plannedDrop &&
+        !bot.launcherCombat?.imminentMaceSmash && now() >= nextMlgAt) {
         const plan = mlg.plan(peakY);
         if (plan) {
           const previous = autoEat.isEating ? autoEat.previousItem : bot.heldItem;

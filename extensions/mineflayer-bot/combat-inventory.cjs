@@ -11,6 +11,11 @@ function carriedItems(bot) {
 
 function bestMeleeWeapon(bot, preferred) {
   const items = carriedItems(bot);
+  if (preferred === "mace") {
+    const mace = items.find((item) => item.name === "mace");
+    if (mace && bot.registry?.itemsByName?.mace) return mace;
+    preferred = "sword";
+  }
   let weapons = items.filter((item) => item.name.endsWith(`_${preferred}`));
   if (!weapons.length)
     weapons = items.filter((item) => item.name.endsWith(preferred === "axe" ? "_sword" : "_axe"));

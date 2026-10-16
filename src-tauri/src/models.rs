@@ -697,6 +697,7 @@ pub struct MineflayerCombatSettings {
     pub sprint_tap: String,
     pub shield: bool,
     pub shield_break: bool,
+    pub mace_defense: bool,
     pub smooth_aim: bool,
     pub smooth_aim_speed: u32,
     pub bow_enabled: bool,
@@ -765,6 +766,7 @@ impl Default for MineflayerCombatSettings {
             sprint_tap: "wtap".into(),
             shield: true,
             shield_break: true,
+            mace_defense: true,
             smooth_aim: true,
             smooth_aim_speed: 100,
             bow_enabled: true,
@@ -1468,7 +1470,7 @@ mod loader_schema_tests {
     #[test]
     fn mineflayer_combat_round_trips_and_defaults_match_worker() {
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
-            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175, "pearlChase": true }
+            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175, "pearlChase": true, "weapon": "mace", "maceDefense": false }
         })).unwrap();
         let saved = serde_json::to_value(&parsed).unwrap();
         assert_eq!(saved["combat"]["engine"], "basic");
@@ -1478,6 +1480,8 @@ mod loader_schema_tests {
         assert_eq!(saved["combat"]["bowIntervalMs"], 1500);
         assert_eq!(saved["combat"]["smoothAimSpeed"], 175);
         assert_eq!(saved["combat"]["pearlChase"], true);
+        assert_eq!(saved["combat"]["weapon"], "mace");
+        assert_eq!(saved["combat"]["maceDefense"], false);
         let worker: super::MineflayerCombatSettings = serde_json::from_str(include_str!(
             "../../extensions/mineflayer-bot/combat-defaults.json"
         ))

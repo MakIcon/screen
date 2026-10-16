@@ -78,6 +78,8 @@ for (const file of [
   "SURVIVAL.md",
   "AUTO-EAT-LICENSE",
   "melee-shield.cjs",
+  "mace.cjs",
+  "mace.test.mjs",
   "defense.test.mjs",
   "utility.test.mjs",
   "COMBAT.md",

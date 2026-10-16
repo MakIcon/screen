@@ -204,6 +204,26 @@ for (const [version, eating] of ['1.20.4', '26.1.2'].flatMap(version => [[versio
   });
 }
 
+test('MLG yields to a reachable mace descent and takes over when the opportunity is lost', async () => {
+  const f = fallingFixture();
+  const { bot } = f;
+  const errors = [];
+  let paused = 0;
+  bot.launcherCombat = { imminentMaceSmash: true, pauseForSurvival: () => { paused++; } };
+  bot.equip = async item => { bot.heldItem = item; };
+  const controller = createSurvivalController(bot, {}, { onError: error => errors.push(error) });
+  try {
+    bot.emit('physicsTick'); await controller.task;
+    assert.equal(controller.busy, false);
+    assert.equal(paused, 0);
+    bot.launcherCombat.imminentMaceSmash = false;
+    bot.emit('physicsTick'); await controller.task;
+    assert.equal(controller.kind, 'mlg');
+    assert.equal(paused, 1);
+    assert.deepEqual(errors, []);
+  } finally { controller.dispose(); f.dispose(); }
+});
+
 test('MLG rejects disabled, short, wet, unloaded and Nether falls', () => {
   const f = fallingFixture();
   try {

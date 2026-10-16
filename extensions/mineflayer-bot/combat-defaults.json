@@ -14,6 +14,7 @@
   "sprintTap": "wtap",
   "shield": true,
   "shieldBreak": true,
+  "maceDefense": true,
   "smoothAim": true,
   "smoothAimSpeed": 100,
   "bowEnabled": true,

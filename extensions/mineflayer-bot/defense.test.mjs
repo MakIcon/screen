@@ -89,6 +89,46 @@ function fixture(version) {
   return { rig, world, bot, packets, item, enemy, flagsIndex };
 }
 
+test("mace combat finishes its airborne axe shield break before resuming wind jumps", async () => {
+  const f = fixture("26.1.2");
+  const { bot, enemy, packets } = f;
+  f.item(36, "mace");
+  f.item(37, "wind_charge");
+  f.item(38, "diamond_axe");
+  f.item(39, "diamond_sword");
+  f.item(45, "shield");
+  enemy.equipment[1] = { name: "shield" };
+  enemy.metadata[f.flagsIndex] = 3;
+  let time = 0;
+  const errors = [];
+  const controller = createCombatController(bot, {
+    weapon: "mace", style: "melee", reactionMs: 0, meleeSkill: 100,
+    smoothAim: false, strafe: "off", sprintTap: "off", criticals: "off",
+    maceDefense: false, shieldBreak: true,
+  }, { now: () => time, onError: (error) => errors.push(error) });
+  try {
+    controller.select(enemy);
+    for (let tick = 0; tick < 40; tick++) {
+      bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt }).apply(bot);
+      bot.emit("physicsTick"); await controller.idleTask; await flush();
+      time += 50;
+    }
+    const hits = packets.filter((packet) => packet.name === "attack");
+    assert.ok(hits.length > 0, "the axe jump survives mode selection until its falling hit");
+    assert.ok(hits.every((hit) => hit.held === "diamond_axe" && !hit.onGround && hit.vy < 0));
+    enemy.metadata[f.flagsIndex] = 0;
+    for (let tick = 0; tick < 20; tick++) {
+      bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt }).apply(bot);
+      bot.emit("physicsTick"); await controller.idleTask; await flush();
+      time += 50;
+      if (packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge")) break;
+    }
+    assert.match(controller.status, /^mace /);
+    assert.ok(packets.some((packet) => packet.name === "use_item" && packet.held === "wind_charge"));
+    assert.deepEqual(errors, []);
+  } finally { controller.dispose(); f.rig.stopPassivePhysics(); }
+});
+
 for (const version of ["1.20.4", "26.1.2"]) {
   test(`shield survives bow release, delayed arrow updates and actual impact on ${version}`, async () => {
     const f = fixture(version),

@@ -1,4 +1,4 @@
-# PvP and bow combat
+# PvP, mace and bow combat
 
 Mineflayer Bot 1.8.13 includes the locked published packages:
 
@@ -20,6 +20,50 @@ The extension installs its published build, so it does not depend on a Downloads
 folder or on TypeScript compilation during installation.
 
 ## Settings
+
+### Mace and wind charges (Java 1.21+)
+
+Select **Ближний бой → Оружие → Булава + заряд ветра** and carry a mace and
+wind charges. The mace controller works with both engine selections. It follows
+the target using the normal terrain planner, finds solid ground with headroom,
+jumps first, then throws a charge below its feet during the initial ascent.
+The shield stays in the offhand; the controller switches its main hand back to
+the mace and steers toward the target. The server receives the downward look
+before the charge use packet.
+
+An airborne strike requires a real descent of more than 1.5 blocks, line of sight
+and eye-to-hitbox reach within the configured maximum of 3 blocks. Grounded mace
+attacks use its 0.6 attack speed; wind charges respect their 500 ms cooldown.
+Server damage feedback confirms a hit before continuing an observed Wind Burst
+bounce. After a successful grounded landing it starts another wind jump; an
+unconfirmed strike/missed launch uses a bounded recovery delay. The bot never
+assumes the server accepted a strike just because an attack packet was sent.
+Raised enemy shields stop the combo; Custom PvP uses a carried axe first when
+shield breaking is enabled. Without charges or headroom it uses ordinary mace
+attacks. Without a supported mace item it falls back to sword/axe combat.
+Stop, target loss, shield defense, pearl travel and survival cancel pending actions.
+Emergency MLG yields briefly to an imminent reachable smash, and can take over
+when the target is out of reach, hidden or blocking.
+
+**Защита от булавы** (`maceDefense`, on by default) extends the existing shield
+controller independently of the arrow-defense switch. It predicts a descending
+mace user's approach and raises the shield early, allowing for the five-tick
+activation delay, while continually facing that player. It also estimates motion
+from position updates when the server's velocity is stale. Grounded carriers,
+trajectories passing away from the bot and attacks behind solid cover do not
+trigger this defense. The same pause/resume lifecycle as arrow defense prevents
+navigation and attacks from overwriting the defensive aim.
+
+Mechanics references:
+
+- [Mojang: Java 1.21 release notes](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-21)
+  (smash threshold, Wind Burst and wind-charge cooldown).
+- [Minecraft Wiki: Mace](https://minecraft.wiki/w/Mace),
+  [Wind Charge](https://minecraft.wiki/w/Wind_Charge),
+  [Blocking](https://minecraft.wiki/w/Blocking), and
+  [PvP](https://minecraft.wiki/w/Tutorial:Player_versus_Player).
+
+### General combat settings
 
 Open Extensions → Mineflayer Bot → PvP / Предметы. Changes apply on the next bot start.
 The Novice, Normal and Expert presets change melee skill, reaction, CPS, tactics,

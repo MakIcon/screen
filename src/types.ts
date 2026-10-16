@@ -304,12 +304,13 @@ export type MineflayerCombatSettings = {
   meleeSkill: number;
   cps: number;
   attackRange: number;
-  weapon: "sword" | "axe";
+  weapon: "sword" | "axe" | "mace";
   strafe: "off" | "intelligent" | "circle" | "random";
   criticals: "off" | "hop" | "shorthop";
   sprintTap: "off" | "wtap" | "stap" | "sprintcancel";
   shield: boolean;
   shieldBreak: boolean;
+  maceDefense: boolean;
   smoothAim: boolean;
   smoothAimSpeed: number;
   bowEnabled: boolean;

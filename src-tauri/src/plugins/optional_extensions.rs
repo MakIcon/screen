@@ -31,6 +31,7 @@ const MINEFLAYER_ARMOR_MANAGER: &str =
     include_str!("../../../extensions/mineflayer-bot/armor-manager.cjs");
 const MINEFLAYER_MELEE_SHIELD: &str =
     include_str!("../../../extensions/mineflayer-bot/melee-shield.cjs");
+const MINEFLAYER_MACE: &str = include_str!("../../../extensions/mineflayer-bot/mace.cjs");
 const MINEFLAYER_BOW_DEFENSE: &str =
     include_str!("../../../extensions/mineflayer-bot/bow-defense.cjs");
 const MINEFLAYER_COMBAT_DEFAULTS: &str =
@@ -82,6 +83,7 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("SURVIVAL.md", include_str!("../../../extensions/mineflayer-bot/SURVIVAL.md")),
     ("AUTO-EAT-LICENSE", include_str!("../../../extensions/mineflayer-bot/AUTO-EAT-LICENSE")),
     ("melee-shield.cjs", MINEFLAYER_MELEE_SHIELD),
+    ("mace.cjs", MINEFLAYER_MACE),
     ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
     ("COMBAT.md", include_str!("../../../extensions/mineflayer-bot/COMBAT.md")),
     ("pathfinder.cjs", MINEFLAYER_PATHFINDER),

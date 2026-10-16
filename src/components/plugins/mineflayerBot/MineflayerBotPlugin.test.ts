@@ -238,6 +238,8 @@ describe("normalizeMineflayerBotSettings", () => {
     const { combat } = normalizeMineflayerBotSettings({
       combat: {
         bowDefenseMode: "trajectory",
+        weapon: "mace",
+        maceDefense: false,
         bowDefenseCheckMs: -100,
         bowDefenseRange: 200,
         bowDefenseMargin: 0.45,
@@ -250,6 +252,9 @@ describe("normalizeMineflayerBotSettings", () => {
       },
     });
     expect(combat.bowDefenseMode).toBe("trajectory");
+    expect(combat.weapon).toBe("mace");
+    expect(combat.maceDefense).toBe(false);
+    expect(normalizeMineflayerBotSettings({}).combat.maceDefense).toBe(true);
     expect(combat.bowDefenseCheckMs).toBe(0);
     expect(combat.bowDefenseRange).toBe(128);
     expect(combat.bowDefenseMargin).toBe(0.45);

@@ -7,7 +7,8 @@ const { createCrystalMovement } = require("./crystal-movement.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
 const { carriedItems, bestMeleeWeapon, equipCombatItem } = require("./combat-inventory.cjs");
 const { installArmorManager } = require("./armor-manager.cjs");
-const { installShieldBreak } = require("./melee-shield.cjs");
+const { installShieldBreak, targetBlocking } = require("./melee-shield.cjs");
+const { createMaceCombat } = require("./mace.cjs");
 const { pearlOrigin, simulatePearlFlight } = require("./pearls.cjs");
 
 const protocolInstalled = Symbol("combatProtocolInstalled");
@@ -97,7 +98,7 @@ function normalizeCombat(value = {}) {
     engine: ["custom", "basic"],
     style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
-    weapon: ["sword", "axe"],
+    weapon: ["sword", "axe", "mace"],
     strafe: ["off", "intelligent", "circle", "random"],
     criticals: ["off", "hop", "shorthop"],
     sprintTap: ["off", "wtap", "stap", "sprintcancel"],
@@ -280,7 +281,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     };
     bot.on("physicsTick", bot.swordpvp[name]);
   }
-  bot.swordpvp.weaponOfChoice = settings.weapon;
+  bot.swordpvp.weaponOfChoice = settings.weapon === "mace" ? "sword" : settings.weapon;
   // Upstream visibility only raycasts along the current view, while rotation
   // refuses hidden targets. Use line of sight to let it turn toward a new target.
   bot.swordpvp.checkVisibility = () => {
@@ -403,13 +404,18 @@ function createCombatController(
   let pearlIntent = null;
   let lastEnemyPosition = null;
   let nextPursuitPlanAt = 0;
+  const mace = createMaceCombat(bot, settings, { now, random, onStatus, onError });
   const crystals = createCrystalPlanner(bot, settings, isOwner);
   const crystalMovement = createCrystalMovement(bot, { now });
   const defense = createBowDefense(bot, settings, {
     now,
     onStatus,
     onError,
-    enabled: () => (settings.enabled && settings.bowDefense) ||
+    enabled: () =>
+      (settings.enabled && (settings.bowDefense || settings.maceDefense)) ||
+      Boolean(bot.launcherGathering?.protecting && bot.launcherGathering.settings.defendArrows),
+    bowEnabled: () =>
+      (settings.enabled && settings.bowDefense) ||
       Boolean(bot.launcherGathering?.protecting && bot.launcherGathering.settings.defendArrows),
     beforeDefend() {
       generation++;
@@ -445,13 +451,14 @@ function createCombatController(
     );
   }
   function stopEngines() {
+    mace.stop();
     crystalMovement.cancel();
     crystalReposition = null;
     nextCrystalPlanAt = 0;
     if (bot.swordpvp?.target) bot.swordpvp.stop();
     if (bot.pvp?.target) bot.pvp.forceStop();
     // The locked smooth-look package exposes task cleanup; stop its tween too
-    // so a cancelled combat turn cannot override navigation or bow cancellation.
+    // so a cancelled combat turn cannot override navigation or item cancellation.
     bot.smoothLook?._cleanupTasks(true);
     if (bot.smoothLook) bot.smoothLook._pendingTask = null;
     // Cancelling a draw releases an arrow in Minecraft. Turn into the ground
@@ -496,8 +503,11 @@ function createCombatController(
     if (!allowed(entity)) throw new Error("Target is missing or is the bot itself");
     if (style === "crystal" && !settings.crystalEnabled)
       throw new Error("Auto Crystal is disabled in extension settings");
-    const maxRange = forWork ? Math.max(12, settings.targetRange) :
-      style === "melee" ? settings.targetRange : Math.max(settings.targetRange, settings.bowRange);
+    const maxRange = forWork
+      ? Math.max(12, settings.targetRange)
+      : style === "melee"
+        ? settings.targetRange
+        : Math.max(settings.targetRange, settings.bowRange);
     if (distance(entity) > maxRange) throw new Error("Target is too far away");
     const previousSuspended = suspended;
     stop(false);
@@ -521,11 +531,24 @@ function createCombatController(
     );
   }
   function chooseMode() {
+    // Finish an airborne sequence before distance-based bow/crystal selection.
+    if (mode === "mace" && mace.airborne) return "mace";
+    const meleeMode = () => {
+      if (workTarget || settings.weapon !== "mace" || !mace.available()) return "melee";
+      const axe = carriedItems(bot).some((item) => item.name.endsWith("_axe"));
+      return settings.engine === "custom" &&
+        settings.shieldBreak &&
+        axe &&
+        (bot.entity.onGround || mode === "melee") &&
+        targetBlocking(bot, target)
+        ? "melee"
+        : "mace";
+    };
     const hasCrystals =
       settings.crystalPlace && carriedItems(bot).some((item) => item.name === "end_crystal");
     const crystalAvailable = settings.crystalEnabled && (settings.crystalBreak || hasCrystals);
     if (requestedStyle === "crystal")
-      return crystalAvailable ? "crystal" : settings.meleeFallback ? "melee" : null;
+      return crystalAvailable ? "crystal" : settings.meleeFallback ? meleeMode() : null;
     // Approach with the crystal controller from the start. Starting melee while
     // a base is out of reach adds strafing/criticals before the first placement.
     if (requestedStyle === "auto" && crystalAvailable && (hasCrystals || crystals.active))
@@ -538,10 +561,11 @@ function createCombatController(
     )
       return "crystal";
     const ranged = hasBow() && distance(target) <= settings.bowRange;
-    if (requestedStyle === "melee") return "melee";
+    if (requestedStyle === "melee") return meleeMode();
     if (requestedStyle === "ranged")
-      return ranged ? "ranged" : settings.meleeFallback ? "melee" : null;
-    return ranged && distance(target) > settings.attackRange + 2 ? "ranged" : "melee";
+      return ranged ? "ranged" : settings.meleeFallback ? meleeMode() : null;
+    if (meleeMode() === "mace" && distance(target) <= 8) return "mace";
+    return ranged && distance(target) > settings.attackRange + 2 ? "ranged" : meleeMode();
   }
   async function prepare(nextMode) {
     const revision = ++generation;
@@ -569,9 +593,12 @@ function createCombatController(
           hand,
           current,
         );
-      } else if (nextMode === "melee") {
-        const weapon = bestMeleeWeapon(bot, settings.weapon);
-        if (weapon) await equipCombatItem(bot, weapon, "hand", current);
+      } else if (nextMode === "melee" || nextMode === "mace") {
+        const weapon = bestMeleeWeapon(
+          bot,
+          nextMode === "melee" && settings.weapon === "mace" ? "sword" : settings.weapon,
+        );
+        if (weapon && nextMode !== "mace") await equipCombatItem(bot, weapon, "hand", current);
         const shield = items.find((item) => item.name === "shield");
         if (settings.shield && shield && !bot.supportFeature("doesntHaveOffHandSlot"))
           await equipCombatItem(bot, shield, "off-hand", current);
@@ -581,7 +608,10 @@ function createCombatController(
       }
       if (revision !== generation || !target) return;
       mode = nextMode;
-      if (mode === "melee") {
+      if (mode === "mace") {
+        bot.tracker?.trackEntity(target);
+        mace.start(target);
+      } else if (mode === "melee") {
         const engine = settings.engine === "custom" ? bot.swordpvp : bot.pvp;
         await engine.attack(target);
         if (revision !== generation) {
@@ -941,9 +971,17 @@ function createCombatController(
     return false;
   }
   function tick() {
-    if (disposed || !bot.entity?.position || bot.health <= 0 || bot.launcherSurvival?.busy || bot.launcherProduction?.busy) return;
+    if (
+      disposed ||
+      !bot.entity?.position ||
+      bot.health <= 0 ||
+      bot.launcherSurvival?.busy ||
+      bot.launcherProduction?.busy
+    )
+      return;
     try {
-      if (defense.tick(true) || (suspended && !workTarget) || (!settings.enabled && !workTarget)) return;
+      if (defense.tick(true) || (suspended && !workTarget) || (!settings.enabled && !workTarget))
+        return;
       if (!target && autoEnabled && !bot.launcherGathering?.busy && now() >= nextActionAt) {
         const entity = bot.nearestEntity(
           (entity) =>
@@ -962,8 +1000,9 @@ function createCombatController(
         observePearlHand();
         if (pursuePearl()) return;
       }
-      const maxRange = workTarget ? Math.max(12, settings.targetRange) :
-        requestedStyle === "melee"
+      const maxRange = workTarget
+        ? Math.max(12, settings.targetRange)
+        : requestedStyle === "melee"
           ? settings.targetRange
           : Math.max(settings.targetRange, settings.bowRange);
       if (!allowed(target) || (distance(target) > maxRange && !pursuit)) {
@@ -986,6 +1025,8 @@ function createCombatController(
             onError(error);
           }
         });
+      } else if (mode === "mace") {
+        mace.tick();
       } else if ((mode === "ranged" || mode === "crystal") && !bowBusy) {
         bowBusy = true;
         const revision = generation;
@@ -1059,7 +1100,8 @@ function createCombatController(
     defend(entity) {
       // Gathering owns threat selection and uses the existing melee engine.
       // Crystal placement and pursuit do not belong in a temporary work defense.
-      if (entity?.username && isOwner(entity.username)) throw new Error("Owners are protected during gathering");
+      if (entity?.username && isOwner(entity.username))
+        throw new Error("Owners are protected during gathering");
       select(entity, "melee", true);
     },
     stopWorkDefense() {
@@ -1070,6 +1112,9 @@ function createCombatController(
     },
     get bowThreat() {
       return defense.threat;
+    },
+    get imminentMaceSmash() {
+      return mace.imminentSmash;
     },
     pauseForSurvival() {
       generation++;
@@ -1086,6 +1131,7 @@ function createCombatController(
         prepareTask,
         actionTask,
         defense.task,
+        mace.task,
         bot.swordpvp?.launcherShieldBreak?.task,
       ]);
     },
@@ -1115,13 +1161,14 @@ function createCombatController(
         : autoEnabled && !suspended
           ? "hostile mobs"
           : defense.threat
-            ? `bow threat ${defense.threat.username || defense.threat.name}`
+            ? `${(defense.threat.heldItem ?? defense.threat.equipment?.[0])?.name === "mace" ? "mace" : "bow"} threat ${defense.threat.username || defense.threat.name}`
             : "idle";
     },
     dispose() {
       disposed = true;
       stop(true);
       defense.dispose();
+      mace.dispose();
       bot.removeListener("physicsTick", tick);
       bot.removeListener("entityGone", removed);
       bot.removeListener("entityDead", dead);

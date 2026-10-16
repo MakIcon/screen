@@ -34,7 +34,7 @@ Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $s
 foreach ($file in @("gathering.cjs", "gathering-defense.cjs", "gathering-storage.cjs", "storage-filters.json", "gathering-plan.cjs", "gathering-defaults.json", "gathering-scan.cjs", "gathering-commands.cjs", "web-inventory.cjs", "GATHERING.md")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
-foreach ($file in @("pearls.cjs", "crystals.cjs", "crystal-movement.cjs", "bow-defense.cjs", "combat-inventory.cjs", "armor-manager.cjs", "melee-shield.cjs", "knockback.cjs", "auto-eat.cjs", "emergency-mlg.cjs", "survival.cjs", "survival-defaults.json", "SURVIVAL.md", "AUTO-EAT-LICENSE")) {
+foreach ($file in @("pearls.cjs", "crystals.cjs", "crystal-movement.cjs", "bow-defense.cjs", "combat-inventory.cjs", "armor-manager.cjs", "melee-shield.cjs", "mace.cjs", "knockback.cjs", "auto-eat.cjs", "emergency-mlg.cjs", "survival.cjs", "survival-defaults.json", "SURVIVAL.md", "AUTO-EAT-LICENSE")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat-defaults.json") -Destination $stageDirectory

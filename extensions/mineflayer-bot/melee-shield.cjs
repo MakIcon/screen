@@ -16,6 +16,7 @@ function targetBlocking(bot, entity) {
 
 function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
   const engine = bot.swordpvp;
+  const preferredWeapon = settings.weapon === "mace" ? "sword" : settings.weapon;
   engine.launcherShieldBreak?.dispose();
   engine[originals] ??= {
     update: engine.update,
@@ -52,11 +53,11 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
     state = null;
     bot.launcherBreakingShield = false;
     bot.launcherAxeAttacking = false;
-    engine.weaponOfChoice = settings.weapon;
+    engine.weaponOfChoice = preferredWeapon;
   }
   function attackReason(target) {
     if (settings.shieldBreak && targetBlocking(bot, target)) return "disableshield";
-    const weapon = bestMeleeWeapon(bot, settings.weapon);
+    const weapon = bestMeleeWeapon(bot, preferredWeapon);
     const onlyAxes = !carriedItems(bot).some((item) => item.name.endsWith("_sword"));
     return weapon?.name.endsWith("_axe") && (settings.criticals !== "off" || onlyAxes)
       ? "axecritical"
@@ -87,7 +88,7 @@ function installShieldBreak(bot, settings, aimedAt, onError = () => {}) {
     const reason = attackReason(target);
     if (state && (state.target !== target || !reason || engine.botReach() > settings.attackRange)) {
       reset();
-      const preferred = bestMeleeWeapon(bot, settings.weapon);
+      const preferred = bestMeleeWeapon(bot, preferredWeapon);
       if (preferred)
         task = equipCombatItem(
           bot,

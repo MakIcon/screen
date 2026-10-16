@@ -149,6 +149,64 @@ function detectBowThreat(bot, settings, motions) {
   return nearest;
 }
 
+function detectMaceThreat(bot, motions, now = Date.now()) {
+  let nearest = null;
+  for (const entity of Object.values(bot.entities ?? {})) {
+    if (
+      entity.id === bot.entity.id ||
+      entity.isValid === false ||
+      !entity.position ||
+      (entity.heldItem ?? entity.equipment?.[0])?.name !== "mace" ||
+      entity.onGround === true ||
+      entity.position.y < bot.entity.position.y + 1.5 ||
+      entity.position.distanceTo(bot.entity.position) > 24
+    )
+      continue;
+    const motion = motions?.get(entity.id);
+    if (motion && (motion.gone || now - motion.at > 1000)) continue;
+    let velocity = motion?.velocity ?? entity.velocity;
+    if (!velocity || velocity.y >= 0) continue;
+    let position = entity.position.clone();
+    const ownMotion = bot.entity.velocity ?? new Vec3(0, 0, 0);
+    // Cover the shield's five-tick activation delay plus equipment/network time.
+    // Predict the falling attacker's actual reach instead of shielding against
+    // every player who merely carries a mace nearby.
+    for (let tick = 0; tick <= 16; tick++) {
+      const body = bot.entity.position.plus(ownMotion.scaled(Math.min(tick, 4)));
+      const eyes = position.offset(0, entity.eyeHeight ?? 1.62, 0);
+      const half = (bot.entity.width ?? 0.6) / 2;
+      const point = new Vec3(
+        Math.max(body.x - half, Math.min(body.x + half, eyes.x)),
+        Math.max(body.y, Math.min(body.y + (bot.entity.height ?? 1.8), eyes.y)),
+        Math.max(body.z - half, Math.min(body.z + half, eyes.z)),
+      );
+      const delta = point.minus(eyes),
+        length = delta.norm();
+      if (
+        length <= 3 &&
+        position.y >= body.y - 0.5 &&
+        (!bot.world?.raycast ||
+          length < 0.01 ||
+          !bot.world.raycast(eyes, delta.scaled(1 / length), length))
+      ) {
+        if (!nearest || tick < nearest.ticks) nearest = { entity, ticks: tick, mace: true };
+        break;
+      }
+      const lengthMoved = velocity.norm();
+      if (
+        bot.world?.raycast &&
+        lengthMoved > 0.01 &&
+        bot.world.raycast(position, velocity.scaled(1 / lengthMoved), lengthMoved)
+      )
+        break;
+      position = position.plus(velocity);
+      velocity = velocity.scaled(0.98).offset(0, -0.0784, 0);
+      if (position.y < body.y - 1) break;
+    }
+  }
+  return nearest;
+}
+
 function createBowDefense(
   bot,
   settings,
@@ -158,7 +216,8 @@ function createBowDefense(
     onError = () => {},
     beforeDefend = () => {},
     afterDefend = () => {},
-    enabled = () => settings.enabled && settings.bowDefense,
+    enabled = () => settings.enabled && (settings.bowDefense || settings.maceDefense),
+    bowEnabled = () => settings.bowDefense,
   } = {},
 ) {
   let generation = 0,
@@ -171,7 +230,21 @@ function createBowDefense(
   let releaseAt = 0,
     defensePoint = null;
   const motions = new Map();
+  const maceMotions = new Map();
   let nextUnavailableAt = 0;
+  function sampleMace(entity, velocityUpdate = false) {
+    if ((entity?.heldItem ?? entity?.equipment?.[0])?.name !== "mace" || !entity.position) return;
+    const previous = maceMotions.get(entity.id),
+      time = now();
+    if (previous && !velocityUpdate && previous.position.equals(entity.position)) return;
+    const velocity =
+      previous && !velocityUpdate && !previous.gone
+        ? entity.position
+            .minus(previous.position)
+            .scaled(1 / Math.max(1, (time - previous.at) / 50))
+        : entity.velocity?.clone();
+    maceMotions.set(entity.id, { position: entity.position.clone(), velocity, at: time });
+  }
   function sampleArrow(entity, velocityUpdate = false) {
     if (!/arrow/i.test(entity?.name ?? "") || !entity.position) return;
     const previous = motions.get(entity.id);
@@ -206,15 +279,23 @@ function createBowDefense(
     }
     if (busy) return true;
     if (!immediate && now() < nextCheckAt) return active;
-    nextCheckAt = now() + settings.bowDefenseCheckMs;
+    nextCheckAt =
+      now() +
+      (settings.maceDefense
+        ? Math.min(50, settings.bowDefenseCheckMs)
+        : settings.bowDefenseCheckMs);
     for (const entity of Object.values(bot.entities ?? {})) {
       if (!motions.get(entity.id)?.gone) sampleArrow(entity);
+      if (settings.maceDefense && !maceMotions.get(entity.id)?.gone) sampleMace(entity);
     }
     for (const [id, motion] of motions) {
       if (motion.expiresAt <= now()) motion.expired = true;
       if (!bot.entities?.[id] && id !== threat?.id) motions.delete(id);
     }
-    const candidate = detectBowThreat(bot, settings, motions);
+    for (const [id] of maceMotions) if (!bot.entities?.[id]) maceMotions.delete(id);
+    const arrow = bowEnabled() ? detectBowThreat(bot, settings, motions) : null;
+    const mace = settings.maceDefense ? detectMaceThreat(bot, maceMotions, now()) : null;
+    const candidate = mace && (!arrow || mace.ticks <= arrow.ticks) ? mace : arrow;
     const previous = threat;
     if (candidate) {
       threat = candidate.entity;
@@ -224,7 +305,9 @@ function createBowDefense(
         0,
       );
       lastThreatAt = now();
-      if (candidate.projectile) {
+      if (candidate.mace) {
+        releaseAt = now() + candidate.ticks * 50 + Math.max(300, settings.bowDefenseHoldMs);
+      } else if (candidate.projectile) {
         // A fixed impact deadline also bounds a stale arrow which never gets
         // another move/destroy packet. New movement refreshes the estimate.
         if (previous?.id !== threat.id || motions.get(threat.id)?.at === now()) {
@@ -243,7 +326,10 @@ function createBowDefense(
         return false;
       }
       if (!active || !threat) {
-        if (!active) { threat = null; defensePoint = null; }
+        if (!active) {
+          threat = null;
+          defensePoint = null;
+        }
         return active;
       }
       if (/arrow/i.test(threat.name ?? "")) {
@@ -258,13 +344,15 @@ function createBowDefense(
       return false;
     }
     if (previous?.id !== threat.id)
-      onStatus(`bow threat: ${threat.username || threat.name || threat.id}`);
+      onStatus(
+        `${candidate?.mace ? "mace" : "bow"} threat: ${threat.username || threat.name || threat.id}`,
+      );
     const shield = carriedItems(bot).find((i) => i.name === "shield");
     if (!settings.shield || !shield || bot.supportFeature("doesntHaveOffHandSlot")) {
       if (active) stop();
       if (now() >= nextUnavailableAt) {
         onStatus(
-          `bow defense unavailable: ${!settings.shield ? "shield disabled" : !shield ? "no shield in inventory or offhand" : "version has no shields"}`,
+          `${candidate?.mace ? "mace" : "bow"} defense unavailable: ${!settings.shield ? "shield disabled" : !shield ? "no shield in inventory or offhand" : "version has no shields"}`,
         );
         nextUnavailableAt = now() + 2000;
       }
@@ -309,15 +397,22 @@ function createBowDefense(
   function changed(entity) {
     if (!enabled() || entity?.id === bot.entity.id) return;
     sampleArrow(entity);
+    if (settings.maceDefense) sampleMace(entity);
     if (
       /arrow/i.test(entity?.name ?? "") ||
       /^(bow|crossbow)$/.test(entity?.heldItem?.name ?? "") ||
       /^(bow|crossbow)$/.test(entity?.equipment?.[1]?.name ?? "") ||
+      (settings.maceDefense && (entity?.heldItem ?? entity?.equipment?.[0])?.name === "mace") ||
       entity?.id === threat?.id
     )
       tick(true, true);
   }
   function gone(entity) {
+    if (maceMotions.has(entity?.id)) {
+      maceMotions.set(entity.id, { ...maceMotions.get(entity.id), gone: true });
+      if (entity.id === threat?.id) releaseAt = now() + settings.bowDefenseHoldMs;
+      tick(true, true);
+    }
     if (!/arrow/i.test(entity?.name ?? "")) return;
     motions.set(entity.id, { ...motions.get(entity.id), gone: true });
     if (entity.id === threat?.id) releaseAt = now() + settings.bowDefenseHoldMs;
@@ -325,12 +420,18 @@ function createBowDefense(
   }
   function velocityChanged(packet) {
     const entity = bot.entities?.[packet.entityId];
+    if (settings.maceDefense && (entity?.heldItem ?? entity?.equipment?.[0])?.name === "mace") {
+      sampleMace(entity, true);
+      tick(true, true);
+      return;
+    }
     if (!/arrow/i.test(entity?.name ?? "")) return;
     sampleArrow(entity, true);
     tick(true, true);
   }
   function spawned(entity) {
     motions.delete(entity?.id);
+    maceMotions.delete(entity?.id);
     changed(entity);
   }
   for (const event of ["entityMoved", "entityUpdate", "entityEquip"]) bot.on?.(event, changed);
@@ -347,6 +448,7 @@ function createBowDefense(
       bot.off?.("entityGone", gone);
       bot._client?.off?.("entity_velocity", velocityChanged);
       motions.clear();
+      maceMotions.clear();
     },
     get task() {
       return task;
@@ -357,4 +459,4 @@ function createBowDefense(
   };
 }
 
-module.exports = { createBowDefense, detectBowThreat };
+module.exports = { createBowDefense, detectBowThreat, detectMaceThreat };
