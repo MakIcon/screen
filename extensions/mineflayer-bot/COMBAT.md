@@ -1,5 +1,19 @@
 # PvP, mace and bow combat
 
+## Faster PvP decisions (1.15.6)
+
+The director reuses inventory capabilities, corridor block reads, crystal damage
+calculations and pearl collision bounds within each decision. Crystal plans
+refresh on movement, health, block confirmations and opponent state changes.
+Ready combinations resume at their action cooldown instead of waiting for the
+next broad scan. Equip/aim verification always reads a fresh world state.
+
+Measured exact pearl planning is about 2× faster, open-ground pursuit checking
+2.76× faster, and continuing crystal layouts 4.28× faster. In the packet/physics
+fixture, foundation → crystal → attack takes 150 ms instead of 300 ms at a
+100 ms action interval. See [the benchmark report](COMBAT-PERFORMANCE.md) for
+the workload, full comparison, raw summaries and reproduction commands.
+
 ## Water entry and low-ceiling sprint jumps (1.15.5)
 
 Water entry keeps one continuous dive until physics confirms the swimming pose.

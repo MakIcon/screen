@@ -221,7 +221,7 @@ test("crystal movement holds an already reached position even with a wall ahead"
   }
 });
 
-test("auto starts a crystal setup immediately and keeps it ahead of wind/mace selection", async () => {
+test("auto starts a crystal setup immediately and keeps it ahead of wind/mace selection", async (t) => {
   const f = fixture("26.1.2", { style: "auto", crystalIntervalMs: 50 });
   const Item = mf("prismarine-item")(f.bot.registry);
   for (const [slot, name] of [
@@ -256,8 +256,9 @@ test("auto starts a crystal setup immediately and keeps it ahead of wind/mace se
     }
     assert.equal(placements(f).length, 1);
     assert.equal(attacks(f).length, 1);
+    t.diagnostic(`foundation → crystal → attack: ${attacks(f)[0].time}ms of simulated game time`);
     assert.ok(
-      attacks(f)[0].time <= 300,
+      attacks(f)[0].time <= 150,
       `confirmed chain has no extra planner waits: ${attacks(f)[0].time}`,
     );
     assert.equal(
@@ -265,6 +266,79 @@ test("auto starts a crystal setup immediately and keeps it ahead of wind/mace se
       false,
     );
     assert.deepEqual(f.errors, []);
+  } finally {
+    f.close();
+  }
+});
+
+test("a newly confirmed base is used on the next tick without waiting for the scan timer", async (t) => {
+  const f = fixture("26.1.2", { crystalBuildBase: false, crystalCover: false });
+  try {
+    f.controller.select(f.enemy);
+    await f.tick(0);
+    assert.equal(placements(f).length, 0);
+    const position = new Vec3(3, 64, 0),
+      previous = f.bot.blockAt(position);
+    f.world.setBlock(position, "obsidian");
+    f.bot.emit("blockUpdate", previous, f.bot.blockAt(position));
+    for (let time = 50; time <= 500 && !placements(f).length; time += 50) await f.tick(time);
+    t.diagnostic(`new base → placement: ${placements(f)[0]?.time}ms of simulated game time`);
+    assert.equal(placements(f)[0]?.time, 50);
+    assert.deepEqual(f.errors, []);
+  } finally {
+    f.close();
+  }
+});
+
+test("target movement opens a crystal opportunity on the next tick", async (t) => {
+  const f = fixture("26.1.2", { crystalBuildBase: false, crystalCover: false });
+  try {
+    f.world.setBlock(new Vec3(3, 64, 0), "obsidian");
+    f.enemy.position.x = 17.5;
+    f.controller.select(f.enemy);
+    await f.tick(0);
+    assert.equal(placements(f).length, 0);
+    f.enemy.position.x = 5.5;
+    for (let time = 50; time <= 500 && !placements(f).length; time += 50) await f.tick(time);
+    t.diagnostic(
+      `target enters blast range → placement: ${placements(f)[0]?.time}ms of simulated game time`,
+    );
+    assert.equal(placements(f)[0]?.time, 50, "refresh even without an entityMoved event");
+    assert.deepEqual(f.errors, []);
+  } finally {
+    f.close();
+  }
+});
+
+test("crystal verification sees changed cover, health and owners at the same timestamp", async () => {
+  const f = fixture("26.1.2", { crystalBuildBase: false, crystalCover: false });
+  const planner = createCrystalPlanner(
+    f.bot,
+    normalizeCombat({ crystalEnabled: true, crystalBuildBase: false, crystalCover: false }),
+    (name) => name === "Owner",
+  );
+  try {
+    f.world.setBlock(new Vec3(3, 64, 0), "obsidian");
+    const action = planner.plan(f.enemy, 0);
+    assert.equal(action?.type, "place");
+    await f.bot.lookAt(action.aim, true);
+    assert.equal(planner.verify(f.enemy, action, 0)?.type, "place");
+    f.world.setBlock(new Vec3(1, 65, 0), "stone");
+    assert.equal(planner.verify(f.enemy, action, 0), null, "new cover invalidates a cached click");
+    f.world.setBlock(new Vec3(1, 65, 0), "air");
+    assert.equal(planner.verify(f.enemy, action, 0)?.type, "place");
+    f.bot.health = 8;
+    assert.equal(planner.verify(f.enemy, action, 0), null, "health is read again after equip/aim");
+    f.bot.health = 20;
+    f.bot.entities[10] = {
+      ...f.enemy,
+      id: 10,
+      username: "Owner",
+      position: new Vec3(6.5, 64, 0.5),
+    };
+    assert.equal(planner.verify(f.enemy, action, 0), null, "owner safety is read again");
+    delete f.bot.entities[10];
+    assert.equal(planner.verify(f.enemy, action, 0)?.type, "place");
   } finally {
     f.close();
   }

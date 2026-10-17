@@ -504,7 +504,8 @@ function createCombatController(
   const mace = createMaceCombat(bot, settings, { now, random, onStatus, onError });
   let crystalProbeAt = -Infinity,
     crystalProbe = null,
-    crystalStalledAt = null;
+    crystalStalledAt = null,
+    crystalSnapshot = null;
   const crystals = createCrystalPlanner(bot, settings, isOwner, {
     scoreAction: (action) =>
       settings.adaptiveCombat && requestedStyle === "auto" && decision
@@ -603,6 +604,7 @@ function createCombatController(
     crystalProbe = null;
     crystalProbeAt = -Infinity;
     crystalStalledAt = null;
+    crystalSnapshot = null;
     brain.reset();
     recoveryMovement.cancel();
     bot.launcherSurvival?.cancelCombatHeal?.();
@@ -727,7 +729,7 @@ function createCombatController(
       !settings.adaptiveCombat &&
       crystalAvailable &&
       distance(target) <= 10 &&
-      crystals.plan(target, now())
+      planCrystals()
     )
       return "crystal";
     const ranged = hasBow() && distance(target) <= settings.bowRange;
@@ -749,10 +751,19 @@ function createCombatController(
     if (now() < crystalProbeAt && !crystals.waiting && !crystals.finishing) return crystalProbe;
     const near = distance(target) <= 3.5 || now() < crystalPressureUntil;
     crystalProbeAt = now() + (near ? 150 : 300);
-    crystalProbe = distance(target) <= 12 || crystals.active ? crystals.plan(target, now()) : null;
+    crystalProbe = distance(target) <= 12 || crystals.active ? planCrystals() : null;
     return crystalProbe;
   }
+  function planCrystals() {
+    crystalSnapshot = {
+      origin: bot.entity.position.clone(),
+      target: target.position.clone(),
+      health: bot.health,
+    };
+    return crystals.plan(target, now());
+  }
   function invalidateCrystal() {
+    nextCrystalPlanAt = 0;
     crystalProbeAt = -Infinity;
     crystalProbe = null;
   }
@@ -979,9 +990,7 @@ function createCombatController(
     const pressure = distance(enemy) <= 3.2 || now() < crystalPressureUntil;
     nextCrystalPlanAt = now() + (pressure ? 100 : 250);
     const action =
-      settings.adaptiveCombat && requestedStyle === "auto"
-        ? probeCrystal()
-        : crystals.plan(enemy, now());
+      settings.adaptiveCombat && requestedStyle === "auto" ? probeCrystal() : planCrystals();
     if (!action) {
       if (now() >= nextCrystalStatusAt) {
         onStatus(`crystal waiting: ${crystals.reason}`);
@@ -1032,7 +1041,12 @@ function createCombatController(
     if (rev !== generation || target !== enemy) return;
     // A valid layout is already reachable. Hold this position through cooldown,
     // equip, aim and server confirmation instead of resuming an old walk goal.
-    if (now() < nextCrystalAt && !action.finish) return;
+    if (now() < nextCrystalAt && !action.finish) {
+      // A ready layout only waits for the configured action cooldown. A search
+      // throttle must never add another 100–250ms after that cooldown expires.
+      nextCrystalPlanAt = Math.min(nextCrystalPlanAt, nextCrystalAt);
+      return;
+    }
     bot.clearControlStates();
     if (action.type !== "break") {
       const item =
@@ -1054,7 +1068,10 @@ function createCombatController(
     if (rev !== generation || target !== enemy) return;
     // Recheck cover, target motion, owner positions and health after asynchronous aiming.
     const verified = crystals.verify(enemy, action, now());
-    if (!verified) return;
+    if (!verified) {
+      invalidateCrystal();
+      return;
+    }
     if (
       settings.adaptiveCombat &&
       requestedStyle === "auto" &&
@@ -1205,6 +1222,13 @@ function createCombatController(
     if (shot) pursuit.landing = shot.landing;
   }
   function moved(entity) {
+    if (
+      settings.crystalEnabled &&
+      target &&
+      entity?.position &&
+      (entity === target || isCrystal(entity) || distance(entity) <= 12)
+    )
+      invalidateCrystal();
     if (entity === target) {
       sampleEnemyTeleport();
       return;
@@ -1368,6 +1392,16 @@ function createCombatController(
         stop(false);
         return;
       }
+      if (
+        settings.crystalEnabled &&
+        crystalSnapshot &&
+        (!bot.entity.position.equals(crystalSnapshot.origin) ||
+          !target.position.equals(crystalSnapshot.target) ||
+          bot.health !== crystalSnapshot.health)
+      ) {
+        invalidateCrystal();
+        crystalSnapshot = null;
+      }
       if (settings.adaptiveCombat && !workTarget) {
         decision = brain.evaluate(target, {
           visible: canSeeTarget(bot, target),
@@ -1448,8 +1482,14 @@ function createCombatController(
   };
   bot.on("entityDead", dead);
   bot.on("entityMoved", moved);
-  bot.on("entityEquip", observePearlHand);
-  bot.on("entityUpdate", observePearlHand);
+  const entityChanged = (entity) => {
+    if (!entity) return;
+    observePearlHand(entity);
+    if (target && (entity === target || isCrystal(entity) || isOwner(entity?.username)))
+      invalidateCrystal();
+  };
+  bot.on("entityEquip", entityChanged);
+  bot.on("entityUpdate", entityChanged);
   const crystalSpawned = (entity) => {
     if (isCrystal(entity)) {
       nextCrystalPlanAt = 0;
@@ -1566,8 +1606,8 @@ function createCombatController(
       bot.removeListener("entityGone", removed);
       bot.removeListener("entityDead", dead);
       bot.removeListener("entityMoved", moved);
-      bot.removeListener("entityEquip", observePearlHand);
-      bot.removeListener("entityUpdate", observePearlHand);
+      bot.removeListener("entityEquip", entityChanged);
+      bot.removeListener("entityUpdate", entityChanged);
       bot.removeListener("entitySpawn", crystalSpawned);
       bot.removeListener("entityHurt", hurt);
       bot.removeListener("blockUpdate", invalidateCrystal);

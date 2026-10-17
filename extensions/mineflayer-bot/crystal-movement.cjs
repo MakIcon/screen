@@ -6,17 +6,17 @@ const clear = (block) => block?.boundingBox === "empty" && !hazardous(block);
 
 // Ground height, including slabs/steps. Unknown columns, water and drops larger
 // than one block belong to the pathfinder rather than blind combat movement.
-function groundAt(bot, point) {
+function groundAt(bot, point, blockAt = (p) => bot.blockAt(p)) {
   if (!bot.blockAt) return null;
   const bottom = Math.floor(point.y);
   for (let y = bottom + 1; y >= bottom - 2; y--) {
-    const block = bot.blockAt(new Vec3(point.x, y, point.z));
+    const block = blockAt(new Vec3(point.x, y, point.z));
     if (!block) return null;
     if (block.boundingBox !== "block" || hazardous(block)) continue;
     const top = y + Math.max(...(block.shapes ?? [[0, 0, 0, 1, 1, 1]]).map((shape) => shape[4]));
     if (top > point.y + 1.1 || top < point.y - 1.1) continue;
     const foot = new Vec3(point.x, top, point.z);
-    if ([0.05, 0.9, 1.75].every((dy) => clear(bot.blockAt(foot.offset(0, dy, 0))))) return foot;
+    if ([0.05, 0.9, 1.75].every((dy) => clear(blockAt(foot.offset(0, dy, 0))))) return foot;
   }
   return null;
 }
@@ -35,6 +35,14 @@ function walkSegment(
   const direction = delta.scaled(1 / length);
   const half = (bot.entity.width ?? 0.6) / 2 + 0.05;
   const travel = Math.min(maxDistance, Math.max(0.3, length - range + 0.3));
+  // The three width samples frequently revisit the same block. Cache only for
+  // this synchronous corridor check so a new obstacle is visible next tick.
+  const blocks = new Map();
+  const blockAt = (point) => {
+    const key = `${Math.floor(point.x)},${Math.floor(point.y)},${Math.floor(point.z)}`;
+    if (!blocks.has(key)) blocks.set(key, bot.blockAt(point));
+    return blocks.get(key);
+  };
   let height = start.y,
     jump = false;
   for (let distance = 0.3; distance <= travel + 0.01; distance += 0.3) {
@@ -45,7 +53,7 @@ function walkSegment(
         height - start.y,
         direction.z * distance + direction.x * side,
       );
-      const ground = groundAt(bot, point);
+      const ground = groundAt(bot, point, blockAt);
       if (!ground) return null;
       across.push(ground.y);
     }

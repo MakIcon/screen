@@ -111,6 +111,7 @@ function crystalOpportunity(s, action, settings) {
 
 function createCombatBrain(bot, settings, { now = Date.now } = {}) {
   let inventory = [],
+    capabilities = {},
     inventoryAt = -Infinity,
     damage = [],
     lastHealth = bot.health;
@@ -137,20 +138,28 @@ function createCombatBrain(bot, settings, { now = Date.now } = {}) {
   return {
     evaluate(target, { visible, airborne = false, recover = true } = {}) {
       healthChanged();
-      if (now() - inventoryAt >= 250) {
+      const time = now();
+      if (time - inventoryAt >= 250) {
         inventory = carriedItems(bot);
-        inventoryAt = now();
+        capabilities = { axe: false, mace: false, wind: false, pearls: 0 };
+        for (const item of inventory) {
+          if (item.name.endsWith("_axe")) capabilities.axe = true;
+          else if (item.name === "mace") capabilities.mace = true;
+          else if (item.name === "wind_charge") capabilities.wind = true;
+          else if (item.name === "ender_pearl") capabilities.pearls += item.count ?? 1;
+          else if (item.name === "golden_apple") capabilities.apple ??= item;
+          else if (item.name === "enchanted_golden_apple") capabilities.enchantedApple ??= item;
+        }
+        inventoryAt = time;
       }
-      damage = damage.filter((hit) => now() - hit.at < 2000);
+      damage = damage.filter((hit) => time - hit.at < 2000);
       const enemy = observedHealth(bot, target);
       const flags = metadataNumber(bot, target, ["living_entity_flags"]);
       const held =
         flags !== null && flags & 2
           ? target.equipment?.[1]
           : (target.heldItem ?? target.equipment?.[0]);
-      const apple =
-        (now() >= nextAppleAt && inventory.find((item) => item.name === "golden_apple")) ||
-        (now() >= nextAppleAt && inventory.find((item) => item.name === "enchanted_golden_apple"));
+      const apple = time >= nextAppleAt && (capabilities.apple ?? capabilities.enchantedApple);
       const food = bot.autoEat?.needsFood() && bot.autoEat.bestFood();
       const heal =
         settings.combatHealing &&
@@ -166,11 +175,9 @@ function createCombatBrain(bot, settings, { now = Date.now } = {}) {
         visible,
         airborne,
         blocking: Boolean(targetBlocking(bot, target)),
-        axe: settings.shieldBreak && inventory.some((item) => item.name.endsWith("_axe")),
-        mace:
-          Boolean(bot.registry?.itemsByName?.mace) &&
-          inventory.some((item) => item.name === "mace"),
-        wind: inventory.some((item) => item.name === "wind_charge"),
+        axe: settings.shieldBreak && capabilities.axe,
+        mace: Boolean(bot.registry?.itemsByName?.mace) && capabilities.mace,
+        wind: capabilities.wind,
         enemyUsingItem: Boolean(
           flags !== null &&
           flags & 1 &&
@@ -179,13 +186,11 @@ function createCombatBrain(bot, settings, { now = Date.now } = {}) {
         heal: heal || null,
         needsFood: Boolean(food),
         food: bot.food,
-        canRecover: recover && now() >= nextRecoveryAt,
+        canRecover: recover && time >= nextRecoveryAt,
         pearlEscape:
           settings.pearlEnabled &&
           settings.pearlEscape &&
-          inventory
-            .filter((item) => item.name === "ender_pearl")
-            .reduce((sum, item) => sum + (item.count ?? 1), 0) > settings.pearlReserve,
+          capabilities.pearls > settings.pearlReserve,
         pearlMinHealth: settings.pearlMinHealth,
       };
       lastDecision = { ...chooseCombatAction(snapshot), ...snapshot };

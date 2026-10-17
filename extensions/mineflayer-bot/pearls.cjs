@@ -41,14 +41,31 @@ function safeLanding(blockAt, point) {
 }
 
 // A segment/slab intersection also catches pearls hitting players before terrain.
-function intersectsEntity(from, to, entity) {
+function entityBounds(entity) {
   const p = entity.position;
   const half = (entity.width ?? 0.6) / 2 + 0.125;
-  const low = [p.x - half, p.y - 0.125, p.z - half];
-  const high = [p.x + half, p.y + (entity.height ?? 1.8) + 0.125, p.z + half];
+  return {
+    low: [p.x - half, p.y - 0.125, p.z - half],
+    high: [p.x + half, p.y + (entity.height ?? 1.8) + 0.125, p.z + half],
+  };
+}
+
+function intersectsBounds(from, to, { low, high }) {
+  // Most arena entities are nowhere near this segment. Reject them before
+  // divisions and slab tests; bounds are built once for the entire arc search.
+  if (
+    (from.x < low[0] && to.x < low[0]) ||
+    (from.x > high[0] && to.x > high[0]) ||
+    (from.y < low[1] && to.y < low[1]) ||
+    (from.y > high[1] && to.y > high[1]) ||
+    (from.z < low[2] && to.z < low[2]) ||
+    (from.z > high[2] && to.z > high[2])
+  )
+    return false;
   let first = 0,
     last = 1;
-  for (const [i, axis] of ["x", "y", "z"].entries()) {
+  for (let i = 0; i < 3; i++) {
+    const axis = i === 0 ? "x" : i === 1 ? "y" : "z";
     const delta = to[axis] - from[axis];
     if (Math.abs(delta) < 1e-8) {
       if (from[axis] < low[i] || from[axis] > high[i]) return false;
@@ -63,9 +80,57 @@ function intersectsEntity(from, to, entity) {
   return true;
 }
 
-function simulatePearl(bot, yaw, pitch, blockAt = (p) => bot.blockAt(p)) {
-  const pos = pearlOrigin(bot.entity, bot.registry);
-  const inherited = bot.entity.velocity ?? new Vec3(0, 0, 0);
+function intersectsEntity(from, to, entity) {
+  return intersectsBounds(from, to, entityBounds(entity));
+}
+
+function flightContext(bot, ownerId) {
+  return {
+    modern: modernPearlPhysics(bot),
+    entities: Object.values(bot.entities ?? {})
+      .filter(
+        (e) =>
+          e.id !== ownerId &&
+          e.isValid !== false &&
+          e.position &&
+          e.height > 0 &&
+          !/pearl/i.test(e.name ?? ""),
+      )
+      .map(entityBounds),
+    origin: bot.entity?.position ? pearlOrigin(bot.entity, bot.registry) : null,
+    inherited: bot.entity?.velocity ?? new Vec3(0, 0, 0),
+  };
+}
+
+function crossesHorizontal(origin, velocity, { low, high }) {
+  let first = 0,
+    last = 120;
+  // Drag only shrinks horizontal velocity; the complete flight stays on this
+  // segment even in water. Vertical motion still uses the full slab test.
+  for (const i of [0, 2]) {
+    const axis = i === 0 ? "x" : "z";
+    if (velocity[axis] === 0) {
+      if (origin[axis] < low[i] || origin[axis] > high[i]) return false;
+    } else {
+      const a = (low[i] - origin[axis]) / velocity[axis];
+      const b = (high[i] - origin[axis]) / velocity[axis];
+      first = Math.max(first, Math.min(a, b));
+      last = Math.min(last, Math.max(a, b));
+      if (first > last) return false;
+    }
+  }
+  return true;
+}
+
+function simulatePearl(
+  bot,
+  yaw,
+  pitch,
+  blockAt = (p) => bot.blockAt(p),
+  context = flightContext(bot, bot.entity.id),
+) {
+  const pos = context.origin;
+  const inherited = context.inherited;
   const velocity = new Vec3(
     -Math.sin(yaw) * Math.cos(pitch),
     Math.sin(pitch),
@@ -73,7 +138,7 @@ function simulatePearl(bot, yaw, pitch, blockAt = (p) => bot.blockAt(p)) {
   )
     .scaled(1.5)
     .plus(new Vec3(inherited.x, bot.entity.onGround ? 0 : inherited.y, inherited.z));
-  const shot = simulatePearlFlight(bot, pos, velocity, blockAt, bot.entity.id);
+  const shot = simulatePearlFlight(bot, pos, velocity, blockAt, bot.entity.id, context);
   if (!shot || shot.face !== 1 || !safeLanding(blockAt, shot.landing)) return null;
   return { ...shot, yaw, pitch };
 }
@@ -84,20 +149,17 @@ function simulatePearlFlight(
   initialVelocity,
   blockAt = (p) => bot.blockAt(p),
   ownerId,
+  context = null,
 ) {
   if (!bot.world?.raycast || !origin || !initialVelocity || initialVelocity.norm() < 1e-6)
     return null;
   let pos = origin.clone(),
     velocity = initialVelocity.clone();
-  const entities = Object.values(bot.entities ?? {}).filter(
-    (e) =>
-      e.id !== ownerId &&
-      e.isValid !== false &&
-      e.position &&
-      e.height > 0 &&
-      !/pearl/i.test(e.name ?? ""),
+  context ??= flightContext(bot, ownerId);
+  const { modern } = context;
+  const entities = context.entities.filter((bounds) =>
+    crossesHorizontal(origin, initialVelocity, bounds),
   );
-  const modern = modernPearlPhysics(bot);
   for (let ticks = 1; ticks <= 120; ticks++) {
     const medium = blockAt(pos);
     if (!medium || (hazards.test(medium.name) && !waterAt(medium))) return null;
@@ -109,12 +171,13 @@ function simulatePearlFlight(
     if (length < 1e-8) return null;
     const hit = bot.world.raycast(pos, velocity.scaled(1 / length), length);
     const end = hit?.intersect ?? next;
+    const delta = end.minus(pos);
     // Water changes drag, but does not collide with the projectile.
     for (let f = 0; f <= 1; f += 0.25) {
-      const b = blockAt(pos.plus(end.minus(pos).scaled(f)));
+      const b = blockAt(pos.plus(delta.scaled(f)));
       if (!b || (hazards.test(b.name) && !waterAt(b))) return null;
     }
-    if (entities.some((e) => intersectsEntity(pos, end, e))) return null;
+    if (entities.some((bounds) => intersectsBounds(pos, end, bounds))) return null;
     if (hit) {
       if (!hit.intersect) return null;
       return { ticks, face: hit.face, landing: hit.intersect.clone() };
@@ -134,6 +197,8 @@ function planPearl(bot, destination, settings, radius = 2, exact = false) {
   const offset = destination.minus(from);
   const yaw = Math.atan2(-offset.x, -offset.z);
   const cache = new Map();
+  const context = flightContext(bot, bot.entity.id);
+  const tried = new Set();
   const blockAt = (p) => {
     const key = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
     if (!cache.has(key)) cache.set(key, bot.blockAt(p));
@@ -146,7 +211,10 @@ function planPearl(bot, destination, settings, radius = 2, exact = false) {
     const step = fromNotchianPitch(0.15);
     const aimYaw = bot.entity.yaw + Math.round((yaw + turn - bot.entity.yaw) / step) * step;
     const aimPitch = bot.entity.pitch + Math.round((angle - bot.entity.pitch) / step) * step;
-    const shot = simulatePearl(bot, aimYaw, aimPitch, blockAt);
+    const key = `${aimYaw},${aimPitch}`;
+    if (tried.has(key)) return;
+    tried.add(key);
+    const shot = simulatePearl(bot, aimYaw, aimPitch, blockAt, context);
     if (!shot) return;
     const travel = from.distanceTo(shot.landing);
     const after = shot.landing.distanceTo(destination);

@@ -1,0 +1,334 @@
+{
+  "checkedAt": "2026-10-17T19:14:29.321Z",
+  "savedPackage": "dist-extensions/pvp-decision-1.15.6/mineflayer-bot",
+  "version": "1.15.6",
+  "generatedArchiveEntries": 187,
+  "allSourceMatches": true,
+  "rootFiles": [
+    {
+      "file": "worker.cjs",
+      "sha256": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "worker.test.mjs",
+      "sha256": "9cd6a1c2176ff5364064788836e39f102e532122515d19da85b3fc32938346b4",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "production.cjs",
+      "sha256": "77b29784ce1daff53314e92159acf8462c3f8314b2168005f3f2dd00321a0a09",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "production-plan.cjs",
+      "sha256": "5b01e14481b390ee353a027d0fc270dcf9a8cd2775488c5bbc30cf9d43063abe",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "storage-scan.cjs",
+      "sha256": "211fd256ca619353ea494d33b33d0f1c3e441dcdb0b59308c171e438cb561516",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "storage-scan.test.mjs",
+      "sha256": "315eed3edd3bbbb223f47921908d831870cb896250c250d8f77a2575cf4b6a5a",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "production-commands.cjs",
+      "sha256": "dfd59d8ea03a441fe9111aa62a2772cedda35c0a335099b901ef0d87f0ce9270",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "production.test.mjs",
+      "sha256": "26c59518afcfa39ee067a08617d902798cd85b34cd3d448b45fd73d31e221767",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "production-container.test.mjs",
+      "sha256": "97ecd9b9fcb9b0ca659a24370d26ac66e22fb69b0841c05bc1be8b9a923c7553",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "PRODUCTION.md",
+      "sha256": "9c53de494c786c651c7962c0fdef99915b478ccbb61466210e9fa538f3099486",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "knockback.cjs",
+      "sha256": "bb69b7c0db7da579d3045e313b07e5af86d7d4cee85dc2a07f7f1ac6aed2a596",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "knockback.test.mjs",
+      "sha256": "c7d5de7ca17cd6e7fbb5e1981c415c5067c34e59f0598ef33c6c7f7d7e35a1e9",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat.cjs",
+      "sha256": "8bb89a5a78a34cf7b734231642a3c5e2aac1e96a4ec2e6be9eac5fdd7535dbe3",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat-brain.cjs",
+      "sha256": "0cf51302bbe384aadb3f4a916858e254910a860e269418d06acb3a2a2c8070fc",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat-footwork.cjs",
+      "sha256": "2b53f0e8b6ccdba7b4d4d824a4f6fa0b3e4f69c3e38811946bea121976469208",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat-brain.test.mjs",
+      "sha256": "7afaf95fac87b7d2b11344f50c229a3208bd2bd1ffb9710056e07558b78ca07a",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "decision-benchmark.mjs",
+      "sha256": "f1c7915cf604e7a2f527c1762b4848c52d4fae52ac63bff4d603876faa383330",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "decision-benchmark-results.json",
+      "sha256": "f64b97a8ffadc4d2fe773447a28e2ea3e9961be78e9454b534be188eaa3b4c60",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "COMBAT-PERFORMANCE.md",
+      "sha256": "7338b189b1b7077eec8e617758397c0d673f60b99f46ed22beec4406bb7b06fb",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat-defaults.json",
+      "sha256": "a80e1430fdf742d3f9ec7628f948a46fd85b5fd505ac7c71819d231e9cbcaffc",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat.test.mjs",
+      "sha256": "959e1ffbf2f4127a7c772f91a792d89a2b39ce509c75b9dd1451a3a8bfc0327e",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "pearls.cjs",
+      "sha256": "eec29870837008eeb585d85d981e3343abf77041af74e34b9500cce2026ad168",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "crystals.cjs",
+      "sha256": "a9992c09e011091c9937a4ff4d1280a7123bbf42020bdf935c695d3587eeef46",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "crystal-movement.cjs",
+      "sha256": "5115496368aa1cef5b5c4cd74386dd8d930ae11908adc6df2e6ee78639f3e533",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "crystal-tactics.test.mjs",
+      "sha256": "bbfcfab3fd9be2d97b9ae89ce4ee9cdf61074f2c937429a2c644f14513c094a4",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "bow-defense.cjs",
+      "sha256": "3d4cc5b823d1e6ec84bae297c56d6e77dbbdd3d8efebdcfbe6883993d01f0856",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "combat-inventory.cjs",
+      "sha256": "f31cefef7e867e86371bba9e461c3af653139afbf54e950aa88efa0fb3ef3a26",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "armor-manager.cjs",
+      "sha256": "6fc417654ecace17439fbb55daa15a6b1ed1d6c9520f1d407ebb19a5e8912115",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "auto-eat.cjs",
+      "sha256": "770a90427e5b2cf0da54f204b35dd4bcce6638b12c27d42d829ac0063f0f6ba7",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "emergency-mlg.cjs",
+      "sha256": "3db1459f121cc007be62aa87792f13d4d9d0725cd4078b306c4ca972d13d1305",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "survival.cjs",
+      "sha256": "38acac7aa9c3e188ba8e94990a6543194fa972032c8642881950ca0784ade686",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-plan.cjs",
+      "sha256": "a7487fc2515417664889f9e223d8fffaf2aee706ac7bba7cd42d14996d0e8f88",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-defaults.json",
+      "sha256": "688ec1323ad842a06dd2f59a3718bd2b3f9580ccf22ec759ee565663321b79ff",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-scan.cjs",
+      "sha256": "fb1c3e89088eb11b51e7ff99a1a3f91a85df1b5a437ad411fcf2cd9e8c2aa6da",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering.cjs",
+      "sha256": "8de6c57bb8fa2a7636147ee713cade22afb151898e1c24e16f26e24e87255067",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-defense.cjs",
+      "sha256": "50f6927530cfd7031e8148cd763d90f503cd170fdfe9790f375ebf68ed4fff7d",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-storage.cjs",
+      "sha256": "e45d61e26230da50fe0edff51e38134fae6866d0862e16c33febdd8996e02033",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "storage-filters.json",
+      "sha256": "cd4cd6a0b3f03494f743d14309752c1ae15640bf8ff7db4bdb9c6e341c5bb186",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-commands.cjs",
+      "sha256": "edefab2f152fcaa6bd60778ea9774c1afeef548229e9af8a7acef44c40f93857",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering.test.mjs",
+      "sha256": "1b2d9ca668f9def1b5283b86ff9879843062a14462e85a64f62777620586e41a",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-storage.test.mjs",
+      "sha256": "905224ced7b0b602896cd9a976bdf3bbb312435ccc4c51e27060f0a18cdd9243",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-container.test.mjs",
+      "sha256": "a23dddb49bb11eff4e5f30a222381e83031c2138256ff2b6a0f9bfb163fee8ed",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "gathering-navigation.test.mjs",
+      "sha256": "13e0fb3d7b05ab50728f16ebf8c2914ad664dd4045d94a9e98d5c6c2684ed275",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "GATHERING.md",
+      "sha256": "d0444a03aa0889344d1b4655fc3f2e3ad5d133f62f6506d9d382212b17f37464",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "web-inventory.cjs",
+      "sha256": "c5af94cb43c17ba926145f5d08f33b0b0c58017c6fe8fc75be4e38fb7d75a2f4",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "web-inventory.test.mjs",
+      "sha256": "3d8f22d03cb122255280464ad8af58c2239a86de4d3fbf970977d22cd3ee722c",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "survival-defaults.json",
+      "sha256": "7b415ce7144261e517500502893242eb6494200d8b268bc120c617b16db36ed9",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "survival.test.mjs",
+      "sha256": "d59f124784c2f9f4b3d38aa2f31331353132c490f2288749a6d03fd589145b24",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "SURVIVAL.md",
+      "sha256": "20e3c9fb5459d28a31a7e75f4d1ae7799e02b7b5d605aed667f32f221df9acb5",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "AUTO-EAT-LICENSE",
+      "sha256": "2cf1268731197ea3a160313616b904f6c6103cb119c4267ecc2d9ce09b8fd707",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "melee-shield.cjs",
+      "sha256": "057cf099e7d99f5c548490cdeed56db5b25a8c47001761dc3eb09242667e2437",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "mace.cjs",
+      "sha256": "ffea6df1417068b5239c11009fb745bfb2dec24d855981d4b268e1e4af205a15",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "mace.test.mjs",
+      "sha256": "9759b27310f25c776145d9d329f4c6a5d8d63eceb87b61c8920f2a3ea5ad6a2b",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "defense.test.mjs",
+      "sha256": "2a1ea6538567ef2c26b116182f8ebd14b3b4c86e18f5c8bf6db5f370df025910",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "utility.test.mjs",
+      "sha256": "bedd64c8c4cae2e25e7f6e6992c9e309e639854b5eea54f5ae77b6a7306dc4f2",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "COMBAT.md",
+      "sha256": "e66bbbb75849bceef6086e860feaa7b0e97d2f474f122bc6ed521894b6e21b60",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "pathfinder.test.mjs",
+      "sha256": "fdd789af9f0d31ebb2e0fce4c0d10c19fb094f17de6259b4ded8fdd39f4e9b4c",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "package.json",
+      "sha256": "b42b2ff9e0e84b35f1309cd90335d32c10c99345612ae13a68cb8e6ce3837226",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "15cb17942b2e0e0ae4919d1adb5f50408cd0e13692f3ad15de8458d112123061",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "extension.json",
+      "sha256": "715572952fe7874786f15fdaa368bf807e47a471f86ccc4752ad35f0aedd8542",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "build-pathfinder.mjs",
+      "sha256": "2de06e8825196847e38e53217b348f13fbd3cc5a1ee72ce786927d57576fd942",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "restore-pathfinder-source.cjs",
+      "sha256": "0f360bc246796e5e14a9e32de62a906c01f89f91a673245e64042a0e465b7cb6",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "COPYING",
+      "sha256": "2e8578f16b6ea265412166e8b4b1da045fcc11f28db03d664908410124a2f01e",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "BARITONE-LICENSE",
+      "sha256": "a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b",
+      "matchesSavedSource": true
+    },
+    {
+      "file": "THIRD-PARTY-NOTICES.md",
+      "sha256": "36106e7758c98e18c58ddff8eb43434bfbf749e6c6c95b45613a53c7cdd6c7b7",
+      "matchesSavedSource": true
+    }
+  ]
+}

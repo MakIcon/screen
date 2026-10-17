@@ -1,0 +1,260 @@
+{
+  "date": "2026-10-17",
+  "baselineRevision": "747ff486cdd9c227e0c601c08d86a23d212bd1ea",
+  "baselineVersion": "1.15.5",
+  "updatedVersion": "1.15.6",
+  "node": "v24.13.1",
+  "cpu": "AMD Ryzen 5 9600X 6-Core Processor",
+  "minecraftVersion": "26.1.2",
+  "entities": 66,
+  "trials": 3,
+  "samplesPerTrial": 100,
+  "summary": "Median of the three trial medians; P95 column is median of the three trial P95s. Initialization and warmup excluded. Same selected outputs verified in each pair.",
+  "settings": {
+    "enabled": true,
+    "adaptiveCombat": true,
+    "combatHealing": true,
+    "pearlEscape": true,
+    "engine": "custom",
+    "style": "auto",
+    "autoTarget": "manual",
+    "targetRange": 24,
+    "reactionMs": 0,
+    "meleeSkill": 100,
+    "cps": 12,
+    "attackRange": 3,
+    "weapon": "sword",
+    "strafe": "intelligent",
+    "criticals": "hop",
+    "sprintTap": "wtap",
+    "shield": true,
+    "shieldBreak": true,
+    "maceDefense": true,
+    "smoothAim": true,
+    "smoothAimSpeed": 100,
+    "bowEnabled": true,
+    "bowEngine": "custom",
+    "bowAccuracy": 90,
+    "bowRange": 48,
+    "bowIntervalMs": 1500,
+    "bowPredict": true,
+    "bowOffhand": false,
+    "meleeFallback": true,
+    "bowDefense": false,
+    "bowDefenseMode": "early",
+    "bowDefenseCheckMs": 50,
+    "bowDefenseRange": 48,
+    "bowDefenseMargin": 0.35,
+    "bowDefenseHoldMs": 300,
+    "bowDefenseRequireDraw": true,
+    "crystalEnabled": true,
+    "crystalPlace": true,
+    "crystalBreak": true,
+    "crystalBuildBase": true,
+    "crystalCover": true,
+    "crystalCoverBlock": "auto",
+    "crystalFastAim": true,
+    "crystalMaxCoverBlocks": 2,
+    "crystalSpawnTimeoutMs": 1500,
+    "crystalRetries": 2,
+    "crystalPlaceRange": 4.5,
+    "crystalBreakRange": 4.5,
+    "crystalMinDamage": 4,
+    "crystalMaxSelfDamage": 6,
+    "crystalMinHealth": 8,
+    "crystalIntervalMs": 250,
+    "crystalPredict": true,
+    "crystalPredictionTicks": 3,
+    "crystalPriority": "damage",
+    "crystalProtectOwners": true,
+    "pearlEnabled": true,
+    "pearlFollow": true,
+    "pearlCome": true,
+    "pearlGoto": false,
+    "pearlChase": true,
+    "pearlChain": true,
+    "pearlMinDistance": 16,
+    "pearlMaxDistance": 48,
+    "pearlCooldownMs": 1500,
+    "pearlMinHealth": 8,
+    "pearlReserve": 0
+  },
+  "results": [
+    {
+      "scenario": "action-and-item",
+      "beforeMedianMs": 0.0006426000000000158,
+      "afterMedianMs": 0.00041880000000003295,
+      "speedup": 1.534383954154645,
+      "beforeP95Ms": 0.000820699999999988,
+      "afterP95Ms": 0.0006236999999999853,
+      "beforeTrialMediansMs": [0.0006440999999999804, 0.000608000000000061, 0.0006426000000000158],
+      "afterTrialMediansMs": [0.0004053000000000111, 0.00041880000000003295, 0.000421100000000024],
+      "beforeBlockReads": 0,
+      "afterBlockReads": 0,
+      "beforeRaycasts": 0,
+      "afterRaycasts": 0,
+      "result": "push"
+    },
+    {
+      "scenario": "movement-open-ground",
+      "beforeMedianMs": 0.024574000000000068,
+      "afterMedianMs": 0.008906000000001768,
+      "speedup": 2.759263417919963,
+      "beforeP95Ms": 0.031678000000001705,
+      "afterP95Ms": 0.01570600000000013,
+      "beforeTrialMediansMs": [0.022792000000001734, 0.024574000000000068, 0.024752000000000864],
+      "afterTrialMediansMs": [0.008906000000001768, 0.008782000000001062, 0.009748000000001866],
+      "beforeBlockReads": 90,
+      "afterBlockReads": 9,
+      "beforeRaycasts": 0,
+      "afterRaycasts": 0,
+      "result": true
+    },
+    {
+      "scenario": "crystal-new-layout",
+      "beforeMedianMs": 0.8349000000000615,
+      "afterMedianMs": 0.5452000000000226,
+      "speedup": 1.5313646368305702,
+      "beforeP95Ms": 1.4770999999999503,
+      "afterP95Ms": 0.7626999999999953,
+      "beforeTrialMediansMs": [0.81899999999996, 0.8349000000000615, 1.026200000000017],
+      "afterTrialMediansMs": [0.5235999999999876, 0.5858999999999241, 0.5452000000000226],
+      "beforeBlockReads": 1241,
+      "afterBlockReads": 403,
+      "beforeRaycasts": 138,
+      "afterRaycasts": 93,
+      "result": {
+        "type": "build",
+        "position": {
+          "x": 4,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 21,
+        "selfDamage": 4.368
+      }
+    },
+    {
+      "scenario": "crystal-continue-layout",
+      "beforeMedianMs": 0.5562999999999647,
+      "afterMedianMs": 0.13009999999997035,
+      "speedup": 4.27594158339809,
+      "beforeP95Ms": 0.7588000000000648,
+      "afterP95Ms": 0.24989999999991142,
+      "beforeTrialMediansMs": [0.6230000000000473, 0.5562999999999647, 0.5419999999999163],
+      "afterTrialMediansMs": [0.13019999999994525, 0.12630000000001473, 0.13009999999997035],
+      "beforeBlockReads": 1237,
+      "afterBlockReads": 13,
+      "beforeRaycasts": 137,
+      "afterRaycasts": 92,
+      "result": {
+        "type": "place",
+        "position": {
+          "x": 4,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 21,
+        "selfDamage": 4.368
+      }
+    },
+    {
+      "scenario": "crystal-existing-base",
+      "beforeMedianMs": 0.7735999999999876,
+      "afterMedianMs": 0.4154999999999518,
+      "speedup": 1.8618531889291874,
+      "beforeP95Ms": 1.0593000000001211,
+      "afterP95Ms": 0.7210999999999785,
+      "beforeTrialMediansMs": [0.8159999999998035, 0.7735999999999876, 0.7628999999999451],
+      "afterTrialMediansMs": [0.4154999999999518, 0.4136000000000877, 0.41859999999996944],
+      "beforeBlockReads": 1270,
+      "afterBlockReads": 403,
+      "beforeRaycasts": 137,
+      "afterRaycasts": 92,
+      "result": {
+        "type": "place",
+        "position": {
+          "x": 3,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 19,
+        "selfDamage": 5.712
+      }
+    },
+    {
+      "scenario": "pearl-travel",
+      "beforeMedianMs": 17.86909999999989,
+      "afterMedianMs": 8.731599999999844,
+      "speedup": 2.0464863255302816,
+      "beforeP95Ms": 19.052300000000287,
+      "afterP95Ms": 9.702299999999923,
+      "beforeTrialMediansMs": [17.73239999999987, 17.904400000000123, 17.86909999999989],
+      "afterTrialMediansMs": [8.722700000000032, 8.731599999999844, 8.816600000000108],
+      "beforeBlockReads": 2186,
+      "afterBlockReads": 2186,
+      "beforeRaycasts": 5034,
+      "afterRaycasts": 4900,
+      "result": {
+        "landing": {
+          "x": 48.495844426700714,
+          "y": 64,
+          "z": 0.49999999998592937
+        },
+        "ticks": 46,
+        "yaw": -1.5707963267946035,
+        "pitch": 0.489564855184379
+      }
+    },
+    {
+      "scenario": "pearl-exact-pursuit",
+      "beforeMedianMs": 25.5332999999996,
+      "afterMedianMs": 13.003299999999854,
+      "speedup": 1.963601547299523,
+      "beforeP95Ms": 27.616300000000138,
+      "afterP95Ms": 14.26870000000008,
+      "beforeTrialMediansMs": [25.585799999999836, 25.5332999999996, 25.085000000000036],
+      "afterTrialMediansMs": [13.003299999999854, 12.60570000000007, 13.01949999999988],
+      "beforeBlockReads": 3536,
+      "afterBlockReads": 3536,
+      "beforeRaycasts": 6964,
+      "afterRaycasts": 6916,
+      "result": {
+        "landing": {
+          "x": 24.58290437314907,
+          "y": 64,
+          "z": 0.49999999999293987
+        },
+        "ticks": 18,
+        "yaw": -1.5707963267946035,
+        "pitch": 0.13089969389956657
+      }
+    }
+  ],
+  "simulatedReactionMs": [
+    {
+      "after": 150,
+      "before": 300,
+      "scenario": "foundation-crystal-attack"
+    },
+    {
+      "after": 50,
+      "before": 250,
+      "scenario": "new-base-placement"
+    },
+    {
+      "after": 50,
+      "before": 250,
+      "scenario": "target-movement-placement"
+    }
+  ],
+  "validation": {
+    "combatTestsPassed": 190,
+    "fullSuitePassed": 488,
+    "fullSuiteTotal": 489,
+    "preExistingFailure": "worker honors disabled STAY ON WATER and disconnect removes the overlay",
+    "baselineFailureReproduced": true,
+    "eslintPassed": true,
+    "prettierPassed": true
+  }
+}

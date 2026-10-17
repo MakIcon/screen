@@ -1,12 +1,13 @@
 {
   "name": "@screenlauncher/mineflayer-bot",
   "private": true,
-  "version": "1.15.5",
+  "version": "1.15.6",
   "license": "GPL-3.0-only",
   "type": "commonjs",
   "scripts": {
     "build:pathfinder": "pnpm --dir pathfinding build && node build-pathfinder.mjs",
-    "test": "node --no-deprecation --test *.test.mjs"
+    "test": "node --no-deprecation --test *.test.mjs",
+    "benchmark:combat": "node decision-benchmark.mjs"
   },
   "dependencies": {
     "@nxg-org/mineflayer-custom-pvp": "1.7.16",
