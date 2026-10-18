@@ -7,6 +7,7 @@ const { createCrystalMovement, groundAt, walkSegment } = require("./crystal-move
 const { createCombatBrain, crystalOpportunity, observedHealth } = require("./combat-brain.cjs");
 const { createCombatFootwork } = require("./combat-footwork.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
+const { createBowAim } = require("./bow-aim.cjs");
 const {
   carriedItems,
   bestMeleeWeapon,
@@ -464,6 +465,7 @@ function createCombatController(
 ) {
   const settings = normalizeCombat(value);
   installCombatNavigation(bot, onError, now);
+  const bowAim = createBowAim(bot, { now });
   // Vanilla shields block only after 5 ticks (250 ms) of use. A raise that the
   // bot saw begin may still be hit if the strike reaches the server in time:
   // subtract the round trip, one tick of entity sync and one tick of margin.
@@ -498,6 +500,7 @@ function createCombatController(
   let chargeAt = null;
   let nextShotAt = 0;
   let lastPlanAt = 0;
+  let lastBowRevision = -1;
   let plan = null;
   let aimOffset = [0, 0];
   let autoEnabled = settings.autoTarget === "hostile";
@@ -676,6 +679,7 @@ function createCombatController(
     bot.launcherTravel?.stopChase();
     if (target) bot.tracker?.stopTrackingEntity(target);
     target = null;
+    bowAim.reset();
     pending = false;
     stopEngines();
     void bot.pathfinder.stop();
@@ -694,6 +698,7 @@ function createCombatController(
     workTarget = forWork;
     workSuspended = previousSuspended;
     target = entity;
+    bowAim.reset(entity);
     lastEnemyPosition = entity.position.clone();
     observePearlHand(entity);
     requestedStyle = style;
@@ -994,6 +999,7 @@ function createCombatController(
     }
   }
   function shotPlan() {
+    if (settings.bowEngine === "custom" && settings.bowPredict) return bowAim.plan(target);
     const velocity = settings.bowPredict
       ? bot.tracker?.getEntitySpeed(target)?.clone() || new Vec3(0, 0, 0)
       : new Vec3(0, 0, 0);
@@ -1014,9 +1020,10 @@ function createCombatController(
       }
       return;
     }
-    if (time - lastPlanAt >= 200 || !plan) {
+    if (time - lastPlanAt >= 50 || lastBowRevision !== bowAim.revision || !plan) {
       plan = shotPlan();
       lastPlanAt = time;
+      lastBowRevision = bowAim.revision;
     }
     if (!plan || !canSeeTarget(bot, target)) return;
     if (chargeAt === null) {
@@ -1033,11 +1040,32 @@ function createCombatController(
         : bot.look.bind(bot);
     await look(plan.yaw + aimOffset[0], plan.pitch + aimOffset[1], true);
     if (revision !== generation || mode !== "ranged") return;
-    if (time - chargeAt >= 1200) {
-      flushBowLook(plan.yaw + aimOffset[0], plan.pitch + aimOffset[1]);
+    if (chargeAt !== null && now() - chargeAt >= 1200) {
+      // Movement packets keep arriving during a smooth turn. Recompute from
+      // those observations and the current shooter position at release time.
+      if (
+        !allowed(target) ||
+        distance(target) > settings.bowRange ||
+        !hasBow() ||
+        !canSeeTarget(bot, target)
+      )
+        return;
+      plan = shotPlan();
+      lastPlanAt = now();
+      lastBowRevision = bowAim.revision;
+      if (!plan) return;
+      const yaw = plan.yaw + aimOffset[0],
+        pitch = plan.pitch + aimOffset[1];
+      bot.smoothLook?._cleanupTasks(true);
+      if (bot.smoothLook) bot.smoothLook._pendingTask = null;
+      // Mineflayer's forced look updates rotation synchronously. Keep look and
+      // release in the same event-loop turn; no stale tween may change it.
+      void bot.look(yaw, pitch, true).catch(onError);
+      if (revision !== generation || mode !== "ranged") return;
+      flushBowLook(yaw, pitch);
       bot.deactivateItem();
       chargeAt = null;
-      nextShotAt = time + Math.max(0, settings.bowIntervalMs - 1200);
+      nextShotAt = now() + Math.max(0, settings.bowIntervalMs - 1200);
       onStatus(`bow shot: ${target.username || target.name}; ${settings.bowEngine}`);
     }
   }
@@ -1289,6 +1317,7 @@ function createCombatController(
     )
       invalidateCrystal();
     if (entity === target) {
+      bowAim.observe(entity);
       sampleEnemyTeleport();
       return;
     }
@@ -1662,6 +1691,7 @@ function createCombatController(
       disposed = true;
       stop(true);
       defense.dispose();
+      bowAim.dispose();
       mace.dispose();
       brain.dispose();
       if (settings.adaptiveCombat && nativeMove) {

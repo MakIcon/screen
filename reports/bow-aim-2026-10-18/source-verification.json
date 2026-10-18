@@ -1,0 +1,9 @@
+{
+  "baselineCommit": "1d16c2cd923fb28eafbb1e0d7cbdb04b25a49f68",
+  "baselineCombatSha256": "1d0da5a9a78a1bc6edfc1259e67d328e4681735f9a420bf38252bf5689376b4e",
+  "finalCombatSha256": "83392d09a71de6d0517adb7c751a7cd16f13a8307a87fba7e2537a69f66b32b4",
+  "bowAimSha256": "b4cb7ef2c8b36d19b186d7d03c3e94b1ce29a15d150148a3444ea760056ca7ec",
+  "archiveSha256": "ae77559c77fc527d3ca564fe86bf729d3afe41ba7a269ae63f848bc864c27b65",
+  "sourceArchiveVerified": true,
+  "stagingVerified": true
+}

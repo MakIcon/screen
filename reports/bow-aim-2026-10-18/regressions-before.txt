@@ -1,0 +1,105 @@
+✖ custom refreshes aim after a delayed turn and starts the interval at actual release (10.0925ms)
+✖ hawkeye refreshes aim after a delayed turn and starts the interval at actual release (1.7981ms)
+✖ bow does not release a stale shot after a smooth turn: cover (1.3785ms)
+✖ bow does not release a stale shot after a smooth turn: range (1.2826ms)
+✔ bow does not release a stale shot after a smooth turn: stop (1.2582ms)
+✖ bow does not release a stale shot after a smooth turn: no-solution (3.794ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 1
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1150.3646
+
+✖ failing tests:
+
+test at combat.test.mjs:239:3
+✖ custom refreshes aim after a delayed turn and starts the interval at actual release (10.0925ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 173.12451171875
+  - 171.4056396484375
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat.test.mjs:273:14)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 173.12451171875,
+    expected: 171.4056396484375,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at combat.test.mjs:239:3
+✖ hawkeye refreshes aim after a delayed turn and starts the interval at actual release (1.7981ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 173.12451171875
+  - 171.4056396484375
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat.test.mjs:273:14)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 173.12451171875,
+    expected: 171.4056396484375,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at combat.test.mjs:287:3
+✖ bow does not release a stale shot after a smooth turn: cover (1.3785ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat.test.mjs:311:14)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at combat.test.mjs:287:3
+✖ bow does not release a stale shot after a smooth turn: range (1.2826ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat.test.mjs:311:14)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at combat.test.mjs:287:3
+✖ bow does not release a stale shot after a smooth turn: no-solution (3.794ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat.test.mjs:311:14)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

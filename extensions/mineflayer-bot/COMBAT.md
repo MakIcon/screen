@@ -374,14 +374,44 @@ the inventory. Bow range is limited to 120 blocks. The offhand option is effecti
 only on Minecraft versions with a second hand.
 
 Bow accuracy controls additional angular scatter; 100% removes it. This is not
-a promised hit percentage. Prediction uses the entity tracker's velocity.
-Both planners model projectile trajectories. The controller checks visibility,
+a promised hit percentage. Since 1.16.2, Custom PvP with prediction enabled uses
+the local `bow-aim.cjs` intercept solver. Up to 24 recent position observations
+(1.2 seconds) distinguish straight running, stops, turns and repeated strafing.
+Look-only packets do not refresh motion age; packet bursts are coalesced,
+teleports reset the history and stale horizontal speed decays. Vertical movement
+uses player gravity/drag and terrain landing checks instead of clearing Y speed.
+Regular reversals can repeat within the short forecast; irregular reversals
+reduce the extrapolation distance. With sparse position packets, a bounded
+cycle fit requires at least two observed periods and a small residual error.
+The solver favours overlapping plausible
+hitboxes and uses the upper torso after recent jumps to tolerate another takeoff.
+These are bounded motion heuristics, not guaranteed future player inputs.
+
+Flight time is solved using discrete arrow gravity/drag, shooter velocity,
+observation age, our measured RTT (bounded at 500 ms) and half a server tick.
+Unknown ping adds no network estimate. Arbitrary server lag, another player's
+ping, network jitter, potion-modified physics and future random evasions cannot
+be known from these observations. The arc is checked against blocks before use.
+HawkEye retains its trajectory planner; prediction off retains stationary aiming.
+The controller refreshes its plan each 50 ms physics tick or fresh observation,
+then recalculates immediately before release after the smooth-look call. It
+rechecks target validity/range, ammo, visibility and trajectory, applies exact
+local/server angles and releases within one event-loop turn. A newly blocked
+shot stays drawn. The shot interval starts at the actual release time.
+
+The controller checks visibility,
 charges a bow for at least 1.2 seconds and applies the configured shot interval.
 HawkEye's automatic attack/radar loops are not started: the extension owns the
 bow lifecycle so engines cannot shoot concurrently or leave timers behind.
 Stopping a charged bow releases it into the ground because Minecraft fires when
 use is released. Target death, disappearance, distance loss and disconnect all
 cancel combat. Reconnect starts a new controller; manual targets are not retained.
+
+Run `pnpm --filter @screenlauncher/mineflayer-bot benchmark:bow` for the paired
+offline comparison against the actual Custom PvP 1.7.16 planner and tracker.
+The benchmark scores moving hitboxes with an independent arrow integrator;
+distances, latency, cache age, failed shots and timing measurements are reported.
+It does not replace a live-server accuracy test.
 
 ## Bow awareness and defense
 

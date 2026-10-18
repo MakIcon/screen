@@ -1,0 +1,36 @@
+{
+  "fullWorker": {
+    "tests": 550,
+    "passed": 550,
+    "failed": 0,
+    "durationMs": 466187.2739
+  },
+  "finalBowCombat": {
+    "tests": 55,
+    "passed": 55,
+    "failed": 0,
+    "durationMs": 18420.492
+  },
+  "packagedBowCombat": {
+    "tests": 55,
+    "passed": 55,
+    "failed": 0,
+    "durationMs": 19156.9973
+  },
+  "regressionsBefore": {
+    "tests": 6,
+    "passed": 1,
+    "failed": 5,
+    "durationMs": 1150.3646
+  },
+  "regressionsAfter": {
+    "tests": 6,
+    "passed": 6,
+    "failed": 0,
+    "durationMs": 955.3588
+  },
+  "notes": [
+    "The full run preceded the added batched-packet test; the final 55-test run and packaged run include it.",
+    "The 5 baseline regression failures are intentional evidence of the old bugs, not failures in the final runtime."
+  ]
+}

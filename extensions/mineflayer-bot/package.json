@@ -1,14 +1,15 @@
 {
   "name": "@screenlauncher/mineflayer-bot",
   "private": true,
-  "version": "1.16.1",
+  "version": "1.16.2",
   "license": "GPL-3.0-only",
   "type": "commonjs",
   "scripts": {
     "build:pathfinder": "pnpm --dir pathfinding build && node build-pathfinder.mjs",
     "test": "node --no-deprecation --test *.test.mjs",
     "benchmark:combat": "node decision-benchmark.mjs",
-    "benchmark:duels": "node --no-deprecation pvp-duel-benchmark.mjs"
+    "benchmark:duels": "node --no-deprecation pvp-duel-benchmark.mjs",
+    "benchmark:bow": "node --no-deprecation bow-benchmark.mjs"
   },
   "dependencies": {
     "@nxg-org/mineflayer-custom-pvp": "1.7.16",

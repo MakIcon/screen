@@ -1,0 +1,14 @@
+✔ custom refreshes aim after a delayed turn and starts the interval at actual release (8.43ms)
+✔ hawkeye refreshes aim after a delayed turn and starts the interval at actual release (1.4974ms)
+✔ bow does not release a stale shot after a smooth turn: cover (1.1799ms)
+✔ bow does not release a stale shot after a smooth turn: range (0.755ms)
+✔ bow does not release a stale shot after a smooth turn: stop (0.7933ms)
+✔ bow does not release a stale shot after a smooth turn: no-solution (0.7825ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 955.3588

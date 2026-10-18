@@ -223,7 +223,7 @@ for (const bowEngine of ["custom", "hawkeye"]) {
 }
 
 test("bow skill produces scatter and offhand draw", async () => {
-  const f = fixture({ style: "ranged", bowAccuracy: 0, bowOffhand: true });
+  const f = fixture({ style: "ranged", bowAccuracy: 0, bowOffhand: true, bowPredict: false });
   f.controller.select(f.enemy);
   await f.tick(0);
   await f.tick(50);
@@ -234,6 +234,86 @@ test("bow skill produces scatter and offhand draw", async () => {
   );
   f.controller.dispose();
 });
+
+for (const bowEngine of ["custom", "hawkeye"]) {
+  test(`${bowEngine} refreshes aim after a delayed turn and starts the interval at actual release`, async () => {
+    const f = fixture({
+      style: "ranged",
+      bowEngine,
+      bowPredict: false,
+      bowAccuracy: 100,
+      bowIntervalMs: 2000,
+      smoothAim: true,
+    });
+    let finishTurn, delayTurn = false;
+    f.bot.smoothLook = {
+      look: () =>
+        !delayTurn ? Promise.resolve() :
+        new Promise((resolve) => {
+          finishTurn = resolve;
+        }),
+      _cleanupTasks: () => {},
+    };
+    const shot = (entity) => ({ hit: true, yaw: entity.position.x / 100, pitch: 0.1 });
+    f.bot.bowpvp.shotToEntity = shot;
+    f.bot.hawkEye.getMasterGrade = shot;
+    try {
+      f.controller.select(f.enemy);
+      await f.tick(0);
+      await f.tick(50);
+      delayTurn = true;
+      await f.tick(1250);
+      // The target changes while the ready-to-release shot is still turning.
+      f.enemy.position.x = 15;
+      await f.tick(1400);
+      finishTurn();
+      await flush();
+      assert.equal(f.calls.filter(([kind]) => kind === "release").length, 1);
+      const packet = f.calls.find(([kind, name]) => kind === "packet" && name === "look");
+      assert.equal(packet[2].yaw, Math.fround(180 - (0.15 * 180) / Math.PI));
+      const look = f.calls.find(([kind]) => kind === "look");
+      assert.equal(look[1], 0.15);
+      await f.tick(2199);
+      assert.equal(f.calls.filter(([kind]) => kind === "draw").length, 1);
+      await f.tick(2200);
+      assert.equal(f.calls.filter(([kind]) => kind === "draw").length, 2);
+    } finally {
+      f.controller.dispose();
+    }
+  });
+}
+
+for (const invalidation of ["cover", "range", "stop", "no-solution"]) {
+  test(`bow does not release a stale shot after a smooth turn: ${invalidation}`, async () => {
+    const f = fixture({ style: "ranged", bowPredict: false });
+    let finishTurn, delayTurn = false;
+    f.bot.smoothLook = {
+      look: () =>
+        !delayTurn ? Promise.resolve() :
+        new Promise((resolve) => {
+          finishTurn = resolve;
+        }),
+      _cleanupTasks: () => {},
+    };
+    try {
+      f.controller.select(f.enemy);
+      await f.tick(0);
+      await f.tick(50);
+      delayTurn = true;
+      await f.tick(1250);
+      if (invalidation === "cover") f.bot.world.raycast = () => ({ name: "stone" });
+      if (invalidation === "range") f.enemy.position.x = 1000;
+      if (invalidation === "no-solution") f.bot.bowpvp.shotToEntity = () => null;
+      if (invalidation === "stop") f.controller.stop();
+      const before = f.calls.filter(([kind]) => kind === "release").length;
+      finishTurn();
+      await flush();
+      assert.equal(f.calls.filter(([kind]) => kind === "release").length, before);
+    } finally {
+      f.controller.dispose();
+    }
+  });
+}
 
 test("auto picks only hostile mobs; stop suspends auto until resumed", async () => {
   const f = fixture({ autoTarget: "hostile", style: "melee" });
@@ -692,11 +772,11 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
           controller.stop();
         }
       target.username = "Owner";
-      for (const bowEngine of ["custom", "hawkeye"]) {
+      for (const [bowEngine, bowPredict] of [["custom", false], ["custom", true], ["hawkeye", false]]) {
         controller.dispose();
         controller = combat.createCombatController(
           bot,
-          { ...settings, style: "ranged", bowEngine },
+          { ...settings, style: "ranged", bowEngine, bowPredict },
           options,
         );
         target.position.x = 12.5;

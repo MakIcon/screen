@@ -31,7 +31,7 @@ foreach ($file in @("production.cjs", "production-plan.cjs", "production-command
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $stageDirectory
-foreach ($file in @("combat-brain.cjs", "combat-footwork.cjs")) {
+foreach ($file in @("combat-brain.cjs", "combat-footwork.cjs", "bow-aim.cjs")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 foreach ($file in @("auto-buff.cjs", "potion-data.cjs")) {

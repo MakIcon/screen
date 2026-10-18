@@ -78,6 +78,7 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("crystals.cjs", MINEFLAYER_CRYSTALS),
     ("crystal-movement.cjs", MINEFLAYER_CRYSTAL_MOVEMENT),
     ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
+    ("bow-aim.cjs", include_str!("../../../extensions/mineflayer-bot/bow-aim.cjs")),
     ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
     ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
     ("auto-eat.cjs", include_str!("../../../extensions/mineflayer-bot/auto-eat.cjs")),

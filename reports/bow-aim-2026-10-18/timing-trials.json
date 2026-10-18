@@ -1,0 +1,126 @@
+{
+  "method": "Five consecutive paired runs, 756 cases per run; median of per-run statistics. Initialization, observation replay and independent scoring are excluded from planner timing. Hit counts are identical across all five runs.",
+  "trials": [
+    {
+      "trial": 1,
+      "before": {
+        "attempts": 756,
+        "hits": 208,
+        "planned": 756,
+        "hitPercent": 27.513227513227513,
+        "meanMs": 0.32006772486772644,
+        "medianMs": 0.3124000000000251,
+        "p95Ms": 0.5226000000000113
+      },
+      "after": {
+        "attempts": 756,
+        "hits": 610,
+        "planned": 756,
+        "hitPercent": 80.68783068783068,
+        "meanMs": 0.10318095238095185,
+        "medianMs": 0.08749999999997726,
+        "p95Ms": 0.21280000000001564
+      }
+    },
+    {
+      "trial": 2,
+      "before": {
+        "attempts": 756,
+        "hits": 208,
+        "planned": 756,
+        "hitPercent": 27.513227513227513,
+        "meanMs": 0.3180383597883568,
+        "medianMs": 0.31189999999992324,
+        "p95Ms": 0.5608999999999469
+      },
+      "after": {
+        "attempts": 756,
+        "hits": 610,
+        "planned": 756,
+        "hitPercent": 80.68783068783068,
+        "meanMs": 0.09750436507936584,
+        "medianMs": 0.08740000000011605,
+        "p95Ms": 0.16869999999994434
+      }
+    },
+    {
+      "trial": 3,
+      "before": {
+        "attempts": 756,
+        "hits": 208,
+        "planned": 756,
+        "hitPercent": 27.513227513227513,
+        "meanMs": 0.31676574074074276,
+        "medianMs": 0.3059000000000651,
+        "p95Ms": 0.5983999999998559
+      },
+      "after": {
+        "attempts": 756,
+        "hits": 610,
+        "planned": 756,
+        "hitPercent": 80.68783068783068,
+        "meanMs": 0.09867671957671899,
+        "medianMs": 0.08300000000008367,
+        "p95Ms": 0.18070000000011532
+      }
+    },
+    {
+      "trial": 4,
+      "before": {
+        "attempts": 756,
+        "hits": 208,
+        "planned": 756,
+        "hitPercent": 27.513227513227513,
+        "meanMs": 0.307083068783067,
+        "medianMs": 0.3081999999999425,
+        "p95Ms": 0.509900000000016
+      },
+      "after": {
+        "attempts": 756,
+        "hits": 610,
+        "planned": 756,
+        "hitPercent": 80.68783068783068,
+        "meanMs": 0.1080755291005386,
+        "medianMs": 0.09750000000008185,
+        "p95Ms": 0.18580000000019936
+      }
+    },
+    {
+      "trial": 5,
+      "before": {
+        "attempts": 756,
+        "hits": 208,
+        "planned": 756,
+        "hitPercent": 27.513227513227513,
+        "meanMs": 0.2964300264550245,
+        "medianMs": 0.30720000000019354,
+        "p95Ms": 0.4958999999998923
+      },
+      "after": {
+        "attempts": 756,
+        "hits": 610,
+        "planned": 756,
+        "hitPercent": 80.68783068783068,
+        "meanMs": 0.11687182539682027,
+        "medianMs": 0.10860000000002401,
+        "p95Ms": 0.20910000000003492
+      }
+    }
+  ],
+  "before": {
+    "attempts": 756,
+    "hits": 208,
+    "hitPercent": 27.513227513227513,
+    "meanMs": 0.31676574074074276,
+    "medianMs": 0.3081999999999425,
+    "p95Ms": 0.5226000000000113
+  },
+  "after": {
+    "attempts": 756,
+    "hits": 610,
+    "hitPercent": 80.68783068783068,
+    "meanMs": 0.10318095238095185,
+    "medianMs": 0.08749999999997726,
+    "p95Ms": 0.18580000000019936
+  }
+}
