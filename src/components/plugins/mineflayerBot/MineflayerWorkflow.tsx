@@ -234,6 +234,30 @@ export function MineflayerWorkflow({
     }
   }, [steps]);
   useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === WORKFLOW_DRAFT_KEY) {
+        const incoming = readWorkflowDraft(event.newValue);
+        setSteps((current) =>
+          JSON.stringify(workflowPayload(current)) === JSON.stringify(workflowPayload(incoming))
+            ? current
+            : incoming,
+        );
+        setEditing(null);
+      } else if (event.key === WORKFLOW_NAME_KEY) {
+        setCustomName(readCustomWorkflowName(event.newValue));
+        setNameVariant(readWorkflowNameVariant(event.newValue));
+      } else if (event.key === WORKFLOW_HISTORY_KEY) {
+        const merged = mergeWorkflowHistory(historyRef.current, readWorkflowHistory(event.newValue));
+        if (JSON.stringify(merged) !== JSON.stringify(historyRef.current)) {
+          historyRef.current = merged;
+          setHistory(merged);
+        }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+  useEffect(() => {
     let cancelled = false;
     setCatalog(bundledCatalog as MinecraftCatalog);
     if (connected)

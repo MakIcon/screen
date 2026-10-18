@@ -67,6 +67,67 @@
   color: var(--ink);
   background: var(--bg-hover);
 }
+.plugins-window-actions {
+  display: flex;
+  gap: 6px;
+}
+.mineflayer-bot-window {
+  display: flex;
+  width: 100vw;
+  height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+}
+.mineflayer-bot-window .plugins-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  user-select: none;
+}
+.mineflayer-bot-window .plugins-header h2 {
+  font-size: 16px;
+}
+.mineflayer-bot-window .plugins-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.mineflayer-bot-window-root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg);
+}
+.mineflayer-bot-window-root > .mineflayer-bot-window {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.mineflayer-bot-window-loading {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  flex: 1;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg);
+}
+.mineflayer-bot-window-loading button {
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.mineflayer-bot-window-error {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border: 1px solid var(--danger);
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .plugins-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -245,6 +306,7 @@
   max-width: 150px;
 }
 .plugin-detail-toggle,
+.plugin-detail-detach,
 .plugin-detail-uninstall,
 .plugins-footer button {
   min-height: 36px;
@@ -260,10 +322,24 @@
   line-height: 1.4;
 }
 .plugin-detail-toggle:hover:not(:disabled),
+.plugin-detail-detach:hover:not(:disabled),
 .plugin-detail-uninstall:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-hover-strong);
+}
+.plugin-detail-detach {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.plugin-detail-detach svg {
+  flex-shrink: 0;
+}
+.plugin-detail-detach:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 .plugin-detail-toggle--enabled,
 .plugins-footer button {

@@ -12,6 +12,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { publishBotWindowContext } from "./components/plugins/mineflayerBot/botWindowContext";
+import { savePluginSettings, subscribePluginSettings } from "./components/plugins/pluginSettingsSync";
 import "./App.css";
 import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
@@ -244,6 +246,25 @@ export default function App() {
     showMsModal,
     setShowMsModal,
   } = useAccounts();
+  const pluginSettingsVersion = useRef(0);
+
+  useEffect(() => {
+    publishBotWindowContext({
+      launcherNickname: nickname,
+      launcherAccountType: accountType,
+      launcherMsAccountId: activeMsAccountId,
+      microsoftAccounts: msAccounts,
+    });
+  }, [nickname, accountType, activeMsAccountId, msAccounts]);
+
+  useEffect(() => {
+    const subscription = subscribePluginSettings((plugins) => {
+      pluginSettingsVersion.current += 1;
+      setLauncherSettings((current) => current ? { ...current, plugins } : current);
+    });
+    void subscription.ready.catch(logger.error);
+    return subscription.dispose;
+  }, []);
 
   // mod / pack / shader state lives in their hooks — wired up after selectedModTarget/selectedShaderTarget are derived
 
@@ -1640,9 +1661,14 @@ export default function App() {
     }
   };
 
-  const saveLauncherPlugins = async (plugins: LauncherPluginsSettings) => {
+  const saveLauncherPlugins = async (
+    plugins: LauncherPluginsSettings,
+    pluginIds?: (keyof LauncherPluginsSettings)[],
+  ) => {
     try {
-      const updated = await invoke<LauncherSettings>("set_launcher_plugins", { plugins });
+      const settingsVersion = pluginSettingsVersion.current;
+      const updated = await savePluginSettings(plugins, pluginIds);
+      if (pluginSettingsVersion.current !== settingsVersion) return;
       setLauncherSettings(updated);
       // Drive Discord RPC immediately on every plugin change (enable/disable/edit),
       // so toggling the plugin reliably starts or stops the presence without

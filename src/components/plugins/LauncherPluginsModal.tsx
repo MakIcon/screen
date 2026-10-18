@@ -1,5 +1,6 @@
-import { Suspense, useEffect, useState, type WheelEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Suspense, useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   LauncherPluginsSettings,
   MicrosoftAccount,
@@ -15,6 +16,8 @@ import { PluginIcon } from "./PluginIcon";
 import { PLUGIN_DEFINITIONS, normalizeLauncherPluginsSettings } from "./pluginRegistry";
 import type { PluginId } from "./pluginTypes";
 import { pluginStatusLabel } from "./pluginStatus";
+import { openMineflayerBotWindow } from "./mineflayerBot/mineflayerBotWindow";
+import { logger } from "../../utils/logger";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
@@ -23,8 +26,9 @@ type LauncherPluginsModalProps = {
   launcherAccountType: string;
   launcherMsAccountId: string | null;
   microsoftAccounts: MicrosoftAccount[];
+  standalone?: boolean;
   onClose: () => void;
-  onSave: (plugins: LauncherPluginsSettings) => void | Promise<void>;
+  onSave: (plugins: LauncherPluginsSettings, pluginIds?: PluginId[]) => void | Promise<void>;
 };
 
 export function LauncherPluginsModal({
@@ -33,13 +37,17 @@ export function LauncherPluginsModal({
   launcherAccountType,
   launcherMsAccountId,
   microsoftAccounts,
+  standalone = false,
   onClose,
   onSave,
 }: LauncherPluginsModalProps) {
   const [draft, setDraft] = useState<LauncherPluginsSettings>(() =>
     normalizeLauncherPluginsSettings(settings),
   );
+  const pendingEdits = useRef<Partial<LauncherPluginsSettings>>({});
   const runtimeMonitor = useRuntimeMonitor();
+  const [openingWindow, setOpeningWindow] = useState(false);
+  const [windowError, setWindowError] = useState("");
   const [installingExtensionId, setInstallingExtensionId] = useState<OptionalExtensionId | null>(
     null,
   );
@@ -50,7 +58,9 @@ export function LauncherPluginsModal({
     id: OptionalExtensionId;
     message: string;
   } | null>(null);
-  const [selectedPluginId, setSelectedPluginId] = useState<PluginId>(PLUGIN_DEFINITIONS[0].id);
+  const [selectedPluginId, setSelectedPluginId] = useState<PluginId>(
+    standalone ? "mineflayerBot" : PLUGIN_DEFINITIONS[0].id,
+  );
   const selectedDefinition =
     PLUGIN_DEFINITIONS.find((definition) => definition.id === selectedPluginId) ??
     PLUGIN_DEFINITIONS[0];
@@ -80,7 +90,7 @@ export function LauncherPluginsModal({
   };
 
   useEffect(() => {
-    setDraft(normalizeLauncherPluginsSettings(settings));
+    setDraft({ ...normalizeLauncherPluginsSettings(settings), ...pendingEdits.current });
   }, [settings]);
 
   useEffect(() => {
@@ -93,30 +103,66 @@ export function LauncherPluginsModal({
     return () => window.clearTimeout(timer);
   }, [confirmUninstallId]);
 
+  const persistPlugins = useCallback(
+    (next: LauncherPluginsSettings, changedIds: PluginId[]) => {
+      if (!changedIds.length) return;
+      const patch = Object.fromEntries(changedIds.map((id) => [id, next[id]]));
+      pendingEdits.current = { ...pendingEdits.current, ...patch };
+      void Promise.resolve(onSave(next, changedIds))
+        .finally(() => {
+          for (const id of changedIds) {
+            if (pendingEdits.current[id] === next[id]) delete pendingEdits.current[id];
+          }
+        })
+        .catch(logger.error);
+    },
+    [onSave],
+  );
+
   const commitPlugins = (plugins: LauncherPluginsSettings) => {
     const next = normalizeLauncherPluginsSettings(plugins);
+    const changedIds = PLUGIN_DEFINITIONS.filter(
+      ({ id }) => JSON.stringify(next[id]) !== JSON.stringify(draft[id]),
+    ).map(({ id }) => id);
     setDraft(next);
-    void onSave(next);
+    persistPlugins(next, changedIds);
   };
 
   useEffect(() => {
     if (!runtimeMonitor.snapshot) return;
     let next = draft;
+    const changedIds: PluginId[] = [];
     for (const definition of PLUGIN_DEFINITIONS) {
+      if (standalone && definition.id !== "mineflayerBot") continue;
       if (!definition.optionalExtensionId || !definition.getEnabled(next)) continue;
       const extension = runtimeMonitor.snapshot.optionalExtensions.find(
         (candidate) => candidate.id === definition.optionalExtensionId,
       );
       if (!extension?.installed) {
         next = definition.setEnabled(next, false);
+        changedIds.push(definition.id);
       }
     }
     if (next !== draft) {
       const normalized = normalizeLauncherPluginsSettings(next);
       setDraft(normalized);
-      void onSave(normalized);
+      persistPlugins(normalized, changedIds);
     }
-  }, [draft, onSave, runtimeMonitor.snapshot]);
+  }, [draft, persistPlugins, runtimeMonitor.snapshot, standalone]);
+
+  const detachBot = async () => {
+    setOpeningWindow(true);
+    setWindowError("");
+    try {
+      await openMineflayerBotWindow();
+      onClose();
+    } catch (error) {
+      logger.error(error);
+      setWindowError(toErrorMessage(error));
+    } finally {
+      setOpeningWindow(false);
+    }
+  };
 
   const installExtension = async (extensionId: OptionalExtensionId) => {
     if (installingExtensionId || uninstallingExtensionId) return;
@@ -162,24 +208,67 @@ export function LauncherPluginsModal({
     event.stopPropagation();
   };
 
-  return (
-    <ElementPopup open onClose={onClose} className="launcher-plugins-dialog">
-      <div className="plugins-shell" onWheel={stopWheelNavigation}>
-        <div className="plugins-header">
-          <div>
-            <h2>РАСШИРЕНИЯ</h2>
-          </div>
+  const content = (
+    <div className="plugins-shell" onWheel={stopWheelNavigation}>
+      <div
+        className="plugins-header"
+        onPointerDown={(event) => {
+          if (
+            standalone &&
+            isTauri() &&
+            event.button === 0 &&
+            !(event.target as HTMLElement).closest("button")
+          ) {
+            void getCurrentWindow().startDragging().catch(logger.error);
+          }
+        }}
+        onDoubleClick={(event) => {
+          if (standalone && isTauri() && !(event.target as HTMLElement).closest("button")) {
+            void getCurrentWindow().toggleMaximize().catch(logger.error);
+          }
+        }}
+      >
+        <div>
+          <h2>{standalone ? "УПРАВЛЕНИЕ БОТОМ" : "РАСШИРЕНИЯ"}</h2>
+        </div>
 
+        {!standalone && (
           <div className="plugins-summary" aria-label="Состояние расширений">
             <span>{PLUGIN_DEFINITIONS.length} всего</span>
             <strong>{enabledCount} включено</strong>
           </div>
+        )}
 
+        <div className="plugins-window-actions">
+          {standalone && isTauri() && (
+            <>
+              <button
+                type="button"
+                className="plugins-close"
+                aria-label="Свернуть окно"
+                onClick={() => void getCurrentWindow().minimize().catch(logger.error)}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M1 9h10" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="plugins-close"
+                aria-label="Развернуть или восстановить окно"
+                onClick={() => void getCurrentWindow().toggleMaximize().catch(logger.error)}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <rect x="1.5" y="1.5" width="9" height="9" stroke="currentColor" />
+                </svg>
+              </button>
+            </>
+          )}
           <button
             className="plugins-close"
             type="button"
             onClick={onClose}
-            aria-label="Закрыть расширения"
+            aria-label={standalone ? "Закрыть окно управления ботом" : "Закрыть расширения"}
           >
             <svg
               width="11"
@@ -196,8 +285,10 @@ export function LauncherPluginsModal({
             </svg>
           </button>
         </div>
+      </div>
 
-        <div className="plugins-layout">
+      <div className="plugins-layout">
+        {!standalone && (
           <aside className="plugins-catalog">
             <nav className="plugins-list" aria-label="Расширения">
               {PLUGIN_DEFINITIONS.map((definition) => (
@@ -224,120 +315,153 @@ export function LauncherPluginsModal({
               ))}
             </nav>
           </aside>
+        )}
 
-          <section className="plugin-detail" aria-labelledby="plugin-detail-title">
-            <div className="plugin-detail-hero">
-              <PluginIcon definition={selectedDefinition} className="plugin-detail-mark" />
+        <section className="plugin-detail" aria-labelledby="plugin-detail-title">
+          <div className="plugin-detail-hero">
+            <PluginIcon definition={selectedDefinition} className="plugin-detail-mark" />
 
-              <div className="plugin-detail-copy">
-                <div className="plugin-detail-topline">
-                  <h3 id="plugin-detail-title">{selectedDefinition.title}</h3>
-                  {selectedPackageReady && (
-                    <strong className={`plugin-status plugin-status--${selectedStatusTone}`}>
-                      {pluginStatusLabel(selectedStatus)}
-                    </strong>
-                  )}
-                </div>
-                <p>{selectedDefinition.description}</p>
-                {selectedExtensionId && installError?.id === selectedExtensionId && (
-                  <span className="plugin-install-error">{installError.message}</span>
+            <div className="plugin-detail-copy">
+              <div className="plugin-detail-topline">
+                <h3 id="plugin-detail-title">{selectedDefinition.title}</h3>
+                {selectedPackageReady && (
+                  <strong className={`plugin-status plugin-status--${selectedStatusTone}`}>
+                    {pluginStatusLabel(selectedStatus)}
+                  </strong>
                 )}
               </div>
-
-              <div className="plugin-detail-actions">
-                <button
-                  className={[
-                    "plugin-detail-toggle",
-                    selectedEnabled && selectedPackageReady ? "plugin-detail-toggle--enabled" : "",
-                    !selectedPackageReady ? "plugin-detail-toggle--download" : "",
-                  ].join(" ")}
-                  type="button"
-                  aria-pressed={selectedPackageReady ? selectedEnabled : undefined}
-                  disabled={
-                    selectedExtensionChecking ||
-                    Boolean(installingExtensionId || uninstallingExtensionId)
-                  }
-                  onClick={() => {
-                    if (!selectedPackageReady && selectedExtensionId) {
-                      void installExtension(selectedExtensionId);
-                      return;
-                    }
-                    commitPlugins(selectedDefinition.setEnabled(draft, !selectedEnabled));
-                  }}
-                >
-                  {selectedExtensionChecking
-                    ? "Проверка…"
-                    : selectedInstalling
-                      ? "Установка…"
-                      : selectedUninstalling
-                        ? "Удаление…"
-                        : !selectedPackageReady
-                          ? "Установить"
-                          : selectedEnabled
-                            ? "Выключить"
-                            : "Включить"}
-                </button>
-
-                {selectedExtensionId && selectedPackageReady && (
-                  <button
-                    className={[
-                      "plugin-detail-uninstall",
-                      confirmUninstallId === selectedExtensionId
-                        ? "plugin-detail-uninstall--confirm"
-                        : "",
-                    ].join(" ")}
-                    type="button"
-                    disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
-                    onClick={() => {
-                      if (confirmUninstallId === selectedExtensionId) {
-                        void uninstallExtension(selectedExtensionId);
-                      } else {
-                        setConfirmUninstallId(selectedExtensionId);
-                      }
-                    }}
-                  >
-                    {selectedUninstalling
-                      ? "Удаление…"
-                      : confirmUninstallId === selectedExtensionId
-                        ? "Подтвердить удаление"
-                        : "Удалить пакет"}
-                  </button>
-                )}
-              </div>
+              <p>{selectedDefinition.description}</p>
+              {selectedExtensionId && installError?.id === selectedExtensionId && (
+                <span className="plugin-install-error">{installError.message}</span>
+              )}
+              {windowError && (
+                <span className="plugin-install-error" role="alert">
+                  {windowError}
+                </span>
+              )}
             </div>
 
-            <CustomScrollArea
-              key={selectedPluginId}
-              className="plugin-detail-settings"
-              onWheel={stopWheelNavigation}
-              aria-label={`Настройки ${selectedDefinition.title}`}
-            >
-              {!selectedPackageReady && (
-                <div className="plugin-package-notice">
-                  {selectedExtensionChecking
-                    ? "Проверяем, установлен ли пакет расширения…"
-                    : "Установите пакет кнопкой выше, чтобы включить расширение. Настройки можно подготовить заранее."}
-                </div>
+            <div className="plugin-detail-actions">
+              {!standalone && selectedPluginId === "mineflayerBot" && (
+                <button
+                  type="button"
+                  className="plugin-detail-detach"
+                  disabled={openingWindow}
+                  aria-busy={openingWindow}
+                  onClick={() => void detachBot()}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M9 2h5v5M14 2 7 9M6 3H2v11h11v-4"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                    />
+                  </svg>
+                  {openingWindow ? "Открываем…" : "В отдельном окне"}
+                </button>
               )}
-              <Suspense
-                fallback={<div className="plugin-settings-loading">Загружаем настройки…</div>}
+              <button
+                className={[
+                  "plugin-detail-toggle",
+                  selectedEnabled && selectedPackageReady ? "plugin-detail-toggle--enabled" : "",
+                  !selectedPackageReady ? "plugin-detail-toggle--download" : "",
+                ].join(" ")}
+                type="button"
+                aria-pressed={selectedPackageReady ? selectedEnabled : undefined}
+                disabled={
+                  selectedExtensionChecking ||
+                  Boolean(installingExtensionId || uninstallingExtensionId)
+                }
+                onClick={() => {
+                  if (!selectedPackageReady && selectedExtensionId) {
+                    void installExtension(selectedExtensionId);
+                    return;
+                  }
+                  commitPlugins(selectedDefinition.setEnabled(draft, !selectedEnabled));
+                }}
               >
-                <SelectedPluginSettings
-                  plugins={draft}
-                  onChange={commitPlugins}
-                  context={pluginContext}
-                />
-              </Suspense>
-            </CustomScrollArea>
-          </section>
-        </div>
-        <div className="plugins-footer">
-          <span>Настройки сохраняются автоматически</span>
-          <button type="button" onClick={onClose}>
-            Готово
-          </button>
-        </div>
+                {selectedExtensionChecking
+                  ? "Проверка…"
+                  : selectedInstalling
+                    ? "Установка…"
+                    : selectedUninstalling
+                      ? "Удаление…"
+                      : !selectedPackageReady
+                        ? "Установить"
+                        : selectedEnabled
+                          ? "Выключить"
+                          : "Включить"}
+              </button>
+
+              {selectedExtensionId && selectedPackageReady && (
+                <button
+                  className={[
+                    "plugin-detail-uninstall",
+                    confirmUninstallId === selectedExtensionId
+                      ? "plugin-detail-uninstall--confirm"
+                      : "",
+                  ].join(" ")}
+                  type="button"
+                  disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
+                  onClick={() => {
+                    if (confirmUninstallId === selectedExtensionId) {
+                      void uninstallExtension(selectedExtensionId);
+                    } else {
+                      setConfirmUninstallId(selectedExtensionId);
+                    }
+                  }}
+                >
+                  {selectedUninstalling
+                    ? "Удаление…"
+                    : confirmUninstallId === selectedExtensionId
+                      ? "Подтвердить удаление"
+                      : "Удалить пакет"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <CustomScrollArea
+            key={selectedPluginId}
+            className="plugin-detail-settings"
+            onWheel={stopWheelNavigation}
+            aria-label={`Настройки ${selectedDefinition.title}`}
+          >
+            {!selectedPackageReady && (
+              <div className="plugin-package-notice">
+                {selectedExtensionChecking
+                  ? "Проверяем, установлен ли пакет расширения…"
+                  : "Установите пакет кнопкой выше, чтобы включить расширение. Настройки можно подготовить заранее."}
+              </div>
+            )}
+            <Suspense
+              fallback={<div className="plugin-settings-loading">Загружаем настройки…</div>}
+            >
+              <SelectedPluginSettings
+                plugins={draft}
+                onChange={commitPlugins}
+                context={pluginContext}
+              />
+            </Suspense>
+          </CustomScrollArea>
+        </section>
       </div>
+      <div className="plugins-footer">
+        <span>Настройки сохраняются автоматически</span>
+        <button type="button" onClick={onClose}>
+          {standalone ? "Закрыть" : "Готово"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return standalone ? (
+    <main className="launcher-plugins-dialog mineflayer-bot-window" lang="ru">
+      {content}
+    </main>
+  ) : (
+    <ElementPopup open onClose={onClose} className="launcher-plugins-dialog">
+      {content}
     </ElementPopup>
   );
 }

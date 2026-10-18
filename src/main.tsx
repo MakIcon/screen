@@ -12,6 +12,13 @@ import {
 } from "./components/builds/InstallProgressWindowApp";
 import { isAppearanceStudioRoute } from "./appearance/window";
 import { isBuildPlaceholdersWindowRoute } from "./components/builds/buildPlaceholdersWindow";
+import { isMineflayerBotWindowRoute } from "./components/plugins/mineflayerBot/mineflayerBotWindow";
+
+const MineflayerBotWindowApp = lazy(() =>
+  import("./components/plugins/mineflayerBot/MineflayerBotWindowApp").then((module) => ({
+    default: module.MineflayerBotWindowApp,
+  })),
+);
 
 const AppearanceStudioApp = lazy(() =>
   import("./appearance/AppearanceStudioApp").then((module) => ({
@@ -32,11 +39,16 @@ const logWindowRoute = readBuildLogsWindowRoute();
 const isInstallProgressWindow = readInstallProgressWindowRoute();
 const isAppearanceStudioWindow = isAppearanceStudioRoute();
 const isBuildPlaceholdersWindow = isBuildPlaceholdersWindowRoute(window.location.search);
+const isMineflayerBotWindow = isMineflayerBotWindowRoute(window.location.search);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <CustomTooltip />
-    {isBuildPlaceholdersWindow ? (
+    {isMineflayerBotWindow ? (
+      <Suspense fallback={null}>
+        <MineflayerBotWindowApp />
+      </Suspense>
+    ) : isBuildPlaceholdersWindow ? (
       <Suspense fallback={null}>
         <BuildPlaceholdersWindowApp />
       </Suspense>

@@ -8,7 +8,8 @@
     "bluemap-*",
     "install-progress",
     "appearance-studio",
-    "build-placeholders"
+    "build-placeholders",
+    "mineflayer-bot"
   ],
   "permissions": [
     "core:default",

@@ -51,7 +51,10 @@ interface SettingsTabProps {
   advancedSettingsEnabled: boolean;
   onToggleAdvanced: () => void;
   pluginsSettings?: LauncherPluginsSettings | null;
-  savePluginsSettings: (plugins: LauncherPluginsSettings) => Promise<void>;
+  savePluginsSettings: (
+    plugins: LauncherPluginsSettings,
+    pluginIds?: (keyof LauncherPluginsSettings)[],
+  ) => Promise<void>;
   launcherNickname: string;
   launcherAccountType: string;
   launcherMsAccountId: string | null;
