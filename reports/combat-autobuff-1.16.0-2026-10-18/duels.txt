@@ -1,0 +1,82 @@
+1.20.4 default    cadence   landed 10 dmg   70.0 first   200 ms crit 0 sprint 10 blocked 0 dist 4.55 cpu 0.4507 ms
+1.20.4 default    wall      landed 16 dmg  161.0 first   200 ms crit 14 sprint 1 blocked 0 dist 1.85 cpu 0.1516 ms
+1.20.4 default    approach  landed  5 dmg   35.0 first  1600 ms crit 0 sprint 5 blocked 0 dist 5.52 cpu 0.3165 ms
+1.20.4 default    runner    landed  5 dmg   45.5 first  3200 ms crit 3 sprint 2 blocked 0 dist 4.43 cpu 0.2735 ms
+1.20.4 default    zigzag    landed  7 dmg   52.5 first   950 ms crit 1 sprint 6 blocked 0 dist 4.54 cpu 0.2721 ms
+1.20.4 default    strafer   landed 12 dmg   84.0 first   200 ms crit 0 sprint 12 blocked 0 dist 4.34 cpu 0.2521 ms
+1.20.4 default    shield    landed 15 dmg  108.5 first   850 ms crit 1 sprint 0 blocked 0 dist 2.29 cpu 0.141 ms
+1.20.4 default    shieldLate landed 18 dmg  126.0 first   200 ms crit 0 sprint 6 blocked 0 dist 3.00 cpu 0.1366 ms
+1.20.4 default    eating    landed  2 dmg   17.5 first  1200 ms crit 1 sprint 1 blocked 0 dist 4.80 cpu 0.1873 ms
+1.20.4 default    pillar    landed  4 dmg   28.0 first   350 ms crit 0 sprint 4 blocked 0 dist 5.55 cpu 0.3602 ms
+1.20.4 aggressive cadence   landed 13 dmg  101.5 first   150 ms crit 3 sprint 10 blocked 0 dist 3.78 cpu 0.2023 ms
+1.20.4 aggressive wall      landed 14 dmg  119.0 first   150 ms crit 6 sprint 8 blocked 0 dist 3.13 cpu 0.2089 ms
+1.20.4 aggressive approach  landed  6 dmg   45.5 first  1550 ms crit 1 sprint 5 blocked 0 dist 4.95 cpu 0.1912 ms
+1.20.4 aggressive runner    landed  5 dmg   45.5 first  2750 ms crit 3 sprint 2 blocked 0 dist 4.35 cpu 0.1838 ms
+1.20.4 aggressive zigzag    landed 10 dmg   87.5 first   850 ms crit 5 sprint 5 blocked 0 dist 3.92 cpu 0.1757 ms
+1.20.4 aggressive strafer   landed 13 dmg   91.0 first   150 ms crit 0 sprint 13 blocked 0 dist 4.19 cpu 0.1924 ms
+1.20.4 aggressive shield    landed 15 dmg  105.0 first   850 ms crit 0 sprint 0 blocked 0 dist 2.28 cpu 0.1106 ms
+1.20.4 aggressive shieldLate landed 19 dmg  133.0 first   150 ms crit 0 sprint 5 blocked 0 dist 2.76 cpu 0.1389 ms
+1.20.4 aggressive eating    landed  2 dmg   14.0 first  1150 ms crit 0 sprint 2 blocked 0 dist 5.03 cpu 0.1883 ms
+1.20.4 aggressive pillar    landed  1 dmg    7.0 first   300 ms crit 0 sprint 1 blocked 0 dist 7.10 cpu 0.2284 ms
+26.1.2 default    cadence   landed 10 dmg   70.0 first   200 ms crit 0 sprint 10 blocked 0 dist 4.55 cpu 0.2279 ms
+26.1.2 default    wall      landed 16 dmg  161.0 first   200 ms crit 14 sprint 1 blocked 0 dist 1.85 cpu 0.1323 ms
+26.1.2 default    approach  landed  5 dmg   35.0 first  1600 ms crit 0 sprint 5 blocked 0 dist 5.52 cpu 0.2177 ms
+26.1.2 default    runner    landed  5 dmg   45.5 first  3200 ms crit 3 sprint 2 blocked 0 dist 4.43 cpu 0.1476 ms
+26.1.2 default    zigzag    landed  7 dmg   52.5 first   950 ms crit 1 sprint 6 blocked 0 dist 4.54 cpu 0.1887 ms
+26.1.2 default    strafer   landed 12 dmg   84.0 first   200 ms crit 0 sprint 12 blocked 0 dist 4.34 cpu 0.1623 ms
+26.1.2 default    shield    landed 15 dmg  108.5 first   850 ms crit 1 sprint 0 blocked 0 dist 2.29 cpu 0.1178 ms
+26.1.2 default    shieldLate landed 18 dmg  126.0 first   200 ms crit 0 sprint 6 blocked 0 dist 3.00 cpu 0.1379 ms
+26.1.2 default    eating    landed  2 dmg   17.5 first  1200 ms crit 1 sprint 1 blocked 0 dist 4.80 cpu 0.1531 ms
+26.1.2 default    pillar    landed  4 dmg   28.0 first   350 ms crit 0 sprint 4 blocked 0 dist 5.55 cpu 0.2903 ms
+26.1.2 aggressive cadence   landed 13 dmg  101.5 first   150 ms crit 3 sprint 10 blocked 0 dist 3.78 cpu 0.186 ms
+26.1.2 aggressive wall      landed 14 dmg  119.0 first   150 ms crit 6 sprint 8 blocked 0 dist 3.13 cpu 0.1691 ms
+26.1.2 aggressive approach  landed  6 dmg   45.5 first  1550 ms crit 1 sprint 5 blocked 0 dist 4.95 cpu 0.1633 ms
+26.1.2 aggressive runner    landed  5 dmg   45.5 first  2750 ms crit 3 sprint 2 blocked 0 dist 4.35 cpu 0.1513 ms
+26.1.2 aggressive zigzag    landed 10 dmg   87.5 first   850 ms crit 5 sprint 5 blocked 0 dist 3.92 cpu 0.1873 ms
+26.1.2 aggressive strafer   landed 13 dmg   91.0 first   150 ms crit 0 sprint 13 blocked 0 dist 4.19 cpu 0.1669 ms
+26.1.2 aggressive shield    landed 15 dmg  105.0 first   850 ms crit 0 sprint 0 blocked 0 dist 2.28 cpu 0.1297 ms
+26.1.2 aggressive shieldLate landed 19 dmg  133.0 first   150 ms crit 0 sprint 5 blocked 0 dist 2.76 cpu 0.143 ms
+26.1.2 aggressive eating    landed  2 dmg   14.0 first  1150 ms crit 0 sprint 2 blocked 0 dist 5.03 cpu 0.1643 ms
+26.1.2 aggressive pillar    landed  1 dmg    7.0 first   300 ms crit 0 sprint 1 blocked 0 dist 7.10 cpu 0.2238 ms
+
+scenario                        before → after (landed hits, damage, first hit)
+1.20.4 default    cadence   10 → 10; 70.0 → 70.0; 200 → 200 ms
+1.20.4 default    wall      16 → 16; 161.0 → 161.0; 200 → 200 ms
+1.20.4 default    approach  5 → 5; 35.0 → 35.0; 1600 → 1600 ms
+1.20.4 default    runner    5 → 5; 45.5 → 45.5; 3200 → 3200 ms
+1.20.4 default    zigzag    7 → 7; 52.5 → 52.5; 950 → 950 ms
+1.20.4 default    strafer   12 → 12; 84.0 → 84.0; 200 → 200 ms
+1.20.4 default    shield    15 → 15; 108.5 → 108.5; 850 → 850 ms
+1.20.4 default    shieldLate 18 → 18; 126.0 → 126.0; 200 → 200 ms
+1.20.4 default    eating    2 → 2; 17.5 → 17.5; 1200 → 1200 ms
+1.20.4 default    pillar    4 → 4; 28.0 → 28.0; 350 → 350 ms
+1.20.4 aggressive cadence   13 → 13; 101.5 → 101.5; 150 → 150 ms
+1.20.4 aggressive wall      14 → 14; 119.0 → 119.0; 150 → 150 ms
+1.20.4 aggressive approach  6 → 6; 45.5 → 45.5; 1550 → 1550 ms
+1.20.4 aggressive runner    5 → 5; 45.5 → 45.5; 2750 → 2750 ms
+1.20.4 aggressive zigzag    10 → 10; 87.5 → 87.5; 850 → 850 ms
+1.20.4 aggressive strafer   13 → 13; 91.0 → 91.0; 150 → 150 ms
+1.20.4 aggressive shield    15 → 15; 105.0 → 105.0; 850 → 850 ms
+1.20.4 aggressive shieldLate 19 → 19; 133.0 → 133.0; 150 → 150 ms
+1.20.4 aggressive eating    2 → 2; 14.0 → 14.0; 1150 → 1150 ms
+1.20.4 aggressive pillar    1 → 1; 7.0 → 7.0; 300 → 300 ms
+26.1.2 default    cadence   10 → 10; 70.0 → 70.0; 200 → 200 ms
+26.1.2 default    wall      16 → 16; 161.0 → 161.0; 200 → 200 ms
+26.1.2 default    approach  5 → 5; 35.0 → 35.0; 1600 → 1600 ms
+26.1.2 default    runner    5 → 5; 45.5 → 45.5; 3200 → 3200 ms
+26.1.2 default    zigzag    7 → 7; 52.5 → 52.5; 950 → 950 ms
+26.1.2 default    strafer   12 → 12; 84.0 → 84.0; 200 → 200 ms
+26.1.2 default    shield    15 → 15; 108.5 → 108.5; 850 → 850 ms
+26.1.2 default    shieldLate 18 → 18; 126.0 → 126.0; 200 → 200 ms
+26.1.2 default    eating    2 → 2; 17.5 → 17.5; 1200 → 1200 ms
+26.1.2 default    pillar    4 → 4; 28.0 → 28.0; 350 → 350 ms
+26.1.2 aggressive cadence   13 → 13; 101.5 → 101.5; 150 → 150 ms
+26.1.2 aggressive wall      14 → 14; 119.0 → 119.0; 150 → 150 ms
+26.1.2 aggressive approach  6 → 6; 45.5 → 45.5; 1550 → 1550 ms
+26.1.2 aggressive runner    5 → 5; 45.5 → 45.5; 2750 → 2750 ms
+26.1.2 aggressive zigzag    10 → 10; 87.5 → 87.5; 850 → 850 ms
+26.1.2 aggressive strafer   13 → 13; 91.0 → 91.0; 150 → 150 ms
+26.1.2 aggressive shield    15 → 15; 105.0 → 105.0; 850 → 850 ms
+26.1.2 aggressive shieldLate 19 → 19; 133.0 → 133.0; 150 → 150 ms
+26.1.2 aggressive eating    2 → 2; 14.0 → 14.0; 1150 → 1150 ms
+26.1.2 aggressive pillar    1 → 1; 7.0 → 7.0; 300 → 300 ms

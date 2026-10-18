@@ -235,6 +235,16 @@ function configureCombatPlugins(
   bot.loadPlugin(custom.default || custom);
   bot.loadPlugin(loadBasicCombat);
   bot.loadPlugin(hawkeye.default || hawkeye);
+  // Upstream attack/checkForWeapon can finish after a potion has acquired the
+  // hand. All custom PvP equips must use the same queue and ownership checks.
+  bot.swordpvp.equipWeapon = async (weapon) => {
+    const enemy = bot.swordpvp.target;
+    const current = () => Boolean(enemy && bot.swordpvp.target === enemy &&
+      !bot.launcherDefendingBow && !bot.launcherSurvival?.busy && !bot.launcherPearling);
+    if (!weapon || !current()) return false;
+    await equipCombatItem(bot, weapon, "hand", current);
+    return current() && bot.heldItem?.name === weapon.name;
+  };
   const customRequire = require("node:module").createRequire(
     require.resolve("@nxg-org/mineflayer-custom-pvp"),
   );
@@ -846,7 +856,7 @@ function createCombatController(
     }
     const state = recovery;
     if (bot.launcherPearling) return true;
-    if (!decision.heal || (bot.health > 14 && !decision.needsFood)) {
+    if (!decision.heal || (bot.health > 14 && !decision.needsFood && !decision.healingPotion)) {
       recovery = null;
       recoveryMovement.cancel();
       brain.deferRecovery();
@@ -1458,6 +1468,15 @@ function createCombatController(
         });
         // Healing preempts slow aim/equip work, but not a live airborne smash.
         if (recover()) return;
+      }
+      if (!workTarget && !mace.airborne && !bot.launcherPearling) {
+        const enemy = target;
+        const current = () => target === enemy && !disposed && !suspended;
+        // Non-adaptive combat still uses potions when space is already available.
+        const potion = settings.combatHealing && bot.launcherSurvival?.healingPotion?.();
+        if (potion && (distance(enemy) >= 6 || !canSeeTarget(bot, enemy)) &&
+          bot.launcherSurvival.requestCombatHeal(potion, current)) return;
+        if (bot.launcherSurvival?.requestCombatBuff?.(enemy, current)) return;
       }
       if (closeWithPearl()) return;
       if (bot.launcherPearling || pending || bowBusy || now() < nextActionAt) return;

@@ -1,0 +1,17 @@
+{
+  "scenarios": 40,
+  "fields": [
+    "landed",
+    "damage",
+    "critical",
+    "sprintHits",
+    "blocked",
+    "outOfReach",
+    "firstHitMs",
+    "meanIntervalMs",
+    "routedTicks",
+    "meanDistance"
+  ],
+  "changes": [],
+  "errors": []
+}

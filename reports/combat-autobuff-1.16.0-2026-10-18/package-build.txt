@@ -1,0 +1,14 @@
+
+> @screenlauncher/mineflayer-bot@1.16.0 build:pathfinder D:\JBProjects\RUST\screen\extensions\mineflayer-bot
+> pnpm --dir pathfinding build && node build-pathfinder.mjs
+
+
+> @screenlauncher/minecraft-pathfinding@0.0.26-screen.7 build D:\JBProjects\RUST\screen\extensions\mineflayer-bot\pathfinding
+> tsc -p tsconfig.json
+
+npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated uuid@9.0.1: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+npm warn deprecated uuid@10.0.0: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+
+added 226 packages in 1m
+D:\JBProjects\RUST\screen\dist-extensions\screenlauncher-mineflayer-bot.zip

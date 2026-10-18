@@ -38,25 +38,40 @@ export class IdleMovementExecutor extends MovementExecutor {
 
 export class NewForwardExecutor extends MovementExecutor {
   private cornerSneaking = false
+  private cornerTarget?: Vec3
 
-  override reset (): void { this.cornerSneaking = false; super.reset() }
+  override reset (): void { this.cornerSneaking = false; this.cornerTarget = undefined; super.reset() }
 
   private async correctCorner (move: Move): Promise<boolean> {
     const pos = this.bot.entity.position
-    if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 ||
-        (clearBodySegment(this.world, pos, move.exitPos, 0.599) && supportedWalkSegment(this.world, pos, move.exitPos))) {
+    if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0) {
+      this.cornerTarget = undefined
+      if (this.cornerSneaking) { this.bot.setControlState('sneak', false); this.cornerSneaking = false }
+      return false
+    }
+    const clearExit = clearBodySegment(this.world, pos, move.exitPos, 0.599) && supportedWalkSegment(this.world, pos, move.exitPos)
+    if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.08 &&
+        Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.025) this.cornerTarget = undefined
+    if (clearExit && this.cornerTarget == null) {
       if (this.cornerSneaking) { this.bot.setControlState('sneak', false); this.cornerSneaking = false }
       return false
     }
     // Predicted completion may switch to the next leg while we still hug the
     // old block's edge. Centre on that supported cell before making the turn.
-    const entry = move.entryPos.clone(); entry.y = pos.y
+    // A replanned move can start at the actual off-centre player position.
+    // Reusing that point as the correction target keeps us against the same
+    // corner forever. Align to the supported cell's centre before turning.
+    const entry = move.entryPos.floored().offset(0.5, 0, 0.5); entry.y = pos.y
     const supportedEntry = supportedWalkSegment(this.world, entry, entry)
-    const center = supportedEntry && clearBodySegment(this.world, pos, entry, 0.599)
+    const center = this.cornerTarget ?? (supportedEntry && clearBodySegment(this.world, pos, entry, 0.599)
       ? entry : getSupportedStartPos(this.world, pos).floored().offset(0.5, 0, 0.5)
+    )
     center.y = pos.y
-    if (pos.xzDistanceTo(center) < 0.08) throw new CancelError('Forward: waypoint is blocked from its approach')
+    if (pos.xzDistanceTo(center) < 0.08 && !clearExit) throw new CancelError('Forward: waypoint is blocked from its approach')
     if (!clearBodySegment(this.world, pos, center, 0.599)) throw new CancelError('Forward: cannot recenter at a blocked corner')
+    // Keep this waypoint until the body and momentum are centred. Switching
+    // back to the exit as soon as one ray clears causes repeated wall taps.
+    this.cornerTarget = center
     await this.lookAtPathPos(center)
     steerToPosition(this.bot, center, 0.1, 0.04)
     this.bot.setControlState('sprint', false)

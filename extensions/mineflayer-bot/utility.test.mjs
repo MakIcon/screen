@@ -336,6 +336,24 @@ for (const pearlChain of [false, true]) {
   });
 }
 
+test("look-only server corrections and ordinary movement cannot confirm pearl arrival", async () => {
+  const f = travelFixture();
+  try {
+    await f.start(); await f.tick(0);
+    assert.equal(f.travel.waiting, true);
+    f.bot.emit("forcedMove");
+    assert.equal(f.travel.waiting, true);
+    f.bot.entity.position.x += .2; f.bot.emit("forcedMove");
+    assert.equal(f.travel.waiting, true);
+    f.bot.entity.position.x += 4; await f.tick(50);
+    f.bot.emit("forcedMove");
+    assert.equal(f.travel.waiting, true, "a later look-only packet cannot turn earlier walking into a teleport");
+    const listeners = f.bot.listenerCount("forcedMove");
+    f.travel.dispose();
+    assert.equal(f.bot.listenerCount("forcedMove"), listeners - 1);
+  } finally { f.close(); }
+});
+
 test("a missing teleport resumes walking; stop/death/dispose cancel an in-progress equip", async () => {
   const f = travelFixture();
   try {
@@ -454,6 +472,90 @@ function chaseFixture(patch = {}, version = "26.1.2") {
 }
 
 for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
+  test(`real custom PvP strikes promptly after a server-corrected pearl teleport on ${version}`, async () => {
+    const f = worldFixture(version), bot = f.bot;
+    const errors = [], packets = [];
+    let time = 0;
+    bot.username = "Bot";
+    bot.supportFeature = bot.registry.supportFeature;
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/entities"));
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/time"));
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/inventory"), { hideErrors: false });
+    bot.loadPlugin(runtime("mineflayer/lib/plugins/simple_inventory"));
+    bot.setQuickBarSlot(0);
+    const Item = mineflayerRequire("prismarine-item")(bot.registry);
+    for (const [slot, name] of [[36, "diamond_sword"], [37, "ender_pearl"]]) {
+      const item = new Item(bot.registry.itemsByName[name].id, 4);
+      item.slot = slot; bot.inventory.slots[slot] = item;
+    }
+    const enemy = { id: 99, name: "player", username: "Enemy", type: "player", isValid: true,
+      position: new Vec3(30.5, 64, .5), velocity: new Vec3(0, 0, 0), width: .6, height: 1.8,
+      metadata: [], equipment: [], yaw: 0, pitch: 0 };
+    bot.entities[enemy.id] = enemy;
+    const outgoing = protocol.createSerializer({ state: "play", isServer: false, version });
+    bot._client.state = "play";
+    bot._client.write = (name, params) => {
+      outgoing.createPacketBuffer({ name, params });
+      packets.push({ name, params, at: time });
+    };
+    runtime("./worker.cjs").configurePathfinder(bot, { canDig: false, allowSprinting: true });
+    const settings = normalizeCombat({ style: "melee", pearlChase: true, smoothAim: false, criticals: "off", shield: false, shieldBreak: false });
+    const combat = createCombatController(bot, settings, { now: () => time, onError: (error) => errors.push(error) });
+    const travel = createTravelController(bot, settings, { now: () => time, onError: (error) => errors.push(error) });
+    bot.launcherCombat = combat; bot.launcherTravel = travel;
+    try {
+      combat.select(enemy);
+      bot.emit("physicsTick"); await flush(); await flush();
+      assert.equal(travel.waiting, true);
+      // Exercise Mineflayer's position handler, including teleport_confirm and
+      // onGround=false, instead of directly faking a successful landing.
+      const actual = new Vec3(30.5, 64, 5.5);
+      enemy.position = actual.offset(2, 0, 0);
+      const incoming = protocol.createSerializer({ state: "play", isServer: true, version });
+      const parser = protocol.createDeserializer({ state: "play", isServer: false, version });
+      const decoded = parser.parsePacketBuffer(incoming.createPacketBuffer({ name: "position", params: {
+        x: actual.x, y: actual.y, z: actual.z, dx: 0, dy: 0, dz: 0,
+        yaw: -90, pitch: 0, flags: version === "26.1.2" ? {} : 0, teleportId: 1,
+      } })).data;
+      time = 100;
+      bot._client.emit(decoded.name, decoded.params);
+      await flush(); await flush();
+      assert.equal(travel.waiting, false);
+      assert.equal(bot.swordpvp.target, enemy);
+      for (let tick = 0; tick < 3; tick++) {
+        time += 50; bot.emit("physicsTick"); await flush();
+      }
+      const hit = packets.find((packet) => packet.name === "attack" || (packet.name === "use_entity" && packet.params.mouse === 1));
+      assert.ok(hit, `attack within 150ms of server teleport; errors=${errors.map((error) => error.message)}`);
+      assert.ok(hit.at - 100 <= 150);
+      assert.deepEqual(errors, []);
+    } finally { combat.dispose(); travel.dispose(); await bot.pathfinder.destroy(); f.dispose(); }
+  });
+
+  test(`server teleport outside the predicted pearl landing resumes melee immediately on ${version}`, async () => {
+    const f = chaseFixture({}, version);
+    try {
+      f.enemy.position.x = 30.5;
+      f.combat.select(f.enemy);
+      await f.tick(0);
+      assert.equal(f.travel.waiting, true);
+      // A server/plugin may correct the collision point. Do not wait for the
+      // predicted flight deadline while already standing next to the enemy.
+      const actual = f.enemy.position.offset(0, 0, 5);
+      f.enemy.position = actual.offset(2, 0, 0);
+      f.bot.entity.position = actual;
+      f.bot.emit("forcedMove");
+      await flush();
+      await flush();
+      assert.equal(f.travel.waiting, false, "server confirmation releases the flight lock without a physics tick");
+      assert.equal(f.bot.launcherPearling, false);
+      assert.equal(f.bot.swordpvp.target, f.enemy, "same target resumes without another reaction delay");
+      assert.equal(f.calls.filter((call) => call === "throw").length, 1);
+    } finally {
+      f.close();
+    }
+  });
+
   test(`distant enemy without a pearl triggers proactive pursuit and resumes melee on ${version}`, async () => {
     const f = chaseFixture({ pearlEnabled: false }, version);
     try {

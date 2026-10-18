@@ -171,8 +171,11 @@ Priorities and commitments:
   hunger) or ordinary safe food. It waits for server consumption confirmation,
   then resumes the same target without another reaction delay. Apples have a
   five-second reuse window to allow their effects to work. Ordinary hunger uses
-  ordinary food. Combat healing currently supports food and golden apples;
-  potion selection/use is not implemented.
+  ordinary food. Since 1.16.0, healing and regeneration potions can take priority
+  over food/apples; potion preferences are under **Выживание → Автобафы**.
+  Strength, speed and fire resistance are applied when the enemy is at least
+  eight blocks away, skipping existing effects. See SURVIVAL.md for confirmation,
+  splash safety, cancellation and version compatibility.
 - `pearlEscape` uses the existing trajectory planner to create healing distance
   when `pearlEnabled` is also enabled. Health, inventory reserve, cooldown,
   loaded terrain, safe landing and one-flight limits still apply. It does not
@@ -272,6 +275,12 @@ travel and server response delay cannot make it run away from the blast point.
 The server receives the current airborne position and downward look before the
 charge use packet. Braking and boost confirmation each have a one-second limit;
 failed launches use a one-second retry delay instead of spending more charges.
+
+Anti-knockback preserves the server impulse for the controller's own wind jump
+and Wind Burst follow-up. This is a one-use exception for an upward gust burst
+near the expected launch point, with the launch's cancellation and time limit.
+Melee velocity packets, unrelated explosions and unsolicited wind bursts remain
+filtered. No upward velocity is invented locally.
 
 An airborne strike requires a real descent of more than 1.5 blocks, line of sight
 and eye-to-hitbox reach within the configured maximum of 3 blocks. Grounded mace

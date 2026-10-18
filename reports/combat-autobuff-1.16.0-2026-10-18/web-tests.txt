@@ -1,0 +1,9 @@
+
+ RUN  v4.1.9 D:/JBProjects/RUST/screen
+
+
+ Test Files  6 passed (6)
+      Tests  38 passed (38)
+   Start at  15:57:51
+   Duration  1.09s (transform 2.24s, setup 0ms, import 2.42s, tests 58ms, environment 1ms)
+

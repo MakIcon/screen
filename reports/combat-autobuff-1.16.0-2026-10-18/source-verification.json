@@ -1,0 +1,14 @@
+{
+  "files": 195,
+  "mismatches": [],
+  "newModules": [
+    {
+      "file": "auto-buff.cjs",
+      "sha256": "0bda71f9acfaf0a124064422124c9ef01c89370680cae45f698d8bfad68c81d1"
+    },
+    {
+      "file": "potion-data.cjs",
+      "sha256": "d18a09e6b432866105ec7c6652647139d5709d608695811696537b0908c6c86a"
+    }
+  ]
+}

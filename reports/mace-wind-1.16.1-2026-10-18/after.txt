@@ -1,0 +1,10 @@
+✔ real wind-charge, mace and shield packets serialize on 1.21.1 (177.6881ms)
+✔ real wind-charge, mace and shield packets serialize on 26.1.2 (189.4274ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1028.0884

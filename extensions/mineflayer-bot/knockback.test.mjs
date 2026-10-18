@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { installKnockback } from "./knockback.cjs";
+import { installKnockback, expectWindBoost } from "./knockback.cjs";
 import worker from "./worker.cjs";
 
 const require = createRequire(import.meta.url);
@@ -234,6 +234,90 @@ test("server position corrections, distant entities, spectators and disabled tea
   } finally {
     f.dispose();
   }
+});
+
+function windExplosion(bot, position = bot.entity.position, patch = {}) {
+  const center = { x: position.x, y: position.y - 0.32, z: position.z };
+  const particle = { type: "gust_emitter_small" };
+  return receivedPacket(bot.version, "explosion", {
+    ...center, center, radius: 1.2, affectedBlockOffsets: [],
+    playerMotionX: 0, playerMotionY: 0.9, playerMotionZ: 0,
+    playerKnockback: { x: 0, y: 0.9, z: 0 }, block_interaction_type: 3,
+    small_explosion_particle: particle, large_explosion_particle: particle,
+    explosionParticle: particle, blockCount: 0, blockParticles: [],
+    sound: { soundId: bot.registry.soundsByName["entity.wind_charge.wind_burst"].id },
+    ...patch,
+  });
+}
+
+for (const version of ["1.21.1", "1.21.11", "26.1.2"]) {
+  test(`anti-knockback accepts one planned wind lift but still blocks hits and other explosions on ${version}`, () => {
+    const f = fixture(version);
+    try {
+      installKnockback(f.bot, true);
+      f.bot.entity.position.y = 64.42;
+      f.bot.entity.onGround = false;
+      f.bot.entity.velocity.set(0, 0.33, 0);
+      const burst = windExplosion(f.bot);
+      f.bot._client.emit("explosion", burst);
+      assert.equal(f.bot.entity.velocity.y, 0.33, "unsolicited wind remains blocked");
+      expectWindBoost(f.bot, f.bot.entity.position, () => true);
+      const velocityType = f.bot.registry.protocol.play.toClient.types.packet_entity_velocity[1]
+        .find(field => field.name === "velocity").type;
+      f.bot._client.emit("entity_velocity", receivedPacket(version, "entity_velocity", {
+        entityId: f.bot.entity.id,
+        velocity: velocityType === "lpVec3" ? { x: 0.5, y: 0.5, z: 0 } : { x: 4000, y: 4000, z: 0 },
+      }));
+      assert.deepEqual(f.bot.entity.velocity, new Vec3(0, 0.33, 0), "melee hit cannot borrow the wind exception");
+      for (const rejected of [
+        { ...burst, explosionParticle: { type: "explosion_emitter" },
+          small_explosion_particle: { type: "explosion_emitter" }, large_explosion_particle: { type: "explosion_emitter" } },
+        { ...burst, x: 5, center: { ...burst.center, x: 5 } },
+        { ...burst, playerMotionY: -0.9, playerKnockback: { x: 0, y: -0.9, z: 0 } },
+        { ...burst, playerMotionX: 1.5, playerKnockback: { x: 1.5, y: 0.9, z: 0 } },
+      ]) {
+        f.bot._client.emit("explosion", rejected);
+        assert.deepEqual(f.bot.entity.velocity, new Vec3(0, 0.33, 0));
+      }
+      f.bot._client.emit("explosion", burst);
+      assert.ok(Math.abs(f.bot.entity.velocity.y - 1.23) < 1e-6, "server wind impulse survives filtering");
+      f.bot._client.emit("explosion", burst);
+      assert.ok(Math.abs(f.bot.entity.velocity.y - 1.23) < 1e-6, "the exception is consumed by one burst");
+      for (let tick = 0; tick < 5; tick++) f.tick();
+      assert.ok(f.bot.entity.position.y > 67, "the accepted packet actually lifts the player through physics");
+    } finally { f.dispose(); }
+  });
+}
+
+test("a wind exception expires, cancels, follows ownership and is removed on disconnect", () => {
+  const f = fixture("26.1.2");
+  let time = 0, current = true;
+  try {
+    installKnockback(f.bot, true);
+    const burst = windExplosion(f.bot);
+    const arm = () => expectWindBoost(f.bot, f.bot.entity.position, () => current, { now: () => time });
+    arm(); time = 1001;
+    f.bot._client.emit("explosion", burst);
+    assert.equal(f.bot.entity.velocity.y, 0);
+    arm(); current = false;
+    f.bot._client.emit("explosion", burst);
+    assert.equal(f.bot.entity.velocity.y, 0);
+    current = true;
+    arm()();
+    f.bot._client.emit("explosion", burst);
+    assert.equal(f.bot.entity.velocity.y, 0);
+    const oldCancel = arm();
+    arm(); oldCancel();
+    f.bot._client.emit("explosion", burst);
+    assert.equal(f.bot.entity.velocity.y, 0.9, "an old cancellation cannot revoke a newer launch");
+    arm();
+    f.bot.emit("end");
+    installKnockback(f.bot, true);
+    // Physics also disconnects on end; the filter must still reject the packet.
+    const before = f.bot.entity.velocity.clone();
+    f.bot._client.emit("explosion", burst);
+    assert.deepEqual(f.bot.entity.velocity, before);
+  } finally { f.dispose(); }
 });
 
 test("reinstall updates the setting once and disconnect removes all controller listeners", () => {

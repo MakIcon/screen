@@ -1,0 +1,19 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\screen_lib-99143297e8d6e2d9.exe)
+
+running 12 tests
+test models::loader_schema_tests::legacy_launcher_settings_receive_mascot_defaults ... ok
+test models::loader_schema_tests::mascot_name_is_trimmed_limited_and_never_empty ... ok
+test models::loader_schema_tests::preserves_disabled_water_protection_in_saved_settings ... ok
+test models::loader_schema_tests::preserves_explicit_jump_head_turn_setting ... ok
+test models::loader_schema_tests::reads_legacy_fabric_loader_version_and_writes_loader_version ... ok
+test models::loader_schema_tests::reads_legacy_mineflayer_settings_with_safe_defaults ... ok
+test models::loader_schema_tests::preserves_anti_knockback_preference_with_disabled_legacy_default ... ok
+test models::loader_schema_tests::preserves_low_ceiling_jump_switch_independently_of_parkour ... ok
+test models::loader_schema_tests::survival_settings_preserve_preferences_and_match_worker_defaults ... ok
+test models::loader_schema_tests::mineflayer_combat_round_trips_and_defaults_match_worker ... ok
+test models::loader_schema_tests::environment_overrides_round_trip_through_build_metadata ... ok
+test models::loader_schema_tests::gathering_settings_preserve_preferences_and_match_worker_defaults ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 96 filtered out; finished in 0.01s
+

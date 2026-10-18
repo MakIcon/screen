@@ -1,0 +1,40 @@
+✖ real wind-charge, mace and shield packets serialize on 1.21.1 (204.2413ms)
+✖ real wind-charge, mace and shield packets serialize on 26.1.2 (209.8438ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1182.0667
+
+✖ failing tests:
+
+test at extensions\mineflayer-bot\mace.test.mjs:698:3
+✖ real wind-charge, mace and shield packets serialize on 1.21.1 (204.2413ms)
+  AssertionError [ERR_ASSERTION]: a delayed server burst lifts the bot; antiKnockback=true
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/mace.test.mjs:871:16)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at extensions\mineflayer-bot\mace.test.mjs:698:3
+✖ real wind-charge, mace and shield packets serialize on 26.1.2 (209.8438ms)
+  AssertionError [ERR_ASSERTION]: a delayed server burst lifts the bot; antiKnockback=true
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/mace.test.mjs:871:16)
+      at async Test.run (node:internal/test_runner/test:1110:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

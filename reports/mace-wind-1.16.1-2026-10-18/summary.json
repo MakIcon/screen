@@ -1,0 +1,67 @@
+{
+  "version": "1.16.1",
+  "generatedAt": "2026-10-18T14:05:08.554Z",
+  "before": {
+    "runtime": "1.16.0",
+    "log": "before.txt",
+    "tests": 2,
+    "pass": 0,
+    "fail": 2,
+    "cancelled": 0,
+    "skipped": 0,
+    "duration_ms": 1182.0667
+  },
+  "focused": {
+    "log": "focused.txt",
+    "tests": 42,
+    "pass": 42,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "duration_ms": 2135.0889
+  },
+  "packaged": {
+    "log": "packaged-tests.txt",
+    "tests": 19,
+    "pass": 19,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "duration_ms": 1193.0299
+  },
+  "worker": {
+    "log": "worker-tests.txt",
+    "tests": 535,
+    "pass": 534,
+    "fail": 1,
+    "cancelled": 0,
+    "skipped": 0,
+    "duration_ms": 462756.4898
+  },
+  "miningRecheck": {
+    "log": "mining-recheck.txt",
+    "tests": 1,
+    "pass": 1,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "duration_ms": 13781.2041
+  },
+  "source": {
+    "files": 195,
+    "mismatches": []
+  },
+  "package": {
+    "archive": "D:\\JBProjects\\RUST\\screen\\dist-extensions\\screenlauncher-mineflayer-bot-1.16.1.zip",
+    "version": "1.16.1",
+    "bytes": 161190297,
+    "runtimeFiles": 48,
+    "sha256": "c303838da1dcbfe0f6999604aed255c63543a0c034a7fa92de7ecd6bd3ffff36",
+    "mismatches": []
+  },
+  "build": {
+    "pathfinder": "build.txt",
+    "rust": "rust-check.txt"
+  },
+  "liveServerTested": false
+}

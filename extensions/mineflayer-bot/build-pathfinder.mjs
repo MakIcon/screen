@@ -35,6 +35,8 @@ for (const dir of ["pathfinding/src", "pathfinding/tests"]) await collect(dir);
 for (const file of [
   "worker.cjs",
   "worker.test.mjs",
+  "workflow.cjs",
+  "workflow.test.mjs",
   "production.cjs",
   "production-plan.cjs",
   "storage-scan.cjs",
@@ -65,6 +67,9 @@ for (const file of [
   "combat-inventory.cjs",
   "armor-manager.cjs",
   "auto-eat.cjs",
+  "auto-buff.cjs",
+  "potion-data.cjs",
+  "auto-buff.test.mjs",
   "emergency-mlg.cjs",
   "survival.cjs",
   "gathering-plan.cjs",

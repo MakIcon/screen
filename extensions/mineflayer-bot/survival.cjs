@@ -1,13 +1,15 @@
 const { AutoEat } = require('./auto-eat.cjs');
+const { AutoBuff, splashSafe } = require('./auto-buff.cjs');
+const { potionData } = require('./potion-data.cjs');
 const { createEmergencyMlg } = require('./emergency-mlg.cjs');
 
 const DEFAULTS = Object.freeze(require('./survival-defaults.json'));
 function normalizeSurvival(value = {}) {
   value = value && typeof value === 'object' ? value : {};
   const result = { ...DEFAULTS };
-  for (const key of ['autoEat', 'emergencyMlg', 'mlgPickupWater'])
+  for (const key of ['autoEat', 'autoBuff', 'autoBuffHealing', 'autoBuffCombat', 'emergencyMlg', 'mlgPickupWater'])
     if (typeof value[key] === 'boolean') result[key] = value[key];
-  for (const [key, min, max] of [['autoEatMinHunger', 1, 19], ['autoEatMinHealth', 1, 20], ['mlgMinFallHeight', 4, 32]])
+  for (const [key, min, max] of [['autoEatMinHunger', 1, 19], ['autoEatMinHealth', 1, 20], ['autoBuffMinHealth', 1, 20], ['mlgMinFallHeight', 4, 32]])
     if (typeof value[key] === 'number' && Number.isFinite(value[key]))
       result[key] = Math.max(min, Math.min(max, Math.round(value[key])));
   if (['foodPoints', 'saturation'].includes(value.autoEatPriority)) result.autoEatPriority = value.autoEatPriority;
@@ -18,6 +20,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
   const settings = normalizeSurvival(value);
   const autoEat = new AutoEat(bot, { enabled: settings.autoEat, minHunger: settings.autoEatMinHunger,
     minHealth: settings.autoEatMinHealth, priority: settings.autoEatPriority });
+  const autoBuff = new AutoBuff(bot, { now });
   const mlg = createEmergencyMlg(bot, settings, { now, onStatus });
   let kind = null, generation = 0, disposed = false, peakY = bot.entity.position.y;
   let combatMeal = null;
@@ -32,6 +35,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     bot.launcherProduction?.pauseForSurvival();
     if (bot.usingHeldItem) bot.deactivateItem();
     autoEat.cancelEat();
+    autoBuff.cancelDrinking();
     bot.clearControlStates();
     const rev = generation;
     return () => alive() && generation === rev && kind === nextKind;
@@ -59,14 +63,18 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     try {
       if (combatMeal && !combatMeal.current()) {
         generation++; kind = null; combatMeal = null; autoEat.cancelEat();
+        autoBuff.cancelDrinking();
         if (bot.usingHeldItem) bot.deactivateItem();
         bot.clearControlStates();
+        bot.launcherCombat?.resumeAfterSurvival();
+        bot.launcherTravel?.resumeAfterSurvival();
+        bot.launcherGathering?.resumeAfterSurvival();
       }
       if (kind !== 'mlg' && settings.emergencyMlg && falling && !plannedDrop &&
         !bot.launcherCombat?.imminentMaceSmash && now() >= nextMlgAt) {
         const plan = mlg.plan(peakY);
         if (plan) {
-          const previous = autoEat.isEating ? autoEat.previousItem : bot.heldItem;
+          const previous = autoBuff.isDrinking ? autoBuff.previousItem : autoEat.isEating ? autoEat.previousItem : bot.heldItem;
           const current = acquire('mlg');
           // Do not wait for an airborne executor to reach safe ground first.
           void bot.pathfinder.interrupt(0, true, 'goalReassignment').catch(onError);
@@ -120,7 +128,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     const wasBusy = kind !== null;
     generation++; kind = null; combatMeal = null;
     if (wasBusy && bot._client?.state === 'play' && bot.usingHeldItem) bot.deactivateItem();
-    autoEat.cancelEat(); mlg.cancel();
+    autoEat.cancelEat(); autoBuff.cancelDrinking(); mlg.cancel();
     peakY = bot.entity.position.y;
     if (!disposed && bot.health > 0) {
       bot.launcherCombat?.resumeAfterSurvival();
@@ -130,17 +138,33 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
   const controller = {
     get busy() { return kind !== null; }, get kind() { return kind; },
     get task() { return task; },
+    healingPotion() {
+      return settings.autoBuff && settings.autoBuffHealing && bot.health <= settings.autoBuffMinHealth
+        ? autoBuff.best(true) : null;
+    },
+    requestCombatBuff(enemy, valid) {
+      if (!settings.autoBuff || !settings.autoBuffCombat || bot.health <= settings.autoBuffMinHealth ||
+        !enemy?.position || enemy.position.distanceTo(bot.entity.position) < 8 || !splashSafe(bot)) return false;
+      const item = autoBuff.best(false);
+      return item ? controller.requestCombatHeal(item, () => valid() &&
+        enemy.position.distanceTo(bot.entity.position) >= 4.5 && splashSafe(bot)) : false;
+    },
     requestCombatHeal(item, valid, onFinished = () => {}) {
-      if (!alive() || kind || autoEat.isEating || !item || bot.launcherPearling ||
+      if (!alive() || kind || autoEat.isEating || autoBuff.isDrinking || !item || bot.launcherPearling ||
         bot.launcherDefendingBow || !bot.entity.onGround) return false;
-      const current = acquire('eat');
+      const potion = potionData(bot, item);
+      if (/potion/.test(item.name) && !potion) return false;
+      if (potion && (!settings.autoBuff || potion.lingering || (potion.splash && !splashSafe(bot)))) return false;
+      const current = acquire(potion ? 'buff' : 'eat');
       combatMeal = { current: valid };
       let succeeded = false;
       const eatingCurrent = () => current() && valid();
       task = Promise.resolve(bot.pathfinder.stop()).then(async () => {
         if (!eatingCurrent()) return;
-        onStatus(`combat heal: ${item.name}`);
-        succeeded = await autoEat.eat({ item, current: eatingCurrent });
+        onStatus(`combat ${potion ? 'potion' : 'heal'}: ${potion?.name || item.name}`);
+        succeeded = potion
+          ? await autoBuff.applyItemToSelf(item, { current: eatingCurrent })
+          : await autoEat.eat({ item, current: eatingCurrent });
       }).catch(error => { if (eatingCurrent()) onError(error); }).finally(async () => {
         if (current()) {
           onFinished(succeeded);
@@ -154,16 +178,21 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
       if (!combatMeal) return;
       generation++; kind = null; combatMeal = null;
       autoEat.cancelEat();
+      autoBuff.cancelDrinking();
       if (bot.usingHeldItem) bot.deactivateItem();
       bot.clearControlStates();
+      bot.launcherCombat?.resumeAfterSurvival();
+      bot.launcherTravel?.resumeAfterSurvival();
+      bot.launcherGathering?.resumeAfterSurvival();
     },
     dispose() {
       if (disposed) return;
-      disposed = true; reset(); autoEat.dispose();
+      disposed = true; reset(); autoEat.dispose(); autoBuff.dispose();
       bot.off('physicsTick', tick); bot.off('death', reset); bot.off('respawn', reset); bot.off('end', controller.dispose);
     },
   };
   bot.autoEat = autoEat;
+  bot.autoBuff = autoBuff;
   bot.launcherSurvival = controller;
   bot.prependListener('physicsTick', tick);
   bot.on('death', reset); bot.on('respawn', reset); bot.on('end', controller.dispose);

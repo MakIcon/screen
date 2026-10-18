@@ -93,6 +93,7 @@ test('survival defaults and bounds preserve explicitly disabled features', () =>
   assert.deepEqual(normalizeSurvival({ autoEat: false, emergencyMlg: false, mlgPickupWater: false,
     autoEatMinHunger: 100, autoEatMinHealth: -5, autoEatPriority: 'wrong', mlgMinFallHeight: 0 }), {
     autoEat: false, emergencyMlg: false, mlgPickupWater: false, autoEatMinHunger: 19,
+    autoBuff: true, autoBuffHealing: true, autoBuffCombat: true, autoBuffMinHealth: 12,
     autoEatMinHealth: 1, autoEatPriority: 'saturation', mlgMinFallHeight: 4,
   });
 });

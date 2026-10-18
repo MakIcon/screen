@@ -1,0 +1,242 @@
+[
+  {
+    "file": "worker.cjs",
+    "bytes": 41401,
+    "sha256": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895"
+  },
+  {
+    "file": "production.cjs",
+    "bytes": 34447,
+    "sha256": "77b29784ce1daff53314e92159acf8462c3f8314b2168005f3f2dd00321a0a09"
+  },
+  {
+    "file": "workflow.cjs",
+    "bytes": 10918,
+    "sha256": "8e8cfcbd603880286a37ade617954019a01ce7ede077d1cdb8605954c82160ad"
+  },
+  {
+    "file": "production-plan.cjs",
+    "bytes": 7948,
+    "sha256": "5b01e14481b390ee353a027d0fc270dcf9a8cd2775488c5bbc30cf9d43063abe"
+  },
+  {
+    "file": "storage-scan.cjs",
+    "bytes": 8847,
+    "sha256": "211fd256ca619353ea494d33b33d0f1c3e441dcdb0b59308c171e438cb561516"
+  },
+  {
+    "file": "production-commands.cjs",
+    "bytes": 2973,
+    "sha256": "dfd59d8ea03a441fe9111aa62a2772cedda35c0a335099b901ef0d87f0ce9270"
+  },
+  {
+    "file": "PRODUCTION.md",
+    "bytes": 9408,
+    "sha256": "9c53de494c786c651c7962c0fdef99915b478ccbb61466210e9fa538f3099486"
+  },
+  {
+    "file": "web-inventory.cjs",
+    "bytes": 12453,
+    "sha256": "c5af94cb43c17ba926145f5d08f33b0b0c58017c6fe8fc75be4e38fb7d75a2f4"
+  },
+  {
+    "file": "gathering.cjs",
+    "bytes": 70485,
+    "sha256": "8de6c57bb8fa2a7636147ee713cade22afb151898e1c24e16f26e24e87255067"
+  },
+  {
+    "file": "gathering-defense.cjs",
+    "bytes": 12120,
+    "sha256": "50f6927530cfd7031e8148cd763d90f503cd170fdfe9790f375ebf68ed4fff7d"
+  },
+  {
+    "file": "gathering-storage.cjs",
+    "bytes": 7104,
+    "sha256": "e45d61e26230da50fe0edff51e38134fae6866d0862e16c33febdd8996e02033"
+  },
+  {
+    "file": "storage-filters.json",
+    "bytes": 3830,
+    "sha256": "cd4cd6a0b3f03494f743d14309752c1ae15640bf8ff7db4bdb9c6e341c5bb186"
+  },
+  {
+    "file": "gathering-plan.cjs",
+    "bytes": 10216,
+    "sha256": "a7487fc2515417664889f9e223d8fffaf2aee706ac7bba7cd42d14996d0e8f88"
+  },
+  {
+    "file": "gathering-defaults.json",
+    "bytes": 224,
+    "sha256": "688ec1323ad842a06dd2f59a3718bd2b3f9580ccf22ec759ee565663321b79ff"
+  },
+  {
+    "file": "gathering-scan.cjs",
+    "bytes": 6297,
+    "sha256": "fb1c3e89088eb11b51e7ff99a1a3f91a85df1b5a437ad411fcf2cd9e8c2aa6da"
+  },
+  {
+    "file": "gathering-commands.cjs",
+    "bytes": 10507,
+    "sha256": "edefab2f152fcaa6bd60778ea9774c1afeef548229e9af8a7acef44c40f93857"
+  },
+  {
+    "file": "GATHERING.md",
+    "bytes": 56000,
+    "sha256": "bb37233dfa7bcc2e90d2ec493e76e2137685a8b786dc3cc43846a8f4018b08f2"
+  },
+  {
+    "file": "knockback.cjs",
+    "bytes": 6137,
+    "sha256": "da1169fcdc1f0bda52c07069377ddf4f7928e129e73e0090f1d6f7c38eb608c0"
+  },
+  {
+    "file": "combat.cjs",
+    "bytes": 63575,
+    "sha256": "1d0da5a9a78a1bc6edfc1259e67d328e4681735f9a420bf38252bf5689376b4e"
+  },
+  {
+    "file": "combat-brain.cjs",
+    "bytes": 9322,
+    "sha256": "7c42817886b2f785ce569ead7e5bee5604db812e3b491525634bd9a51ea393cb"
+  },
+  {
+    "file": "combat-footwork.cjs",
+    "bytes": 12028,
+    "sha256": "a03abd83bc92c005ac75ea20d042050896cb77c03c65ba5ff93f66db28c204a9"
+  },
+  {
+    "file": "pearls.cjs",
+    "bytes": 20042,
+    "sha256": "1de78ee38fac202c360c5225ae477ff22cfed29635617ef1c6c912409e1cfa9e"
+  },
+  {
+    "file": "crystals.cjs",
+    "bytes": 37103,
+    "sha256": "a9992c09e011091c9937a4ff4d1280a7123bbf42020bdf935c695d3587eeef46"
+  },
+  {
+    "file": "crystal-movement.cjs",
+    "bytes": 7398,
+    "sha256": "765670c6805d1859a454fb70162be98a2432969174349571451d2548650a2f98"
+  },
+  {
+    "file": "bow-defense.cjs",
+    "bytes": 18429,
+    "sha256": "3d4cc5b823d1e6ec84bae297c56d6e77dbbdd3d8efebdcfbe6883993d01f0856"
+  },
+  {
+    "file": "combat-inventory.cjs",
+    "bytes": 2492,
+    "sha256": "f31cefef7e867e86371bba9e461c3af653139afbf54e950aa88efa0fb3ef3a26"
+  },
+  {
+    "file": "armor-manager.cjs",
+    "bytes": 2162,
+    "sha256": "6fc417654ecace17439fbb55daa15a6b1ed1d6c9520f1d407ebb19a5e8912115"
+  },
+  {
+    "file": "auto-eat.cjs",
+    "bytes": 4499,
+    "sha256": "770a90427e5b2cf0da54f204b35dd4bcce6638b12c27d42d829ac0063f0f6ba7"
+  },
+  {
+    "file": "auto-buff.cjs",
+    "bytes": 7544,
+    "sha256": "0bda71f9acfaf0a124064422124c9ef01c89370680cae45f698d8bfad68c81d1"
+  },
+  {
+    "file": "potion-data.cjs",
+    "bytes": 4385,
+    "sha256": "d18a09e6b432866105ec7c6652647139d5709d608695811696537b0908c6c86a"
+  },
+  {
+    "file": "emergency-mlg.cjs",
+    "bytes": 6421,
+    "sha256": "3db1459f121cc007be62aa87792f13d4d9d0725cd4078b306c4ca972d13d1305"
+  },
+  {
+    "file": "survival.cjs",
+    "bytes": 9706,
+    "sha256": "5ab72271c84f7b9389e5b362b04f08312fad37443ecf87cde94a3ac7db3cab73"
+  },
+  {
+    "file": "survival-defaults.json",
+    "bytes": 284,
+    "sha256": "7f9a7dc333f033396bc821738fee772226fb62c5fc94fc2fa200e3e8eeb02047"
+  },
+  {
+    "file": "SURVIVAL.md",
+    "bytes": 4217,
+    "sha256": "c6ea725873523095d477e1b5280194ef445b79bb0a0b2a1f6887fd144b7da32b"
+  },
+  {
+    "file": "AUTO-EAT-LICENSE",
+    "bytes": 1061,
+    "sha256": "2cf1268731197ea3a160313616b904f6c6103cb119c4267ecc2d9ce09b8fd707"
+  },
+  {
+    "file": "melee-shield.cjs",
+    "bytes": 10451,
+    "sha256": "40d0484aa2b6bbf705baa135ffe27ffbe594a901ea87651981d360b1a48e9421"
+  },
+  {
+    "file": "mace.cjs",
+    "bytes": 15852,
+    "sha256": "bc18ca5b5a1f0e57417c6f8135737ff0beedd1db44c3b2bca8405329ee264df2"
+  },
+  {
+    "file": "combat-defaults.json",
+    "bytes": 1645,
+    "sha256": "a80e1430fdf742d3f9ec7628f948a46fd85b5fd505ac7c71819d231e9cbcaffc"
+  },
+  {
+    "file": "COMBAT.md",
+    "bytes": 39222,
+    "sha256": "6aa375fcee81ca1716213257b9d2cd5c2f7eca9f3189515d7d55e687a4291b3e"
+  },
+  {
+    "file": "pathfinder.cjs",
+    "bytes": 607164,
+    "sha256": "fbd455683989f88ad50bfbd2aa690fe94a2ef34c88c8684e5cdbf24c713eb973"
+  },
+  {
+    "file": "extension.json",
+    "bytes": 163,
+    "sha256": "f25fc083551c60395ca1ef3cf9a0ae2d98ac385fcc0aead743262840875cf185"
+  },
+  {
+    "file": "package.json",
+    "bytes": 1264,
+    "sha256": "ea313d1b9bb6bacdc148bd741c6274f1053d386f35c55bc8cd15264d610b52b7"
+  },
+  {
+    "file": "package-lock.json",
+    "bytes": 98924,
+    "sha256": "283945120bec388a75f9a37010272253133f54d1ef72920b1309f3a830c7d921"
+  },
+  {
+    "file": "COPYING",
+    "bytes": 35801,
+    "sha256": "2e8578f16b6ea265412166e8b4b1da045fcc11f28db03d664908410124a2f01e"
+  },
+  {
+    "file": "BARITONE-LICENSE",
+    "bytes": 7651,
+    "sha256": "a5681bf9b05db14d86776930017c647ad9e6e56ff6bbcfdf21e5848288dfaf1b"
+  },
+  {
+    "file": "THIRD-PARTY-NOTICES.md",
+    "bytes": 4964,
+    "sha256": "fedc560d295fe21e7dad2426f64ab16cacb2060dad1a1139e54127889c88e530"
+  },
+  {
+    "file": "pathfinder-source.json",
+    "bytes": 2456060,
+    "sha256": "34df5c578a8df1a2b7a5e00be703240b1656cdcfc31fe93081894537cdd7c660"
+  },
+  {
+    "file": "restore-pathfinder-source.cjs",
+    "bytes": 667,
+    "sha256": "0f360bc246796e5e14a9e32de62a906c01f89f91a673245e64042a0e465b7cb6"
+  }
+]

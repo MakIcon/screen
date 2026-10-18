@@ -1,0 +1,27 @@
+✔ wind launch brakes sprint momentum before jumping and re-aims at the current feet (6.2873ms)
+✔ wind launch holds its blast position through delayed boost then pursues a moving target (1.555ms)
+✔ an ordinary jump without a wind impulse never becomes a smash and retries are bounded (0.838ms)
+✔ braking is bounded and launch clearance is checked again after equipping (0.819ms)
+✔ launch owns movement during slow equip and stop cancels a delayed downward aim (1.0377ms)
+✔ wind jump waits for real descent, fall distance, hitbox reach and confirmed Wind Burst (3.8419ms)
+✔ unconfirmed or shielded hits do not start a Wind Burst combo (0.8685ms)
+✔ successful smash on the ground starts another jump after the wind cooldown (0.4906ms)
+✔ miss, roof and absent charges use bounded retries and the grounded mace cooldown (0.4878ms)
+✔ switching to a grounded mace charges it before the first ordinary attack (0.4183ms)
+✔ stop, target loss and survival invalidate an in-flight inventory operation (0.6283ms)
+✔ walls, moving targets, zero skill and raised shields prevent a falling hit (0.6232ms)
+✔ a reachable high descent keeps the mace until its future hit window, then yields on a miss (0.3715ms)
+✔ mace preference uses its controller with both engines and falls back on older versions (2.6568ms)
+✔ mace defense predicts interception and ignores a pass, grounded carrier, wall and stale motion (0.2524ms)
+✔ auto keeps its mace after the hit confirmation expires until landing, even against a raised shield (1.1728ms)
+✔ mace shield works with arrow defense off, samples motion and resumes after the landing (0.4797ms)
+✔ real wind-charge, mace and shield packets serialize on 1.21.1 (178.4455ms)
+✔ real wind-charge, mace and shield packets serialize on 26.1.2 (249.4179ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1193.0299

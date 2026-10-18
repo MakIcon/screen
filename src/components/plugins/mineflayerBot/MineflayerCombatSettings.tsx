@@ -203,7 +203,7 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
             {toggle(
               "combatHealing",
               "ЛЕЧЕНИЕ В БОЮ",
-              "Отойти для золотого яблока или еды и вернуться в бой. Требуется адаптивный бой.",
+              "Зелья, золотые яблоки и еда. Адаптивный бой помогает отойти для лечения; автобафы настраиваются в разделе «Выживание».",
             )}
             {toggle(
               "pearlEscape",

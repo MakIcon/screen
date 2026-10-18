@@ -1,0 +1,26 @@
+[
+  {
+    "module": "sword/swordpvp",
+    "normalizedMatch": false
+  },
+  {
+    "module": "sword/sworddata",
+    "normalizedMatch": true
+  },
+  {
+    "module": "sword/swordconfigs",
+    "normalizedMatch": false
+  },
+  {
+    "module": "sword/swordutil",
+    "normalizedMatch": false
+  },
+  {
+    "module": "bow/shotPlanner",
+    "normalizedMatch": true
+  },
+  {
+    "module": "calc/mathUtils",
+    "normalizedMatch": false
+  }
+]

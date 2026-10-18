@@ -24,6 +24,17 @@ pathfinding/src/mineflayer-specific/movements/controls.ts.
 External physics/utility packages retain their GPL-3.0 notices in node_modules;
 all other dependency license files are retained with their packages.
 
+Potion support added in 1.16.0 was developed using the supplied
+nxg-org/mineflayer-auto-buff 1.5.0 sources by GenerelSchwerz (GPL-3.0) as a design
+reference. The local auto-buff.cjs and potion-data.cjs replace its standalone
+listeners, selection and drinking loops with version-aware potion recognition,
+confirmed use, bounded waits, shared inventory ownership and cancellation.
+https://github.com/nxg-org/mineflayer-auto-buff
+The supplied Custom PvP 1.7.16 and Ender sources were also reviewed for this
+integration. Their downloaded builds are not installed over the existing
+launcher integrations. All local changes ship as corresponding source under
+GPL-3.0-only; the complete license is retained in COPYING.
+
 The local auto-eat.cjs module adapts the supplied linkle69/mineflayer-auto-eat
 5.0.3 source (Copyright (c) 2023 Link, MIT). Its original license is retained
 verbatim in AUTO-EAT-LICENSE. Lifecycle, inventory ownership and survival

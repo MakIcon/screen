@@ -89,9 +89,17 @@ describe("normalizeMineflayerBotSettings", () => {
         autoEatMinHealth: -1,
         mlgMinFallHeight: 0,
         autoEatPriority: "foodPoints",
+        autoBuff: false,
+        autoBuffHealing: false,
+        autoBuffCombat: false,
+        autoBuffMinHealth: 99,
       },
     });
     expect(normalized.survival).toEqual({
+      autoBuff: false,
+      autoBuffHealing: false,
+      autoBuffCombat: false,
+      autoBuffMinHealth: 20,
       autoEat: false,
       emergencyMlg: false,
       mlgPickupWater: false,

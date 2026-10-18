@@ -636,38 +636,42 @@ var require_navigationGeometry = __commonJS({
       const radius = width / 2;
       const delta = to.minus(from);
       const steps = Math.max(1, Math.ceil(delta.norm() * 2));
+      const scanPadding = delta.norm() / (2 * steps);
       const visited = /* @__PURE__ */ new Set();
+      const intersects = (box) => {
+        let enter = 0, leave = 1;
+        const mins = [box.minX - radius, box.minY - height + 1e-5, box.minZ - radius];
+        const maxs = [box.maxX + radius, box.maxY - 1e-5, box.maxZ + radius];
+        const origin = [from.x, from.y, from.z], direction = [delta.x, delta.y, delta.z];
+        for (let axis = 0; axis < 3; axis++) {
+          if (Math.abs(direction[axis]) < 1e-9) {
+            if (origin[axis] <= mins[axis] || origin[axis] >= maxs[axis])
+              return false;
+          } else {
+            const a = (mins[axis] - origin[axis]) / direction[axis];
+            const b = (maxs[axis] - origin[axis]) / direction[axis];
+            enter = Math.max(enter, Math.min(a, b));
+            leave = Math.min(leave, Math.max(a, b));
+          }
+        }
+        return enter < leave && leave > 0 && enter < 1;
+      };
       for (let i = 0; i <= steps; i++) {
         const p = from.plus(delta.scaled(i / steps));
-        for (let x = Math.floor(p.x - radius); x <= Math.floor(p.x + radius); x++) {
-          for (let z = Math.floor(p.z - radius); z <= Math.floor(p.z + radius); z++) {
-            for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + height - 1e-5); y++) {
+        for (let x = Math.floor(p.x - radius - scanPadding); x <= Math.floor(p.x + radius + scanPadding); x++) {
+          for (let z = Math.floor(p.z - radius - scanPadding); z <= Math.floor(p.z + radius + scanPadding); z++) {
+            for (let y = Math.floor(p.y - scanPadding + 1e-5); y <= Math.floor(p.y + height + scanPadding - 1e-5); y++) {
               const key = `${x}:${y}:${z}`;
               if (visited.has(key))
                 continue;
               visited.add(key);
+              if (!intersects({ minX: x, minY: y, minZ: z, maxX: x + 1, maxY: y + 1, maxZ: z + 1 }))
+                continue;
               const block = world.getBlockInfo(new vec3_1.Vec3(x, y, z));
               if (block.isInvalid || !block.safe)
                 return false;
               for (const box of block.getBBs()) {
-                let enter = 0, leave = 1;
-                const mins = [box.minX - radius, box.minY - height + 1e-5, box.minZ - radius];
-                const maxs = [box.maxX + radius, box.maxY - 1e-5, box.maxZ + radius];
-                const origin = [from.x, from.y, from.z], direction = [delta.x, delta.y, delta.z];
-                for (let axis = 0; axis < 3; axis++) {
-                  if (Math.abs(direction[axis]) < 1e-9) {
-                    if (origin[axis] <= mins[axis] || origin[axis] >= maxs[axis]) {
-                      enter = 2;
-                      break;
-                    }
-                  } else {
-                    const a = (mins[axis] - origin[axis]) / direction[axis];
-                    const b = (maxs[axis] - origin[axis]) / direction[axis];
-                    enter = Math.max(enter, Math.min(a, b));
-                    leave = Math.min(leave, Math.max(a, b));
-                  }
-                }
-                if (enter < leave && leave > 0 && enter < 1)
+                if (intersects(box))
                   return false;
               }
             }
@@ -4436,26 +4440,39 @@ var require_movementExecutors = __commonJS({
       }
       reset() {
         this.cornerSneaking = false;
+        this.cornerTarget = void 0;
         super.reset();
       }
       async correctCorner(move) {
         const pos = this.bot.entity.position;
-        if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0 || (0, navigationGeometry_1.clearBodySegment)(this.world, pos, move.exitPos, 0.599) && (0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, move.exitPos)) {
+        if (!this.bot.entity.onGround || this.doWaterLogic() || this.toBreakLen() > 0 || this.toPlaceLen() > 0) {
+          this.cornerTarget = void 0;
           if (this.cornerSneaking) {
             this.bot.setControlState("sneak", false);
             this.cornerSneaking = false;
           }
           return false;
         }
-        const entry = move.entryPos.clone();
+        const clearExit = (0, navigationGeometry_1.clearBodySegment)(this.world, pos, move.exitPos, 0.599) && (0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, move.exitPos);
+        if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.08 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.025)
+          this.cornerTarget = void 0;
+        if (clearExit && this.cornerTarget == null) {
+          if (this.cornerSneaking) {
+            this.bot.setControlState("sneak", false);
+            this.cornerSneaking = false;
+          }
+          return false;
+        }
+        const entry = move.entryPos.floored().offset(0.5, 0, 0.5);
         entry.y = pos.y;
         const supportedEntry = (0, navigationGeometry_1.supportedWalkSegment)(this.world, entry, entry);
-        const center = supportedEntry && (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : (0, utils_1.getSupportedStartPos)(this.world, pos).floored().offset(0.5, 0, 0.5);
+        const center = this.cornerTarget ?? (supportedEntry && (0, navigationGeometry_1.clearBodySegment)(this.world, pos, entry, 0.599) ? entry : (0, utils_1.getSupportedStartPos)(this.world, pos).floored().offset(0.5, 0, 0.5));
         center.y = pos.y;
-        if (pos.xzDistanceTo(center) < 0.08)
+        if (pos.xzDistanceTo(center) < 0.08 && !clearExit)
           throw new exceptions_12.CancelError("Forward: waypoint is blocked from its approach");
         if (!(0, navigationGeometry_1.clearBodySegment)(this.world, pos, center, 0.599))
           throw new exceptions_12.CancelError("Forward: cannot recenter at a blocked corner");
+        this.cornerTarget = center;
         await this.lookAtPathPos(center);
         (0, controls_1.steerToPosition)(this.bot, center, 0.1, 0.04);
         this.bot.setControlState("sprint", false);

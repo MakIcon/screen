@@ -81,6 +81,8 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
     ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
     ("auto-eat.cjs", include_str!("../../../extensions/mineflayer-bot/auto-eat.cjs")),
+    ("auto-buff.cjs", include_str!("../../../extensions/mineflayer-bot/auto-buff.cjs")),
+    ("potion-data.cjs", include_str!("../../../extensions/mineflayer-bot/potion-data.cjs")),
     ("emergency-mlg.cjs", include_str!("../../../extensions/mineflayer-bot/emergency-mlg.cjs")),
     ("survival.cjs", include_str!("../../../extensions/mineflayer-bot/survival.cjs")),
     ("survival-defaults.json", include_str!("../../../extensions/mineflayer-bot/survival-defaults.json")),

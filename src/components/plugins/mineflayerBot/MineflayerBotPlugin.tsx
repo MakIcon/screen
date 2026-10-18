@@ -661,6 +661,28 @@ function MineflayerBotSettingsEditor({
               <p className="mineflayer-bot-combat-note">Бот делает паузу для еды и возвращает прежний предмет. Опасная еда и золотые яблоки сохраняются. При полном голоде обычная еда не используется.</p>
             </PluginSettingsGroup>
             <PluginSettingsGroup
+              title="АВТОБАФЫ И ЛЕЧЕБНЫЕ ЗЕЛЬЯ"
+              description="Зелья из инвентаря в бою · настройки применяются после перезапуска бота"
+              enabled={settings.survival.autoBuff}
+              onToggle={() => update({ survival: { ...settings.survival, autoBuff: !settings.survival.autoBuff } })}
+            >
+              <SettingToggle label="ЛЕЧЕБНЫЕ ЗЕЛЬЯ" description="Мгновенное лечение и регенерация при низком здоровье"
+                checked={settings.survival.autoBuffHealing}
+                onChange={(autoBuffHealing) => update({ survival: { ...settings.survival, autoBuffHealing } })} />
+              <SettingToggle label="БОЕВЫЕ УСИЛЕНИЯ" description="Сила, скорость и огнестойкость при безопасной дистанции"
+                checked={settings.survival.autoBuffCombat}
+                onChange={(autoBuffCombat) => update({ survival: { ...settings.survival, autoBuffCombat } })} />
+              <div className="mineflayer-bot-grid">
+                <label className="mineflayer-bot-field">
+                  <span>ЛЕЧИТЬСЯ ПРИ ЗДОРОВЬЕ ≤ · HP</span>
+                  <CustomNumberInput ariaLabel="ЗДОРОВЬЕ ДЛЯ ЛЕЧЕБНОГО ЗЕЛЬЯ" background="transparent" min={1} max={20}
+                    value={settings.survival.autoBuffMinHealth}
+                    onChange={(autoBuffMinHealth) => update({ survival: { ...settings.survival, autoBuffMinHealth } })} />
+                </label>
+              </div>
+              <p className="mineflayer-bot-combat-note">Бот использует питьевые и взрывные зелья, учитывает действующие эффекты и возвращает оружие. Взрывные зелья бросаются под ноги вдали от других существ. Туманные зелья сохраняются. Адаптивный бой помогает отойти для лечения.</p>
+            </PluginSettingsGroup>
+            <PluginSettingsGroup
               title="АВАРИЙНЫЙ MLG"
               description="Спасение ведром воды при случайном падении или отбрасывании"
               enabled={settings.survival.emergencyMlg}

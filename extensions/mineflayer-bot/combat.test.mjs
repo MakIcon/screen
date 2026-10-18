@@ -883,7 +883,7 @@ test("aim speed changes actual smooth turns without changing navigation physics"
   assert.ok(angles[1] < angles[2], `300% turns faster than 100%: ${angles}`);
 });
 
-function recoveryFixture(settings = {}) {
+function recoveryFixture(settings = {}, survivalSettings = {}) {
   const f = fixture({ style: "melee", ...settings });
   const bot = f.bot;
   bot.entity.onGround = true;
@@ -919,6 +919,7 @@ function recoveryFixture(settings = {}) {
   bot.launcherCombat = f.controller;
   const survival = runtimeRequire("./survival.cjs").createSurvivalController(bot, {
     emergencyMlg: false,
+    ...survivalSettings,
   });
   f.enemy.position.x = 3;
   return {
@@ -929,6 +930,69 @@ function recoveryFixture(settings = {}) {
       survival.dispose();
     },
   };
+}
+
+for (const adaptiveCombat of [true, false]) {
+  test(`combat uses a healing potion at full hunger and resumes the same enemy; adaptive=${adaptiveCombat}`, async () => {
+    const f = recoveryFixture({ adaptiveCombat });
+    try {
+      const heal = { name: "potion", slot: 10, nbt: { type: "compound", value: {
+        Potion: { type: "string", value: "minecraft:strong_healing" },
+      } } };
+      f.items.push(heal);
+      f.bot.health = 10; f.enemy.position.x = 8;
+      f.controller.select(f.enemy);
+      await f.tick(0);
+      assert.equal(f.survival.kind, "buff");
+      assert.equal(f.bot.heldItem, heal, "prefer healing over the carried golden apple");
+      f.bot.health = 18;
+      f.bot._client.emit("entity_status", { entityId: 1, entityStatus: 9 });
+      await f.survival.task;
+      f.enemy.position.x = 3;
+      await f.tick(50);
+      assert.equal(f.bot.swordpvp.target, f.enemy);
+      assert.equal(f.bot.heldItem.name, "diamond_sword");
+    } finally { f.close(); }
+  });
+}
+
+test("combat buffs at distance yield immediately to an approaching opponent", async () => {
+  const f = recoveryFixture();
+  try {
+    f.items.push({ name: "potion", slot: 10, nbt: { type: "compound", value: {
+      Potion: { type: "string", value: "minecraft:long_strength" },
+    } } });
+    f.enemy.position.x = 12;
+    f.controller.select(f.enemy);
+    await f.tick(0);
+    assert.equal(f.survival.kind, "buff");
+    assert.equal(f.bot.heldItem.name, "potion");
+    f.enemy.position.x = 3;
+    await f.tick(50);
+    await f.survival.task;
+    await f.tick(100);
+    assert.equal(f.survival.busy, false);
+    assert.equal(f.bot.swordpvp.target, f.enemy);
+    assert.equal(f.bot.heldItem.name, "diamond_sword");
+    assert.equal(f.bot._client.listenerCount("entity_status"), 0);
+  } finally { f.close(); }
+});
+
+for (const patch of [{ autoBuff: false }, { autoBuffHealing: false }]) {
+  test(`disabled healing potion settings preserve food healing: ${JSON.stringify(patch)}`, async () => {
+    const f = recoveryFixture({}, patch);
+    try {
+      f.items.push({ name: "potion", slot: 10, nbt: { type: "compound", value: {
+        Potion: { type: "string", value: "minecraft:healing" },
+      } } });
+      f.bot.health = 10; f.enemy.position.x = 8;
+      f.controller.select(f.enemy); await f.tick(0);
+      assert.equal(f.survival.kind, "eat");
+      assert.equal(f.bot.heldItem.name, "golden_apple");
+      f.bot._client.emit("entity_status", { entityId: 1, entityStatus: 9 });
+      await f.survival.task;
+    } finally { f.close(); }
+  });
 }
 
 for (const [version, startDistance] of [

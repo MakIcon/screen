@@ -1,0 +1,29 @@
+✔ recognizes real strong healing potion items and restores the weapon on 1.8.8 (25.3386ms)
+✔ recognizes real strong healing potion items and restores the weapon on 1.20.4 (39.3423ms)
+✔ recognizes real strong healing potion items and restores the weapon on 1.20.5 (24.9828ms)
+✔ recognizes real strong healing potion items and restores the weapon on 26.1.2 (30.5272ms)
+✔ recognition handles long/strong NBT and refuses mixed harmful, unknown and turtle potions (0.5105ms)
+✔ modern custom effect IDs resolve against the current version and unknown potion IDs fail closed (0.3328ms)
+✔ buff selection skips active effects, supports upgrades and invalidates changed potion slots (0.5455ms)
+✔ splash aims and sends look before use, waits for self healing and restores the sword (7.1283ms)
+✔ self splash never heals an adjacent opponent and lingering potions are preserved (0.4999ms)
+✔ potion death cleans listeners and releases the hand (0.9838ms)
+✔ potion end cleans listeners and releases the hand (0.5342ms)
+✔ potion cancel cleans listeners and releases the hand (0.5985ms)
+✔ potion timeout cleans listeners and releases the hand (16.3432ms)
+✔ potion equip failure cleans listeners and releases the hand (0.746ms)
+✔ MLG cancellation cannot restore a weapon over an emergency bucket (0.7004ms)
+✔ a changed potion slot cannot substitute poison for healing while equip is queued (0.5289ms)
+✔ survival coordinates potion healing with combat and resumes the same controller (0.9705ms)
+✔ stopping combat potion use releases paused travel for the next command (0.5482ms)
+✔ splash potion uses real Mineflayer inventory and versioned packets on 1.8.8 (505.7873ms)
+✔ splash potion uses real Mineflayer inventory and versioned packets on 1.20.4 (41.6829ms)
+✔ splash potion uses real Mineflayer inventory and versioned packets on 26.1.2 (137.1604ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1140.2912

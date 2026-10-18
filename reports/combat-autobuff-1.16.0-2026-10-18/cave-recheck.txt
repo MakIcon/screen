@@ -1,0 +1,25 @@
+✖ delivery crosses a broad cave through its remembered stairs and returns to the mining site (14042.4087ms)
+✔ storage climbs remembered cave stairs to an already loaded surface chest (39257.0349ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 54993.1432
+
+✖ failing tests:
+
+test at extensions\mineflayer-bot\gathering-navigation.test.mjs:916:42
+✖ delivery crosses a broad cave through its remembered stairs and returns to the mining site (14042.4087ms)
+  Error [NavigationError]: Movement stalled: blocked by a wall or corner.
+      at EventEmitter.moveListener (D:\JBProjects\RUST\screen\extensions\mineflayer-bot\pathfinder.cjs:10812:25)
+      at EventEmitter.emit (node:events:520:35)
+      at EventEmitter.emit (node:domain:489:12)
+      at tickPhysics (D:\JBProjects\RUST\screen\node_modules\.pnpm\mineflayer@4.37.1\node_modules\mineflayer\lib\plugins\physics.js:83:11)
+      at Timeout.doPhysics (D:\JBProjects\RUST\screen\node_modules\.pnpm\mineflayer@4.37.1\node_modules\mineflayer\lib\plugins\physics.js:71:7)
+      at listOnTimeout (node:internal/timers:605:17)
+      at processTimers (node:internal/timers:541:7) {
+    reason: 'stalled'
+  }

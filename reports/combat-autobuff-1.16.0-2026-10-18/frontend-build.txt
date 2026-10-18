@@ -1,0 +1,82 @@
+vite v7.3.1 building client environment for production...
+transforming...
+✓ 446 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                        1.02 kB │ gzip:   0.43 kB
+dist/assets/draco_wasm_wrapper-fZCQGLGb.js            58.46 kB
+dist/assets/draco_wasm_wrapper-DxJM36Ib.js            58.76 kB
+dist/assets/draco_decoder-Z1_iN-Ht.wasm              192.42 kB │ gzip:  63.46 kB
+dist/assets/draco_decoder-C32yEggz.wasm              285.75 kB │ gzip:  88.64 kB
+dist/assets/draco_decoder-fzg4nYZr.js                719.41 kB
+dist/assets/ProxyPlugin-CzOANUBC.css                   2.14 kB │ gzip:   0.73 kB
+dist/assets/ObsTelemetryPlugin-Un7KyaR2.css            3.68 kB │ gzip:   0.94 kB
+dist/assets/BlueMapPlugin-C6GkNAvL.css                 4.29 kB │ gzip:   1.22 kB
+dist/assets/DiscordRpcPlugin-Xfmpbf5h.css              5.35 kB │ gzip:   1.49 kB
+dist/assets/BuildPlaceholdersWindowApp-E2jmWMHa.css    7.57 kB │ gzip:   2.53 kB
+dist/assets/LauncherMascot-C-51BrBb.css               18.65 kB │ gzip:   3.49 kB
+dist/assets/MineflayerBotPlugin-DK4bY8jO.css          48.11 kB │ gzip:   7.96 kB
+dist/assets/AppearanceStudioApp-BywJu-7V.css          60.75 kB │ gzip:   9.48 kB
+dist/assets/index-A2LS3JQY.css                       208.47 kB │ gzip:  36.48 kB
+dist/assets/rect-cache-BIJHrtkf.js                     0.39 kB │ gzip:   0.23 kB
+dist/assets/scroll-state-xmJCQjid.js                   0.51 kB │ gzip:   0.34 kB
+dist/assets/PluginSettingsGroup-CFZkWgQq.js            1.37 kB │ gzip:   0.62 kB
+dist/assets/ProxyPlugin-CDoj-Mdg.js                    3.25 kB │ gzip:   1.59 kB
+dist/assets/BuildScreenshotsModal-DUwVEGye.js          3.65 kB │ gzip:   1.45 kB
+dist/assets/DiscordRpcPlugin-Cf22J6BP.js               4.91 kB │ gzip:   1.65 kB
+dist/assets/BlueMapPlugin-CKcwtfmF.js                  5.95 kB │ gzip:   2.13 kB
+dist/assets/ObsTelemetryPlugin-R9w7Q1QV.js             6.30 kB │ gzip:   2.32 kB
+dist/assets/Glitch-k-EOsQmX.js                         7.83 kB │ gzip:   3.34 kB
+dist/assets/Ripple-DTrETCRj.js                         8.86 kB │ gzip:   3.76 kB
+dist/assets/Displacement-B9tEKhvi.js                   9.56 kB │ gzip:   3.96 kB
+dist/assets/ParticleReveal-DJWofWVz.js                 9.82 kB │ gzip:   4.06 kB
+dist/assets/VHS-C3VLmt84.js                           10.49 kB │ gzip:   4.25 kB
+dist/assets/react-vendor-C6WxKkic.js                  11.32 kB │ gzip:   4.07 kB
+dist/assets/MicrosoftAccountsModal-DzYfwiet.js        11.50 kB │ gzip:   3.66 kB
+dist/assets/Peel-Y0Un1Ios.js                          11.74 kB │ gzip:   4.69 kB
+dist/assets/Laser-D_iC_9yZ.js                         12.43 kB │ gzip:   5.11 kB
+dist/assets/Glass-CrXKTaP3.js                         12.46 kB │ gzip:   4.83 kB
+dist/assets/Bubble-C7DJgg8c.js                        12.80 kB │ gzip:   4.99 kB
+dist/assets/ParticleScroll-Bv_Y2OQD.js                13.34 kB │ gzip:   5.03 kB
+dist/assets/RetroDither-ClLHm88M.js                   14.09 kB │ gzip:   5.39 kB
+dist/assets/Blaze-C0necR8F.js                         14.31 kB │ gzip:   5.13 kB
+dist/assets/BuildPlaceholdersWindowApp-DHDBMXqc.js    14.48 kB │ gzip:   5.52 kB
+dist/assets/Magnify-tiQvW4ry.js                       14.51 kB │ gzip:   5.77 kB
+dist/assets/ParticleObject-BqsP_bBw.js                14.76 kB │ gzip:   6.33 kB
+dist/assets/Grid-DiN0d4fE.js                          15.14 kB │ gzip:   5.44 kB
+dist/assets/Clouds-BoUV0a40.js                        15.19 kB │ gzip:   5.22 kB
+dist/assets/Droplets-Bf9dBkK4.js                      15.30 kB │ gzip:   5.58 kB
+dist/assets/Cloth-B-rxlE2I.js                         15.39 kB │ gzip:   6.03 kB
+dist/assets/Shatter-DXGwmJhx.js                       15.65 kB │ gzip:   5.65 kB
+dist/assets/GlassObject-Ucv5ZKI9.js                   15.65 kB │ gzip:   6.72 kB
+dist/assets/Liquid-BBH-30HB.js                        16.02 kB │ gzip:   5.05 kB
+dist/assets/FlameWrap-Ctr1eOmL.js                     16.75 kB │ gzip:   6.37 kB
+dist/assets/GlyphRain-CWiEDnUB.js                     16.98 kB │ gzip:   6.36 kB
+dist/assets/Bend-CoXynt_E.js                          17.30 kB │ gzip:   6.80 kB
+dist/assets/Canvas-59QdTFvD.js                        17.86 kB │ gzip:   6.33 kB
+dist/assets/DitheredObject-3ibcGyrd.js                18.32 kB │ gzip:   7.63 kB
+dist/assets/DecryptReveal-BlN68Mfu.js                 20.34 kB │ gzip:   7.38 kB
+dist/assets/AsciiObject-Dco004EO.js                   21.35 kB │ gzip:   8.82 kB
+dist/assets/InkObject-CCy1A4vQ.js                     22.72 kB │ gzip:   9.42 kB
+dist/assets/Frost-C7onpfNv.js                         22.74 kB │ gzip:   7.47 kB
+dist/assets/Asciify-Befxu096.js                       22.86 kB │ gzip:   8.34 kB
+dist/assets/SVGLoader-NW8KBKQU.js                     24.94 kB │ gzip:   8.90 kB
+dist/assets/ForceField-zaHgvTwu.js                    26.18 kB │ gzip:   8.73 kB
+dist/assets/AsciiSweep-DNQ81Gc1.js                    28.79 kB │ gzip:  10.95 kB
+dist/assets/LiquidObject-BxPejz5S.js                  30.17 kB │ gzip:  11.22 kB
+dist/assets/HexFloat-CCKpM_aS.js                      30.21 kB │ gzip:   9.75 kB
+dist/assets/BuildStatsModal-6Fk-ZP3s.js               40.07 kB │ gzip:  14.15 kB
+dist/assets/index-DSpUrpEf.js                         52.19 kB │ gzip:  17.21 kB
+dist/assets/LauncherMascot-D-uf2Inq.js                78.66 kB │ gzip:  27.83 kB
+dist/assets/AppearanceStudioApp-kWZ55tBX.js          109.72 kB │ gzip:  29.70 kB
+dist/assets/LiquidWebGPU-CHGXGsWI.js                 160.72 kB │ gzip:  49.86 kB
+dist/assets/MinecraftSkinPreview-CdLJMC5G.js         511.58 kB │ gzip: 128.51 kB
+dist/assets/GLTFLoader-DqSg9lG8.js                   671.08 kB │ gzip: 173.51 kB
+dist/assets/MineflayerBotPlugin-Bdj97QP_.js          875.61 kB │ gzip: 277.88 kB
+dist/assets/index-D0f4Dha9.js                        934.47 kB │ gzip: 271.65 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 4.54s

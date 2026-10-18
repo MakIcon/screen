@@ -1,0 +1,2 @@
+    Checking screen v0.1.0 (D:\JBProjects\RUST\screen\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.19s

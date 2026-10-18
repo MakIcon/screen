@@ -34,6 +34,9 @@ Copy-Item -LiteralPath (Join-Path $sourceDirectory "combat.cjs") -Destination $s
 foreach ($file in @("combat-brain.cjs", "combat-footwork.cjs")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
+foreach ($file in @("auto-buff.cjs", "potion-data.cjs")) {
+    Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
+}
 foreach ($file in @("gathering.cjs", "gathering-defense.cjs", "gathering-storage.cjs", "storage-filters.json", "gathering-plan.cjs", "gathering-defaults.json", "gathering-scan.cjs", "gathering-commands.cjs", "web-inventory.cjs", "GATHERING.md")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }

@@ -1,0 +1,12 @@
+
+> screen@0.1.0 build:pathfinder D:\JBProjects\RUST\screen
+> pnpm --filter @screenlauncher/mineflayer-bot build:pathfinder
+
+
+> @screenlauncher/mineflayer-bot@1.16.1 build:pathfinder D:\JBProjects\RUST\screen\extensions\mineflayer-bot
+> pnpm --dir pathfinding build && node build-pathfinder.mjs
+
+
+> @screenlauncher/minecraft-pathfinding@0.0.26-screen.7 build D:\JBProjects\RUST\screen\extensions\mineflayer-bot\pathfinding
+> tsc -p tsconfig.json
+

@@ -1,0 +1,4 @@
+
+> screen@0.1.0 typecheck D:\JBProjects\RUST\screen
+> tsc --noEmit
+

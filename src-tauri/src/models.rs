@@ -662,6 +662,10 @@ pub struct MineflayerSurvivalSettings {
     pub auto_eat_min_hunger: u32,
     pub auto_eat_min_health: u32,
     pub auto_eat_priority: String,
+    pub auto_buff: bool,
+    pub auto_buff_healing: bool,
+    pub auto_buff_combat: bool,
+    pub auto_buff_min_health: u32,
     pub emergency_mlg: bool,
     pub mlg_min_fall_height: u32,
     pub mlg_pickup_water: bool,
@@ -674,6 +678,10 @@ impl Default for MineflayerSurvivalSettings {
             auto_eat_min_hunger: 15,
             auto_eat_min_health: 14,
             auto_eat_priority: "saturation".to_string(),
+            auto_buff: true,
+            auto_buff_healing: true,
+            auto_buff_combat: true,
+            auto_buff_min_health: 12,
             emergency_mlg: true,
             mlg_min_fall_height: 4,
             mlg_pickup_water: true,
@@ -1557,10 +1565,15 @@ mod loader_schema_tests {
         assert_eq!(serde_json::to_value(legacy.survival).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "survival": { "autoEat": false, "emergencyMlg": false,
+                "autoBuff": false, "autoBuffHealing": false, "autoBuffCombat": false, "autoBuffMinHealth": 9,
                 "mlgPickupWater": false, "autoEatMinHunger": 12, "autoEatPriority": "foodPoints" }
         })).unwrap();
         let saved = serde_json::to_value(parsed).unwrap();
         assert_eq!(saved["survival"]["autoEat"], false);
+        assert_eq!(saved["survival"]["autoBuff"], false);
+        assert_eq!(saved["survival"]["autoBuffHealing"], false);
+        assert_eq!(saved["survival"]["autoBuffCombat"], false);
+        assert_eq!(saved["survival"]["autoBuffMinHealth"], 9);
         assert_eq!(saved["survival"]["emergencyMlg"], false);
         assert_eq!(saved["survival"]["mlgPickupWater"], false);
         assert_eq!(saved["survival"]["autoEatMinHunger"], 12);

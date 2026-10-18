@@ -14,6 +14,7 @@ const { createMaceCombat } = runtime("./mace.cjs");
 const { createCombatController, normalizeCombat, installCombatProtocol } = runtime("./combat.cjs");
 const { createBowDefense, detectMaceThreat } = runtime("./bow-defense.cjs");
 const { bestMeleeWeapon } = runtime("./combat-inventory.cjs");
+const { installKnockback } = runtime("./knockback.cjs");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 function fixture(patch = {}) {
@@ -682,7 +683,7 @@ test("mace shield works with arrow defense off, samples motion and resumes after
 });
 
 // Actual Mineflayer use/attack APIs and versioned packet serializers, with
-// server knockback represented by observed entity motion rather than fake hits.
+// server knockback delivered through decoded explosion packets and real physics.
 const rigRequire = createRequire(new URL("./pathfinding/package.json", import.meta.url));
 rigRequire("ts-node").register({
   project: fileURLToPath(new URL("./pathfinding/tsconfig.json", import.meta.url)),
@@ -697,7 +698,8 @@ for (const version of ["1.21.1", "26.1.2"]) {
   test(`real wind-charge, mace and shield packets serialize on ${version}`, async () => {
     const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5));
     const bot = rig.bot;
-    bot.physicsEnabled = false;
+    rig.stopPassivePhysics();
+    bot.physicsEnabled = true;
     bot.health = 20;
     bot.supportFeature = bot.registry.supportFeature;
     bot.entity.onGround = true;
@@ -751,6 +753,22 @@ for (const version of ["1.21.1", "26.1.2"]) {
       now: () => time,
       onError: (error) => errors.push(error),
     });
+    const knockback = installKnockback(bot);
+    const serverSerializer = protocol.createSerializer({ state: "play", isServer: true, version });
+    const clientParser = protocol.createDeserializer({ state: "play", isServer: false, version });
+    const explode = (center, lift) => {
+      const particle = { type: "gust_emitter_small" };
+      const params = {
+        ...center, center, radius: 1.2, affectedBlockOffsets: [],
+        playerMotionX: 0, playerMotionY: lift, playerMotionZ: 0,
+        playerKnockback: { x: 0, y: lift, z: 0 }, block_interaction_type: 3,
+        small_explosion_particle: particle, large_explosion_particle: particle,
+        explosionParticle: particle, blockCount: 0, blockParticles: [],
+        sound: { soundId: bot.registry.soundsByName["entity.wind_charge.wind_burst"].id },
+      };
+      const packet = serverSerializer.createPacketBuffer({ name: "explosion", params });
+      bot._client.emit("explosion", clientParser.parsePacketBuffer(packet).data.params);
+    };
     async function step(at, y, vy, onGround) {
       time = at;
       bot.entity.position.y = y;
@@ -779,13 +797,15 @@ for (const version of ["1.21.1", "26.1.2"]) {
       mace.stop();
 
       // Real movement physics with residual sprint momentum and delayed server
-      // impulses. The simulated burst only reaches a bot still above its impact
-      // point; an immediate unconditional boost would hide premature pursuit.
-      for (const [delayTicks, momentum] of [
+      // impulses, with anti-knockback both disabled and enabled. The server
+      // burst only reaches a bot still above its impact; assigning local upward
+      // velocity would hide the anti-knockback filter swallowing this packet.
+      for (const antiKnockback of [false, true]) for (const [delayTicks, momentum] of [
         [1, 0],
         [3, 0.28],
         [5, -0.28],
       ]) {
+        knockback.setEnabled(antiKnockback);
         bot.entity.position.set(0.5, 64, 0.5);
         bot.entity.velocity.set(momentum, 0, 0);
         bot.entity.onGround = true;
@@ -795,7 +815,7 @@ for (const version of ["1.21.1", "26.1.2"]) {
           physicsHit = false,
           thrownAt = null,
           impact = null;
-        const started = 2000 + delayTicks * 5000;
+        const started = 2000 + (antiKnockback ? 30000 : 0) + delayTicks * 5000;
         time = started;
         mace.start(enemy);
         for (let tick = 0; tick < 80; tick++) {
@@ -828,8 +848,8 @@ for (const version of ["1.21.1", "26.1.2"]) {
                 `stays above impact during ${delayTicks * 50} ms delay: ${drift}`,
               );
               if (drift < 0.3) {
-                bot.entity.velocity.y = 1.05;
-                boosted = true;
+                explode({ x: impact.x, y: 64.1, z: impact.z }, 1.05 - bot.entity.velocity.y);
+                boosted = bot.entity.velocity.y > 1;
               }
             }
           }
@@ -844,10 +864,14 @@ for (const version of ["1.21.1", "26.1.2"]) {
             assert.equal(bot.entity.onGround, false);
             assert.ok(bot.entity.velocity.y < 0);
             assert.ok(bot.entity.position.x > 0.5, "moves toward the enemy after the burst");
+            bot.emit("entityHurt", enemy);
+            explode(bot.entity.position, 1.05 - bot.entity.velocity.y);
+            assert.ok(bot.entity.velocity.y > 1, "confirmed Wind Burst also survives anti-knockback");
             break;
           }
         }
-        assert.ok(boosted, "a delayed burst reaches the bot");
+        assert.notEqual(thrownAt, null, "the bot actually throws a charge in this run");
+        assert.ok(boosted, `a delayed server burst lifts the bot; antiKnockback=${antiKnockback}`);
         assert.ok(physicsHit, "the complete physical wind jump reaches a smash opportunity");
         assert.equal(
           packets.slice(beforeFlight).filter((packet) => packet.name === "use_item").length,
@@ -876,6 +900,7 @@ for (const version of ["1.21.1", "26.1.2"]) {
       assert.deepEqual(errors, []);
     } finally {
       mace.dispose();
+      knockback.dispose();
       rig.stopPassivePhysics();
     }
   });

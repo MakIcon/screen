@@ -1,5 +1,35 @@
 const controllers = new WeakMap()
+const windBoosts = new WeakMap()
 const livingTypes = new Set(['player', 'mob', 'animal', 'hostile', 'passive', 'water_creature'])
+
+// A voluntary wind jump is server knockback too. Allow only one nearby upward
+// wind burst belonging to a still-current launch, never all airborne impulses.
+function expectWindBoost (bot, position, current, { now = Date.now, duration = 1000 } = {}) {
+  const expected = { position: position.clone(), current, now, until: now() + duration }
+  windBoosts.set(bot, expected)
+  return () => { if (windBoosts.get(bot) === expected) windBoosts.delete(bot) }
+}
+
+function acceptsWindBoost (bot, packet) {
+  const expected = windBoosts.get(bot)
+  if (!expected) return false
+  if (expected.now() > expected.until || !expected.current()) {
+    windBoosts.delete(bot)
+    return false
+  }
+  const center = packet.center ?? packet
+  const impulse = packet.playerKnockback ?? {
+    x: packet.playerMotionX, y: packet.playerMotionY, z: packet.playerMotionZ
+  }
+  const gust = [packet.explosionParticle, packet.small_explosion_particle, packet.large_explosion_particle]
+    .some(particle => /^(gust|small_gust|gust_emitter_small|gust_emitter_large)$/.test(particle?.type))
+  if (!gust || ![center.x, center.y, center.z, impulse.x, impulse.y, impulse.z].every(Number.isFinite) ||
+      impulse.y <= 0.1 || Math.hypot(impulse.x, impulse.z) > impulse.y ||
+      Math.hypot(center.x - expected.position.x, center.z - expected.position.z) > 1.25 ||
+      center.y < expected.position.y - 2 || center.y > expected.position.y + 0.5) return false
+  windBoosts.delete(bot)
+  return true
+}
 
 function canPush (bot, entity) {
   if (!entity || entity === bot.entity || entity.id === bot.entity.id || entity.isValid === false) return false
@@ -55,6 +85,7 @@ function installKnockback (bot, enabled = false) {
     const before = (packet) => {
       if (!antiKnockback || !bot.entity?.velocity) return
       if (event !== 'explosion' && packet.entityId !== bot.entity.id) return
+      if (event === 'explosion' && acceptsWindBoost(bot, packet)) return
       snapshots.set(packet, { entity: bot.entity, velocity: bot.entity.velocity.clone() })
     }
     const after = (packet) => {
@@ -87,6 +118,7 @@ function installKnockback (bot, enabled = false) {
     get enabled () { return antiKnockback },
     setEnabled (value) { antiKnockback = value === true },
     dispose () {
+      windBoosts.delete(bot)
       bot.removeListener('physicsTick', onTick)
       bot.removeListener('end', controller.dispose)
       for (const [event, before, after] of listeners) {
@@ -102,4 +134,4 @@ function installKnockback (bot, enabled = false) {
   return controller
 }
 
-module.exports = { installKnockback }
+module.exports = { installKnockback, expectWindBoost }

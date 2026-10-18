@@ -39,7 +39,7 @@ function chooseCombatAction(s) {
     s.canRecover &&
     !s.airborne &&
     !finish &&
-    (danger || s.health <= 12 || (s.needsFood && (s.distance >= 6 || s.food <= 6)))
+    (danger || s.healingPotion || s.health <= 12 || (s.needsFood && (s.distance >= 6 || s.food <= 6)))
   ) {
     if (s.distance >= 6 || !s.visible) return { action: "heal", reason: "safe healing window" };
     if (s.pearlEscape && s.health >= s.pearlMinHealth && s.health > 6)
@@ -165,10 +165,11 @@ function createCombatBrain(
           : (target.heldItem ?? target.equipment?.[0]);
       const apple = time >= nextAppleAt && (capabilities.apple ?? capabilities.enchantedApple);
       const food = bot.autoEat?.needsFood() && bot.autoEat.bestFood();
+      const potion = settings.combatHealing && bot.launcherSurvival?.healingPotion?.();
       const heal =
         settings.combatHealing &&
         bot.launcherSurvival?.requestCombatHeal &&
-        ((bot.health <= 12 && apple) || food);
+        (potion || (bot.health <= 12 && apple) || food);
       // An opponent looking more than ~100° away cannot aim a hit back.
       const away = bot.entity.position.minus(target.position);
       const awayLength = Math.hypot(away.x, away.z);
@@ -196,6 +197,7 @@ function createCombatBrain(
           /apple|potion|bow|beef|porkchop|bread|carrot/.test(held?.name ?? ""),
         ),
         heal: heal || null,
+        healingPotion: Boolean(potion),
         needsFood: Boolean(food),
         food: bot.food,
         canRecover: recover && time >= nextRecoveryAt,

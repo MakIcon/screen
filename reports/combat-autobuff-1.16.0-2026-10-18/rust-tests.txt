@@ -1,0 +1,8 @@
+   Compiling screen v0.1.0 (D:\JBProjects\RUST\screen\src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.62s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\screen_lib-99143297e8d6e2d9.exe)
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `D:\JBProjects\RUST\screen\src-tauri\target\debug\deps\screen_lib-99143297e8d6e2d9.exe survival_settings_preserve_preferences_and_match_worker_defaults` (exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.

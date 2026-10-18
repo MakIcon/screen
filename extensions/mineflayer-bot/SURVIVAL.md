@@ -1,5 +1,38 @@
 # Auto-eat and emergency MLG
 
+## Combat potions (1.16.0)
+
+Configure **Выживание → Автобафы и лечебные зелья** and restart the bot.
+AutoBuff, healing potions and combat buffs are enabled by default; the healing
+threshold is 12 HP. The separate **Лечение в бою** combat preference controls
+healing supplies. Adaptive combat creates space for healing; non-adaptive combat
+can use potions when a safe window already exists.
+
+Healing selects instant health or regeneration from inventory. Instant health
+has priority, stronger healing and splash delivery are preferred. Active
+regeneration is not wasted. Before fighting at distance, strength, speed and
+fire resistance can be applied if absent or weaker than the carried potion.
+Buff preparation starts at eight blocks and is cancelled if the enemy closes
+inside 4.5 blocks. Bottles stay in inventory; lingering potions and potions with
+harmful or unknown effects are preserved.
+
+Recognition supports legacy 1.8 metadata, NBT Potion/CustomPotionEffects and
+modern numeric potion_contents/custom effect components, including long/strong
+variants. Effect IDs are resolved using the connected version's registry.
+Splash potions are aimed straight down, with a real look packet before use,
+only while grounded and with no other player or mob within 4.5 blocks. A throw
+alone is not success: the controller waits for a self effect or healing update.
+Drinking waits for the server's consumption status, including at full hunger.
+Timeouts back off instead of retrying each tick.
+
+Potion use shares the inventory queue and survival ownership with food, shield
+defense, combat and MLG. MLG cancels drinking immediately; a cancelled potion
+cannot restore a sword over the emergency bucket. Success restores the previous
+weapon and resumes the same combat target. Stop, target change, death and
+disconnect cancel pending work and remove acknowledgement listeners.
+
+## Food and water rescue
+
 Added in Mineflayer Bot 1.8.13.
 
 Configure these features in the bot's **Выживание** tab and restart the bot.

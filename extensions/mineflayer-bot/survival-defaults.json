@@ -3,6 +3,10 @@
   "autoEatMinHunger": 15,
   "autoEatMinHealth": 14,
   "autoEatPriority": "saturation",
+  "autoBuff": true,
+  "autoBuffHealing": true,
+  "autoBuffCombat": true,
+  "autoBuffMinHealth": 12,
   "emergencyMlg": true,
   "mlgMinFallHeight": 4,
   "mlgPickupWater": true

@@ -433,6 +433,7 @@ function createTravelController(
         });
       waiting = {
         from: bot.entity.position.clone(),
+        lastPosition: bot.entity.position.clone(),
         landing: shot.landing,
         until: now() + shot.ticks * 50 + 2500,
         task,
@@ -474,15 +475,16 @@ function createTravelController(
     }
     if (waiting) {
       if (
+        waiting.confirmed ||
         (bot.entity.position.distanceTo(waiting.landing) <= 3 &&
           bot.entity.position.distanceTo(waiting.from) > 3) ||
         now() >= waiting.until
       ) {
-        const timeout = bot.entity.position.distanceTo(waiting.landing) > 3;
+        const timeout = !waiting.confirmed && bot.entity.position.distanceTo(waiting.landing) > 3;
         waiting = null;
         if (timeout) nextPearlAt = now() + Math.max(settings.pearlCooldownMs, 5000);
         walk(task, rev, !timeout);
-      }
+      } else waiting.lastPosition = bot.entity.position.clone();
       return;
     }
     if (
@@ -515,9 +517,21 @@ function createTravelController(
         if (["chase", "escape"].includes(task.kind) && valid(task, rev) && !waiting)
           walk(task, rev);
         bot.launcherPearling = ["chase", "escape"].includes(active?.kind) && Boolean(waiting);
+        // A fast server may teleport while the previous weapon is restoring.
+        // Release as soon as that inventory operation ends, not at the deadline.
+        if (waiting?.confirmed) tick();
       });
   }
+  function forcedMove() {
+    if (!waiting || !active || !valid(active, generation)) return;
+    // Mineflayer emits this after applying and acknowledging server position.
+    // A look-only packet or a small anti-cheat correction is not an arrival.
+    if (bot.entity.position.distanceTo(waiting.lastPosition) <= 3) return;
+    waiting.confirmed = true;
+    tick();
+  }
   bot.on("physicsTick", tick);
+  bot.on("forcedMove", forcedMove);
   const cancel = () => {
     stop();
     void bot.pathfinder.stop();
@@ -553,6 +567,7 @@ function createTravelController(
       disposed = true;
       stop();
       bot.off("physicsTick", tick);
+      bot.off("forcedMove", forcedMove);
       bot.off("death", cancel);
       delete bot.launcherPauseTravelForDefense;
       delete bot.launcherResumeTravelAfterDefense;

@@ -2,6 +2,7 @@ const { Vec3 } = require("vec3");
 const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
 const { carriedItems, equipCombatItem } = require("./combat-inventory.cjs");
 const { targetBlocking } = require("./melee-shield.cjs");
+const { expectWindBoost } = require("./knockback.cjs");
 
 // Aim inside the real hitbox and measure reach from the attacker's eyes.
 function maceAttackPoint(bot, target, range, position = bot.entity.position) {
@@ -36,6 +37,7 @@ function createMaceCombat(
     nextCpsAt = 0,
     retryAt = 0;
   let approaching = false;
+  let cancelWindBoost = () => {};
   const available = () =>
     Boolean(bot.registry?.itemsByName?.mace) &&
     carriedItems(bot).some((item) => item.name === "mace");
@@ -54,6 +56,7 @@ function createMaceCombat(
   }
   function stop() {
     generation++;
+    cancelWindBoost();
     if (target) controlsOff();
     if (approaching) void bot.pathfinder.stop();
     approaching = false;
@@ -71,6 +74,7 @@ function createMaceCombat(
     task = action(revision)
       .catch((error) => {
         if (revision === generation) {
+          cancelWindBoost();
           state = null;
           retryAt = now() + 1000;
           controlsOff();
@@ -115,6 +119,7 @@ function createMaceCombat(
     return !bot.world?.raycast(eyes, new Vec3(0, 1, 0), 4);
   }
   function abortLaunch() {
+    cancelWindBoost();
     controlsOff();
     state =
       bot.entity.onGround || state?.phase !== "burst"
@@ -170,6 +175,9 @@ function createMaceCombat(
     // jump position and downward view before use_item so the server sees the
     // same jump -> throw order, not a throw from the old grounded position.
     flushLook(true);
+    cancelWindBoost();
+    cancelWindBoost = expectWindBoost(bot, bot.entity.position,
+      () => current(revision) && state === action, { now });
     bot.activateItem(false);
     bot.deactivateItem();
     nextWindAt = now() + 500;
@@ -229,6 +237,9 @@ function createMaceCombat(
     action.phase = "confirm";
     action.hitAt = now();
     action.confirmed = false;
+    cancelWindBoost();
+    cancelWindBoost = expectWindBoost(bot, bot.entity.position,
+      () => current(revision) && state === action && action.phase === "confirm", { now, duration: 600 });
     nextAttackAt = now() + Math.max(1000 / 0.6, 1000 / settings.cps);
     nextCpsAt = now() + 1000 / settings.cps;
     bot.attack(target);
@@ -280,6 +291,7 @@ function createMaceCombat(
         // Keep horizontal controls released until an actual upward impulse is
         // observed, including projectile travel time and server response delay.
         state.phase = "flight";
+        cancelWindBoost();
         state.started = time;
         onStatus("mace: wind boost confirmed, tracking target");
         run(flight);
@@ -290,8 +302,10 @@ function createMaceCombat(
       // Wind Burst is observed through real upward movement after a confirmed
       // hit. The next descent can smash again without spending a wind charge.
       if (state.confirmed && !entity.onGround && entity.velocity.y > 0.1) {
+        cancelWindBoost();
         state = { phase: "flight", peak: entity.position.y, started: time };
       } else if (entity.onGround || time - state.hitAt > 650) {
+        cancelWindBoost();
         retryAt = Math.max(retryAt, state.confirmed ? nextWindAt : time + 1000);
         state = entity.onGround ? null : { phase: "land", peak: state.peak, started: time };
       }

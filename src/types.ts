@@ -369,6 +369,10 @@ export type MineflayerSurvivalSettings = {
   autoEatMinHunger: number;
   autoEatMinHealth: number;
   autoEatPriority: "foodPoints" | "saturation";
+  autoBuff: boolean;
+  autoBuffHealing: boolean;
+  autoBuffCombat: boolean;
+  autoBuffMinHealth: number;
   emergencyMlg: boolean;
   mlgMinFallHeight: number;
   mlgPickupWater: boolean;

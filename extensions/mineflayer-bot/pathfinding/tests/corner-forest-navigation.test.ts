@@ -3,11 +3,24 @@ import test from 'node:test'
 import { Vec3 } from 'vec3'
 import { createPlugin, goals, movementProviders } from '../src'
 import { createCacheWorld } from './setup'
-import { supportedWalkSegment } from '../src/mineflayer-specific/navigationGeometry'
+import { supportedWalkSegment, clearBodySegment } from '../src/mineflayer-specific/navigationGeometry'
 
 const jumps = [movementProviders.ParkourForward, movementProviders.ParkourDiagonal,
   movementProviders.MomentumJump, movementProviders.NeoProvider,
   movementProviders.AroundCornerDiagonal]
+
+test('continuous body sweep detects a stair corner between samples without blocking adjacent clear space', () => {
+  const { rig, world, cacheWorld } = createCacheWorld('26.1.2', 64, new Vec3(0.7, 64, 1.17))
+  try {
+    world.setBlock(new Vec3(1, 64, 0), 'stone')
+    assert.equal(clearBodySegment(cacheWorld, new Vec3(0.7, 64, 1.17), new Vec3(4.5, 64, 3.5), 0.599), false)
+    assert.equal(clearBodySegment(cacheWorld, new Vec3(0.5, 64, 1.5), new Vec3(4.5, 64, 3.5), 0.599), true)
+    world.setBlock(new Vec3(1, 64, 0), 'lava')
+    assert.equal(clearBodySegment(cacheWorld, new Vec3(0.5, 64, 0.5), new Vec3(0.5, 64, 2.5), 0.599), true,
+      'a nearby unsafe cell outside the true sweep is not part of the corridor')
+    assert.equal(clearBodySegment(cacheWorld, new Vec3(0.7, 64, 1.17), new Vec3(4.5, 64, 3.5), 0.599), false)
+  } finally { rig.stopPassivePhysics(); cacheWorld.dispose() }
+})
 
 test('walking support must not join blocks which touch only at a corner', () => {
   const { rig, world, cacheWorld } = createCacheWorld('1.20.4', 64, new Vec3(0.5, 84, 0.5))
@@ -24,6 +37,32 @@ test('walking support must not join blocks which touch only at a corner', () => 
 })
 
 for (const version of ['1.20.4', '26.1.2']) {
+  for (const reverse of [false, true]) test(`a cave stair corner recenters an off-center route start before turning ${reverse ? 'left' : 'right'} on ${version}`, { timeout: 6000 }, async (t) => {
+    const { rig, world } = createCacheWorld(version, 64, new Vec3(reverse ? 0.3 : 0.7, 64, 1.17), { renderDistance: 1 })
+    const corner = new Vec3(reverse ? -1 : 1, 64, 0)
+    const target = new Vec3(reverse ? -3.5 : 4.5, 64, 3.5)
+    world.setBlock(corner, 'stone')
+    rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, allowSprinting: false, allowJumpSprint: false, movementTimeoutMs: 2000 } }))
+    let routes = 0
+    const failures: string[] = []
+    const perform = rig.bot.pathfinder.perform.bind(rig.bot.pathfinder)
+    rig.bot.pathfinder.perform = async (...args: Parameters<typeof perform>) => {
+      try { await perform(...args) } catch (error) {
+        failures.push(`${error}; position=${rig.bot.entity.position}; move=${rig.bot.pathfinder.currentMove?.moveType.constructor.name}`)
+        throw error
+      }
+    }
+    rig.bot.on('pathGenerated', () => routes++)
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+    try {
+      await rig.bot.waitForTicks(2)
+      await rig.bot.pathfinder.goto(goals.GoalNear.fromVec(target, 0.4))
+      assert.ok(rig.bot.entity.position.distanceTo(target) < 0.5)
+      assert.equal(routes, 1, `recenter away from the corner instead of repeating the same blocked route: ${failures.join('; ')}`)
+      assert.equal(world.getBlock(corner)?.name, 'stone')
+    } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+  })
+
   test(`supported diagonal sprint jumps retain speed without rim crouching on ${version}`, { timeout: 9000 }, async (t) => {
     const { rig } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 })
     rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, allowJumpSprint: true } }))
