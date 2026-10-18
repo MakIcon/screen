@@ -8,11 +8,14 @@ import type {
   MineflayerGatheringSettings,
 } from "../../../types";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
+import { FARMING_KINDS, FARMING_NOTE, farmCropLabel } from "./farming";
+import { MineflayerFarmCropField } from "./MineflayerFarmCropField";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
 import { toErrorMessage } from "../../../utils/errors";
 import { MineflayerActionIcon } from "./MineflayerActionIcon";
 import { MineflayerWorkflowHistory } from "./MineflayerWorkflowHistory";
+import { MineflayerWorkflowPresets } from "./MineflayerWorkflowPresets";
 import { useWorkflowStepDrag } from "./useWorkflowStepDrag";
 import {
   workflowName,
@@ -34,7 +37,6 @@ import {
   WORKFLOW_DRAFT_KEY,
   WORKFLOW_STEP_LIMIT,
   newWorkflowStep,
-  workflowTemplate,
   workflowPayload,
   readWorkflowDraft,
   moveWorkflowStep,
@@ -103,6 +105,10 @@ function loadNameVariant() {
 const ACTION_LABELS: Record<MineflayerWorkflowStep["kind"], string> = {
   mine: "Добыть",
   forest: "Дерево",
+  till: "Вспахать",
+  plant: "Посадить",
+  harvest: "Урожай",
+  farm: "Огород",
   craft: "Крафт",
   smelt: "Переплавка",
   return: "Вернуться",
@@ -300,6 +306,8 @@ export function MineflayerWorkflow({
     if (step.kind === "mine")
       return `${itemName(step.item)} · блоков: ${step.count} · радиус ${step.radius}`;
     if (step.kind === "forest") return `Брёвна: ${step.count} · радиус ${step.radius}`;
+    if (FARMING_KINDS.includes(step.kind))
+      return `${step.kind === "till" ? "Грядки рядом с водой" : farmCropLabel(step.item)} · ${step.count ? `до ${step.count} действий` : "все доступные"} · радиус ${step.radius}${["harvest", "farm"].includes(step.kind) ? (step.replant === false ? " · без пересадки" : " · с пересадкой") : ""}`;
     if (step.kind === "collect") return `В радиусе ${step.radius} блоков`;
     if (step.kind === "return") return "К месту запуска сценария";
     if (step.kind === "deposit") return "В сундуки настроенного склада";
@@ -310,8 +318,8 @@ export function MineflayerWorkflow({
       <span>{label}</span>
       <CustomNumberInput
         ariaLabel={`${label}, шаг ${steps.findIndex((entry) => entry.id === step.id) + 1}`}
-        value={step[key] || 1}
-        min={key === "radius" ? 4 : 1}
+        value={step[key] ?? 1}
+        min={key === "radius" ? 4 : FARMING_KINDS.includes(step.kind) ? 0 : 1}
         max={max}
         step={1}
         background="transparent"
@@ -350,25 +358,7 @@ export function MineflayerWorkflow({
             </button>
           ))}
         </div>
-        <div className="mf-workflow-templates" aria-label="Пресеты сценария">
-          <span>Пресеты:</span>
-          <button
-            type="button"
-            disabled={locked || steps.length + 11 > WORKFLOW_STEP_LIMIT}
-            data-tooltip="Добавить 11 шагов: добыча, возврат на базу, крафт и переплавка"
-            onClick={() => append(workflowTemplate("iron"))}
-          >
-            Железные инструменты
-          </button>
-          <button
-            type="button"
-            disabled={locked || steps.length + 2 > WORKFLOW_STEP_LIMIT}
-            data-tooltip="Добавить 2 шага: заготовить дерево и скрафтить 16 палок"
-            onClick={() => append(workflowTemplate("wood"))}
-          >
-            Дерево → палки
-          </button>
-        </div>
+        <MineflayerWorkflowPresets locked={locked} stepCount={steps.length} onAppend={append} />
       </section>
       <section ref={planRef} className="mf-workflow-plan" aria-label="Последовательность действий">
         <div className="mf-workflow-name">
@@ -622,6 +612,12 @@ export function MineflayerWorkflow({
                   {expanded && (
                     <div className="mf-step-editor" id={`mf-step-${step.id}`}>
                       <div className="mineflayer-bot-grid">
+                        {["plant", "harvest", "farm"].includes(step.kind) && (
+                          <MineflayerFarmCropField
+                            value={step.item || "auto"}
+                            onChange={(item) => patch(step.id, { item })}
+                          />
+                        )}
                         {["mine", "craft", "smelt"].includes(step.kind) && (
                           <MinecraftSearchField
                             label={
@@ -646,14 +642,34 @@ export function MineflayerWorkflow({
                             "count",
                             step.kind === "mine"
                               ? "КОЛИЧЕСТВО БЛОКОВ"
-                              : step.kind === "forest"
-                                ? "КОЛИЧЕСТВО БРЁВЕН"
-                                : "КОЛИЧЕСТВО ПРЕДМЕТОВ",
-                            step.kind === "mine" ? 4096 : step.kind === "smelt" ? 64 : 256,
+                              : FARMING_KINDS.includes(step.kind)
+                                ? "ДЕЙСТВИЯ · 0 = ВСЕ"
+                                : step.kind === "forest"
+                                  ? "КОЛИЧЕСТВО БРЁВЕН"
+                                  : "КОЛИЧЕСТВО ПРЕДМЕТОВ",
+                            step.kind === "mine" || FARMING_KINDS.includes(step.kind)
+                              ? 4096
+                              : step.kind === "smelt"
+                                ? 64
+                                : 256,
                           )}
-                        {["mine", "forest", "collect"].includes(step.kind) &&
+                        {["mine", "forest", "collect", ...FARMING_KINDS].includes(step.kind) &&
                           number(step, "radius", "РАДИУС · БЛОКОВ", 64)}
                       </div>
+                      {["harvest", "farm"].includes(step.kind) && (
+                        <label className="mineflayer-bot-field">
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={step.replant !== false}
+                              onChange={(event) =>
+                                patch(step.id, { replant: event.target.checked })
+                              }
+                            />{" "}
+                            ПЕРЕСАЖИВАТЬ ПОСЛЕ СБОРА
+                          </span>
+                        </label>
+                      )}
                       {["craft", "smelt"].includes(step.kind) && (
                         <div className="mf-step-mode">
                           <span className="mf-eyebrow">
@@ -691,17 +707,19 @@ export function MineflayerWorkflow({
                         </div>
                       )}
                       <p>
-                        {step.kind === "craft"
-                          ? "Промежуточные ингредиенты, включая доски, бот скрафтит сам. В режиме «Авто» найдёт верстак в 32 блоках или сделает и поставит его."
-                          : step.kind === "smelt"
-                            ? "Печь должна быть рядом, а сырьё и топливо — в инвентаре. Бот сам подберёт топливо и заберёт результат."
-                            : step.kind === "return"
-                              ? "Бот вернётся к месту запуска сценария. Запускайте сценарий рядом с печью и местом для крафта."
-                              : step.kind === "deposit"
-                                ? "Используются группы сундуков из настроек склада."
-                                : step.kind === "mine"
-                                  ? "Количество считается в блоках. Для железа нужна каменная кирка или лучше."
-                                  : "Действие начнётся после завершения предыдущего шага."}
+                        {FARMING_KINDS.includes(step.kind)
+                          ? FARMING_NOTE
+                          : step.kind === "craft"
+                            ? "Промежуточные ингредиенты, включая доски, бот скрафтит сам. В режиме «Авто» найдёт верстак в 32 блоках или сделает и поставит его."
+                            : step.kind === "smelt"
+                              ? "Печь должна быть рядом, а сырьё и топливо — в инвентаре. Бот сам подберёт топливо и заберёт результат."
+                              : step.kind === "return"
+                                ? "Бот вернётся к месту запуска сценария. Запускайте сценарий рядом с печью и местом для крафта."
+                                : step.kind === "deposit"
+                                  ? "Используются группы сундуков из настроек склада."
+                                  : step.kind === "mine"
+                                    ? "Количество считается в блоках. Для железа нужна каменная кирка или лучше."
+                                    : "Действие начнётся после завершения предыдущего шага."}
                       </p>
                     </div>
                   )}

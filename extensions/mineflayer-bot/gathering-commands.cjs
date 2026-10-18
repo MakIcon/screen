@@ -17,6 +17,10 @@ const COMMANDS = new Set([
   "deliver",
   "bring",
   "give",
+  "till",
+  "plant",
+  "harvest",
+  "farm",
 ]);
 function coordinates(args) {
   if (args.length !== 3 || !args.every((value) => value.trim() && Number.isFinite(Number(value))))
@@ -40,6 +44,15 @@ function ownerPosition(bot, source, owner) {
   return position(block.position);
 }
 function taskFromCommand(bot, work, command, args) {
+  if (["till", "plant", "harvest", "farm"].includes(command)) {
+    const values = command === "till" ? args : args.slice(1);
+    if (values.length > (command === "harvest" ? 3 : 2) ||
+        (values[2] && !["replant", "leave"].includes(values[2])))
+      throw new Error(command === "till" ? "till [количество, 0 = все] [радиус]" :
+        `${command} [культура|auto] [количество, 0 = все] [радиус]${command === "harvest" ? " [replant|leave]" : ""}`);
+    return { kind: command, crop: command === "till" ? undefined : args[0] || "auto",
+      count: values[0] ?? 0, radius: values[1] ?? 8, replant: values[2] !== "leave" };
+  }
   if (command === "mine" || command === "ores") {
     if (command === "mine" && !args[0])
       throw new Error("mine блок,блок [количество блоков] [радиус]");

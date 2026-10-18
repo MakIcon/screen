@@ -43,6 +43,7 @@ export class IdleMovement extends MovementProvider {
 }
 
 export class Forward extends MovementProvider {
+  override readonly supportsWalkOnly = true
   movementDirs = Movement.cardinalDirs
 
   provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
@@ -70,6 +71,7 @@ export class Forward extends MovementProvider {
 
     const blockB = this.getBlockInfo(pos, dir.x, 1, dir.z)
     const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z)
+    if (this.settings.walkOnly && (blockC.liquid || !blockD.physical || !blockD.safe)) return
 
     const toBreak: BreakHandler[] = []
     const toPlace: PlaceHandler[] = []
@@ -100,6 +102,7 @@ export class Forward extends MovementProvider {
 }
 
 export class Diagonal extends MovementProvider {
+  override readonly supportsWalkOnly = true
   movementDirs = Movement.diagonalDirs
 
   provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
@@ -130,6 +133,7 @@ export class Diagonal extends MovementProvider {
     // const needSideClearance = block00.height - block0.height < 0
     const block1 = this.getBlockInfo(node, dir.x, 1, dir.z)
     const blockN1 = this.getBlockInfo(node, dir.x, -1, dir.z)
+    if (this.settings.walkOnly && (block0.liquid || !blockN1.physical || !blockN1.safe)) return
     const sideFloors = [this.getBlockInfo(node, 0, -1, dir.z), this.getBlockInfo(node, dir.x, -1, 0)]
     // A dry diagonal sweeps both sides of the corner. If the landing already
     // exists, preserve the cardinal bend instead of filling its inside edge.

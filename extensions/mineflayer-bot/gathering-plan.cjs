@@ -1,4 +1,5 @@
 const { Vec3 } = require("vec3");
+const farming = require("./farming.cjs");
 
 const DEFAULTS = Object.freeze({
   ...require("./gathering-defaults.json"),
@@ -132,12 +133,12 @@ function resolveBlocks(registry, input = "ores") {
   return [...chosen];
 }
 function normalizeTask(bot, input, settings = DEFAULTS) {
-  if (!input || !["mine", "forest", "quarry", "collect", "deposit"].includes(input.kind))
-    throw new Error("Задача: mine, forest, quarry, collect или deposit");
+  if (!input || !["mine", "forest", "quarry", "collect", "deposit", ...farming.KINDS].includes(input.kind))
+    throw new Error("Задача: mine, forest, quarry, collect, deposit, till, plant, harvest или farm");
   const task = {
     kind: input.kind,
     origin: position(input.origin || bot.entity.position),
-    radius: integer(input.radius ?? settings.radius, "Радиус", 1, settings.maxRadius),
+    radius: integer(input.radius ?? (farming.isFarming(input) ? 8 : settings.radius), "Радиус", 1, settings.maxRadius),
     count: integer(
       input.count ?? (input.kind === "mine" ? 64 : 0),
       "Количество блоков",
@@ -181,6 +182,7 @@ function normalizeTask(bot, input, settings = DEFAULTS) {
     throw new Error("Для расчистки задайте два угла области");
   if (input.kind === "quarry" && input.blocks)
     task.names = resolveBlocks(bot.registry, input.blocks);
+  if (farming.isFarming(task)) farming.configureTask(bot, input, task);
   return task;
 }
 function matches(task, block) {

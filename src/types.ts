@@ -465,6 +465,11 @@ export type MineflayerWorkTask = {
   minY?: number;
   maxY?: number;
   item?: string;
+  crop?: string;
+  replant?: boolean;
+  tilled?: number;
+  planted?: number;
+  harvested?: number;
   area?: {
     min: { x: number; y: number; z: number };
     max: { x: number; y: number; z: number };
@@ -557,11 +562,12 @@ export type MineflayerInventory = {
   } | null;
 };
 export type MineflayerWorkflowStep = {
-  kind: "mine" | "forest" | "craft" | "smelt" | "collect" | "deposit" | "return";
+  kind: "mine" | "forest" | "craft" | "smelt" | "collect" | "deposit" | "return" | "till" | "plant" | "harvest" | "farm";
   item?: string;
   count?: number;
   radius?: number;
   mode?: string;
+  replant?: boolean;
 };
 export type MineflayerWorkflowStatus = {
   id?: string | null;

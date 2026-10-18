@@ -9,7 +9,7 @@ const controllers = new WeakMap<Bot, () => void>()
  * Release jump in the air so the next landing can jump without autojump delay.
  * Shared by route walking and direct combat pursuit. */
 export function installLowCeilingJumps (bot: Bot, enabled = true): () => void {
-  enabled = enabled && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false
+  enabled = enabled && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false && !bot.pathfinder?.defaultMoveSettings.walkOnly
   const existing = controllers.get(bot)
   if (existing != null) {
     if (!enabled) existing()
@@ -32,6 +32,7 @@ export function installLowCeilingJumps (bot: Bot, enabled = true): () => void {
       !(bot as any).launcherPearling && !(bot as any).launcherDefendingBow && !bot.targetDigBlock &&
       bot.pathfinder?.defaultMoveSettings.allowSprinting !== false &&
       bot.pathfinder?.defaultMoveSettings.allowLowCeilingJumps !== false &&
+      !bot.pathfinder?.defaultMoveSettings.walkOnly &&
       bot.getControlState('forward') && bot.getControlState('sprint') &&
       !bot.getControlState('back') && !bot.getControlState('sneak') &&
       (move == null || (move.toBreak.length === 0 && move.toPlace.length === 0 &&

@@ -62,6 +62,8 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("PRODUCTION.md", include_str!("../../../extensions/mineflayer-bot/PRODUCTION.md")),
     ("web-inventory.cjs", include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs")),
     ("gathering.cjs", include_str!("../../../extensions/mineflayer-bot/gathering.cjs")),
+    ("farming.cjs", include_str!("../../../extensions/mineflayer-bot/farming.cjs")),
+    ("FARMING.md", include_str!("../../../extensions/mineflayer-bot/FARMING.md")),
     ("gathering-defense.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-defense.cjs")),
     ("gathering-storage.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-storage.cjs")),
     ("storage-filters.json", include_str!("../../../extensions/mineflayer-bot/storage-filters.json")),

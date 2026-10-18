@@ -693,7 +693,7 @@ var require_lowCeilingJumps = __commonJS({
     var climbablePhysics_12 = require_climbablePhysics();
     var controllers = /* @__PURE__ */ new WeakMap();
     function installLowCeilingJumps(bot, enabled = true) {
-      enabled = enabled && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false;
+      enabled = enabled && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false && !bot.pathfinder?.defaultMoveSettings.walkOnly;
       const existing = controllers.get(bot);
       if (existing != null) {
         if (!enabled)
@@ -712,7 +712,7 @@ var require_lowCeilingJumps = __commonJS({
       const ownsMovement = () => {
         const entity = bot.entity;
         const move = bot.pathfinder?.currentMove;
-        return alive && bot.health !== 0 && bot.food > 6 && !bot.usingHeldItem && !entity?.isInWater && !entity?.isInLava && !entity?.isInWeb && !entity?.elytraFlying && !bot.launcherSurvival?.busy && !bot.launcherAxeAttacking && !bot.launcherPearling && !bot.launcherDefendingBow && !bot.targetDigBlock && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false && bot.pathfinder?.defaultMoveSettings.allowLowCeilingJumps !== false && bot.getControlState("forward") && bot.getControlState("sprint") && !bot.getControlState("back") && !bot.getControlState("sneak") && (move == null || move.toBreak.length === 0 && move.toPlace.length === 0 && ["Forward", "Diagonal"].includes(move.moveType.constructor.name));
+        return alive && bot.health !== 0 && bot.food > 6 && !bot.usingHeldItem && !entity?.isInWater && !entity?.isInLava && !entity?.isInWeb && !entity?.elytraFlying && !bot.launcherSurvival?.busy && !bot.launcherAxeAttacking && !bot.launcherPearling && !bot.launcherDefendingBow && !bot.targetDigBlock && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false && bot.pathfinder?.defaultMoveSettings.allowLowCeilingJumps !== false && !bot.pathfinder?.defaultMoveSettings.walkOnly && bot.getControlState("forward") && bot.getControlState("sprint") && !bot.getControlState("back") && !bot.getControlState("sneak") && (move == null || move.toBreak.length === 0 && move.toPlace.length === 0 && ["Forward", "Diagonal"].includes(move.moveType.constructor.name));
       };
       const canHop = () => {
         const entity = bot.entity;
@@ -1049,6 +1049,9 @@ var require_utils = __commonJS({
         throw new Error("BlockInfo not initialized");
       const pos = startPos ?? bot.entity.position.clone();
       const block = bot.pathfinder.world.getBlockInfo(pos);
+      if (block.block?.name === "farmland" && Math.abs(pos.y - block.height) < 0.1) {
+        return pos.offset(0, Math.ceil(block.height) - pos.y, 0);
+      }
       if (cacheWorld_12.BlockInfo.carpets.has(block.type)) {
         return pos.floor();
       }
@@ -2707,6 +2710,7 @@ var require_movement = __commonJS({
     var climbablePhysics_12 = require_climbablePhysics();
     exports2.DEFAULT_MOVEMENT_OPTS = {
       allowJumpSprint: true,
+      walkOnly: false,
       allowAirStrafe: false,
       canOpenDoors: true,
       canDig: true,
@@ -4616,6 +4620,8 @@ var require_movementExecutors = __commonJS({
       }
       // TODO: clean this up.
       canJump(thisMove, currentIndex, path) {
+        if (this.settings.walkOnly)
+          return false;
         if (this.doWaterLogic()) {
           if (this.bot.entity.position.y < thisMove.exitPos.y) {
             return true;
@@ -5735,6 +5741,7 @@ var require_movementProvider = __commonJS({
     var MovementProvider = class extends movement_1.Movement {
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
+        this.supportsWalkOnly = false;
         this.excavationFloors = /* @__PURE__ */ new Set();
         this.orgX = 0;
         this.orgY = 0;
@@ -6038,6 +6045,8 @@ var require_movementProvider = __commonJS({
         this.preloadInteractData(pos, currentMove);
         this.lastPos = pos;
         for (const newMove of this.recognizedMovements) {
+          if (newMove.settings.walkOnly && !newMove.supportsWalkOnly)
+            continue;
           newMove.loadMove(currentMove);
           newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear, this.excavationFloors);
           const first = moves.length;
@@ -8224,6 +8233,7 @@ var require_movementProviders = __commonJS({
     var Forward = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.supportsWalkOnly = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -8248,6 +8258,8 @@ var require_movementProviders = __commonJS({
           return;
         const blockB = this.getBlockInfo(pos, dir.x, 1, dir.z);
         const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z);
+        if (this.settings.walkOnly && (blockC.liquid || !blockD.physical || !blockD.safe))
+          return;
         const toBreak = [];
         const toPlace = [];
         if (!blockD.physical && !blockC.liquid) {
@@ -8273,6 +8285,7 @@ var require_movementProviders = __commonJS({
     var Diagonal = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.supportsWalkOnly = true;
         this.movementDirs = movement_1.Movement.diagonalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -8301,6 +8314,8 @@ var require_movementProviders = __commonJS({
           return;
         const block1 = this.getBlockInfo(node, dir.x, 1, dir.z);
         const blockN1 = this.getBlockInfo(node, dir.x, -1, dir.z);
+        if (this.settings.walkOnly && (block0.liquid || !blockN1.physical || !blockN1.safe))
+          return;
         const sideFloors = [this.getBlockInfo(node, 0, -1, dir.z), this.getBlockInfo(node, dir.x, -1, 0)];
         if (!block0.liquid && blockN1.physical && sideFloors.some((block) => !block.physical || !block.safe))
           return;

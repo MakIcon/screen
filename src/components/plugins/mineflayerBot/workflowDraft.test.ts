@@ -9,6 +9,17 @@ import {
 } from "./workflowDraft";
 
 describe("scenario drafts", () => {
+  it("restores farming's all-actions limit, chosen crop and disabled replanting", () => {
+    const steps = [
+      newWorkflowStep("till"),
+      { ...newWorkflowStep("plant"), item: "carrot" },
+      { ...newWorkflowStep("harvest"), replant: false },
+      newWorkflowStep("farm"),
+    ];
+    const payload = workflowPayload(steps);
+    expect(workflowPayload(readWorkflowDraft(JSON.stringify(payload)))).toEqual(payload);
+    expect(readWorkflowDraft(JSON.stringify(payload)).every((step) => step.count === 0)).toBe(true);
+  });
   it("preserves user choices across reopening and strips UI identity from worker payloads", () => {
     const steps = [
       newWorkflowStep("mine"),

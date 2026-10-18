@@ -15,6 +15,13 @@ function validateWorkflow(steps, { bot, gathering }) {
       if (!step || typeof step !== "object") throw new Error("Некорректный шаг");
       const kind = step.kind;
       if (kind === "return") return { kind };
+      if (["till", "plant", "harvest", "farm"].includes(kind)) {
+        const spec = { kind, item: String(step.item || "auto"),
+          count: integer(step.count ?? 0, "Действия", 0, 4096),
+          radius: integer(step.radius ?? 8, "Радиус", 4, 64), replant: step.replant ?? true };
+        gathering.validate(spec);
+        return spec;
+      }
       if (["mine", "forest", "collect", "deposit"].includes(kind)) {
         const spec =
           kind === "mine"
@@ -131,7 +138,7 @@ function createWorkflowController({
       if (failure) throw failure;
       return;
     }
-    if (["mine", "forest", "collect", "deposit"].includes(step.kind)) {
+    if (["mine", "forest", "collect", "deposit", "till", "plant", "harvest", "farm"].includes(step.kind)) {
       const id = gathering.enqueue(step);
       for (;;) {
         check(token);

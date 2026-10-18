@@ -1,11 +1,16 @@
 import type { MineflayerWorkflowStep } from "../../../types";
 
 export type WorkflowDraftStep = MineflayerWorkflowStep & { id: string };
+export { workflowTemplate } from "./workflowPresets";
 export const WORKFLOW_DRAFT_KEY = "screenlauncher.mineflayer.workflow.v1";
 export const WORKFLOW_STEP_LIMIT = 100;
 export const WORKFLOW_ACTIONS = [
   { kind: "mine", label: "Добыть блоки", note: "Руды, камень и другие блоки" },
   { kind: "forest", label: "Заготовить дерево", note: "Срубить и подобрать брёвна" },
+  { kind: "till", label: "Вспахать землю", note: "Подготовить грядки рядом с водой" },
+  { kind: "plant", label: "Посадить семена", note: "Засадить пустые грядки" },
+  { kind: "harvest", label: "Собрать урожай", note: "Только зрелые растения, с пересадкой" },
+  { kind: "farm", label: "Обработать огород", note: "Собрать, вспахать и посадить за один проход" },
   { kind: "craft", label: "Скрафтить", note: "Ингредиенты и инструменты" },
   { kind: "smelt", label: "Переплавить", note: "Металлы, еда и материалы" },
   { kind: "return", label: "Вернуться к старту", note: "К месту запуска сценария" },
@@ -17,6 +22,10 @@ export function newWorkflowStep(kind: MineflayerWorkflowStep["kind"]): WorkflowD
   const defaults: Record<MineflayerWorkflowStep["kind"], MineflayerWorkflowStep> = {
     mine: { kind, item: "iron", count: 9, radius: 32 },
     forest: { kind, count: 4, radius: 16 },
+    till: { kind, count: 0, radius: 8 },
+    plant: { kind, item: "auto", count: 0, radius: 8 },
+    harvest: { kind, item: "auto", count: 0, radius: 8, replant: true },
+    farm: { kind, item: "auto", count: 0, radius: 8, replant: true },
     craft: { kind, item: "stick", count: 8, mode: "auto" },
     smelt: { kind, item: "raw_iron", count: 9, mode: "auto" },
     collect: { kind, radius: 16 },
@@ -26,28 +35,15 @@ export function newWorkflowStep(kind: MineflayerWorkflowStep["kind"]): WorkflowD
   return { ...defaults[kind], id: crypto.randomUUID() };
 }
 
-export function workflowTemplate(template: "iron" | "wood"): WorkflowDraftStep[] {
-  const create = (
-    kind: MineflayerWorkflowStep["kind"],
-    patch: Partial<MineflayerWorkflowStep> = {},
-  ) => ({ ...newWorkflowStep(kind), ...patch });
-  if (template === "wood") return [create("forest"), create("craft", { count: 16 })];
-  return [
-    create("mine", { item: "coal", count: 2 }),
-    create("mine"),
-    create("return"),
-    create("forest"),
-    create("return"),
-    create("craft"),
-    create("smelt"),
-    ...["iron_pickaxe", "iron_axe", "iron_sword", "iron_shovel"].map((item) =>
-      create("craft", { item, count: 1 }),
-    ),
-  ];
-}
-
 export function workflowPayload(steps: MineflayerWorkflowStep[]): MineflayerWorkflowStep[] {
-  return steps.map(({ kind, item, count, radius, mode }) => ({ kind, item, count, radius, mode }));
+  return steps.map(({ kind, item, count, radius, mode, replant }) => ({
+    kind,
+    item,
+    count,
+    radius,
+    mode,
+    ...(typeof replant === "boolean" ? { replant } : {}),
+  }));
 }
 
 export function readWorkflowDraft(value: string | null): WorkflowDraftStep[] {
@@ -60,14 +56,19 @@ export function readWorkflowDraft(value: string | null): WorkflowDraftStep[] {
       const result = newWorkflowStep(step.kind);
       if (typeof step.item === "string") result.item = step.item.slice(0, 512);
       for (const key of ["count", "radius"] as const) {
-        if (typeof step[key] === "number" && Number.isSafeInteger(step[key]) && step[key] > 0)
+        const farming = ["till", "plant", "harvest", "farm"].includes(step.kind);
+        if (
+          typeof step[key] === "number" &&
+          Number.isSafeInteger(step[key]) &&
+          (step[key] > 0 || (key === "count" && farming && step[key] === 0))
+        )
           result[key] = Math.max(
-            key === "radius" ? 4 : 1,
+            key === "radius" ? 4 : farming ? 0 : 1,
             Math.min(
               step[key],
               key === "radius"
                 ? 64
-                : step.kind === "mine"
+                : step.kind === "mine" || farming
                   ? 4096
                   : step.kind === "smelt"
                     ? 64
@@ -80,6 +81,7 @@ export function readWorkflowDraft(value: string | null): WorkflowDraftStep[] {
           ? ["auto", "furnace", "blast_furnace", "smoker"]
           : ["auto", "inventory", "table"];
       if (modes.includes(step.mode)) result.mode = step.mode;
+      if (typeof step.replant === "boolean") result.replant = step.replant;
       return result;
     });
   } catch {

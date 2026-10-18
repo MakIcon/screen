@@ -8,6 +8,8 @@ import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
+import { FARMING_KINDS, FARMING_NOTE, farmCropLabel } from "./farming";
+import { MineflayerFarmCropField } from "./MineflayerFarmCropField";
 import {
   formatBlockCoordinates,
   parseBlockCoordinates,
@@ -20,13 +22,26 @@ import type {
   MinecraftCatalog,
 } from "../../../types";
 
-type Mode = "mine" | "forest" | "quarry" | "collect" | "tunnel";
+type Mode =
+  | "mine"
+  | "forest"
+  | "quarry"
+  | "collect"
+  | "tunnel"
+  | "till"
+  | "plant"
+  | "harvest"
+  | "farm";
 const MODES: Array<[Mode, string]> = [
   ["mine", "Блоки и руды"],
   ["forest", "Лес"],
   ["quarry", "Область"],
   ["collect", "Дроп"],
   ["tunnel", "Туннель"],
+  ["till", "Вспашка"],
+  ["plant", "Посадка"],
+  ["harvest", "Урожай"],
+  ["farm", "Огород"],
 ];
 const PHASES: Record<string, string> = {
   idle: "Готов к работе",
@@ -34,6 +49,7 @@ const PHASES: Record<string, string> = {
   move: "Подходит к блоку",
   equip: "Выбирает инструмент",
   dig: "Добывает",
+  farming: "Работает на грядках",
   pickup: "Подбирает добычу",
   deposit: "Выгружает",
   deliver: "Несёт добычу к вам",
@@ -57,6 +73,13 @@ function WorkCancelIcon() {
   );
 }
 export function workTaskTitle(task: MineflayerWorkTask) {
+  const farmTitles: Record<string, string> = {
+    till: "Вспашка земли",
+    plant: "Посадка семян",
+    harvest: "Сбор урожая",
+    farm: "Обработка огорода",
+  };
+  if (farmTitles[task.kind]) return farmTitles[task.kind];
   if (task.tunnel) return "Проходка тоннеля";
   if (task.kind === "forest") return "Заготовка леса";
   if (task.kind === "quarry") return "Расчистка области";
@@ -87,7 +110,8 @@ function taskDetail(task: MineflayerWorkTask) {
   if (task.radius) values.push(`радиус ${task.radius} блоков`);
   if (task.kind === "mine") values.push(`Y ${task.minY}…${task.maxY}`);
   if (task.area) values.push(`${task.area.volume.toLocaleString("ru-RU")} блоков в области`);
-  if (task.item) values.push(task.item);
+  if (task.item)
+    values.push(FARMING_KINDS.includes(task.kind) ? farmCropLabel(task.item) : task.item);
   if (["mine", "forest"].includes(task.kind))
     values.push(task.count ? `цель ${task.count} блоков` : "все доступные блоки");
   return values.join(" · ");
@@ -117,6 +141,9 @@ export function MineflayerGatheringControls({
   const [corner1, setCorner1] = useState(""),
     [corner2, setCorner2] = useState("");
   const [item, setItem] = useState("");
+  const [crop, setCrop] = useState("auto");
+  const [replant, setReplant] = useState(true);
+  const farming = FARMING_KINDS.includes(mode);
   const [length, setLength] = useState(16);
   const [sending, setSending] = useState(false),
     [feedback, setFeedback] = useState("");
@@ -156,8 +183,11 @@ export function MineflayerGatheringControls({
       cancelled = true;
     };
   }, [connected, status?.pid]);
-  const command =
-    mode === "mine"
+  const command = farming
+    ? mode === "till"
+      ? `till ${count} ${radius}`
+      : `${mode} ${crop} ${count} ${radius}${mode === "harvest" ? (replant ? " replant" : " leave") : ""}`
+    : mode === "mine"
       ? `mine ${minecraftSelectedNames(blocks).join(",")} ${count} ${radius}${autoDepth ? "" : ` ${minY} ${maxY}`}`
       : mode === "forest"
         ? `forest ${radius} ${count} ${leaves ? "leaves" : "logs"} ${scaffold ? "scaffold" : "plain"}`
@@ -179,7 +209,9 @@ export function MineflayerGatheringControls({
     setFeedback("");
     try {
       if (
-        /^(mine|forest|quarry|collect|tunnel|deposit|deliver)( |$)/.test(value) ||
+        /^(mine|forest|quarry|collect|tunnel|deposit|deliver|till|plant|harvest|farm)( |$)/.test(
+          value,
+        ) ||
         value === "work resume"
       ) {
         await invoke("configure_mineflayer_bot_storage", { groups: settings.storageGroups });
@@ -306,8 +338,10 @@ export function MineflayerGatheringControls({
         </strong>
         {status?.gathering && (
           <span>
-            Добыто: {status.gathering.mined} · Подобрано: {status.gathering.collected} · В очереди:{" "}
-            {status.gathering.queued}
+            {active && FARMING_KINDS.includes(active.kind)
+              ? `Вспахано: ${active.tilled || 0} · Посажено: ${active.planted || 0} · Урожай: ${active.harvested || 0}`
+              : `Добыто: ${status.gathering.mined}`}{" "}
+            · Подобрано: {status.gathering.collected} · В очереди: {status.gathering.queued}
           </span>
         )}
         {status?.gathering?.reason && <p>{status.gathering.reason}</p>}
@@ -326,7 +360,7 @@ export function MineflayerGatheringControls({
               <p>{taskDetail(active)}</p>
               <div className="mineflayer-work-counts">
                 <span>
-                  Добыто{" "}
+                  {FARMING_KINDS.includes(active.kind) ? "Действий" : "Добыто"}{" "}
                   <b>
                     {active.mined}
                     {active.count ? ` / ${active.count}` : ""}
@@ -468,6 +502,10 @@ export function MineflayerGatheringControls({
                 aria-pressed={mode === value}
                 onClick={() => {
                   setMode(value);
+                  if (FARMING_KINDS.includes(value) && !farming) {
+                    setRadius(8);
+                    setCount(0);
+                  }
                   setError("");
                 }}
               >
@@ -483,6 +521,10 @@ export function MineflayerGatheringControls({
           >
             <fieldset className="mineflayer-bot-gathering-fields" disabled={sending}>
               <div className="mineflayer-bot-grid">
+                {farming && mode !== "till" && (
+                  <MineflayerFarmCropField value={crop} onChange={setCrop} />
+                )}
+                {farming && number("ДЕЙСТВИЯ · 0 = ВСЕ", count, setCount, 0, 4096)}
                 {mode === "mine" && (
                   <MinecraftSearchField
                     label="БЛОКИ ИЛИ ГРУППА"
@@ -531,6 +573,14 @@ export function MineflayerGatheringControls({
                 )}
                 {mode === "tunnel" && <>{number("ДЛИНА", length, setLength, 1, 128)}</>}
               </div>
+              {mode === "harvest" && (
+                <ElementToggle
+                  title="ПЕРЕСАЖИВАТЬ ПОСЛЕ СБОРА"
+                  note="Использовать семена из инвентаря и собранного урожая"
+                  enabled={replant}
+                  onToggle={() => setReplant(!replant)}
+                />
+              )}
               {mode === "quarry" && (
                 <div className="mineflayer-coordinate-guide">
                   <p>
@@ -578,15 +628,17 @@ export function MineflayerGatheringControls({
                 </div>
               )}
               <p className="mineflayer-bot-combat-note">
-                {mode === "mine"
-                  ? "Ищет руду под землёй и прокладывает проход к залежи. Радиус ограничивает поиск по горизонтали, высота задаётся отдельно. Нужна подходящая кирка."
-                  : mode === "forest"
-                    ? "Срубает стволы выбранного леса. Для подъёма нужны строительные блоки; при спуске разбирает опоры под собой. Остальные опоры остаются."
-                    : mode === "quarry"
-                      ? "Расчищает включительно между углами, сверху вниз. Максимум 32 768 блоков."
-                      : mode === "tunnel"
-                        ? "Копает вперёд по направлению взгляда бота. Пол под туннелем сохраняется."
-                        : "Подбирает лежащие предметы в заданном радиусе."}
+                {farming
+                  ? FARMING_NOTE
+                  : mode === "mine"
+                    ? "Ищет руду под землёй и прокладывает проход к залежи. Радиус ограничивает поиск по горизонтали, высота задаётся отдельно. Нужна подходящая кирка."
+                    : mode === "forest"
+                      ? "Срубает стволы выбранного леса. Для подъёма нужны строительные блоки; при спуске разбирает опоры под собой. Остальные опоры остаются."
+                      : mode === "quarry"
+                        ? "Расчищает включительно между углами, сверху вниз. Максимум 32 768 блоков."
+                        : mode === "tunnel"
+                          ? "Копает вперёд по направлению взгляда бота. Пол под туннелем сохраняется."
+                          : "Подбирает лежащие предметы в заданном радиусе."}
               </p>
               <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
                 <button
@@ -613,7 +665,11 @@ export function MineflayerGatheringControls({
                 #{task.id} · {workTaskTitle(task)}
               </strong>
               <span>
-                {task.outcome} · добыто {task.mined} · подобрано {task.collected}
+                {task.outcome} ·{" "}
+                {FARMING_KINDS.includes(task.kind)
+                  ? `вспахано ${task.tilled || 0} · посажено ${task.planted || 0} · урожай ${task.harvested || 0}`
+                  : `добыто ${task.mined}`}{" "}
+                · подобрано {task.collected}
               </span>
               {task.reason && <p>{task.reason}</p>}
             </div>

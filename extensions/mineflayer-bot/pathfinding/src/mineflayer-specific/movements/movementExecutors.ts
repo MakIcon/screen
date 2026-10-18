@@ -241,6 +241,7 @@ export class NewForwardExecutor extends MovementExecutor {
 
   // TODO: clean this up.
   private canJump (thisMove: Move, currentIndex: number, path: Move[]): boolean {
+    if (this.settings.walkOnly) return false
     if (this.doWaterLogic()) {
       if (this.bot.entity.position.y < thisMove.exitPos.y) {
         return true

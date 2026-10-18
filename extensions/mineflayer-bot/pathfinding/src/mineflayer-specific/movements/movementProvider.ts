@@ -17,6 +17,8 @@ import { COST_INF } from './costs'
  * Provides movements to the pathfinder.
  */
 export abstract class MovementProvider extends Movement {
+  /** Only ordinary forward/diagonal steps are valid in walk-only mode. */
+  readonly supportsWalkOnly: boolean = false
   orgPos!: Vec3
   toClear!: Set<number>
   private excavationFloors: ReadonlySet<string> = new Set()
@@ -412,6 +414,7 @@ export class MovementHandler implements AMovementProvider<Move> {
     // const arr = new Array(this.maxBound).fill(null);
 
     for (const newMove of this.recognizedMovements) {
+      if (newMove.settings.walkOnly && !newMove.supportsWalkOnly) continue
       newMove.loadMove(currentMove)
       newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear, this.excavationFloors)
       const first = moves.length

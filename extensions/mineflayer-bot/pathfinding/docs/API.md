@@ -568,6 +568,8 @@ These are the currently available settings.
 
 ```ts
 interface MovementOptions {
+  // Ordinary supported steps only; no jumps, drops, climbing or swimming.
+  walkOnly: boolean // false by default; used by farming tasks
   allowDiagonalBridging: boolean
   allowJumpSprint: boolean
   allow1by1towers: boolean

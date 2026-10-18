@@ -414,6 +414,14 @@ function workflowLabels(steps: MineflayerWorkflowStep[]): string[] {
     switch (step.kind) {
       case "forest":
         return `Дерево${amount}`;
+      case "till":
+        return "Вспашка грядок";
+      case "plant":
+        return "Посадка семян";
+      case "harvest":
+        return "Сбор урожая";
+      case "farm":
+        return "Обработка огорода";
       case "mine":
         return `Добыча: ${shorten(item || "блоки", 36)}${amount}`;
       case "craft":

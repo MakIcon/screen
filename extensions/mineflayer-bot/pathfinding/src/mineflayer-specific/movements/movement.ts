@@ -15,6 +15,8 @@ import { ClimbAwarePhysics } from '../climbablePhysics'
 export interface MovementOptions {
   allowDiagonalBridging: boolean
   allowJumpSprint: boolean
+  /** Grounded walking only, without jumping, falling, climbing or swimming. */
+  walkOnly: boolean
   allowAirStrafe: boolean
   allow1by1towers: boolean
 
@@ -77,6 +79,7 @@ export interface MovementOptions {
 
 export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowJumpSprint: true,
+  walkOnly: false,
   allowAirStrafe: false,
   canOpenDoors: true,
   canDig: true,

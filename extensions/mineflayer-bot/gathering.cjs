@@ -14,6 +14,7 @@ const {
 const plan = require("./gathering-plan.cjs");
 const { createGatheringDefense } = require("./gathering-defense.cjs");
 const storage = require("./gathering-storage.cjs");
+const farming = require("./farming.cjs");
 
 class WorkError extends NavigationTaskError {
   constructor(message, resumeOnRecovery = false) {
@@ -54,6 +55,7 @@ const PHASES = [
   "move",
   "equip",
   "dig",
+  "farming",
   "pickup",
   "deposit",
   "deliver",
@@ -66,6 +68,7 @@ const LABELS = {
   move: "подход",
   equip: "инструмент",
   dig: "добыча",
+  farming: "работа на грядках",
   pickup: "сбор дропа",
   deposit: "выгрузка",
   deliver: "несёт добычу владельцу",
@@ -208,6 +211,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       minY: entry.minY,
       maxY: entry.maxY,
       item: entry.item,
+      crop: entry.crop,
+      replant: entry.replant,
+      tilled: entry.tilled || 0,
+      planted: entry.planted || 0,
+      harvested: entry.harvested || 0,
       area: entry.area,
       mined: entry.mined,
       collected: entry.collected,
@@ -220,7 +228,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (!task) return `Добыча: ожидание; очередь ${queue.length}`;
     return (
       `#${task.id} ${task.kind}: ${LABELS[machine.activeState?.stateName] || desired}; ` +
-      `блоки ${task.mined}${task.count ? `/${task.count}` : ""}; подобрано ${task.collected}; ` +
+      (farming.isFarming(task)
+        ? `вспахано ${task.tilled || 0}; посажено ${task.planted || 0}; урожай ${task.harvested || 0}; подобрано ${task.collected}; `
+        : `блоки ${task.mined}${task.count ? `/${task.count}` : ""}; подобрано ${task.collected}; `) +
       `выгружено ${task.deposited}; очередь ${queue.length}${pausedReason ? `; ${pausedReason}` : ""}`
     );
   }
@@ -534,6 +544,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       ],
       allowWaterDrop: false,
       allowBucketWaterDrop: false,
+      ...(farming.isFarming(task) ? { walkOnly: true, allowSprinting: false, allowJumpSprint: false, allowLowCeilingJumps: false } : {}),
       maxDropDown: Math.min(2, movementSettings.maxDropDown ?? 2),
     });
   }
@@ -672,7 +683,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           !picked.has(entity.id) &&
           entity.getDroppedItem?.() &&
           (task.kind !== "collect" || plan.insideTask(task, entity.position)) &&
-          (!task.item || entity.getDroppedItem().name === task.item) &&
+          (farming.isFarming(task) || !task.item || entity.getDroppedItem().name === task.item) &&
           (task.failed.get(`item:${entity.id}`) || 0) < settings.maxAttempts,
       )
       .sort(
@@ -728,6 +739,25 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           task.missedDrops ? "частично" : "готово",
           "Доступный дроп в заданном радиусе собран",
         );
+      return;
+    }
+    if (farming.isFarming(task)) {
+      await awaitDrops(signal);
+      if (drops().length) {
+        pickupOnly = false;
+        desired = "pickup";
+        return;
+      }
+      target = await farming.scanFarming(bot, task, {
+        inside: plan.insideTask, maxAttempts: settings.maxAttempts, scanLimit: settings.scanLimit,
+        yieldControl: () => wait(0, signal).then(() => guard(signal)),
+      });
+      guard(signal);
+      if (target) desired = "farming";
+      else finish(task.failed.size || task.missedDrops || (task.count && task.mined < task.count) ? "частично" : "готово",
+        `Проход завершён: вспахано ${task.tilled || 0}, посажено ${task.planted || 0}, собрано ${task.harvested || 0}. ` +
+        "Молодые растения оставлены расти; обрабатываются только загруженные грядки" +
+        (task.lastFailure ? `; ${task.lastFailure}` : ""));
       return;
     }
     if (task.count && task.mined >= task.count) {
@@ -888,6 +918,43 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     desired = "equip";
   }
+  async function farm(signal) {
+    const reachable = (block, top, feet = bot.entity.position) => {
+      if (!block) return false;
+      const height = Math.max(0.5, ...(block.shapes || []).map((shape) => shape[4]));
+      const aim = block.position.offset(0.5, top ? height - 0.001 : height / 2, 0.5);
+      const eye = feet.offset(0, bot.entity.eyeHeight || 1.62, 0);
+      const distance = eye.distanceTo(aim);
+      if (distance > settings.digReach || (top && eye.y <= aim.y)) return false;
+      if (!bot.world?.raycast) return bot.canSeeBlock?.(block) !== false;
+      const hit = bot.world.raycast(eye, aim.minus(eye).normalize(), distance + 0.002);
+      // Crops have no collision shapes: an unobstructed ray can end in air.
+      return hit ? hit.position.equals(block.position) : !top;
+    };
+    await farming.executeFarming(bot, task, target, {
+      guard: () => guard(signal),
+      operation: (factory) => operation(factory, signal),
+      approach: async (block, top) => {
+        if (!reachable(block, top))
+          await navigate(new GoalContainerAccess(block.position, (feet) => reachable(block, top, feet)), signal);
+        guard(signal);
+        if (!reachable(bot.blockAt(block.position), top)) throw new Error("Грядка вне досягаемости или закрыта");
+      },
+      confirm: async (predicate, message) => {
+        const deadline = now() + 1500;
+        while (!predicate() && now() < deadline) await wait(25, signal);
+        guard(signal);
+        if (!predicate()) throw new Error(message);
+      },
+      fail: (message) => { throw new WorkError(message); },
+      remainingDurability: plan.remainingDurability,
+      minToolDurability: settings.minToolDurability,
+      trackDig,
+    });
+    guard(signal);
+    desired = "scan";
+    report(true);
+  }
   async function selectTool(block, signal) {
     const candidates = bot.inventory
       .items()
@@ -1044,6 +1111,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     let unmatched = 0;
     for (const item of [...bot.inventory.items()]) {
       if (plan.keepItem(bot, item)) continue;
+      if (farming.isFarming(task) && farming.CROPS.some((crop) => item.name === crop.seed)) continue;
       const keep = plan.SCAFFOLD_ITEMS.has(item.name) ? Math.min(item.count, scaffoldReserve) : 0;
       scaffoldReserve -= keep;
       const remaining = item.count - keep;
@@ -1303,6 +1371,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     move,
     equip,
     dig,
+    farming: farm,
     pickup,
     deposit,
     deliver,

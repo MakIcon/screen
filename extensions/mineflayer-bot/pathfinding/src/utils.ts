@@ -111,6 +111,12 @@ export function getNormalizedPos (bot: Bot, startPos?: Vec3): Vec3 {
   const pos = startPos ?? bot.entity.position.clone()
 
   const block = bot.pathfinder.world.getBlockInfo(pos)
+  // Farmland is 15/16 of a block high. Its top still belongs to the walkable
+  // cell above it; flooring the real feet Y would put the route INSIDE the bed.
+  // Keep the world's collision shapes unchanged and use the upper route cell.
+  if (block.block?.name === 'farmland' && Math.abs(pos.y - block.height) < 0.1) {
+    return pos.offset(0, Math.ceil(block.height) - pos.y, 0)
+  }
   if (BlockInfo.carpets.has(block.type)) {
     return pos.floor()
   }

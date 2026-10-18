@@ -27,6 +27,9 @@ if (Test-Path -LiteralPath $stageDirectory) {
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
+foreach ($file in @("farming.cjs", "FARMING.md")) {
+    Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
+}
 foreach ($file in @("production.cjs", "production-plan.cjs", "production-commands.cjs", "workflow.cjs", "storage-scan.cjs", "PRODUCTION.md")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
