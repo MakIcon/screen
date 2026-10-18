@@ -1,0 +1,8 @@
+{
+  "corridors": 8000,
+  "walkable": 3241,
+  "controlTicks": 4000,
+  "pearlFlights": 1188,
+  "pearlPlans": 24,
+  "allEquivalent": true
+}

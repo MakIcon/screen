@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-17T21:49:48.261Z",
+  "version": "1.15.9",
+  "suites": {
+    "worker": {
+      "tests": 498,
+      "pass": 498,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "duration_ms": 468344.1276
+    },
+    "navigation": {
+      "tests": 300,
+      "pass": 300,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "duration_ms": 317353.7424
+    }
+  },
+  "rootChanges": [
+    "extension.json",
+    "package-lock.json",
+    "package.json",
+    "pathfinder-source.json",
+    "pathfinder.cjs",
+    "pathfinder.test.mjs"
+  ],
+  "archiveFilesVerified": 190,
+  "duel": {
+    "beforeVersion": "1.15.8",
+    "afterVersion": "1.15.9",
+    "scenarios": 40,
+    "fields": [
+      "attacks",
+      "landed",
+      "damage",
+      "critical",
+      "sprintHits",
+      "blocked",
+      "outOfReach",
+      "firstHitMs",
+      "meanIntervalMs",
+      "meanDistance",
+      "routedTicks"
+    ],
+    "changes": []
+  },
+  "sourceSha256": {
+    "pathfinder.cjs": "3a600a34cce248a33c553543e10e75e231e44b92fa4184173f57464f6de458c4",
+    "pathfinder-source.json": "5e5a087cbaa9a2ec7ecf75ebfb854256af3613e00c4bd47789bd9f9df4f69913",
+    "package.json": "1fb0ee0601969e28293548be38c2ca77c59a39b794058dd67e087c905301d818",
+    "package-lock.json": "fa9fbb872a7ac28bec445a7fd19f7fe0382878f0a546e5ca899119a3c565a781",
+    "extension.json": "c73bd1881da3a408af41247b2b1bce0fd2246419c1c569c4ae7ccde5d7eb0b2a",
+    "pathfinder.test.mjs": "a612582018578a15ee7528c81c038815b306e95d4d624b426d1717eadd4d6d4a",
+    "pathfinding/src/mineflayer-specific/surfaceSwimming.ts": "fc86fe7f3c271d73e33b533f4cf117ce5891d251a8c968ca35735ea2f10fe9e6",
+    "pathfinding/src/mineflayer-specific/lowCeilingJumps.ts": "39d1eb337da081851f3eeea5980123860494c81c4e5ff5940198dde71638994c",
+    "pathfinding/src/ThePathfinder.ts": "12d6db750a05063bc649b18195162007fa7b10191b2d9795b2ffff598fa9e0cc",
+    "pathfinding/src/mineflayer-specific/shore.ts": "a86aef8c938c6baa0aa15b825d56f000c7d58769476de7a9c1a74253154ab8ec",
+    "pathfinding/tests/navigation-recovery.test.ts": "7b13e4018902c82dfad78b2be1578ca3aab7580ebea965cff293a7dd0139dd0c",
+    "pathfinding/tests/travel-speed.test.ts": "c973b2d59738b5bb2f3887957fe7539df876b485bf2d42bc0e8ab860f3561737",
+    "pathfinding/src/pathExecutor.ts": "517560ae2e15f9fb37e41bb767d35043f6fcae136e288a7d0f62a86b41f8f15f",
+    "pathfinding/src/mineflayer-specific/movements/movementExecutors.ts": "c5b3e8feb239f73d52b98d3aa3225ed46a81da0faa76bc6b8323f2d2061f1661"
+  }
+}

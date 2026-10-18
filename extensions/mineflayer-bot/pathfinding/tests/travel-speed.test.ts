@@ -96,7 +96,7 @@ for (const version of ['1.20.4', '26.1.2']) {
     })
   }
 
-  test(`swimming preserves server movement attributes for subsequent parkour on ${version}`, { timeout: 8500 }, async () => {
+  test(`swimming preserves server movement attributes for subsequent parkour on ${version}`, { timeout: 8500 }, async (t) => {
     const world = createFlatWorld(version, 56, { renderDistance: 1 })
     for (let x = -10; x < 0; x++) for (let z = -3; z <= 3; z++) for (let y = 56; y <= 63; y++) world.setBlock(new Vec3(x, y, z), 'water')
     for (let x = 0; x <= 2; x++) world.setBlock(new Vec3(x, 63, 0), 'stone')
@@ -107,6 +107,7 @@ for (const version of ['1.20.4', '26.1.2']) {
     rig.bot.entity.attributes[key] = { value: 0.12, modifiers: [modifier] }
     rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false, movementTimeoutMs: 2000 } }))
     const dispose = installSurfaceSwimming(rig.bot)
+    t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
     try {
       await rig.bot.pathfinder.goto(new goals.GoalBlock(0, 64, 0))
       assert.equal(rig.bot.entity.attributes[key].value, 0.12)

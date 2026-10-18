@@ -43,23 +43,36 @@ function walkSegment(
     if (!blocks.has(key)) blocks.set(key, bot.blockAt(point));
     return blocks.get(key);
   };
+  // Ground and headroom depend on the block column and the exact input height,
+  // not the fractional X/Z sample. Reuse only inside this corridor check;
+  // the next call must see newly placed blocks and removed support immediately.
+  const columns = new Map();
+  const groundHeight = (x, y, z) => {
+    const key = `${Math.floor(x)},${y},${Math.floor(z)}`;
+    let height = columns.get(key);
+    if (height === undefined) {
+      height = groundAt(bot, new Vec3(x, y, z), blockAt)?.y ?? null;
+      columns.set(key, height);
+    }
+    return height;
+  };
+  const sides = [-half, 0, half];
   let height = start.y,
     jump = false;
   for (let distance = 0.3; distance <= travel + 0.01; distance += 0.3) {
-    const across = [];
-    for (const side of [-half, 0, half]) {
-      const point = start.offset(
-        direction.x * distance - direction.z * side,
-        height - start.y,
-        direction.z * distance + direction.x * side,
+    let low = Infinity,
+      next = -Infinity;
+    for (const side of sides) {
+      const ground = groundHeight(
+        start.x + (direction.x * distance - direction.z * side),
+        start.y + (height - start.y),
+        start.z + (direction.z * distance + direction.x * side),
       );
-      const ground = groundAt(bot, point, blockAt);
-      if (!ground) return null;
-      across.push(ground.y);
+      if (ground === null) return null;
+      low = Math.min(low, ground);
+      next = Math.max(next, ground);
     }
-    const next = Math.max(...across);
-    if (Math.max(...across) - Math.min(...across) > 1.01 || Math.abs(next - height) > 1.1)
-      return null;
+    if (next - low > 1.01 || Math.abs(next - height) > 1.1) return null;
     if (next > start.y + 0.4 && distance < 1.2) jump = true;
     height = next;
   }

@@ -1,0 +1,199 @@
+{
+  "node": "v24.13.1",
+  "cpu": "AMD Ryzen 5 9600X 6-Core Processor             ",
+  "version": "26.1.2",
+  "entities": 66,
+  "settings": {
+    "enabled": true,
+    "adaptiveCombat": true,
+    "combatHealing": true,
+    "pearlEscape": true,
+    "engine": "custom",
+    "style": "auto",
+    "autoTarget": "manual",
+    "targetRange": 24,
+    "reactionMs": 0,
+    "meleeSkill": 100,
+    "cps": 12,
+    "attackRange": 3,
+    "weapon": "sword",
+    "strafe": "intelligent",
+    "criticals": "hop",
+    "sprintTap": "wtap",
+    "shield": true,
+    "shieldBreak": true,
+    "maceDefense": true,
+    "smoothAim": true,
+    "smoothAimSpeed": 100,
+    "bowEnabled": true,
+    "bowEngine": "custom",
+    "bowAccuracy": 90,
+    "bowRange": 48,
+    "bowIntervalMs": 1500,
+    "bowPredict": true,
+    "bowOffhand": false,
+    "meleeFallback": true,
+    "bowDefense": false,
+    "bowDefenseMode": "early",
+    "bowDefenseCheckMs": 50,
+    "bowDefenseRange": 48,
+    "bowDefenseMargin": 0.35,
+    "bowDefenseHoldMs": 300,
+    "bowDefenseRequireDraw": true,
+    "crystalEnabled": true,
+    "crystalPlace": true,
+    "crystalBreak": true,
+    "crystalBuildBase": true,
+    "crystalCover": true,
+    "crystalCoverBlock": "auto",
+    "crystalFastAim": true,
+    "crystalMaxCoverBlocks": 2,
+    "crystalSpawnTimeoutMs": 1500,
+    "crystalRetries": 2,
+    "crystalPlaceRange": 4.5,
+    "crystalBreakRange": 4.5,
+    "crystalMinDamage": 4,
+    "crystalMaxSelfDamage": 6,
+    "crystalMinHealth": 8,
+    "crystalIntervalMs": 250,
+    "crystalPredict": true,
+    "crystalPredictionTicks": 3,
+    "crystalPriority": "damage",
+    "crystalProtectOwners": true,
+    "pearlEnabled": true,
+    "pearlFollow": true,
+    "pearlCome": true,
+    "pearlGoto": false,
+    "pearlChase": true,
+    "pearlChain": true,
+    "pearlMinDistance": 16,
+    "pearlMaxDistance": 48,
+    "pearlCooldownMs": 1500,
+    "pearlMinHealth": 8,
+    "pearlReserve": 0
+  },
+  "results": [
+    {
+      "name": "action-and-item",
+      "samples": 100,
+      "batch": 1000,
+      "medianMs": 0.0009122999999999592,
+      "p95Ms": 0.0021263000000001286,
+      "meanMs": 0.001019767000000011,
+      "blockReads": 0,
+      "raycasts": 0,
+      "result": "push"
+    },
+    {
+      "name": "movement-open-ground",
+      "samples": 100,
+      "batch": 50,
+      "medianMs": 0.039156000000002675,
+      "p95Ms": 0.0900460000000021,
+      "meanMs": 0.04621354000000011,
+      "blockReads": 18,
+      "raycasts": 0,
+      "result": true
+    },
+    {
+      "name": "crystal-new-layout",
+      "samples": 100,
+      "batch": 1,
+      "medianMs": 1.001299999999901,
+      "p95Ms": 3.4593999999999596,
+      "meanMs": 1.3498869999999965,
+      "blockReads": 403,
+      "raycasts": 93,
+      "result": {
+        "type": "build",
+        "position": {
+          "x": 4,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 21,
+        "selfDamage": 4.368
+      }
+    },
+    {
+      "name": "crystal-continue-layout",
+      "samples": 100,
+      "batch": 1,
+      "medianMs": 0.2641999999998461,
+      "p95Ms": 0.7956000000001495,
+      "meanMs": 0.3322779999999989,
+      "blockReads": 13,
+      "raycasts": 92,
+      "result": {
+        "type": "place",
+        "position": {
+          "x": 4,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 21,
+        "selfDamage": 4.368
+      }
+    },
+    {
+      "name": "crystal-existing-base",
+      "samples": 100,
+      "batch": 1,
+      "medianMs": 0.8386000000000422,
+      "p95Ms": 1.6794999999999618,
+      "meanMs": 0.9775489999999877,
+      "blockReads": 403,
+      "raycasts": 92,
+      "result": {
+        "type": "place",
+        "position": {
+          "x": 3,
+          "y": 64,
+          "z": 0
+        },
+        "damage": 19,
+        "selfDamage": 5.712
+      }
+    },
+    {
+      "name": "pearl-travel",
+      "samples": 100,
+      "batch": 1,
+      "medianMs": 17.25570000000016,
+      "p95Ms": 20.854199999999764,
+      "meanMs": 17.439159999999973,
+      "blockReads": 2186,
+      "raycasts": 4900,
+      "result": {
+        "landing": {
+          "x": 48.495844426700714,
+          "y": 64,
+          "z": 0.49999999998592937
+        },
+        "ticks": 46,
+        "yaw": -1.5707963267946035,
+        "pitch": 0.489564855184379
+      }
+    },
+    {
+      "name": "pearl-exact-pursuit",
+      "samples": 100,
+      "batch": 1,
+      "medianMs": 26.02810000000045,
+      "p95Ms": 29.81919999999991,
+      "meanMs": 26.12019000000003,
+      "blockReads": 3536,
+      "raycasts": 6916,
+      "result": {
+        "landing": {
+          "x": 24.58290437314907,
+          "y": 64,
+          "z": 0.49999999999293987
+        },
+        "ticks": 18,
+        "yaw": -1.5707963267946035,
+        "pitch": 0.13089969389956657
+      }
+    }
+  ]
+}

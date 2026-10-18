@@ -1281,6 +1281,22 @@ test(
   },
 );
 
+test("disabled sprinting leaves controls unwrapped and can enable low-ceiling jumps later", async () => {
+  const { rig } = createCacheWorld("26.1.2", 64, new Vec3(0.5, 64, 0.5));
+  const originalSet = rig.bot.setControlState;
+  try {
+    rig.bot.loadPlugin(pathfinder.createPlugin({ moveSettings: { allowSprinting: false, allowLowCeilingJumps: true } }));
+    assert.equal(rig.bot.setControlState, originalSet);
+    rig.bot.pathfinder.setMoveOptions({ allowSprinting: true });
+    assert.notEqual(rig.bot.setControlState, originalSet);
+    rig.bot.pathfinder.setMoveOptions({ allowSprinting: false });
+    assert.equal(rig.bot.setControlState, originalSet);
+  } finally {
+    await rig.bot.pathfinder?.destroy();
+    rig.stopPassivePhysics();
+  }
+});
+
 test(
   "worker honors disabled STAY ON WATER and disconnect removes the overlay",
   { timeout: 2500 },

@@ -1,0 +1,14 @@
+✔ water navigation passes an isolated ledge to reach a mountain bridge without blocks on 1.20.4 (8619.6196ms)
+✔ water navigation passes an isolated ledge to reach a mountain bridge without blocks on 1.20.4 with a completed water prefix (9480.3611ms)
+✔ water navigation passes an isolated ledge to reach a mountain bridge without blocks on 26.1.2 (9191.5914ms)
+✔ water navigation passes an isolated ledge to reach a mountain bridge without blocks on 26.1.2 with a completed water prefix (9049.6786ms)
+✔ swimming preserves server movement attributes for subsequent parkour on 1.20.4 (5563.2488ms)
+✔ swimming preserves server movement attributes for subsequent parkour on 26.1.2 (5484.3459ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41864.1002

@@ -1,0 +1,16 @@
+{
+  "changedDuringOptimization": [
+    "COMBAT.md",
+    "combat-brain.test.mjs",
+    "combat-footwork.cjs",
+    "crystal-movement.cjs",
+    "extension.json",
+    "package-lock.json",
+    "package.json",
+    "pathfinder-source.json",
+    "pearls.cjs"
+  ],
+  "otherUserSourceFilesPreserved": true,
+  "archiveFilesVerified": 190,
+  "pathfinderBundleUnchanged": true
+}

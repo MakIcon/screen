@@ -1,0 +1,11 @@
+✔ walking through a supported two-high tunnel does not tap sneak at its turns or destination (3075.1181ms)
+✔ swimming preserves server movement attributes for subsequent parkour on 1.20.4 (5561.1091ms)
+✔ swimming preserves server movement attributes for subsequent parkour on 26.1.2 (5494.4755ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16495.921

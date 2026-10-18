@@ -1,0 +1,75 @@
+{
+  "sourcesUnchanged": true,
+  "suites": {
+    "worker": {
+      "tests": 497,
+      "pass": 496,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 466919.6309
+    },
+    "pathfinder": {
+      "tests": 298,
+      "pass": 295,
+      "fail": 1,
+      "cancelled": 2,
+      "skipped": 0,
+      "durationMs": 928569.313
+    }
+  },
+  "functionalStatus": {
+    "worker": {
+      "startedAt": "2026-10-17T20:47:41.4508690Z",
+      "command": "pnpm test:worker",
+      "exitCode": 1,
+      "finishedAt": "2026-10-17T20:55:29.3039508Z"
+    },
+    "pathfinder": {
+      "startedAt": "2026-10-17T20:55:29.3264474Z",
+      "command": "pnpm test:pathfinder",
+      "exitCode": 1,
+      "finishedAt": "2026-10-17T21:10:59.0014941Z"
+    }
+  },
+  "equivalence": {
+    "corridors": 8000,
+    "walkable": 3241,
+    "controlTicks": 4000,
+    "pearlFlights": 1188,
+    "pearlPlans": 24,
+    "allEquivalent": true
+  },
+  "measuredDuelRuns": 360,
+  "cpuMethod": "Rotate and reverse the three versions for each sample within one process",
+  "navigationFailures": [
+    "water navigation passes an isolated ledge to reach a mountain bridge without blocks on 26.1.2",
+    "swimming preserves server movement attributes for subsequent parkour on 1.20.4",
+    "swimming preserves server movement attributes for subsequent parkour on 26.1.2"
+  ],
+  "navigationRetries": [
+    {
+      "finishedAt": "2026-10-17T21:06:41.7893169Z",
+      "startedAt": "2026-10-17T21:06:27.7657733Z",
+      "exitCode": 0,
+      "trial": 1
+    },
+    {
+      "finishedAt": "2026-10-17T21:06:56.1644956Z",
+      "startedAt": "2026-10-17T21:06:41.8185872Z",
+      "exitCode": 0,
+      "trial": 2
+    },
+    {
+      "finishedAt": "2026-10-17T21:07:10.5141281Z",
+      "startedAt": "2026-10-17T21:06:56.1698116Z",
+      "exitCode": 0,
+      "trial": 3
+    }
+  ],
+  "attributesRetry": {
+    "exitCode": 1,
+    "startedAt": "2026-10-17T21:09:46.1055581Z",
+    "finishedAt": "2026-10-17T21:10:08.7336254Z"
+  }
+}

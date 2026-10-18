@@ -1,0 +1,148 @@
+✔ director prioritizes survival, reachable finishes, shield breaks and pressure (1.9177ms)
+✔ reported health is version mapped, includes absorption and never invented (0.7456ms)
+✔ health reacts immediately, inventory is cached, updates invalidate it, apples have a recovery window (0.5134ms)
+✔ hunger uses ordinary food instead of spending a golden apple (0.3036ms)
+✔ direct pursuit closes distance; strafe is bounded and rejects cliffs and unknown terrain (5.3818ms)
+✔ director decision cost stays comfortably below a physics tick (24.264ms)
+ℹ 20000 decisions: 23.6 ms (0.0012 ms/decision); 1 inventory scan
+✔ pursuit checks its full initial corridor and sees changed terrain on the next tick (1.4273ms)
+✖ corridor checks keep slab height, player width and hazardous edge checks (2.025ms)
+✔ a committed crystal setup survives score fluctuations but still obeys safety and pressure (0.4255ms)
+✔ stalled direct pursuit yields to a route long enough to clear the obstacle (0.8855ms)
+✔ crystals compete with weapon pressure by damage, health, setup time and known lethal damage (0.349ms)
+✔ crystal planning never snaps live player coordinates to block corners (422.2821ms)
+✔ crystal movement holds an already reached position even with a wall ahead (152.513ms)
+✔ auto starts a crystal setup immediately and keeps it ahead of wind/mace selection (198.678ms)
+ℹ foundation → crystal → attack: 150ms of simulated game time
+✔ a newly confirmed base is used on the next tick without waiting for the scan timer (163.0981ms)
+ℹ new base → placement: 50ms of simulated game time
+✔ target movement opens a crystal opportunity on the next tick (195.0199ms)
+ℹ target enters blast range → placement: 50ms of simulated game time
+✔ crystal verification sees changed cover, health and owners at the same timestamp (171.2606ms)
+✔ crystal movement serializes turns and stopping waits for an outstanding aim (184.1231ms)
+✔ crystal movement detects walking in place and gives the route time to bypass it (163.3556ms)
+✔ crystal reposition requires a usable action instead of an endless retreat (454.1894ms)
+✔ crystal approach reaches a complete physical combo without snapping or shuffle on 1.20.4 (138.8847ms)
+✔ auto director commits a profitable crystal combo and finishes after the target flees on 1.20.4 (41.4287ms)
+✔ auto director keeps melee when crystals have no profitable safe setup on 1.20.4 (85.3686ms)
+✔ auto director refuses setup during close pressure and checks HP again after equip on 1.20.4 (187.1877ms)
+✔ crystal approach reaches a complete physical combo without snapping or shuffle on 26.1.2 (135.1708ms)
+✔ auto director commits a profitable crystal combo and finishes after the target flees on 26.1.2 (131.2358ms)
+✔ auto director keeps melee when crystals have no profitable safe setup on 26.1.2 (164.7279ms)
+✔ auto director refuses setup during close pressure and checks HP again after equip on 26.1.2 (308.1697ms)
+✔ crystal finishes its explosion when the target flees during spawn on 1.20.4 (28.4055ms)
+✔ crystal keeps placing and exploding under close melee pressure on 1.20.4 (87.2312ms)
+✔ crystal moves out of an occupied layout instead of holding blocks forever on 1.20.4 (81.8142ms)
+✔ crystal movement crosses a stepped approach without reverse/strafe braking on 1.20.4 (34.6295ms)
+✔ crystal finishes its explosion when the target flees during spawn on 26.1.2 (146.4288ms)
+✔ crystal keeps placing and exploding under close melee pressure on 26.1.2 (236.5204ms)
+✔ crystal moves out of an occupied layout instead of holding blocks forever on 26.1.2 (193.8435ms)
+✔ crystal movement crosses a stepped approach without reverse/strafe braking on 26.1.2 (163.7394ms)
+✔ an entity obstructing the crystal attack triggers a usable reposition (153.2227ms)
+✔ finishing a placed crystal still respects self damage and nearby owners (133.6802ms)
+✔ sword hits a cornered opponent every 13 ticks with criticals despite our shield on 1.20.4 (473.6642ms)
+✔ sword hits a cornered opponent every 13 ticks with criticals despite our shield on 26.1.2 (209.8066ms)
+✔ knockback lift keeps direct pursuit on open ground (197.5532ms)
+✔ sprint jumps catch an opponent sprinting away (142.2956ms)
+✔ an opponent on a two-block pillar is hit from below (485.5185ms)
+✔ a shield raised as the hit becomes ready is hit before it can block (312.2857ms)
+✔ pearl trajectories reach safe terrain and serialize real use packets on 1.8.8 (267.3789ms)
+✔ pearl trajectories reach safe terrain and serialize real use packets on 1.20.4 (209.6467ms)
+✔ pearl trajectories reach safe terrain and serialize real use packets on 26.1.2 (256.0675ms)
+✔ combat escape respects permissions, HP, one-flight ownership and arrival on 1.20.4 (135.5156ms)
+✔ combat escape respects permissions, HP, one-flight ownership and arrival on 26.1.2 (263.8854ms)
+✔ escape cancelled during equip cannot throw after a new command (82.2647ms)
+✔ pearl solver rejects water, unloaded terrain, obstructed arcs and entity collisions (154.0583ms)
+✔ travel falls back to walking when {"pearlEnabled":false} (40.2083ms)
+✔ travel falls back to walking when {"pearlFollow":false} (37.8544ms)
+✔ travel falls back to walking when {"pearlReserve":4} (37.9947ms)
+✔ travel falls back to walking when {"pearlMinHealth":20} (39.2903ms)
+✔ travel waits for teleport, observes cooldown and pearlChain=false (108.9198ms)
+✔ travel waits for teleport, observes cooldown and pearlChain=true (174.7925ms)
+✔ a missing teleport resumes walking; stop/death/dispose cancel an in-progress equip (249.3752ms)
+✔ distant enemy without a pearl triggers proactive pursuit and resumes melee on 1.8.8 (123.9571ms)
+✔ enemy pearl is chased to its landing and melee resumes on 1.8.8 (155.2006ms)
+✔ distant enemy without a pearl triggers proactive pursuit and resumes melee on 1.20.4 (95.0775ms)
+✔ enemy pearl is chased to its landing and melee resumes on 1.20.4 (107.0542ms)
+✔ distant enemy without a pearl triggers proactive pursuit and resumes melee on 26.1.2 (91.4715ms)
+✔ enemy pearl is chased to its landing and melee resumes on 26.1.2 (149.8757ms)
+✔ proactive pearls keep walking when disabled, too close, unsafe or reserved (207.866ms)
+✔ proactive pearl aim is revalidated and a new target cancels the old throw (182.1454ms)
+✔ combat does not throw when {"pearlChase":false} (35.3821ms)
+✔ combat does not throw when {"pearlReserve":4} (36.9916ms)
+✔ combat does not throw when {"pearlMinHealth":20} (30.9795ms)
+✔ held pearl and confirmed teleport trigger melee pursuit through real packets on 1.8.8 (101.4888ms)
+✔ held pearl and confirmed teleport trigger melee pursuit through real packets on 1.20.4 (85.1503ms)
+✔ held pearl and confirmed teleport trigger melee pursuit through real packets on 26.1.2 (97.1183ms)
+✔ a pearl aim interrupted by water movement is retried after the enemy teleport (127.5745ms)
+✔ combat can pursue with pearls carried only in the offhand (81.5975ms)
+✔ combat ignores other players' pearls and refuses an unreachable landing (51.1889ms)
+✔ separate enemy pearls obey the shared cooldown even when travel chaining is disabled (150.8345ms)
+✔ a missing pearl keeps melee active and walking is not mistaken for teleportation (31.1412ms)
+✔ legacy ownerless pearls with two possible throwers are ignored (44.5936ms)
+✔ an unknown flight can be chased after the actual enemy teleport confirms loaded terrain (80.0249ms)
+✔ pearl chase interrupts a bow draw before equipping its projectile (88.4659ms)
+✔ combat preserves a teleporting target across despawn and cancels chase on stop/death/dispose (399.4286ms)
+✔ water launch uses liquid drag and the correct tick order on 1.8.8 (26.0944ms)
+✔ water launch uses liquid drag and the correct tick order on 1.20.4 (9.171ms)
+✔ water launch uses liquid drag and the correct tick order on 26.1.2 (24.3646ms)
+✔ swimming pearls leave water for a safe shore; water landings remain forbidden (70.7799ms)
+✔ legacy health metadata is not interpreted as a swimming pose (9.8668ms)
+✔ a current in water during aiming invalidates the old throw (56.6672ms)
+✔ explosion estimate accounts for range and cover and refuses unknown terrain (26.319ms)
+✔ crystal planner respects self/owner safety, occupied bases and server confirmation (28.2098ms)
+✔ crystal click is cancelled when view changed during aiming (34.5633ms)
+✔ crystal click is cancelled when wall appeared during aiming (30.5406ms)
+✔ bow defense detects aiming/incoming arrows, releases its shield and cancels delayed equip (2.4084ms)
+✔ crystal controller places/breaks through real Mineflayer APIs on 1.20.4 (91.1671ms)
+✔ crystal controller places/breaks through real Mineflayer APIs on 26.1.2 (108.6002ms)
+✔ bow defense uses an already equipped offhand shield on 1.20.4 and preempts a charged bow (11.2982ms)
+✔ crystals finish the build/cover/place/break cycle on 1.20.4: {"crystalCoverBlock":"planks","smoothAim":false} (46.5758ms)
+✔ crystals finish the build/cover/place/break cycle on 1.20.4: {"crystalCoverBlock":"auto","smoothAim":true,"style":"auto","spawnDelayTicks":2,"bowDefense":true} (197.2575ms)
+✔ crystals finish the build/cover/place/break cycle on 1.20.4: {"crystalCoverBlock":"auto","smoothAim":true,"crystalFastAim":false} (900.107ms)
+✔ bow defense uses an already equipped offhand shield on 26.1.2 and preempts a charged bow (27.9798ms)
+✔ crystals finish the build/cover/place/break cycle on 26.1.2: {"crystalCoverBlock":"planks","smoothAim":false} (57.9881ms)
+✔ crystals finish the build/cover/place/break cycle on 26.1.2: {"crystalCoverBlock":"auto","smoothAim":true,"style":"auto","spawnDelayTicks":2,"bowDefense":true} (95.1146ms)
+✔ crystals finish the build/cover/place/break cycle on 26.1.2: {"crystalCoverBlock":"auto","smoothAim":true,"crystalFastAim":false} (913.8483ms)
+✔ bow recognition reads draw metadata, reacts on player updates, rejects walls and respects settings on 1.20.4 (9.079ms)
+✔ bow recognition reads draw metadata, reacts on player updates, rejects walls and respects settings on 26.1.2 (23.5515ms)
+✔ crystal approach walks smoothly through real physics on 1.20.4 (197.7858ms)
+✔ rejected crystal foundations retry without blocking for 5000ms on 1.20.4 (18.4491ms)
+✔ crystal approach walks smoothly through real physics on 26.1.2 (197.3189ms)
+✔ rejected crystal foundations retry without blocking for 5000ms on 26.1.2 (28.8632ms)
+✔ crystal placement waits for spawn and bounds retries instead of constructing more bases (29.2574ms)
+ℹ tests 109
+ℹ suites 0
+ℹ pass 108
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9087.2842
+
+✖ failing tests:
+
+test at extensions\mineflayer-bot\combat-brain.test.mjs:234:1
+✖ corridor checks keep slab height, player width and hazardous edge checks (2.025ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + null
+  - {
+  -   jump: false
+  - }
+  
+      at TestContext.<anonymous> (file:///D:/JBProjects/RUST/screen/extensions/mineflayer-bot/combat-brain.test.mjs:257:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1103:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:785:18)
+      at Test.postRun (node:internal/test_runner/test:1232:19)
+      at Test.run (node:internal/test_runner/test:1160:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:785:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: { jump: false },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

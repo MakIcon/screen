@@ -173,8 +173,24 @@ function simulatePearlFlight(
     const end = hit?.intersect ?? next;
     const delta = end.minus(pos);
     // Water changes drag, but does not collide with the projectile.
-    for (let f = 0; f <= 1; f += 0.25) {
-      const b = blockAt(pos.plus(delta.scaled(f)));
+    // The first sample is the medium already checked above. Several later
+    // samples often occupy that same block: every crossed sampled cell still
+    // gets checked, without allocating two vectors and reading it repeatedly.
+    let lastX = Math.floor(pos.x),
+      lastY = Math.floor(pos.y),
+      lastZ = Math.floor(pos.z);
+    for (let f = 0.25; f <= 1; f += 0.25) {
+      const px = pos.x + delta.x * f,
+        py = pos.y + delta.y * f,
+        pz = pos.z + delta.z * f;
+      const x = Math.floor(px),
+        y = Math.floor(py),
+        z = Math.floor(pz);
+      if (x === lastX && y === lastY && z === lastZ) continue;
+      lastX = x;
+      lastY = y;
+      lastZ = z;
+      const b = blockAt(new Vec3(px, py, pz));
       if (!b || (hazards.test(b.name) && !waterAt(b))) return null;
     }
     if (entities.some((bounds) => intersectsBounds(pos, end, bounds))) return null;

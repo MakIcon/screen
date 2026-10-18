@@ -689,6 +689,7 @@ var require_lowCeilingJumps = __commonJS({
     var climbablePhysics_12 = require_climbablePhysics();
     var controllers = /* @__PURE__ */ new WeakMap();
     function installLowCeilingJumps(bot, enabled = true) {
+      enabled = enabled && bot.pathfinder?.defaultMoveSettings.allowSprinting !== false;
       const existing = controllers.get(bot);
       if (existing != null) {
         if (!enabled)
@@ -5330,6 +5331,7 @@ var require_movementExecutors = __commonJS({
             if (!this.bot.entity.onGround && this.bot.entity.position.y > move.entryPos.y + 0.05)
               this.hasLeftGround = true;
             if (this.hasLeftGround && this.bot.entity.onGround) {
+              this.stopTickControls();
               this.bot.setControlState("jump", false);
               this.bot.setControlState("sprint", false);
               this.bot.setControlState("sneak", true);
@@ -10302,6 +10304,7 @@ var require_pathExecutor = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.PathExecutor = void 0;
     var vec3_1 = require("vec3");
+    var attributes_1 = require("@nxg-org/mineflayer-physics-util/dist/physics/info/attributes");
     var goals = __importStar2(require_goals());
     var move_12 = require_move();
     var exceptions_12 = require_exceptions();
@@ -10439,16 +10442,27 @@ var require_pathExecutor = __commonJS({
         let productiveAt = lastProgressAt;
         let stoppingAt;
         const adjustStop = (target) => {
-          if (bot.entity.position.xzDistanceTo(target) <= 0.08) {
+          const pos = bot.entity.position;
+          const distance = pos.xzDistanceTo(target);
+          if (distance <= 0.08) {
             for (const control of ["forward", "back", "left", "right"])
               bot.setControlState(control, false);
           } else
             stopController.adjustPosition(target, 0.08);
           bot.setControlState("jump", false);
           bot.setControlState("sprint", false);
-          const pos = bot.entity.position;
           const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3);
-          bot.setControlState("sneak", !(0, navigationGeometry_1.supportedWalkSegment)(this.host.world, pos, projected));
+          let precisionCorrection = false;
+          if (distance > 0.08 && distance < 0.3 && Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) < 0.025) {
+            const physics = bot.physics;
+            const speed = bot.entity.attributes?.[physics.movementSpeedAttribute];
+            if (speed != null)
+              precisionCorrection = (0, attributes_1.getAttributeValue)({
+                value: speed.value,
+                modifiers: speed.modifiers.filter((modifier) => modifier.uuid !== physics.sprintingUUID)
+              }) > 0.100001;
+          }
+          bot.setControlState("sneak", precisionCorrection || !(0, navigationGeometry_1.supportedWalkSegment)(this.host.world, pos, projected));
         };
         const completion = new Promise((resolve, reject) => {
           resolveCompletion = resolve;
@@ -13125,12 +13139,6 @@ var require_ThePathfinder = __commonJS({
               continue;
             }
             await this.cleanupBot(false, continueSwimming());
-            if (prefix) {
-              prefixVisits.set(last.hash, (prefixVisits.get(last.hash) ?? 0) + 1);
-              if (prefixVisits.size > 32)
-                prefixVisits.delete(prefixVisits.keys().next().value);
-              continue;
-            }
             const arrived = this.bot.entity.position;
             const actual = {
               ...path.path[path.path.length - 1],
@@ -13139,6 +13147,12 @@ var require_ThePathfinder = __commonJS({
               z: Math.floor(arrived.z),
               exitPos: arrived
             };
+            if (prefix && !(shore != null && this.bot.entity.onGround && routingGoal.isEnd(actual))) {
+              prefixVisits.set(last.hash, (prefixVisits.get(last.hash) ?? 0) + 1);
+              if (prefixVisits.size > 32)
+                prefixVisits.delete(prefixVisits.keys().next().value);
+              continue;
+            }
             if (!(routingGoal instanceof goals.GoalFollowEntity) && !routingGoal.isEnd(actual)) {
               throw new exceptions_12.NavigationError("recovery", "Movement ended before reaching the route goal.");
             }

@@ -1,0 +1,10 @@
+{
+  "revision": "0c57fcdab4617d607d701ad3ecd4062ae06e3800",
+  "testAdaptation": "Only the two dependency/tsconfig URLs point one directory up; test logic matches Git.",
+  "sha256": {
+    "worker.cjs": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895",
+    "pathfinder.cjs": "0f41b065be315ba05533ad94e8affc21faff9fc41322d5e416618471cfb5a671",
+    "package.json": "b42b2ff9e0e84b35f1309cd90335d32c10c99345612ae13a68cb8e6ce3837226",
+    "pathfinder.test.mjs": "fdd789af9f0d31ebb2e0fce4c0d10c19fb094f17de6259b4ded8fdd39f4e9b4c"
+  }
+}

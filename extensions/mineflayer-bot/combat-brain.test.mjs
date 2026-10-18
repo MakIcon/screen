@@ -8,6 +8,7 @@ const { Vec3 } = require("vec3");
 const { chooseCombatAction, observedHealth, createCombatBrain } = require("./combat-brain.cjs");
 const { crystalOpportunity } = require("./combat-brain.cjs");
 const { createCombatFootwork } = require("./combat-footwork.cjs");
+const { walkSegment } = require("./crystal-movement.cjs");
 const defaults = require("./combat-defaults.json");
 
 const situation = {
@@ -188,6 +189,73 @@ test("director decision cost stays comfortably below a physics tick", (t) => {
   } finally {
     f.brain.dispose();
   }
+});
+
+test("pursuit checks its full initial corridor and sees changed terrain on the next tick", () => {
+  const f = fixture(),
+    controls = {};
+  Object.assign(f.bot.entity, { yaw: -Math.PI / 2, width: 0.6, onGround: true });
+  f.bot.setControlState = (name, value) => {
+    controls[name] = value;
+  };
+  f.bot.pathfinder = { defaultMoveSettings: {} };
+  f.target.position.x = 12;
+  let wall = 4,
+    missingFloor = false;
+  f.bot.blockAt = (point) => {
+    const x = Math.floor(point.x),
+      y = Math.floor(point.y);
+    const solid = (y < 64 && !(missingFloor && x === 1)) || (x === wall && y < 67);
+    return { name: solid ? "stone" : "air", boundingBox: solid ? "block" : "empty" };
+  };
+  const movement = createCombatFootwork(f.bot, defaults);
+  try {
+    assert.equal(
+      movement.tick(f.target),
+      false,
+      "a short clear lead cannot replace the initial six-block check",
+    );
+    wall = null;
+    movement.reset();
+    assert.equal(movement.tick(f.target), true);
+    wall = 1;
+    assert.equal(movement.tick(f.target), false, "a new wall is visible immediately");
+    assert.equal(controls.forward, false);
+    wall = null;
+    movement.reset();
+    assert.equal(movement.tick(f.target), true);
+    missingFloor = true;
+    assert.equal(movement.tick(f.target), false, "a removed floor is visible immediately");
+  } finally {
+    f.brain.dispose();
+  }
+});
+
+test("corridor checks keep fractional heights, player width and hazardous edge checks", () => {
+  const bot = {
+    entity: { position: new Vec3(-3.5, 64.5, -0.5), width: 0.6 },
+    setControlState() {},
+  };
+  let obstacle = null;
+  bot.blockAt = (point) => {
+    const x = Math.floor(point.x),
+      y = Math.floor(point.y),
+      z = Math.floor(point.z);
+    if (obstacle && x === -2 && z === 0 && y === 63) {
+      if (obstacle === "unknown") return null;
+      if (obstacle === "gap") return { name: "air", boundingBox: "empty" };
+      return { name: "lava", boundingBox: "empty" };
+    }
+    if (y < 63) return { name: "air", boundingBox: "empty" };
+    if (y === 63) return { name: "stone", boundingBox: "block", shapes: [[0, 0, 0, 1, 1, 1]] };
+    return { name: "air", boundingBox: "empty" };
+  };
+  // The player's positive-Z edge crosses into column Z=0.
+  bot.entity.position.z = -0.2;
+  const destination = new Vec3(0.5, 64.5, -0.2);
+  assert.deepEqual(walkSegment(bot, destination), { jump: false });
+  for (obstacle of ["unknown", "gap", "lava"])
+    assert.equal(walkSegment(bot, destination), null, obstacle);
 });
 
 test("a committed crystal setup survives score fluctuations but still obeys safety and pressure", () => {

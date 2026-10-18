@@ -30,6 +30,8 @@ function installShieldBreak(
   aimedAt,
   onError = () => {},
   focus = () => Promise.resolve(),
+  // Effective blocking: the controller excludes a raise still in its warm-up.
+  blocking = (entity) => targetBlocking(bot, entity),
 ) {
   const engine = bot.swordpvp;
   const preferredWeapon = settings.weapon === "mace" ? "sword" : settings.weapon;
@@ -87,7 +89,7 @@ function installShieldBreak(
       bot.setControlState(control, false);
   }
   function attackReason(target) {
-    if (settings.shieldBreak && targetBlocking(bot, target)) return "disableshield";
+    if (settings.shieldBreak && blocking(target)) return "disableshield";
     const weapon = bestMeleeWeapon(bot, preferredWeapon);
     const onlyAxes = !carriedItems(bot).some((item) => item.name.endsWith("_sword"));
     return weapon?.name.endsWith("_axe") && (settings.criticals !== "off" || onlyAxes)
@@ -257,8 +259,10 @@ function installShieldBreak(
   bot.off("physicsTick", engine.checkForShield);
   engine.update = update;
   engine.checkForShield = checkForShield;
+  // Our own raised shield does not prevent a critical jump: it stays up in the
+  // air and toggleShield lowers it on the strike tick, as for any other hit.
   engine.causeCritical = (...args) =>
-    state || restoring || ownsShield || targetBlocking(bot, engine.target)
+    state || restoring || blocking(engine.target)
       ? Promise.resolve(false)
       : original.causeCritical(...args);
   engine.doMove = (...args) => {
@@ -266,7 +270,7 @@ function installShieldBreak(
     return original.doMove(...args);
   };
   engine.doStrafe = (...args) => {
-    if (state || ownsShield || targetBlocking(bot, engine.target)) return;
+    if (state || ownsShield || blocking(engine.target)) return;
     return original.doStrafe(...args);
   };
   engine.toggleShield = () => {
@@ -279,7 +283,7 @@ function installShieldBreak(
         !bot.pathfinder.goal &&
         engine.wasVisible &&
         engine.botReach() <= settings.attackRange + 1 &&
-        (restoring || engine.ticksToNextAttack > 0 || targetBlocking(bot, target)),
+        (restoring || engine.ticksToNextAttack > 0 || blocking(target)),
       ),
     );
     return Promise.resolve();

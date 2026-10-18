@@ -230,7 +230,7 @@ for (const version of ['1.20.4', '26.1.2']) {
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 
-  test(`water navigation passes an isolated ledge to reach a mountain bridge without blocks on ${version}`, { timeout: 15000 }, async (t) => {
+  for (const bankPrefix of [false, true]) test(`water navigation passes an isolated ledge to reach a mountain bridge without blocks on ${version}${bankPrefix ? ' with a completed water prefix' : ''}`, { timeout: 15000 }, async (t) => {
     const world = createFlatWorld(version, 56, { renderDistance: 2 })
     for (let x = -8; x <= 18; x++) for (let z = -8; z <= 8; z++) for (let y = 56; y <= 63; y++) world.setBlock(new Vec3(x, y, z), 'water')
     // The tempting nearest exit has no onward land connection.
@@ -245,11 +245,26 @@ for (const version of ['1.20.4', '26.1.2']) {
       pathfinderSettings: { searchTimeoutMs: 1000, tickTimeoutMs: 3, routePrefixMs: 30, maxVisitedNodes: 12000 } }))
     installSurfaceSwimming(rig.bot)
     const getPathTo = rig.bot.pathfinder.getPathTo.bind(rig.bot.pathfinder)
-    let drySearches = 0, verifiedShore = false
+    let drySearches = 0, verifiedShore = false, returnedBankPrefix = false
     rig.bot.pathfinder.getPathTo = (...args: Parameters<typeof getPathTo>) => {
       verifiedShore ||= args[0] instanceof ShoreRouteGoal
       if (rig.bot.entity.onGround && !(rig.bot.entity as any).isInWater) drySearches++
-      return getPathTo(...args)
+      const generated = getPathTo(...args)
+      if (!bankPrefix || !(args[0] instanceof ShoreRouteGoal)) return generated
+      // Exercise a real bank route delivered as the last time-sliced prefix.
+      // Its status must not force an empty search once the bank is reached.
+      return (async function * () {
+        for await (const result of generated) {
+          if (result.result.status === 'partial') continue
+          if (result.result.status === 'success') {
+            await new Promise<void>(resolve => setTimeout(resolve, 35))
+            returnedBankPrefix = true
+            yield { ...result, result: { ...result.result, status: 'partial' as const } }
+            return
+          }
+          yield result
+        }
+      })()
     }
     t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
     const target = new Vec3(4.5, 68, 0.5)
@@ -261,6 +276,7 @@ for (const version of ['1.20.4', '26.1.2']) {
       // A time-bounded shore probe may leave the onward route unverified under
       // load. In that case a dry search is required; a verified route is reused.
       if (verifiedShore) assert.equal(drySearches, 0, 'reuse the verified onward route immediately after landing on the bank')
+      if (bankPrefix) assert.equal(returnedBankPrefix, true, 'exercise a completed water prefix')
     } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
   })
 }

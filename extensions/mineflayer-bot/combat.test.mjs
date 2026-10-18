@@ -622,7 +622,8 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
       assert.ok(bot.swordpvp && bot.pvp && bot.bowpvp && bot.hawkEye, version);
       assert.equal(bot.canSeeEntity, undefined);
       assert.equal(bot.listenerCount("physicTick"), 0);
-      assert.ok(bot.swordpvp.meleeAttackRate.getTicks(null) >= 4, version);
+      // The loop strikes one tick after the counter reaches zero: 5 CPS = 4 ticks.
+      assert.ok(bot.swordpvp.meleeAttackRate.getTicks(null) + 1 >= 4, version);
       const target = {
         id: 2,
         username: "Owner",

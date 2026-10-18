@@ -1,0 +1,404 @@
+{
+  "minecraftVersion": "26.1.2",
+  "tickMs": 50,
+  "trials": 3,
+  "effectiveComboIntervalMs": 100,
+  "settings": {
+    "enabled": true,
+    "adaptiveCombat": true,
+    "combatHealing": true,
+    "pearlEscape": true,
+    "engine": "custom",
+    "style": "auto",
+    "autoTarget": "manual",
+    "targetRange": 24,
+    "reactionMs": 0,
+    "meleeSkill": 100,
+    "cps": 12,
+    "attackRange": 3,
+    "weapon": "sword",
+    "strafe": "intelligent",
+    "criticals": "hop",
+    "sprintTap": "wtap",
+    "shield": true,
+    "shieldBreak": true,
+    "maceDefense": true,
+    "smoothAim": true,
+    "smoothAimSpeed": 100,
+    "bowEnabled": true,
+    "bowEngine": "custom",
+    "bowAccuracy": 90,
+    "bowRange": 48,
+    "bowIntervalMs": 1500,
+    "bowPredict": true,
+    "bowOffhand": false,
+    "meleeFallback": true,
+    "bowDefense": false,
+    "bowDefenseMode": "early",
+    "bowDefenseCheckMs": 50,
+    "bowDefenseRange": 48,
+    "bowDefenseMargin": 0.35,
+    "bowDefenseHoldMs": 300,
+    "bowDefenseRequireDraw": true,
+    "crystalEnabled": true,
+    "crystalPlace": true,
+    "crystalBreak": true,
+    "crystalBuildBase": true,
+    "crystalCover": true,
+    "crystalCoverBlock": "auto",
+    "crystalFastAim": true,
+    "crystalMaxCoverBlocks": 2,
+    "crystalSpawnTimeoutMs": 1500,
+    "crystalRetries": 2,
+    "crystalPlaceRange": 4.5,
+    "crystalBreakRange": 4.5,
+    "crystalMinDamage": 4,
+    "crystalMaxSelfDamage": 6,
+    "crystalMinHealth": 8,
+    "crystalIntervalMs": 250,
+    "crystalPredict": true,
+    "crystalPredictionTicks": 3,
+    "crystalPriority": "damage",
+    "crystalProtectOwners": true,
+    "pearlEnabled": true,
+    "pearlFollow": true,
+    "pearlCome": true,
+    "pearlGoto": false,
+    "pearlChase": true,
+    "pearlChain": true,
+    "pearlMinDistance": 16,
+    "pearlMaxDistance": 48,
+    "pearlCooldownMs": 1500,
+    "pearlMinHealth": 8,
+    "pearlReserve": 0
+  },
+  "observations": [
+    {
+      "trial": 1,
+      "name": "foundation-crystal-attack",
+      "ms": 150,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 63,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4995881897931813,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999988275,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "obsidian",
+          "time": 0
+        },
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4819686539747874,
+            "cursorY": 1,
+            "cursorZ": 0.49999999999883266,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 100
+        },
+        {
+          "name": "attack",
+          "params": {
+            "entityId": 100
+          },
+          "held": "end_crystal",
+          "time": 150
+        }
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "confirmed-base-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "target-enters-range-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "foundation-crystal-attack",
+      "ms": 150,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 63,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4995881897931813,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999988275,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "obsidian",
+          "time": 0
+        },
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4819686539747874,
+            "cursorY": 1,
+            "cursorZ": 0.49999999999883266,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 100
+        },
+        {
+          "name": "attack",
+          "params": {
+            "entityId": 100
+          },
+          "held": "end_crystal",
+          "time": 150
+        }
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "confirmed-base-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "target-enters-range-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "name": "foundation-crystal-attack",
+      "ms": 150,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 63,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4995881897931813,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999988275,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "obsidian",
+          "time": 0
+        },
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.4819686539747874,
+            "cursorY": 1,
+            "cursorZ": 0.49999999999883266,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 100
+        },
+        {
+          "name": "attack",
+          "params": {
+            "entityId": 100
+          },
+          "held": "end_crystal",
+          "time": 150
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "name": "confirmed-base-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    },
+    {
+      "trial": 3,
+      "name": "target-enters-range-placement",
+      "ms": 50,
+      "packets": [
+        {
+          "name": "block_place",
+          "params": {
+            "location": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "direction": 1,
+            "hand": 0,
+            "cursorX": 0.49386675835972493,
+            "cursorY": 1,
+            "cursorZ": 0.4999999999991223,
+            "insideBlock": false,
+            "sequence": 0,
+            "worldBorderHit": false
+          },
+          "held": "end_crystal",
+          "time": 50
+        }
+      ]
+    }
+  ]
+}

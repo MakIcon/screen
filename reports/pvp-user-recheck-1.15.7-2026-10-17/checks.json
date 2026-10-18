@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-10-17T20:17:13.831Z",
+  "eslint": {
+    "exitCode": 0
+  },
+  "prettier": {
+    "exitCode": 1,
+    "files": [
+      "extensions/mineflayer-bot/combat.test.mjs"
+    ],
+    "baselineComparison": {
+      "baselineFormatted": false,
+      "currentFormatted": false
+    }
+  },
+  "sourceArchive": {
+    "entries": 190,
+    "mismatches": []
+  },
+  "codeModifiedByTestTask": false,
+  "typeScript": {
+    "exitCode": 0,
+    "command": "pnpm exec tsc --noEmit -p tsconfig.json",
+    "cwd": "extensions/mineflayer-bot/pathfinding"
+  },
+  "gitDiffCheck": {
+    "exitCode": 0
+  },
+  "baselineWater": {
+    "version": "1.15.6",
+    "revision": "0c57fcdab4617d607d701ad3ecd4062ae06e3800",
+    "exitCode": 1,
+    "sameFailureAsPreviouslyObserved": true,
+    "log": "baseline-water-test.txt"
+  },
+  "worker": {
+    "exitCode": 1,
+    "total": 495,
+    "passed": 494,
+    "failed": 1,
+    "durationMs": 451751.8882,
+    "failure": "worker honors disabled STAY ON WATER and disconnect removes the overlay",
+    "newDuelTestsPassed": 6,
+    "log": "worker-tests.txt"
+  },
+  "unchangedFromBaseline": [
+    {
+      "file": "crystal-movement.cjs",
+      "equal": true
+    },
+    {
+      "file": "crystals.cjs",
+      "equal": true
+    },
+    {
+      "file": "pearls.cjs",
+      "equal": true
+    },
+    {
+      "file": "combat-defaults.json",
+      "equal": true
+    },
+    {
+      "file": "worker.cjs",
+      "equal": true
+    },
+    {
+      "file": "pathfinder.cjs",
+      "equal": true
+    }
+  ]
+}

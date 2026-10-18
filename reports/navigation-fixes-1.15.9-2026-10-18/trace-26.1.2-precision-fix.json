@@ -1,0 +1,1019 @@
+{
+  "version": "26.1.2",
+  "rows": [
+    {
+      "event": "path",
+      "phase": "swim",
+      "tick": 0,
+      "status": "success",
+      "moves": [
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -7.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -6.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -6.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -5.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -5.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -4.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -4.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -3.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -3.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -2.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": -2.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -1.5,
+            "y": 62,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "ForwardJump",
+          "entry": {
+            "x": -1.5,
+            "y": 62,
+            "z": 0.5
+          },
+          "exit": {
+            "x": -0.5,
+            "y": 63,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "ForwardJump",
+          "entry": {
+            "x": -0.5,
+            "y": 63,
+            "z": 0.5
+          },
+          "exit": {
+            "x": 0.5,
+            "y": 64,
+            "z": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "phase": "swim",
+      "tick": 5,
+      "canInterrupt": true,
+      "position": {
+        "x": -7.3226396000000005,
+        "y": 61.89291271357525,
+        "z": 0.4999999999999769
+      },
+      "velocity": {
+        "x": 0.06066396,
+        "y": 0.020380474347870773,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 10,
+      "canInterrupt": true,
+      "position": {
+        "x": -6.816590257403999,
+        "y": 62.360477521036294,
+        "z": 0.49999999999994804
+      },
+      "velocity": {
+        "x": 0.10805902574040002,
+        "y": 0.0970229517807536,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 15,
+      "canInterrupt": true,
+      "position": {
+        "x": -6.1164533810944866,
+        "y": 63.04868102801503,
+        "z": 0.4999999999999192
+      },
+      "velocity": {
+        "x": 0.13604533810944883,
+        "y": 0.11545437069450898,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 20,
+      "canInterrupt": true,
+      "position": {
+        "x": -5.301709757002484,
+        "y": 63.53990192440618,
+        "z": 0.4999999999998903
+      },
+      "velocity": {
+        "x": 0.15257097570024847,
+        "y": 0.04788293418999191,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 25,
+      "canInterrupt": true,
+      "position": {
+        "x": -4.419291994412396,
+        "y": 63.700865199728334,
+        "z": 0.49999999999986144
+      },
+      "velocity": {
+        "x": 0.16232919944123975,
+        "y": 0.015690281044393534,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 30,
+      "canInterrupt": true,
+      "position": {
+        "x": -3.496913329780575,
+        "y": 63.75360964971567,
+        "z": 0.4999999999998326
+      },
+      "velocity": {
+        "x": 0.16809133297805767,
+        "y": 0.005141391675690388,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 35,
+      "canInterrupt": true,
+      "position": {
+        "x": -2.5509381521021313,
+        "y": 63.76615464556371,
+        "z": 0.4999999999998037
+      },
+      "velocity": {
+        "x": 0.1714938152102133,
+        "y": 0,
+        "z": -5.1735046321889124e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "swim",
+      "tick": 40,
+      "canInterrupt": true,
+      "position": {
+        "x": -1.5910294694347864,
+        "y": 63.803754644723284,
+        "z": 0.49999999999977485
+      },
+      "velocity": {
+        "x": 0.1542248417275368,
+        "y": 0.025079999775886524,
+        "z": -4.598670784167922e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": true,
+      "height": 0.6,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 45,
+      "canInterrupt": true,
+      "position": {
+        "x": -0.7525137889555455,
+        "y": 63.58735851932028,
+        "z": 0.499999999999746
+      },
+      "velocity": {
+        "x": 0.15763769789437612,
+        "y": -0.26090648910528275,
+        "z": -5.230988016991011e-15
+      },
+      "onGround": false,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 50,
+      "canInterrupt": true,
+      "position": {
+        "x": -0.3,
+        "y": 63.13147926554397,
+        "z": 0.4999999999997171
+      },
+      "velocity": {
+        "x": 0,
+        "y": 0.005269361649980942,
+        "z": -4.598670784167922e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 55,
+      "canInterrupt": true,
+      "position": {
+        "x": -0.3,
+        "y": 63.788514421134714,
+        "z": 0.49999999999968825
+      },
+      "velocity": {
+        "x": 0,
+        "y": 0.3,
+        "z": -4.598670784167922e-15
+      },
+      "onGround": false,
+      "water": true,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": true,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 60,
+      "canInterrupt": true,
+      "position": {
+        "x": -0.038983044444000026,
+        "y": 64.4612263216875,
+        "z": 0.4999999999996594
+      },
+      "velocity": {
+        "x": 0.07450847399996001,
+        "y": -0.10545423280948936,
+        "z": -5.230988016991011e-15
+      },
+      "onGround": false,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 65,
+      "canInterrupt": true,
+      "position": {
+        "x": 0.3780397140515511,
+        "y": 64,
+        "z": 0.49999999999965344
+      },
+      "velocity": {
+        "x": 0.01972817259205867,
+        "y": -0.0784000015258789,
+        "z": 0
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": false,
+        "sneak": true,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "phase": "swim",
+      "tick": 70,
+      "canInterrupt": true,
+      "position": {
+        "x": 0.5007175435188258,
+        "y": 64,
+        "z": 0.49999999999964206
+      },
+      "velocity": {
+        "x": 0.0028404532728187946,
+        "y": -0.0784000015258789,
+        "z": 0
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": false,
+        "back": false,
+        "sprint": false,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ForwardJump"
+    },
+    {
+      "event": "landed",
+      "phase": "swim",
+      "tick": 73,
+      "ms": 3651.3167000000003
+    },
+    {
+      "event": "path",
+      "phase": "parkour",
+      "tick": 73,
+      "status": "success",
+      "moves": [
+        {
+          "type": "Forward",
+          "entry": {
+            "x": 0.5007175435188258,
+            "y": 64,
+            "z": 0.49999999999964206
+          },
+          "exit": {
+            "x": 1.5,
+            "y": 64,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "Forward",
+          "entry": {
+            "x": 1.5,
+            "y": 64,
+            "z": 0.5
+          },
+          "exit": {
+            "x": 2.5,
+            "y": 64,
+            "z": 0.5
+          }
+        },
+        {
+          "type": "ParkourForward",
+          "entry": {
+            "x": 2.5,
+            "y": 64,
+            "z": 0.5
+          },
+          "exit": {
+            "x": 7.5,
+            "y": 64,
+            "z": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "phase": "parkour",
+      "tick": 75,
+      "canInterrupt": true,
+      "position": {
+        "x": 0.6688856096407381,
+        "y": 64,
+        "z": 0.49999999999959277
+      },
+      "velocity": {
+        "x": 0.09181976410256408,
+        "y": -0.0784000015258789,
+        "z": -2.6929136899722705e-14
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          },
+          {
+            "uuid": "662a6b8d-da3e-4c1c-8813-96ea6097278d",
+            "amount": 0.3,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "Forward"
+    },
+    {
+      "phase": "parkour",
+      "tick": 80,
+      "canInterrupt": true,
+      "leftGround": false,
+      "executing": false,
+      "position": {
+        "x": 2.2895295109151794,
+        "y": 64,
+        "z": 0.4999999999994449
+      },
+      "velocity": {
+        "x": 0.19688776353352874,
+        "y": -0.0784000015258789,
+        "z": -1.6867017031000524e-17
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          },
+          {
+            "uuid": "662a6b8d-da3e-4c1c-8813-96ea6097278d",
+            "amount": 0.3,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ParkourForward"
+    },
+    {
+      "phase": "parkour",
+      "tick": 85,
+      "canInterrupt": false,
+      "leftGround": true,
+      "executing": true,
+      "position": {
+        "x": 4.258233806205864,
+        "y": 65.00133597911214,
+        "z": 0.49999999999944483
+      },
+      "velocity": {
+        "x": 0.3014731011776607,
+        "y": 0.16477328182606651,
+        "z": -4.2593460603704774e-18
+      },
+      "onGround": false,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          },
+          {
+            "uuid": "662a6b8d-da3e-4c1c-8813-96ea6097278d",
+            "amount": 0.3,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ParkourForward"
+    },
+    {
+      "phase": "parkour",
+      "tick": 90,
+      "canInterrupt": false,
+      "leftGround": true,
+      "executing": true,
+      "position": {
+        "x": 5.856935794648838,
+        "y": 65.02442408821369,
+        "z": 0.49999999999944483
+      },
+      "velocity": {
+        "x": 0.284989922217793,
+        "y": -0.22768848754498797,
+        "z": -4.2593460603704774e-18
+      },
+      "onGround": false,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          },
+          {
+            "uuid": "662a6b8d-da3e-4c1c-8813-96ea6097278d",
+            "amount": 0.3,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": true,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      },
+      "move": "ParkourForward"
+    },
+    {
+      "phase": "parkour",
+      "tick": 95,
+      "canInterrupt": true,
+      "leftGround": true,
+      "executing": true,
+      "position": {
+        "x": 7.199059048327641,
+        "y": 64,
+        "z": 0.49999999999944483
+      },
+      "velocity": {
+        "x": 0.1093384884766788,
+        "y": -0.0784000015258789,
+        "z": 3.892388545615504e-18
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": false,
+        "back": true,
+        "sprint": false,
+        "jump": false,
+        "sneak": true,
+        "left": false,
+        "right": false
+      },
+      "move": "ParkourForward"
+    },
+    {
+      "phase": "parkour",
+      "tick": 100,
+      "position": {
+        "x": 7.406871218708231,
+        "y": 64,
+        "z": 0.49999999999944483
+      },
+      "velocity": {
+        "x": 0.014991763123890329,
+        "y": -0.0784000015258789,
+        "z": 0
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": true,
+        "back": false,
+        "sprint": false,
+        "jump": false,
+        "sneak": true,
+        "left": false,
+        "right": false
+      }
+    },
+    {
+      "phase": "parkour",
+      "tick": 105,
+      "position": {
+        "x": 7.51962266836918,
+        "y": 64,
+        "z": 0.49999999999944483
+      },
+      "velocity": {
+        "x": 0.0026106202367228554,
+        "y": -0.0784000015258789,
+        "z": 0
+      },
+      "onGround": true,
+      "water": false,
+      "swimming": false,
+      "height": 1.8,
+      "attribute": {
+        "value": 0.12,
+        "modifiers": [
+          {
+            "uuid": "11111111-1111-4111-8111-111111111111",
+            "amount": 0.1,
+            "operation": 2
+          }
+        ]
+      },
+      "controls": {
+        "forward": false,
+        "back": false,
+        "sprint": false,
+        "jump": false,
+        "sneak": false,
+        "left": false,
+        "right": false
+      }
+    },
+    {
+      "event": "arrived",
+      "phase": "parkour",
+      "tick": 107,
+      "ms": 5359.709400000001
+    }
+  ]
+}

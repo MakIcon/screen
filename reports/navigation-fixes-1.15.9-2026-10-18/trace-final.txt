@@ -1,0 +1,41 @@
+1.20.4 {
+  error: undefined,
+  milestones: [
+    { event: 'landed', phase: 'swim', tick: 74, ms: 3697.6544 },
+    {
+      event: 'arrived',
+      phase: 'parkour',
+      tick: 108,
+      ms: 5405.651600000001
+    }
+  ],
+  last: {
+    event: 'arrived',
+    phase: 'parkour',
+    tick: 108,
+    ms: 5405.651600000001
+  }
+}
+26.1.2 {
+  error: undefined,
+  milestones: [
+    {
+      event: 'landed',
+      phase: 'swim',
+      tick: 73,
+      ms: 3663.3235000000004
+    },
+    {
+      event: 'arrived',
+      phase: 'parkour',
+      tick: 107,
+      ms: 5373.412699999999
+    }
+  ],
+  last: {
+    event: 'arrived',
+    phase: 'parkour',
+    tick: 107,
+    ms: 5373.412699999999
+  }
+}

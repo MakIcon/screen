@@ -1,5 +1,43 @@
 # PvP, mace and bow combat
 
+## Faster melee pursuit and openings (1.15.7)
+
+- **Attack rhythm.** Both melee loops struck one tick after their counter reached
+  zero. A sword now hits every 13 ticks (its full 12.5-tick cooldown) instead of
+  14; axes, the mace and the CPS cap likewise lose the extra tick.
+- **Knockback no longer ends direct pursuit.** A hit lifts the opponent more
+  than a block. That height used to count as a terrain step, handing movement to
+  the navigator for 1.8 s after almost every hit. The footwork now compares the
+  ground under an airborne opponent (Mineflayer does not track other entities'
+  `onGround`, so a changing height marks it as airborne).
+- **Sprint jumps.** On checked flat ground the bot sprint-jumps once running
+  (about a quarter faster than sprinting). It jumps only if the landing stays
+  short of the opponent, allowing for knockback decay, and the whole flight
+  corridor is supported and hazard free. It needs sprinting, more than 6 food and
+  the movement setting that allows sprint jumps (parkour, on by default).
+- **Leading a runner.** Beyond reach + 1 block the bot faces a point up to half a
+  second ahead along the opponent's observed velocity, if that corridor is clear.
+- **Hits from below.** An opponent on a pillar or ledge within reach of the
+  bot's eyes is approached on the bot's own level and hit, instead of waiting
+  for a route on top. A visible opponent within reach is also aimed at and hit
+  while the navigator owns movement.
+- **Sprint reset.** `sprintTap` now acts on the tick after each hit. The old
+  50 ms window rarely matched a tick, so later charged hits were often not
+  sprint hits for the server. Pursuit also agrees with Custom PvP's sprint
+  release before a falling critical instead of toggling sprint twice per tick.
+- **Criticals with a shield.** Holding the bot's own shield during the weapon
+  cooldown no longer cancels critical jumps; the shield is lowered on the strike
+  tick. An opponent's raised shield still prevents pointless jumps.
+- **Openings.** A shield blocks only after 5 ticks of use. A raise the bot saw
+  begin can still be hit within `150 ms − ping`; with unknown ping or ping of
+  150 ms or more this window is closed. An opponent facing more than about 100°
+  away is treated like one eating or drinking (`punish`): no strafing, straight
+  pressure.
+
+`pvp-duel-benchmark.mjs` measures these changes in simulated duels. See
+[the duel benchmark report](COMBAT-DUELS.md) for scenarios, results and
+reproduction commands.
+
 ## Faster PvP decisions (1.15.6)
 
 The director reuses inventory capabilities, corridor block reads, crystal damage
@@ -511,6 +549,14 @@ launcher's existing dynamic entity goals. The launcher keeps its movement
 settings and supplied pathfinding rewrite; a second navigator is not loaded.
 
 ## Packaging and verification
+
+Version 1.15.8 keeps the 1.15.7 pursuit and attack policy while reducing repeated
+geometry work. A validated lead corridor is reused only when the movement check
+has exactly the same start, destination, range and length. The initial six-block
+check still runs in full. Ground and headroom samples reuse column results only
+within one synchronous corridor check; subsequent decisions read the world again.
+Pearl flight checks skip repeated samples of the same block while preserving
+every sampled cell, raycast, candidate angle and entity-collision check.
 
 The Behavior tab has an `АНТИОТБРАСЫВАНИЕ` toggle, disabled by default (also for
 legacy settings). With it off, nearby players and mobs push the bot and server

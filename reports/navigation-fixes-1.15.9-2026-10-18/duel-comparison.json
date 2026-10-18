@@ -1,0 +1,19 @@
+{
+  "beforeVersion": "1.15.8",
+  "afterVersion": "1.15.9",
+  "scenarios": 40,
+  "fields": [
+    "attacks",
+    "landed",
+    "damage",
+    "critical",
+    "sprintHits",
+    "blocked",
+    "outOfReach",
+    "firstHitMs",
+    "meanIntervalMs",
+    "meanDistance",
+    "routedTicks"
+  ],
+  "changes": []
+}

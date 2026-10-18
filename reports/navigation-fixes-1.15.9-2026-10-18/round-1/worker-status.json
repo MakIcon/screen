@@ -1,0 +1,6 @@
+{
+  "command": "pnpm test:worker",
+  "startedAt": "2026-10-17T21:32:36.2218622Z",
+  "finishedAt": "2026-10-17T21:40:34.2827212Z",
+  "exitCode": 0
+}

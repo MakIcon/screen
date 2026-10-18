@@ -1,0 +1,20 @@
+✖ swimming preserves server movement attributes for subsequent parkour on 1.20.4 (8513.9976ms)
+✖ swimming preserves server movement attributes for subsequent parkour on 26.1.2 (8514.6327ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 0
+ℹ cancelled 2
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 22310.5245
+
+✖ failing tests:
+
+test at tests\travel-speed.test.ts:124:29
+✖ swimming preserves server movement attributes for subsequent parkour on 1.20.4 (8513.9976ms)
+  'test timed out after 8500ms'
+
+test at tests\travel-speed.test.ts:124:29
+✖ swimming preserves server movement attributes for subsequent parkour on 26.1.2 (8514.6327ms)
+  'test timed out after 8500ms'

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, no-unmodified-loop-condition, @typescript-eslint/no-throw-literal, @typescript-eslint/strict-boolean-expressions */
 import { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
+import { getAttributeValue } from '@nxg-org/mineflayer-physics-util/dist/physics/info/attributes'
 import { Path } from './mineflayer-specific/algs'
 import * as goals from './mineflayer-specific/goals'
 import { Move } from './mineflayer-specific/move'
@@ -194,7 +195,9 @@ export class PathExecutor {
     let productiveAt = lastProgressAt
     let stoppingAt: Vec3 | undefined
     const adjustStop = (target: Vec3): void => {
-      if (bot.entity.position.xzDistanceTo(target) <= 0.08) {
+      const pos = bot.entity.position
+      const distance = pos.xzDistanceTo(target)
+      if (distance <= 0.08) {
         // Let ground friction finish the stop inside the accepted position.
         // Alternating full forward/back input here creates a small permanent
         // oscillation, especially when catch-up ticks update every frame.
@@ -202,9 +205,22 @@ export class PathExecutor {
       } else stopController.adjustPosition(target, 0.08)
       bot.setControlState('jump', false)
       bot.setControlState('sprint', false)
-      const pos = bot.entity.position
       const projected = pos.offset(bot.entity.velocity.x * 3, 0, bot.entity.velocity.z * 3)
-      bot.setControlState('sneak', !supportedWalkSegment(this.host.world, pos, projected))
+      // A nearly stopped player with a server speed bonus can cross the whole
+      // arrival tolerance in one full walking tap. Use a crouched correction
+      // only for that final alignment, without changing the arrival tolerance.
+      let precisionCorrection = false
+      if (distance > 0.08 && distance < 0.3 && Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) < 0.025) {
+        const physics = bot.physics as typeof bot.physics & { movementSpeedAttribute: string, sprintingUUID: string }
+        const speed = bot.entity.attributes?.[physics.movementSpeedAttribute]
+        // Exclude vanilla sprint, which the next walking tick removes, and
+        // retain all server modifiers without mutating their original array.
+        if (speed != null) precisionCorrection = getAttributeValue({
+          value: speed.value,
+          modifiers: speed.modifiers.filter(modifier => modifier.uuid !== physics.sprintingUUID)
+        }) > 0.100001
+      }
+      bot.setControlState('sneak', precisionCorrection || !supportedWalkSegment(this.host.world, pos, projected))
     }
 
     const completion = new Promise<void>((resolve, reject) => {

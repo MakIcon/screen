@@ -222,7 +222,12 @@ function installCombatNavigation(bot, onError, now = Date.now) {
   };
 }
 
-function configureCombatPlugins(bot, settings, onError = () => {}) {
+function configureCombatPlugins(
+  bot,
+  settings,
+  onError = () => {},
+  { blocking = (entity) => targetBlocking(bot, entity) } = {},
+) {
   installCombatProtocol(bot);
   installArmorManager(bot, onError);
   const custom = require("@nxg-org/mineflayer-custom-pvp");
@@ -244,7 +249,9 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     (smoothLook[originalTurnTime](yaw, pitch) * 100) /
     (settings.smoothAimSpeed ?? defaults.smoothAimSpeed);
 
-  function rotateTowardTarget(target, exact = false) {
+  // `heading` optionally turns the body toward a pursuit lead point while the
+  // pitch still tracks the target's hitbox.
+  function rotateTowardTarget(target, exact = false, heading = null) {
     if (bot.launcherDefendingBow || !target || !canSeeTarget(bot, target)) return Promise.resolve();
     const eyes = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
     const point = target.position.offset(
@@ -254,7 +261,11 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     );
     const delta = point.minus(eyes);
     const horizontal = Math.hypot(delta.x, delta.z);
-    const yaw = horizontal < 0.05 ? bot.entity.yaw : Math.atan2(-delta.x, -delta.z);
+    const toward = heading ? heading.minus(eyes) : delta;
+    const yaw =
+      horizontal < 0.05 || Math.hypot(toward.x, toward.z) < 0.05
+        ? bot.entity.yaw
+        : Math.atan2(-toward.x, -toward.z);
     const turn = Math.atan2(Math.sin(yaw - bot.entity.yaw), Math.cos(yaw - bot.entity.yaw));
     const pitch = Math.atan2(delta.y, horizontal);
     const limit =
@@ -339,20 +350,27 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   bot.swordpvp.checkVisibility = () => {
     bot.swordpvp.wasVisible = canSeeTarget(bot, bot.swordpvp.target);
   };
-  bot.swordpvp.rotate = () => rotateTowardTarget(bot.swordpvp.target);
+  bot.swordpvp.rotate = (heading) => rotateTowardTarget(bot.swordpvp.target, false, heading);
   // Recreate the legacy CPS timing solver after applying the chosen CPS.
   if (bot.supportFeature("doesntHaveOffHandSlot")) {
     bot.swordpvp.meleeAttackRate = new bot.swordpvp.meleeAttackRate.constructor(bot, settings.cps);
   }
+  // Both melee loops strike when their counter reaches -1, one tick after it
+  // reaches zero. Return the remaining wait, so the actual interval equals the
+  // full weapon cooldown or CPS cap instead of one extra tick (sword: 13, not 14).
   const customTiming = bot.swordpvp.meleeAttackRate.getTicks.bind(bot.swordpvp.meleeAttackRate);
   bot.swordpvp.meleeAttackRate.getTicks = (...args) =>
-    Math.max(customTiming(...args), meleeCooldownTicks(bot, args[0]), Math.ceil(20 / settings.cps));
+    Math.max(
+      customTiming(...args),
+      meleeCooldownTicks(bot, args[0]),
+      Math.ceil(20 / settings.cps),
+    ) - 1;
   const customAttempt = bot.swordpvp.attemptAttack.bind(bot.swordpvp);
   bot.swordpvp.attemptAttack = (reason) => {
     if (bot.launcherDefendingBow || bot.launcherSurvival?.busy) return Promise.resolve();
     if (bot.launcherAxeAttacking && !["disableshield", "axecritical"].includes(reason))
       return Promise.resolve();
-    if (reason === "normal" && targetBlocking(bot, bot.swordpvp.target)) return Promise.resolve();
+    if (reason === "normal" && blocking(bot.swordpvp.target)) return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
     if (settings.adaptiveCombat && bot.swordpvp.ticksToNextAttack > 0) return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
@@ -361,7 +379,7 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
     }
     return customAttempt(reason);
   };
-  installShieldBreak(bot, settings, aimedAt, onError, rotateTowardTarget);
+  installShieldBreak(bot, settings, aimedAt, onError, rotateTowardTarget, blocking);
   bot.pvp.attackRange = settings.attackRange;
   bot.pvp.followRange = Math.max(1, settings.attackRange - 0.5);
   bot.pvp.viewDistance = viewDistance;
@@ -381,14 +399,15 @@ function configureCombatPlugins(bot, settings, onError = () => {}) {
   bot.pvp.attemptAttack = () => {
     if (bot.launcherSurvival?.busy) return;
     if (!bot.pvp.target || Math.random() * 100 >= settings.meleeSkill || !aimedAt(bot.pvp.target)) {
-      bot.pvp.timeToNextAttack = 1;
+      // Retry on the next tick: the loop fires when its counter reaches -1.
+      bot.pvp.timeToNextAttack = 0;
       return;
     }
     attempt();
   };
   const timing = bot.pvp.meleeAttackRate.getTicks.bind(bot.pvp.meleeAttackRate);
   bot.pvp.meleeAttackRate.getTicks = (...args) =>
-    Math.max(timing(...args), meleeCooldownTicks(bot), Math.ceil(20 / settings.cps));
+    Math.max(timing(...args), meleeCooldownTicks(bot), Math.ceil(20 / settings.cps)) - 1;
 }
 
 const HOSTILES = new Set([
@@ -435,7 +454,29 @@ function createCombatController(
 ) {
   const settings = normalizeCombat(value);
   installCombatNavigation(bot, onError, now);
-  if (loadPlugins) configureCombatPlugins(bot, settings, onError);
+  // Vanilla shields block only after 5 ticks (250 ms) of use. A raise that the
+  // bot saw begin may still be hit if the strike reaches the server in time:
+  // subtract the round trip, one tick of entity sync and one tick of margin.
+  // Unknown or slow connections close the window.
+  const shields = new WeakMap();
+  function observeShield(entity) {
+    const raised = targetBlocking(bot, entity);
+    const state = shields.get(entity) ?? { raised: false, since: null, loweredAt: -Infinity };
+    // Only a raise that began after a recent lowered observation has a known start.
+    if (raised && !state.raised) state.since = now() - state.loweredAt <= 100 ? now() : null;
+    if (!raised) state.loweredAt = now();
+    state.raised = raised;
+    shields.set(entity, state);
+    return state;
+  }
+  function shieldBlocking(entity) {
+    const state = observeShield(entity);
+    if (!state.raised) return false;
+    const ping = bot.player?.ping;
+    const window = Number.isFinite(ping) && ping > 0 ? 150 - ping : 0;
+    return state.since === null || now() - state.since >= window;
+  }
+  if (loadPlugins) configureCombatPlugins(bot, settings, onError, { blocking: shieldBlocking });
   let target = null;
   let workTarget = false;
   let workSuspended = false;
@@ -462,8 +503,8 @@ function createCombatController(
   let recovery = null,
     decision = null,
     recoveryMoving = false;
-  const brain = createCombatBrain(bot, settings, { now });
-  const footwork = createCombatFootwork(bot, settings, { now, onError });
+  const brain = createCombatBrain(bot, settings, { now, blocking: shieldBlocking });
+  const footwork = createCombatFootwork(bot, settings, { now, onError, blocking: shieldBlocking });
   const recoveryMovement = createCrystalMovement(bot, { now });
   const nativeMove = bot.swordpvp?.doMove?.bind(bot.swordpvp);
   const nativeStrafe = bot.swordpvp?.doStrafe?.bind(bot.swordpvp);
@@ -497,7 +538,15 @@ function createCombatController(
         : nativeCritical();
     if (nativeRotate)
       bot.swordpvp.rotate = () => {
-        if (!bot.pathfinder.goal) return nativeRotate();
+        // The route owns the view while it moves, except for a visible target
+        // already within reach: take the hit instead of looking along the path.
+        if (!bot.pathfinder.goal) return nativeRotate(footwork.lead);
+        if (
+          bot.swordpvp.target &&
+          bot.swordpvp.botReach() <= settings.attackRange + 0.25 &&
+          canSeeTarget(bot, bot.swordpvp.target)
+        )
+          return nativeRotate();
       };
     bot.swordpvp.on("attackedTarget", footwork.attacked);
   }
@@ -1484,6 +1533,8 @@ function createCombatController(
   bot.on("entityMoved", moved);
   const entityChanged = (entity) => {
     if (!entity) return;
+    // Timestamp a shield raise when its metadata arrives, not on the next tick.
+    if (entity === target) observeShield(entity);
     observePearlHand(entity);
     if (target && (entity === target || isCrystal(entity) || isOwner(entity?.username)))
       invalidateCrystal();

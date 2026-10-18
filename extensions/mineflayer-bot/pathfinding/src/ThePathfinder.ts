@@ -1377,14 +1377,17 @@ export class ThePathfinder {
           continue
         }
         await this.cleanupBot(false, continueSwimming())
-        if (prefix) {
+        const arrived = this.bot.entity.position
+        const actual = { ...path.path[path.path.length - 1], x: Math.floor(arrived.x), y: Math.floor(arrived.y + 1e-4),
+          z: Math.floor(arrived.z), exitPos: arrived } as Move
+        // A time-sliced water prefix can already end on the selected bank.
+        // Complete that shore goal now instead of searching an empty dry path
+        // before handing control to its verified continuation.
+        if (prefix && !(shore != null && this.bot.entity.onGround && routingGoal.isEnd(actual))) {
           prefixVisits.set(last.hash, (prefixVisits.get(last.hash) ?? 0) + 1)
           if (prefixVisits.size > 32) prefixVisits.delete(prefixVisits.keys().next().value!)
           continue
         }
-        const arrived = this.bot.entity.position
-        const actual = { ...path.path[path.path.length - 1], x: Math.floor(arrived.x), y: Math.floor(arrived.y + 1e-4),
-          z: Math.floor(arrived.z), exitPos: arrived } as Move
         if (!(routingGoal instanceof goals.GoalFollowEntity) && !routingGoal.isEnd(actual)) {
           throw new NavigationError('recovery', 'Movement ended before reaching the route goal.')
         }

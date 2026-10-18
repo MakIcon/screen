@@ -1,0 +1,41 @@
+{
+  "startedAt": "2026-10-17T20:24:24.715Z",
+  "finishedAt": "2026-10-17T20:25:09.279Z",
+  "duelComparisons": 40,
+  "trialsPerVersion": 3,
+  "duelsTotal": 240,
+  "allResultsDeterministic": true,
+  "errors": [],
+  "totals26_1_2": {
+    "default": {
+      "before": {
+        "landed": 62,
+        "damage": 437.5,
+        "critical": 1,
+        "blocked": 0
+      },
+      "after": {
+        "landed": 94,
+        "damage": 728,
+        "critical": 20,
+        "blocked": 0
+      }
+    },
+    "aggressive": {
+      "before": {
+        "landed": 62,
+        "damage": 437.5,
+        "critical": 1,
+        "blocked": 0
+      },
+      "after": {
+        "landed": 98,
+        "damage": 749,
+        "critical": 18,
+        "blocked": 0
+      }
+    }
+  },
+  "changedFromPriorDuelReport": [],
+  "sourceFilesUnchanged": 118
+}

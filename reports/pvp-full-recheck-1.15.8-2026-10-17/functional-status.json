@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "startedAt": "2026-10-17T20:47:41.4508690Z",
+    "command": "pnpm test:worker",
+    "exitCode": 1,
+    "finishedAt": "2026-10-17T20:55:29.3039508Z"
+  },
+  "pathfinder": {
+    "startedAt": "2026-10-17T20:55:29.3264474Z",
+    "command": "pnpm test:pathfinder",
+    "exitCode": 1,
+    "finishedAt": "2026-10-17T21:10:59.0014941Z"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "run.mjs": {
+    "exitCode": 0,
+    "startedAt": "2026-10-17T21:11:00.1530357Z",
+    "finishedAt": "2026-10-17T21:12:10.2282647Z"
+  },
+  "paired-cpu.mjs": {
+    "exitCode": 0,
+    "startedAt": "2026-10-17T21:12:10.2638110Z",
+    "finishedAt": "2026-10-17T21:13:18.9802275Z"
+  },
+  "run-duels.mjs": {
+    "exitCode": 0,
+    "startedAt": "2026-10-17T21:13:18.9821457Z",
+    "finishedAt": "2026-10-17T21:15:18.0010406Z"
+  }
+}

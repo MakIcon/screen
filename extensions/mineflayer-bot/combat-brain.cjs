@@ -109,7 +109,11 @@ function crystalOpportunity(s, action, settings) {
     : reject("weapon pressure is more valuable than this setup");
 }
 
-function createCombatBrain(bot, settings, { now = Date.now } = {}) {
+function createCombatBrain(
+  bot,
+  settings,
+  { now = Date.now, blocking = (entity) => targetBlocking(bot, entity) } = {},
+) {
   let inventory = [],
     capabilities = {},
     inventoryAt = -Infinity,
@@ -165,16 +169,24 @@ function createCombatBrain(bot, settings, { now = Date.now } = {}) {
         settings.combatHealing &&
         bot.launcherSurvival?.requestCombatHeal &&
         ((bot.health <= 12 && apple) || food);
+      // An opponent looking more than ~100° away cannot aim a hit back.
+      const away = bot.entity.position.minus(target.position);
+      const awayLength = Math.hypot(away.x, away.z);
+      const facing =
+        !Number.isFinite(target.yaw) ||
+        awayLength < 0.01 ||
+        (-Math.sin(target.yaw) * away.x - Math.cos(target.yaw) * away.z) / awayLength > -0.2;
       const snapshot = {
         health: bot.health,
         enemyHealth: enemy.effective,
         enemy,
+        facing,
         distance: bot.entity.position.distanceTo(target.position),
         reach: settings.attackRange,
         damage: damage.reduce((total, hit) => total + hit.amount, 0),
         visible,
         airborne,
-        blocking: Boolean(targetBlocking(bot, target)),
+        blocking: Boolean(blocking(target)),
         axe: settings.shieldBreak && capabilities.axe,
         mace: Boolean(bot.registry?.itemsByName?.mace) && capabilities.mace,
         wind: capabilities.wind,

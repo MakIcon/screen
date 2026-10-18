@@ -1,0 +1,761 @@
+{
+  "startedAt": "2026-10-17T21:11:04.031Z",
+  "finishedAt": "2026-10-17T21:12:10.125Z",
+  "node": "v24.13.1",
+  "cpu": "AMD Ryzen 5 9600X 6-Core Processor             ",
+  "baselineRevision": "0c57fcdab4617d607d701ad3ecd4062ae06e3800",
+  "workingTreeHead": "0c57fcdab4617d607d701ad3ecd4062ae06e3800",
+  "initialStatus": " M extensions/mineflayer-bot/COMBAT.md\n M extensions/mineflayer-bot/build-pathfinder.mjs\n M extensions/mineflayer-bot/combat-brain.cjs\n M extensions/mineflayer-bot/combat-brain.test.mjs\n M extensions/mineflayer-bot/combat-footwork.cjs\n M extensions/mineflayer-bot/combat.cjs\n M extensions/mineflayer-bot/combat.test.mjs\n M extensions/mineflayer-bot/crystal-movement.cjs\n M extensions/mineflayer-bot/extension.json\n M extensions/mineflayer-bot/melee-shield.cjs\n M extensions/mineflayer-bot/package-lock.json\n M extensions/mineflayer-bot/package.json\n M extensions/mineflayer-bot/pathfinder-source.json\n M extensions/mineflayer-bot/pearls.cjs\n?? extensions/mineflayer-bot/COMBAT-DUELS.md\n?? extensions/mineflayer-bot/duels.test.mjs\n?? extensions/mineflayer-bot/pvp-duel-benchmark.mjs\n",
+  "dependencies": {
+    "mineflayer": "4.37.1",
+    "minecraft-data": "3.113.2",
+    "prismarine-physics": "1.11.1",
+    "minecraft-protocol": "1.67.0"
+  },
+  "minecraftVersion": "26.1.2",
+  "settings": {
+    "enabled": true,
+    "adaptiveCombat": true,
+    "combatHealing": true,
+    "pearlEscape": true,
+    "engine": "custom",
+    "style": "auto",
+    "autoTarget": "manual",
+    "targetRange": 24,
+    "reactionMs": 0,
+    "meleeSkill": 100,
+    "cps": 12,
+    "attackRange": 3,
+    "weapon": "sword",
+    "strafe": "intelligent",
+    "criticals": "hop",
+    "sprintTap": "wtap",
+    "shield": true,
+    "shieldBreak": true,
+    "maceDefense": true,
+    "smoothAim": true,
+    "smoothAimSpeed": 100,
+    "bowEnabled": true,
+    "bowEngine": "custom",
+    "bowAccuracy": 90,
+    "bowRange": 48,
+    "bowIntervalMs": 1500,
+    "bowPredict": true,
+    "bowOffhand": false,
+    "meleeFallback": true,
+    "bowDefense": false,
+    "bowDefenseMode": "early",
+    "bowDefenseCheckMs": 50,
+    "bowDefenseRange": 48,
+    "bowDefenseMargin": 0.35,
+    "bowDefenseHoldMs": 300,
+    "bowDefenseRequireDraw": true,
+    "crystalEnabled": true,
+    "crystalPlace": true,
+    "crystalBreak": true,
+    "crystalBuildBase": true,
+    "crystalCover": true,
+    "crystalCoverBlock": "auto",
+    "crystalFastAim": true,
+    "crystalMaxCoverBlocks": 2,
+    "crystalSpawnTimeoutMs": 1500,
+    "crystalRetries": 2,
+    "crystalPlaceRange": 4.5,
+    "crystalBreakRange": 4.5,
+    "crystalMinDamage": 4,
+    "crystalMaxSelfDamage": 6,
+    "crystalMinHealth": 8,
+    "crystalIntervalMs": 250,
+    "crystalPredict": true,
+    "crystalPredictionTicks": 3,
+    "crystalPriority": "damage",
+    "crystalProtectOwners": true,
+    "pearlEnabled": true,
+    "pearlFollow": true,
+    "pearlCome": true,
+    "pearlGoto": false,
+    "pearlChase": true,
+    "pearlChain": true,
+    "pearlMinDistance": 16,
+    "pearlMaxDistance": 48,
+    "pearlCooldownMs": 1500,
+    "pearlMinHealth": 8,
+    "pearlReserve": 0
+  },
+  "method": {
+    "trials": 3,
+    "samplesPerTrial": 100,
+    "warmupSamples": 20,
+    "movementBatch": 50,
+    "entities": 66,
+    "runOrders": [
+      [
+        "reference",
+        "before",
+        "after"
+      ],
+      [
+        "after",
+        "reference",
+        "before"
+      ],
+      [
+        "before",
+        "after",
+        "reference"
+      ]
+    ],
+    "resultEquivalencePassed": true,
+    "serializedPacketValidationPassed": true,
+    "simulatedTickMs": 50,
+    "effectiveComboIntervalMs": 100
+  },
+  "profiles": {
+    "reference": {
+      "version": "1.15.6",
+      "sha256": {
+        "armor-manager.cjs": "6fc417654ecace17439fbb55daa15a6b1ed1d6c9520f1d407ebb19a5e8912115",
+        "auto-eat.cjs": "770a90427e5b2cf0da54f204b35dd4bcce6638b12c27d42d829ac0063f0f6ba7",
+        "bow-defense.cjs": "3d4cc5b823d1e6ec84bae297c56d6e77dbbdd3d8efebdcfbe6883993d01f0856",
+        "combat-brain.cjs": "0cf51302bbe384aadb3f4a916858e254910a860e269418d06acb3a2a2c8070fc",
+        "combat-defaults.json": "a80e1430fdf742d3f9ec7628f948a46fd85b5fd505ac7c71819d231e9cbcaffc",
+        "combat-footwork.cjs": "2b53f0e8b6ccdba7b4d4d824a4f6fa0b3e4f69c3e38811946bea121976469208",
+        "combat-inventory.cjs": "f31cefef7e867e86371bba9e461c3af653139afbf54e950aa88efa0fb3ef3a26",
+        "combat.cjs": "8bb89a5a78a34cf7b734231642a3c5e2aac1e96a4ec2e6be9eac5fdd7535dbe3",
+        "crystal-movement.cjs": "5115496368aa1cef5b5c4cd74386dd8d930ae11908adc6df2e6ee78639f3e533",
+        "crystals.cjs": "a9992c09e011091c9937a4ff4d1280a7123bbf42020bdf935c695d3587eeef46",
+        "decision-benchmark-results.json": "f64b97a8ffadc4d2fe773447a28e2ea3e9961be78e9454b534be188eaa3b4c60",
+        "emergency-mlg.cjs": "3db1459f121cc007be62aa87792f13d4d9d0725cd4078b306c4ca972d13d1305",
+        "extension.json": "715572952fe7874786f15fdaa368bf807e47a471f86ccc4752ad35f0aedd8542",
+        "gathering-commands.cjs": "edefab2f152fcaa6bd60778ea9774c1afeef548229e9af8a7acef44c40f93857",
+        "gathering-defaults.json": "688ec1323ad842a06dd2f59a3718bd2b3f9580ccf22ec759ee565663321b79ff",
+        "gathering-defense.cjs": "50f6927530cfd7031e8148cd763d90f503cd170fdfe9790f375ebf68ed4fff7d",
+        "gathering-plan.cjs": "a7487fc2515417664889f9e223d8fffaf2aee706ac7bba7cd42d14996d0e8f88",
+        "gathering-scan.cjs": "fb1c3e89088eb11b51e7ff99a1a3f91a85df1b5a437ad411fcf2cd9e8c2aa6da",
+        "gathering-storage.cjs": "e45d61e26230da50fe0edff51e38134fae6866d0862e16c33febdd8996e02033",
+        "gathering.cjs": "8de6c57bb8fa2a7636147ee713cade22afb151898e1c24e16f26e24e87255067",
+        "knockback.cjs": "bb69b7c0db7da579d3045e313b07e5af86d7d4cee85dc2a07f7f1ac6aed2a596",
+        "mace.cjs": "ffea6df1417068b5239c11009fb745bfb2dec24d855981d4b268e1e4af205a15",
+        "melee-shield.cjs": "057cf099e7d99f5c548490cdeed56db5b25a8c47001761dc3eb09242667e2437",
+        "package-lock.json": "93ba3b2a677824a24415f7b98c4bbc5a2ba4bfe3e8d576180853e07d7be25785",
+        "package.json": "b42b2ff9e0e84b35f1309cd90335d32c10c99345612ae13a68cb8e6ce3837226",
+        "pathfinder-source.json": "bb5bc8492295aa8c12c1a9d874234669c269085857826693c66de9d4740a8c62",
+        "pathfinder.cjs": "0f41b065be315ba05533ad94e8affc21faff9fc41322d5e416618471cfb5a671",
+        "pearls.cjs": "eec29870837008eeb585d85d981e3343abf77041af74e34b9500cce2026ad168",
+        "production-commands.cjs": "dfd59d8ea03a441fe9111aa62a2772cedda35c0a335099b901ef0d87f0ce9270",
+        "production-plan.cjs": "5b01e14481b390ee353a027d0fc270dcf9a8cd2775488c5bbc30cf9d43063abe",
+        "production.cjs": "77b29784ce1daff53314e92159acf8462c3f8314b2168005f3f2dd00321a0a09",
+        "restore-pathfinder-source.cjs": "0f360bc246796e5e14a9e32de62a906c01f89f91a673245e64042a0e465b7cb6",
+        "storage-filters.json": "cd4cd6a0b3f03494f743d14309752c1ae15640bf8ff7db4bdb9c6e341c5bb186",
+        "storage-scan.cjs": "211fd256ca619353ea494d33b33d0f1c3e441dcdb0b59308c171e438cb561516",
+        "survival-defaults.json": "7b415ce7144261e517500502893242eb6494200d8b268bc120c617b16db36ed9",
+        "survival.cjs": "38acac7aa9c3e188ba8e94990a6543194fa972032c8642881950ca0784ade686",
+        "web-inventory.cjs": "c5af94cb43c17ba926145f5d08f33b0b0c58017c6fe8fc75be4e38fb7d75a2f4",
+        "worker.cjs": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895",
+        "workflow.cjs": "8e8cfcbd603880286a37ade617954019a01ce7ede077d1cdb8605954c82160ad"
+      }
+    },
+    "before": {
+      "version": "1.15.7",
+      "sha256": {
+        "armor-manager.cjs": "6fc417654ecace17439fbb55daa15a6b1ed1d6c9520f1d407ebb19a5e8912115",
+        "auto-eat.cjs": "770a90427e5b2cf0da54f204b35dd4bcce6638b12c27d42d829ac0063f0f6ba7",
+        "bow-defense.cjs": "3d4cc5b823d1e6ec84bae297c56d6e77dbbdd3d8efebdcfbe6883993d01f0856",
+        "combat-brain.cjs": "79799869f136026916e375618a00af7a0da93d6a1df8c2e0f7a9de3f7358bb1d",
+        "combat-defaults.json": "a80e1430fdf742d3f9ec7628f948a46fd85b5fd505ac7c71819d231e9cbcaffc",
+        "combat-footwork.cjs": "f869f1f050dc3f69a61657c7930a80604376aa8f5368d1182b98bf6c265f2ff0",
+        "combat-inventory.cjs": "f31cefef7e867e86371bba9e461c3af653139afbf54e950aa88efa0fb3ef3a26",
+        "combat.cjs": "b8d99e9a0d256d1b90304d533a9473b2bea742800b185927a283115a13d2385a",
+        "crystal-movement.cjs": "5115496368aa1cef5b5c4cd74386dd8d930ae11908adc6df2e6ee78639f3e533",
+        "crystals.cjs": "a9992c09e011091c9937a4ff4d1280a7123bbf42020bdf935c695d3587eeef46",
+        "decision-benchmark-results.json": "f64b97a8ffadc4d2fe773447a28e2ea3e9961be78e9454b534be188eaa3b4c60",
+        "emergency-mlg.cjs": "3db1459f121cc007be62aa87792f13d4d9d0725cd4078b306c4ca972d13d1305",
+        "extension.json": "4dfed60ea6b70de90c5c1bea07a6d0b1f90ff56ef2bc231b42734154b42feb70",
+        "gathering-commands.cjs": "edefab2f152fcaa6bd60778ea9774c1afeef548229e9af8a7acef44c40f93857",
+        "gathering-defaults.json": "688ec1323ad842a06dd2f59a3718bd2b3f9580ccf22ec759ee565663321b79ff",
+        "gathering-defense.cjs": "50f6927530cfd7031e8148cd763d90f503cd170fdfe9790f375ebf68ed4fff7d",
+        "gathering-plan.cjs": "a7487fc2515417664889f9e223d8fffaf2aee706ac7bba7cd42d14996d0e8f88",
+        "gathering-scan.cjs": "fb1c3e89088eb11b51e7ff99a1a3f91a85df1b5a437ad411fcf2cd9e8c2aa6da",
+        "gathering-storage.cjs": "e45d61e26230da50fe0edff51e38134fae6866d0862e16c33febdd8996e02033",
+        "gathering.cjs": "8de6c57bb8fa2a7636147ee713cade22afb151898e1c24e16f26e24e87255067",
+        "knockback.cjs": "bb69b7c0db7da579d3045e313b07e5af86d7d4cee85dc2a07f7f1ac6aed2a596",
+        "mace.cjs": "ffea6df1417068b5239c11009fb745bfb2dec24d855981d4b268e1e4af205a15",
+        "melee-shield.cjs": "40d0484aa2b6bbf705baa135ffe27ffbe594a901ea87651981d360b1a48e9421",
+        "package-lock.json": "2f19cc8263d5e6d06f61ce0eed951a690ef2e69b730ec1c173be227f2f830755",
+        "package.json": "6c40177ff5b0b9e01a0853e2f73743e1d8a6d984164a292ef346d74fbd9da77c",
+        "pathfinder-source.json": "a3dfafbfca9562bea7092c23c82d8f159b74505c0daccaa6fb597422b7fff300",
+        "pathfinder.cjs": "0f41b065be315ba05533ad94e8affc21faff9fc41322d5e416618471cfb5a671",
+        "pearls.cjs": "eec29870837008eeb585d85d981e3343abf77041af74e34b9500cce2026ad168",
+        "production-commands.cjs": "dfd59d8ea03a441fe9111aa62a2772cedda35c0a335099b901ef0d87f0ce9270",
+        "production-plan.cjs": "5b01e14481b390ee353a027d0fc270dcf9a8cd2775488c5bbc30cf9d43063abe",
+        "production.cjs": "77b29784ce1daff53314e92159acf8462c3f8314b2168005f3f2dd00321a0a09",
+        "restore-pathfinder-source.cjs": "0f360bc246796e5e14a9e32de62a906c01f89f91a673245e64042a0e465b7cb6",
+        "storage-filters.json": "cd4cd6a0b3f03494f743d14309752c1ae15640bf8ff7db4bdb9c6e341c5bb186",
+        "storage-scan.cjs": "211fd256ca619353ea494d33b33d0f1c3e441dcdb0b59308c171e438cb561516",
+        "survival-defaults.json": "7b415ce7144261e517500502893242eb6494200d8b268bc120c617b16db36ed9",
+        "survival.cjs": "38acac7aa9c3e188ba8e94990a6543194fa972032c8642881950ca0784ade686",
+        "web-inventory.cjs": "c5af94cb43c17ba926145f5d08f33b0b0c58017c6fe8fc75be4e38fb7d75a2f4",
+        "worker.cjs": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895",
+        "workflow.cjs": "8e8cfcbd603880286a37ade617954019a01ce7ede077d1cdb8605954c82160ad"
+      }
+    },
+    "after": {
+      "version": "1.15.8",
+      "sha256": {
+        "armor-manager.cjs": "6fc417654ecace17439fbb55daa15a6b1ed1d6c9520f1d407ebb19a5e8912115",
+        "auto-eat.cjs": "770a90427e5b2cf0da54f204b35dd4bcce6638b12c27d42d829ac0063f0f6ba7",
+        "bow-defense.cjs": "3d4cc5b823d1e6ec84bae297c56d6e77dbbdd3d8efebdcfbe6883993d01f0856",
+        "combat-brain.cjs": "79799869f136026916e375618a00af7a0da93d6a1df8c2e0f7a9de3f7358bb1d",
+        "combat-defaults.json": "a80e1430fdf742d3f9ec7628f948a46fd85b5fd505ac7c71819d231e9cbcaffc",
+        "combat-footwork.cjs": "a03abd83bc92c005ac75ea20d042050896cb77c03c65ba5ff93f66db28c204a9",
+        "combat-inventory.cjs": "f31cefef7e867e86371bba9e461c3af653139afbf54e950aa88efa0fb3ef3a26",
+        "combat.cjs": "b8d99e9a0d256d1b90304d533a9473b2bea742800b185927a283115a13d2385a",
+        "crystal-movement.cjs": "765670c6805d1859a454fb70162be98a2432969174349571451d2548650a2f98",
+        "crystals.cjs": "a9992c09e011091c9937a4ff4d1280a7123bbf42020bdf935c695d3587eeef46",
+        "decision-benchmark-results.json": "f64b97a8ffadc4d2fe773447a28e2ea3e9961be78e9454b534be188eaa3b4c60",
+        "emergency-mlg.cjs": "3db1459f121cc007be62aa87792f13d4d9d0725cd4078b306c4ca972d13d1305",
+        "extension.json": "b7de46fa2b97be49844839bca336d1f72569c4c6364d81cca6f3f2c143108503",
+        "gathering-commands.cjs": "edefab2f152fcaa6bd60778ea9774c1afeef548229e9af8a7acef44c40f93857",
+        "gathering-defaults.json": "688ec1323ad842a06dd2f59a3718bd2b3f9580ccf22ec759ee565663321b79ff",
+        "gathering-defense.cjs": "50f6927530cfd7031e8148cd763d90f503cd170fdfe9790f375ebf68ed4fff7d",
+        "gathering-plan.cjs": "a7487fc2515417664889f9e223d8fffaf2aee706ac7bba7cd42d14996d0e8f88",
+        "gathering-scan.cjs": "fb1c3e89088eb11b51e7ff99a1a3f91a85df1b5a437ad411fcf2cd9e8c2aa6da",
+        "gathering-storage.cjs": "e45d61e26230da50fe0edff51e38134fae6866d0862e16c33febdd8996e02033",
+        "gathering.cjs": "8de6c57bb8fa2a7636147ee713cade22afb151898e1c24e16f26e24e87255067",
+        "knockback.cjs": "bb69b7c0db7da579d3045e313b07e5af86d7d4cee85dc2a07f7f1ac6aed2a596",
+        "mace.cjs": "ffea6df1417068b5239c11009fb745bfb2dec24d855981d4b268e1e4af205a15",
+        "melee-shield.cjs": "40d0484aa2b6bbf705baa135ffe27ffbe594a901ea87651981d360b1a48e9421",
+        "package-lock.json": "3260c26534bf3d35c8ea40b64ce4fa653ae84dd074af7133d73ab5b54620c805",
+        "package.json": "31d623b4babb7e94e6f3a7a3bd38866d167a80922299df80c2bcabea75f5bf7c",
+        "pathfinder-source.json": "02feaa6a243d021e166445cbfc1b201926023d3ca36d3d13d8ea6ce4ee3d4f78",
+        "pathfinder.cjs": "0f41b065be315ba05533ad94e8affc21faff9fc41322d5e416618471cfb5a671",
+        "pearls.cjs": "0bb811fdc702c2655ff79c67d927bc8e75a1e69fb8b68ee2c7e7deb4de09ac11",
+        "production-commands.cjs": "dfd59d8ea03a441fe9111aa62a2772cedda35c0a335099b901ef0d87f0ce9270",
+        "production-plan.cjs": "5b01e14481b390ee353a027d0fc270dcf9a8cd2775488c5bbc30cf9d43063abe",
+        "production.cjs": "77b29784ce1daff53314e92159acf8462c3f8314b2168005f3f2dd00321a0a09",
+        "restore-pathfinder-source.cjs": "0f360bc246796e5e14a9e32de62a906c01f89f91a673245e64042a0e465b7cb6",
+        "storage-filters.json": "cd4cd6a0b3f03494f743d14309752c1ae15640bf8ff7db4bdb9c6e341c5bb186",
+        "storage-scan.cjs": "211fd256ca619353ea494d33b33d0f1c3e441dcdb0b59308c171e438cb561516",
+        "survival-defaults.json": "7b415ce7144261e517500502893242eb6494200d8b268bc120c617b16db36ed9",
+        "survival.cjs": "38acac7aa9c3e188ba8e94990a6543194fa972032c8642881950ca0784ade686",
+        "web-inventory.cjs": "c5af94cb43c17ba926145f5d08f33b0b0c58017c6fe8fc75be4e38fb7d75a2f4",
+        "worker.cjs": "86b9d9b6d9b4b746667d0c4d7224b94668b3de07fcc7f679d48911f4527ff895",
+        "workflow.cjs": "8e8cfcbd603880286a37ade617954019a01ce7ede077d1cdb8605954c82160ad"
+      }
+    }
+  },
+  "changedDuringRun": [],
+  "cpuResults": [
+    {
+      "name": "action-and-item",
+      "profiles": {
+        "reference": {
+          "medianMs": 0.0006864000000000488,
+          "p95Ms": 0.0013939000000000306,
+          "trialMediansMs": [
+            0.0008347999999998592,
+            0.00047820000000001526,
+            0.0006864000000000488
+          ],
+          "blockReads": 0,
+          "raycasts": 0,
+          "result": "push"
+        },
+        "before": {
+          "medianMs": 0.0008516999999999371,
+          "p95Ms": 0.0020608999999999467,
+          "trialMediansMs": [
+            0.0009122999999999592,
+            0.0004531000000000631,
+            0.0008516999999999371
+          ],
+          "blockReads": 0,
+          "raycasts": 0,
+          "result": "push"
+        },
+        "after": {
+          "medianMs": 0.0007804000000000996,
+          "p95Ms": 0.001983500000000049,
+          "trialMediansMs": [
+            0.0007262000000000625,
+            0.0007804000000000996,
+            0.0007877999999998338
+          ],
+          "blockReads": 0,
+          "raycasts": 0,
+          "result": "push"
+        }
+      }
+    },
+    {
+      "name": "movement-open-ground",
+      "profiles": {
+        "reference": {
+          "medianMs": 0.014634000000000924,
+          "p95Ms": 0.036170000000001895,
+          "trialMediansMs": [
+            0.01669800000000123,
+            0.010814000000000306,
+            0.014634000000000924
+          ],
+          "blockReads": 9,
+          "raycasts": 0,
+          "result": true
+        },
+        "before": {
+          "medianMs": 0.031757999999999814,
+          "p95Ms": 0.0659900000000016,
+          "trialMediansMs": [
+            0.039156000000002675,
+            0.020488000000000284,
+            0.031757999999999814
+          ],
+          "blockReads": 18,
+          "raycasts": 0,
+          "result": true
+        },
+        "after": {
+          "medianMs": 0.009916000000002896,
+          "p95Ms": 0.031394000000000234,
+          "trialMediansMs": [
+            0.009916000000002896,
+            0.008686000000002423,
+            0.010832000000000334
+          ],
+          "blockReads": 9,
+          "raycasts": 0,
+          "result": true
+        }
+      }
+    },
+    {
+      "name": "crystal-new-layout",
+      "profiles": {
+        "reference": {
+          "medianMs": 0.8527999999998883,
+          "p95Ms": 1.8402000000000953,
+          "trialMediansMs": [
+            1.1751999999999043,
+            0.6535000000000082,
+            0.8527999999998883
+          ],
+          "blockReads": 403,
+          "raycasts": 93,
+          "result": {
+            "type": "build",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        },
+        "before": {
+          "medianMs": 1.001299999999901,
+          "p95Ms": 3.1438000000000557,
+          "trialMediansMs": [
+            1.001299999999901,
+            0.6002000000000862,
+            1.1403999999999996
+          ],
+          "blockReads": 403,
+          "raycasts": 93,
+          "result": {
+            "type": "build",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        },
+        "after": {
+          "medianMs": 0.9569000000001324,
+          "p95Ms": 2.088899999999967,
+          "trialMediansMs": [
+            1.0152000000000498,
+            0.8088000000000193,
+            0.9569000000001324
+          ],
+          "blockReads": 403,
+          "raycasts": 93,
+          "result": {
+            "type": "build",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        }
+      }
+    },
+    {
+      "name": "crystal-continue-layout",
+      "profiles": {
+        "reference": {
+          "medianMs": 0.1972000000000662,
+          "p95Ms": 0.6044999999999163,
+          "trialMediansMs": [
+            0.3319000000001324,
+            0.18189999999992779,
+            0.1972000000000662
+          ],
+          "blockReads": 13,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        },
+        "before": {
+          "medianMs": 0.2545000000000073,
+          "p95Ms": 0.6497999999999138,
+          "trialMediansMs": [
+            0.2641999999998461,
+            0.13630000000000564,
+            0.2545000000000073
+          ],
+          "blockReads": 13,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        },
+        "after": {
+          "medianMs": 0.2158999999999196,
+          "p95Ms": 0.5965000000001055,
+          "trialMediansMs": [
+            0.2158999999999196,
+            0.20430000000010295,
+            0.2767999999998665
+          ],
+          "blockReads": 13,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 4,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 21,
+            "selfDamage": 4.368
+          }
+        }
+      }
+    },
+    {
+      "name": "crystal-existing-base",
+      "profiles": {
+        "reference": {
+          "medianMs": 0.6965000000000146,
+          "p95Ms": 1.4398000000001048,
+          "trialMediansMs": [
+            0.8712000000000444,
+            0.6276000000000295,
+            0.6965000000000146
+          ],
+          "blockReads": 403,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 19,
+            "selfDamage": 5.712
+          }
+        },
+        "before": {
+          "medianMs": 0.8386000000000422,
+          "p95Ms": 1.6794999999999618,
+          "trialMediansMs": [
+            0.8386000000000422,
+            0.5473000000000638,
+            0.8766000000000531
+          ],
+          "blockReads": 403,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 19,
+            "selfDamage": 5.712
+          }
+        },
+        "after": {
+          "medianMs": 0.8049000000000888,
+          "p95Ms": 1.943899999999985,
+          "trialMediansMs": [
+            0.8049000000000888,
+            0.5559000000000651,
+            1.026299999999992
+          ],
+          "blockReads": 403,
+          "raycasts": 92,
+          "result": {
+            "type": "place",
+            "position": {
+              "x": 3,
+              "y": 64,
+              "z": 0
+            },
+            "damage": 19,
+            "selfDamage": 5.712
+          }
+        }
+      }
+    },
+    {
+      "name": "pearl-travel",
+      "profiles": {
+        "reference": {
+          "medianMs": 15.35629999999992,
+          "p95Ms": 18.01130000000012,
+          "trialMediansMs": [
+            19.127200000000357,
+            11.308500000000095,
+            15.35629999999992
+          ],
+          "blockReads": 2186,
+          "raycasts": 4900,
+          "result": {
+            "landing": {
+              "x": 48.495844426700714,
+              "y": 64,
+              "z": 0.49999999998592937
+            },
+            "ticks": 46,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.489564855184379
+          }
+        },
+        "before": {
+          "medianMs": 17.25570000000016,
+          "p95Ms": 20.854199999999764,
+          "trialMediansMs": [
+            17.25570000000016,
+            10.091599999999971,
+            19.234599999999773
+          ],
+          "blockReads": 2186,
+          "raycasts": 4900,
+          "result": {
+            "landing": {
+              "x": 48.495844426700714,
+              "y": 64,
+              "z": 0.49999999998592937
+            },
+            "ticks": 46,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.489564855184379
+          }
+        },
+        "after": {
+          "medianMs": 13.630599999999959,
+          "p95Ms": 16.129899999999907,
+          "trialMediansMs": [
+            17.75540000000001,
+            9.147600000000239,
+            13.630599999999959
+          ],
+          "blockReads": 2186,
+          "raycasts": 4900,
+          "result": {
+            "landing": {
+              "x": 48.495844426700714,
+              "y": 64,
+              "z": 0.49999999998592937
+            },
+            "ticks": 46,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.489564855184379
+          }
+        }
+      }
+    },
+    {
+      "name": "pearl-exact-pursuit",
+      "profiles": {
+        "reference": {
+          "medianMs": 22.038100000000668,
+          "p95Ms": 26.002700000000004,
+          "trialMediansMs": [
+            26.615099999999984,
+            15.65480000000025,
+            22.038100000000668
+          ],
+          "blockReads": 3536,
+          "raycasts": 6916,
+          "result": {
+            "landing": {
+              "x": 24.58290437314907,
+              "y": 64,
+              "z": 0.49999999999293987
+            },
+            "ticks": 18,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.13089969389956657
+          }
+        },
+        "before": {
+          "medianMs": 26.02810000000045,
+          "p95Ms": 29.81919999999991,
+          "trialMediansMs": [
+            26.02810000000045,
+            14.998999999999796,
+            30.57470000000012
+          ],
+          "blockReads": 3536,
+          "raycasts": 6916,
+          "result": {
+            "landing": {
+              "x": 24.58290437314907,
+              "y": 64,
+              "z": 0.49999999999293987
+            },
+            "ticks": 18,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.13089969389956657
+          }
+        },
+        "after": {
+          "medianMs": 20.44890000000032,
+          "p95Ms": 23.552599999999984,
+          "trialMediansMs": [
+            26.113999999999578,
+            14.068900000000212,
+            20.44890000000032
+          ],
+          "blockReads": 3536,
+          "raycasts": 6916,
+          "result": {
+            "landing": {
+              "x": 24.58290437314907,
+              "y": 64,
+              "z": 0.49999999999293987
+            },
+            "ticks": 18,
+            "yaw": -1.5707963267946035,
+            "pitch": 0.13089969389956657
+          }
+        }
+      }
+    }
+  ],
+  "simulationResults": [
+    {
+      "name": "foundation-crystal-attack",
+      "profiles": {
+        "reference": {
+          "medianMs": 150,
+          "timesMs": [
+            150,
+            150,
+            150
+          ]
+        },
+        "before": {
+          "medianMs": 150,
+          "timesMs": [
+            150,
+            150,
+            150
+          ]
+        },
+        "after": {
+          "medianMs": 150,
+          "timesMs": [
+            150,
+            150,
+            150
+          ]
+        }
+      }
+    },
+    {
+      "name": "target-enters-range-placement",
+      "profiles": {
+        "reference": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        },
+        "before": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        },
+        "after": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        }
+      }
+    },
+    {
+      "name": "confirmed-base-placement",
+      "profiles": {
+        "reference": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        },
+        "before": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        },
+        "after": {
+          "medianMs": 50,
+          "timesMs": [
+            50,
+            50,
+            50
+          ]
+        }
+      }
+    }
+  ]
+}

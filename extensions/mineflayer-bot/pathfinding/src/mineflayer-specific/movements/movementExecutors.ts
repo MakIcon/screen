@@ -1070,6 +1070,9 @@ export class ParkourForwardExecutor extends MovementExecutor {
         }
         if (!this.bot.entity.onGround && this.bot.entity.position.y > move.entryPos.y + 0.05) this.hasLeftGround = true
         if (this.hasLeftGround && this.bot.entity.onGround) {
+          // The runner now owns landing alignment and braking. Continuing the
+          // airborne tick hook would overwrite its coasting inputs each tick.
+          this.stopTickControls()
           this.bot.setControlState('jump', false)
           this.bot.setControlState('sprint', false)
           this.bot.setControlState('sneak', true)
