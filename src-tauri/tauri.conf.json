@@ -47,7 +47,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3N0VCMjg5NkMxRkM3MjgKUldRb3h4OXNpYkorUjkrRlVVMExWa0M3Mys2Yi9NR25SOVhaV3ZGQVp6Tkc2RU9sWkZzbTlNUlUK",
-      "endpoints": ["https://github.com/MakIcon/screen/releases/latest/download/latest.json"],
+      "endpoints": ["https://raw.githubusercontent.com/MakIcon/screen/updates/latest.json"],
       "windows": {
         "installMode": "quiet"
       }

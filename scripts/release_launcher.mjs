@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Builds a signed ScreenLauncher release for the in-app updater.
 //
-//   pnpm release --version 0.2.0 --notes-file notes.md [--publish]
+//   pnpm release --version 0.2.1 --notes-file notes.md [--publish]
 //
 // 1. Optionally bumps the version in tauri.conf.json, package.json and Cargo.toml.
 // 2. Builds the NSIS installer plus its updater signature (.sig).
-// 3. Writes latest.json — the manifest every installed launcher polls on start.
-// 4. Collects everything in dist-release/v<version>/ and, with --publish and the
-//    GitHub CLI installed, creates the GitHub release with the installer and
-//    latest.json attached.
+// 3. Writes latest.json — hosted separately on the repository's updates branch.
+// 4. Collects everything in dist-release/v<version>/ and, with --publish, creates
+//    or updates the GitHub release with only the installer attached, then updates
+//    the manifest. GitHub login comes from GH_TOKEN, gh or Git Credential Manager.
 //
 // The private key comes from TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PATH
 // or %USERPROFILE%\.tauri\screenlauncher-updater.key. Never commit it: without
@@ -22,6 +22,13 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  githubClient,
+  githubToken,
+  publishLauncherRelease,
+  releaseForTag,
+  updaterEndpoint,
+} from "./launcher_release_github.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tauriConfPath = path.join(root, "src-tauri", "tauri.conf.json");
@@ -34,6 +41,7 @@ const { values: args } = parseArgs({
     notes: { type: "string" },
     "notes-file": { type: "string" },
     repo: { type: "string", default: "MakIcon/screen" },
+    tag: { type: "string" },
     publish: { type: "boolean", default: false },
     "skip-build": { type: "boolean", default: false },
   },
@@ -45,7 +53,7 @@ function fail(message) {
 }
 
 function run(command, commandArgs, options = {}) {
-  // pnpm and gh are .cmd shims on Windows, which Node only spawns through a shell.
+  // pnpm uses a .cmd shim on Windows, which Node only spawns through a shell.
   const quoted = commandArgs.map((arg) => (/[\s"]/.test(arg) ? `"${arg}"` : arg));
   const result = spawnSync(command, quoted, {
     cwd: root,
@@ -97,6 +105,7 @@ function readNotes() {
 }
 
 if (process.platform !== "win32") fail("Releases are built on Windows (NSIS installer).");
+if (!/^[\w.-]+\/[\w.-]+$/.test(args.repo)) fail("--repo must be an owner/repository name.");
 
 if (args.version) {
   if (!SEMVER.test(args.version)) fail(`"${args.version}" is not a semver version like 0.2.0`);
@@ -105,6 +114,25 @@ if (args.version) {
 
 const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, "utf8"));
 const { productName, version } = tauriConf;
+const tag = args.tag ?? `v${version}`;
+const endpoint = updaterEndpoint(args.repo);
+if (tauriConf.plugins?.updater?.endpoints?.[0] !== endpoint) {
+  fail(`Set plugins.updater.endpoints to ["${endpoint}"] in tauri.conf.json before building.`);
+}
+
+let api;
+if (args.publish) {
+  try {
+    api = githubClient(githubToken(root));
+    // Check authentication and whether an existing release can be changed before
+    // spending time on the build. The publisher rechecks immediately before upload.
+    const repository = await api(`repos/${args.repo}`);
+    if (repository.permissions?.push === false) fail(`No write access to ${args.repo}.`);
+    await releaseForTag(api, args.repo, tag);
+  } catch (cause) {
+    fail(cause.message);
+  }
+}
 const installerName = `${productName}_${version}_x64-setup.exe`;
 const bundleDir = path.join(root, "src-tauri", "target", "release", "bundle", "nsis");
 const installerPath = path.join(bundleDir, installerName);
@@ -125,7 +153,6 @@ if (!fs.existsSync(`${installerPath}.sig`)) {
   fail(`Signature not found next to the installer. Was it built with updater artifacts?`);
 }
 
-const tag = `v${version}`;
 const notes = readNotes();
 const manifest = {
   version,
@@ -139,7 +166,7 @@ const manifest = {
   },
 };
 
-const outDir = path.join(root, "dist-release", tag);
+const outDir = path.join(root, "dist-release", `v${version}`);
 fs.mkdirSync(outDir, { recursive: true });
 fs.copyFileSync(installerPath, path.join(outDir, installerName));
 fs.copyFileSync(`${installerPath}.sig`, path.join(outDir, `${installerName}.sig`));
@@ -149,31 +176,26 @@ log(`\n• Release files ready in ${path.relative(root, outDir)}`);
 
 if (!args.publish) {
   log(
-    `\nNext: create the GitHub release ${tag} in ${args.repo} and attach\n` +
-      `  ${installerName}\n  latest.json\n` +
-      "or rerun with --publish (needs the GitHub CLI, gh).",
+    `\nNext: rerun with --skip-build --publish${args.tag ? ` --tag ${tag}` : ""} to create/update release ${tag}\n` +
+      `with only ${installerName} attached and publish the manifest to\n  ${endpoint}\n` +
+      "For manual publication, upload only the .exe to the release and update latest.json on the updates branch.",
   );
   process.exit(0);
 }
 
-if (run("gh", ["--version"], { stdio: "ignore" }) !== 0) {
-  fail("GitHub CLI (gh) is not installed. Upload the files from dist-release by hand.");
+try {
+  await publishLauncherRelease({
+    api,
+    repo: args.repo,
+    tag,
+    title: `${productName} ${version}`,
+    notes,
+    installerPath: path.join(outDir, installerName),
+    manifestText: fs.readFileSync(manifestPath, "utf8"),
+  });
+} catch (cause) {
+  fail(
+    `Publication failed: ${cause.message}\nRetry with --skip-build --publish and the same --tag, if set.`,
+  );
 }
-
-const notesPath = path.join(outDir, "notes.md");
-fs.writeFileSync(notesPath, notes || `${productName} ${version}`);
-const status = run("gh", [
-  "release",
-  "create",
-  tag,
-  path.join(outDir, installerName),
-  manifestPath,
-  "--repo",
-  args.repo,
-  "--title",
-  `${productName} ${version}`,
-  "--notes-file",
-  notesPath,
-]);
-if (status !== 0) fail("gh release create failed");
-log(`\n✔ Published ${tag}. Installed launchers will pick it up on their next start.`);
+log(`\n✔ Published ${tag}: installer in Releases, update manifest at ${endpoint}`);

@@ -20,6 +20,7 @@
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:web": "vitest run src",
     "test:worker": "pnpm --filter @screenlauncher/mineflayer-bot test",
+    "test:release": "node --test scripts/launcher_release_github.test.mjs",
     "release": "node scripts/release_launcher.mjs",
     "package:extensions": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_optional_extensions.ps1"
   },

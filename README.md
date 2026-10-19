@@ -155,13 +155,17 @@ public/                    App icon and web assets
 scripts/                   Build and packaging tools
 ```
 
-**Releasing an update.** Installed launchers check `latest.json` from the latest GitHub release on start and update in place, without the Windows installer window. Build, sign and publish a new version with:
+**Releasing an update.** Installed launchers check an update manifest at `https://raw.githubusercontent.com/MakIcon/screen/updates/latest.json` on start and update in place, without the Windows installer window. GitHub Releases contain only the `.exe` installer; the manifest is hosted separately on the `updates` branch. Build, sign and publish a new version with:
 
 ```bash
-pnpm release --version 0.2.0 --notes-file notes.md --publish
+pnpm release --version 0.2.1 --notes-file notes.md --publish
 ```
 
-The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish` (or without the GitHub CLI) the installer and `latest.json` are left in `dist-release/` for manual upload.
+The script creates or updates the release, uploads the installer, then publishes `latest.json` to the `updates` branch (created automatically on first publication). It removes legacy `latest.json` / installer `.sig` release assets after the manifest is published. GitHub authentication uses `GH_TOKEN` / `GITHUB_TOKEN`, an existing `gh auth login`, or the account saved by Git Credential Manager; access must allow writing repository contents and releases. GitHub CLI is optional.
+
+For an existing release whose tag differs from `v<version>`, pass its exact tag, for example `pnpm release --tag 0.2.0 --publish`. To retry publication without rebuilding, use `pnpm release --tag 0.2.0 --skip-build --publish`.
+
+The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish`, the installer, signature and `latest.json` remain in `dist-release/v<version>/`. For manual publication, upload only the `.exe` to the release and replace `latest.json` on the `updates` branch after the installer is available. Every update must publish a new manifest with the matching installer signature and download URL.
 
 The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 
