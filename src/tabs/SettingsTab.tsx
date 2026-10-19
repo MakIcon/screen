@@ -143,97 +143,119 @@ export function SettingsTab({
   return (
     <section className="launcher-panel">
       <div className="panel-grid simple-two-col-fixed settings-panel-grid">
-        <div className="panel-card" data-guide-target="settings-main">
-          <span className="panel-label">LAUNCHER SETTINGS</span>
+        <div className="panel-card settings-main-card" data-guide-target="settings-main">
+          <CustomScrollArea className="settings-main-scroll">
+            <div className="settings-main-content">
+              <span className="panel-label">LAUNCHER SETTINGS</span>
 
-          <div className="settings-memory-block" data-guide-target="settings-ram">
-            <div className="memory-readout">
-              <span
-                className="memory-number"
-                {...createPlaceholderAppearanceAttributes("%launcher_ram_value%", resolve)}
+              <div className="settings-memory-block" data-guide-target="settings-ram">
+                <div className="memory-readout">
+                  <span
+                    className="memory-number"
+                    {...createPlaceholderAppearanceAttributes("%launcher_ram_value%", resolve)}
+                  >
+                    {resolve("%launcher_ram_value%")}
+                  </span>
+                  <span className="memory-unit">GB</span>
+                </div>
+
+                <div className="settings-element-slider">
+                  <ElementSlider
+                    label="RAM"
+                    showHeader={false}
+                    min={1}
+                    max={minecraftRamMax}
+                    defaultValue={4}
+                    appearanceConstraint="system-ram"
+                    appearanceSystemMax={minecraftRamMax}
+                    step={1}
+                    value={settingsRamDraft}
+                    tickMode="custom"
+                    customTicks={ramSliderTicks}
+                    onChange={(value) => {
+                      setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
+                    }}
+                    onCommit={(value) => void saveSettingsRam(value)}
+                  />
+                </div>
+              </div>
+
+              <div
+                className="theme-switch-row theme-switch-row--appearance"
+                data-guide-target="settings-appearance"
               >
-                {resolve("%launcher_ram_value%")}
+                <span className="theme-switch-label">APPEARANCE</span>
+                <SettingsChoiceSwitch
+                  className="theme-switch--appearance"
+                  value={appearanceCustomized ? "studio" : theme}
+                  options={APPEARANCE_CHOICES.filter(
+                    (option) =>
+                      option.value !== "studio" || advancedSettingsEnabled || appearanceCustomized,
+                  ).map((option) =>
+                    option.value === "studio"
+                      ? {
+                          ...option,
+                          buttonProps: {
+                            ...option.buttonProps,
+                            "data-tooltip": appearanceCustomized
+                              ? "Custom design active · edit in Appearance Studio (Ctrl+Shift+A)"
+                              : "Edit design in Appearance Studio (Ctrl+Shift+A)",
+                            "aria-keyshortcuts": "Control+Shift+A Meta+Shift+A",
+                          },
+                        }
+                      : option,
+                  )}
+                  onChange={(value) => {
+                    if (value === "studio") onCustomizeAppearance();
+                    else if (appearanceCustomized || value !== theme) setTheme(value as Theme);
+                  }}
+                />
+              </div>
+
+              <div className="theme-switch-row" data-guide-target="settings-source">
+                <span className="theme-switch-label">DOWNLOAD SOURCE</span>
+                <SettingsChoiceSwitch
+                  value={mirrorMode}
+                  options={MIRROR_OPTIONS}
+                  onChange={(value) => commitMirrorMode(value as MirrorMode)}
+                />
+              </div>
+
+              <div className="theme-switch-row" data-guide-target="settings-auto-java">
+                <span className="theme-switch-label">AUTO-DOWNLOAD JAVA</span>
+                <SettingsChoiceSwitch
+                  value={autoDownloadJava ? "on" : "off"}
+                  options={JAVA_CHOICES}
+                  onChange={(value) => {
+                    const enabled = value === "on";
+                    if (enabled !== autoDownloadJava) void saveAutoDownloadJava(enabled);
+                  }}
+                />
+              </div>
+
+              <div className="theme-switch-row" data-guide-target="settings-language">
+                <span className="theme-switch-label">LANGUAGE</span>
+                <SettingsChoiceSwitch value="ru" options={LANGUAGE_CHOICES} onChange={() => {}} />
+              </div>
+            </div>
+          </CustomScrollArea>
+
+          <div className="settings-update-row" data-guide-target="settings-updates">
+            <div className="settings-update-copy">
+              <span className="settings-update-title">LAUNCHER UPDATES</span>
+              <span className="settings-update-note">
+                {launcherVersion ? `Версия ${launcherVersion}. ` : ""}Новые версии проверяются при
+                запуске и ставятся без установщика Windows.
               </span>
-              <span className="memory-unit">GB</span>
             </div>
-
-            <div className="settings-element-slider">
-              <ElementSlider
-                label="RAM"
-                showHeader={false}
-                min={1}
-                max={minecraftRamMax}
-                defaultValue={4}
-                appearanceConstraint="system-ram"
-                appearanceSystemMax={minecraftRamMax}
-                step={1}
-                value={settingsRamDraft}
-                tickMode="custom"
-                customTicks={ramSliderTicks}
-                onChange={(value) => {
-                  setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
-                }}
-                onCommit={(value) => void saveSettingsRam(value)}
-              />
-            </div>
-          </div>
-
-          <div
-            className="theme-switch-row theme-switch-row--appearance"
-            data-guide-target="settings-appearance"
-          >
-            <span className="theme-switch-label">APPEARANCE</span>
-            <SettingsChoiceSwitch
-              className="theme-switch--appearance"
-              value={appearanceCustomized ? "studio" : theme}
-              options={APPEARANCE_CHOICES.filter(
-                (option) =>
-                  option.value !== "studio" || advancedSettingsEnabled || appearanceCustomized,
-              ).map((option) =>
-                option.value === "studio"
-                  ? {
-                      ...option,
-                      buttonProps: {
-                        ...option.buttonProps,
-                        "data-tooltip": appearanceCustomized
-                          ? "Custom design active · edit in Appearance Studio (Ctrl+Shift+A)"
-                          : "Edit design in Appearance Studio (Ctrl+Shift+A)",
-                        "aria-keyshortcuts": "Control+Shift+A Meta+Shift+A",
-                      },
-                    }
-                  : option,
-              )}
-              onChange={(value) => {
-                if (value === "studio") onCustomizeAppearance();
-                else if (appearanceCustomized || value !== theme) setTheme(value as Theme);
-              }}
-            />
-          </div>
-
-          <div className="theme-switch-row" data-guide-target="settings-source">
-            <span className="theme-switch-label">DOWNLOAD SOURCE</span>
-            <SettingsChoiceSwitch
-              value={mirrorMode}
-              options={MIRROR_OPTIONS}
-              onChange={(value) => commitMirrorMode(value as MirrorMode)}
-            />
-          </div>
-
-          <div className="theme-switch-row" data-guide-target="settings-auto-java">
-            <span className="theme-switch-label">AUTO-DOWNLOAD JAVA</span>
-            <SettingsChoiceSwitch
-              value={autoDownloadJava ? "on" : "off"}
-              options={JAVA_CHOICES}
-              onChange={(value) => {
-                const enabled = value === "on";
-                if (enabled !== autoDownloadJava) void saveAutoDownloadJava(enabled);
-              }}
-            />
-          </div>
-
-          <div className="theme-switch-row" data-guide-target="settings-language">
-            <span className="theme-switch-label">LANGUAGE</span>
-            <SettingsChoiceSwitch value="ru" options={LANGUAGE_CHOICES} onChange={() => {}} />
+            <button
+              className="settings-update-check"
+              type="button"
+              onClick={onCheckUpdates}
+              disabled={updateChecking}
+            >
+              {updateChecking ? "CHECKING…" : "CHECK NOW"}
+            </button>
           </div>
         </div>
 
@@ -382,24 +404,6 @@ export function SettingsTab({
                   onToggle={onToggleAdvanced}
                   guideTarget="settings-advanced"
                 />
-              </div>
-
-              <div className="settings-update-row" data-guide-target="settings-updates">
-                <div className="settings-update-copy">
-                  <span className="settings-update-title">LAUNCHER UPDATES</span>
-                  <span className="settings-update-note">
-                    {launcherVersion ? `Версия ${launcherVersion}. ` : ""}Новые версии проверяются
-                    при запуске и ставятся без установщика Windows.
-                  </span>
-                </div>
-                <button
-                  className="settings-update-check"
-                  type="button"
-                  onClick={onCheckUpdates}
-                  disabled={updateChecking}
-                >
-                  {updateChecking ? "CHECKING…" : "CHECK NOW"}
-                </button>
               </div>
 
               {advancedSettingsEnabled && (

@@ -83,10 +83,25 @@
   justify-content: center;
 }
 
-/* ── Settings grid: full-height cards, content laid out so nothing scrolls ── */
+/* ── Settings grid: full-height cards with scrollable controls ── */
 
 .settings-panel-grid {
   grid-template-rows: minmax(0, 1fr);
+}
+
+.settings-main-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.settings-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.settings-main-content {
+  padding: 28px 30px 0;
 }
 
 /* ── Memory readout & slider ── */
@@ -606,16 +621,19 @@
   position: relative;
   z-index: 1;
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 12px 20px;
+  margin: 0 30px 24px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
 .settings-update-copy {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 220px;
 }
 
 .settings-update-title {
