@@ -5,7 +5,7 @@
 //
 // 1. Optionally bumps the version in tauri.conf.json, package.json and Cargo.toml.
 // 2. Builds the NSIS installer plus its updater signature (.sig).
-// 3. Writes latest.json — hosted separately on the repository's updates branch.
+// 3. Writes latest.json — hosted separately in a GitHub Gist.
 // 4. Collects everything in dist-release/v<version>/ and, with --publish, creates
 //    or updates the GitHub release with only the installer attached, then updates
 //    the manifest. GitHub login comes from GH_TOKEN, gh or Git Credential Manager.
@@ -25,9 +25,10 @@ import { parseArgs } from "node:util";
 import {
   githubClient,
   githubToken,
+  gistFromEndpoint,
+  manifestGist,
   publishLauncherRelease,
   releaseForTag,
-  updaterEndpoint,
 } from "./launcher_release_github.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -115,9 +116,12 @@ if (args.version) {
 const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, "utf8"));
 const { productName, version } = tauriConf;
 const tag = args.tag ?? `v${version}`;
-const endpoint = updaterEndpoint(args.repo);
-if (tauriConf.plugins?.updater?.endpoints?.[0] !== endpoint) {
-  fail(`Set plugins.updater.endpoints to ["${endpoint}"] in tauri.conf.json before building.`);
+const endpoint = tauriConf.plugins?.updater?.endpoints?.[0];
+let gist;
+try {
+  gist = gistFromEndpoint(endpoint);
+} catch (cause) {
+  fail(cause.message);
 }
 
 let api;
@@ -128,6 +132,11 @@ if (args.publish) {
     // spending time on the build. The publisher rechecks immediately before upload.
     const repository = await api(`repos/${args.repo}`);
     if (repository.permissions?.push === false) fail(`No write access to ${args.repo}.`);
+    const user = await api("user");
+    if (user.login.toLowerCase() !== gist.owner.toLowerCase()) {
+      fail(`Sign in as ${gist.owner} to update the configured Gist.`);
+    }
+    await manifestGist(api, gist);
     await releaseForTag(api, args.repo, tag);
   } catch (cause) {
     fail(cause.message);
@@ -178,7 +187,7 @@ if (!args.publish) {
   log(
     `\nNext: rerun with --skip-build --publish${args.tag ? ` --tag ${tag}` : ""} to create/update release ${tag}\n` +
       `with only ${installerName} attached and publish the manifest to\n  ${endpoint}\n` +
-      "For manual publication, upload only the .exe to the release and update latest.json on the updates branch.",
+      "For manual publication, upload only the .exe to the release and update latest.json in the configured Gist.",
   );
   process.exit(0);
 }
@@ -192,6 +201,7 @@ try {
     notes,
     installerPath: path.join(outDir, installerName),
     manifestText: fs.readFileSync(manifestPath, "utf8"),
+    endpoint,
   });
 } catch (cause) {
   fail(

@@ -155,17 +155,19 @@ public/                    App icon and web assets
 scripts/                   Build and packaging tools
 ```
 
-**Releasing an update.** Installed launchers check an update manifest at `https://raw.githubusercontent.com/MakIcon/screen/updates/latest.json` on start and update in place, without the Windows installer window. GitHub Releases contain only the `.exe` installer; the manifest is hosted separately on the `updates` branch. Build, sign and publish a new version with:
+**Releasing an update.** Installed launchers check an update manifest at `https://gist.githubusercontent.com/MakIcon/7f89bdec5673899ca35511d92c58794a/raw/latest.json` on start and update in place, without the Windows installer window. GitHub Releases contain only the `.exe` installer; the manifest is hosted separately in a [GitHub Gist](https://gist.github.com/MakIcon/7f89bdec5673899ca35511d92c58794a). Build, sign and publish a new version with:
 
 ```bash
 pnpm release --version 0.2.1 --notes-file notes.md --publish
 ```
 
-The script creates or updates the release, uploads the installer, then publishes `latest.json` to the `updates` branch (created automatically on first publication). It removes legacy `latest.json` / installer `.sig` release assets after the manifest is published. GitHub authentication uses `GH_TOKEN` / `GITHUB_TOKEN`, an existing `gh auth login`, or the account saved by Git Credential Manager; access must allow writing repository contents and releases. GitHub CLI is optional.
+The script creates or updates the release, uploads the installer, then replaces `latest.json` in the configured Gist. It removes legacy `latest.json` / installer `.sig` release assets after the manifest is published. No update branch is created or changed. GitHub authentication uses `GH_TOKEN` / `GITHUB_TOKEN`, an existing `gh auth login`, or the account saved by Git Credential Manager; authenticate as the Gist owner with access to releases and Gists (`repo` and `gist` scopes for a classic token, or equivalent fine-grained permissions). GitHub CLI is optional.
+
+The Gist is selected by `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; keep its raw URL free of a revision SHA so installed launchers always read the latest contents. The release command validates the Gist before uploading. Keep the same Gist for future releases; changing its ID requires rebuilding and distributing the launcher. GitHub may cache raw Gist responses for a few minutes, so newly published updates may not appear immediately.
 
 For an existing release whose tag differs from `v<version>`, pass its exact tag, for example `pnpm release --tag 0.2.0 --publish`. To retry publication without rebuilding, use `pnpm release --tag 0.2.0 --skip-build --publish`.
 
-The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish`, the installer, signature and `latest.json` remain in `dist-release/v<version>/`. For manual publication, upload only the `.exe` to the release and replace `latest.json` on the `updates` branch after the installer is available. Every update must publish a new manifest with the matching installer signature and download URL.
+The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish`, the installer, signature and `latest.json` remain in `dist-release/v<version>/`. For manual publication, upload only the `.exe` to the release and replace `latest.json` in the configured Gist after the installer is available. Every update must publish a new manifest with the matching installer signature and download URL.
 
 The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 

@@ -1,13 +1,31 @@
 import { spawnSync } from "node:child_process";
-import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-export const UPDATES_BRANCH = "updates";
+export function gistFromEndpoint(endpoint) {
+  const match =
+    /^https:\/\/gist\.githubusercontent\.com\/([\w-]+)\/([a-f0-9]+)\/raw\/latest\.json$/.exec(
+      endpoint,
+    );
+  if (!match) {
+    throw new Error(
+      "Updater endpoint must be a revision-free GitHub Gist URL: " +
+        "https://gist.githubusercontent.com/<owner>/<gist-id>/raw/latest.json",
+    );
+  }
+  return { owner: match[1], id: match[2] };
+}
 
-export function updaterEndpoint(repo) {
-  return `https://raw.githubusercontent.com/${repo}/${UPDATES_BRANCH}/latest.json`;
+export async function manifestGist(api, gist) {
+  const data = await api(`gists/${gist.id}`);
+  if (data.owner?.login?.toLowerCase() !== gist.owner.toLowerCase()) {
+    throw new Error(`Gist ${gist.id} does not belong to ${gist.owner}.`);
+  }
+  if (!data.files?.["latest.json"]) {
+    throw new Error(`Gist ${gist.id} does not contain latest.json.`);
+  }
+  return data;
 }
 
 export function githubToken(cwd) {
@@ -70,43 +88,6 @@ export async function releaseForTag(api, repo, tag) {
   return release;
 }
 
-async function publishManifest(api, repo, tag, manifestText) {
-  const branch = await api(`repos/${repo}/git/ref/heads/${UPDATES_BRANCH}`, { allowMissing: true });
-  const message = `Publish ScreenLauncher ${tag} update manifest`;
-  if (!branch) {
-    // Start an independent branch containing only update metadata. Never switch
-    // the source checkout or include local changes in this publication.
-    const tree = await api(`repos/${repo}/git/trees`, {
-      method: "POST",
-      body: {
-        tree: [{ path: "latest.json", mode: "100644", type: "blob", content: manifestText }],
-      },
-    });
-    const commit = await api(`repos/${repo}/git/commits`, {
-      method: "POST",
-      body: { message, tree: tree.sha, parents: [] },
-    });
-    await api(`repos/${repo}/git/refs`, {
-      method: "POST",
-      body: { ref: `refs/heads/${UPDATES_BRANCH}`, sha: commit.sha },
-    });
-    return;
-  }
-
-  const current = await api(`repos/${repo}/contents/latest.json?ref=${UPDATES_BRANCH}`, {
-    allowMissing: true,
-  });
-  await api(`repos/${repo}/contents/latest.json`, {
-    method: "PUT",
-    body: {
-      message,
-      branch: UPDATES_BRANCH,
-      content: Buffer.from(manifestText).toString("base64"),
-      ...(current ? { sha: current.sha } : {}),
-    },
-  });
-}
-
 export async function publishLauncherRelease({
   api,
   repo,
@@ -115,7 +96,11 @@ export async function publishLauncherRelease({
   notes,
   installerPath,
   manifestText,
+  endpoint,
 }) {
+  const gist = gistFromEndpoint(endpoint);
+  // Catch a missing or misconfigured Gist before replacing any release assets.
+  await manifestGist(api, gist);
   let release = await releaseForTag(api, repo, tag);
   if (!release) {
     release = await api(`repos/${repo}/releases`, {
@@ -146,7 +131,10 @@ export async function publishLauncherRelease({
   }
 
   // Announce the update only after the installer is available for download.
-  await publishManifest(api, repo, tag, manifestText);
+  await api(`gists/${gist.id}`, {
+    method: "PATCH",
+    body: { files: { "latest.json": { content: manifestText } } },
+  });
 
   // Migrate releases previously published by the old script. Signatures remain
   // embedded in the manifest; neither metadata file belongs in release assets.
