@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { VisibleUpdateState } from "./useLauncherUpdater";
 import {
   formatEta,
@@ -18,21 +18,7 @@ type Props = {
   onDragStart?: () => void;
 };
 
-const LEAVE_MS = 460;
-// Matches the end of the staggered entrance in the stylesheet.
-const ENTRANCE_MS = 2200;
-
-const STEPS = ["СКАЧИВАНИЕ", "УСТАНОВКА", "ПЕРЕЗАПУСК"] as const;
-
-const KICKER: Record<VisibleUpdateState["stage"], string> = {
-  available: "ДОСТУПНО ОБНОВЛЕНИЕ",
-  downloading: "ОБНОВЛЯЕМ ЛАУНЧЕР",
-  installing: "ОБНОВЛЯЕМ ЛАУНЧЕР",
-  error: "ОБНОВЛЕНИЕ ПРЕРВАНО",
-};
-
-const activeStep = (state: VisibleUpdateState) =>
-  state.stage === "downloading" ? 0 : state.stage === "installing" ? 1 : -1;
+const STEPS = ["Загрузка", "Проверка", "Перезапуск"] as const;
 
 function LauncherMark() {
   return (
@@ -44,75 +30,6 @@ function LauncherMark() {
   );
 }
 
-function UpdateProgress({ state }: { state: VisibleUpdateState }) {
-  if (state.stage === "installing") {
-    return (
-      <div
-        className="launcher-update__progress is-installing"
-        role="progressbar"
-        aria-label="Установка обновления"
-        aria-valuetext="Установка"
-      >
-        <div className="launcher-update__progress-head">
-          <span>Устанавливаем обновление</span>
-          <strong>100%</strong>
-        </div>
-        <div className="launcher-update__track">
-          <div className="launcher-update__fill" style={{ width: "100%" }} />
-        </div>
-        <div className="launcher-update__meta">
-          <span>Лаунчер закроется и откроется сам</span>
-          <span>пара секунд</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.stage !== "downloading") return null;
-
-  const ratio = progressRatio(state.downloaded, state.total);
-  const percent = ratio === null ? null : Math.floor(ratio * 100);
-  const verifying = ratio === 1;
-  const remaining = state.total === null ? 0 : state.total - state.downloaded;
-  const eta =
-    state.bytesPerSecond && !verifying ? formatEta(remaining, state.bytesPerSecond) : null;
-
-  return (
-    <div
-      className={`launcher-update__progress${ratio === null ? " is-indeterminate" : ""}`}
-      role="progressbar"
-      aria-label="Загрузка обновления"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={percent ?? undefined}
-    >
-      <div className="launcher-update__progress-head">
-        <span>{verifying ? "Проверяем подпись файла" : "Скачиваем обновление"}</span>
-        <strong>
-          {percent ?? "—"}
-          {percent !== null && <small>%</small>}
-        </strong>
-      </div>
-      <div className="launcher-update__track">
-        <div
-          className="launcher-update__fill"
-          style={{ width: ratio === null ? undefined : `${ratio * 100}%` }}
-        />
-      </div>
-      <div className="launcher-update__meta">
-        <span>
-          {formatMegabytes(state.downloaded)}
-          {state.total !== null && ` из ${formatMegabytes(state.total)}`}
-        </span>
-        <span>
-          {state.bytesPerSecond && !verifying ? formatSpeed(state.bytesPerSecond) : ""}
-          {eta && ` · ${eta}`}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export function LauncherUpdateOverlay({
   state,
   autoStartDelayMs,
@@ -120,33 +37,31 @@ export function LauncherUpdateOverlay({
   onLater,
   onDragStart,
 }: Props) {
-  const [leaving, setLeaving] = useState(false);
-  const [settled, setSettled] = useState(false);
-  const { info } = state;
-  const autoStart = state.stage === "available" && state.autoStart;
+  const [notesOpen, setNotesOpen] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(() => Math.ceil(autoStartDelayMs / 1000));
-  const canLeave = state.stage === "available" || state.stage === "error";
-  const step = activeStep(state);
+  const { info } = state;
+  const downloading = state.stage === "downloading";
+  const installing = state.stage === "installing";
+  const error = state.stage === "error";
+  const transferVisible = downloading || installing;
+  const autoStart = state.stage === "available" && state.autoStart;
+  const canLeave = state.stage === "available" || error;
+  const ratio = downloading ? progressRatio(state.downloaded, state.total) : null;
+  const verifying = downloading && ratio === 1;
+  const percent = installing ? 100 : ratio === null ? null : Math.floor(ratio * 100);
+  const step = installing ? 2 : verifying ? 1 : downloading ? 0 : -1;
   const releaseDate = formatReleaseDate(info.date);
   const notes = info.notes ? parseReleaseNotes(info.notes) : [];
-
-  const leave = useCallback(() => {
-    if (leaving) return;
-    setLeaving(true);
-    window.setTimeout(onLater, LEAVE_MS);
-  }, [leaving, onLater]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSettled(true), ENTRANCE_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const eta =
+    downloading && state.total !== null && state.bytesPerSecond && !verifying
+      ? formatEta(Math.max(0, state.total - state.downloaded), state.bytesPerSecond)
+      : null;
 
   useEffect(() => {
     if (!autoStart) return;
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
-      const left = Math.max(0, Math.ceil((autoStartDelayMs - (Date.now() - startedAt)) / 1000));
-      setSecondsLeft(left);
+      setSecondsLeft(Math.max(0, Math.ceil((autoStartDelayMs - (Date.now() - startedAt)) / 1000)));
     }, 250);
     return () => window.clearInterval(timer);
   }, [autoStart, autoStartDelayMs]);
@@ -156,26 +71,20 @@ export function LauncherUpdateOverlay({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      leave();
+      onLater();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canLeave, leave]);
+  }, [canLeave, onLater]);
 
   return (
     <div
-      className={`launcher-update stage-${state.stage}${settled ? " is-settled" : ""}${
-        leaving ? " is-leaving" : ""
-      }`}
+      className={`launcher-update stage-${state.stage}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="launcher-update-title"
       style={{ "--update-countdown": `${autoStartDelayMs}ms` } as CSSProperties}
     >
-      <div className="launcher-update__sheet" aria-hidden="true">
-        <span className="launcher-update__ghost-version">{info.version}</span>
-      </div>
-
       <header
         className="launcher-update__bar"
         onMouseDown={(event) => {
@@ -183,79 +92,182 @@ export function LauncherUpdateOverlay({
           onDragStart?.();
         }}
       >
-        <span className="launcher-update__brand">ARCHIVE // UPDATE</span>
-        <ol className="launcher-update__steps">
-          {STEPS.map((label, index) => (
-            <li
-              key={label}
-              className={index < step ? "is-done" : index === step ? "is-active" : undefined}
-            >
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              {label}
-            </li>
-          ))}
-        </ol>
+        <span className="launcher-update__brand" aria-label="ScreenLauncher">
+          <LauncherMark />
+          <span className="launcher-update__wordmark">
+            screen<span>launcher</span>
+          </span>
+        </span>
+        <span className="launcher-update__kicker">
+          {error ? "Обновление прервано" : "Новая версия"}
+        </span>
       </header>
 
       <main className="launcher-update__body">
-        <div className="launcher-update__headline">
-          <LauncherMark />
-          <span className="launcher-update__kicker">{KICKER[state.stage]}</span>
+        <div className="launcher-update__release">
+          <span>SCREENLAUNCHER</span>
+          <span className="launcher-update__version">{info.version}</span>
+          {releaseDate && <span className="launcher-update__date">{releaseDate}</span>}
+        </div>
+        <div className="launcher-update__hero">
+          <div className="launcher-update__intro">
+            <h2 id="launcher-update-title" className="launcher-update__title">
+              {error ? (
+                <>
+                  Не получилось
+                  <br />
+                  обновить лаунчер.
+                </>
+              ) : installing ? (
+                <>
+                  Ещё мгновение.
+                  <br />И можно продолжать.
+                </>
+              ) : (
+                <>
+                  Немного лучше.
+                  <br />С каждым запуском.
+                </>
+              )}
+            </h2>
+            <p className="launcher-update__sub">
+              {error
+                ? "Текущая версия готова к работе."
+                : installing
+                  ? "Лаунчер закроется и откроется сам."
+                  : state.stage === "available"
+                    ? "Доступно обновление лаунчера."
+                    : "Обновляем лаунчер."}
+              <br />
+              Твои сборки и настройки останутся на месте.
+            </p>
+          </div>
+          {transferVisible && (
+            <div className="launcher-update__percent" aria-hidden="true">
+              <span>{percent ?? "—"}</span>
+              {percent !== null && <small>%</small>}
+            </div>
+          )}
         </div>
 
-        <h2 id="launcher-update-title" className="launcher-update__version">
-          <span className="launcher-update__version-prefix">v</span>
-          {info.version}
-        </h2>
-        <p className="launcher-update__sub">
-          Сейчас установлена {info.currentVersion}
-          {releaseDate && <> · выпущена {releaseDate}</>}
-        </p>
+        {transferVisible && (
+          <div
+            className={`launcher-update__progress${downloading && ratio === null ? " is-indeterminate" : ""}`}
+          >
+            <div className="launcher-update__progress-head">
+              <span role="status">
+                {installing
+                  ? "Устанавливаем обновление"
+                  : verifying
+                    ? "Проверяем подпись файла"
+                    : "Скачиваем обновление"}
+              </span>
+              <span>
+                {installing
+                  ? "Перезапуск автоматически"
+                  : verifying
+                    ? "Почти готово"
+                    : eta
+                      ? `Осталось ${eta}`
+                      : ""}
+              </span>
+            </div>
+            <div
+              className="launcher-update__track"
+              role="progressbar"
+              aria-label={installing ? "Установка обновления" : "Загрузка обновления"}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={installing ? undefined : (percent ?? undefined)}
+              aria-valuetext={
+                installing
+                  ? "Установка"
+                  : verifying
+                    ? "Проверка подписи"
+                    : percent === null
+                      ? "Размер загрузки пока неизвестен"
+                      : undefined
+              }
+            >
+              <div
+                className="launcher-update__fill"
+                style={{
+                  width: installing ? "100%" : ratio === null ? undefined : `${ratio * 100}%`,
+                }}
+              />
+            </div>
+            <div className="launcher-update__meta">
+              <span>
+                {downloading
+                  ? `${formatMegabytes(state.downloaded)}${state.total !== null ? ` из ${formatMegabytes(state.total)}` : ""}`
+                  : "Применяем новую версию"}
+              </span>
+              <span>
+                {downloading && state.bytesPerSecond && !verifying
+                  ? formatSpeed(state.bytesPerSecond)
+                  : ""}
+              </span>
+            </div>
+          </div>
+        )}
 
-        <div className="launcher-update__stage" key={state.stage}>
-          {state.stage === "available" && (
+        {state.stage === "available" && (
+          <div className="launcher-update__actions">
+            <button
+              type="button"
+              className={`launcher-update__primary${autoStart ? " is-counting" : ""}`}
+              onClick={onUpdate}
+              autoFocus
+            >
+              <span className="launcher-update__primary-fill" aria-hidden="true" />
+              <span className="launcher-update__primary-label">
+                Обновить сейчас{autoStart && <em>{secondsLeft}</em>}
+              </span>
+            </button>
+            <button type="button" className="launcher-update__secondary" onClick={onLater}>
+              Позже
+            </button>
+            {autoStart && (
+              <span className="launcher-update__countdown-hint">
+                Начнём автоматически через {secondsLeft} с
+              </span>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="launcher-update__error">
+            <p role="alert">{state.message}</p>
             <div className="launcher-update__actions">
-              <button
-                type="button"
-                className={`launcher-update__primary${autoStart ? " is-counting" : ""}`}
-                onClick={onUpdate}
-                autoFocus
-              >
-                <span className="launcher-update__primary-fill" aria-hidden="true" />
-                <span className="launcher-update__primary-label">
-                  ОБНОВИТЬ СЕЙЧАС
-                  {autoStart && <em>{secondsLeft}</em>}
-                </span>
+              <button type="button" className="launcher-update__primary" onClick={onUpdate}>
+                <span className="launcher-update__primary-label">Попробовать ещё раз</span>
               </button>
-              <button type="button" className="launcher-update__secondary" onClick={leave}>
-                ПОЗЖЕ
+              <button type="button" className="launcher-update__secondary" onClick={onLater}>
+                Продолжить без обновления
               </button>
             </div>
-          )}
-
-          {(state.stage === "downloading" || state.stage === "installing") && (
-            <UpdateProgress state={state} />
-          )}
-
-          {state.stage === "error" && (
-            <div className="launcher-update__error">
-              <p>{state.message}</p>
-              <div className="launcher-update__actions">
-                <button type="button" className="launcher-update__primary" onClick={onUpdate}>
-                  <span className="launcher-update__primary-label">ПОВТОРИТЬ</span>
-                </button>
-                <button type="button" className="launcher-update__secondary" onClick={leave}>
-                  ПРОДОЛЖИТЬ БЕЗ ОБНОВЛЕНИЯ
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {notes.length > 0 && (
-          <section className="launcher-update__notes" aria-label="Что нового">
-            <span className="launcher-update__notes-label">ЧТО НОВОГО</span>
-            <div className="launcher-update__notes-body">
+          <section className="launcher-update__notes" aria-label="Описание обновления">
+            <button
+              type="button"
+              className="launcher-update__notes-toggle"
+              aria-expanded={notesOpen}
+              aria-controls="launcher-update-notes"
+              onClick={() => setNotesOpen((open) => !open)}
+            >
+              <span className="launcher-update__notes-icon" aria-hidden="true">
+                {notesOpen ? "−" : "+"}
+              </span>
+              Что нового
+            </button>
+            <div
+              id="launcher-update-notes"
+              className="launcher-update__notes-body"
+              hidden={!notesOpen}
+            >
               {notes.map((line, index) =>
                 line.kind === "heading" ? (
                   <strong key={index}>{line.text}</strong>
@@ -270,17 +282,20 @@ export function LauncherUpdateOverlay({
         )}
       </main>
 
-      <footer className="launcher-update__bar launcher-update__bar--bottom">
-        <span>
-          {state.stage === "downloading" || state.stage === "installing"
-            ? "НЕ ЗАКРЫВАЙ ЛАУНЧЕР"
-            : state.stage === "error"
-              ? "ТЕКУЩАЯ ВЕРСИЯ ОСТАЛАСЬ БЕЗ ИЗМЕНЕНИЙ"
-              : autoStart
-                ? "ОБНОВЛЕНИЕ НАЧНЁТСЯ АВТОМАТИЧЕСКИ"
-                : "SCREENLAUNCHER"}
-        </span>
-        <span>
+      <footer className="launcher-update__footer">
+        <ol className="launcher-update__steps" aria-label="Этапы обновления">
+          {STEPS.map((label, index) => (
+            <li
+              key={label}
+              className={index < step ? "is-done" : index === step ? "is-active" : undefined}
+              aria-current={index === step ? "step" : undefined}
+            >
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              {label}
+            </li>
+          ))}
+        </ol>
+        <span className="launcher-update__version-change">
           {info.currentVersion} → {info.version}
         </span>
       </footer>
