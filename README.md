@@ -171,6 +171,14 @@ The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\sc
 
 The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 
+**Windows installer.** The NSIS installer and uninstaller use the Quiet Start design: custom welcome, maintenance, folder/shortcut selection, installation progress and completion pages. `src-tauri/nsis/quiet-start.nsh` defines the layout; `skin.cpp` draws buttons and toggles while preserving their native keyboard and accessibility behavior. The percentage reads the real NSIS progress control. Silent updater flags (`/S`, `/UPDATE`, `/NS`, `/R`) retain Tauri's behavior.
+
+The `beforeBundleCommand` builds the small x86 NSIS skin plugin into `src-tauri/target/nsis-skin/` with the MSVC x86 C++ tools from Visual Studio Build Tools (the Desktop development with C++ workload). It is embedded in the installer; end users need no extra installation for the skin. `src-tauri/nsis/installer.nsi` is based on Tauri CLI 2.10.1's template. When upgrading the Tauri CLI, compare its upstream installer template and carry over changes to installation, WebView2, updater flags and uninstallation before releasing.
+
+The native checkbox and text field skin follows the launcher's `ElementCheckbox` and input styles: square 16px indicators, a 10px label gap, antialiased check marks, flat input borders and centred text with 12px padding. Existing versions retain their old `uninstall.exe` until the new installer runs; NSIS upgrades default to installing in place, which replaces it with the custom uninstaller while preserving application data.
+
+Both windows share a custom frame with a draggable header, native accessible minimise/close buttons, and system shadow/corners. Brand and version share a measured baseline; checkbox glyphs, input text and button captions align using visible font metrics. The layout uses a 32px gutter and a common footer row. Closing respects NSIS's disabled cancel state during installation; silent updates create no window.
+
 For the bot extension, see the [combat guide](extensions/mineflayer-bot/COMBAT.md), [survival guide](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding documentation](extensions/mineflayer-bot/pathfinding/README.md).
 
 </details>

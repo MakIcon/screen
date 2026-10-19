@@ -6,6 +6,7 @@
     "beforeDevCommand": "pnpm icons && pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
+    "beforeBundleCommand": "node scripts/build_installer_skin.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -31,7 +32,9 @@
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",
-        "installerHooks": "nsis/branding.nsh"
+        "installerHooks": "nsis/branding.nsh",
+        "template": "nsis/installer.nsi",
+        "languages": ["Russian"]
       }
     },
     "icon": [
