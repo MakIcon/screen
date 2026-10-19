@@ -45,7 +45,7 @@ Getting started doesn't require any development tools.
 Want to add mods? Open the **Modrinth** section after creating a compatible build.
 
 > [!NOTE]
-> The repository is currently **private**, so GitHub downloads require repository access. The latest published release is labeled **v2.0**, although its Windows installer is named `ScreenLauncher_0.1.0_x64-setup.exe`. That published installer may not include every change on the `main` branch.
+> The latest published release is labeled **v2.0**, although its Windows installer is named `ScreenLauncher_0.1.0_x64-setup.exe`. That published installer may not include every change on the `main` branch.
 
 ## More than just a Play button
 
@@ -154,6 +154,14 @@ obs-telemetry-mod/         Fabric client-side telemetry helper
 public/                    App icon and web assets
 scripts/                   Build and packaging tools
 ```
+
+**Releasing an update.** Installed launchers check `latest.json` from the latest GitHub release on start and update in place, without the Windows installer window. Build, sign and publish a new version with:
+
+```bash
+pnpm release --version 0.2.0 --notes-file notes.md --publish
+```
+
+The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish` (or without the GitHub CLI) the installer and `latest.json` are left in `dist-release/` for manual upload.
 
 The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
 

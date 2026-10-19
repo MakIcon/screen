@@ -63,6 +63,9 @@ interface SettingsTabProps {
   setTheme: (t: Theme) => void;
   appearanceCustomized: boolean;
   onCustomizeAppearance: () => void;
+  launcherVersion: string | null;
+  updateChecking: boolean;
+  onCheckUpdates: () => void;
 }
 
 export function SettingsTab({
@@ -99,6 +102,9 @@ export function SettingsTab({
   setTheme,
   appearanceCustomized,
   onCustomizeAppearance,
+  launcherVersion,
+  updateChecking,
+  onCheckUpdates,
 }: SettingsTabProps) {
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
@@ -376,6 +382,24 @@ export function SettingsTab({
                   onToggle={onToggleAdvanced}
                   guideTarget="settings-advanced"
                 />
+              </div>
+
+              <div className="settings-update-row" data-guide-target="settings-updates">
+                <div className="settings-update-copy">
+                  <span className="settings-update-title">LAUNCHER UPDATES</span>
+                  <span className="settings-update-note">
+                    {launcherVersion ? `Версия ${launcherVersion}. ` : ""}Новые версии проверяются
+                    при запуске и ставятся без установщика Windows.
+                  </span>
+                </div>
+                <button
+                  className="settings-update-check"
+                  type="button"
+                  onClick={onCheckUpdates}
+                  disabled={updateChecking}
+                >
+                  {updateChecking ? "CHECKING…" : "CHECK NOW"}
+                </button>
               </div>
 
               {advancedSettingsEnabled && (
