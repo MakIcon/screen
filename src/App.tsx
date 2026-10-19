@@ -13,10 +13,15 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { publishBotWindowContext } from "./components/plugins/mineflayerBot/botWindowContext";
-import { savePluginSettings, subscribePluginSettings } from "./components/plugins/pluginSettingsSync";
+import {
+  savePluginSettings,
+  subscribePluginSettings,
+} from "./components/plugins/pluginSettingsSync";
 import "./App.css";
 import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
 import { useWindowPhase } from "./hooks/useWindowPhase";
+import { AUTO_UPDATE_DELAY_MS, useLauncherUpdater } from "./updater/useLauncherUpdater";
+import { LauncherUpdateOverlay } from "./updater/LauncherUpdateOverlay";
 import { useRunningInstances } from "./hooks/useRunningInstances";
 import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
 import { useLocalStorageBoolean } from "./hooks/useLocalStorage";
@@ -260,7 +265,7 @@ export default function App() {
   useEffect(() => {
     const subscription = subscribePluginSettings((plugins) => {
       pluginSettingsVersion.current += 1;
-      setLauncherSettings((current) => current ? { ...current, plugins } : current);
+      setLauncherSettings((current) => (current ? { ...current, plugins } : current));
     });
     void subscription.ready.catch(logger.error);
     return subscription.dispose;
@@ -296,8 +301,7 @@ export default function App() {
       ),
     runningInstances.size > 0 ||
       Boolean(
-        launcherSettings?.plugins.blueMap.enabled ||
-          launcherSettings?.plugins.obsTelemetry.enabled,
+        launcherSettings?.plugins.blueMap.enabled || launcherSettings?.plugins.obsTelemetry.enabled,
       ),
   );
   const applyDiscordRpcPresence = (
@@ -806,6 +810,26 @@ export default function App() {
   };
 
   useWindowPhase(win as unknown as WebviewWindow, setPhase);
+
+  const updaterProxy = launcherSettings?.plugins.proxy;
+  const launcherUpdater = useLauncherUpdater({
+    ready: phase === "ready",
+    deferAutomatic: runningInstances.size > 0,
+    proxy: updaterProxy?.enabled && updaterProxy.url.trim() ? updaterProxy.url.trim() : null,
+  });
+
+  const checkLauncherUpdates = async () => {
+    const result = await launcherUpdater.checkForUpdates({ manual: true });
+    if (result.status === "up-to-date") {
+      pushToast(
+        "info",
+        `Установлена последняя версия${launcherUpdater.currentVersion ? ` ${launcherUpdater.currentVersion}` : ""}.`,
+        { title: "Up to date" },
+      );
+    } else if (result.status === "error") {
+      pushToast("error", result.message, { title: "Update check failed" });
+    }
+  };
 
   useEffect(() => {
     if (selectedInstanceId) {
@@ -2306,6 +2330,9 @@ export default function App() {
             setTheme={setTheme}
             appearanceCustomized={appearance.customized}
             onCustomizeAppearance={handleCustomizeAppearance}
+            launcherVersion={launcherUpdater.currentVersion}
+            updateChecking={launcherUpdater.checking}
+            onCheckUpdates={() => void checkLauncherUpdates()}
           />
         );
       default:
@@ -2548,6 +2575,15 @@ export default function App() {
           </div>
         )}
         <ToastStack toasts={toasts} onDismiss={dismissToast} />
+        {launcherUpdater.overlayState && (
+          <LauncherUpdateOverlay
+            state={launcherUpdater.overlayState}
+            autoStartDelayMs={AUTO_UPDATE_DELAY_MS}
+            onUpdate={() => void launcherUpdater.startUpdate()}
+            onLater={launcherUpdater.dismiss}
+            onDragStart={() => void win.startDragging()}
+          />
+        )}
         {dragKind === "build" && (
           <div className="global-drop-overlay">
             <div className="global-drop-overlay-inner">

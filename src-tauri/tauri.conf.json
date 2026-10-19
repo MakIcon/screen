@@ -1,6 +1,6 @@
 {
   "productName": "ScreenLauncher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.makar.screen",
   "build": {
     "beforeDevCommand": "pnpm icons && pnpm dev",
@@ -43,5 +43,14 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3N0VCMjg5NkMxRkM3MjgKUldRb3h4OXNpYkorUjkrRlVVMExWa0M3Mys2Yi9NR25SOVhaV3ZGQVp6Tkc2RU9sWkZzbTlNUlUK",
+      "endpoints": ["https://github.com/MakIcon/screen/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
   }
 }

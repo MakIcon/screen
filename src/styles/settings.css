@@ -599,3 +599,64 @@
     transform: translateY(0);
   }
 }
+
+/* ── Launcher updates ── */
+
+.settings-update-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-update-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.settings-update-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+
+.settings-update-note {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-alt);
+}
+
+.settings-update-check {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.settings-update-check:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover-strong);
+}
+
+.settings-update-check:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
