@@ -24,3 +24,12 @@ dist-release
 *.njsproj
 *.sln
 *.sw?
+
+# Local assistant settings and instructions
+.claude/
+.cloudi/
+.claudi/
+CLAUDE.md
+CLAUDE.local.md
+CLOUDI.md
+CLAUDI.md
