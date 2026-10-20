@@ -263,8 +263,9 @@ var require_cacheWorld = __commonJS({
         this.isInvalid = this.type === -1;
       }
       static init(registry) {
-        if (_BlockInfo.initialized && _BlockInfo.registryVersion === registry.version.minecraftVersion)
+        if (_BlockInfo.initialized && _BlockInfo.registry === registry && _BlockInfo.registryBlocks === registry.blocks && _BlockInfo.registryItems === registry.items)
           return;
+        _BlockInfo.initialized = false;
         for (const entries of [
           _BlockInfo.interactableBlocks,
           _BlockInfo.blocksCantBreak,
@@ -282,8 +283,6 @@ var require_cacheWorld = __commonJS({
           _BlockInfo.mlgItems
         ])
           entries.clear();
-        _BlockInfo.registryVersion = registry.version.minecraftVersion;
-        _BlockInfo.initialized = true;
         if (registry.blocksByName.soul_sand?.id != null) {
           _BlockInfo.soulsandId = registry.blocksByName.soul_sand.id;
         } else {
@@ -388,6 +387,10 @@ var require_cacheWorld = __commonJS({
             _BlockInfo.openable.add(block.id);
           }
         });
+        _BlockInfo.registry = registry;
+        _BlockInfo.registryBlocks = registry.blocks;
+        _BlockInfo.registryItems = registry.items;
+        _BlockInfo.initialized = true;
       }
       static fromBlock(b) {
         if (b === null)
@@ -13585,6 +13588,19 @@ function createPlugin(opts) {
     (0, climbablePhysics_1.installClimbablePhysics)(bot);
     (0, supportingBlockPhysics_1.installSupportingBlockPhysics)(bot);
     bot.pathfinder = new ThePathfinder_1.ThePathfinder(bot, opts);
+    const fabric = bot.fabric;
+    if (fabric) {
+      const refresh = () => {
+        cacheWorld_1.BlockInfo.init(bot.registry);
+        bot.pathfinder.world.cleanup?.();
+      };
+      fabric.on("adapted", refresh);
+      fabric.on("configuration", refresh);
+      bot.once("end", () => {
+        fabric.removeListener("adapted", refresh);
+        fabric.removeListener("configuration", refresh);
+      });
+    }
     bot.pathingUtil = new PathingUtil_1.PathingUtil(bot);
     (0, lowCeilingJumps_1.installLowCeilingJumps)(bot, bot.pathfinder.defaultMoveSettings.allowLowCeilingJumps);
   };

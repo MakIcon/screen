@@ -7,6 +7,7 @@ import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import { PlaceholderGuideButton } from "../../placeholders/PlaceholderGuideButton";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
+import { CustomScrollArea } from "../../layout/CustomScrollArea";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
@@ -931,15 +932,22 @@ function MineflayerBotSettingsEditor({
             </PluginSettingsGroup>
 
             <PluginSettingsGroup title="ЖУРНАЛ СОБЫТИЙ" collapsible={false}>
-              <div className="mineflayer-bot-log" aria-live="polite">
-                {(status?.logs ?? []).length === 0 ? (
-                  <span>Пока нет событий</span>
-                ) : (
-                  status?.logs
-                    .slice(-20)
-                    .map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
-                )}
-              </div>
+              <CustomScrollArea
+                className="mineflayer-bot-log"
+                style={{ minHeight: 150 }}
+                tabIndex={0}
+                aria-label="Журнал событий"
+              >
+                <div className="mineflayer-bot-log-lines" aria-live="polite">
+                  {(status?.logs ?? []).length === 0 ? (
+                    <span>Пока нет событий</span>
+                  ) : (
+                    status?.logs
+                      .slice(-20)
+                      .map((line, index) => <span key={`${line}-${index}`}>{line}</span>)
+                  )}
+                </div>
+              </CustomScrollArea>
             </PluginSettingsGroup>
           </>
         )}

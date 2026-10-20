@@ -56,6 +56,10 @@ Combat integrations added in 1.7.0 use:
 - minecrafthawkeye 1.3.9, sefirosweb, ISC.
 - mineflayer-armor-manager 2.0.1, G07cha / PrismarineJS, MIT.
 The original license files remain in their installed node_modules packages.
+Fabric networking uses mineflayer-fabric 0.2.1, Apache-2.0. Its bundled runtime
+is mineflayer-fabric.cjs; editable source and tests are in
+vendor/mineflayer-fabric and pathfinder-source.json. The original license and
+notice are included as FABRIC-LICENSE and FABRIC-NOTICE.
 Editable launcher combat code, defaults and tests are in the corresponding
 source archive alongside the worker and Pathfinder source.
 

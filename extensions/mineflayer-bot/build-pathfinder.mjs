@@ -7,6 +7,17 @@ const require = createRequire(new URL("./pathfinding/package.json", import.meta.
 const { build } = require("esbuild");
 
 await build({
+  entryPoints: [fileURLToPath(new URL("./vendor/mineflayer-fabric/index.js", import.meta.url))],
+  outfile: fileURLToPath(new URL("./mineflayer-fabric.cjs", import.meta.url)),
+  bundle: true,
+  packages: "external",
+  platform: "node",
+  format: "cjs",
+  target: "node22",
+  banner: { js: "// mineflayer-fabric 0.2.1 (Apache-2.0). Source: vendor/mineflayer-fabric; see FABRIC-LICENSE and FABRIC-NOTICE." },
+});
+
+await build({
   absWorkingDir: fileURLToPath(new URL("../../", import.meta.url)),
   entryPoints: [fileURLToPath(new URL("./pathfinding/dist/index.js", import.meta.url))],
   outfile: fileURLToPath(new URL("./pathfinder.cjs", import.meta.url)),
@@ -32,7 +43,13 @@ async function collect(relative) {
   }
 }
 for (const dir of ["pathfinding/src", "pathfinding/tests"]) await collect(dir);
+await collect("vendor/mineflayer-fabric");
 for (const file of [
+  "fabric.cjs",
+  "fabric.test.mjs",
+  "FABRIC.md",
+  "FABRIC-LICENSE",
+  "FABRIC-NOTICE",
   "worker.cjs",
   "worker.test.mjs",
   "workflow.cjs",

@@ -54,6 +54,11 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
 
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("worker.cjs", MINEFLAYER_WORKER),
+    ("fabric.cjs", include_str!("../../../extensions/mineflayer-bot/fabric.cjs")),
+    ("mineflayer-fabric.cjs", include_str!("../../../extensions/mineflayer-bot/mineflayer-fabric.cjs")),
+    ("FABRIC.md", include_str!("../../../extensions/mineflayer-bot/FABRIC.md")),
+    ("FABRIC-LICENSE", include_str!("../../../extensions/mineflayer-bot/FABRIC-LICENSE")),
+    ("FABRIC-NOTICE", include_str!("../../../extensions/mineflayer-bot/FABRIC-NOTICE")),
     ("production.cjs", include_str!("../../../extensions/mineflayer-bot/production.cjs")),
     ("workflow.cjs", include_str!("../../../extensions/mineflayer-bot/workflow.cjs")),
     ("production-plan.cjs", include_str!("../../../extensions/mineflayer-bot/production-plan.cjs")),
@@ -468,5 +473,28 @@ pub async fn uninstall_optional_extension(
             uninstall_blue_map_package().await
         }
         _ => Err(format!("Unknown optional extension: {extension_id}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn fabric_runtime_is_installed_and_refreshed_with_the_worker() {
+        let directory = std::env::temp_dir().join(format!("screen-fabric-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        write_mineflayer_scaffold(&directory).await.unwrap();
+        for name in ["fabric.cjs", "mineflayer-fabric.cjs", "FABRIC.md", "FABRIC-LICENSE", "FABRIC-NOTICE"] {
+            assert!(directory.join(name).is_file(), "missing {name}");
+        }
+        fs::write(directory.join("mineflayer-fabric.cjs"), "stale library").unwrap();
+        sync_mineflayer_worker(&directory).unwrap();
+        let library = fs::read_to_string(directory.join("mineflayer-fabric.cjs")).unwrap();
+        assert!(library.contains("mineflayer-fabric 0.2.1"));
+        assert!(library.contains("blockCollisionShapes"));
+        assert!(fs::read_to_string(directory.join("worker.cjs")).unwrap().contains("installFabricSupport(bot, emit)"));
+        assert_eq!(directory.parent(), Some(std::env::temp_dir().as_path()));
+        fs::remove_dir_all(directory).unwrap();
     }
 }

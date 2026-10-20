@@ -592,14 +592,17 @@
 }
 
 .mineflayer-bot-log {
-  display: grid;
-  gap: 6px;
-  min-height: 150px;
   max-height: 290px;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--line);
   background: var(--bg-card);
-  padding: 12px;
+}
+
+.mineflayer-bot-log-lines {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px 22px 12px 12px;
 }
 
 .mineflayer-bot-log span {

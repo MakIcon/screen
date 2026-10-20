@@ -23,7 +23,9 @@ export class BlockInfo {
     return this.walkthrough && this.safe && this.block != null && openWaterNames.has(this.block.name)
   }
   static initialized = false
-  private static registryVersion?: string
+  private static registry?: MCData
+  private static registryBlocks?: MCData['blocks']
+  private static registryItems?: MCData['items']
   static readonly interactableBlocks = new Set()
   static readonly blocksCantBreak = new Set<number>()
   static readonly blocksToAvoid = new Set()
@@ -90,15 +92,15 @@ export class BlockInfo {
   }
 
   static init (registry: MCData): void {
-    if (BlockInfo.initialized && BlockInfo.registryVersion === registry.version.minecraftVersion) return
-    // A reconnect to another protocol must not interpret its block IDs using
-    // the previous registry (ordinary dirt can otherwise become "unbreakable").
+    if (BlockInfo.initialized && BlockInfo.registry === registry &&
+      BlockInfo.registryBlocks === registry.blocks && BlockInfo.registryItems === registry.items) return
+    // Fabric can change IDs without changing Minecraft version, including
+    // replacing tables in an existing registry during PLAY or proxy transfer.
+    BlockInfo.initialized = false
     for (const entries of [BlockInfo.interactableBlocks, BlockInfo.blocksCantBreak,
       BlockInfo.blocksToAvoid, BlockInfo.climbables, BlockInfo.carpets, BlockInfo.fences,
       BlockInfo.replaceables, BlockInfo.liquids, BlockInfo.waters, BlockInfo.gravityBlocks,
       BlockInfo.openable, BlockInfo.emptyBlocks, BlockInfo.scaffoldingBlockItems, BlockInfo.mlgItems]) entries.clear()
-    BlockInfo.registryVersion = registry.version.minecraftVersion
-    BlockInfo.initialized = true
 
     if (registry.blocksByName.soul_sand?.id != null) {
       BlockInfo.soulsandId = registry.blocksByName.soul_sand.id // might be broke, who knows
@@ -229,6 +231,10 @@ export class BlockInfo {
         BlockInfo.openable.add(block.id)
       }
     })
+    BlockInfo.registry = registry
+    BlockInfo.registryBlocks = registry.blocks
+    BlockInfo.registryItems = registry.items
+    BlockInfo.initialized = true
   }
 
   static fromBlock (b: Block | null): BlockInfo {

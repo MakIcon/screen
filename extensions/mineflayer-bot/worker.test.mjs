@@ -250,13 +250,16 @@ test("formats Fabric NBT kick reasons as readable text", () => {
 
 test("adds an actionable hint and treats Fabric mismatch as permanent", () => {
   const reason = describeKickReason(fabricKick);
-  assert.match(reason, /Mineflayer cannot load Fabric client mods/);
+  assert.match(reason, /Fabric networking and registry adaptation/);
   assert.equal(isPermanentConnectionError(reason), true);
 });
 
 test("keeps ordinary socket failures reconnectable", () => {
   assert.equal(isPermanentConnectionError("socketClosed"), false);
   assert.equal(isPermanentConnectionError("connect ECONNREFUSED"), false);
+  assert.equal(isPermanentConnectionError("FABRIC_TIMEOUT: exchange deadline"), false);
+  assert.equal(isPermanentConnectionError("FABRIC_REGISTRY_INCOMPATIBLE: testmod:block"), true);
+  assert.equal(isPermanentConnectionError("FABRIC_COMMON_VERSION: unsupported version"), true);
 });
 
 test("converts protocol i64 values without losing signed low bits", () => {

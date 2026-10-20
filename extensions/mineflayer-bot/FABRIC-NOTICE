@@ -1,0 +1,15 @@
+mineflayer-fabric
+Copyright 2026 mineflayer-fabric contributors
+
+This project implements the Fabric networking protocol using the Fabric API
+source as a reference. Registry sync decoding (RegistrySyncPayload,
+DirectRegistryPacketHandler, RegistryMapSerializer) is adapted from Fabric API:
+Copyright (c) 2016, 2017, 2018, 2019 FabricMC, Apache License 2.0.
+https://github.com/FabricMC/fabric
+Reference branches 1.14 to 26.1.2; commits are listed in docs/PROTOCOL.md
+(26.1.2: 1abe2820db1f3304fe06785fee88497bf593aeb2).
+
+The supplied minecraft-protocol and minecraft-protocol-forge source trees were
+studied for their client lifecycle and plugin API. They are not bundled here.
+This is an independent third-party project, not an official FabricMC or
+PrismarineJS product.

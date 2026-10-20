@@ -1,0 +1,66 @@
+{
+  "name": "mineflayer-fabric",
+  "version": "0.2.1",
+  "description": "Fabric networking for Mineflayer and minecraft-protocol: Fabric API 1.14 - 26.x handshake, registry sync and mod data adaptation",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.js"
+    }
+  },
+  "types": "index.d.ts",
+  "type": "commonjs",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "index.js",
+    "index.mjs",
+    "index.d.ts",
+    "src",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "docs",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "check": "node --check index.js && tsc --noEmit --strict --skipLibCheck test/types.ts",
+    "example": "node examples/mineflayer.js",
+    "diagnose": "node examples/diagnose.js"
+  },
+  "peerDependencies": {
+    "minecraft-protocol": ">=1.66.0",
+    "mineflayer": ">=4.37.1"
+  },
+  "peerDependenciesMeta": {
+    "minecraft-protocol": {
+      "optional": true
+    },
+    "mineflayer": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "minecraft-protocol": "1.68.0",
+    "mineflayer": "4.39.0",
+    "typescript": "^5.9.3",
+    "@types/node": "^24.0.0"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "fabric",
+    "fabric-api",
+    "registry",
+    "handshake",
+    "minecraft-protocol",
+    "modded"
+  ]
+}

@@ -44,6 +44,19 @@ export function createPlugin (opts?: HandlerOpts) {
     installClimbablePhysics(bot)
     installSupportingBlockPhysics(bot)
     bot.pathfinder = new ThePathfinder(bot, opts)
+    const fabric = (bot as Bot & { fabric?: import('node:events').EventEmitter }).fabric
+    if (fabric) {
+      const refresh = () => {
+        BlockInfo.init(bot.registry)
+        bot.pathfinder.world.cleanup?.()
+      }
+      fabric.on('adapted', refresh)
+      fabric.on('configuration', refresh)
+      bot.once('end', () => {
+        fabric.removeListener('adapted', refresh)
+        fabric.removeListener('configuration', refresh)
+      })
+    }
     bot.pathingUtil = new PathingUtil(bot)
     installLowCeilingJumps(bot, bot.pathfinder.defaultMoveSettings.allowLowCeilingJumps)
   }

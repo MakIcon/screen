@@ -32,6 +32,7 @@ function loadMineflayer () {
 }
 
 const { mineflayer, compatibilityVersion } = loadMineflayer()
+const { installFabricSupport } = require('./fabric.cjs')
 const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
 const { normalizeCombat, createCombatController } = require('./combat.cjs')
 const { createTravelController } = require('./pearls.cjs')
@@ -193,13 +194,13 @@ function describeKickReason (reason) {
       message
     )
   ) {
-    return `${message} Mineflayer cannot load Fabric client mods. Remove client-only Xaero's Minimap/World Map from the server mods folder or use a vanilla-compatible dedicated server.`
+    return `${message} SCREEN includes Fabric networking and registry adaptation. Check the Fabric messages above: mod-specific client replies and gameplay may need a dedicated adapter.`
   }
   return message
 }
 
 function isPermanentConnectionError (reason) {
-  return /unsupported protocol version|server version .* is not supported|no data for version|no chunk implementation|this server requires|installed on your client|fabric loader|fabric api|registry entry namespaces|xaerominimap|xaeroworldmap|not whitelisted|you are banned|invalid session|failed to verify username/i.test(
+  return /FABRIC_(?!TIMEOUT\b)[A-Z_]+|unsupported protocol version|server version .* is not supported|no data for version|no chunk implementation|this server requires|installed on your client|fabric loader|fabric api|registry entry namespaces|xaerominimap|xaeroworldmap|not whitelisted|you are banned|invalid session|failed to verify username/i.test(
     String(reason || '')
   )
 }
@@ -1105,7 +1106,11 @@ async function main () {
 
     bot.on('error', (error) => {
       if (ended) return
-      emit('error', { error: error.message })
+      const message = error.code?.startsWith('FABRIC_')
+        ? `${error.code}: ${error.message}`
+        : error.message
+      if (isPermanentConnectionError(message)) kickReason = message
+      emit('error', { error: message })
     })
 
     bot.on('end', (reason) => {
@@ -1124,6 +1129,7 @@ async function main () {
       }
       scheduleReconnect(kickReason || formatReason(reason))
     })
+    installFabricSupport(bot, emit)
   }
 
   function requestShutdown (signal) {
