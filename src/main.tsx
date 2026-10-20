@@ -14,11 +14,13 @@ import { isAppearanceStudioRoute } from "./appearance/window";
 import { isBuildPlaceholdersWindowRoute } from "./components/builds/buildPlaceholdersWindow";
 import { isMineflayerBotWindowRoute } from "./components/plugins/mineflayerBot/mineflayerBotWindow";
 import { readLocale, useLocale } from "./i18n/locale";
+import { installLanguageTransition } from "./i18n/languageTransition";
 
 document.documentElement.lang = readLocale();
 
 function DocumentLocale() {
   const locale = useLocale();
+  React.useEffect(installLanguageTransition, []);
   React.useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);

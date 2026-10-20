@@ -2,22 +2,27 @@ import { useSyncExternalStore } from "react";
 
 export type Locale = "ru" | "en";
 
-const STORAGE_KEY = "screenlauncher-language";
+export const LOCALE_STORAGE_KEY = "screenlauncher-language";
+export const LOCALE_CHANGING_EVENT = "screenlauncher-language-changing";
 const CHANGE_EVENT = "screenlauncher-language-changed";
 let volatileLocale: Locale = "ru";
 
 export function readLocale(): Locale {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "en" ? "en" : "ru";
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === "en" ? "en" : "ru";
   } catch {
     return volatileLocale;
   }
 }
 
 export function saveLocale(locale: Locale): void {
+  if (locale !== readLocale()) {
+    // Observe the following React commit before notifying translation subscribers.
+    window.dispatchEvent(new Event(LOCALE_CHANGING_EVENT));
+  }
   volatileLocale = locale;
   try {
-    window.localStorage.setItem(STORAGE_KEY, locale);
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   } catch {
     // Keep the selected language active for this window when storage is unavailable.
   }
