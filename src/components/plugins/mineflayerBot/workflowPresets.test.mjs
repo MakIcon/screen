@@ -3,6 +3,8 @@ import { URL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { WORKFLOW_PRESETS, WORKFLOW_PRESET_GROUPS, workflowTemplate } from "./workflowPresets";
 import { readWorkflowDraft, workflowPayload, WORKFLOW_STEP_LIMIT } from "./workflowDraft";
+import { translateFor } from "../../../i18n/locale";
+const requires = (preset) => translateFor("ru", `bot.preset.${preset.id}.requires`);
 const runtime = createRequire(
   new URL("../../../../extensions/mineflayer-bot/package.json", import.meta.url),
 );
@@ -51,11 +53,12 @@ describe("workflow preset library", () => {
     expect(WORKFLOW_PRESETS).toHaveLength(31);
     expect(new Set(WORKFLOW_PRESETS.map((preset) => preset.id)).size).toBe(WORKFLOW_PRESETS.length);
     for (const group of WORKFLOW_PRESET_GROUPS)
-      expect(WORKFLOW_PRESETS.some((preset) => preset.group === group.id)).toBe(true);
+      expect(WORKFLOW_PRESETS.some((preset) => preset.group === group)).toBe(true);
     for (const preset of WORKFLOW_PRESETS) {
       expect(preset.steps.length).toBeGreaterThan(0);
       expect(preset.steps.length).toBeLessThanOrEqual(WORKFLOW_STEP_LIMIT);
-      expect(preset.requires.length).toBeGreaterThan(0);
+      expect(requires(preset).length).toBeGreaterThan(0);
+      expect(translateFor("en", `bot.preset.${preset.id}.requires`).length).toBeGreaterThan(0);
     }
   });
   it("keeps added copies independent and saves every preset without changing its settings", () => {
@@ -80,7 +83,7 @@ describe("workflow preset library", () => {
               bot: f.bot,
               gathering: { validate: (input) => normalizeTask(f.bot, input) },
             }),
-          preset.label,
+          preset.id,
         ).not.toThrow();
       }
     });
@@ -89,7 +92,7 @@ describe("workflow preset library", () => {
         entry.steps.some((step) => step.kind === "craft" || step.kind === "smelt"),
       )) {
         const f = fixture(version);
-        let table = preset.requires.includes("верстак рядом");
+        let table = requires(preset).includes("верстак рядом");
         for (const step of preset.steps) {
           if (step.kind === "forest") f.add("oak_log", step.count);
           if (step.kind === "mine") {

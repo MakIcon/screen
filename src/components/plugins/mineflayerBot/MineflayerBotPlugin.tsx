@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "../../../i18n/locale";
 import type { MineflayerBotPluginSettings, MineflayerBotStatus } from "../../../types";
 import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
 import { normalizeMineflayerBotSettings } from "../pluginSettings";
@@ -22,33 +23,29 @@ type CommandSource = MineflayerBotPluginSettings["commandSource"];
 type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "gathering";
 type WorkspaceView = "scenario" | "inventory" | "production" | "settings" | "control";
 
-const WORKSPACE_VIEWS: Array<{ id: WorkspaceView; label: string }> = [
-  { id: "scenario", label: "Сценарий" },
-  { id: "inventory", label: "Инвентарь" },
-  { id: "production", label: "Рабочие блоки" },
-  { id: "settings", label: "Настройки" },
-  { id: "control", label: "Журнал и чат" },
+const WORKSPACE_VIEWS: WorkspaceView[] = [
+  "scenario",
+  "inventory",
+  "production",
+  "settings",
+  "control",
 ];
 
-const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
-  { id: "connection", label: "Подключение" },
-  { id: "behavior", label: "Движение" },
-  { id: "survival", label: "Выживание" },
-  { id: "combat", label: "Бой и предметы" },
-  { id: "gathering", label: "Добыча и склад" },
-  { id: "commands", label: "Команды" },
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  "connection",
+  "behavior",
+  "survival",
+  "combat",
+  "gathering",
+  "commands",
 ];
 
 const MOVEMENT_PRESETS: Array<{
-  id: string;
-  label: string;
-  description: string;
+  id: "safe" | "balanced" | "explorer";
   patch: Partial<MineflayerBotPluginSettings>;
 }> = [
   {
     id: "safe",
-    label: "ОСТОРОЖНЫЙ",
-    description: "Без изменения мира",
     patch: {
       allowSprinting: false,
       allowParkour: false,
@@ -59,8 +56,6 @@ const MOVEMENT_PRESETS: Array<{
   },
   {
     id: "balanced",
-    label: "СБАЛАНСИРОВАННЫЙ",
-    description: "Обычное движение",
     patch: {
       allowSprinting: true,
       allowParkour: true,
@@ -71,8 +66,6 @@ const MOVEMENT_PRESETS: Array<{
   },
   {
     id: "explorer",
-    label: "ИССЛЕДОВАТЕЛЬ",
-    description: "Быстро, с разрушением блоков",
     patch: {
       allowSprinting: true,
       allowParkour: true,
@@ -123,6 +116,7 @@ function MineflayerBotSettingsEditor({
   onChange: (settings: MineflayerBotPluginSettings) => void;
   context: PluginRenderContext;
 }) {
+  const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const status = monitor.snapshot?.mineflayerBot ?? null;
   const packageInstalled = Boolean(
@@ -144,15 +138,31 @@ function MineflayerBotSettingsEditor({
     const key = `${status?.pid}:${storageScan.id}`;
     if (savedScan.current === key) return;
     savedScan.current = key;
-    if (storageScan.added) onChange(normalizeMineflayerBotSettings({ ...settings,
-      gathering: { ...settings.gathering, storageGroups: mergeScannedStorageGroups(settings.gathering.storageGroups, storageScan.groups) } }));
-    void invoke("send_mineflayer_bot_chat", { message: `stash scan saved ${storageScan.id}`, command: true })
-      .catch(error => setActionError(toErrorMessage(error)));
+    if (storageScan.added)
+      onChange(
+        normalizeMineflayerBotSettings({
+          ...settings,
+          gathering: {
+            ...settings.gathering,
+            storageGroups: mergeScannedStorageGroups(
+              settings.gathering.storageGroups,
+              storageScan.groups,
+            ),
+          },
+        }),
+      );
+    void invoke("send_mineflayer_bot_chat", {
+      message: `stash scan saved ${storageScan.id}`,
+      command: true,
+    }).catch((error) => setActionError(toErrorMessage(error)));
   }, [storageScan, status?.pid, settings, onChange]);
   const [activeView, setActiveView] = useState<WorkspaceView>("scenario");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("connection");
   const activeSection = activeView === "settings" ? settingsSection : activeView;
-  const openSettings = (section: SettingsSection) => { setSettingsSection(section); setActiveView("settings"); };
+  const openSettings = (section: SettingsSection) => {
+    setSettingsSection(section);
+    setActiveView("settings");
+  };
   const activeBotMsAccount = context.microsoftAccounts.find(
     (account) => account.id === settings.botMicrosoftAccountId,
   );
@@ -247,7 +257,7 @@ function MineflayerBotSettingsEditor({
     try {
       await invoke("send_mineflayer_bot_chat", { message });
       setChatMessage((current) => (current === draft ? "" : current));
-      setChatFeedback("Отправлено боту");
+      setChatFeedback(tr("bot.main.sentToTheBot"));
       void monitor.refresh();
     } catch (error) {
       setChatError(toErrorMessage(error));
@@ -261,8 +271,13 @@ function MineflayerBotSettingsEditor({
   const connectionControls = (
     <>
       {status?.running && (
-        <button type="button" className="mf-button" disabled={Boolean(busyAction)} onClick={() => void restartBot()}>
-          Перезапустить
+        <button
+          type="button"
+          className="mf-button"
+          disabled={Boolean(busyAction)}
+          onClick={() => void restartBot()}
+        >
+          {tr("bot.main.restart")}
         </button>
       )}
       <button
@@ -271,7 +286,11 @@ function MineflayerBotSettingsEditor({
         disabled={status?.running ? Boolean(busyAction) : !canStart}
         onClick={() => void (status?.running ? stopBot() : startBot())}
       >
-        {busyAction ? "Подождите…" : status?.running ? "Отключить" : "Подключить бота"}
+        {busyAction
+          ? tr("bot.main.pleaseWait")
+          : status?.running
+            ? tr("bot.main.disconnect")
+            : tr("bot.main.connectBot")}
       </button>
     </>
   );
@@ -281,56 +300,130 @@ function MineflayerBotSettingsEditor({
       <header className="mf-bot-toolbar">
         <div className={`mf-bot-identity${chatConnected ? " is-connected" : ""}`}>
           <span className="mf-bot-connection-dot" aria-hidden="true" />
-          <div><strong>{status?.botUsername || activeBotMsAccount?.username || settings.botNickname || "Mineflayer Bot"}</strong><span>{chatConnected ? "Подключён" : status?.state === "reconnecting" ? "Переподключается…" : status?.running ? "Подключается…" : "Не подключён"}<span aria-hidden="true"> · </span>{settings.host || "Сервер не указан"}{settings.host ? `:${settings.port}` : ""}</span></div>
+          <div>
+            <strong>
+              {status?.botUsername ||
+                activeBotMsAccount?.username ||
+                settings.botNickname ||
+                "Mineflayer Bot"}
+            </strong>
+            <span>
+              {chatConnected
+                ? tr("bot.main.connected")
+                : status?.state === "reconnecting"
+                  ? tr("bot.main.reconnecting")
+                  : status?.running
+                    ? tr("bot.main.connecting")
+                    : tr("bot.main.notConnected")}
+              <span aria-hidden="true"> · </span>
+              {settings.host || tr("bot.main.noServerSet")}
+              {settings.host ? `:${settings.port}` : ""}
+            </span>
+          </div>
         </div>
-        <div className="mf-bot-toolbar-actions">
-          {connectionControls}
-        </div>
+        <div className="mf-bot-toolbar-actions">{connectionControls}</div>
       </header>
-      {!status?.running && (!settings.enabled || !settings.host.trim() || sameAsLauncherAccount || (settings.botAccountMode === "microsoft" && !settings.botMicrosoftAccountId)) && <p className="mf-bot-connection-hint">{!settings.enabled ? "Включите расширение переключателем выше." : sameAsLauncherAccount ? "Выберите для бота отдельный Microsoft-аккаунт." : "Укажите сервер и аккаунт бота в настройках подключения."}<button type="button" className="mf-text-button" onClick={() => openSettings("connection")}>Открыть настройки ↗</button></p>}
-      <nav className="mineflayer-bot-tabs" aria-label="Рабочая область бота">
+      {!status?.running &&
+        (!settings.enabled ||
+          !settings.host.trim() ||
+          sameAsLauncherAccount ||
+          (settings.botAccountMode === "microsoft" && !settings.botMicrosoftAccountId)) && (
+          <p className="mf-bot-connection-hint">
+            {!settings.enabled
+              ? tr("bot.main.turnTheExtensionOn")
+              : sameAsLauncherAccount
+                ? tr("bot.main.chooseASeparateMicrosoft")
+                : tr("bot.main.setTheServerAnd")}
+            <button
+              type="button"
+              className="mf-text-button"
+              onClick={() => openSettings("connection")}
+            >
+              {tr("bot.main.openSettings")}
+            </button>
+          </p>
+        )}
+      <nav className="mineflayer-bot-tabs" aria-label={tr("bot.main.botWorkspace")}>
         {WORKSPACE_VIEWS.map((section) => (
           <button
-            key={section.id}
+            key={section}
             type="button"
-            aria-current={activeView === section.id ? "page" : undefined}
-            className={activeView === section.id ? "active" : ""}
+            aria-current={activeView === section ? "page" : undefined}
+            className={activeView === section ? "active" : ""}
             onClick={(event) => {
-              setActiveView(section.id);
+              setActiveView(section);
               event.currentTarget.closest(".csa-content")?.scrollTo({ top: 0 });
             }}
           >
-            <strong>{section.label}</strong>
+            <strong>{tr(`bot.workspace.${section}`)}</strong>
           </button>
         ))}
       </nav>
 
       <div hidden={activeView !== "scenario"}>
-        <MineflayerWorkflow connected={chatConnected} status={status} gatheringSettings={settings.gathering} refresh={monitor.refresh} onOpenConnection={() => openSettings("connection")} onOpenStorage={() => openSettings("gathering")} />
+        <MineflayerWorkflow
+          connected={chatConnected}
+          status={status}
+          gatheringSettings={settings.gathering}
+          refresh={monitor.refresh}
+          onOpenConnection={() => openSettings("connection")}
+          onOpenStorage={() => openSettings("gathering")}
+        />
       </div>
-      {activeView === "settings" && <nav className="mf-settings-nav" aria-label="Разделы настроек">{SETTINGS_SECTIONS.map(section => <button key={section.id} type="button" aria-current={settingsSection === section.id ? "page" : undefined} className={settingsSection === section.id ? "active" : ""} onClick={() => setSettingsSection(section.id)}>{section.label}</button>)}</nav>}
+      {activeView === "settings" && (
+        <nav className="mf-settings-nav" aria-label={tr("bot.main.settingsSections")}>
+          {SETTINGS_SECTIONS.map((section) => (
+            <button
+              key={section}
+              type="button"
+              aria-current={settingsSection === section ? "page" : undefined}
+              className={settingsSection === section ? "active" : ""}
+              onClick={() => setSettingsSection(section)}
+            >
+              {tr(`bot.settingsSection.${section}`)}
+            </button>
+          ))}
+        </nav>
+      )}
       <div className="mineflayer-bot-section" key={activeSection}>
-        {activeSection === "gathering" && <MineflayerGatheringControls connected={chatConnected} refresh={monitor.refresh} status={status} settings={settings.gathering} onSettingsChange={(gathering) => update({ gathering })} onOpenInventory={() => setActiveView("inventory")} />}
-        {activeSection === "inventory" && <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveView("scenario")} />}
-        {activeSection === "production" && <MineflayerProductionControls connected={chatConnected} refresh={monitor.refresh} status={status} />}
+        {activeSection === "gathering" && (
+          <MineflayerGatheringControls
+            connected={chatConnected}
+            refresh={monitor.refresh}
+            status={status}
+            settings={settings.gathering}
+            onSettingsChange={(gathering) => update({ gathering })}
+            onOpenInventory={() => setActiveView("inventory")}
+          />
+        )}
+        {activeSection === "inventory" && (
+          <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveView("scenario")} />
+        )}
+        {activeSection === "production" && (
+          <MineflayerProductionControls
+            connected={chatConnected}
+            refresh={monitor.refresh}
+            status={status}
+          />
+        )}
         {activeSection === "connection" && (
           <div className="mineflayer-bot-connection-grid">
-            <PluginSettingsGroup title="СЕРВЕР" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.server")} collapsible={false}>
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field mineflayer-bot-field--wide">
-                  <span>АДРЕС СЕРВЕРА</span>
+                  <span>{tr("bot.main.serverAddress")}</span>
                   <input
                     value={settings.host}
-                    placeholder="localhost или play.example.net"
+                    placeholder={tr("bot.main.localhostOrPlayExample")}
                     spellCheck={false}
                     onChange={(event) => update({ host: event.target.value })}
                   />
                 </label>
 
                 <label className="mineflayer-bot-field">
-                  <span>ПОРТ</span>
+                  <span>{tr("bot.main.port")}</span>
                   <CustomNumberInput
-                    ariaLabel="ПОРТ"
+                    ariaLabel={tr("bot.main.port")}
                     background="transparent"
                     min={1}
                     max={65535}
@@ -340,17 +433,17 @@ function MineflayerBotSettingsEditor({
                 </label>
 
                 <label className="mineflayer-bot-field">
-                  <span>ВЕРСИЯ</span>
+                  <span>{tr("bot.main.version")}</span>
                   <input
                     value={settings.version}
-                    placeholder="Авто"
+                    placeholder={tr("common.auto")}
                     spellCheck={false}
                     onChange={(event) => update({ version: event.target.value })}
                   />
                 </label>
               </div>
             </PluginSettingsGroup>
-            <PluginSettingsGroup title="АККАУНТ БОТА" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.botAccount")} collapsible={false}>
               <div className="mineflayer-bot-mode" role="group">
                 <button
                   type="button"
@@ -358,7 +451,7 @@ function MineflayerBotSettingsEditor({
                   className={settings.botAccountMode === "offline" ? "active" : ""}
                   onClick={() => update({ botAccountMode: "offline" })}
                 >
-                  ОФЛАЙН
+                  {tr("bot.main.offline")}
                 </button>
                 <button
                   type="button"
@@ -378,7 +471,7 @@ function MineflayerBotSettingsEditor({
 
               {settings.botAccountMode === "offline" ? (
                 <label className="mineflayer-bot-field mineflayer-bot-field--full">
-                  <span>НИК БОТА</span>
+                  <span>{tr("bot.main.botNickname")}</span>
                   <input
                     value={settings.botNickname}
                     maxLength={16}
@@ -390,7 +483,7 @@ function MineflayerBotSettingsEditor({
                 <div className="mineflayer-bot-account-list">
                   {context.microsoftAccounts.length === 0 ? (
                     <div className="mineflayer-bot-empty">
-                      Нет аккаунтов Microsoft. Добавьте отдельный аккаунт в лаунчере.
+                      {tr("bot.main.noMicrosoftAccountsAdd")}
                     </div>
                   ) : (
                     context.microsoftAccounts.map((account) => (
@@ -418,21 +511,21 @@ function MineflayerBotSettingsEditor({
 
               {sameAsLauncherAccount && (
                 <div className="mineflayer-bot-warning">
-                  Выбран аккаунт активного игрока. Для бота нужен отдельный аккаунт.
+                  {tr("bot.main.theActivePlayersAccount")}
                 </div>
               )}
             </PluginSettingsGroup>
-            <PluginSettingsGroup title="ПОВТОРНОЕ ПОДКЛЮЧЕНИЕ" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.reconnecting2")} collapsible={false}>
               <div className="mineflayer-bot-toggle-grid">
                 <SettingToggle
-                  label="АВТОПЕРЕПОДКЛЮЧЕНИЕ"
-                  description="Возвращаться после разрыва соединения"
+                  label={tr("bot.main.autoReconnect")}
+                  description={tr("bot.main.comeBackAfterA")}
                   checked={settings.autoReconnect}
                   onChange={(autoReconnect) => update({ autoReconnect })}
                 />
                 <SettingToggle
-                  label="АВТОВОЗРОЖДЕНИЕ"
-                  description="Возрождаться после смерти"
+                  label={tr("bot.main.autoRespawn")}
+                  description={tr("bot.main.respawnAfterDying")}
                   checked={settings.autoRespawn}
                   onChange={(autoRespawn) => update({ autoRespawn })}
                 />
@@ -440,9 +533,9 @@ function MineflayerBotSettingsEditor({
 
               <div className="mineflayer-bot-grid mineflayer-bot-grid--three">
                 <label className="mineflayer-bot-field">
-                  <span>ЗАДЕРЖКА ПОВТОРА · СЕК</span>
+                  <span>{tr("bot.main.retryDelaySec")}</span>
                   <CustomNumberInput
-                    ariaLabel="ЗАДЕРЖКА ПОВТОРА · СЕК"
+                    ariaLabel={tr("bot.main.retryDelaySec")}
                     background="transparent"
                     min={1}
                     max={300}
@@ -452,9 +545,9 @@ function MineflayerBotSettingsEditor({
                   />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>ПОПЫТКИ · 0 = БЕЗ ЛИМИТА</span>
+                  <span>{tr("bot.main.attempts0Unlimited")}</span>
                   <CustomNumberInput
-                    ariaLabel="ПОПЫТКИ · 0 = БЕЗ ЛИМИТА"
+                    ariaLabel={tr("bot.main.attempts0Unlimited")}
                     background="transparent"
                     min={0}
                     max={100}
@@ -464,9 +557,9 @@ function MineflayerBotSettingsEditor({
                   />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>ТАЙМАУТ ВХОДА · СЕК</span>
+                  <span>{tr("bot.main.loginTimeoutSec")}</span>
                   <CustomNumberInput
-                    ariaLabel="ТАЙМАУТ ВХОДА · СЕК"
+                    ariaLabel={tr("bot.main.loginTimeoutSec")}
                     background="transparent"
                     min={5}
                     max={300}
@@ -482,24 +575,24 @@ function MineflayerBotSettingsEditor({
         {activeSection === "behavior" && (
           <>
             <div className="mineflayer-bot-subhead">
-              <span>ПРОФИЛЬ ДВИЖЕНИЯ</span>
+              <span>{tr("bot.main.movementProfile")}</span>
             </div>
 
             <div className="mineflayer-bot-presets">
               {MOVEMENT_PRESETS.map((preset) => (
                 <button key={preset.id} type="button" onClick={() => update(preset.patch)}>
-                  <strong>{preset.label}</strong>
-                  <span>{preset.description}</span>
+                  <strong>{tr(`bot.movementPreset.${preset.id}.label`)}</strong>
+                  <span>{tr(`bot.movementPreset.${preset.id}.description`)}</span>
                 </button>
               ))}
             </div>
 
-            <PluginSettingsGroup title="ДВИЖЕНИЕ И МАРШРУТ" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.movementAndRoute")} collapsible={false}>
               <div className="mineflayer-bot-grid mineflayer-bot-grid--three">
                 <label className="mineflayer-bot-field">
-                  <span>ДИСТАНЦИЯ СЛЕДОВАНИЯ</span>
+                  <span>{tr("bot.main.followDistance")}</span>
                   <CustomNumberInput
-                    ariaLabel="ДИСТАНЦИЯ СЛЕДОВАНИЯ"
+                    ariaLabel={tr("bot.main.followDistance")}
                     background="transparent"
                     min={1}
                     max={16}
@@ -508,9 +601,9 @@ function MineflayerBotSettingsEditor({
                   />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>РАДИУС ПРИБЫТИЯ</span>
+                  <span>{tr("bot.main.arrivalRadius")}</span>
                   <CustomNumberInput
-                    ariaLabel="РАДИУС ПРИБЫТИЯ"
+                    ariaLabel={tr("bot.main.arrivalRadius")}
                     background="transparent"
                     min={1}
                     max={16}
@@ -519,9 +612,9 @@ function MineflayerBotSettingsEditor({
                   />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>МАКСИМАЛЬНАЯ ВЫСОТА ПАДЕНИЯ</span>
+                  <span>{tr("bot.main.maxFallHeight")}</span>
                   <CustomNumberInput
-                    ariaLabel="МАКСИМАЛЬНАЯ ВЫСОТА ПАДЕНИЯ"
+                    ariaLabel={tr("bot.main.maxFallHeight")}
                     background="transparent"
                     min={1}
                     max={16}
@@ -533,89 +626,89 @@ function MineflayerBotSettingsEditor({
 
               <div className="mineflayer-bot-toggle-grid">
                 <SettingToggle
-                  label="СПРИНТ"
-                  description="Бежать на прямых участках"
+                  label={tr("bot.main.sprint")}
+                  description={tr("bot.main.runOnStraightStretches")}
                   checked={settings.allowSprinting}
                   onChange={(allowSprinting) => update({ allowSprinting })}
                 />
                 <SettingToggle
-                  label="ПРЫЖКИ ПОД НИЗКИМ ПОТОЛКОМ"
-                  description="Частые спринт-прыжки в тоннелях высотой два блока и под листвой · нужен спринт"
+                  label={tr("bot.main.lowCeilingJumps")}
+                  description={tr("bot.main.frequentSprintJumpsIn")}
                   checked={settings.allowLowCeilingJumps}
                   onChange={(allowLowCeilingJumps) => update({ allowLowCeilingJumps })}
                 />
                 <SettingToggle
-                  label="ПАРКУР"
-                  description="Перепрыгивать небольшие разрывы"
+                  label={tr("bot.main.parkour")}
+                  description={tr("bot.main.jumpAcrossSmallGaps")}
                   checked={settings.allowParkour}
                   onChange={(allowParkour) => update({ allowParkour })}
                 />
                 <SettingToggle
-                  label="РАЗРУШЕНИЕ БЛОКОВ"
-                  description="Разрешает боту изменять мир"
+                  label={tr("bot.main.blockBreaking")}
+                  description={tr("bot.main.letsTheBotChange")}
                   checked={settings.canDig}
                   warning
                   onChange={(canDig) => update({ canDig })}
                 />
                 <SettingToggle
-                  label="ПОВОРОТ В ПРЫЖКЕ"
-                  description="Поворот на 45° для дальнего прыжка"
+                  label={tr("bot.main.airStrafe")}
+                  description={tr("bot.main.a45TurnFor")}
                   checked={settings.allowAirStrafe}
                   onChange={(allowAirStrafe) => update({ allowAirStrafe })}
                 />
                 <SettingToggle
-                  label="ПЛАВАНИЕ"
-                  description="Плыть быстро и сохранять воздух"
+                  label={tr("bot.main.swimming")}
+                  description={tr("bot.main.swimFastAndConserve")}
                   checked={settings.stayOnWater}
                   onChange={(stayOnWater) => update({ stayOnWater })}
                 />
                 <SettingToggle
-                  label="WATER DROP В ВОДОЁМ"
-                  description="Прыгать в воду после проверки траектории"
+                  label={tr("bot.main.waterDropIntoWater")}
+                  description={tr("bot.main.jumpIntoWaterAfter")}
                   checked={settings.allowWaterDrop}
                   onChange={(allowWaterDrop) => update({ allowWaterDrop })}
                 />
                 <SettingToggle
-                  label="WATER DROP С ВЕДРОМ"
-                  description="Ставить воду перед приземлением и забирать её"
+                  label={tr("bot.main.waterDropWithA")}
+                  description={tr("bot.main.placeWaterBeforeLanding")}
                   checked={settings.allowBucketWaterDrop}
                   onChange={(allowBucketWaterDrop) => update({ allowBucketWaterDrop })}
                 />
                 <SettingToggle
-                  label="ОТЛАДКА МАРШРУТА"
-                  description="Записывать изменения пути в журнал"
+                  label={tr("bot.main.routeDebugging")}
+                  description={tr("bot.main.writeRouteChangesTo")}
                   checked={settings.logPathUpdates}
                   onChange={(logPathUpdates) => update({ logPathUpdates })}
                 />
                 <SettingToggle
-                  label="АНТИОТБРАСЫВАНИЕ"
-                  description="БЛОКИРОВАТЬ ТОЛЧКИ И УДАРЫ · ПОСЛЕ ПЕРЕЗАПУСКА БОТА"
+                  label={tr("bot.main.antiKnockback")}
+                  description={tr("bot.main.blockPushesAndHits")}
                   checked={settings.antiKnockback}
                   onChange={(antiKnockback) => update({ antiKnockback })}
                 />
               </div>
             </PluginSettingsGroup>
-            <PluginSettingsGroup title="ПОСЛЕ ВХОДА НА СЕРВЕР" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.afterJoiningTheServer")} collapsible={false}>
               <div className="mineflayer-bot-toggle-grid">
                 <SettingToggle
-                  label="СЛЕДОВАТЬ ЗА ВЛАДЕЛЬЦЕМ"
-                  description="Начинать движение после входа"
+                  label={tr("bot.main.followTheOwner")}
+                  description={tr("bot.main.startMovingAfterJoining")}
                   checked={settings.autoFollowOnSpawn}
                   onChange={(autoFollowOnSpawn) => update({ autoFollowOnSpawn })}
                 />
               </div>
               <PluginSettingsGroup
-                title="СООБЩЕНИЕ ПРИ ВХОДЕ"
-                description="Текст приветствия и плейсхолдеры"
+                title={tr("bot.main.joinMessage")}
+                description={tr("bot.main.greetingTextAndPlaceholders")}
                 enabled={settings.announceOnSpawn}
                 onToggle={() => update({ announceOnSpawn: !settings.announceOnSpawn })}
               >
                 <label className="mineflayer-bot-field mineflayer-bot-field--full">
-                  <span>ТЕКСТ СООБЩЕНИЯ</span>
+                  <span>{tr("bot.main.messageText")}</span>
                   <input
                     value={settings.spawnMessage}
                     maxLength={200}
-                    placeholder="Готов, %owner%!"
+                    placeholder={tr("bot.main.readyOwner")}
                     onChange={(event) => update({ spawnMessage: event.target.value })}
                   />
                 </label>
@@ -628,79 +721,144 @@ function MineflayerBotSettingsEditor({
         {activeSection === "survival" && (
           <>
             <PluginSettingsGroup
-              title="АВТОЕДА"
-              description="Безопасная пища из инвентаря · настройки применяются после перезапуска бота"
+              title={tr("bot.main.autoEat")}
+              description={tr("bot.main.safeFoodFromThe")}
               enabled={settings.survival.autoEat}
-              onToggle={() => update({ survival: { ...settings.survival, autoEat: !settings.survival.autoEat } })}
+              onToggle={() =>
+                update({ survival: { ...settings.survival, autoEat: !settings.survival.autoEat } })
+              }
             >
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field">
-                  <span>ЕСТЬ ПРИ ГОЛОДЕ ≤ · ИЗ 20</span>
-                  <CustomNumberInput ariaLabel="ЕСТЬ ПРИ ГОЛОДЕ" background="transparent" min={1} max={19}
+                  <span>{tr("bot.main.eatAtHungerOut")}</span>
+                  <CustomNumberInput
+                    ariaLabel={tr("bot.main.eatAtHunger")}
+                    background="transparent"
+                    min={1}
+                    max={19}
                     value={settings.survival.autoEatMinHunger}
-                    onChange={(autoEatMinHunger) => update({ survival: { ...settings.survival, autoEatMinHunger } })} />
+                    onChange={(autoEatMinHunger) =>
+                      update({ survival: { ...settings.survival, autoEatMinHunger } })
+                    }
+                  />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>ЕСТЬ ПРИ ЗДОРОВЬЕ ≤ · ИЗ 20</span>
-                  <CustomNumberInput ariaLabel="ЕСТЬ ПРИ ЗДОРОВЬЕ" background="transparent" min={1} max={20}
+                  <span>{tr("bot.main.eatAtHealthOut")}</span>
+                  <CustomNumberInput
+                    ariaLabel={tr("bot.main.eatAtHealth")}
+                    background="transparent"
+                    min={1}
+                    max={20}
                     value={settings.survival.autoEatMinHealth}
-                    onChange={(autoEatMinHealth) => update({ survival: { ...settings.survival, autoEatMinHealth } })} />
+                    onChange={(autoEatMinHealth) =>
+                      update({ survival: { ...settings.survival, autoEatMinHealth } })
+                    }
+                  />
                 </label>
                 <div className="mineflayer-bot-field mineflayer-bot-field--full">
-                  <span>ВЫБОР ЕДЫ</span>
-                  <div className="mineflayer-bot-mode" role="group" aria-label="ВЫБОР ЕДЫ">
+                  <span>{tr("bot.main.foodChoice")}</span>
+                  <div
+                    className="mineflayer-bot-mode"
+                    role="group"
+                    aria-label={tr("bot.main.foodChoice")}
+                  >
                     {(["saturation", "foodPoints"] as const).map((priority) => (
-                      <button key={priority} type="button" aria-pressed={settings.survival.autoEatPriority === priority}
+                      <button
+                        key={priority}
+                        type="button"
+                        aria-pressed={settings.survival.autoEatPriority === priority}
                         className={settings.survival.autoEatPriority === priority ? "active" : ""}
-                        onClick={() => update({ survival: { ...settings.survival, autoEatPriority: priority } })}>
-                        {priority === "saturation" ? "Больше насыщения" : "Больше очков голода"}
+                        onClick={() =>
+                          update({ survival: { ...settings.survival, autoEatPriority: priority } })
+                        }
+                      >
+                        {priority === "saturation"
+                          ? tr("bot.main.moreSaturation")
+                          : tr("bot.main.moreFoodPoints")}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
-              <p className="mineflayer-bot-combat-note">Бот делает паузу для еды и возвращает прежний предмет. Опасная еда и золотые яблоки сохраняются. При полном голоде обычная еда не используется.</p>
+              <p className="mineflayer-bot-combat-note">{tr("bot.main.theBotPausesTo")}</p>
             </PluginSettingsGroup>
             <PluginSettingsGroup
-              title="АВТОБАФЫ И ЛЕЧЕБНЫЕ ЗЕЛЬЯ"
-              description="Зелья из инвентаря в бою · настройки применяются после перезапуска бота"
+              title={tr("bot.main.autoBuffsAndHealing")}
+              description={tr("bot.main.potionsFromTheInventory")}
               enabled={settings.survival.autoBuff}
-              onToggle={() => update({ survival: { ...settings.survival, autoBuff: !settings.survival.autoBuff } })}
+              onToggle={() =>
+                update({
+                  survival: { ...settings.survival, autoBuff: !settings.survival.autoBuff },
+                })
+              }
             >
-              <SettingToggle label="ЛЕЧЕБНЫЕ ЗЕЛЬЯ" description="Мгновенное лечение и регенерация при низком здоровье"
+              <SettingToggle
+                label={tr("bot.main.healingPotions")}
+                description={tr("bot.main.instantHealingAndRegeneration")}
                 checked={settings.survival.autoBuffHealing}
-                onChange={(autoBuffHealing) => update({ survival: { ...settings.survival, autoBuffHealing } })} />
-              <SettingToggle label="БОЕВЫЕ УСИЛЕНИЯ" description="Сила, скорость и огнестойкость при безопасной дистанции"
+                onChange={(autoBuffHealing) =>
+                  update({ survival: { ...settings.survival, autoBuffHealing } })
+                }
+              />
+              <SettingToggle
+                label={tr("bot.main.combatBuffs")}
+                description={tr("bot.main.strengthSpeedAndFire")}
                 checked={settings.survival.autoBuffCombat}
-                onChange={(autoBuffCombat) => update({ survival: { ...settings.survival, autoBuffCombat } })} />
+                onChange={(autoBuffCombat) =>
+                  update({ survival: { ...settings.survival, autoBuffCombat } })
+                }
+              />
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field">
-                  <span>ЛЕЧИТЬСЯ ПРИ ЗДОРОВЬЕ ≤ · HP</span>
-                  <CustomNumberInput ariaLabel="ЗДОРОВЬЕ ДЛЯ ЛЕЧЕБНОГО ЗЕЛЬЯ" background="transparent" min={1} max={20}
+                  <span>{tr("bot.main.healAtHealthHp")}</span>
+                  <CustomNumberInput
+                    ariaLabel={tr("bot.main.healthForHealingPotion")}
+                    background="transparent"
+                    min={1}
+                    max={20}
                     value={settings.survival.autoBuffMinHealth}
-                    onChange={(autoBuffMinHealth) => update({ survival: { ...settings.survival, autoBuffMinHealth } })} />
+                    onChange={(autoBuffMinHealth) =>
+                      update({ survival: { ...settings.survival, autoBuffMinHealth } })
+                    }
+                  />
                 </label>
               </div>
-              <p className="mineflayer-bot-combat-note">Бот использует питьевые и взрывные зелья, учитывает действующие эффекты и возвращает оружие. Взрывные зелья бросаются под ноги вдали от других существ. Туманные зелья сохраняются. Адаптивный бой помогает отойти для лечения.</p>
+              <p className="mineflayer-bot-combat-note">{tr("bot.main.theBotUsesDrinkable")}</p>
             </PluginSettingsGroup>
             <PluginSettingsGroup
-              title="АВАРИЙНЫЙ MLG"
-              description="Спасение ведром воды при случайном падении или отбрасывании"
+              title={tr("bot.main.emergencyMlg")}
+              description={tr("bot.main.aWaterBucketSave")}
               enabled={settings.survival.emergencyMlg}
-              onToggle={() => update({ survival: { ...settings.survival, emergencyMlg: !settings.survival.emergencyMlg } })}
+              onToggle={() =>
+                update({
+                  survival: { ...settings.survival, emergencyMlg: !settings.survival.emergencyMlg },
+                })
+              }
             >
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field">
-                  <span>МИНИМАЛЬНОЕ ПАДЕНИЕ · БЛОКИ</span>
-                  <CustomNumberInput ariaLabel="МИНИМАЛЬНОЕ ПАДЕНИЕ ДЛЯ MLG" background="transparent" min={4} max={32}
+                  <span>{tr("bot.main.minFallBlocks")}</span>
+                  <CustomNumberInput
+                    ariaLabel={tr("bot.main.minFallForMlg")}
+                    background="transparent"
+                    min={4}
+                    max={32}
                     value={settings.survival.mlgMinFallHeight}
-                    onChange={(mlgMinFallHeight) => update({ survival: { ...settings.survival, mlgMinFallHeight } })} />
+                    onChange={(mlgMinFallHeight) =>
+                      update({ survival: { ...settings.survival, mlgMinFallHeight } })
+                    }
+                  />
                 </label>
               </div>
-              <SettingToggle label="ЗАБИРАТЬ ВОДУ ПОСЛЕ MLG" description="Только свой источник и только после приземления"
+              <SettingToggle
+                label={tr("bot.main.pickUpWaterAfter")}
+                description={tr("bot.main.onlyYourOwnSource")}
                 checked={settings.survival.mlgPickupWater}
-                onChange={(mlgPickupWater) => update({ survival: { ...settings.survival, mlgPickupWater } })} />
-              <p className="mineflayer-bot-combat-note">Нужно ведро воды в инвентаре. Бот рассчитывает траекторию с учётом скорости и препятствий. В Нижнем мире вода не ставится. Плановые Water Drop настраиваются во вкладке «Поведение».</p>
+                onChange={(mlgPickupWater) =>
+                  update({ survival: { ...settings.survival, mlgPickupWater } })
+                }
+              />
+              <p className="mineflayer-bot-combat-note">{tr("bot.main.aWaterBucketIs")}</p>
             </PluginSettingsGroup>
           </>
         )}
@@ -715,10 +873,10 @@ function MineflayerBotSettingsEditor({
 
         {activeSection === "commands" && (
           <>
-            <PluginSettingsGroup title="ДОСТУП К КОМАНДАМ" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.commandAccess")} collapsible={false}>
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field">
-                  <span>ПРЕФИКС КОМАНД</span>
+                  <span>{tr("bot.main.commandPrefix")}</span>
                   <input
                     value={settings.commandPrefix}
                     maxLength={8}
@@ -727,9 +885,9 @@ function MineflayerBotSettingsEditor({
                   />
                 </label>
                 <label className="mineflayer-bot-field">
-                  <span>ПЕРЕРЫВ МЕЖДУ КОМАНДАМИ · МС</span>
+                  <span>{tr("bot.main.pauseBetweenCommandsMs")}</span>
                   <CustomNumberInput
-                    ariaLabel="ПЕРЕРЫВ МЕЖДУ КОМАНДАМИ · МС"
+                    ariaLabel={tr("bot.main.pauseBetweenCommandsMs")}
                     background="transparent"
                     min={0}
                     max={10000}
@@ -750,16 +908,16 @@ function MineflayerBotSettingsEditor({
                     onClick={() => update({ commandSource: source })}
                   >
                     {source === "chat"
-                      ? "Общий чат"
+                      ? tr("bot.main.publicChat")
                       : source === "whisper"
-                        ? "Личные сообщения"
-                        : "Оба канала"}
+                        ? tr("bot.main.whispers")
+                        : tr("bot.main.bothChannels")}
                   </button>
                 ))}
               </div>
 
               <label className="mineflayer-bot-field mineflayer-bot-field--full">
-                <span>ДОПОЛНИТЕЛЬНЫЕ ВЛАДЕЛЬЦЫ · ЧЕРЕЗ ЗАПЯТУЮ ИЛИ С НОВОЙ СТРОКИ</span>
+                <span>{tr("bot.main.extraOwnersCommaSeparated")}</span>
                 <textarea
                   value={settings.extraOwners}
                   rows={3}
@@ -771,28 +929,28 @@ function MineflayerBotSettingsEditor({
 
               <div className="mineflayer-bot-toggle-grid">
                 <SettingToggle
-                  label="ОТВЕТЫ В ЧАТ"
-                  description="Подтверждать команды в игре"
+                  label={tr("bot.main.chatReplies")}
+                  description={tr("bot.main.confirmCommandsInGame")}
                   checked={settings.sendChatFeedback}
                   onChange={(sendChatFeedback) => update({ sendChatFeedback })}
                 />
                 <SettingToggle
-                  label="КОМАНДА SAY"
-                  description="Владелец может писать от имени бота"
+                  label={tr("bot.main.sayCommand")}
+                  description={tr("bot.main.theOwnerCanType")}
                   checked={settings.allowSayCommand}
                   warning
                   onChange={(allowSayCommand) => update({ allowSayCommand })}
                 />
                 <SettingToggle
-                  label="КОМАНДА QUIT"
-                  description="Владелец может отключить бота"
+                  label={tr("bot.main.quitCommand")}
+                  description={tr("bot.main.theOwnerCanDisconnect")}
                   checked={settings.allowQuitCommand}
                   warning
                   onChange={(allowQuitCommand) => update({ allowQuitCommand })}
                 />
               </div>
             </PluginSettingsGroup>
-            <PluginSettingsGroup title="СПРАВОЧНИК КОМАНД" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.commandReference")} collapsible={false}>
               <div className="mineflayer-bot-command-list">
                 {[
                   "help",
@@ -853,15 +1011,24 @@ function MineflayerBotSettingsEditor({
 
         {activeSection === "control" && (
           <>
-            <div className="mf-journal-controls" role="group" aria-label="Подключение бота">
+            <div
+              className="mf-journal-controls"
+              role="group"
+              aria-label={tr("bot.main.botConnection")}
+            >
               {connectionControls}
-              <button type="button" className="mf-button" disabled={Boolean(busyAction)} onClick={() => void refreshBotStatus()}>
-                Обновить статус
+              <button
+                type="button"
+                className="mf-button"
+                disabled={Boolean(busyAction)}
+                onClick={() => void refreshBotStatus()}
+              >
+                {tr("bot.main.refreshStatus")}
               </button>
             </div>
             <div className="mineflayer-bot-status">
               <div>
-                <span>СОСТОЯНИЕ</span>
+                <span>{tr("bot.main.state")}</span>
                 <strong>{formatStatusValue(status?.state)}</strong>
               </div>
               <div>
@@ -869,15 +1036,15 @@ function MineflayerBotSettingsEditor({
                 <strong>{formatStatusValue(status?.pid)}</strong>
               </div>
               <div>
-                <span>СЕРВЕР</span>
+                <span>{tr("bot.main.server")}</span>
                 <strong>{formatStatusValue(status?.server)}</strong>
               </div>
               <div>
-                <span>ВЛАДЕЛЕЦ</span>
+                <span>{tr("bot.main.owner")}</span>
                 <strong>{formatStatusValue(status?.ownerName)}</strong>
               </div>
               <div>
-                <span>БОТ</span>
+                <span>{tr("bot.main.bot")}</span>
                 <strong>
                   {formatStatusValue(
                     status?.botUsername ?? activeBotMsAccount?.username ?? settings.botNickname,
@@ -886,7 +1053,11 @@ function MineflayerBotSettingsEditor({
               </div>
             </div>
 
-            <PluginSettingsGroup title="ЧАТ И КОМАНДЫ БОТА" description="forest — рубить лес, deliver — принести добычу, craft — крафтить, smelt — переплавлять, station — работать со станками. Эти команды работают и без префикса. Остальной текст идёт в игровой чат." collapsible={false}>
+            <PluginSettingsGroup
+              title={tr("bot.main.botChatAndCommands")}
+              description={tr("bot.main.forestChopTreesDeliver")}
+              collapsible={false}
+            >
               <form
                 className="mineflayer-bot-chat"
                 onSubmit={(event) => {
@@ -897,8 +1068,10 @@ function MineflayerBotSettingsEditor({
                 <label className="mineflayer-bot-field">
                   <input
                     ref={chatInputRef}
-                    aria-label="Сообщение от имени бота"
-                    placeholder={chatConnected ? "Введите сообщение…" : "Подключите бота к серверу"}
+                    aria-label={tr("bot.main.messageAsTheBot")}
+                    placeholder={
+                      chatConnected ? tr("bot.main.typeAMessage") : tr("bot.main.connectTheBotTo")
+                    }
                     value={chatMessage}
                     maxLength={240}
                     disabled={!chatConnected}
@@ -918,7 +1091,7 @@ function MineflayerBotSettingsEditor({
                   type="submit"
                   disabled={!chatConnected || chatSending || !chatMessage.trim()}
                 >
-                  {chatSending ? "Отправка…" : "Отправить"}
+                  {chatSending ? tr("bot.main.sending") : tr("bot.main.send")}
                 </button>
               </form>
               {(chatError || chatFeedback) && (
@@ -931,16 +1104,16 @@ function MineflayerBotSettingsEditor({
               )}
             </PluginSettingsGroup>
 
-            <PluginSettingsGroup title="ЖУРНАЛ СОБЫТИЙ" collapsible={false}>
+            <PluginSettingsGroup title={tr("bot.main.eventLog")} collapsible={false}>
               <CustomScrollArea
                 className="mineflayer-bot-log"
                 style={{ minHeight: 150 }}
                 tabIndex={0}
-                aria-label="Журнал событий"
+                aria-label={tr("bot.main.eventLog2")}
               >
                 <div className="mineflayer-bot-log-lines" aria-live="polite">
                   {(status?.logs ?? []).length === 0 ? (
-                    <span>Пока нет событий</span>
+                    <span>{tr("common.noEventsYet")}</span>
                   ) : (
                     status?.logs
                       .slice(-20)

@@ -1,18 +1,21 @@
 import type { ButtonHTMLAttributes } from "react";
+import { useTranslation, type PlainMessageKey } from "../../i18n/locale";
 
 export type BuildPlayState = "idle" | "starting" | "running";
 
 export function BuildPlayButton({
   state,
-  idleLabel = "PLAY BUILD",
-  startingLabel = "WORKING...",
+  idleLabel = "buildPlay.playBuild",
+  startingLabel = "buildPlay.starting",
   className = "",
   ...buttonProps
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   state: BuildPlayState;
-  idleLabel?: string;
-  startingLabel?: string;
+  /** Message keys, so the button follows the interface language. */
+  idleLabel?: PlainMessageKey;
+  startingLabel?: PlainMessageKey;
 }) {
+  const tr = useTranslation();
   return (
     <button
       {...buttonProps}
@@ -21,13 +24,17 @@ export function BuildPlayButton({
     >
       <span className="bpa-stack">
         <span className="bpa-label">
-          {state === "running" ? "STOP GAME" : state === "starting" ? startingLabel : idleLabel}
+          {state === "running"
+            ? tr("buildPlay.stopGame")
+            : state === "starting"
+              ? tr(startingLabel)
+              : tr(idleLabel)}
         </span>
         <span className="bpa-sizer" aria-hidden="true">
-          PLAY BUILD
+          {tr("buildPlay.playBuild")}
         </span>
         <span className="bpa-sizer" aria-hidden="true">
-          STOP GAME
+          {tr("buildPlay.stopGame")}
         </span>
       </span>
     </button>

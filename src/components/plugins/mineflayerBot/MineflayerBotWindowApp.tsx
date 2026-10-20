@@ -10,6 +10,7 @@ import { LauncherPluginsModal } from "../LauncherPluginsModal";
 import { savePluginSettings, subscribePluginSettings } from "../pluginSettingsSync";
 import { readBotWindowContext, subscribeBotWindowContext } from "./botWindowContext";
 import "../../../App.css";
+import { translate, useTranslation } from "../../../i18n/locale";
 
 function closeBotWindow() {
   if (isTauri()) void getCurrentWindow().close().catch(logger.error);
@@ -18,6 +19,7 @@ function closeBotWindow() {
 
 export function MineflayerBotWindowApp() {
   useAppearance();
+  const tr = useTranslation();
   const monitor = useRuntimeMonitorController([], true, false);
   const [plugins, setPlugins] = useState<LauncherPluginsSettings | null>(null);
   const [context, setContext] = useState(readBotWindowContext);
@@ -61,7 +63,7 @@ export function MineflayerBotWindowApp() {
       await savePluginSettings(next, ["mineflayerBot"]);
     } catch (cause) {
       logger.error(cause);
-      setError(`Не удалось сохранить настройки: ${toErrorMessage(cause)}`);
+      setError(`${translate("bot.main.couldNotSaveSettings")}: ${toErrorMessage(cause)}`);
     }
   }, []);
 
@@ -78,15 +80,15 @@ export function MineflayerBotWindowApp() {
           />
         ) : (
           <main className="mineflayer-bot-window-loading">
-            <strong>Управление ботом</strong>
-            <p>{loading ? "Загружаем настройки…" : "Не удалось загрузить настройки бота."}</p>
+            <strong>{tr("bot.main.botControl")}</strong>
+            <p>{loading ? tr("bot.main.loadingSettings") : tr("bot.main.couldNotLoadThe")}</p>
             {!loading && (
               <button type="button" onClick={() => setLoadAttempt((value) => value + 1)}>
-                Повторить
+                {tr("common.retry")}
               </button>
             )}
             <button type="button" onClick={closeBotWindow}>
-              Закрыть окно
+              {tr("bot.main.closeWindow")}
             </button>
           </main>
         )}

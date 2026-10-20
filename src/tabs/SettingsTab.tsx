@@ -5,6 +5,7 @@ import {
   MIRROR_OPTIONS,
   JAVA_CHOICES,
   LANGUAGE_CHOICES,
+  localizeChoices,
 } from "../components/settings/settingsChoices";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
@@ -18,6 +19,7 @@ import {
 } from "../components/plugins/pluginRegistry";
 import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
+import { useLocale, useTranslation, saveLocale, type Locale } from "../i18n/locale";
 import type { Theme } from "../appearance/types";
 import type {
   LauncherPluginsSettings,
@@ -106,6 +108,8 @@ export function SettingsTab({
   updateChecking,
   onCheckUpdates,
 }: SettingsTabProps) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
@@ -146,7 +150,7 @@ export function SettingsTab({
         <div className="panel-card settings-main-card" data-guide-target="settings-main">
           <CustomScrollArea className="settings-main-scroll">
             <div className="settings-main-content">
-              <span className="panel-label">LAUNCHER SETTINGS</span>
+              <span className="panel-label">{tr("settings.launcherSettings")}</span>
 
               <div className="settings-memory-block" data-guide-target="settings-ram">
                 <div className="memory-readout">
@@ -161,7 +165,7 @@ export function SettingsTab({
 
                 <div className="settings-element-slider">
                   <ElementSlider
-                    label="RAM"
+                    label={tr("ui.ram")}
                     showHeader={false}
                     min={1}
                     max={minecraftRamMax}
@@ -184,13 +188,18 @@ export function SettingsTab({
                 className="theme-switch-row theme-switch-row--appearance"
                 data-guide-target="settings-appearance"
               >
-                <span className="theme-switch-label">APPEARANCE</span>
+                <span className="theme-switch-label">{tr("settings.appearance")}</span>
                 <SettingsChoiceSwitch
                   className="theme-switch--appearance"
                   value={appearanceCustomized ? "studio" : theme}
-                  options={APPEARANCE_CHOICES.filter(
-                    (option) =>
-                      option.value !== "studio" || advancedSettingsEnabled || appearanceCustomized,
+                  options={localizeChoices(
+                    APPEARANCE_CHOICES.filter(
+                      (option) =>
+                        option.value !== "studio" ||
+                        advancedSettingsEnabled ||
+                        appearanceCustomized,
+                    ),
+                    tr,
                   ).map((option) =>
                     option.value === "studio"
                       ? {
@@ -198,8 +207,8 @@ export function SettingsTab({
                           buttonProps: {
                             ...option.buttonProps,
                             "data-tooltip": appearanceCustomized
-                              ? "Custom design active · edit in Appearance Studio (Ctrl+Shift+A)"
-                              : "Edit design in Appearance Studio (Ctrl+Shift+A)",
+                              ? tr("settings.customDesignActiveEdit")
+                              : tr("settings.editDesignInAppearance"),
                             "aria-keyshortcuts": "Control+Shift+A Meta+Shift+A",
                           },
                         }
@@ -213,19 +222,19 @@ export function SettingsTab({
               </div>
 
               <div className="theme-switch-row" data-guide-target="settings-source">
-                <span className="theme-switch-label">DOWNLOAD SOURCE</span>
+                <span className="theme-switch-label">{tr("settings.downloadSource")}</span>
                 <SettingsChoiceSwitch
                   value={mirrorMode}
-                  options={MIRROR_OPTIONS}
+                  options={localizeChoices(MIRROR_OPTIONS, tr)}
                   onChange={(value) => commitMirrorMode(value as MirrorMode)}
                 />
               </div>
 
               <div className="theme-switch-row" data-guide-target="settings-auto-java">
-                <span className="theme-switch-label">AUTO-DOWNLOAD JAVA</span>
+                <span className="theme-switch-label">{tr("settings.autoDownloadJava")}</span>
                 <SettingsChoiceSwitch
                   value={autoDownloadJava ? "on" : "off"}
-                  options={JAVA_CHOICES}
+                  options={localizeChoices(JAVA_CHOICES, tr)}
                   onChange={(value) => {
                     const enabled = value === "on";
                     if (enabled !== autoDownloadJava) void saveAutoDownloadJava(enabled);
@@ -234,18 +243,22 @@ export function SettingsTab({
               </div>
 
               <div className="theme-switch-row" data-guide-target="settings-language">
-                <span className="theme-switch-label">LANGUAGE</span>
-                <SettingsChoiceSwitch value="ru" options={LANGUAGE_CHOICES} onChange={() => {}} />
+                <span className="theme-switch-label">{tr("settings.language")}</span>
+                <SettingsChoiceSwitch
+                  value={locale}
+                  options={localizeChoices(LANGUAGE_CHOICES, tr)}
+                  onChange={(value) => saveLocale(value as Locale)}
+                />
               </div>
             </div>
           </CustomScrollArea>
 
           <div className="settings-update-row" data-guide-target="settings-updates">
             <div className="settings-update-copy">
-              <span className="settings-update-title">LAUNCHER UPDATES</span>
+              <span className="settings-update-title">{tr("settings.launcherUpdates")}</span>
               <span className="settings-update-note">
-                {launcherVersion ? `Версия ${launcherVersion}. ` : ""}Новые версии проверяются при
-                запуске и ставятся без установщика Windows.
+                {launcherVersion ? `${tr("settings.version")} ${launcherVersion}. ` : ""}
+                {tr("settings.newVersionsAreChecked")}
               </span>
             </div>
             <button
@@ -254,7 +267,7 @@ export function SettingsTab({
               onClick={onCheckUpdates}
               disabled={updateChecking}
             >
-              {updateChecking ? "CHECKING…" : "CHECK NOW"}
+              {updateChecking ? tr("settings.checking") : tr("settings.checkNow")}
             </button>
           </div>
         </div>
@@ -265,28 +278,28 @@ export function SettingsTab({
         >
           <CustomScrollArea className="settings-preferences-scroll">
             <div className="settings-preferences-content">
-              <span className="panel-label">PREFERENCES</span>
+              <span className="panel-label">{tr("settings.preferences")}</span>
 
               <div className="settings-toggle-block settings-toggle-block--bare">
                 <ElementToggle
-                  title="OPTIMIZED JAVA ARGUMENTS"
-                  note="Запуск с G1GC-настройками и фиксированным heap. Выключи для классического запуска."
+                  title={tr("settings.optimizedJavaArguments")}
+                  note={tr("settings.launchWithG1gcSettings")}
                   enabled={optimizedJavaArgs}
                   onToggle={() => void saveOptimizedJavaArgs(!optimizedJavaArgs)}
                   guideTarget="settings-optimized"
                 />
 
                 <ElementToggle
-                  title="WHEEL TAB SWITCHING"
-                  note="Переключение вкладок движением колеса мыши."
+                  title={tr("settings.wheelTabSwitching")}
+                  note={tr("settings.switchTabsWithThe")}
                   enabled={wheelTabSwitching}
                   onToggle={() => setWheelTabSwitching((prev) => !prev)}
                   guideTarget="settings-wheel"
                 />
 
                 <ExpandableSettingsGroup
-                  title="LAUNCHER MASCOT"
-                  note="Маскот гуляет по меню. Нажми стрелку, чтобы настроить его характер и возможности."
+                  title={tr("settings.launcherMascot")}
+                  note={tr("settings.theMascotWalksAround")}
                   enabled={mascotEnabled}
                   expanded={mascotSettingsOpen}
                   onToggle={() => void saveMascotEnabled(!mascotEnabled)}
@@ -295,14 +308,14 @@ export function SettingsTab({
                   guideTarget="settings-mascot"
                 >
                   <label className="mascot-name-field">
-                    <span>MASCOT NAME</span>
+                    <span>{tr("settings.mascotName")}</span>
                     <input
                       type="text"
                       value={mascotNameDraft}
                       maxLength={24}
                       spellCheck={false}
                       placeholder="PIXEL"
-                      aria-label="Имя маскота"
+                      aria-label={tr("settings.mascotName2")}
                       onChange={(event) => setMascotNameDraft(event.target.value)}
                       onBlur={commitMascotName}
                       onKeyDown={(event) => {
@@ -316,32 +329,32 @@ export function SettingsTab({
                   </label>
 
                   <ElementToggle
-                    title="SHOW MASCOT NAME"
-                    note="Показывать имя маскота в плашке при наведении."
+                    title={tr("settings.showMascotName")}
+                    note={tr("settings.showTheMascotsName")}
                     enabled={mascotSettings.showName}
                     onToggle={() => updateMascotFlag("showName", !mascotSettings.showName)}
                     size="small"
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="RAGE MODE"
-                    note="Сильные броски копят предупреждения и могут вызвать ярость."
+                    title={tr("settings.rageMode")}
+                    note={tr("settings.hardThrowsBuildUp")}
                     enabled={mascotSettings.rageEnabled}
                     onToggle={() => updateMascotFlag("rageEnabled", !mascotSettings.rageEnabled)}
                     size="small"
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="WATER BOWL"
-                    note="Показывать миску: маскот сможет пить, а миску можно взять и бросить."
+                    title={tr("settings.waterBowl")}
+                    note={tr("settings.showABowlThe")}
                     enabled={mascotSettings.bowlEnabled}
                     onToggle={() => updateMascotFlag("bowlEnabled", !mascotSettings.bowlEnabled)}
                     size="small"
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="AUTONOMOUS MOVEMENT"
-                    note="Разрешить маскоту самостоятельно гулять по лаунчеру."
+                    title={tr("settings.autonomousMovement")}
+                    note={tr("settings.allowTheMascotTo")}
                     enabled={mascotSettings.movementEnabled}
                     onToggle={() =>
                       updateMascotFlag("movementEnabled", !mascotSettings.movementEnabled)
@@ -350,8 +363,8 @@ export function SettingsTab({
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="PLAY WITH CONTROLS"
-                    note="Прыгать на кнопки, поля и ползунки в спокойном режиме."
+                    title={tr("settings.playWithControls")}
+                    note={tr("settings.jumpOntoButtonsFields")}
                     enabled={mascotSettings.interactionsEnabled}
                     onToggle={() =>
                       updateMascotFlag("interactionsEnabled", !mascotSettings.interactionsEnabled)
@@ -360,8 +373,8 @@ export function SettingsTab({
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="CARRY UI ELEMENTS"
-                    note="Брать элементы интерфейса в руки и уносить их."
+                    title={tr("settings.carryUiElements")}
+                    note={tr("settings.pickUpAndCarry")}
                     enabled={mascotSettings.carryElementsEnabled}
                     onToggle={() =>
                       updateMascotFlag("carryElementsEnabled", !mascotSettings.carryElementsEnabled)
@@ -370,8 +383,8 @@ export function SettingsTab({
                     mascotOffSwitch
                   />
                   <ElementToggle
-                    title="SCROLL LISTS"
-                    note="Подходить к спискам и самостоятельно листать их."
+                    title={tr("settings.scrollLists")}
+                    note={tr("settings.walkUpToLists")}
                     enabled={mascotSettings.scrollListsEnabled}
                     onToggle={() =>
                       updateMascotFlag("scrollListsEnabled", !mascotSettings.scrollListsEnabled)
@@ -382,24 +395,24 @@ export function SettingsTab({
                 </ExpandableSettingsGroup>
 
                 <ElementToggle
-                  title="SHOW SNAPSHOTS"
-                  note="Показывать snapshot версии в списке доступных установок."
+                  title={tr("settings.showSnapshots")}
+                  note={tr("settings.showSnapshotVersionsIn")}
                   enabled={showSnapshots}
                   onToggle={() => setShowSnapshots((prev) => !prev)}
                   guideTarget="settings-snapshots"
                 />
 
                 <ElementToggle
-                  title="SHOW PRE-RELEASES"
-                  note="Показывать pre-release и release candidate версии."
+                  title={tr("settings.showPreReleases")}
+                  note={tr("settings.showPreReleaseAnd")}
                   enabled={showPreReleases}
                   onToggle={() => setShowPreReleases((prev) => !prev)}
                   guideTarget="settings-prereleases"
                 />
 
                 <ElementToggle
-                  title="ADVANCED SETTINGS"
-                  note="Включает кнопку SETTINGS у сборок и в режиме создания для кастомного фона карточки версии."
+                  title={tr("settings.advancedSettings")}
+                  note={tr("settings.enablesBuildSettingsAnd")}
                   enabled={advancedSettingsEnabled}
                   onToggle={onToggleAdvanced}
                   guideTarget="settings-advanced"
@@ -413,8 +426,8 @@ export function SettingsTab({
                     type="button"
                     onClick={() => setPluginsModalOpen(true)}
                   >
-                    <span>EXTENSIONS</span>
-                    <strong>MANAGE</strong>
+                    <span>{tr("settings.extensions")}</span>
+                    <strong>{tr("settings.manage")}</strong>
                     {activePluginDefinitions.length > 0 && (
                       <span className="runtime-extension-icons" aria-hidden="true">
                         {activePluginDefinitions.slice(0, 4).map((definition) => (

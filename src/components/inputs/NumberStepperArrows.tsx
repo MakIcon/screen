@@ -1,4 +1,5 @@
 import "./NumberStepperArrows.css";
+import { useTranslation } from "../../i18n/locale";
 
 type NumberStepperArrowsProps = {
   onIncrement: () => void;
@@ -15,6 +16,7 @@ export function NumberStepperArrows({
   incrementDisabled = false,
   decrementDisabled = false,
 }: NumberStepperArrowsProps) {
+  const tr = useTranslation();
   return (
     <div className="nsa-root" aria-hidden={disabled ? "true" : undefined}>
       <button
@@ -23,7 +25,7 @@ export function NumberStepperArrows({
         tabIndex={-1}
         disabled={disabled || incrementDisabled}
         onClick={onIncrement}
-        aria-label="Increase value"
+        aria-label={tr("numberStepperArrows.increaseValue")}
       >
         <span className="nsa-triangle nsa-triangle--up" />
       </button>
@@ -33,7 +35,7 @@ export function NumberStepperArrows({
         tabIndex={-1}
         disabled={disabled || decrementDisabled}
         onClick={onDecrement}
-        aria-label="Decrease value"
+        aria-label={tr("numberStepperArrows.decreaseValue")}
       >
         <span className="nsa-triangle nsa-triangle--down" />
       </button>

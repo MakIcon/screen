@@ -5,6 +5,13 @@ import { useWorldBackups } from "../../hooks/useWorldBackups";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { WorldPreview } from "./WorldPreview";
 import "./WorldBackupsModal.css";
+import {
+  useLocale,
+  useTranslation,
+  type Locale,
+  intlLocale,
+  translateFor,
+} from "../../i18n/locale";
 
 function BackupIcon({
   kind = "archive",
@@ -39,17 +46,26 @@ function BackupIcon({
   );
 }
 
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} Б`;
-  const units = ["КБ", "МБ", "ГБ", "ТБ"];
-  const power = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length);
-  return `${(bytes / 1024 ** power).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ${units[power - 1]}`;
+const SIZE_UNITS = [
+  "units.kilobytes",
+  "units.megabytes",
+  "units.gigabytes",
+  "units.terabytes",
+] as const;
+
+function formatSize(bytes: number, locale: Locale) {
+  if (bytes < 1024) return translateFor(locale, "units.bytes", { value: bytes });
+  const power = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), SIZE_UNITS.length);
+  const value = (bytes / 1024 ** power).toLocaleString(intlLocale(locale), {
+    maximumFractionDigits: 1,
+  });
+  return translateFor(locale, SIZE_UNITS[power - 1], { value });
 }
 
-function formatDate(seconds: string, short = false) {
+function formatDate(seconds: string, locale: Locale, short = false) {
   const value = Number(seconds);
-  if (!seconds || !Number.isFinite(value)) return "Дата неизвестна";
-  return new Date(value * 1000).toLocaleString("ru-RU", {
+  if (!seconds || !Number.isFinite(value)) return translateFor(locale, "worldBackups.unknownDate");
+  return new Date(value * 1000).toLocaleString(intlLocale(locale), {
     day: "numeric",
     month: "short",
     ...(short ? {} : { year: "numeric" }),
@@ -58,10 +74,8 @@ function formatDate(seconds: string, short = false) {
   });
 }
 
-function worldCount(count: number) {
-  const last = count % 10;
-  const teen = count % 100 >= 11 && count % 100 <= 14;
-  return `${count} ${teen ? "миров" : last === 1 ? "мир" : last >= 2 && last <= 4 ? "мира" : "миров"}`;
+function worldCount(count: number, locale: Locale) {
+  return translateFor(locale, "worldBackups.worlds", { count });
 }
 
 function WorldChoice({
@@ -81,6 +95,7 @@ function WorldChoice({
   detail?: string;
   onChange: () => void;
 }) {
+  const locale = useLocale();
   return (
     <label className={`wb-world ${checked ? "wb-world--selected" : ""}`}>
       <input
@@ -98,8 +113,8 @@ function WorldChoice({
       />
       <span className="wb-world-info">
         <strong title={world.folderName}>{world.folderName}</strong>
-        <span>{formatSize(world.sizeBytes)}</span>
-        <small>{detail ?? formatDate(world.modifiedAt, true)}</small>
+        <span>{formatSize(world.sizeBytes, locale)}</span>
+        <small>{detail ?? formatDate(world.modifiedAt, locale, true)}</small>
       </span>
       <span className="wb-checkbox">
         <BackupIcon kind="check" />
@@ -118,6 +133,8 @@ type Props = {
 };
 
 export function WorldBackupsModal({ instance, running, onClose, pushToast }: Props) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const backups = useWorldBackups(instance.id, running, pushToast);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [historyRevision, setHistoryRevision] = useState(0);
@@ -133,10 +150,10 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
   );
   const visible = backups.backups.filter((backup) => filter === "all" || backup.kind === filter);
   const busyText = {
-    create: "Сохраняем миры…",
-    restore: "Восстанавливаем миры…",
-    delete: "Удаляем копию…",
-    refresh: "Обновляем…",
+    create: tr("worldBackups.savingWorlds"),
+    restore: tr("worldBackups.restoringWorlds"),
+    delete: tr("worldBackups.deletingBackup"),
+    refresh: tr("worldBackups.refreshing"),
   };
 
   useEffect(() => {
@@ -186,16 +203,19 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
     confirmation && (
       <div className="wb-inline-confirmation">
         <h4 ref={restoreHeading} tabIndex={-1}>
-          {confirmation.action === "restore" ? "Какие миры восстановить?" : "Удалить эту копию?"}
+          {confirmation.action === "restore"
+            ? tr("worldBackups.whichWorldsShouldBe")
+            : tr("worldBackups.deleteThisBackup")}
         </h4>
         {confirmation.action === "restore" ? (
           <>
-            <p className="wb-restore-note">
-              Выбранные миры заменят текущие в игре. Перед заменой сохраним их прежние версии.
-            </p>
+            <p className="wb-restore-note">{tr("worldBackups.selectedWorldsWillReplace")}</p>
             <div className="wb-toolbar wb-toolbar--compact">
               <span>
-                {confirmation.worlds.length} из {confirmation.backup.worlds.length} выбрано
+                {tr("worldBackups.selectedOf", {
+                  selected: confirmation.worlds.length,
+                  total: confirmation.backup.worlds.length,
+                })}
               </span>
               <button
                 className="wb-text-button"
@@ -212,8 +232,8 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                 }
               >
                 {confirmation.worlds.length === confirmation.backup.worlds.length
-                  ? "Снять выбор"
-                  : "Выбрать все"}
+                  ? tr("worldBackups.clearSelection")
+                  : tr("worldBackups.selectAll")}
               </button>
             </div>
             <div className="wb-world-grid">
@@ -227,8 +247,8 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                   disabled={backups.working}
                   detail={
                     backups.worlds.some((item) => item.folderName === world.folderName)
-                      ? "Заменить в игре"
-                      : "Вернуть в игру"
+                      ? tr("worldBackups.replaceInGame")
+                      : tr("worldBackups.restoreToGame")
                   }
                   onChange={() =>
                     setConfirmation({
@@ -243,9 +263,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
             </div>
           </>
         ) : (
-          <p className="wb-restore-note">
-            Удалится только эта резервная копия. Миры в игре останутся.
-          </p>
+          <p className="wb-restore-note">{tr("worldBackups.onlyThisBackupWill")}</p>
         )}
         <div className="wb-confirm-actions">
           <button
@@ -257,7 +275,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
               dialog.current?.focus();
             }}
           >
-            Отмена
+            {tr("worldBackups.cancel")}
           </button>
           <button
             className={`wb-primary ${confirmation.action === "delete" ? "wb-danger" : ""}`}
@@ -269,8 +287,8 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
             onClick={() => void confirm()}
           >
             {confirmation.action === "delete"
-              ? "Удалить копию"
-              : `Восстановить · ${worldCount(confirmation.worlds.length)}`}
+              ? tr("worldBackups.deleteBackup")
+              : `${tr("worldBackups.restore")} · ${worldCount(confirmation.worlds.length, locale)}`}
           </button>
         </div>
       </div>
@@ -325,17 +343,21 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
         <header className="wb-header">
           <div className="wb-heading">
             <span>{instance.name}</span>
-            <h2 id="wb-title">Резервные копии</h2>
+            <h2 id="wb-title">{tr("worldBackups.worldBackups")}</h2>
           </div>
           <div className="wb-header-actions">
             <span className="wb-progress" role="status">
-              {backups.operation ? busyText[backups.operation] : backups.loading ? "Загрузка…" : ""}
+              {backups.operation
+                ? busyText[backups.operation]
+                : backups.loading
+                  ? tr("common.loading")
+                  : ""}
             </span>
             <button
               className="wb-icon-button"
               type="button"
-              aria-label="Обновить миры и копии"
-              title="Обновить"
+              aria-label={tr("worldBackups.refreshWorldsAndBackups")}
+              title={tr("worldBackups.refresh")}
               disabled={backups.working}
               onClick={() => {
                 setConfirmation(null);
@@ -347,7 +369,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
             <button
               className="wb-icon-button"
               type="button"
-              aria-label="Закрыть резервные копии"
+              aria-label={tr("worldBackups.closeWorldBackups")}
               disabled={backups.operation !== null}
               onClick={onClose}
             >
@@ -361,9 +383,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
             {backups.error}
           </div>
         )}
-        {running && (
-          <div className="wb-message">Закрой игру, чтобы создать копию или восстановить миры.</div>
-        )}
+        {running && <div className="wb-message">{tr("worldBackups.closeTheGameTo")}</div>}
 
         <CustomScrollArea className="wb-body-scroll">
           <div className="wb-columns">
@@ -373,12 +393,15 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
               aria-busy={backups.working}
             >
               <div className="wb-section-heading">
-                <h3 id="wb-worlds-heading">Миры для копии</h3>
+                <h3 id="wb-worlds-heading">{tr("worldBackups.worldsToBackUp")}</h3>
               </div>
               <div className="wb-toolbar">
                 <div>
                   <span>
-                    {selected.size} из {backups.worlds.length} выбрано
+                    {tr("worldBackups.selectedOf", {
+                      selected: selected.size,
+                      total: backups.worlds.length,
+                    })}
                   </span>
                 </div>
                 <button
@@ -394,19 +417,19 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                   }
                 >
                   {selected.size && selected.size === backups.worlds.length
-                    ? "Снять выбор"
-                    : "Выбрать все"}
+                    ? tr("worldBackups.clearSelection")
+                    : tr("worldBackups.selectAll")}
                 </button>
               </div>
               <CustomScrollArea className="wb-scroll" onWheel={(event) => event.stopPropagation()}>
                 <div className="wb-world-grid">
                   {backups.loading ? (
-                    <div className="wb-empty">Загружаем миры…</div>
+                    <div className="wb-empty">{tr("worldBackups.loadingWorlds")}</div>
                   ) : !backups.worlds.length ? (
                     <div className="wb-empty">
                       <BackupIcon />
-                      <h3>Здесь появятся твои миры</h3>
-                      <p>Создай мир в этой сборке и вернись, чтобы сохранить его.</p>
+                      <h3>{tr("worldBackups.yourWorldsWillAppear")}</h3>
+                      <p>{tr("worldBackups.createAWorldIn")}</p>
                     </div>
                   ) : (
                     backups.worlds.map((world) => (
@@ -439,7 +462,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                 }}
               >
                 <label htmlFor="wb-name">
-                  Название копии <span>необязательно</span>
+                  {tr("worldBackups.backupName")} <span>{tr("worldBackups.optional")}</span>
                 </label>
                 <div className="wb-compose-row">
                   <input
@@ -448,7 +471,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                     value={name}
                     disabled={backups.working}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Например, перед обновлением модов"
+                    placeholder={tr("worldBackups.forExampleBeforeUpdating")}
                   />
                   <button
                     type="submit"
@@ -456,8 +479,10 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                     disabled={backups.working || running || !selected.size}
                   >
                     <BackupIcon />
-                    {backups.operation === "create" ? "Сохраняем…" : "Создать копию"}
-                    <span>{formatSize(selectedSize)}</span>
+                    {backups.operation === "create"
+                      ? tr("worldBackups.saving")
+                      : tr("worldBackups.createBackup")}
+                    <span>{formatSize(selectedSize, locale)}</span>
                   </button>
                 </div>
               </form>
@@ -468,16 +493,16 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
               aria-busy={backups.working}
             >
               <div className="wb-section-heading">
-                <h3 id="wb-history-heading">Сохранённые копии</h3>
+                <h3 id="wb-history-heading">{tr("worldBackups.savedBackups")}</h3>
                 <span>{backups.backups.length}</span>
               </div>
               <div className="wb-toolbar">
-                <div className="wb-filters" role="group" aria-label="Тип копий">
+                <div className="wb-filters" role="group" aria-label={tr("worldBackups.backupType")}>
                   {(
                     [
-                      ["all", "Все"],
-                      ["manual", "Мои"],
-                      ["beforeRestore", "Автоматические"],
+                      ["all", tr("worldBackups.all")],
+                      ["manual", tr("worldBackups.mine")],
+                      ["beforeRestore", tr("worldBackups.automatic")],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -495,7 +520,10 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                   ))}
                 </div>
                 <span>
-                  {formatSize(backups.backups.reduce((size, backup) => size + backup.sizeBytes, 0))}
+                  {formatSize(
+                    backups.backups.reduce((size, backup) => size + backup.sizeBytes, 0),
+                    locale,
+                  )}
                 </span>
               </div>
               <CustomScrollArea
@@ -505,19 +533,19 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
               >
                 <div className="wb-history-list">
                   {backups.loading ? (
-                    <div className="wb-empty">Загружаем копии…</div>
+                    <div className="wb-empty">{tr("worldBackups.loadingBackups")}</div>
                   ) : !visible.length ? (
                     <div className="wb-empty">
                       <BackupIcon />
                       <h3>
                         {backups.backups.length
-                          ? "Таких копий пока нет"
-                          : "Пока нет сохранённых копий"}
+                          ? tr("worldBackups.noBackupsOfThis")
+                          : tr("worldBackups.noSavedBackupsYet")}
                       </h3>
                       <p>
                         {filter === "beforeRestore"
-                          ? "Они появятся после восстановления миров."
-                          : "Сохрани нужные миры, чтобы вернуться к ним позже."}
+                          ? tr("worldBackups.theyWillAppearAfter")
+                          : tr("worldBackups.backUpYourWorlds")}
                       </p>
                     </div>
                   ) : (
@@ -533,18 +561,18 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                           )}
                           <div className="wb-backup-info">
                             <div className="wb-backup-title">
-                              <h3>{backup.name || "Копия миров"}</h3>
+                              <h3>{backup.name || tr("worldBackups.worldBackup")}</h3>
                               {backup.kind === "beforeRestore" && (
-                                <span className="wb-badge">Авто</span>
+                                <span className="wb-badge">{tr("common.auto")}</span>
                               )}
                               {backups.restoredId === backup.id && (
                                 <span className="wb-restored">
                                   <BackupIcon kind="check" />
-                                  Восстановлена
+                                  {tr("worldBackups.restored")}
                                 </span>
                               )}
                             </div>
-                            <time>{formatDate(backup.createdAt)}</time>
+                            <time>{formatDate(backup.createdAt, locale)}</time>
                             <p title={backup.worlds.map((world) => world.folderName).join(", ")}>
                               {backup.worlds.map((world) => world.folderName).join(", ")}
                             </p>
@@ -565,15 +593,15 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                               })
                             }
                           >
-                            <span>Состав копии</span>
-                            <span>{worldCount(backup.worldCount)}</span>
+                            <span>{tr("worldBackups.backupContents")}</span>
+                            <span>{worldCount(backup.worldCount, locale)}</span>
                             <BackupIcon kind="chevron" />
                           </button>
                           {expanded.has(backup.id) && (
                             <ul
                               id={`wb-contents-${backup.id}`}
                               className="wb-saved-worlds"
-                              aria-label="Миры в копии"
+                              aria-label={tr("worldBackups.worldsInBackup")}
                             >
                               {backup.worlds.map((world) => (
                                 <li key={world.folderName}>
@@ -584,9 +612,9 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                                   />
                                   <span>
                                     <strong>{world.folderName}</strong>
-                                    <small>{formatDate(world.modifiedAt, true)}</small>
+                                    <small>{formatDate(world.modifiedAt, locale, true)}</small>
                                   </span>
-                                  <small>{formatSize(world.sizeBytes)}</small>
+                                  <small>{formatSize(world.sizeBytes, locale)}</small>
                                 </li>
                               ))}
                             </ul>
@@ -594,11 +622,14 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                         </div>
                         <div className="wb-backup-bottom">
                           <span>
-                            {worldCount(backup.worldCount)}
+                            {worldCount(backup.worldCount, locale)}
                             <span className="wb-dot">·</span>
-                            {formatSize(backup.sizeBytes)}
+                            {formatSize(backup.sizeBytes, locale)}
                             {backup.kind === "beforeRestore" && (
-                              <span className="wb-auto-label"> · Перед восстановлением</span>
+                              <span className="wb-auto-label">
+                                {" "}
+                                · {tr("worldBackups.beforeRestore")}
+                              </span>
                             )}
                           </span>
                           {confirmation?.backup.id !== backup.id && (
@@ -609,13 +640,13 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                                 disabled={backups.working || running}
                                 onClick={() => beginConfirmation(backup, "restore")}
                               >
-                                Восстановить
+                                {tr("worldBackups.restore")}
                               </button>
                               <button
                                 type="button"
                                 className="wb-icon-button wb-delete"
-                                aria-label={`Удалить копию ${backup.name || formatDate(backup.createdAt)}`}
-                                title="Удалить копию"
+                                aria-label={`${tr("worldBackups.deleteBackup")} ${backup.name || formatDate(backup.createdAt, locale)}`}
+                                title={tr("worldBackups.deleteBackup")}
                                 disabled={backups.working}
                                 onClick={() => beginConfirmation(backup, "delete")}
                               >

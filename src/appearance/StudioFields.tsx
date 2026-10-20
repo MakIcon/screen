@@ -3,6 +3,7 @@ import { ColorPicker } from "../components/color-picker/ColorPicker";
 import { CustomNumberInput } from "../components/inputs/CustomNumberInput";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
+import { useAppearanceText } from "./localization";
 
 type ColorFieldProps = {
   label: string;
@@ -11,10 +12,11 @@ type ColorFieldProps = {
 };
 
 export function ColorField({ label, value, onChange }: ColorFieldProps) {
+  const copy = useAppearanceText();
   return (
     <div className="studio-color-field">
-      <span>{label}</span>
-      <ColorPicker value={value} onChange={onChange} label={label} />
+      <span>{copy(label)}</span>
+      <ColorPicker value={value} onChange={onChange} label={copy(label)} />
     </div>
   );
 }
@@ -46,6 +48,7 @@ export function RangeField({
   valueEditable = true,
   onChange,
 }: RangeFieldProps) {
+  const copy = useAppearanceText();
   const displayedSuffix = value === 0 && zeroSuffix ? zeroSuffix : suffix;
   const updateValue = (nextValue: number) => {
     const safeStep = step > 0 ? step : 1;
@@ -57,7 +60,7 @@ export function RangeField({
   return (
     <div className="studio-range-field">
       <div>
-        <span>{label}</span>
+        <span>{copy(label)}</span>
         <div className="studio-range-value-editor">
           <CustomNumberInput
             value={value}
@@ -66,10 +69,10 @@ export function RangeField({
             step={step}
             showArrows={false}
             disabled={disabled || !valueEditable}
-            ariaLabel={`${label} value`}
+            ariaLabel={copy("{label} value", { label: copy(label) })}
             onChange={updateValue}
           />
-          {displayedSuffix && <span>{displayedSuffix.trim()}</span>}
+          {displayedSuffix && <span>{copy(displayedSuffix.trim())}</span>}
         </div>
       </div>
       <ElementSlider
@@ -96,6 +99,7 @@ type SelectFieldProps<T extends string> = {
   label: string;
   value: T;
   options: readonly { id: T; label: string }[];
+  translateOptions?: boolean;
   onChange: (value: T) => void;
 };
 
@@ -103,11 +107,17 @@ export function SelectField<T extends string>({
   label,
   value,
   options,
+  translateOptions = true,
   onChange,
 }: SelectFieldProps<T>) {
+  const copy = useAppearanceText();
+  const displayedOptions = options.map((option) => ({
+    ...option,
+    label: translateOptions ? copy(option.label) : option.label,
+  }));
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const selectedLabel = options.find((option) => option.id === value)?.label ?? value;
+  const selectedLabel = displayedOptions.find((option) => option.id === value)?.label ?? value;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -125,16 +135,16 @@ export function SelectField<T extends string>({
 
   return (
     <div className="studio-select-field" ref={rootRef}>
-      <span>{label}</span>
+      <span>{copy(label)}</span>
       <InlineDropdown
         compact
-        label={label}
+        label={copy(label)}
         value={selectedLabel}
-        options={options.map((option) => option.label)}
+        options={displayedOptions.map((option) => option.label)}
         isOpen={isOpen}
         onToggle={() => setIsOpen((current) => !current)}
         onSelect={(nextLabel) => {
-          const nextOption = options.find((option) => option.label === nextLabel);
+          const nextOption = displayedOptions.find((option) => option.label === nextLabel);
           if (nextOption) onChange(nextOption.id);
           setIsOpen(false);
         }}
@@ -154,6 +164,7 @@ export function Section({
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
+  const copy = useAppearanceText();
   const [expanded, setExpanded] = useState(defaultOpen);
   const contentId = useId();
   useEffect(() => setExpanded(defaultOpen), [title, defaultOpen]);
@@ -167,8 +178,8 @@ export function Section({
         onClick={() => setExpanded((current) => !current)}
       >
         <span className="studio-section-heading">
-          <span>{title}</span>
-          {note && <span className="studio-section-note">{note}</span>}
+          <span>{copy(title)}</span>
+          {note && <span className="studio-section-note">{copy(note)}</span>}
         </span>
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="m4 6 4 4 4-4" />

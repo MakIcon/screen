@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as skinview3d from "skinview3d";
 import { toErrorMessage } from "../../utils/errors";
+import { useTranslation } from "../../i18n/locale";
 
 export type SkinVariant = "CLASSIC" | "SLIM";
 export type PreviewMotion = "STILL" | "IDLE" | "WALK" | "RUN" | "WAVE";
@@ -60,6 +61,7 @@ export function MinecraftSkinPreview({
   zoomEnabled: boolean;
   resetKey: number;
 }) {
+  const tr = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<skinview3d.SkinViewer | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
@@ -190,7 +192,7 @@ export function MinecraftSkinPreview({
   return (
     <div className="ms-preview-canvas-shell">
       <canvas ref={canvasRef} className="ms-preview-canvas" />
-      {!skinUrl && <div className="ms-preview-empty">NO SKIN DATA</div>}
+      {!skinUrl && <div className="ms-preview-empty">{tr("minecraftSkinPreview.noSkinData")}</div>}
       {viewerError && <div className="ms-preview-error">{viewerError}</div>}
     </div>
   );

@@ -1,3 +1,4 @@
+import { useTranslation } from "../../i18n/locale";
 import {
   useEffect,
   useMemo,
@@ -54,12 +55,13 @@ export function JavaArgsEditor({
   value,
   onChange,
   className = "",
-  ariaLabel = "Java arguments",
+  ariaLabel,
   searchQuery = "",
   activeSearchMatchIndex = -1,
   searchFocusToken = 0,
   textEditRequest = null,
 }: JavaArgsEditorProps) {
+  const tr = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const handledSearchFocusToken = useRef(0);
   const handledTextEditRequestId = useRef(0);
@@ -69,8 +71,7 @@ export function JavaArgsEditor({
   const lineCount = Math.max(lines.length, 1);
   const contentHeight = `${lineCount * ROW_HEIGHT}px`;
   const [activeLine, setActiveLine] = useState<number | null>(null);
-  const visibleActiveLine =
-    activeLine === null ? null : Math.min(activeLine, lineCount - 1);
+  const visibleActiveLine = activeLine === null ? null : Math.min(activeLine, lineCount - 1);
   const hasSearchQuery = searchQuery.trim().length > 0;
   const searchMatches = useMemo(
     () => getTextSearchMatches(normalizedValue, searchQuery),
@@ -80,10 +81,7 @@ export function JavaArgsEditor({
     () => searchMatches.map((match) => match.line),
     [searchMatches],
   );
-  const searchMatchSet = useMemo(
-    () => new Set(searchMatchIndexes),
-    [searchMatchIndexes],
-  );
+  const searchMatchSet = useMemo(() => new Set(searchMatchIndexes), [searchMatchIndexes]);
   const visibleSearchMatchIndex =
     activeSearchMatchIndex >= 0 && searchMatches.length > 0
       ? clamp(activeSearchMatchIndex, 0, searchMatches.length - 1)
@@ -105,17 +103,12 @@ export function JavaArgsEditor({
 
   const updateActiveLine = (textarea: HTMLTextAreaElement) => {
     const caret = textarea.selectionStart ?? 0;
-    const nextLine = normalizeNewlines(textarea.value.slice(0, caret)).split(
-      "\n",
-    ).length - 1;
+    const nextLine = normalizeNewlines(textarea.value.slice(0, caret)).split("\n").length - 1;
 
     setActiveLine(clamp(nextLine, 0, lineCount - 1));
   };
 
-  const updateActiveLineFromPointer = (
-    textarea: HTMLTextAreaElement,
-    clientY: number,
-  ) => {
+  const updateActiveLineFromPointer = (textarea: HTMLTextAreaElement, clientY: number) => {
     const rect = textarea.getBoundingClientRect();
     const nextLine = Math.floor((clientY - rect.top + textarea.scrollTop) / ROW_HEIGHT);
 
@@ -212,16 +205,13 @@ export function JavaArgsEditor({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const wantsUndo =
-      (event.ctrlKey || event.metaKey) &&
-      !event.shiftKey &&
-      event.key.toLowerCase() === "z";
+      (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z";
 
     if (!wantsUndo) return;
 
     const textarea = event.currentTarget;
     const currentValue = normalizeNewlines(textarea.value);
-    const lastUndo =
-      programmaticUndoStack.current[programmaticUndoStack.current.length - 1];
+    const lastUndo = programmaticUndoStack.current[programmaticUndoStack.current.length - 1];
 
     if (!lastUndo || currentValue !== lastUndo.after) return;
 
@@ -234,10 +224,7 @@ export function JavaArgsEditor({
   };
 
   return (
-    <CustomScrollArea
-      className={`java-args-editor ${className}`.trim()}
-      style={{ minHeight: 0 }}
-    >
+    <CustomScrollArea className={`java-args-editor ${className}`.trim()} style={{ minHeight: 0 }}>
       <div
         className="jae-editor"
         style={{ "--jae-content-height": contentHeight } as CSSProperties}
@@ -269,7 +256,9 @@ export function JavaArgsEditor({
                   className={[
                     "jae-search-line",
                     index === visibleSearchMatchIndex ? "jae-search-line--current" : "",
-                  ].filter(Boolean).join(" ")}
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                   style={{ transform: `translateY(${match.line * ROW_HEIGHT}px)` }}
                 />
               ))}
@@ -308,7 +297,7 @@ export function JavaArgsEditor({
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? tr("ui.javaArguments")}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPointerDown={(event) =>

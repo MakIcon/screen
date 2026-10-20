@@ -3,6 +3,7 @@ import {
   setPlaceholderTemplateCase,
   type PlaceholderTemplateCase,
 } from "../../utils/placeholders";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   value: string;
@@ -31,11 +32,15 @@ const CASE_OPTIONS: readonly {
 ];
 
 export function BuildPlaceholderCaseControl({ value, maxLength, onChange }: Props) {
+  const tr = useTranslation();
   const currentCase = getPlaceholderTemplateCase(value);
   const hasPlaceholder = currentCase !== "none";
 
   return (
-    <div className="bce-placeholder-case" aria-label="Placeholder output case">
+    <div
+      className="bce-placeholder-case"
+      aria-label={tr("buildPlaceholderCaseControl.placeholderOutputCase")}
+    >
       {CASE_OPTIONS.map((option) => {
         const nextValue = setPlaceholderTemplateCase(value, option.mode);
         const disabled =
@@ -46,17 +51,25 @@ export function BuildPlaceholderCaseControl({ value, maxLength, onChange }: Prop
             key={option.mode}
             className={currentCase === option.mode ? "active" : ""}
             disabled={disabled}
-            data-tooltip={option.title}
+            data-tooltip={
+              option.mode === "uppercase"
+                ? tr("buildPlaceholderCaseControl.forceTheResolvedPlaceholder")
+                : tr("buildPlaceholderCaseControl.keepTheResolvedPlaceholder")
+            }
             onClick={() => {
               if (nextValue !== value) onChange(nextValue);
             }}
           >
             <code>{option.syntax}</code>
-            <span>{option.label}</span>
+            <span>
+              {option.mode === "uppercase"
+                ? tr("buildPlaceholderCaseControl.uppercase")
+                : tr("buildPlaceholderCaseControl.asValue")}
+            </span>
           </button>
         );
       })}
-      {currentCase === "mixed" && <small>MIXED CASE</small>}
+      {currentCase === "mixed" && <small>{tr("buildPlaceholderCaseControl.mixedCase")}</small>}
     </div>
   );
 }

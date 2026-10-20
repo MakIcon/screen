@@ -2,6 +2,8 @@ import type { LauncherPluginsSettings } from "../../types";
 import type { PluginDefinition, PluginId } from "./pluginTypes";
 import { PluginIcon } from "./PluginIcon";
 import { pluginStatusLabel } from "./pluginStatus";
+import { pluginCopy } from "./pluginLocalization";
+import { useLocale, useTranslation } from "../../i18n/locale";
 
 type PluginCardProps = {
   definition: PluginDefinition;
@@ -24,15 +26,17 @@ export function PluginCard({
   installing,
   uninstalling,
 }: PluginCardProps) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const status = uninstalling ? "REMOVING" : definition.getStatus(plugins);
   const statusTone = packageReady && status === "ON" ? "on" : status === "OFF" ? "off" : "warning";
   const statusLabel = packageChecking
-    ? "Проверка…"
+    ? tr("pluginCard.checking")
     : installing
-      ? "Установка…"
+      ? tr("pluginCard.installing")
       : !packageReady
-        ? "Доступно для установки"
-        : pluginStatusLabel(status);
+        ? tr("pluginCard.availableToInstall")
+        : pluginStatusLabel(status, locale);
   return (
     <button
       type="button"
@@ -43,7 +47,7 @@ export function PluginCard({
       <PluginIcon definition={definition} className="plugin-card-mark" />
       <span className="plugin-card-copy">
         <strong>{definition.title}</strong>
-        <span className="plugin-card-category">{definition.tag}</span>
+        <span className="plugin-card-category">{pluginCopy(definition, locale).tag}</span>
         <span className={`plugin-card-state plugin-card-state--${statusTone}`}>{statusLabel}</span>
       </span>
     </button>

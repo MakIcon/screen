@@ -1,3 +1,4 @@
+import { useTranslation } from "../../i18n/locale";
 import { useState } from "react";
 
 export function fileBadge(title: string, source: string) {
@@ -84,6 +85,7 @@ export function ExportedItemIcon({
   title: string;
   source: string;
 }) {
+  const tr = useTranslation();
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const badge = fileBadge(title, source);
 
@@ -103,7 +105,7 @@ export function ExportedItemIcon({
   return (
     <span
       className={`eximp-list-preview-icon-fallback file-kind-${badge.kind}`}
-      aria-label={`${badge.kind} file`}
+      aria-label={tr("ui.fileType", { type: badge.label })}
     >
       {badge.label}
     </span>

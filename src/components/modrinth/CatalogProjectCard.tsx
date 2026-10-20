@@ -1,6 +1,7 @@
 import type { ModDownloadProgressPayload, ModrinthProject } from "../../types";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import { ModrinthProjectIcon } from "./ModrinthProjectModal";
+import { useTranslation } from "../../i18n/locale";
 
 // Keep preview data with its card without serializing version lists into the DOM.
 const catalogProjects = new WeakMap<HTMLElement, ModrinthProject>();
@@ -40,26 +41,30 @@ function ModDownloadControls({
   onPause: (paused: boolean) => Promise<void>;
   onCancel: () => Promise<void>;
 }) {
+  const tr = useTranslation();
   const paused = progress.state === "paused";
   const percent = Math.round(progress.percent);
   return (
     <div className="mod-download-progress" onClick={(event) => event.stopPropagation()}>
       <div className="mod-download-progress-head">
-        <strong>{paused ? "PAUSED" : "DOWNLOADING"}</strong>
+        <strong>{paused ? tr("common.paused") : tr("common.downloading")}</strong>
         <span>{percent}%</span>
       </div>
-      <div className="mod-download-progress-track" aria-label={`Download ${percent}%`}>
+      <div
+        className="mod-download-progress-track"
+        aria-label={`${tr("catalogProjectCard.download")} ${percent}%`}
+      >
         <span style={{ width: `${percent}%` }} />
       </div>
       <div className="mod-download-progress-actions">
         <span data-tooltip={progress.filename}>
-          {progress.filename || "Resolving dependencies…"}
+          {progress.filename || tr("catalogProjectCard.resolvingDependencies")}
         </span>
         <button type="button" onClick={() => void onPause(!paused)}>
-          {paused ? "RESUME" : "PAUSE"}
+          {paused ? tr("common.resume") : tr("common.pause")}
         </button>
         <button className="danger" type="button" onClick={() => void onCancel()}>
-          CANCEL
+          {tr("common.cancel")}
         </button>
       </div>
     </div>
@@ -80,6 +85,7 @@ export function CatalogProjectCard({
   setDownloadPaused,
   cancelDownload,
 }: CatalogProjectCardProps) {
+  const tr = useTranslation();
   return (
     <div
       ref={(node) => {
@@ -89,7 +95,7 @@ export function CatalogProjectCard({
       key={item.projectId}
       role="button"
       tabIndex={0}
-      aria-label={`Open ${item.title} details`}
+      aria-label={tr("catalogProjectCard.openDetails", { title: item.title })}
       aria-haspopup="dialog"
       onClick={() => onOpen()}
       onKeyDown={(event) => {
@@ -116,7 +122,7 @@ export function CatalogProjectCard({
             installedCatalogMode === "downloaded" ? (
               <>
                 <button className="ghost-action installed catalog-action" type="button" disabled>
-                  DOWNLOADED
+                  {tr("catalogProjectCard.downloaded")}
                 </button>
                 <button
                   className="ghost-action danger catalog-action"
@@ -124,7 +130,7 @@ export function CatalogProjectCard({
                   disabled={contentBusy}
                   onClick={onUninstall}
                 >
-                  {busy ? "REMOVING..." : "DELETE"}
+                  {busy ? tr("catalogProjectCard.removing") : tr("common.deleteCaps")}
                 </button>
               </>
             ) : (
@@ -135,7 +141,7 @@ export function CatalogProjectCard({
                   disabled={contentBusy}
                   onClick={onUninstall}
                 >
-                  {busy ? "..." : "REMOVE"}
+                  {busy ? "..." : tr("common.remove")}
                 </button>
                 <button
                   className="ghost-action installed catalog-action"
@@ -143,9 +149,9 @@ export function CatalogProjectCard({
                   disabled={contentBusy}
                   onClick={onInstall}
                   data-mascot-stealable
-                  data-mascot-label="UPDATE"
+                  data-mascot-label={tr("catalogProjectCard.update")}
                 >
-                  {busy ? "..." : "UPDATE"}
+                  {busy ? "..." : tr("catalogProjectCard.update")}
                 </button>
               </>
             )
@@ -156,9 +162,9 @@ export function CatalogProjectCard({
               disabled={contentBusy}
               onClick={onInstall}
               data-mascot-stealable
-              data-mascot-label="INSTALL"
+              data-mascot-label={tr("common.install")}
             >
-              {busy ? "INSTALLING..." : "INSTALL"}
+              {busy ? tr("catalogProjectCard.installing") : tr("common.install")}
             </button>
           )}
         </div>
@@ -172,9 +178,11 @@ export function CatalogProjectCard({
       )}
       <p className="mod-description">{truncateDescription(item.description)}</p>
       <div className="mod-meta-strip">
-        <span>BY {item.author.toUpperCase()}</span>
-        <span>{item.downloads.toLocaleString()} DOWNLOADS</span>
-        <span>{item.follows.toLocaleString()} FOLLOWERS</span>
+        <span>
+          {tr("catalogProjectCard.by")} {item.author.toUpperCase()}
+        </span>
+        <span>{tr("catalogProjectCard.downloads", { count: item.downloads })}</span>
+        <span>{tr("catalogProjectCard.followers", { count: item.follows })}</span>
       </div>
     </div>
   );

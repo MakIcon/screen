@@ -18,6 +18,7 @@ import {
 import { BuildPlaceholderCaseControl } from "./BuildPlaceholderCaseControl";
 import { getBuildCardPlainContentStyle, resolveBuildCardTags } from "./BuildCardContentView";
 import { PlaceholderGuideButton } from "../placeholders/PlaceholderGuideButton";
+import { useTranslation } from "../../i18n/locale";
 
 function alphaColor(hex: string, opacity: number) {
   const normalizedOpacity = Math.max(0, Math.min(100, opacity));
@@ -48,8 +49,8 @@ function ContentTagRow({
   onUpdate,
   onDelete,
 }: ContentTagRowProps) {
+  const tr = useTranslation();
   const [open, setOpen] = useState(false);
-  const labelPrefix = mode === "tags" ? "Tag" : "Text";
 
   return (
     <div className="bce-tag-row">
@@ -77,10 +78,19 @@ function ContentTagRow({
                     }
             }
           >
-            {previewText || tag.text || `${labelPrefix} tag`}
+            {previewText ||
+              tag.text ||
+              (mode === "tags"
+                ? tr("buildCardEditorContent.tag")
+                : tr("buildCardEditorContent.text"))}
           </span>
 
-          <span className="bce-tag-caption">{tag.text || `${labelPrefix} placeholder`}</span>
+          <span className="bce-tag-caption">
+            {tag.text ||
+              (mode === "tags"
+                ? tr("buildCardEditorContent.tagPlaceholder")
+                : tr("buildCardEditorContent.textPlaceholder"))}
+          </span>
 
           <svg
             className={`bce-section-chevron ${open ? "bce-section-chevron--open" : ""}`}
@@ -98,7 +108,12 @@ function ContentTagRow({
           </svg>
         </button>
 
-        <button type="button" className="bce-tag-delete" onClick={onDelete} aria-label="Delete tag">
+        <button
+          type="button"
+          className="bce-tag-delete"
+          onClick={onDelete}
+          aria-label={tr("buildCardEditorContent.deleteTag")}
+        >
           <svg
             width="10"
             height="10"
@@ -117,7 +132,7 @@ function ContentTagRow({
 
       {open && (
         <div className="bce-tag-row-body">
-          <EditorRow label="Text">
+          <EditorRow label={tr("buildCardEditorContent.text")}>
             <div className="bce-placeholder-field">
               <input
                 className="bce-text-input"
@@ -135,7 +150,7 @@ function ContentTagRow({
             </div>
           </EditorRow>
 
-          <EditorRow label="Size">
+          <EditorRow label={tr("buildCardEditorContent.size")}>
             <div className="bce-slider-field">
               <span className="bce-slider-value">{tag.fontSize}px</span>
               <div className="bce-slider">
@@ -152,14 +167,28 @@ function ContentTagRow({
             </div>
           </EditorRow>
 
-          <EditorRow label={mode === "tags" ? "Border" : "Stroke"} alignTop>
+          <EditorRow
+            label={
+              mode === "tags"
+                ? tr("buildCardEditorContent.border")
+                : tr("buildCardEditorContent.stroke")
+            }
+            alignTop
+          >
             <ColorPicker
               value={tag.borderColor}
               onChange={(hex) => onUpdate({ ...tag, borderColor: hex })}
             />
           </EditorRow>
 
-          <EditorRow label={mode === "tags" ? "Fill" : "Text"} alignTop>
+          <EditorRow
+            label={
+              mode === "tags"
+                ? tr("buildCardEditorContent.fill")
+                : tr("buildCardEditorContent.text")
+            }
+            alignTop
+          >
             <ColorPicker
               value={tag.fillColor}
               onChange={(hex) => onUpdate({ ...tag, fillColor: hex })}
@@ -167,7 +196,7 @@ function ContentTagRow({
           </EditorRow>
 
           {mode === "tags" && (
-            <EditorRow label="Text" alignTop>
+            <EditorRow label={tr("buildCardEditorContent.text")} alignTop>
               <ColorPicker
                 value={tag.textColor}
                 onChange={(hex) => onUpdate({ ...tag, textColor: hex })}
@@ -175,7 +204,13 @@ function ContentTagRow({
             </EditorRow>
           )}
 
-          <EditorRow label={mode === "tags" ? "Fill %" : "Text %"}>
+          <EditorRow
+            label={
+              mode === "tags"
+                ? tr("buildCardEditorContent.fill2")
+                : tr("buildCardEditorContent.text2")
+            }
+          >
             <div className="bce-slider-field">
               <span className="bce-slider-value">{tag.fillOpacity}%</span>
               <div className="bce-slider">
@@ -204,6 +239,7 @@ type Props = {
 };
 
 export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Props) {
+  const tr = useTranslation();
   const [open, setOpen] = useState(true);
 
   const previewContentTags = resolveBuildCardTags(draft, resolvePreviewText);
@@ -246,48 +282,52 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
   }
 
   return (
-    <EditorSection title="Content" open={open} onToggle={() => setOpen((prev) => !prev)}>
-      <EditorRow label="Enable">
+    <EditorSection
+      title={tr("buildCardEditorContent.content")}
+      open={open}
+      onToggle={() => setOpen((prev) => !prev)}
+    >
+      <EditorRow label={tr("common.enable")}>
         <div className="bce-mode-switch">
           <button
             type="button"
             className={`bce-mode-pill ${draft.contentEnabled ? "bce-mode-pill--active" : ""}`}
             onClick={() => onDraftChange((prev) => ({ ...prev, contentEnabled: true }))}
           >
-            On
+            {tr("common.on")}
           </button>
           <button
             type="button"
             className={`bce-mode-pill ${!draft.contentEnabled ? "bce-mode-pill--active" : ""}`}
             onClick={() => onDraftChange((prev) => ({ ...prev, contentEnabled: false }))}
           >
-            Off
+            {tr("common.off")}
           </button>
         </div>
       </EditorRow>
 
-      <EditorRow label="Mode">
+      <EditorRow label={tr("buildCardEditorContent.mode")}>
         <div className="bce-mode-switch">
           <button
             type="button"
             className={`bce-mode-pill ${draft.contentMode === "text" ? "bce-mode-pill--active" : ""}`}
             onClick={() => onDraftChange((prev) => ({ ...prev, contentMode: "text" }))}
           >
-            Plain text
+            {tr("buildCardEditorContent.plainText")}
           </button>
           <button
             type="button"
             className={`bce-mode-pill ${draft.contentMode === "tags" ? "bce-mode-pill--active" : ""}`}
             onClick={() => onDraftChange((prev) => ({ ...prev, contentMode: "tags" }))}
           >
-            Tags
+            {tr("buildCardEditorContent.tags")}
           </button>
         </div>
       </EditorRow>
 
       {draft.contentMode === "text" && (
         <>
-          <EditorRow label="Align">
+          <EditorRow label={tr("buildCardEditorContent.align")}>
             <div className="bce-mode-switch">
               {(["left", "center", "right"] as const).map((align) => (
                 <button
@@ -296,7 +336,11 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
                   className={`bce-mode-pill ${draft.contentTextAlign === align ? "bce-mode-pill--active" : ""}`}
                   onClick={() => onDraftChange((prev) => ({ ...prev, contentTextAlign: align }))}
                 >
-                  {align === "left" ? "Left" : align === "center" ? "Center" : "Right"}
+                  {align === "left"
+                    ? tr("buildCardEditorContent.left")
+                    : align === "center"
+                      ? tr("buildCardEditorContent.center")
+                      : tr("buildCardEditorContent.right")}
                 </button>
               ))}
             </div>
@@ -304,8 +348,8 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
 
           <div className="bce-content-toggle-wrap">
             <ElementToggle
-              title="TEXT OUTLINE"
-              note="Draw a stroke around plain text placeholders."
+              title={tr("buildCardEditorContent.textOutline")}
+              note={tr("buildCardEditorContent.drawAStrokeAround")}
               enabled={draft.contentTextStrokeEnabled}
               onToggle={() =>
                 onDraftChange((prev) => ({
@@ -320,9 +364,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
 
       <div className="bce-tag-list">
         {draft.contentTags.length === 0 ? (
-          <div className="bce-tag-empty">
-            Add a tag to show build placeholders inside the card content area.
-          </div>
+          <div className="bce-tag-empty">{tr("buildCardEditorContent.addATagTo")}</div>
         ) : (
           draft.contentTags.map((tag, index) => (
             <ContentTagRow
@@ -357,7 +399,7 @@ export function ContentSection({ draft, onDraftChange, resolvePreviewText }: Pro
           <line x1="5" y1="1.5" x2="5" y2="8.5" />
           <line x1="1.5" y1="5" x2="8.5" y2="5" />
         </svg>
-        Add tag
+        {tr("buildCardEditorContent.addTag")}
       </button>
 
       <PlaceholderGuideButton />

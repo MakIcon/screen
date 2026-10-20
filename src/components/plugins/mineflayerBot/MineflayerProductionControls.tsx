@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { isPlainMessageKey, translate, useLocale, useTranslation } from "../../../i18n/locale";
+import { localizeCatalog } from "./catalogLocalization";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
@@ -8,48 +10,35 @@ import bundledCatalog from "../../../data/minecraftCatalog.json";
 import type { MinecraftCatalog, MineflayerBotStatus } from "../../../types";
 
 const STATIONS = [
-  ["crafting_table", "Верстак"],
-  ["furnace", "Печь"],
-  ["blast_furnace", "Плавильная печь"],
-  ["smoker", "Коптильня"],
-  ["stonecutter", "Камнерез"],
-  ["anvil", "Наковальня"],
-  ["chipped_anvil", "Повреждённая наковальня"],
-  ["damaged_anvil", "Разбитая наковальня"],
-  ["enchanting_table", "Стол зачарований"],
-  ["brewing_stand", "Зельеварка"],
-  ["smithing_table", "Кузнечный стол"],
-  ["grindstone", "Точило"],
-  ["loom", "Ткацкий станок"],
-  ["cartography_table", "Стол картографа"],
-  ["crafter", "Сборщик"],
-  ["chest", "Сундук"],
-  ["barrel", "Бочка"],
-  ["hopper", "Воронка"],
-  ["dispenser", "Раздатчик"],
-  ["dropper", "Выбрасыватель"],
-];
-const SLOT_HELP: Record<string, string> = {
-  crafting_table:
-    "0 — результат; 1–9 — сетка 3×3. Для автоматического крафта используйте форму выше.",
-  furnace: "0 — сырьё; 1 — топливо; 2 — результат.",
-  blast_furnace: "0 — сырьё; 1 — топливо; 2 — результат.",
-  smoker: "0 — еда; 1 — топливо; 2 — результат.",
-  anvil:
-    "0 — предмет; 1 — материал или книга; 2 — результат. Для ремонта и объединения нужен опыт.",
-  chipped_anvil: "0 — предмет; 1 — материал или книга; 2 — результат.",
-  damaged_anvil: "0 — предмет; 1 — материал или книга; 2 — результат.",
-  stonecutter: "0 — материал; 1 — результат. После загрузки выберите номер рецепта от 0.",
-  enchanting_table: "0 — предмет; 1 — лазурит. Варианты зачарования: 0, 1, 2. Нужен опыт.",
-  brewing_stand:
-    "0–2 — бутылочки; 3 — ингредиент; 4 — огненный порошок. Дождитесь окончания варки.",
-  smithing_table:
-    "В новых версиях: 0 — шаблон; 1 — предмет; 2 — материал; 3 — результат. В старых версиях — два входа и результат.",
-  grindstone: "0–1 — предметы; 2 — результат.",
-  loom: "0 — флаг; 1 — краситель; 2 — узор; 3 — результат. Выберите номер узора от 0.",
-  cartography_table: "0 — карта; 1 — бумага, карта или стекло; 2 — результат.",
-  crafter: "0–8 — сетка сборщика. Для запуска нужен сигнал редстоуна.",
+  "crafting_table",
+  "furnace",
+  "blast_furnace",
+  "smoker",
+  "stonecutter",
+  "anvil",
+  "chipped_anvil",
+  "damaged_anvil",
+  "enchanting_table",
+  "brewing_stand",
+  "smithing_table",
+  "grindstone",
+  "loom",
+  "cartography_table",
+  "crafter",
+  "chest",
+  "barrel",
+  "hopper",
+  "dispenser",
+  "dropper",
+] as const;
+type Station = (typeof STATIONS)[number];
+const isStation = (name: string): name is Station => (STATIONS as readonly string[]).includes(name);
+const slotHelp = (name: string) => {
+  const key = `bot.production.slotHelp.${name}`;
+  return isPlainMessageKey(key) ? translate(key) : undefined;
 };
+const stationName = (name: string) =>
+  isStation(name) ? translate(`bot.production.station.${name}`) : undefined;
 
 export function MineflayerProductionControls({
   connected,
@@ -60,6 +49,8 @@ export function MineflayerProductionControls({
   refresh: () => Promise<unknown>;
   status: MineflayerBotStatus | null;
 }) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [item, setItem] = useState("stone_pickaxe"),
     [count, setCount] = useState(1);
   const [craftMode, setCraftMode] = useState("auto");
@@ -79,7 +70,14 @@ export function MineflayerProductionControls({
   const [feedback, setFeedback] = useState("");
   const sendingRef = useRef(false);
   const [liveCatalog, setLiveCatalog] = useState<MinecraftCatalog | null>(null);
-  const catalog = connected && liveCatalog ? liveCatalog : (bundledCatalog as MinecraftCatalog);
+  const catalog = useMemo(
+    () =>
+      localizeCatalog(
+        connected && liveCatalog ? liveCatalog : (bundledCatalog as MinecraftCatalog),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connected, liveCatalog, locale],
+  );
   const progress = connected ? status?.inventory?.production : null;
   const active = progress?.station;
   const disabled = !connected || sending;
@@ -105,7 +103,7 @@ export function MineflayerProductionControls({
     setFeedback("");
     try {
       await invoke("send_mineflayer_bot_chat", { message: command, command: true });
-      setFeedback("Команда принята. Результат и текущий этап появятся ниже.");
+      setFeedback(tr("bot.production.commandAcceptedTheResult"));
       await refresh();
     } catch (failure) {
       setError(toErrorMessage(failure));
@@ -138,29 +136,34 @@ export function MineflayerProductionControls({
   return (
     <>
       <PluginSettingsGroup
-        title="БЛОКИ ВОКРУГ БОТА"
-        description="Находит рабочие блоки и контейнеры в загруженной области вокруг бота. Выберите найденный блок, чтобы бот подошёл и открыл его."
+        title={tr("bot.production.blocksAroundTheBot")}
+        description={tr("bot.production.findsWorkstationsAndContainers")}
         collapsible={false}
       >
         <div className="mineflayer-bot-grid">
-          {number("РАДИУС СКАНИРОВАНИЯ · БЛОКОВ", scanRadius, setScanRadius, 4, 64)}
+          {number(tr("bot.production.scanRadiusBlocks"), scanRadius, setScanRadius, 4, 64)}
           <div className="mineflayer-coordinate-actions">
             <button
               type="button"
               disabled={disabled}
               onClick={() => void send(`station scan ${scanRadius}`)}
             >
-              Сканировать рабочие блоки
+              {tr("bot.production.scanWorkstations")}
             </button>
           </div>
         </div>
         {progress?.nearbyScan && (
           <>
             <p role="status">
-              Найдено: {progress.nearbyScan.blocks.length} · радиус {progress.nearbyScan.radius}{" "}
-              блоков
+              {tr("bot.production.scanResult", {
+                found: progress.nearbyScan.blocks.length,
+                radius: progress.nearbyScan.radius,
+              })}
             </p>
-            <div className="mineflayer-production-slots" aria-label="Найденные рабочие блоки">
+            <div
+              className="mineflayer-production-slots"
+              aria-label={tr("bot.production.workstationsFound")}
+            >
               {progress.nearbyScan.blocks.map((block) => (
                 <button
                   type="button"
@@ -173,109 +176,107 @@ export function MineflayerProductionControls({
                   }
                 >
                   <strong>
-                    {STATIONS.find(([value]) => value === block.name)?.[1] ||
+                    {stationName(block.name) ||
                       catalog.entries.find((entry) => entry.name === block.name)?.displayName ||
                       block.name}
                   </strong>
                   <span>
-                    {block.position.x} {block.position.y} {block.position.z} · {block.distance} бл.
+                    {block.position.x} {block.position.y} {block.position.z} ·{" "}
+                    {tr("units.blocksShort", { value: block.distance })}
                   </span>
-                  <small>ПОДОЙТИ И ОТКРЫТЬ</small>
+                  <small>{tr("bot.production.walkOverAndOpen")}</small>
                 </button>
               ))}
             </div>
             {!progress.nearbyScan.blocks.length && (
               <p className="mineflayer-production-hint">
-                В этом радиусе рабочих блоков не найдено. Подойдите к базе или увеличьте радиус.
+                {tr("bot.production.noWorkstationsFoundWithin")}
               </p>
             )}
           </>
         )}
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="АВТОМАТИЧЕСКИЙ КРАФТ"
-        description="Бот изготовит промежуточные ингредиенты из ресурсов в инвентаре. Найдёт верстак в радиусе 32 блоков или изготовит и поставит его рядом."
+        title={tr("bot.production.automaticCrafting")}
+        description={tr("bot.production.theBotCraftsIntermediate")}
         collapsible={false}
       >
         <div className="mineflayer-bot-grid">
           <MinecraftSearchField
-            label="ПРЕДМЕТ"
+            label={tr("bot.production.item")}
             value={item}
             onChange={setItem}
             catalog={catalog}
             scope="items"
             disabled={disabled}
           />
-          {number("СКОЛЬКО ИЗГОТОВИТЬ", count, setCount, 1, 256)}
+          {number(tr("bot.production.howManyToCraft"), count, setCount, 1, 256)}
           <label className="mineflayer-bot-field">
-            <span>МЕСТО КРАФТА</span>
+            <span>{tr("bot.production.craftingSpot")}</span>
             <select
               value={craftMode}
               onChange={(event) => setCraftMode(event.target.value)}
               disabled={disabled}
             >
-              <option value="auto">Автоматически</option>
-              <option value="inventory">Инвентарь · 2×2</option>
-              <option value="table">Верстак · 3×3</option>
+              <option value="auto">{tr("bot.production.automatic")}</option>
+              <option value="inventory">{tr("bot.production.inventory22")}</option>
+              <option value="table">{tr("bot.production.craftingTable33")}</option>
             </select>
           </label>
         </div>
-        <p className="mineflayer-production-hint">
-          Количество указано в предметах. Если рецепт выдаёт несколько штук, бот округлит до целой
-          партии. Недостающие исходные ресурсы нужно добыть заранее.
-        </p>
+        <p className="mineflayer-production-hint">{tr("bot.production.theCountIsIn")}</p>
         <div className="mineflayer-coordinate-actions">
           <button
             type="button"
             disabled={disabled || !item.trim()}
             onClick={() => void send(`recipes ${item.trim()} ${count} ${craftMode}`)}
           >
-            Проверить рецепт
+            {tr("bot.production.checkRecipe")}
           </button>
           <button
             type="button"
             disabled={working || !item.trim()}
             onClick={() => void send(`craft ${item.trim()} ${count} ${craftMode}`)}
           >
-            Изготовить
+            {tr("bot.production.craft")}
           </button>
         </div>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="ПЕРЕПЛАВКА И ГОТОВКА"
-        description="Бот загрузит пустую печь, подберёт топливо, дождётся результата и заберёт его. Коптильня подходит для еды, плавильная печь — для руд и металла."
+        title={tr("bot.production.smeltingAndCooking")}
+        description={tr("bot.production.theBotLoadsAn")}
         collapsible={false}
       >
         <div className="mineflayer-bot-grid">
           <MinecraftSearchField
-            label="СЫРЬЁ"
+            label={tr("bot.production.rawMaterial")}
             value={smeltItem}
             onChange={setSmeltItem}
             catalog={catalog}
             scope="items"
             disabled={disabled}
           />
-          {number("КОЛИЧЕСТВО СЫРЬЯ", smeltCount, setSmeltCount, 1, 64)}
+          {number(tr("bot.production.rawMaterialCount"), smeltCount, setSmeltCount, 1, 64)}
           <MinecraftSearchField
-            label="ТОПЛИВО · ПУСТО = АВТОВЫБОР"
+            label={tr("bot.production.fuelEmptyAuto")}
             value={fuel}
             onChange={setFuel}
             catalog={catalog}
             scope="items"
             disabled={disabled}
-            placeholder="Автоматически"
+            placeholder={tr("bot.production.automatic")}
           />
           <label className="mineflayer-bot-field">
-            <span>ПЕЧЬ</span>
+            <span>{tr("bot.production.furnace")}</span>
             <select
               value={furnace}
               onChange={(event) => setFurnace(event.target.value)}
               disabled={disabled}
             >
-              <option value="auto">Автоматически</option>
-              <option value="furnace">Обычная печь</option>
-              <option value="blast_furnace">Плавильная печь</option>
-              <option value="smoker">Коптильня</option>
+              <option value="auto">{tr("bot.production.automatic")}</option>
+              <option value="furnace">{tr("bot.production.regularFurnace")}</option>
+              <option value="blast_furnace">{tr("bot.production.blastFurnace")}</option>
+              <option value="smoker">{tr("bot.production.smoker")}</option>
             </select>
           </label>
         </div>
@@ -289,26 +290,26 @@ export function MineflayerProductionControls({
               )
             }
           >
-            Начать переплавку
+            {tr("bot.production.startSmelting")}
           </button>
         </div>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="РАБОЧИЕ БЛОКИ"
-        description="Выберите блок: бот подойдёт и откроет его. Затем положите материалы в нужные слоты, выберите действие и заберите результат."
+        title={tr("bot.production.workstations")}
+        description={tr("bot.production.pickABlockThe")}
         collapsible={false}
       >
         <div className="mineflayer-bot-grid">
           <label className="mineflayer-bot-field">
-            <span>БЛОК РЯДОМ С БОТОМ</span>
+            <span>{tr("bot.production.blockNearTheBot")}</span>
             <select
               value={station}
               onChange={(event) => setStation(event.target.value)}
               disabled={disabled}
             >
-              {STATIONS.map(([value, label]) => (
+              {STATIONS.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {tr(`bot.production.station.${value}`)}
                 </option>
               ))}
             </select>
@@ -319,21 +320,23 @@ export function MineflayerProductionControls({
               disabled={working}
               onClick={() => void send(`station open ${station}`)}
             >
-              Подойти и открыть
+              {tr("bot.production.walkOverAndOpen2")}
             </button>
           </div>
         </div>
         <p className="mineflayer-production-hint">
-          {SLOT_HELP[active?.name || station] ||
-            "Нумерация слотов начинается с 0. Предметы переносятся между блоком и инвентарём бота."}
+          {slotHelp(active?.name || station) || tr("bot.production.slotNumberingStartsAt")}
         </p>
         {active && (
           <>
             <p>
-              Открыт: {STATIONS.find(([value]) => value === active.name)?.[1] || active.name} ·{" "}
+              {tr("bot.production.open")}: {stationName(active.name) || active.name} ·{" "}
               {active.position.x} {active.position.y} {active.position.z}
             </p>
-            <div className="mineflayer-production-slots" aria-label="Слоты рабочего блока">
+            <div
+              className="mineflayer-production-slots"
+              aria-label={tr("bot.production.workstationSlots")}
+            >
               {active.slots.map((entry, index) => (
                 <button
                   key={index}
@@ -343,22 +346,30 @@ export function MineflayerProductionControls({
                   onClick={() => setSlot(index)}
                   className={slot === index ? "active" : ""}
                 >
-                  <small>СЛОТ {index}</small>
-                  <span>{entry ? `${entry.name} × ${entry.count}` : "Пусто"}</span>
+                  <small>
+                    {tr("bot.production.slot")} {index}
+                  </small>
+                  <span>{entry ? `${entry.name} × ${entry.count}` : tr("common.empty")}</span>
                 </button>
               ))}
             </div>
             <div className="mineflayer-bot-grid">
-              {number("НОМЕР СЛОТА", slot, setSlot, 0, Math.max(0, active.slots.length - 1))}
+              {number(
+                tr("bot.production.slotNumber"),
+                slot,
+                setSlot,
+                0,
+                Math.max(0, active.slots.length - 1),
+              )}
               <MinecraftSearchField
-                label="ПРЕДМЕТ ДЛЯ ЗАГРУЗКИ"
+                label={tr("bot.production.itemToLoad")}
                 value={stationItem}
                 onChange={setStationItem}
                 catalog={catalog}
                 scope="items"
                 disabled={disabled}
               />
-              {number("КОЛИЧЕСТВО ДЛЯ ЗАГРУЗКИ", stationCount, setStationCount, 1, 64)}
+              {number(tr("bot.production.countToLoad"), stationCount, setStationCount, 1, 64)}
             </div>
             <div className="mineflayer-coordinate-actions">
               <button
@@ -368,22 +379,22 @@ export function MineflayerProductionControls({
                   void send(`station put ${slot} ${stationItem.trim()} ${stationCount}`)
                 }
               >
-                Положить в слот {slot}
+                {tr("bot.production.putIntoSlot")} {slot}
               </button>
               <button
                 type="button"
                 disabled={working || !active.slots[slot]}
                 onClick={() => void send(`station take ${slot}`)}
               >
-                Забрать из слота {slot}
+                {tr("bot.production.takeFromSlot")} {slot}
               </button>
             </div>
             {["stonecutter", "loom", "enchanting_table"].includes(active.name) && (
               <>
                 {number(
                   active.name === "enchanting_table"
-                    ? "ВАРИАНТ ЗАЧАРОВАНИЯ · 0–2"
-                    : "НОМЕР ВАРИАНТА · ОТ 0",
+                    ? tr("bot.production.enchantmentOption02")
+                    : tr("bot.production.optionNumberFrom0"),
                   choice,
                   setChoice,
                   0,
@@ -391,7 +402,7 @@ export function MineflayerProductionControls({
                 )}
                 {active.name === "enchanting_table" && (
                   <p className="mineflayer-production-hint">
-                    Нужные уровни:{" "}
+                    {tr("bot.production.requiredLevels")}:{" "}
                     {[0, 1, 2]
                       .map((index) => `${index}: ${active.properties[index] ?? "—"}`)
                       .join(" · ")}
@@ -403,7 +414,9 @@ export function MineflayerProductionControls({
                     disabled={working}
                     onClick={() => void send(`station select ${choice}`)}
                   >
-                    {active.name === "enchanting_table" ? "Зачаровать" : "Выбрать вариант"}
+                    {active.name === "enchanting_table"
+                      ? tr("bot.production.enchant")
+                      : tr("bot.production.chooseOption")}
                   </button>
                 </div>
               </>
@@ -411,7 +424,7 @@ export function MineflayerProductionControls({
             {/anvil$/.test(active.name) && (
               <>
                 <label className="mineflayer-bot-field">
-                  <span>НОВОЕ ИМЯ ПРЕДМЕТА</span>
+                  <span>{tr("bot.production.newItemName")}</span>
                   <input
                     value={name}
                     maxLength={35}
@@ -425,7 +438,7 @@ export function MineflayerProductionControls({
                     disabled={working || !name.trim()}
                     onClick={() => void send(`station rename ${name.trim()}`)}
                   >
-                    Задать имя
+                    {tr("bot.production.setName")}
                   </button>
                 </div>
               </>
@@ -433,19 +446,18 @@ export function MineflayerProductionControls({
           </>
         )}
       </PluginSettingsGroup>
-      <PluginSettingsGroup title="ТЕКУЩАЯ РАБОТА" collapsible={false}>
+      <PluginSettingsGroup title={tr("bot.production.currentWork")} collapsible={false}>
         <p role="status" aria-live="polite">
-          {connected ? progress?.message || "Готов к работе" : "Подключите бота к серверу"}
+          {connected
+            ? progress?.message || tr("bot.production.readyToWork")
+            : tr("bot.production.connectTheBotTo")}
         </p>
         <div className="mineflayer-coordinate-actions">
           <button type="button" disabled={disabled} onClick={() => void send("station stop")}>
-            Остановить и закрыть блок
+            {tr("bot.production.stopAndCloseThe")}
           </button>
         </div>
-        <p className="mineflayer-production-hint">
-          При остановке переплавки или варки материалы остаются в блоке. Откройте его, чтобы забрать
-          содержимое.
-        </p>
+        <p className="mineflayer-production-hint">{tr("bot.production.whenSmeltingOrBrewing")}</p>
         {(error || feedback) && (
           <p
             className={`mineflayer-bot-chat-feedback${error ? " is-error" : ""}`}

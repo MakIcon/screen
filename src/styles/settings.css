@@ -213,6 +213,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 16px 0;
   border-top: 1px solid var(--line);
   margin-bottom: 0;
@@ -231,6 +232,7 @@
 
 .theme-switch {
   display: flex;
+  max-width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   overflow: hidden;
@@ -260,6 +262,7 @@
     color 0.15s,
     background 0.15s;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .theme-switch-btn + .theme-switch-btn {

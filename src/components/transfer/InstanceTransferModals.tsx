@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../../utils/errors";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type {
   ExportedItem,
@@ -18,6 +19,23 @@ import { ExportedItemIcon, fileTypeLabel } from "./ExportedItemIcon";
 import type { ContentIconKind } from "../../hooks/useContentIcons";
 import type { ImportProgress } from "../../hooks/useInstanceTransfers";
 import type { InstanceTransferOptions, TransferHoverTarget, TransferListPreview } from "./types";
+import { useTranslation } from "../../i18n/locale";
+
+function transferLabels(
+  tr: ReturnType<typeof useTranslation>,
+): Record<keyof InstanceTransferOptions, string> {
+  return {
+    name: tr("instanceTransferModals.buildName"),
+    ram: tr("instanceTransferModals.ramSettings"),
+    javaArgs: tr("instanceTransferModals.javaArguments"),
+    javaPath: tr("common.javaPath"),
+    environmentVariables: tr("instanceTransferModals.environmentVariables"),
+    window: tr("instanceTransferModals.windowSize"),
+    mods: tr("common.modsCaps"),
+    shaders: tr("instanceTransferModals.shaders"),
+    resourcePacks: tr("instanceTransferModals.resourcePacks"),
+  };
+}
 
 type CommonPreviewProps = {
   altHoverRef: MutableRefObject<TransferHoverTarget | null>;
@@ -105,39 +123,41 @@ export function InstanceTransferModals(props: InstanceTransferModalsProps) {
 }
 
 function ExportModal(props: InstanceTransferModalsProps & { previewProps: CommonPreviewProps }) {
+  const tr = useTranslation();
+  const labels = transferLabels(tr);
   type ExportKey = keyof InstanceTransferOptions;
   type ExportRow = { key: ExportKey; label: string; meta?: string; items?: ExportedItem[] };
   const instance = props.instances.find((item) => item.id === props.exportInstanceId);
   const rows: ExportRow[] = [
-    { key: "name", label: "BUILD NAME", meta: props.exportData?.name },
+    { key: "name", label: labels.name, meta: props.exportData?.name },
     {
       key: "ram",
-      label: "RAM SETTINGS",
+      label: labels.ram,
       meta: props.exportData ? `${props.exportData.ram} GB` : undefined,
     },
-    { key: "javaArgs", label: "JAVA ARGUMENTS", meta: formatJavaArgsMeta(props.exportData) },
-    { key: "javaPath", label: "JAVA PATH", meta: props.exportData?.javaPath || undefined },
+    { key: "javaArgs", label: labels.javaArgs, meta: formatJavaArgsMeta(props.exportData) },
+    { key: "javaPath", label: labels.javaPath, meta: props.exportData?.javaPath || undefined },
     {
       key: "environmentVariables",
-      label: "ENVIRONMENT VARIABLES",
+      label: labels.environmentVariables,
       meta: `${Object.keys(props.exportData?.environmentVariables ?? {}).length}`,
     },
-    { key: "window", label: "WINDOW SIZE", meta: formatWindowSettingsMeta(props.exportData) },
+    { key: "window", label: labels.window, meta: formatWindowSettingsMeta(props.exportData) },
     {
       key: "mods",
-      label: "MODS",
+      label: labels.mods,
       meta: props.exportData ? `${props.exportData.mods.length}` : "...",
       items: props.exportData?.mods ?? [],
     },
     {
       key: "shaders",
-      label: "SHADERS",
+      label: labels.shaders,
       meta: props.exportData ? `${props.exportData.shaders.length}` : "...",
       items: props.exportData?.shaders ?? [],
     },
     {
       key: "resourcePacks",
-      label: "RESOURCE PACKS",
+      label: labels.resourcePacks,
       meta: props.exportData ? `${props.exportData.resourcePacks.length}` : "...",
       items: props.exportData?.resourcePacks ?? [],
     },
@@ -153,7 +173,7 @@ function ExportModal(props: InstanceTransferModalsProps & { previewProps: Common
   return (
     <div className="confirm-overlay" onClick={close}>
       <div className="confirm-dialog eximp-dialog" onClick={(event) => event.stopPropagation()}>
-        <span className="confirm-label">EXPORT BUILD</span>
+        <span className="confirm-label">{tr("instanceTransferModals.exportBuild")}</span>
         <p className="confirm-title">{instance?.name ?? ""}</p>
         <div className="eximp-options">
           {rows.map(({ key, label, meta, items }) => {
@@ -179,16 +199,15 @@ function ExportModal(props: InstanceTransferModalsProps & { previewProps: Common
             );
           })}
         </div>
-        <p className="eximp-notice">
-          .SLBUILD stores the project list. .MRPACK also includes local mods, configs, and other
-          user files through OVERRIDES.
-        </p>
+        <p className="eximp-notice">{tr("instanceTransferModals.slbuildStoresTheProject")}</p>
         {props.exportError && (
           <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
             {props.exportError}
           </p>
         )}
-        {props.exportWorking && <p className="eximp-working">CREATING .MRPACK...</p>}
+        {props.exportWorking && (
+          <p className="eximp-working">{tr("instanceTransferModals.creatingMrpack")}</p>
+        )}
         <div className="confirm-actions" style={{ marginTop: 24 }}>
           <button
             className="primary-action"
@@ -212,7 +231,7 @@ function ExportModal(props: InstanceTransferModalsProps & { previewProps: Common
             disabled={props.exportWorking}
             onClick={close}
           >
-            CANCEL
+            {tr("common.cancel")}
           </button>
         </div>
       </div>
@@ -221,6 +240,8 @@ function ExportModal(props: InstanceTransferModalsProps & { previewProps: Common
 }
 
 function ImportModal(props: InstanceTransferModalsProps & { previewProps: CommonPreviewProps }) {
+  const tr = useTranslation();
+  const labels = transferLabels(tr);
   type ImportKey = keyof InstanceTransferOptions;
   type ImportRow = {
     key: ImportKey;
@@ -230,53 +251,53 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
     items?: ExportedItem[];
   };
   const rows: ImportRow[] = [
-    { key: "name", label: "BUILD NAME", meta: props.importData?.name || undefined },
+    { key: "name", label: labels.name, meta: props.importData?.name || undefined },
     {
       key: "ram",
-      label: "RAM SETTINGS",
+      label: labels.ram,
       meta: props.importData?.ram ? `${props.importData.ram} GB` : undefined,
     },
     {
       key: "javaArgs",
-      label: "JAVA ARGUMENTS",
+      label: labels.javaArgs,
       meta: formatJavaArgsMeta(props.importData),
       disabled: !hasJavaArgsData(props.importData),
     },
     {
       key: "javaPath",
-      label: "JAVA PATH",
+      label: labels.javaPath,
       meta: props.importData?.javaPath || undefined,
       disabled: !hasJavaPathData(props.importData),
     },
     {
       key: "environmentVariables",
-      label: "ENVIRONMENT VARIABLES",
+      label: labels.environmentVariables,
       meta: `${Object.keys(props.importData?.environmentVariables ?? {}).length}`,
       disabled: !hasEnvironmentVariablesData(props.importData),
     },
     {
       key: "window",
-      label: "WINDOW SIZE",
+      label: labels.window,
       meta: formatWindowSettingsMeta(props.importData),
       disabled: !hasWindowSettingsData(props.importData),
     },
     {
       key: "mods",
-      label: "MODS",
+      label: labels.mods,
       meta: props.importData ? `${props.importData.mods?.length ?? 0}` : undefined,
       disabled: !props.importData?.mods?.length,
       items: props.importData?.mods ?? [],
     },
     {
       key: "shaders",
-      label: "SHADERS",
+      label: labels.shaders,
       meta: props.importData ? `${props.importData.shaders?.length ?? 0}` : undefined,
       disabled: !props.importData?.shaders?.length,
       items: props.importData?.shaders ?? [],
     },
     {
       key: "resourcePacks",
-      label: "RESOURCE PACKS",
+      label: labels.resourcePacks,
       meta: props.importData ? `${props.importData.resourcePacks?.length ?? 0}` : undefined,
       disabled: !props.importData?.resourcePacks?.length,
       items: props.importData?.resourcePacks ?? [],
@@ -296,8 +317,10 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
   return (
     <div className="confirm-overlay" onClick={close}>
       <div className="confirm-dialog eximp-dialog" onClick={(event) => event.stopPropagation()}>
-        <span className="confirm-label">IMPORT BUILD</span>
-        <p className="confirm-title">{props.importData?.name || "НОВАЯ СБОРКА"}</p>
+        <span className="confirm-label">{tr("instanceTransferModals.importBuild")}</span>
+        <p className="confirm-title">
+          {props.importData?.name || tr("instanceTransferModals.newBuild")}
+        </p>
         {props.importData ? (
           <>
             {!props.importResult && (
@@ -331,7 +354,7 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                       {key === "name" && !props.importOptions.name && (
                         <div className="eximp-name-input-wrap">
                           <input
-                            placeholder="Введите название сборки"
+                            placeholder={tr("instanceTransferModals.enterABuildName")}
                             value={props.importCustomName}
                             onChange={(event) => props.setImportCustomName(event.target.value)}
                             onClick={(event) => event.stopPropagation()}
@@ -346,17 +369,17 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
             {!props.importResult && (
               <p className="eximp-notice">
                 {props.importSourceFormat === "mrpack"
-                  ? "Files from the .mrpack will be downloaded and unpacked into the build folders."
-                  : "Version and loader come from the file. Modrinth projects will be downloaded again."}
+                  ? tr("instanceTransferModals.filesFromTheMrpack")
+                  : tr("instanceTransferModals.versionAndLoaderCome")}
               </p>
             )}
             {props.importResult && (
               <div className="eximp-import-results" role="status">
                 <p className="eximp-notice">
-                  Сборка создана. Установлено{" "}
-                  {props.importResult.items.filter((item) => item.success).length}
-                  {" / "}
-                  {props.importResult.items.length} компонентов.
+                  {tr("instanceTransferModals.importSummary", {
+                    installed: props.importResult.items.filter((item) => item.success).length,
+                    total: props.importResult.items.length,
+                  })}
                 </p>
                 {props.importResult.items.map((result, index) => (
                   <div
@@ -368,9 +391,14 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                     </strong>
                     <span>
                       {result.category === "resourcePacks"
-                        ? "PACKS"
-                        : result.category.toUpperCase()}{" "}
-                      · {result.success ? "Установлено" : result.message}
+                        ? tr("ui.resourcePacks")
+                        : result.category === "mods"
+                          ? tr("ui.mods")
+                          : tr("ui.shaders")}{" "}
+                      ·{" "}
+                      {result.success
+                        ? tr("instanceTransferModals.installed")
+                        : toErrorMessage(result.message)}
                     </span>
                   </div>
                 ))}
@@ -388,11 +416,11 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                     {
                       (
                         {
-                          preparing: "ПОДГОТОВКА",
-                          installing: "УСТАНОВКА",
-                          downloading: "ЗАГРУЗКА",
-                          extracting: "РАСПАКОВКА",
-                          complete: "ГОТОВО",
+                          preparing: tr("instanceTransferModals.preparing"),
+                          installing: tr("instanceTransferModals.installing"),
+                          downloading: tr("common.downloading"),
+                          extracting: tr("instanceTransferModals.extracting"),
+                          complete: tr("instanceTransferModals.done"),
                         } as const
                       )[props.importProgress.stage]
                     }
@@ -406,7 +434,7 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 <div
                   className={`eximp-progress-track${props.importProgress.total === 0 ? " indeterminate" : ""}`}
                   role="progressbar"
-                  aria-label="Прогресс импорта сборки"
+                  aria-label={tr("instanceTransferModals.buildImportProgress")}
                   aria-valuemin={0}
                   aria-valuemax={props.importProgress.total || undefined}
                   aria-valuenow={
@@ -423,12 +451,12 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 </div>
                 <small data-tooltip={props.importProgress.filename}>
                   {props.importCancelRequested
-                    ? "Останавливаю и очищаю незавершённую сборку…"
-                    : props.importProgress.filename || "Подготовка файлов…"}
+                    ? tr("instanceTransferModals.stoppingAndCleaningUp")
+                    : props.importProgress.filename || tr("instanceTransferModals.preparingFiles")}
                 </small>
               </div>
             ) : props.importWorking ? (
-              <p className="eximp-working">ИМПОРТ...</p>
+              <p className="eximp-working">{tr("instanceTransferModals.importing")}</p>
             ) : null}
             <div className="confirm-actions" style={{ marginTop: 24 }}>
               <button
@@ -443,15 +471,15 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 onClick={props.onImportConfirm}
               >
                 {props.importWorking
-                  ? "WORKING..."
+                  ? tr("common.working")
                   : props.importResult
                     ? props.importResult.items.some(
                         (item) =>
                           !item.success && item.item.source === "modrinth" && !!item.item.projectId,
                       )
-                      ? "RETRY FAILED"
-                      : "DONE"
-                    : "IMPORT"}
+                      ? tr("instanceTransferModals.retryFailed")
+                      : tr("instanceTransferModals.done")
+                    : tr("instanceTransferModals.import")}
               </button>
               <button
                 className="ghost-action"
@@ -463,20 +491,20 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
               >
                 {props.importWorking
                   ? props.importCancelRequested
-                    ? "ОТМЕНА…"
-                    : "ОТМЕНИТЬ ИМПОРТ"
-                  : "CANCEL"}
+                    ? tr("instanceTransferModals.cancelling")
+                    : tr("instanceTransferModals.cancelImport")
+                  : tr("common.cancel")}
               </button>
             </div>
           </>
         ) : (
           <>
             <p className="confirm-body" style={{ color: "var(--accent)" }}>
-              {props.importError || "Ошибка чтения файла."}
+              {props.importError || tr("instanceTransferModals.couldNotReadThe")}
             </p>
             <div className="confirm-actions" style={{ marginTop: 8 }}>
               <button className="ghost-action" type="button" onClick={close}>
-                CLOSE
+                {tr("common.close")}
               </button>
             </div>
           </>
@@ -489,14 +517,13 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
 function TransferPreview(props: CommonPreviewProps) {
   const { listPreview } = props;
   if (!listPreview?.items.length) return null;
-  const kind: ContentIconKind | null =
-    listPreview.label === "MODS"
-      ? "mods"
-      : listPreview.label === "SHADERS"
-        ? "shaders"
-        : listPreview.label === "RESOURCE PACKS"
-          ? "resourcePacks"
-          : null;
+  const kind: ContentIconKind | null = listPreview.ownerId.endsWith("-mods")
+    ? "mods"
+    : listPreview.ownerId.endsWith("-shaders")
+      ? "shaders"
+      : listPreview.ownerId.endsWith("-resourcePacks")
+        ? "resourcePacks"
+        : null;
   const gap = 10;
   const bridgeOverlap = 2;
   const previewWidth = 280;

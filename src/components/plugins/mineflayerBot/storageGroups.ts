@@ -1,4 +1,6 @@
 import type { MineflayerStorageGroup, MinecraftCatalog } from "../../../types";
+import { translate } from "../../../i18n/locale";
+import { localizeStorageFilter } from "./catalogLocalization";
 import filters from "../../../../extensions/mineflayer-bot/storage-filters.json";
 
 export const STORAGE_FILTERS = filters as Array<{
@@ -9,9 +11,7 @@ export const STORAGE_FILTERS = filters as Array<{
   material?: string;
 }>;
 export function storageChestCount(count: number) {
-  const last = count % 10,
-    teen = count % 100 >= 11 && count % 100 <= 14;
-  return `${count} ${!teen && last === 1 ? "сундук" : !teen && last >= 2 && last <= 4 ? "сундука" : "сундуков"}`;
+  return translate("bot.storageGroups.chests", { count });
 }
 export const storagePositionKey = (point: { x: number; y: number; z: number }) =>
   `${point.x},${point.y},${point.z}`;
@@ -48,7 +48,10 @@ export function normalizeStorageGroups(value: unknown): MineflayerStorageGroup[]
     return [
       {
         id,
-        name: typeof group.name === "string" ? group.name.slice(0, 64) : `Группа ${index + 1}`,
+        name:
+          typeof group.name === "string"
+            ? group.name.slice(0, 64)
+            : `${translate("bot.storageGroups.group")} ${index + 1}`,
         enabled: group.enabled !== false,
         filters: [
           ...new Set(
@@ -84,7 +87,7 @@ export function storageCatalog(catalog: MinecraftCatalog): MinecraftCatalog {
   return {
     ...catalog,
     entries: [
-      ...STORAGE_FILTERS.map((filter) => ({
+      ...STORAGE_FILTERS.map(localizeStorageFilter).map((filter) => ({
         ...filter,
         texture: catalog.entries.find((entry) => entry.name === filter.icon)?.texture || "",
         kind: "group" as const,

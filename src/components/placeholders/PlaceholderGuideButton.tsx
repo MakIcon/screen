@@ -2,8 +2,10 @@ import { useState } from "react";
 import { openBuildPlaceholdersWindow } from "../builds/buildPlaceholdersWindow";
 import { logger } from "../../utils/logger";
 import "./PlaceholderGuideButton.css";
+import { useTranslation } from "../../i18n/locale";
 
 export function PlaceholderGuideButton({ compact = false }: { compact?: boolean }) {
+  const tr = useTranslation();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
 
@@ -14,7 +16,7 @@ export function PlaceholderGuideButton({ compact = false }: { compact?: boolean 
       await openBuildPlaceholdersWindow();
     } catch (cause) {
       logger.error(cause);
-      setError("Не удалось открыть справочник плейсхолдеров. Попробуй ещё раз.");
+      setError(tr("placeholderGuide.couldNotOpenThe"));
     } finally {
       setOpening(false);
     }
@@ -27,7 +29,7 @@ export function PlaceholderGuideButton({ compact = false }: { compact?: boolean 
         className="placeholder-guide-button"
         disabled={opening}
         aria-busy={opening}
-        aria-label="Открыть справочник плейсхолдеров"
+        aria-label={tr("placeholderGuide.openThePlaceholderGuide")}
         onClick={() => void openGuide()}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -39,7 +41,7 @@ export function PlaceholderGuideButton({ compact = false }: { compact?: boolean 
             strokeLinecap="round"
           />
         </svg>
-        <span>Плейсхолдеры</span>
+        <span>{tr("placeholderGuide.placeholders")}</span>
         <svg
           className="placeholder-guide-arrow"
           width="14"

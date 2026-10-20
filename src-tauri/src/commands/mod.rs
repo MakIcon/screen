@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod backups;
 pub mod content;
+pub mod errors;
 pub mod import_progress;
 pub mod instances;
 pub mod launcher;

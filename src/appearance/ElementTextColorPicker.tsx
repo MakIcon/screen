@@ -1,3 +1,4 @@
+import { useAppearanceText } from "./localization";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import type { AppearanceElementOverride } from "./types";
 
@@ -121,13 +122,14 @@ export function ElementTextColorPicker({
   fallbackAccent,
   onChange,
 }: ElementTextColorPickerProps) {
+  const copy = useAppearanceText();
   return (
     <ElementBackgroundPicker
       style={asBackgroundStyle(style)}
       fallbackColor={fallbackColor}
       fallbackAccent={fallbackAccent}
-      title="TEXT"
-      colorLabel="Text color"
+      title={copy("TEXT")}
+      colorLabel={copy("Text color")}
       previewMode="text"
       onChange={(patch) => onChange(asTextStyle(patch))}
     />

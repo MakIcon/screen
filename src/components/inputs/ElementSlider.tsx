@@ -1,3 +1,4 @@
+import { translate, useTranslation } from "../../i18n/locale";
 import {
   useRef,
   useState,
@@ -76,7 +77,7 @@ function shouldShowTick(n: number, mode: TickMode, custom: number[]): boolean {
 }
 
 export function ElementSlider({
-  label = "Value",
+  label = translate("ui.valueLabel"),
   min = 0,
   max = 100,
   step = 1,
@@ -100,6 +101,7 @@ export function ElementSlider({
   onChange,
   onCommit,
 }: ElementSliderProps) {
+  const tr = useTranslation();
   const componentDefaults = {
     label,
     min,
@@ -384,7 +386,7 @@ export function ElementSlider({
                   step={effectiveStep}
                   showArrows={false}
                   disabled={disabled}
-                  ariaLabel={`${effectiveLabel} value`}
+                  ariaLabel={tr("ui.value", { label: effectiveLabel })}
                   onChange={(nextValue) => updateValue(nextValue, false)}
                   onCommit={(nextValue) => onCommit?.(snap(nextValue))}
                 />
@@ -427,7 +429,7 @@ export function ElementSlider({
             <span
               className="es-default-marker"
               style={{ left: `${defaultMarkerPercent}%` }}
-              data-tooltip={`Default: ${defaultMarkerValue}`}
+              data-tooltip={tr("ui.defaultValue", { value: defaultMarkerValue })}
               aria-hidden="true"
             />
           )}

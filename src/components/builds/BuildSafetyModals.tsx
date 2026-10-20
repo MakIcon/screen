@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { InstanceItem } from "../../types";
 import "./BuildSafetyModals.css";
+import { useTranslation } from "../../i18n/locale";
 
 type TrashProps = {
   items: InstanceItem[];
@@ -19,6 +20,7 @@ export function DeletedBuildsModal({
   onRestore,
   onPurge,
 }: TrashProps) {
+  const tr = useTranslation();
   const [confirmPurge, setConfirmPurge] = useState<string | null>(null);
   return (
     <div className="confirm-overlay" onClick={() => !working && onClose()}>
@@ -26,17 +28,16 @@ export function DeletedBuildsModal({
         className="confirm-dialog build-safety-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Корзина сборок"
+        aria-label={tr("buildSafetyModals.buildTrash")}
         onClick={(event) => event.stopPropagation()}
       >
-        <span className="confirm-label">BUILD TRASH</span>
-        <p className="confirm-title">Удалённые сборки</p>
-        <p className="confirm-body">
-          Файлы остаются на диске до окончательного удаления. Оно также удалит резервные копии миров
-          этой сборки.
-        </p>
+        <span className="confirm-label">{tr("buildSafetyModals.buildTrash2")}</span>
+        <p className="confirm-title">{tr("buildSafetyModals.deletedBuilds")}</p>
+        <p className="confirm-body">{tr("buildSafetyModals.filesRemainOnDisk")}</p>
         <div className="build-safety-list">
-          {items.length === 0 && <p className="panel-text">Корзина пуста.</p>}
+          {items.length === 0 && (
+            <p className="panel-text">{tr("buildSafetyModals.trashIsEmpty")}</p>
+          )}
           {items.map((item) => (
             <div className="build-safety-row" key={item.id}>
               <div>
@@ -52,7 +53,7 @@ export function DeletedBuildsModal({
                   disabled={working}
                   onClick={() => onRestore(item.id)}
                 >
-                  RESTORE
+                  {tr("buildSafetyModals.restore")}
                 </button>
                 {confirmPurge === item.id ? (
                   <button
@@ -64,7 +65,7 @@ export function DeletedBuildsModal({
                       onPurge(item.id);
                     }}
                   >
-                    CONFIRM DELETE
+                    {tr("buildSafetyModals.confirmDelete")}
                   </button>
                 ) : (
                   <button
@@ -73,7 +74,7 @@ export function DeletedBuildsModal({
                     disabled={working}
                     onClick={() => setConfirmPurge(item.id)}
                   >
-                    DELETE FOREVER
+                    {tr("buildSafetyModals.deleteForever")}
                   </button>
                 )}
               </div>
@@ -87,7 +88,7 @@ export function DeletedBuildsModal({
         )}
         <div className="confirm-actions">
           <button className="ghost-action" type="button" disabled={working} onClick={onClose}>
-            CLOSE
+            {tr("common.close")}
           </button>
         </div>
       </div>

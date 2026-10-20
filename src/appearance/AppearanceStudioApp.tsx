@@ -1,3 +1,5 @@
+import { toErrorMessage } from "../utils/errors";
+import { appearanceText, useAppearanceText } from "./localization";
 import {
   useCallback,
   useEffect,
@@ -97,6 +99,11 @@ type StudioCategory =
   | "canvas-ui"
   | "element";
 
+type EditorNotice =
+  | string
+  | { text: string; params?: Record<string, string | number> }
+  | { error: unknown };
+
 const CATEGORIES: { id: StudioCategory; index: string; label: string; note: string }[] = [
   { id: "background", index: "01", label: "BACKGROUND", note: "Color, gradient, image or drawing" },
   { id: "colors", index: "02", label: "COLORS", note: "Theme and custom palette" },
@@ -122,12 +129,15 @@ const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
 function elementStyleBadges(override: AppearanceElementOverride) {
   const badges: { label: string; value: string; color?: string }[] = [];
   if (override.canvasUi?.enabled) {
-    badges.push({ label: "CANVAS UI", value: getCanvasUiEffect(override.canvasUi.effect).name });
+    badges.push({
+      label: "CANVAS UI",
+      value: appearanceText(getCanvasUiEffect(override.canvasUi.effect).name),
+    });
   }
   if (override.text !== undefined) {
     badges.push({
       label: "LABEL",
-      value: override.text.trim() ? override.text.trim().slice(0, 22) : "HIDDEN",
+      value: override.text.trim() ? override.text.trim().slice(0, 22) : appearanceText("HIDDEN"),
     });
   }
   if (override.style.backgroundOpacity !== undefined) {
@@ -152,7 +162,11 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   }
   if (override.style.width !== undefined || override.style.height !== undefined) {
     const boxValue = (value: number | undefined) =>
-      value === undefined ? "DEFAULT" : value === 0 ? "AUTO" : String(value);
+      value === undefined
+        ? appearanceText("DEFAULT")
+        : value === 0
+          ? appearanceText("AUTO")
+          : String(value);
     badges.push({
       label: "BOX",
       value: `${boxValue(override.style.width)} × ${boxValue(override.style.height)}`,
@@ -165,7 +179,7 @@ function elementStyleBadges(override: AppearanceElementOverride) {
     const font = [...FONT_OPTIONS, ...DISPLAY_FONT_OPTIONS].find(
       (option) => option.value === override.style.fontFamily,
     );
-    badges.push({ label: "FONT", value: font?.label || "CUSTOM" });
+    badges.push({ label: "FONT", value: font?.label || appearanceText("CUSTOM") });
   }
   if (override.style.backgroundColor) {
     badges.push({
@@ -175,10 +189,10 @@ function elementStyleBadges(override: AppearanceElementOverride) {
     });
   }
   if (override.style.backgroundKind === "gradient") {
-    badges.push({ label: "FILL", value: "GRADIENT" });
+    badges.push({ label: "FILL", value: appearanceText("GRADIENT") });
   }
   if (override.style.textKind === "gradient") {
-    badges.push({ label: "TEXT", value: "GRADIENT" });
+    badges.push({ label: "TEXT", value: appearanceText("GRADIENT") });
   } else if (override.style.textColor) {
     badges.push({
       label: "TEXT",
@@ -193,13 +207,16 @@ function elementStyleBadges(override: AppearanceElementOverride) {
     badges.push({ label: "BORDER", value: `${override.style.borderWidth} PX` });
   }
   if (override.style.shadow && override.style.shadow !== "none") {
-    badges.push({ label: "SHADOW", value: override.style.shadow.toUpperCase() });
+    badges.push({ label: "SHADOW", value: appearanceText(override.style.shadow.toUpperCase()) });
   }
   if (override.style.scale !== undefined) {
     badges.push({ label: "SCALE", value: `${Math.round(override.style.scale * 100)}%` });
   }
   if (override.componentSettings) {
-    badges.push({ label: "PROPS", value: override.componentSettings.kind.toUpperCase() });
+    badges.push({
+      label: "PROPS",
+      value: appearanceText(override.componentSettings.kind.toUpperCase()),
+    });
   }
   const customizedStates = ELEMENT_INTERACTION_STATES.filter(
     (state) =>
@@ -216,6 +233,7 @@ function elementStyleBadges(override: AppearanceElementOverride) {
 }
 
 export function AppearanceStudioApp() {
+  const copy = useAppearanceText();
   const studioWindow = useMemo(() => (isTauri() ? getCurrentWindow() : null), []);
   const [category, setCategory] = useState<StudioCategory>("background");
   const [categoryQuery, setCategoryQuery] = useState("");
@@ -228,7 +246,7 @@ export function AppearanceStudioApp() {
   const draft = draftHistory.present;
   const canUndo = draftHistory.past.length > 0;
   const canRedo = draftHistory.future.length > 0;
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<EditorNotice>("");
   const [imageBusy, setImageBusy] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AppearanceElementTarget[]>([]);
   const selectedTarget = selectedTargets[selectedTargets.length - 1] ?? null;
@@ -376,7 +394,7 @@ export function AppearanceStudioApp() {
           ? "ELEMENT ADDED · KEEP SHIFT HELD OR CLICK ONCE TO FINISH"
           : additive
             ? "MULTI-SELECTION FINISHED"
-            : `SELECTED: ${target.label}`,
+            : { text: "Selected: {target}", params: { target: target.label } },
       );
     })
       .then((dispose) => {
@@ -697,7 +715,10 @@ export function AppearanceStudioApp() {
           : [];
       }),
     }));
-    setMessage(`${elementInteractionState.toUpperCase()} STYLE CLEARED`);
+    setMessage({
+      text: "{state} style cleared",
+      params: { state: elementInteractionState.toUpperCase() },
+    });
   };
 
   const previewWindowAnimation = (payload: WindowAnimationPreviewPayload) => {
@@ -727,7 +748,7 @@ export function AppearanceStudioApp() {
     setElementInteractionState("normal");
     setCategory("element");
     setElementListOpen(false);
-    setMessage(`LOCATING: ${override.label}`);
+    setMessage({ text: "Locating: {target}", params: { target: override.label } });
     void emit(APPEARANCE_ELEMENT_REVEAL_EVENT, override).catch(() => {
       setMessage("COULD NOT LOCATE ELEMENT");
     });
@@ -799,9 +820,7 @@ export function AppearanceStudioApp() {
       void emit(APPEARANCE_CHANGED_EVENT, saved).catch(() => {});
       setMessage("SAVED AND APPLIED TO LAUNCHER");
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message.toUpperCase() : "COULD NOT SAVE APPEARANCE",
-      );
+      setMessage({ error });
     }
   };
 
@@ -843,7 +862,7 @@ export function AppearanceStudioApp() {
         },
       }));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message.toUpperCase() : "COULD NOT LOAD IMAGE");
+      setMessage({ error });
     } finally {
       setImageBusy(false);
     }
@@ -878,15 +897,17 @@ export function AppearanceStudioApp() {
         return (
           <>
             <Section
-              title="CANVAS UI ENGINE"
-              note="Every effect is scoped to the current target. Picked elements get their own renderer and settings; WHOLE LAUNCHER remains a separate global layer."
+              title={copy("CANVAS UI ENGINE")}
+              note={copy(
+                "Every effect is scoped to the current target. Picked elements get their own renderer and settings; WHOLE LAUNCHER remains a separate global layer.",
+              )}
             >
               <div className="canvas-ui-target-chip">
-                <span>{selectedTarget ? "ELEMENT TARGET" : "GLOBAL TARGET"}</span>
+                <span>{selectedTarget ? copy("ELEMENT TARGET") : copy("GLOBAL TARGET")}</span>
                 <strong>
                   {selectedTargets.length > 1
-                    ? `${selectedTargets.length} ELEMENTS`
-                    : selectedTarget?.label || "WHOLE LAUNCHER"}
+                    ? copy("{count} picked elements", { count: selectedTargets.length })
+                    : selectedTarget?.label || copy("WHOLE LAUNCHER")}
                 </strong>
               </div>
               <div className="studio-segmented">
@@ -900,7 +921,7 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  ENABLED
+                  {copy("ENABLED")}
                 </button>
                 <button
                   type="button"
@@ -912,7 +933,7 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  DISABLED
+                  {copy("DISABLED")}
                 </button>
               </div>
               <div className="studio-segmented">
@@ -926,7 +947,7 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  WEBGL · COMPATIBLE
+                  {copy("WEBGL · COMPATIBLE")}
                 </button>
                 <button
                   type="button"
@@ -939,23 +960,27 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  WEBGPU · LIQUID
+                  {copy("WEBGPU · LIQUID")}
                 </button>
               </div>
               <div className="canvas-ui-active-effect">
-                <span>ACTIVE COMPONENT</span>
-                <strong>{activeEffect.name}</strong>
-                <p>{activeEffect.description}</p>
-                <small>{activeEffect.interaction}</small>
+                <span>{copy("ACTIVE COMPONENT")}</span>
+                <strong>{copy(activeEffect.name)}</strong>
+                <p>{copy(activeEffect.description)}</p>
+                <small>{copy(activeEffect.interaction)}</small>
               </div>
             </Section>
 
             <Section
-              title={`${activeEffect.name.toUpperCase()} CONTROLS`}
-              note="The ranges and defaults come from the component API. Changes update the current target live and are retained when you switch components."
+              title={copy("{effect} controls", { effect: copy(activeEffect.name) })}
+              note={copy(
+                "The ranges and defaults come from the component API. Changes update the current target live and are retained when you switch components.",
+              )}
             >
               <div className="canvas-ui-controls-heading">
-                <span>{activeEffect.controls.length} PARAMETERS</span>
+                <span>
+                  {activeEffect.controls.length} {copy("PARAMETERS")}
+                </span>
                 <button
                   type="button"
                   onClick={() =>
@@ -965,7 +990,7 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  RESET EFFECT
+                  {copy("RESET EFFECT")}
                 </button>
               </div>
               <div className="canvas-ui-control-grid">
@@ -974,9 +999,9 @@ export function AppearanceStudioApp() {
                   if (control.kind === "range") {
                     return (
                       <div className="canvas-ui-control-card" key={control.key}>
-                        <span>{control.group.toUpperCase()}</span>
+                        <span>{copy(control.group.toUpperCase())}</span>
                         <RangeField
-                          label={control.label}
+                          label={copy(control.label)}
                           value={Number(value)}
                           min={control.min}
                           max={control.max}
@@ -985,7 +1010,7 @@ export function AppearanceStudioApp() {
                           defaultValue={control.defaultValue}
                           onChange={(next) => setEffectSetting(control.key, next)}
                         />
-                        {control.hint && <small>{control.hint}</small>}
+                        {control.hint && <small>{copy(control.hint)}</small>}
                       </div>
                     );
                   }
@@ -995,9 +1020,9 @@ export function AppearanceStudioApp() {
                         className="canvas-ui-control-card canvas-ui-control-card--color"
                         key={control.key}
                       >
-                        <span>{control.group.toUpperCase()}</span>
+                        <span>{copy(control.group.toUpperCase())}</span>
                         <ColorField
-                          label={control.label}
+                          label={copy(control.label)}
                           value={String(value)}
                           onChange={(next) => setEffectSetting(control.key, next)}
                         />
@@ -1010,9 +1035,9 @@ export function AppearanceStudioApp() {
                         className="canvas-ui-control-card canvas-ui-control-card--select"
                         key={control.key}
                       >
-                        <span>{control.group.toUpperCase()}</span>
+                        <span>{copy(control.group.toUpperCase())}</span>
                         <SelectField
-                          label={control.label}
+                          label={copy(control.label)}
                           value={String(value)}
                           options={control.options}
                           onChange={(next) => setEffectSetting(control.key, next)}
@@ -1025,22 +1050,22 @@ export function AppearanceStudioApp() {
                       className="canvas-ui-control-card canvas-ui-control-card--toggle"
                       key={control.key}
                     >
-                      <span>{control.group.toUpperCase()}</span>
-                      <strong>{control.label}</strong>
+                      <span>{copy(control.group.toUpperCase())}</span>
+                      <strong>{copy(control.label)}</strong>
                       <div className="studio-segmented">
                         <button
                           type="button"
                           className={value === true ? "active" : ""}
                           onClick={() => setEffectSetting(control.key, true)}
                         >
-                          ON
+                          {copy("ON")}
                         </button>
                         <button
                           type="button"
                           className={value === false ? "active" : ""}
                           onClick={() => setEffectSetting(control.key, false)}
                         >
-                          OFF
+                          {copy("OFF")}
                         </button>
                       </div>
                     </div>
@@ -1058,12 +1083,14 @@ export function AppearanceStudioApp() {
                   key={effectCategory}
                   title={
                     effectCategory === "object"
-                      ? "OBJECT COMPONENTS"
-                      : `${effectCategory.toUpperCase()} EFFECTS`
+                      ? copy("OBJECT COMPONENTS")
+                      : copy("{category} effects", { category: copy(effectCategory.toUpperCase()) })
                   }
                   note={
                     effectCategory === "object"
-                      ? "Object components overlay an image, SVG, GLB or glTF asset without replacing launcher controls."
+                      ? copy(
+                          "Object components overlay an image, SVG, GLB or glTF asset without replacing launcher controls.",
+                        )
                       : undefined
                   }
                 >
@@ -1075,9 +1102,9 @@ export function AppearanceStudioApp() {
                         className={activeCanvasUi.effect === effect.id ? "active" : ""}
                         onClick={() => chooseEffect(effect.id)}
                       >
-                        <span>{effect.objectEffect ? "3D / ASSET" : "LIVE HTML"}</span>
-                        <strong>{effect.name}</strong>
-                        <small>{effect.description}</small>
+                        <span>{effect.objectEffect ? copy("3D / ASSET") : copy("LIVE HTML")}</span>
+                        <strong>{copy(effect.name)}</strong>
+                        <small>{copy(effect.description)}</small>
                       </button>
                     ))}
                   </div>
@@ -1087,16 +1114,18 @@ export function AppearanceStudioApp() {
 
             {activeEffect.objectEffect && (
               <Section
-                title="OBJECT SOURCE"
-                note="Paste an HTTPS URL to an SVG, image, GLB or glTF file. With an empty value the launcher uses its bundled icon as a safe preview asset."
+                title={copy("OBJECT SOURCE")}
+                note={copy(
+                  "Paste an HTTPS URL to an SVG, image, GLB or glTF file. With an empty value the launcher uses its bundled icon as a safe preview asset.",
+                )}
               >
                 <label className="studio-text-field studio-text-field--single-line">
-                  <span>ASSET URL</span>
+                  <span>{copy("ASSET URL")}</span>
                   <input
                     value={activeCanvasUi.assetUrl}
                     maxLength={2048}
                     spellCheck={false}
-                    placeholder="https://example.com/model.glb"
+                    placeholder={copy("https://example.com/model.glb")}
                     onChange={(event) =>
                       patchCanvasUi((current) => ({
                         ...current,
@@ -1135,8 +1164,8 @@ export function AppearanceStudioApp() {
         return (
           <>
             <Section
-              title="BACKGROUND SOURCE"
-              note="Choose one layer, then decide below which launcher area reveals it."
+              title={copy("BACKGROUND SOURCE")}
+              note={copy("Choose one layer, then decide below which launcher area reveals it.")}
             >
               <div className="studio-segmented">
                 {(["solid", "gradient", "image", "drawing"] as AppearanceBackgroundKind[]).map(
@@ -1147,7 +1176,15 @@ export function AppearanceStudioApp() {
                       className={draft.background.kind === kind ? "active" : ""}
                       onClick={() => selectBackgroundKind(kind)}
                     >
-                      {kind.toUpperCase()}
+                      {copy(
+                        kind === "solid"
+                          ? "SOLID COLOR"
+                          : kind === "gradient"
+                            ? "GRADIENT"
+                            : kind === "image"
+                              ? "LOCAL IMAGE"
+                              : "CANVAS",
+                      )}
                     </button>
                   ),
                 )}
@@ -1155,8 +1192,10 @@ export function AppearanceStudioApp() {
             </Section>
 
             <Section
-              title="BACKGROUND AREA"
-              note="Use the full launcher, or mask the title bar, left navigation and footer without rescaling the image."
+              title={copy("BACKGROUND AREA")}
+              note={copy(
+                "Use the full launcher, or mask the title bar, left navigation and footer without rescaling the image.",
+              )}
               defaultOpen={false}
             >
               <div className="studio-segmented">
@@ -1172,16 +1211,16 @@ export function AppearanceStudioApp() {
                       }))
                     }
                   >
-                    {scope === "launcher" ? "WHOLE LAUNCHER" : "CONTENT ONLY"}
+                    {scope === "launcher" ? copy("WHOLE LAUNCHER") : copy("CONTENT ONLY")}
                   </button>
                 ))}
               </div>
             </Section>
 
             {draft.background.kind === "solid" && (
-              <Section title="SOLID COLOR">
+              <Section title={copy("SOLID COLOR")}>
                 <ColorField
-                  label="WINDOW BACKGROUND"
+                  label={copy("WINDOW BACKGROUND")}
                   value={draft.colors.background}
                   onChange={(background) =>
                     patchDraft((current) => ({
@@ -1195,8 +1234,10 @@ export function AppearanceStudioApp() {
 
             {draft.background.kind === "gradient" && (
               <Section
-                title="WINDOW GRADIENT"
-                note="Build a full-window gradient with palettes, color stops and precise direction controls."
+                title={copy("WINDOW GRADIENT")}
+                note={copy(
+                  "Build a full-window gradient with palettes, color stops and precise direction controls.",
+                )}
               >
                 <ElementBackgroundPicker
                   style={{ ...draft.background.gradient, backgroundColor: draft.colors.background }}
@@ -1219,8 +1260,10 @@ export function AppearanceStudioApp() {
 
             {draft.background.kind === "image" && (
               <Section
-                title="LOCAL IMAGE"
-                note="The image is resized locally and stored inside your appearance profile."
+                title={copy("LOCAL IMAGE")}
+                note={copy(
+                  "The image is resized locally and stored inside your appearance profile.",
+                )}
               >
                 <label className="studio-file-picker">
                   <input
@@ -1229,8 +1272,8 @@ export function AppearanceStudioApp() {
                     disabled={imageBusy}
                     onChange={(event) => void chooseImage(event.target.files?.[0])}
                   />
-                  <span>{imageBusy ? "PROCESSING…" : "CHOOSE IMAGE"}</span>
-                  <strong>{draft.background.imageName || "NO IMAGE SELECTED"}</strong>
+                  <span>{imageBusy ? copy("PROCESSING…") : copy("CHOOSE IMAGE")}</span>
+                  <strong>{draft.background.imageName || copy("NO IMAGE SELECTED")}</strong>
                 </label>
                 {draft.background.imageDataUrl && (
                   <button
@@ -1243,7 +1286,7 @@ export function AppearanceStudioApp() {
                       }))
                     }
                   >
-                    REMOVE IMAGE
+                    {copy("REMOVE IMAGE")}
                   </button>
                 )}
               </Section>
@@ -1251,8 +1294,10 @@ export function AppearanceStudioApp() {
 
             {draft.background.kind === "drawing" && (
               <Section
-                title="CANVAS"
-                note="The title bar, left panel and footer guides are preview-only and are not saved into the drawing."
+                title={copy("CANVAS")}
+                note={copy(
+                  "The title bar, left panel and footer guides are preview-only and are not saved into the drawing.",
+                )}
               >
                 <DrawingCanvas
                   value={draft.background.drawingDataUrl}
@@ -1270,9 +1315,9 @@ export function AppearanceStudioApp() {
             )}
 
             {(draft.background.kind === "image" || draft.background.kind === "drawing") && (
-              <Section title="IMAGE TREATMENT">
+              <Section title={copy("IMAGE TREATMENT")}>
                 <RangeField
-                  label="DARKEN"
+                  label={copy("DARKEN")}
                   value={draft.background.dim}
                   min={0}
                   max={0.9}
@@ -1286,7 +1331,7 @@ export function AppearanceStudioApp() {
                   }
                 />
                 <RangeField
-                  label="BLUR"
+                  label={copy("BLUR")}
                   value={draft.background.blur}
                   min={0}
                   max={24}
@@ -1308,8 +1353,10 @@ export function AppearanceStudioApp() {
         if (selectedTarget) {
           return (
             <Section
-              title="SELECTED ELEMENT COLORS"
-              note={`Only ${selectedTarget.label} changes. Other launcher colors stay untouched.`}
+              title={copy("SELECTED ELEMENT COLORS")}
+              note={copy("Only {target} changes. Other launcher colors stay untouched.", {
+                target: selectedTarget.label,
+              })}
             >
               <ElementBackgroundPicker
                 style={selectedVisualStyle}
@@ -1329,8 +1376,8 @@ export function AppearanceStudioApp() {
         return (
           <>
             <Section
-              title="BASE THEME"
-              note="A base supplies safe semantic colors for every component."
+              title={copy("BASE THEME")}
+              note={copy("A base supplies safe semantic colors for every component.")}
             >
               <div className="studio-segmented">
                 {(["light", "dark", "void"] as Theme[]).map((theme) => (
@@ -1340,15 +1387,21 @@ export function AppearanceStudioApp() {
                     className={draft.baseTheme === theme ? "active" : ""}
                     onClick={() => selectBaseTheme(theme)}
                   >
-                    {theme.toUpperCase()}
+                    {copy(
+                      theme === "light"
+                        ? "LIGHT THEME"
+                        : theme === "dark"
+                          ? "DARK THEME"
+                          : "VOID THEME",
+                    )}
                   </button>
                 ))}
               </div>
             </Section>
-            <Section title="CUSTOM PALETTE">
+            <Section title={copy("CUSTOM PALETTE")}>
               <div className="studio-color-grid">
                 <ColorField
-                  label="BACKGROUND"
+                  label={copy("BACKGROUND")}
                   value={draft.colors.background}
                   onChange={(background) =>
                     patchDraft((current) => ({
@@ -1358,7 +1411,7 @@ export function AppearanceStudioApp() {
                   }
                 />
                 <ColorField
-                  label="SURFACES"
+                  label={copy("SURFACES")}
                   value={draft.colors.surface}
                   onChange={(surface) =>
                     patchDraft((current) => ({
@@ -1368,7 +1421,7 @@ export function AppearanceStudioApp() {
                   }
                 />
                 <ColorField
-                  label="TEXT"
+                  label={copy("TEXT")}
                   value={draft.colors.text}
                   onChange={(text) =>
                     patchDraft((current) => ({
@@ -1378,7 +1431,7 @@ export function AppearanceStudioApp() {
                   }
                 />
                 <ColorField
-                  label="ACCENT"
+                  label={copy("ACCENT")}
                   value={draft.colors.accent}
                   onChange={(accent) =>
                     patchDraft((current) => ({
@@ -1398,8 +1451,10 @@ export function AppearanceStudioApp() {
         return (
           <>
             <Section
-              title="SIDEBAR DESIGN"
-              note="Use the current numbered layout or bring back the original minimal menu."
+              title={copy("SIDEBAR DESIGN")}
+              note={copy(
+                "Use the current numbered layout or bring back the original minimal menu.",
+              )}
             >
               <div className="studio-sidebar-presets">
                 <button
@@ -1407,23 +1462,23 @@ export function AppearanceStudioApp() {
                   className={legacyTabs.length === 0 ? "active" : ""}
                   onClick={() => setLegacySidebarTabs([])}
                 >
-                  <strong>CURRENT DESIGN</strong>
-                  <small>Numbers and active background</small>
+                  <strong>{copy("CURRENT DESIGN")}</strong>
+                  <small>{copy("Numbers and active background")}</small>
                 </button>
                 <button
                   type="button"
                   className={allLegacy ? "active" : ""}
                   onClick={() => setLegacySidebarTabs([...TAB_ORDER])}
                 >
-                  <strong>ORIGINAL DESIGN</strong>
-                  <small>Text-only menu for every item</small>
+                  <strong>{copy("ORIGINAL DESIGN")}</strong>
+                  <small>{copy("Text-only menu for every item")}</small>
                 </button>
               </div>
             </Section>
 
             <Section
-              title="ORIGINAL STYLE BY ITEM"
-              note="Choose only the entries that should look like the old launcher menu."
+              title={copy("ORIGINAL STYLE BY ITEM")}
+              note={copy("Choose only the entries that should look like the old launcher menu.")}
               defaultOpen={false}
             >
               <div className="studio-sidebar-tab-grid">
@@ -1437,9 +1492,9 @@ export function AppearanceStudioApp() {
                       aria-pressed={legacy}
                       onClick={() => toggleLegacySidebarTab(tab)}
                     >
-                      <span>{legacy ? "ORIGINAL" : "CURRENT"}</span>
+                      <span>{legacy ? copy("ORIGINAL") : copy("CURRENT")}</span>
                       <strong>{TAB_TITLE[tab]}</strong>
-                      <small>{legacy ? "TEXT ONLY" : "NUMBERED"}</small>
+                      <small>{legacy ? copy("TEXT ONLY") : copy("NUMBERED")}</small>
                     </button>
                   );
                 })}
@@ -1454,14 +1509,16 @@ export function AppearanceStudioApp() {
           const radius = selectedVisualStyle?.radius ?? draft.shape.radius;
           return (
             <Section
-              title="SELECTED ELEMENT RADIUS"
-              note={`Only ${selectedTarget.label} receives this corner radius.`}
+              title={copy("SELECTED ELEMENT RADIUS")}
+              note={copy("Only {target} receives this corner radius.", {
+                target: selectedTarget.label,
+              })}
             >
               <div className="studio-radius-preview studio-radius-preview--single">
                 <span style={{ borderRadius: radius }}>{selectedTarget.label}</span>
               </div>
               <RangeField
-                label="RADIUS"
+                label={copy("RADIUS")}
                 value={radius}
                 min={0}
                 max={40}
@@ -1474,18 +1531,18 @@ export function AppearanceStudioApp() {
         }
         return (
           <Section
-            title="GLOBAL CORNER RADIUS"
-            note="Applied to the window, cards, fields, menus, modals and buttons."
+            title={copy("GLOBAL CORNER RADIUS")}
+            note={copy("Applied to the window, cards, fields, menus, modals and buttons.")}
           >
             <div className="studio-radius-preview">
-              <span style={{ borderRadius: draft.shape.radius }}>CARD</span>
+              <span style={{ borderRadius: draft.shape.radius }}>{copy("CARD")}</span>
               <button type="button" style={{ borderRadius: draft.shape.radius }}>
-                BUTTON
+                {copy("BUTTON")}
               </button>
               <input style={{ borderRadius: draft.shape.radius }} value="FIELD" readOnly />
             </div>
             <RangeField
-              label="RADIUS"
+              label={copy("RADIUS")}
               value={draft.shape.radius}
               min={0}
               max={28}
@@ -1549,8 +1606,8 @@ export function AppearanceStudioApp() {
         };
         const customFontManager = (
           <Section
-            title="CUSTOM FONTS"
-            note="Fonts stay on this device and are saved inside the appearance profile."
+            title={copy("CUSTOM FONTS")}
+            note={copy("Fonts stay on this device and are saved inside the appearance profile.")}
             defaultOpen={false}
           >
             <CustomFontManager
@@ -1574,8 +1631,10 @@ export function AppearanceStudioApp() {
             <>
               {customFontManager}
               <Section
-                title="SELECTED ELEMENT FONT"
-                note={`Only ${selectedTarget.label} and its inherited text change.`}
+                title={copy("SELECTED ELEMENT FONT")}
+                note={copy("Only {target} and its inherited text change.", {
+                  target: selectedTarget.label,
+                })}
               >
                 <div className="studio-font-grid">
                   {elementFonts.map((font) => (
@@ -1587,7 +1646,7 @@ export function AppearanceStudioApp() {
                       onClick={() => patchSelectedStyle({ fontFamily: font.value })}
                     >
                       <span>{font.label}</span>
-                      <small>Selected element / Aa</small>
+                      <small>{copy("Selected element / Aa")}</small>
                     </button>
                   ))}
                 </div>
@@ -1598,7 +1657,10 @@ export function AppearanceStudioApp() {
         return (
           <>
             {customFontManager}
-            <Section title="INTERFACE FONT" note="Controls, metadata and navigation.">
+            <Section
+              title={copy("INTERFACE FONT")}
+              note={copy("Controls, metadata and navigation.")}
+            >
               <div className="studio-font-grid">
                 {[...FONT_OPTIONS, ...customFontOptions].map((font) => (
                   <button
@@ -1614,12 +1676,12 @@ export function AppearanceStudioApp() {
                     }
                   >
                     <span>{font.label}</span>
-                    <small>Archive 01 / Aa</small>
+                    <small>{copy("Archive 01 / Aa")}</small>
                   </button>
                 ))}
               </div>
             </Section>
-            <Section title="DISPLAY FONT" note="Large headings and index numbers.">
+            <Section title={copy("DISPLAY FONT")} note={copy("Large headings and index numbers.")}>
               <div className="studio-font-grid">
                 {[...DISPLAY_FONT_OPTIONS, ...customFontOptions].map((font) => (
                   <button
@@ -1635,7 +1697,7 @@ export function AppearanceStudioApp() {
                     }
                   >
                     <span>{font.label}</span>
-                    <small>Create your world.</small>
+                    <small>{copy("Create your world.")}</small>
                   </button>
                 ))}
               </div>
@@ -1648,11 +1710,14 @@ export function AppearanceStudioApp() {
         if (selectedTarget) {
           return (
             <Section
-              title="SELECTED ELEMENT OPACITY"
-              note={`Whole element opacity is the final multiplier. Background and content of ${selectedTarget.label} are applied inside it.`}
+              title={copy("SELECTED ELEMENT OPACITY")}
+              note={copy(
+                "Whole element opacity is the final multiplier. Background and content of {target} are applied inside it.",
+                { target: selectedTarget.label },
+              )}
             >
               <RangeField
-                label={`WHOLE ELEMENT${selectedElementOpacitySource}`}
+                label={copy("WHOLE ELEMENT") + copy(selectedElementOpacitySource)}
                 value={selectedEffectiveElementOpacity}
                 min={0}
                 max={1}
@@ -1661,7 +1726,7 @@ export function AppearanceStudioApp() {
                 onChange={(elementOpacity) => patchSelectedStyle({ elementOpacity })}
               />
               <RangeField
-                label="BACKGROUND"
+                label={copy("BACKGROUND")}
                 value={selectedVisualStyle?.backgroundOpacity ?? selectedVisualStyle?.opacity ?? 1}
                 min={0}
                 max={1}
@@ -1670,7 +1735,7 @@ export function AppearanceStudioApp() {
                 onChange={(backgroundOpacity) => patchSelectedStyle({ backgroundOpacity })}
               />
               <RangeField
-                label="CONTENT"
+                label={copy("CONTENT")}
                 value={selectedVisualStyle?.contentOpacity ?? selectedVisualStyle?.opacity ?? 1}
                 min={0}
                 max={1}
@@ -1683,11 +1748,13 @@ export function AppearanceStudioApp() {
         }
         return (
           <Section
-            title="TRANSPARENCY"
-            note="Window opacity affects the complete launcher; the other controls only affect their layer."
+            title={copy("TRANSPARENCY")}
+            note={copy(
+              "Window opacity affects the complete launcher; the other controls only affect their layer.",
+            )}
           >
             <RangeField
-              label="WHOLE WINDOW"
+              label={copy("WHOLE WINDOW")}
               value={draft.opacity.window}
               min={0.55}
               max={1}
@@ -1701,7 +1768,7 @@ export function AppearanceStudioApp() {
               }
             />
             <RangeField
-              label="PANELS"
+              label={copy("PANELS")}
               value={draft.opacity.panels}
               min={0}
               max={1}
@@ -1715,7 +1782,7 @@ export function AppearanceStudioApp() {
               }
             />
             <RangeField
-              label="BUTTONS & CONTROLS"
+              label={copy("BUTTONS & CONTROLS")}
               value={draft.opacity.controls}
               min={0.35}
               max={1}
@@ -1734,11 +1801,11 @@ export function AppearanceStudioApp() {
       case "motion":
         return (
           <>
-            <Section title="ANIMATION ENGINE">
+            <Section title={copy("ANIMATION ENGINE")}>
               <label className="studio-master-toggle">
                 <div>
-                  <strong>ENABLE ANIMATIONS</strong>
-                  <span>Disabling this also removes small interface transitions.</span>
+                  <strong>{copy("ENABLE ANIMATIONS")}</strong>
+                  <span>{copy("Disabling this also removes small interface transitions.")}</span>
                 </div>
                 <input
                   type="checkbox"
@@ -1752,7 +1819,7 @@ export function AppearanceStudioApp() {
                 />
               </label>
               <SelectField<UiMotionStyle>
-                label="INTERFACE FEEL"
+                label={copy("INTERFACE FEEL")}
                 value={draft.motion.uiStyle}
                 options={UI_MOTION_STYLES}
                 onChange={(uiStyle) =>
@@ -1763,7 +1830,7 @@ export function AppearanceStudioApp() {
                 }
               />
               <SelectField<OpenAnimationId>
-                label="LAUNCHER OPEN"
+                label={copy("LAUNCHER OPEN")}
                 value={draft.motion.opening}
                 options={OPEN_ANIMATIONS}
                 onChange={(opening) => {
@@ -1781,14 +1848,16 @@ export function AppearanceStudioApp() {
                     previewWindowAnimation({ kind: "opening", animation: draft.motion.opening })
                   }
                 >
-                  REPLAY OPENING ON MAIN WINDOW
+                  {copy("REPLAY OPENING ON MAIN WINDOW")}
                 </button>
               </div>
             </Section>
 
             <Section
-              title="TAB TRANSITIONS"
-              note="A transition belongs to the tab being entered, regardless of where you came from."
+              title={copy("TAB TRANSITIONS")}
+              note={copy(
+                "A transition belongs to the tab being entered, regardless of where you came from.",
+              )}
               defaultOpen={false}
             >
               <div className="studio-segmented">
@@ -1802,7 +1871,7 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  ONE FOR ALL
+                  {copy("ONE FOR ALL")}
                 </button>
                 <button
                   type="button"
@@ -1814,13 +1883,13 @@ export function AppearanceStudioApp() {
                     }))
                   }
                 >
-                  PER TAB
+                  {copy("PER TAB")}
                 </button>
               </div>
 
               {draft.motion.tabMode === "global" ? (
                 <SelectField<TabAnimationId>
-                  label="EVERY TAB"
+                  label={copy("EVERY TAB")}
                   value={draft.motion.tabDefault}
                   options={TAB_ANIMATIONS}
                   onChange={(tabDefault) =>
@@ -1857,12 +1926,12 @@ export function AppearanceStudioApp() {
             </Section>
 
             <Section
-              title="CLOSE BEHAVIOR"
-              note="The window button and Alt+F4 can use different effects."
+              title={copy("CLOSE BEHAVIOR")}
+              note={copy("The window button and Alt+F4 can use different effects.")}
               defaultOpen={false}
             >
               <SelectField<CloseAnimationId>
-                label="CLOSE BUTTON"
+                label={copy("CLOSE BUTTON")}
                 value={draft.motion.closeButton}
                 options={CLOSE_ANIMATIONS}
                 onChange={(closeButton) => {
@@ -1874,7 +1943,7 @@ export function AppearanceStudioApp() {
                 }}
               />
               <SelectField<CloseAnimationId>
-                label="ALT + F4 / SYSTEM CLOSE"
+                label={copy("ALT + F4 / SYSTEM CLOSE")}
                 value={draft.motion.closeSystem}
                 options={CLOSE_ANIMATIONS}
                 onChange={(closeSystem) => {
@@ -1895,7 +1964,7 @@ export function AppearanceStudioApp() {
                     })
                   }
                 >
-                  REPLAY CLOSE BUTTON
+                  {copy("REPLAY CLOSE BUTTON")}
                 </button>
                 <button
                   type="button"
@@ -1906,7 +1975,7 @@ export function AppearanceStudioApp() {
                     })
                   }
                 >
-                  REPLAY ALT + F4
+                  {copy("REPLAY ALT + F4")}
                 </button>
               </div>
             </Section>
@@ -1926,28 +1995,51 @@ export function AppearanceStudioApp() {
           index: "09",
           label: selectedTarget ? "ELEMENT SETTINGS" : "PICK AN ELEMENT",
           note: selectedTarget
-            ? `Fine-tune ${selectedTarget.label} without changing the rest of the launcher.`
+            ? copy("Fine-tune {target} without changing the rest of the launcher.", {
+                target: selectedTarget.label,
+              })
             : "Use Pick from launcher, then click the button, card or text you want to change.",
         }
       : category === "canvas-ui" && selectedTarget
         ? {
             index: "08",
             label: "CANVAS UI · ELEMENT",
-            note: `The selected effect is isolated to ${selectedTargets.length > 1 ? `${selectedTargets.length} picked elements` : selectedTarget.label}.`,
+            note: copy("The selected effect is isolated to {target}.", {
+              target:
+                selectedTargets.length > 1
+                  ? copy("{count} picked elements", { count: selectedTargets.length })
+                  : selectedTarget.label,
+            }),
           }
         : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
 
+  const messageIsError =
+    typeof message === "object" ? "error" in message : message.includes("COULD NOT");
+  const displayedMessage =
+    typeof message === "string"
+      ? copy(message)
+      : "error" in message
+        ? toErrorMessage(message.error)
+        : copy(message.text, {
+            ...message.params,
+            ...(message.params?.state ? { state: copy(String(message.params.state)) } : {}),
+          });
+
   const searchQuery = categoryQuery.trim().toLocaleLowerCase();
   const visibleCategories = CATEGORIES.filter((item) =>
-    `${item.label} ${item.note} ${CATEGORY_SEARCH_TERMS[item.id] ?? ""}`
+    `${copy(item.label)} ${copy(item.note)} ${CATEGORY_SEARCH_TERMS[item.id] ?? ""}`
       .toLocaleLowerCase()
       .includes(searchQuery),
   );
   const showElementPicker =
-    "pick element choose anything on screen edit current selection".includes(searchQuery);
+    `${copy("PICK ELEMENT")} ${copy("Choose anything on screen")} ${copy("Edit the current selection")} pick element`
+      .toLocaleLowerCase()
+      .includes(searchQuery);
   const showEditedElements =
     draft.elementOverrides.length > 0 &&
-    "edited elements review individual styles customized".includes(searchQuery);
+    `${copy("EDITED ELEMENTS")}{" "} ${copy("Review individual styles")} ${" "}{copy("CUSTOMIZED")} edited elements`
+      .toLocaleLowerCase()
+      .includes(searchQuery);
 
   return (
     <div
@@ -1964,17 +2056,21 @@ export function AppearanceStudioApp() {
         }}
       >
         <div className="appearance-studio-titlebar-brand">
-          <span>SCREENLAUNCHER / DESIGN TOOLS</span>
-          <strong>APPEARANCE STUDIO</strong>
+          <span>{copy("SCREENLAUNCHER / DESIGN TOOLS")}</span>
+          <strong>{copy("APPEARANCE STUDIO")}</strong>
         </div>
         <div className="appearance-studio-titlebar-tools">
-          <div className="appearance-history-controls" role="group" aria-label="Edit history">
+          <div
+            className="appearance-history-controls"
+            role="group"
+            aria-label={copy("Edit history")}
+          >
             <button
               type="button"
               onClick={undo}
               disabled={!canUndo}
-              data-tooltip="Undo (Ctrl+Z)"
-              aria-label="Undo last appearance change"
+              data-tooltip={copy("Undo (Ctrl+Z)")}
+              aria-label={copy("Undo last appearance change")}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M8 5 3.5 9 8 13" />
@@ -1985,8 +2081,8 @@ export function AppearanceStudioApp() {
               type="button"
               onClick={redo}
               disabled={!canRedo}
-              data-tooltip="Redo (Ctrl+Shift+Z)"
-              aria-label="Redo last appearance change"
+              data-tooltip={copy("Redo (Ctrl+Shift+Z)")}
+              aria-label={copy("Redo last appearance change")}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="m12 5 4.5 4-4.5 4" />
@@ -1997,26 +2093,29 @@ export function AppearanceStudioApp() {
           <div className="appearance-live-status">
             <i aria-hidden="true" />
             <div>
-              <strong>LIVE PREVIEW</strong>
-              <span>Changes appear in the launcher</span>
+              <strong>{copy("LIVE PREVIEW")}</strong>
+              <span>{copy("Changes appear in the launcher")}</span>
             </div>
           </div>
           <div className="appearance-studio-window-actions">
             <button type="button" onClick={() => void studioWindow?.minimize()}>
-              MINIMIZE
+              {copy("MINIMIZE")}
             </button>
             <button type="button" onClick={() => void closeStudio()}>
-              CLOSE
+              {copy("CLOSE")}
             </button>
           </div>
         </div>
       </header>
 
       <div className="appearance-studio-body">
-        <nav className="appearance-studio-categories" aria-label="Appearance editor sections">
+        <nav
+          className="appearance-studio-categories"
+          aria-label={copy("Appearance editor sections")}
+        >
           <div className="appearance-studio-nav-intro">
-            <span>WORKFLOW</span>
-            <strong>Design your launcher</strong>
+            <span>{copy("WORKFLOW")}</span>
+            <strong>{copy("Design your launcher")}</strong>
             <label className="appearance-studio-nav-search">
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.5" />
@@ -2026,13 +2125,13 @@ export function AppearanceStudioApp() {
                 type="search"
                 value={categoryQuery}
                 onChange={(event) => setCategoryQuery(event.target.value)}
-                placeholder="Search sections"
-                aria-label="Search appearance sections"
+                placeholder={copy("Search sections")}
+                aria-label={copy("Search appearance sections")}
               />
             </label>
           </div>
           {visibleCategories.length > 0 && (
-            <span className="appearance-studio-nav-group">GLOBAL STYLE</span>
+            <span className="appearance-studio-nav-group">{copy("GLOBAL STYLE")}</span>
           )}
           {visibleCategories.map((item) => (
             <button
@@ -2044,14 +2143,14 @@ export function AppearanceStudioApp() {
             >
               <span>{item.index}</span>
               <div>
-                <strong>{item.label}</strong>
-                <small>{item.note}</small>
+                <strong>{copy(item.label)}</strong>
+                <small>{copy(item.note)}</small>
               </div>
             </button>
           ))}
           {(showElementPicker || showEditedElements) && (
             <span className="appearance-studio-nav-group appearance-studio-nav-group--tools">
-              ELEMENT TOOLS
+              {copy("ELEMENT TOOLS")}
             </span>
           )}
           {showElementPicker && (
@@ -2063,9 +2162,11 @@ export function AppearanceStudioApp() {
             >
               <span>09</span>
               <div>
-                <strong>PICK ELEMENT</strong>
+                <strong>{copy("PICK ELEMENT")}</strong>
                 <small>
-                  {selectedTarget ? "Edit the current selection" : "Choose anything on screen"}
+                  {selectedTarget
+                    ? copy("Edit the current selection")
+                    : copy("Choose anything on screen")}
                 </small>
               </div>
             </button>
@@ -2080,31 +2181,33 @@ export function AppearanceStudioApp() {
               <span>10</span>
               <div>
                 <strong>
-                  EDITED ELEMENTS <em>{draft.elementOverrides.length}</em>
+                  {copy("EDITED ELEMENTS")} <em>{draft.elementOverrides.length}</em>
                 </strong>
-                <small>Review individual styles</small>
+                <small>{copy("Review individual styles")}</small>
               </div>
             </button>
           )}
           {visibleCategories.length === 0 && !showElementPicker && !showEditedElements && (
-            <p className="appearance-studio-nav-empty">No matching sections</p>
+            <p className="appearance-studio-nav-empty">{copy("No matching sections")}</p>
           )}
         </nav>
 
         <main className="appearance-studio-editor">
           <header className="appearance-editor-heading">
-            <span>SECTION {activeEditorContext.index}</span>
-            <strong>{activeEditorContext.label}</strong>
-            <p>{activeEditorContext.note}</p>
+            <span>
+              {copy("SECTION")} {activeEditorContext.index}
+            </span>
+            <strong>{copy(activeEditorContext.label)}</strong>
+            <p>{copy(activeEditorContext.note)}</p>
           </header>
 
           <section className="appearance-target-bar">
             <div className="appearance-target-current">
-              <span>CURRENT TARGET</span>
+              <span>{copy("CURRENT TARGET")}</span>
               <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
                 {selectedTargets.length > 1
-                  ? `${selectedTargets.length} ELEMENTS SELECTED`
-                  : selectedTarget?.label || "WHOLE LAUNCHER"}
+                  ? copy("{count} elements selected", { count: selectedTargets.length })
+                  : selectedTarget?.label || copy("WHOLE LAUNCHER")}
               </strong>
               {selectedTarget && (
                 <button
@@ -2113,7 +2216,7 @@ export function AppearanceStudioApp() {
                   onClick={clearSelectedStyle}
                   disabled={!selectedOverride}
                 >
-                  {selectedTargets.length > 1 ? "RESET ELEMENTS" : "RESET ELEMENT"}
+                  {selectedTargets.length > 1 ? copy("RESET ELEMENTS") : copy("RESET ELEMENT")}
                 </button>
               )}
             </div>
@@ -2123,21 +2226,25 @@ export function AppearanceStudioApp() {
                 className={!selectedTarget ? "active" : ""}
                 onClick={selectWholeLauncher}
               >
-                <strong>GLOBAL STYLE</strong>
-                <small>Entire launcher</small>
+                <strong>{copy("GLOBAL STYLE")}</strong>
+                <small>{copy("Entire launcher")}</small>
               </button>
               <button
                 type="button"
                 className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
                 onClick={requestElementPick}
               >
-                <strong>{pickingElement ? "CLICK IN LAUNCHER…" : "PICK ELEMENT"}</strong>
-                <small>{pickingElement ? "Hold Shift for several" : "Button, card or text"}</small>
+                <strong>
+                  {pickingElement ? copy("CLICK IN LAUNCHER…") : copy("PICK ELEMENT")}
+                </strong>
+                <small>
+                  {pickingElement ? copy("Hold Shift for several") : copy("Button, card or text")}
+                </small>
               </button>
             </div>
             {selectedTarget && (
               <section className="appearance-interaction-state">
-                <span>VISUAL STATE</span>
+                <span>{copy("VISUAL STATE")}</span>
                 <div>
                   {ELEMENT_INTERACTION_STATES.map((state) => (
                     <button
@@ -2146,15 +2253,15 @@ export function AppearanceStudioApp() {
                       className={elementInteractionState === state.id ? "active" : ""}
                       onClick={() => setElementInteractionState(state.id)}
                     >
-                      {state.label}
+                      {copy(state.label)}
                     </button>
                   ))}
                 </div>
                 <small>
-                  {
+                  {copy(
                     ELEMENT_INTERACTION_STATES.find((state) => state.id === elementInteractionState)
-                      ?.note
-                  }
+                      ?.note ?? "",
+                  )}
                 </small>
                 <button
                   type="button"
@@ -2162,7 +2269,7 @@ export function AppearanceStudioApp() {
                   disabled={!selectedInteractionCustomized}
                   onClick={clearSelectedInteractionStyle}
                 >
-                  RESET {elementInteractionState.toUpperCase()}
+                  {copy("Reset {state}", { state: copy(elementInteractionState.toUpperCase()) })}
                 </button>
               </section>
             )}
@@ -2172,9 +2279,11 @@ export function AppearanceStudioApp() {
             <CustomScrollArea className="appearance-element-list-scroll">
               <div className="appearance-element-list">
                 <header>
-                  <span>INDIVIDUAL ELEMENTS</span>
-                  <strong>{draft.elementOverrides.length} CUSTOMIZED</strong>
-                  <p>Choose an object to open its launcher tab and highlight it.</p>
+                  <span>{copy("INDIVIDUAL ELEMENTS")}</span>
+                  <strong>
+                    {draft.elementOverrides.length} {copy("CUSTOMIZED")}
+                  </strong>
+                  <p>{copy("Choose an object to open its launcher tab and highlight it.")}</p>
                 </header>
                 <div>
                   {draft.elementOverrides.map((override, index) => (
@@ -2186,10 +2295,10 @@ export function AppearanceStudioApp() {
                       >
                         <span>
                           {String(index + 1).padStart(2, "0")} /{" "}
-                          {override.tab ? TAB_TITLE[override.tab] : "ALL TABS"}
+                          {override.tab ? TAB_TITLE[override.tab] : copy("ALL TABS")}
                         </span>
                         <strong>{override.label}</strong>
-                        <small>OPEN TAB & HIGHLIGHT →</small>
+                        <small>{copy("OPEN TAB & HIGHLIGHT →")}</small>
                       </button>
                       <div className="appearance-element-list-badges">
                         {elementStyleBadges(override).map((badge) => (
@@ -2197,7 +2306,7 @@ export function AppearanceStudioApp() {
                             {badge.color && (
                               <i style={{ backgroundColor: badge.color }} aria-hidden="true" />
                             )}
-                            <b>{badge.label}</b>
+                            <b>{copy(badge.label)}</b>
                             {badge.value}
                           </span>
                         ))}
@@ -2223,21 +2332,23 @@ export function AppearanceStudioApp() {
             <div className="appearance-save-state">
               <i className={hasUnsavedChanges ? "unsaved" : ""} aria-hidden="true" />
               <div>
-                <strong>{hasUnsavedChanges ? "UNSAVED CHANGES" : "ALL CHANGES SAVED"}</strong>
-                <small className={message.includes("COULD NOT") ? "error" : ""}>
-                  {message ||
+                <strong>
+                  {hasUnsavedChanges ? copy("UNSAVED CHANGES") : copy("ALL CHANGES SAVED")}
+                </strong>
+                <small className={messageIsError ? "error" : ""}>
+                  {displayedMessage ||
                     (hasUnsavedChanges
-                      ? "Preview is live. Save to keep it."
-                      : "Your launcher appearance is up to date.")}
+                      ? copy("Preview is live. Save to keep it.")
+                      : copy("Your launcher appearance is up to date."))}
                 </small>
               </div>
             </div>
             <div className="appearance-studio-action-buttons">
               <button type="button" onClick={discard} disabled={!hasUnsavedChanges}>
-                DISCARD
+                {copy("DISCARD")}
               </button>
               <button type="button" className="restore" onClick={reset}>
-                DEFAULTS
+                {copy("DEFAULTS")}
               </button>
               <button
                 type="button"
@@ -2245,7 +2356,7 @@ export function AppearanceStudioApp() {
                 onClick={save}
                 disabled={!hasUnsavedChanges}
               >
-                SAVE & APPLY
+                {copy("SAVE & APPLY")}
               </button>
             </div>
           </footer>

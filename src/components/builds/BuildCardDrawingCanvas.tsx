@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { ColorPicker } from "../color-picker/ColorPicker";
 import { ElementSlider } from "../inputs/ElementSlider";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   width: number;
@@ -25,6 +26,7 @@ function drawImageOnCanvas(canvas: HTMLCanvasElement, source: string) {
 }
 
 export function BuildCardDrawingCanvas({ width, height, image, onImageChange }: Props) {
+  const tr = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const activePointerRef = useRef<number | null>(null);
@@ -161,7 +163,7 @@ export function BuildCardDrawingCanvas({ width, height, image, onImageChange }: 
           className="bce-drawing-canvas"
           width={width}
           height={height}
-          aria-label="Build card drawing canvas"
+          aria-label={tr("buildCardDrawingCanvas.buildCardDrawingCanvas")}
           onPointerDown={beginStroke}
           onPointerMove={continueStroke}
           onPointerUp={finishStroke}
@@ -172,14 +174,18 @@ export function BuildCardDrawingCanvas({ width, height, image, onImageChange }: 
       <div className="bce-canvas-toolbar">
         <div className="bce-canvas-toolbar__brush">
           <div className="bce-canvas-toolbar__meta">
-            <span className="bce-canvas-toolbar__label">Brush color</span>
+            <span className="bce-canvas-toolbar__label">
+              {tr("buildCardDrawingCanvas.brushColor")}
+            </span>
           </div>
           <ColorPicker value={brushColor} onChange={setBrushColor} />
         </div>
 
         <div className="bce-canvas-toolbar__size">
           <div className="bce-canvas-toolbar__meta">
-            <span className="bce-canvas-toolbar__label">Brush size</span>
+            <span className="bce-canvas-toolbar__label">
+              {tr("buildCardDrawingCanvas.brushSize")}
+            </span>
             <strong>{brushSize}px</strong>
           </div>
           <div className="bce-slider bce-drawing-size-slider">
@@ -202,10 +208,10 @@ export function BuildCardDrawingCanvas({ width, height, image, onImageChange }: 
             onClick={undo}
             disabled={historySize === 0}
           >
-            Undo
+            {tr("buildCardDrawingCanvas.undo")}
           </button>
           <button className="bce-mini-btn" type="button" onClick={clear} disabled={!image}>
-            Clear
+            {tr("buildCardDrawingCanvas.clear")}
           </button>
         </div>
       </div>

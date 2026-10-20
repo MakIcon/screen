@@ -1,3 +1,4 @@
+import { useAppearanceText } from "./localization";
 import {
   memo,
   useEffect,
@@ -18,6 +19,11 @@ import {
   type PlaceholderGroup,
 } from "../utils/placeholders";
 import { PlaceholderGuideButton } from "../components/placeholders/PlaceholderGuideButton";
+import { useLocale } from "../i18n/locale";
+import {
+  getPlaceholderGuideDescription,
+  getPlaceholderGuideLabel,
+} from "../components/builds/buildPlaceholdersGuide";
 
 const PLACEHOLDER_GROUPS: readonly { id: PlaceholderGroup; label: string }[] = [
   { id: "build", label: "BUILD" },
@@ -43,6 +49,8 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
   placeholderValues = {},
   onChange,
 }: PlaceholderTemplateEditorProps) {
+  const copy = useAppearanceText();
+  const locale = useLocale();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectionRef = useRef({ start: value.length, end: value.length });
   const templateCase = useMemo(() => getPlaceholderTemplateCase(value), [value]);
@@ -116,7 +124,7 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
         maxLength={maxLength}
         rows={2}
         spellCheck={false}
-        aria-label="Element text and placeholder template"
+        aria-label={copy("Element text and placeholder template")}
         onChange={handleChange}
         onSelect={rememberSelection}
         onClick={rememberSelection}
@@ -125,8 +133,8 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
 
       <PlaceholderGuideButton compact />
 
-      <div className="studio-placeholder-case" aria-label="Placeholder output case">
-        <span>PLACEHOLDER OUTPUT CASE</span>
+      <div className="studio-placeholder-case" aria-label={copy("Placeholder output case")}>
+        <span>{copy("PLACEHOLDER OUTPUT CASE")}</span>
         <div>
           <button
             type="button"
@@ -134,8 +142,8 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
             onMouseDown={keepEditorSelection}
             onClick={() => selectPlaceholderCase(false)}
           >
-            <code>%placeholder%</code>
-            <span>AS VALUE</span>
+            <code>{copy("%placeholder%")}</code>
+            <span>{copy("AS VALUE")}</span>
           </button>
           <button
             type="button"
@@ -143,22 +151,22 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
             onMouseDown={keepEditorSelection}
             onClick={() => selectPlaceholderCase(true)}
           >
-            <code>^%placeholder%</code>
-            <span>UPPERCASE</span>
+            <code>{copy("^%placeholder%")}</code>
+            <span>{copy("UPPERCASE")}</span>
           </button>
         </div>
         <small>
           {templateCase === "mixed"
-            ? "MIXED CASE · CHOOSE A MODE TO NORMALIZE ALL TOKENS"
-            : "THE ^ MODIFIER UPPERCASES ONLY THE RESOLVED VALUE"}
+            ? copy("MIXED CASE · CHOOSE A MODE TO NORMALIZE ALL TOKENS")
+            : copy("THE ^ MODIFIER UPPERCASES ONLY THE RESOLVED VALUE")}
         </small>
       </div>
 
-      <div className="studio-template-map" aria-label="Placeholder-highlighted template">
-        <span className="studio-template-map-label">TEMPLATE MAP</span>
+      <div className="studio-template-map" aria-label={copy("Placeholder-highlighted template")}>
+        <span className="studio-template-map-label">{copy("TEMPLATE MAP")}</span>
         <div className="studio-template-code">
           {segments.length === 0 ? (
-            <span className="studio-template-empty">EMPTY TEXT</span>
+            <span className="studio-template-empty">{copy("EMPTY TEXT")}</span>
           ) : (
             segments.map((segment, index) => {
               if (segment.type === "text") {
@@ -178,16 +186,29 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
                 >
                   {segment.value}
                   <span className="studio-template-token-tooltip" role="tooltip">
-                    <strong>{definition?.label ?? "UNKNOWN PLACEHOLDER"}</strong>
+                    <strong>
+                      {definition
+                        ? getPlaceholderGuideLabel(definition, locale)
+                        : copy("UNKNOWN PLACEHOLDER")}
+                    </strong>
                     <code>{segment.value}</code>
-                    <small>CASE · {segment.uppercase ? "UPPERCASE (^)" : "AS VALUE"}</small>
-                    <span>{definition?.description ?? "This token is kept unchanged."}</span>
+                    <small>
+                      {copy("CASE ·")}{" "}
+                      {segment.uppercase ? copy("UPPERCASE (^)") : copy("AS VALUE")}
+                    </small>
+                    <span>
+                      {definition
+                        ? getPlaceholderGuideDescription(definition, locale)
+                        : copy("This token is kept unchanged.")}
+                    </span>
                     <em>
-                      {isResolved ? "CURRENT VALUE" : "NOT AVAILABLE"} · {liveValue || "EMPTY"}
+                      {isResolved ? copy("CURRENT VALUE") : copy("NOT AVAILABLE")} ·{" "}
+                      {liveValue || copy("EMPTY")}
                     </em>
                     {definition?.aliases?.length ? (
                       <small>
-                        ALIASES · {definition.aliases.map((alias) => `%${alias}%`).join(" · ")}
+                        {copy("ALIASES ·")}{" "}
+                        {definition.aliases.map((alias) => `%${alias}%`).join(" · ")}
                       </small>
                     ) : null}
                   </span>
@@ -197,16 +218,16 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
           )}
         </div>
         <div className="studio-template-resolved">
-          <span>LIVE RESULT</span>
-          <strong>{resolvedPreview || "EMPTY TEXT"}</strong>
+          <span>{copy("LIVE RESULT")}</span>
+          <strong>{resolvedPreview || copy("EMPTY TEXT")}</strong>
         </div>
       </div>
 
       <div className="studio-placeholder-picker">
-        <span>INSERT LIVE PLACEHOLDER AT CURSOR</span>
+        <span>{copy("INSERT LIVE PLACEHOLDER AT CURSOR")}</span>
         {PLACEHOLDER_GROUPS.map((group) => (
           <div className="studio-placeholder-group" key={group.id}>
-            <small>{group.label}</small>
+            <small>{copy(group.label)}</small>
             <div>
               {AVAILABLE_PLACEHOLDERS.filter((placeholder) => placeholder.group === group.id).map(
                 (placeholder) => {
@@ -223,7 +244,7 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
                       onClick={() => insertPlaceholder(token)}
                     >
                       <code>{token}</code>
-                      <span>{placeholder.label}</span>
+                      <span>{getPlaceholderGuideLabel(placeholder, locale)}</span>
                       <em>{liveValue}</em>
                     </button>
                   );
@@ -233,13 +254,15 @@ export const PlaceholderTemplateEditor = memo(function PlaceholderTemplateEditor
           </div>
         ))}
         <small>
-          <code>%placeholder%</code> keeps the resolved value casing. <code>^%placeholder%</code>{" "}
-          forces uppercase. Legacy aliases are shown in each token tooltip.
+          <code>{copy("%placeholder%")}</code> {copy("keeps the resolved value casing.")}{" "}
+          <code>{copy("^%placeholder%")}</code>{" "}
+          {copy("forces uppercase. Legacy aliases are shown in each token tooltip.")}
         </small>
       </div>
 
       <small className="studio-template-meta">
-        ORIGINAL: {originalText} · RENDERED: {renderedOriginalText} · {value.length}/{maxLength}
+        {copy("ORIGINAL:")} {originalText} {copy("· RENDERED:")} {renderedOriginalText} ·{" "}
+        {value.length}/{maxLength}
       </small>
     </div>
   );

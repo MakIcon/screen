@@ -17,6 +17,7 @@ import type {
   MascotPhase,
   MascotPosition,
 } from "./mascotTypes";
+import { useTranslation } from "../../i18n/locale";
 
 interface MascotViewProps {
   layerRef: RefObject<HTMLDivElement | null>;
@@ -95,6 +96,7 @@ export function MascotView({
   onBowlPointerFinish,
   onBowlKeyDown,
 }: MascotViewProps) {
+  const tr = useTranslation();
   const style = {
     transform: `translate3d(${position.x.toFixed(2)}px, ${position.y.toFixed(2)}px, 0)`,
   } satisfies CSSProperties;
@@ -107,7 +109,7 @@ export function MascotView({
       {undoAvailable && (
         <button className="launcher-mascot-undo" type="button" onClick={onUndoChaos}>
           <span aria-hidden="true">↶</span>
-          ОТКАТИТЬ ИЗМЕНЕНИЯ МАСКОТА
+          {tr("mascot.undoMascotChanges")}
         </button>
       )}
 
@@ -171,8 +173,8 @@ export function MascotView({
           role={bowlStatus === "full" ? "button" : undefined}
           aria-label={
             bowlStatus === "full"
-              ? "Полная миска маскота. Перетащите и бросьте, чтобы опрокинуть."
-              : "Пустая миска маскота"
+              ? tr("mascot.theMascotsFullBowl")
+              : tr("mascot.theMascotsEmptyBowl")
           }
           aria-disabled={bowlStatus !== "full"}
           tabIndex={bowlStatus === "full" ? 0 : -1}
@@ -188,7 +190,7 @@ export function MascotView({
           />
           {bowlStatus === "full" && (
             <span className="launcher-mascot-bowl-tooltip" aria-hidden="true">
-              Возьми и брось миску
+              {tr("mascot.pickUpAndThrow")}
             </span>
           )}
         </div>
@@ -227,10 +229,10 @@ export function MascotView({
         role="button"
         aria-label={
           phase === "sleeping"
-            ? `${name} спит. Нажмите, чтобы разбудить.`
+            ? tr("mascot.isAsleepClickTo", { name })
             : carriedButton
-              ? `${name} несёт кнопку. Нажмите, чтобы вернуть её.`
-              : `${name}. Нажмите, чтобы погладить, или перетащите и бросьте.`
+              ? tr("mascot.isCarryingAButton", { name })
+              : tr("mascot.clickToPetOr", { name })
         }
         tabIndex={0}
         onClick={onClick}
@@ -314,10 +316,10 @@ export function MascotView({
         )}
         <span className="launcher-mascot-tooltip" aria-hidden="true">
           {phase === "sleeping"
-            ? "Нажми, чтобы разбудить"
+            ? tr("mascot.clickToWakeUp")
             : carriedButton
-              ? "Нажми, чтобы вернуть кнопку"
-              : "Погладь или брось маскота"}
+              ? tr("mascot.clickToReturnThe")
+              : tr("mascot.petOrThrowThe")}
         </span>
       </div>
     </div>

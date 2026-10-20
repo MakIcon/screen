@@ -93,66 +93,71 @@ pub struct ModrinthModDependencies {
 pub async fn get_modrinth_mod_dependencies(
     instance_id: String,
     project_id: String,
-) -> Result<ModrinthModDependencies, String> {
-    let instance = find_instance(&instance_id).await?;
-    let loader = instance_loader(&instance.loader)?;
-    let client = build_client()?;
-    let state = read_state(&instance, MODS).await?;
-    let (plan, available_files) = resolve_project_install_plan(
-        &client,
-        &instance,
-        &project_id,
-        &content_dir(&instance, MODS),
-        &[loader],
-        &state,
-        None,
-    )
-    .await?;
-    let root = plan.first().ok_or("Не удалось подобрать версию мода")?;
-    let version_number = root.version.version_number.clone();
-    let direct_dependencies = root.dependencies.clone();
-    let mut dependencies = Vec::new();
-    for item in plan.into_iter().skip(1) {
-        let version = item.version;
-        let file = choose_primary_file(&version)
-            .ok_or_else(|| format!("У зависимости {} нет файлов", version.project_id))?;
-        validate_filename(&file.filename)?;
-        let status = ModrinthDependencyStatus::for_file(&version, file, &state, &available_files);
-        let existing = reusable_installed_entry(&version, file, &state, &available_files);
-        let (title, icon_url) =
-            if let Some(entry) = existing.filter(|entry| !entry.title.is_empty()) {
-                (entry.title.clone(), entry.icon_url.clone())
-            } else {
-                let metadata: serde_json::Value = http_json(
-                    &client,
-                    &format!("{MODRINTH_API_BASE}/project/{}", version.project_id),
-                )
-                .await?;
-                (
-                    metadata
-                        .get("title")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or(&version.project_id)
-                        .to_string(),
-                    metadata
-                        .get("icon_url")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_string),
-                )
-            };
-        dependencies.push(ModrinthModDependency {
-            direct: direct_dependencies.contains(&version.project_id),
-            project_id: version.project_id,
-            title,
-            icon_url,
-            version_number: version.version_number,
-            status,
-        });
+) -> Result<ModrinthModDependencies, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let instance = find_instance(&instance_id).await?;
+        let loader = instance_loader(&instance.loader)?;
+        let client = build_client()?;
+        let state = read_state(&instance, MODS).await?;
+        let (plan, available_files) = resolve_project_install_plan(
+            &client,
+            &instance,
+            &project_id,
+            &content_dir(&instance, MODS),
+            &[loader],
+            &state,
+            None,
+        )
+        .await?;
+        let root = plan.first().ok_or("Не удалось подобрать версию мода")?;
+        let version_number = root.version.version_number.clone();
+        let direct_dependencies = root.dependencies.clone();
+        let mut dependencies = Vec::new();
+        for item in plan.into_iter().skip(1) {
+            let version = item.version;
+            let file = choose_primary_file(&version)
+                .ok_or_else(|| format!("У зависимости {} нет файлов", version.project_id))?;
+            validate_filename(&file.filename)?;
+            let status =
+                ModrinthDependencyStatus::for_file(&version, file, &state, &available_files);
+            let existing = reusable_installed_entry(&version, file, &state, &available_files);
+            let (title, icon_url) =
+                if let Some(entry) = existing.filter(|entry| !entry.title.is_empty()) {
+                    (entry.title.clone(), entry.icon_url.clone())
+                } else {
+                    let metadata: serde_json::Value = http_json(
+                        &client,
+                        &format!("{MODRINTH_API_BASE}/project/{}", version.project_id),
+                    )
+                    .await?;
+                    (
+                        metadata
+                            .get("title")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or(&version.project_id)
+                            .to_string(),
+                        metadata
+                            .get("icon_url")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string),
+                    )
+                };
+            dependencies.push(ModrinthModDependency {
+                direct: direct_dependencies.contains(&version.project_id),
+                project_id: version.project_id,
+                title,
+                icon_url,
+                version_number: version.version_number,
+                status,
+            });
+        }
+        Ok(ModrinthModDependencies {
+            version_number,
+            dependencies,
+        })
     }
-    Ok(ModrinthModDependencies {
-        version_number,
-        dependencies,
-    })
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -161,31 +166,35 @@ pub async fn search_modrinth_mods(
     query: String,
     offset: usize,
     limit: usize,
-) -> Result<ModrinthSearchResponse, String> {
-    let client = build_client()?;
-    let instance = find_instance(&instance_id).await?;
-    let loader = instance_loader(&instance.loader)?;
-    let mut response = fetch_modrinth_search(
-        &client,
-        &query,
-        &instance.version,
-        "mod",
-        &[loader],
-        offset,
-        limit.clamp(1, SEARCH_PAGE_SIZE_MAX),
-    )
-    .await?;
+) -> Result<ModrinthSearchResponse, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let client = build_client()?;
+        let instance = find_instance(&instance_id).await?;
+        let loader = instance_loader(&instance.loader)?;
+        let mut response = fetch_modrinth_search(
+            &client,
+            &query,
+            &instance.version,
+            "mod",
+            &[loader],
+            offset,
+            limit.clamp(1, SEARCH_PAGE_SIZE_MAX),
+        )
+        .await?;
 
-    let installed_project_ids = read_state(&instance, MODS)
-        .await?
-        .into_values()
-        .map(|entry| entry.project_id)
-        .collect::<HashSet<_>>();
-    for hit in &mut response.hits {
-        hit.installed = installed_project_ids.contains(&hit.project_id);
+        let installed_project_ids = read_state(&instance, MODS)
+            .await?
+            .into_values()
+            .map(|entry| entry.project_id)
+            .collect::<HashSet<_>>();
+        for hit in &mut response.hits {
+            hit.installed = installed_project_ids.contains(&hit.project_id);
+        }
+
+        Ok(response)
     }
-
-    Ok(response)
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -193,55 +202,60 @@ pub async fn install_modrinth_project(
     app: AppHandle,
     instance_id: String,
     project_id: String,
-) -> Result<ActionResult, String> {
-    let client = build_client()?;
-    let instance = find_instance(&instance_id).await?;
-    let loader = instance_loader(&instance.loader)?;
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let client = build_client()?;
+        let instance = find_instance(&instance_id).await?;
+        let loader = instance_loader(&instance.loader)?;
 
-    let target_dir = ensure_content_dir(&instance, MODS).await?;
-    let mut install_batch = read_state(&instance, MODS).await?;
-    let key = download_key(&instance_id, &project_id);
-    let (control_sender, control_receiver) = watch::channel(ModDownloadControlState::Downloading);
-    {
-        let mut active = active_mod_downloads().lock().await;
-        if active.contains_key(&key) {
-            return Err("This mod download is already running".to_string());
+        let target_dir = ensure_content_dir(&instance, MODS).await?;
+        let mut install_batch = read_state(&instance, MODS).await?;
+        let key = download_key(&instance_id, &project_id);
+        let (control_sender, control_receiver) =
+            watch::channel(ModDownloadControlState::Downloading);
+        {
+            let mut active = active_mod_downloads().lock().await;
+            if active.contains_key(&key) {
+                return Err("This mod download is already running".to_string());
+            }
+            active.insert(key.clone(), control_sender);
         }
-        active.insert(key.clone(), control_sender);
-    }
-    let context = ModDownloadContext::new(
-        app,
-        instance_id.clone(),
-        project_id.clone(),
-        control_receiver,
-    );
+        let context = ModDownloadContext::new(
+            app,
+            instance_id.clone(),
+            project_id.clone(),
+            control_receiver,
+        );
 
-    let install_result = install_project_to_dir(
-        &client,
-        &instance,
-        &project_id,
-        &target_dir,
-        &[loader],
-        &mut install_batch,
-        Some(&context),
-    )
+        let install_result = install_project_to_dir(
+            &client,
+            &instance,
+            &project_id,
+            &target_dir,
+            &[loader],
+            &mut install_batch,
+            Some(&context),
+        )
+        .await;
+        active_mod_downloads().lock().await.remove(&key);
+
+        if let Err(error) = install_result {
+            if error == MOD_DOWNLOAD_CANCELLED {
+                context.emit("", 0, 0, "cancelled");
+            }
+            return Err(error);
+        }
+        merge_state(&instance, MODS, &install_batch).await?;
+        context.emit("", 0, 0, "completed");
+
+        Ok(ActionResult {
+            ok: true,
+            message: "Мод и все обязательные зависимости установлены".into(),
+            pid: None,
+        })
+    }
     .await;
-    active_mod_downloads().lock().await.remove(&key);
-
-    if let Err(error) = install_result {
-        if error == MOD_DOWNLOAD_CANCELLED {
-            context.emit("", 0, 0, "cancelled");
-        }
-        return Err(error);
-    }
-    merge_state(&instance, MODS, &install_batch).await?;
-    context.emit("", 0, 0, "completed");
-
-    Ok(ActionResult {
-        ok: true,
-        message: "Мод и все обязательные зависимости установлены".into(),
-        pid: None,
-    })
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -249,61 +263,73 @@ pub async fn set_modrinth_download_paused(
     instance_id: String,
     project_id: String,
     paused: bool,
-) -> Result<(), String> {
-    let active = active_mod_downloads().lock().await;
-    let control = active
-        .get(&download_key(&instance_id, &project_id))
-        .ok_or_else(|| "Mod download is no longer active".to_string())?;
-    control
-        .send(if paused {
-            ModDownloadControlState::Paused
-        } else {
-            ModDownloadControlState::Downloading
-        })
-        .map_err(|_| "Mod download is no longer active".to_string())
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let active = active_mod_downloads().lock().await;
+        let control = active
+            .get(&download_key(&instance_id, &project_id))
+            .ok_or_else(|| "Mod download is no longer active".to_string())?;
+        control
+            .send(if paused {
+                ModDownloadControlState::Paused
+            } else {
+                ModDownloadControlState::Downloading
+            })
+            .map_err(|_| "Mod download is no longer active".to_string())
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn cancel_modrinth_download(
     instance_id: String,
     project_id: String,
-) -> Result<(), String> {
-    let active = active_mod_downloads().lock().await;
-    let control = active
-        .get(&download_key(&instance_id, &project_id))
-        .ok_or_else(|| "Mod download is no longer active".to_string())?;
-    control
-        .send(ModDownloadControlState::Cancelled)
-        .map_err(|_| "Mod download is no longer active".to_string())
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let active = active_mod_downloads().lock().await;
+        let control = active
+            .get(&download_key(&instance_id, &project_id))
+            .ok_or_else(|| "Mod download is no longer active".to_string())?;
+        control
+            .send(ModDownloadControlState::Cancelled)
+            .map_err(|_| "Mod download is no longer active".to_string())
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn uninstall_modrinth_mod(
     instance_id: String,
     filename: String,
-) -> Result<ActionResult, String> {
-    validate_filename(&filename)?;
-    let instance = find_instance(&instance_id).await?;
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        validate_filename(&filename)?;
+        let instance = find_instance(&instance_id).await?;
 
-    let file_path = content_dir(&instance, MODS).join(&filename);
-    if file_path.exists() {
-        fs::remove_file(&file_path)
-            .await
-            .map_err(|e| format!("remove file error: {e}"))?;
+        let file_path = content_dir(&instance, MODS).join(&filename);
+        if file_path.exists() {
+            fs::remove_file(&file_path)
+                .await
+                .map_err(|e| format!("remove file error: {e}"))?;
+        }
+
+        // The metadata is keyed by the original filename, so drop any `.disabled`
+        // suffix before removing the entry for a currently-disabled mod.
+        let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
+        let mut state = read_state(&instance, MODS).await.unwrap_or_default();
+        state.remove(base_filename);
+        write_state(&instance, MODS, &state).await?;
+
+        Ok(ActionResult {
+            ok: true,
+            message: "Deleted".into(),
+            pid: None,
+        })
     }
-
-    // The metadata is keyed by the original filename, so drop any `.disabled`
-    // suffix before removing the entry for a currently-disabled mod.
-    let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
-    let mut state = read_state(&instance, MODS).await.unwrap_or_default();
-    state.remove(base_filename);
-    write_state(&instance, MODS, &state).await?;
-
-    Ok(ActionResult {
-        ok: true,
-        message: "Deleted".into(),
-        pid: None,
-    })
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 /// Enable or disable a mod by renaming its file, the way Prism/MultiMC do it:
@@ -315,118 +341,128 @@ pub async fn set_mod_enabled(
     instance_id: String,
     filename: String,
     enabled: bool,
-) -> Result<ActionResult, String> {
-    validate_filename(&filename)?;
-    let instance = find_instance(&instance_id).await?;
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        validate_filename(&filename)?;
+        let instance = find_instance(&instance_id).await?;
 
-    let mods_dir = content_dir(&instance, MODS);
-    let current_path = mods_dir.join(&filename);
-    if !current_path.exists() {
-        return Err(format!("Mod file not found: {filename}"));
-    }
+        let mods_dir = content_dir(&instance, MODS);
+        let current_path = mods_dir.join(&filename);
+        if !current_path.exists() {
+            return Err(format!("Mod file not found: {filename}"));
+        }
 
-    let currently_enabled = !filename.ends_with(".disabled");
-    if currently_enabled == enabled {
-        // Already in the requested state — nothing to do.
-        return Ok(ActionResult {
-            ok: true,
-            message: "No change".into(),
-            pid: None,
-        });
-    }
+        let currently_enabled = !filename.ends_with(".disabled");
+        if currently_enabled == enabled {
+            // Already in the requested state — nothing to do.
+            return Ok(ActionResult {
+                ok: true,
+                message: "No change".into(),
+                pid: None,
+            });
+        }
 
-    let target_filename = if enabled {
-        filename
-            .strip_suffix(".disabled")
-            .unwrap_or(&filename)
-            .to_string()
-    } else {
-        format!("{filename}.disabled")
-    };
-    let target_path = mods_dir.join(&target_filename);
-    if target_path.exists() {
-        return Err(format!(
-            "Cannot toggle mod, target already exists: {target_filename}"
-        ));
-    }
-
-    fs::rename(&current_path, &target_path)
-        .await
-        .map_err(|e| format!("toggle mod error: {e}"))?;
-
-    Ok(ActionResult {
-        ok: true,
-        message: if enabled {
-            "Enabled".into()
+        let target_filename = if enabled {
+            filename
+                .strip_suffix(".disabled")
+                .unwrap_or(&filename)
+                .to_string()
         } else {
-            "Disabled".into()
-        },
-        pid: None,
-    })
+            format!("{filename}.disabled")
+        };
+        let target_path = mods_dir.join(&target_filename);
+        if target_path.exists() {
+            return Err(format!(
+                "Cannot toggle mod, target already exists: {target_filename}"
+            ));
+        }
+
+        fs::rename(&current_path, &target_path)
+            .await
+            .map_err(|e| format!("toggle mod error: {e}"))?;
+
+        Ok(ActionResult {
+            ok: true,
+            message: if enabled {
+                "Enabled".into()
+            } else {
+                "Disabled".into()
+            },
+            pid: None,
+        })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn list_installed_mods(instance_id: String) -> Result<Vec<InstalledModView>, String> {
-    let instance = find_instance(&instance_id).await?;
-    let mods_dir = ensure_content_dir(&instance, MODS).await?;
-    let state = read_state(&instance, MODS).await.unwrap_or_default();
-    let mut entries = fs::read_dir(&mods_dir)
-        .await
-        .map_err(|e| format!("read mods dir error: {e}"))?;
+pub async fn list_installed_mods(
+    instance_id: String,
+) -> Result<Vec<InstalledModView>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let instance = find_instance(&instance_id).await?;
+        let mods_dir = ensure_content_dir(&instance, MODS).await?;
+        let state = read_state(&instance, MODS).await.unwrap_or_default();
+        let mut entries = fs::read_dir(&mods_dir)
+            .await
+            .map_err(|e| format!("read mods dir error: {e}"))?;
 
-    let mut out = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| format!("mods dir iteration error: {e}"))?
-    {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(filename) = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-        else {
-            continue;
-        };
-        if filename == MODS_STATE_FILE {
-            continue;
-        }
-        if !filename.ends_with(".jar")
-            && !filename.ends_with(".zip")
-            && !filename.ends_with(".disabled")
+        let mut out = Vec::new();
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| format!("mods dir iteration error: {e}"))?
         {
-            continue;
-        }
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
 
-        // A `.disabled` suffix means the mod is toggled off. The metadata state is
-        // still keyed by the original filename, so strip the suffix when looking it up.
-        let enabled = !filename.ends_with(".disabled");
-        let base_filename = filename
-            .strip_suffix(".disabled")
-            .unwrap_or(&filename)
-            .to_string();
+            let Some(filename) = path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+            else {
+                continue;
+            };
+            if filename == MODS_STATE_FILE {
+                continue;
+            }
+            if !filename.ends_with(".jar")
+                && !filename.ends_with(".zip")
+                && !filename.ends_with(".disabled")
+            {
+                continue;
+            }
 
-        if let Some(meta) = state.get(&base_filename) {
-            out.push(InstalledModView::from_metadata(filename, enabled, meta));
-        } else {
-            let title = base_filename
-                .trim_end_matches(".jar")
-                .trim_end_matches(".zip")
+            // A `.disabled` suffix means the mod is toggled off. The metadata state is
+            // still keyed by the original filename, so strip the suffix when looking it up.
+            let enabled = !filename.ends_with(".disabled");
+            let base_filename = filename
+                .strip_suffix(".disabled")
+                .unwrap_or(&filename)
                 .to_string();
-            out.push(InstalledModView::local(
-                filename,
-                enabled,
-                title,
-                "LOCAL FILE",
-            ));
-        }
-    }
 
-    out.sort_by_key(|item| item.title.to_lowercase());
-    Ok(out)
+            if let Some(meta) = state.get(&base_filename) {
+                out.push(InstalledModView::from_metadata(filename, enabled, meta));
+            } else {
+                let title = base_filename
+                    .trim_end_matches(".jar")
+                    .trim_end_matches(".zip")
+                    .to_string();
+                out.push(InstalledModView::local(
+                    filename,
+                    enabled,
+                    title,
+                    "LOCAL FILE",
+                ));
+            }
+        }
+
+        out.sort_by_key(|item| item.title.to_lowercase());
+        Ok(out)
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]

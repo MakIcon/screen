@@ -1,15 +1,8 @@
-const STATUS_LABELS: Record<string, string> = {
-  ON: "Включено",
-  OFF: "Выключено",
-  REMOVING: "Удаление…",
-  "NEEDS APP ID": "Укажите Application ID",
-  "NEEDS SERVER": "Укажите сервер",
-  "NEEDS ACCOUNT": "Выберите аккаунт",
-  "NEEDS URL": "Укажите адрес",
-  "NEEDS PACKAGE": "Настройте пакет",
-  "NEEDS PORT": "Укажите порт",
-};
+import { isPlainMessageKey, translateFor, type Locale } from "../../i18n/locale";
 
-export function pluginStatusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
+/** Status badges arrive as English codes such as "NEEDS URL"; unknown codes are shown as is. */
+export function pluginStatusLabel(status: string, locale: Locale = "ru") {
+  const code = status.toLowerCase().replace(/ (\w)/g, (_, letter: string) => letter.toUpperCase());
+  const key = `pluginStatus.${code}`;
+  return isPlainMessageKey(key) ? translateFor(locale, key) : status;
 }

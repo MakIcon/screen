@@ -13,6 +13,17 @@ import {
 import { isAppearanceStudioRoute } from "./appearance/window";
 import { isBuildPlaceholdersWindowRoute } from "./components/builds/buildPlaceholdersWindow";
 import { isMineflayerBotWindowRoute } from "./components/plugins/mineflayerBot/mineflayerBotWindow";
+import { readLocale, useLocale } from "./i18n/locale";
+
+document.documentElement.lang = readLocale();
+
+function DocumentLocale() {
+  const locale = useLocale();
+  React.useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+  return null;
+}
 
 const MineflayerBotWindowApp = lazy(() =>
   import("./components/plugins/mineflayerBot/MineflayerBotWindowApp").then((module) => ({
@@ -43,6 +54,7 @@ const isMineflayerBotWindow = isMineflayerBotWindowRoute(window.location.search)
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
+    <DocumentLocale />
     <CustomTooltip />
     {isMineflayerBotWindow ? (
       <Suspense fallback={null}>

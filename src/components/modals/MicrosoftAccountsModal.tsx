@@ -1,11 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "../../i18n/locale";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  MinecraftCape,
-  MinecraftProfile,
-  MinecraftSkin,
-  MicrosoftAccount,
-} from "../../types";
+import type { MinecraftCape, MinecraftProfile, MinecraftSkin, MicrosoftAccount } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 import type { PreviewMotion, SkinVariant } from "./MinecraftSkinPreview";
 
@@ -87,6 +83,7 @@ export function MicrosoftAccountsModal({
   onAccountsChange,
   onClose,
 }: Props) {
+  const tr = useTranslation();
   const skinFileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === activeAccountId) ?? accounts[0] ?? null,
@@ -302,30 +299,35 @@ export function MicrosoftAccountsModal({
     <div className="confirm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="ms-modal ms-modal-manager" onClick={(e) => e.stopPropagation()}>
         <div className="ms-modal-head">
-          <span className="ms-modal-tag">ACCOUNT</span>
-          <span className="ms-modal-title">Microsoft Profile Manager</span>
+          <span className="ms-modal-tag">{tr("microsoftAccounts.account")}</span>
+          <span className="ms-modal-title">{tr("microsoftAccounts.microsoftProfileManager")}</span>
           <button
             className="ms-modal-close"
             onClick={onClose}
-            data-tooltip="Close"
-            aria-label="Close"
+            data-tooltip={tr("common.close2")}
+            aria-label={tr("common.close2")}
             type="button"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path
+                d="M1 1L13 13M13 1L1 13"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
         </div>
 
         <div className="ms-manager-body">
           <aside className="ms-account-pane">
-            <div className="ms-manager-kicker">ACCOUNTS</div>
+            <div className="ms-manager-kicker">{tr("microsoftAccounts.accounts")}</div>
 
             <div className="ms-account-list">
               {accounts.length === 0 && !authLoading && (
                 <div className="ms-modal-empty ms-modal-empty-compact">
-                  <span>No Microsoft accounts added yet.</span>
-                  <span className="ms-modal-empty-sub">Sign in to load Minecraft profile data.</span>
+                  <span>{tr("microsoftAccounts.noMicrosoftAccountsAdded")}</span>
+                  <span className="ms-modal-empty-sub">{tr("microsoftAccounts.signInToLoad")}</span>
                 </div>
               )}
 
@@ -359,11 +361,13 @@ export function MicrosoftAccountsModal({
                       <span className="ms-account-uuid">{acc.uuid}</span>
                     </div>
                     <div className="ms-account-actions">
-                      {isActive && <span className="ms-account-badge">ACTIVE</span>}
+                      {isActive && (
+                        <span className="ms-account-badge">{tr("microsoftAccounts.active")}</span>
+                      )}
                       <button
                         className="ms-account-remove"
-                        data-tooltip="Remove account"
-                        aria-label="Remove account"
+                        data-tooltip={tr("microsoftAccounts.removeAccount")}
+                        aria-label={tr("microsoftAccounts.removeAccount")}
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -388,8 +392,10 @@ export function MicrosoftAccountsModal({
               {authLoading && (
                 <div className="ms-auth-loading">
                   <div className="ms-auth-spinner" />
-                  <span>Waiting for sign-in...</span>
-                  <span className="ms-auth-loading-sub">Complete login in the Microsoft window</span>
+                  <span>{tr("microsoftAccounts.waitingForSignIn")}</span>
+                  <span className="ms-auth-loading-sub">
+                    {tr("microsoftAccounts.completeLoginInThe")}
+                  </span>
                 </div>
               )}
             </div>
@@ -400,14 +406,19 @@ export function MicrosoftAccountsModal({
               {authLoading ? (
                 <>
                   <div className="ms-add-spinner" />
-                  Signing in...
+                  {tr("microsoftAccounts.signingIn")}
                 </>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M6 1V11M1 6H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    <path
+                      d="M6 1V11M1 6H11"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
                   </svg>
-                  ADD MICROSOFT ACCOUNT
+                  {tr("microsoftAccounts.addMicrosoftAccount")}
                 </>
               )}
             </button>
@@ -416,13 +427,15 @@ export function MicrosoftAccountsModal({
           <section className="ms-profile-pane">
             {!selectedAccount ? (
               <div className="ms-profile-empty">
-                <span>NO ACCOUNT SELECTED</span>
+                <span>{tr("microsoftAccounts.noAccountSelected")}</span>
               </div>
             ) : (
               <>
                 <div className="ms-profile-head">
                   <div>
-                    <span className="ms-profile-tag">MINECRAFT PROFILE</span>
+                    <span className="ms-profile-tag">
+                      {tr("microsoftAccounts.minecraftProfile")}
+                    </span>
                     <strong>{profile?.name ?? selectedAccount.username}</strong>
                   </div>
                   <span className="ms-profile-uuid">{selectedAccount.uuid}</span>
@@ -431,7 +444,7 @@ export function MicrosoftAccountsModal({
                 {profileLoading ? (
                   <div className="ms-profile-loading">
                     <div className="ms-auth-spinner" />
-                    <span>LOADING PROFILE...</span>
+                    <span>{tr("microsoftAccounts.loadingProfile")}</span>
                   </div>
                 ) : (
                   <div className="ms-profile-grid">
@@ -439,7 +452,9 @@ export function MicrosoftAccountsModal({
                       <Suspense
                         fallback={
                           <div className="ms-preview-canvas-shell">
-                            <div className="ms-preview-empty">LOADING VIEWER...</div>
+                            <div className="ms-preview-empty">
+                              {tr("microsoftAccounts.loadingViewer")}
+                            </div>
                           </div>
                         }
                       >
@@ -456,31 +471,53 @@ export function MicrosoftAccountsModal({
                       </Suspense>
                       <div className="ms-preview-meta">
                         <span>
-                          {skinDraft ? "LOCAL PREVIEW" : activeSkin?.variant ?? "DEFAULT"} /{" "}
-                          {previewSecondLayer ? "LAYER 2" : "BASE"}
+                          {skinDraft
+                            ? tr("microsoftAccounts.localPreview")
+                            : (activeSkin?.variant ?? tr("microsoftAccounts.default"))}{" "}
+                          /{" "}
+                          {previewSecondLayer
+                            ? tr("microsoftAccounts.layer2")
+                            : tr("microsoftAccounts.base")}
                         </span>
-                        <strong>{previewCapeUrl ? getCapeLabel(profile?.capes.find((cape) => cape.id === previewCapeId) ?? activeCape) : "NO CAPE"}</strong>
+                        <strong>
+                          {previewCapeUrl
+                            ? getCapeLabel(
+                                profile?.capes.find((cape) => cape.id === previewCapeId) ??
+                                  activeCape,
+                              )
+                            : tr("microsoftAccounts.noCape")}
+                        </strong>
                       </div>
                     </div>
 
                     <div className="ms-editor-panel">
                       <section className="ms-editor-section ms-viewer-section">
                         <div className="ms-editor-head">
-                          <span>VIEWER</span>
-                          <strong>{previewAutoRotate ? "ROTATING" : "PAUSED"}</strong>
+                          <span>{tr("microsoftAccounts.viewer")}</span>
+                          <strong>
+                            {previewAutoRotate
+                              ? tr("microsoftAccounts.rotating")
+                              : tr("common.paused")}
+                          </strong>
                         </div>
 
-                        <div className="ms-motion-grid" role="tablist" aria-label="Preview animation">
-                          {(["STILL", "IDLE", "WALK", "RUN", "WAVE"] as PreviewMotion[]).map((motion) => (
-                            <button
-                              key={motion}
-                              className={previewMotion === motion ? "active" : ""}
-                              type="button"
-                              onClick={() => setPreviewMotion(motion)}
-                            >
-                              {motion}
-                            </button>
-                          ))}
+                        <div
+                          className="ms-motion-grid"
+                          role="tablist"
+                          aria-label={tr("microsoftAccounts.previewAnimation")}
+                        >
+                          {(["STILL", "IDLE", "WALK", "RUN", "WAVE"] as PreviewMotion[]).map(
+                            (motion) => (
+                              <button
+                                key={motion}
+                                className={previewMotion === motion ? "active" : ""}
+                                type="button"
+                                onClick={() => setPreviewMotion(motion)}
+                              >
+                                {tr(`microsoftAccounts.motion.${motion}`)}
+                              </button>
+                            ),
+                          )}
                         </div>
 
                         <div className="ms-viewer-controls">
@@ -489,39 +526,54 @@ export function MicrosoftAccountsModal({
                             type="button"
                             onClick={() => setPreviewAutoRotate((value) => !value)}
                           >
-                            {previewAutoRotate ? "PAUSE ROTATE" : "AUTO ROTATE"}
+                            {previewAutoRotate
+                              ? tr("microsoftAccounts.pauseRotate")
+                              : tr("microsoftAccounts.autoRotate")}
                           </button>
                           <button
                             className={`ghost-action ms-toggle-action${previewSecondLayer ? " active" : ""}`}
                             type="button"
                             onClick={() => setPreviewSecondLayer((value) => !value)}
                           >
-                            {previewSecondLayer ? "HIDE LAYER 2" : "SHOW LAYER 2"}
+                            {previewSecondLayer
+                              ? tr("microsoftAccounts.hideLayer2")
+                              : tr("microsoftAccounts.showLayer2")}
                           </button>
                           <button
                             className={`ghost-action ms-toggle-action${previewZoomEnabled ? " active" : ""}`}
                             type="button"
                             onClick={() => setPreviewZoomEnabled((value) => !value)}
                           >
-                            {previewZoomEnabled ? "ZOOM OFF" : "ZOOM ON"}
+                            {previewZoomEnabled
+                              ? tr("microsoftAccounts.zoomOff")
+                              : tr("microsoftAccounts.zoomOn")}
                           </button>
                           <button
                             className="ghost-action ms-toggle-action"
                             type="button"
                             onClick={() => setPreviewResetKey((value) => value + 1)}
                           >
-                            RESET VIEW
+                            {tr("microsoftAccounts.resetView")}
                           </button>
                         </div>
                       </section>
 
                       <section className="ms-editor-section">
                         <div className="ms-editor-head">
-                          <span>SKIN</span>
-                          <strong>{skinDraft?.fileName ?? activeSkin?.alias ?? activeSkin?.variant ?? "DEFAULT"}</strong>
+                          <span>{tr("microsoftAccounts.skin")}</span>
+                          <strong>
+                            {skinDraft?.fileName ??
+                              activeSkin?.alias ??
+                              activeSkin?.variant ??
+                              tr("ui.default")}
+                          </strong>
                         </div>
 
-                        <div className="ms-segmented" role="tablist" aria-label="Skin model">
+                        <div
+                          className="ms-segmented"
+                          role="tablist"
+                          aria-label={tr("microsoftAccounts.skinModel")}
+                        >
                           {(["CLASSIC", "SLIM"] as SkinVariant[]).map((variant) => (
                             <button
                               key={variant}
@@ -529,7 +581,7 @@ export function MicrosoftAccountsModal({
                               type="button"
                               onClick={() => setSkinVariant(variant)}
                             >
-                              {variant}
+                              {tr(`microsoftAccounts.skin.${variant}`)}
                             </button>
                           ))}
                         </div>
@@ -541,7 +593,7 @@ export function MicrosoftAccountsModal({
                             onClick={() => skinFileInputRef.current?.click()}
                             disabled={profileAction !== null}
                           >
-                            PICK SKIN
+                            {tr("microsoftAccounts.pickSkin")}
                           </button>
                           <button
                             className="primary-action ms-compact-primary"
@@ -549,7 +601,9 @@ export function MicrosoftAccountsModal({
                             onClick={handleApplySkin}
                             disabled={!skinDraft || profileAction !== null}
                           >
-                            {profileAction === "skin" ? "APPLYING..." : "APPLY SKIN"}
+                            {profileAction === "skin"
+                              ? tr("microsoftAccounts.applying")
+                              : tr("microsoftAccounts.applySkin")}
                           </button>
                         </div>
 
@@ -559,13 +613,15 @@ export function MicrosoftAccountsModal({
                           onClick={handleResetSkin}
                           disabled={profileAction !== null}
                         >
-                          {profileAction === "skin-reset" ? "RESETTING..." : "RESET SKIN"}
+                          {profileAction === "skin-reset"
+                            ? tr("microsoftAccounts.resetting")
+                            : tr("microsoftAccounts.resetSkin")}
                         </button>
                       </section>
 
                       <section className="ms-editor-section ms-editor-section-fill">
                         <div className="ms-editor-head">
-                          <span>CAPES</span>
+                          <span>{tr("microsoftAccounts.capes")}</span>
                           <strong>{profile?.capes.length ?? 0}</strong>
                         </div>
 
@@ -579,8 +635,10 @@ export function MicrosoftAccountsModal({
                             }}
                           >
                             <MinecraftCapeThumb url={null} />
-                            <span>NO CAPE</span>
-                            {activeCapeId === null && <strong>ACTIVE</strong>}
+                            <span>{tr("microsoftAccounts.noCape")}</span>
+                            {activeCapeId === null && (
+                              <strong>{tr("microsoftAccounts.active")}</strong>
+                            )}
                           </button>
 
                           {profile?.capes.map((cape) => {
@@ -601,7 +659,7 @@ export function MicrosoftAccountsModal({
                               >
                                 <MinecraftCapeThumb url={cape.url ?? null} />
                                 <span>{getCapeLabel(cape)}</span>
-                                {isActive && <strong>ACTIVE</strong>}
+                                {isActive && <strong>{tr("microsoftAccounts.active")}</strong>}
                               </button>
                             );
                           })}
@@ -614,7 +672,9 @@ export function MicrosoftAccountsModal({
                             onClick={handleApplyCape}
                             disabled={!capeDirty || profileAction !== null}
                           >
-                            {profileAction === "cape" ? "SAVING..." : "APPLY CAPE"}
+                            {profileAction === "cape"
+                              ? tr("microsoftAccounts.saving")
+                              : tr("microsoftAccounts.applyCape")}
                           </button>
                           <button
                             className="ghost-action"
@@ -622,7 +682,9 @@ export function MicrosoftAccountsModal({
                             onClick={handleHideCape}
                             disabled={!activeCapeId || profileAction !== null}
                           >
-                            {profileAction === "cape-hide" ? "HIDING..." : "HIDE CAPE"}
+                            {profileAction === "cape-hide"
+                              ? tr("microsoftAccounts.hiding")
+                              : tr("microsoftAccounts.hideCape")}
                           </button>
                         </div>
                       </section>
@@ -630,7 +692,9 @@ export function MicrosoftAccountsModal({
                   </div>
                 )}
 
-                {profileError && <div className="ms-auth-error ms-profile-error">{profileError}</div>}
+                {profileError && (
+                  <div className="ms-auth-error ms-profile-error">{profileError}</div>
+                )}
               </>
             )}
           </section>

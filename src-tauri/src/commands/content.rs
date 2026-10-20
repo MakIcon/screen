@@ -62,51 +62,55 @@ async fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
 pub async fn install_dropped_content(
     instance_id: String,
     paths: Vec<String>,
-) -> Result<ActionResult, String> {
-    let instance = read_instances()
-        .await?
-        .into_iter()
-        .find(|item| item.id == instance_id)
-        .ok_or_else(|| "Instance not found".to_string())?;
-    let game_dir = PathBuf::from(&instance.game_dir);
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let instance = read_instances()
+            .await?
+            .into_iter()
+            .find(|item| item.id == instance_id)
+            .ok_or_else(|| "Instance not found".to_string())?;
+        let game_dir = PathBuf::from(&instance.game_dir);
 
-    let mut installed = 0_usize;
-    let mut skipped = 0_usize;
-    for raw in &paths {
-        let source = PathBuf::from(raw);
-        let Some(filename) = source
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-        else {
-            skipped += 1;
-            continue;
-        };
-        let Some(subdir) = target_subdir(&source).await? else {
-            skipped += 1;
-            continue;
+        let mut installed = 0_usize;
+        let mut skipped = 0_usize;
+        for raw in &paths {
+            let source = PathBuf::from(raw);
+            let Some(filename) = source
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+            else {
+                skipped += 1;
+                continue;
+            };
+            let Some(subdir) = target_subdir(&source).await? else {
+                skipped += 1;
+                continue;
+            };
+
+            let dest_dir = game_dir.join(subdir);
+            fs::create_dir_all(&dest_dir)
+                .await
+                .map_err(|e| format!("create {subdir} dir error: {e}"))?;
+            fs::copy(&source, dest_dir.join(&filename))
+                .await
+                .map_err(|e| format!("copy {filename} error: {e}"))?;
+            installed += 1;
+        }
+
+        let message = if installed == 0 {
+            "No installable files in drop".to_string()
+        } else if skipped == 0 {
+            format!("Added {installed} file(s) to {}", instance.name)
+        } else {
+            format!("Added {installed}, skipped {skipped}")
         };
 
-        let dest_dir = game_dir.join(subdir);
-        fs::create_dir_all(&dest_dir)
-            .await
-            .map_err(|e| format!("create {subdir} dir error: {e}"))?;
-        fs::copy(&source, dest_dir.join(&filename))
-            .await
-            .map_err(|e| format!("copy {filename} error: {e}"))?;
-        installed += 1;
+        Ok(ActionResult {
+            ok: installed > 0,
+            message,
+            pid: None,
+        })
     }
-
-    let message = if installed == 0 {
-        "No installable files in drop".to_string()
-    } else if skipped == 0 {
-        format!("Added {installed} file(s) to {}", instance.name)
-    } else {
-        format!("Added {installed}, skipped {skipped}")
-    };
-
-    Ok(ActionResult {
-        ok: installed > 0,
-        message,
-        pid: None,
-    })
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }

@@ -7,6 +7,7 @@ import { BuildModsEditor } from "./BuildModsEditor";
 import type { BuildRuntimeSettingsDraft } from "../../types";
 import { getEnvironmentVariablesError } from "../../utils/environmentVariables";
 import "./BuildCardSettingsPopup.css";
+import { useTranslation } from "../../i18n/locale";
 
 export type BuildCardImageFit = "cover" | "stretch";
 export type BuildCardBackgroundMode = "color" | "image" | "url" | "draw";
@@ -734,6 +735,7 @@ type Props = {
 };
 
 export function BuildCardSettingsPopup(props: Props) {
+  const tr = useTranslation();
   const [activeTab, setActiveTab] = useState<"runtime" | "card" | "mods">("runtime");
   const isRuntimeTab = activeTab === "runtime";
   const isModsTab = activeTab === "mods";
@@ -744,9 +746,15 @@ export function BuildCardSettingsPopup(props: Props) {
         <div className="bce-header bcs-header">
           <div className="bcs-heading">
             <span className="bce-header-title">
-              {props.isCreateMode ? "NEW BUILD SETTINGS" : "BUILD SETTINGS"}
+              {props.isCreateMode
+                ? tr("buildCardSettingsPopup.newBuildSettings")
+                : tr("buildCardSettingsPopup.buildSettings")}
             </span>
-            <div className="bcs-tabs" role="tablist" aria-label="Build settings sections">
+            <div
+              className="bcs-tabs"
+              role="tablist"
+              aria-label={tr("buildCardSettingsPopup.buildSettingsSections")}
+            >
               <button
                 type="button"
                 role="tab"
@@ -754,7 +762,7 @@ export function BuildCardSettingsPopup(props: Props) {
                 className={`bcs-tab ${isRuntimeTab ? "bcs-tab--active" : ""}`}
                 onClick={() => setActiveTab("runtime")}
               >
-                BUILD
+                {tr("common.buildCaps")}
               </button>
               <button
                 type="button"
@@ -763,7 +771,7 @@ export function BuildCardSettingsPopup(props: Props) {
                 className={`bcs-tab ${isModsTab ? "bcs-tab--active" : ""}`}
                 onClick={() => setActiveTab("mods")}
               >
-                MODS
+                {tr("common.modsCaps")}
               </button>
               <button
                 type="button"
@@ -772,7 +780,7 @@ export function BuildCardSettingsPopup(props: Props) {
                 className={`bcs-tab ${activeTab === "card" ? "bcs-tab--active" : ""}`}
                 onClick={() => setActiveTab("card")}
               >
-                CARD
+                {tr("buildCardSettingsPopup.card")}
               </button>
             </div>
           </div>
@@ -785,7 +793,7 @@ export function BuildCardSettingsPopup(props: Props) {
                   type="button"
                   onClick={isRuntimeTab ? props.onResetRuntime : props.onResetAll}
                 >
-                  RESET
+                  {tr("buildCardSettingsPopup.reset")}
                 </button>
                 <button
                   className="bce-hdr-btn bce-hdr-btn--save"
@@ -797,7 +805,7 @@ export function BuildCardSettingsPopup(props: Props) {
                   }
                   onClick={() => void props.onSave()}
                 >
-                  SAVE
+                  {tr("buildCardSettingsPopup.save")}
                 </button>
               </>
             )}
@@ -805,7 +813,7 @@ export function BuildCardSettingsPopup(props: Props) {
               className="bce-hdr-close"
               type="button"
               onClick={props.onClose}
-              aria-label="Close"
+              aria-label={tr("common.close2")}
             >
               <svg
                 width="11"

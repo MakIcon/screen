@@ -1,6 +1,7 @@
 import type { InstanceItem, TabKey } from "../types";
 import { BuildPlayButton } from "../components/builds/BuildPlayButton";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
+import { useTranslation, Trans } from "../i18n/locale";
 
 interface OverviewTabProps {
   selectedInstance: InstanceItem | null;
@@ -21,6 +22,7 @@ export function OverviewTab({
   working,
   setTabAnimated,
 }: OverviewTabProps) {
+  const tr = useTranslation();
   if (!selectedInstance) {
     return (
       <section className="launcher-panel">
@@ -29,18 +31,13 @@ export function OverviewTab({
             className="panel-card hero-card overview-minimal-card"
             data-guide-target="overview-hero"
           >
-            <span className="panel-label">NO BUILDS</span>
+            <span className="panel-label">{tr("overview.noBuilds")}</span>
 
             <h2>
-              Create your
-              <br />
-              first build.
+              <Trans k="overview.createFirstBuild" values={{ br: <br /> }} />
             </h2>
 
-            <p className="panel-text">
-              BUILDS теперь создают реальные инстансы, скачивают official files и могут запускаться
-              в offline mode.
-            </p>
+            <p className="panel-text">{tr("overview.createAMinecraftBuild")}</p>
 
             <div className="action-row">
               <button
@@ -48,9 +45,9 @@ export function OverviewTab({
                 type="button"
                 onClick={() => setTabAnimated("instances")}
                 data-mascot-stealable
-                data-mascot-label="OPEN BUILDS"
+                data-mascot-label={tr("overview.openBuilds")}
               >
-                OPEN BUILDS
+                {tr("overview.openBuilds")}
               </button>
             </div>
           </div>
@@ -66,29 +63,24 @@ export function OverviewTab({
           className="panel-card hero-card overview-minimal-card"
           data-guide-target="overview-hero"
         >
-          <span className="panel-label">LAST SESSION</span>
+          <span className="panel-label">{tr("overview.lastSession")}</span>
 
           <h2>
-            Play last
-            <br />
-            build.
+            <Trans k="overview.playLastBuild" values={{ br: <br /> }} />
           </h2>
 
-          <p className="panel-text">
-            Реальный offline launcher: client, libraries, natives и assets скачиваются автоматически
-            перед стартом.
-          </p>
+          <p className="panel-text">{tr("overview.minecraftFilesDownloadAutomatically")}</p>
 
           <div className="hero-meta two-col-meta">
             <div className="meta-block">
-              <span className="meta-title">BUILD</span>
+              <span className="meta-title">{tr("common.buildCaps")}</span>
               <strong {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}>
                 {resolve("%build_name%")}
               </strong>
             </div>
 
             <div className="meta-block">
-              <span className="meta-title">MC / LOADER</span>
+              <span className="meta-title">{tr("overview.mcLoader")}</span>
               <strong
                 {...createPlaceholderAppearanceAttributes(
                   "%build_version% / %build_loader%",
@@ -100,14 +92,14 @@ export function OverviewTab({
             </div>
 
             <div className="meta-block">
-              <span className="meta-title">LAST PLAYED</span>
+              <span className="meta-title">{tr("overview.lastPlayed")}</span>
               <strong {...createPlaceholderAppearanceAttributes("%build_last_played%", resolve)}>
                 {resolve("%build_last_played%")}
               </strong>
             </div>
 
             <div className="meta-block">
-              <span className="meta-title">TIME IN GAME</span>
+              <span className="meta-title">{tr("overview.timeInGame")}</span>
               <strong {...createPlaceholderAppearanceAttributes("%build_playtime%", resolve)}>
                 {resolve("%build_playtime%")}
               </strong>
@@ -124,12 +116,12 @@ export function OverviewTab({
             ) : (
               <BuildPlayButton
                 state={working ? "starting" : "idle"}
-                idleLabel="PLAY LAST"
+                idleLabel="overview.playLast2"
                 className="play-last-button"
                 onClick={() => handleLaunchSelected()}
                 disabled={working}
                 data-mascot-stealable
-                data-mascot-label="PLAY LAST"
+                data-mascot-label={tr("overview.playLast2")}
               />
             )}
           </div>

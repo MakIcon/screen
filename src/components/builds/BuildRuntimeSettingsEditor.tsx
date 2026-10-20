@@ -27,6 +27,7 @@ import {
 } from "../../utils/placeholders";
 import { getTextSearchMatches, replaceAllTextSearchMatches } from "../../utils/textSearch";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "../../i18n/locale";
 import type {
   BuildRuntimeSettingsDraft,
   JavaInstallation,
@@ -82,6 +83,7 @@ export function BuildRuntimeSettingsEditor({
   onDraftChange,
   onOpenLogs,
 }: Props) {
+  const tr = useTranslation();
   const [argsSearchQuery, setArgsSearchQuery] = useState("");
   const [argsReplaceValue, setArgsReplaceValue] = useState("");
   const [activeSearchMatchIndex, setActiveSearchMatchIndex] = useState(0);
@@ -286,14 +288,14 @@ export function BuildRuntimeSettingsEditor({
       const importedArgs = readImportedJavaArgs(raw);
 
       if (importedArgs === null) {
-        setArgsImportError("IMPORT ERROR");
+        setArgsImportError(tr("buildRuntimeSettings.importError"));
         return;
       }
 
       updateJavaArgs(normalizeNewlines(importedArgs));
       setArgsImportError("");
     };
-    reader.onerror = () => setArgsImportError("IMPORT ERROR");
+    reader.onerror = () => setArgsImportError(tr("buildRuntimeSettings.importError"));
     reader.readAsText(file);
   };
 
@@ -304,14 +306,14 @@ export function BuildRuntimeSettingsEditor({
           <div className="brs-panel-head">
             <div className="brs-panel-title">
               <span className="brs-panel-kicker">JVM</span>
-              <strong>JAVA ARGUMENTS</strong>
+              <strong>{tr("buildRuntimeSettings.javaArguments")}</strong>
             </div>
             <div className="brs-args-actions">
               <button
                 className="brs-icon-action"
                 type="button"
-                data-tooltip="Export arguments"
-                aria-label="Export arguments"
+                data-tooltip={tr("buildRuntimeSettings.exportArguments")}
+                aria-label={tr("buildRuntimeSettings.exportArguments")}
                 onClick={exportJavaArgs}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -327,8 +329,8 @@ export function BuildRuntimeSettingsEditor({
               <button
                 className="brs-icon-action"
                 type="button"
-                data-tooltip="Import arguments"
-                aria-label="Import arguments"
+                data-tooltip={tr("buildRuntimeSettings.importArguments")}
+                aria-label={tr("buildRuntimeSettings.importArguments")}
                 onClick={() => importArgsInputRef.current?.click()}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -353,7 +355,7 @@ export function BuildRuntimeSettingsEditor({
           <div className="brs-args-toolbar">
             <div className="brs-find-row">
               <label className="brs-search-field">
-                <span>SEARCH</span>
+                <span>{tr("buildRuntimeSettings.search")}</span>
                 <input
                   value={argsSearchQuery}
                   placeholder="G1, gc, heap"
@@ -366,14 +368,14 @@ export function BuildRuntimeSettingsEditor({
                   <span className="brs-search-count">
                     {argsSearchMatches.length > 0
                       ? `${activeSearchIndex + 1}/${argsSearchMatches.length}`
-                      : "NO MATCH"}
+                      : tr("buildRuntimeSettings.noMatch")}
                   </span>
                 )}
                 <button
                   className="brs-icon-action brs-find-action"
                   type="button"
-                  data-tooltip="Previous match"
-                  aria-label="Previous match"
+                  data-tooltip={tr("buildRuntimeSettings.previousMatch")}
+                  aria-label={tr("buildRuntimeSettings.previousMatch")}
                   disabled={argsSearchMatches.length === 0}
                   onClick={() => moveSearchMatch(-1)}
                 >
@@ -390,8 +392,8 @@ export function BuildRuntimeSettingsEditor({
                 <button
                   className="brs-icon-action brs-find-action"
                   type="button"
-                  data-tooltip="Next match"
-                  aria-label="Next match"
+                  data-tooltip={tr("buildRuntimeSettings.nextMatch")}
+                  aria-label={tr("buildRuntimeSettings.nextMatch")}
                   disabled={argsSearchMatches.length === 0}
                   onClick={() => moveSearchMatch(1)}
                 >
@@ -409,10 +411,10 @@ export function BuildRuntimeSettingsEditor({
             </div>
             <div className="brs-replace-row">
               <label className="brs-search-field">
-                <span>REPLACE</span>
+                <span>{tr("buildRuntimeSettings.replace")}</span>
                 <input
                   value={argsReplaceValue}
-                  placeholder="new value"
+                  placeholder={tr("buildRuntimeSettings.newValue")}
                   onChange={(event) => setArgsReplaceValue(event.target.value)}
                   onKeyDown={handleReplaceKeyDown}
                 />
@@ -423,7 +425,7 @@ export function BuildRuntimeSettingsEditor({
                 disabled={argsSearchMatches.length === 0}
                 onClick={replaceCurrentSearchMatch}
               >
-                REPLACE
+                {tr("buildRuntimeSettings.replace2")}
               </button>
               <button
                 className="brs-compact-action"
@@ -431,7 +433,7 @@ export function BuildRuntimeSettingsEditor({
                 disabled={argsSearchMatches.length === 0}
                 onClick={replaceAllSearchMatches}
               >
-                ALL
+                {tr("buildRuntimeSettings.all")}
               </button>
             </div>
             {argsImportError && <span className="brs-args-status">{argsImportError}</span>}
@@ -452,18 +454,18 @@ export function BuildRuntimeSettingsEditor({
             {onOpenLogs && (
               <section className="brs-section brs-logs-section">
                 <div className="brs-section-head">
-                  <span>LOGS</span>
+                  <span>{tr("buildRuntimeSettings.logs")}</span>
                   <strong>MINECRAFT</strong>
                 </div>
                 <button className="brs-wide-action" type="button" onClick={onOpenLogs}>
-                  OPEN LOG WINDOW
+                  {tr("buildRuntimeSettings.openLogWindow")}
                 </button>
               </section>
             )}
 
             <section className="brs-section">
               <div className="brs-section-head">
-                <span>MEMORY</span>
+                <span>{tr("buildRuntimeSettings.memory")}</span>
                 <strong
                   {...createPlaceholderAppearanceAttributes("%build_ram%", resolvePreviewText)}
                 >
@@ -472,7 +474,7 @@ export function BuildRuntimeSettingsEditor({
               </div>
               <div className="brs-slider">
                 <ElementSlider
-                  label="RAM"
+                  label={tr("ui.ram")}
                   showHeader={false}
                   min={1}
                   max={minecraftRamMax}
@@ -490,16 +492,16 @@ export function BuildRuntimeSettingsEditor({
 
             <section className="brs-section">
               <div className="brs-section-head">
-                <span>JAVA PATH</span>
+                <span>{tr("common.javaPath")}</span>
                 <div className="brs-java-actions">
                   {draft.javaPath.trim() && (
                     <button
                       className="brs-compact-action"
                       type="button"
-                      data-tooltip="Use the launcher-managed Java"
+                      data-tooltip={tr("buildRuntimeSettings.useTheLauncherManaged")}
                       onClick={() => setJavaPath("")}
                     >
-                      AUTO
+                      {tr("ui.auto")}
                     </button>
                   )}
                   <button
@@ -508,7 +510,9 @@ export function BuildRuntimeSettingsEditor({
                     disabled={javaScanning}
                     onClick={() => void scanJavaInstallations()}
                   >
-                    {javaScanning ? "SCANNING..." : "AUTO-SCAN"}
+                    {javaScanning
+                      ? tr("buildRuntimeSettings.scanning")
+                      : tr("buildRuntimeSettings.autoScan")}
                   </button>
                 </div>
               </div>
@@ -516,14 +520,14 @@ export function BuildRuntimeSettingsEditor({
               <label className="brs-field">
                 <input
                   value={draft.javaPath}
-                  placeholder="AUTO (managed runtime) — or type a javaw.exe path"
+                  placeholder={tr("buildRuntimeSettings.autoManagedRuntimeOr")}
                   onChange={(event) => setJavaPath(event.target.value)}
                 />
               </label>
 
               {javaScanError && <span className="brs-args-status">{javaScanError}</span>}
               {javaScanned && javaList.length === 0 && !javaScanError && (
-                <span className="brs-args-status">NO JAVA FOUND</span>
+                <span className="brs-args-status">{tr("buildRuntimeSettings.noJavaFound")}</span>
               )}
 
               {javaList.length > 0 && (
@@ -560,11 +564,11 @@ export function BuildRuntimeSettingsEditor({
                 }
                 onClick={() => void testJavaSettings()}
               >
-                {javaTesting ? "TESTING JAVA..." : "TEST JAVA SETTINGS"}
+                {javaTesting
+                  ? tr("buildRuntimeSettings.testingJava")
+                  : tr("buildRuntimeSettings.testJavaSettings")}
               </button>
-              <p className="brs-note">
-                Проверяет текущие RAM, аргументы и окружение без запуска Minecraft.
-              </p>
+              <p className="brs-note">{tr("buildRuntimeSettings.checksTheCurrentRam")}</p>
               {visibleJavaTest && (
                 <div className="brs-java-test" role="status" aria-live="polite">
                   {visibleJavaTest.error ? (
@@ -574,8 +578,8 @@ export function BuildRuntimeSettingsEditor({
                       <>
                         <strong className={visibleJavaTest.result.success ? "" : "brs-args-status"}>
                           {visibleJavaTest.result.success
-                            ? "JAVA CHECK PASSED"
-                            : "JAVA CHECK FAILED"}
+                            ? tr("buildRuntimeSettings.javaCheckPassed")
+                            : tr("buildRuntimeSettings.javaCheckFailed")}
                         </strong>
                         <span className="brs-note brs-java-test-path">
                           {visibleJavaTest.result.javaPath}
@@ -585,7 +589,7 @@ export function BuildRuntimeSettingsEditor({
                         )}
                         <pre>
                           {visibleJavaTest.result.output ||
-                            "Java не вернула диагностический вывод."}
+                            tr("buildRuntimeSettings.javaReturnedNoDiagnostic")}
                         </pre>
                       </>
                     )
@@ -603,20 +607,24 @@ export function BuildRuntimeSettingsEditor({
 
             <section className="brs-section">
               <div className="brs-section-head">
-                <span>WINDOW</span>
-                <strong>{draft.fullscreen ? "FULLSCREEN" : "WINDOWED"}</strong>
+                <span>{tr("buildRuntimeSettings.window")}</span>
+                <strong>
+                  {draft.fullscreen
+                    ? tr("buildRuntimeSettings.fullscreen")
+                    : tr("buildRuntimeSettings.windowed")}
+                </strong>
               </div>
 
               <div className="brs-window-grid">
                 <label className="brs-field">
-                  <span>WIDTH</span>
+                  <span>{tr("buildRuntimeSettings.width")}</span>
                   <CustomNumberInput
                     min={320}
                     max={7680}
                     step={1}
                     value={draft.windowWidth}
                     showArrows
-                    ariaLabel="Window width"
+                    ariaLabel={tr("buildRuntimeSettings.windowWidth")}
                     onChange={(value) =>
                       onDraftChange((prev) => ({
                         ...prev,
@@ -627,14 +635,14 @@ export function BuildRuntimeSettingsEditor({
                 </label>
 
                 <label className="brs-field">
-                  <span>HEIGHT</span>
+                  <span>{tr("buildRuntimeSettings.height")}</span>
                   <CustomNumberInput
                     min={240}
                     max={4320}
                     step={1}
                     value={draft.windowHeight}
                     showArrows
-                    ariaLabel="Window height"
+                    ariaLabel={tr("buildRuntimeSettings.windowHeight")}
                     onChange={(value) =>
                       onDraftChange((prev) => ({
                         ...prev,
@@ -650,7 +658,7 @@ export function BuildRuntimeSettingsEditor({
                 className="brs-toggle-row"
                 onClick={() => onDraftChange((prev) => ({ ...prev, fullscreen: !prev.fullscreen }))}
               >
-                <span>FULLSCREEN</span>
+                <span>{tr("buildRuntimeSettings.fullscreen")}</span>
                 <span className={`toggle-switch ${draft.fullscreen ? "enabled" : ""}`}>
                   <span className="toggle-knob" />
                 </span>

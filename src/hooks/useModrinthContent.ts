@@ -10,9 +10,10 @@ import type {
   ModrinthSearchResponse,
   TabKey,
 } from "../types";
-import { toErrorMessage } from "../utils/errors";
+import { isCancelledError, toErrorMessage } from "../utils/errors";
 import { RequestGeneration } from "../utils/requestGeneration";
 import type { PushToast } from "./useToasts";
+import { translate, type PlainMessageKey } from "../i18n/locale";
 
 export type ModrinthContentKind = "mods" | "resourcepacks" | "shaders";
 
@@ -23,12 +24,12 @@ type ContentCommands = {
   install: string;
   uninstall: string;
   includeGameVersion: boolean;
-  installingMessage: string;
-  installedMessage: string;
-  uninstallingMessage: string;
-  installedTitle: string;
-  installFailedTitle: string;
-  removedTitle: string;
+  installingMessage: () => string;
+  installedMessage: () => string;
+  uninstallingMessage: () => string;
+  installedTitle: PlainMessageKey;
+  installFailedTitle: PlainMessageKey;
+  removedTitle: PlainMessageKey;
 };
 
 const PAGE_SIZE = 24;
@@ -42,12 +43,12 @@ const CONTENT_COMMANDS: Record<ModrinthContentKind, ContentCommands> = {
     install: "install_modrinth_project",
     uninstall: "uninstall_modrinth_mod",
     includeGameVersion: false,
-    installingMessage: "Установка мода и обязательных зависимостей…",
-    installedMessage: "Мод и обязательные зависимости установлены",
-    uninstallingMessage: "Uninstalling mod...",
-    installedTitle: "Mod installed",
-    installFailedTitle: "Mod install failed",
-    removedTitle: "Mod removed",
+    installingMessage: () => translate("modrinthContent.installingTheModAnd"),
+    installedMessage: () => translate("modrinthContent.modAndRequiredDependencies"),
+    uninstallingMessage: () => translate("modrinthContent.uninstallingMod"),
+    installedTitle: "toast.modInstalled",
+    installFailedTitle: "toast.modInstallFailed",
+    removedTitle: "toast.modRemoved",
   },
   resourcepacks: {
     tab: "resourcepacks",
@@ -56,12 +57,12 @@ const CONTENT_COMMANDS: Record<ModrinthContentKind, ContentCommands> = {
     install: "install_modrinth_resourcepack",
     uninstall: "uninstall_modrinth_resourcepack",
     includeGameVersion: true,
-    installingMessage: "Installing resource pack...",
-    installedMessage: "Resource pack install finished",
-    uninstallingMessage: "Uninstalling resource pack...",
-    installedTitle: "Resource pack installed",
-    installFailedTitle: "Resource pack install failed",
-    removedTitle: "Resource pack removed",
+    installingMessage: () => translate("modrinthContent.installingResourcePack"),
+    installedMessage: () => translate("modrinthContent.resourcePackInstallFinished"),
+    uninstallingMessage: () => translate("modrinthContent.uninstallingResourcePack"),
+    installedTitle: "toast.resourcePackInstalled",
+    installFailedTitle: "toast.resourcePackInstallFailed",
+    removedTitle: "toast.resourcePackRemoved",
   },
   shaders: {
     tab: "shaders",
@@ -70,12 +71,12 @@ const CONTENT_COMMANDS: Record<ModrinthContentKind, ContentCommands> = {
     install: "install_modrinth_shader",
     uninstall: "uninstall_modrinth_shader",
     includeGameVersion: true,
-    installingMessage: "Installing shader...",
-    installedMessage: "Shader install finished",
-    uninstallingMessage: "Uninstalling shader...",
-    installedTitle: "Shader installed",
-    installFailedTitle: "Shader install failed",
-    removedTitle: "Shader removed",
+    installingMessage: () => translate("modrinthContent.installingShader"),
+    installedMessage: () => translate("modrinthContent.shaderInstallFinished"),
+    uninstallingMessage: () => translate("modrinthContent.uninstallingShader"),
+    installedTitle: "toast.shaderInstalled",
+    installFailedTitle: "toast.shaderInstallFailed",
+    removedTitle: "toast.shaderRemoved",
   },
 };
 
@@ -335,29 +336,31 @@ export function useModrinthContent({
         });
       }
       setActionError("");
-      setBusyMessage(commands.installingMessage);
+      setBusyMessage(commands.installingMessage());
       const result = await invoke<ActionResult>(commands.install, {
         instanceId: target.id,
         projectId,
       });
       await refreshContent();
-      setBusyMessage(commands.installedMessage);
+      setBusyMessage(commands.installedMessage());
       pushToast(
         "info",
         `${projectName} → ${target.name}${kind === "mods" ? ` · ${result.message}` : ""}`,
         {
-          title: commands.installedTitle,
+          title: translate(commands.installedTitle),
         },
       );
     } catch (caught) {
       const message = toErrorMessage(caught);
-      if (message.includes("MOD_DOWNLOAD_CANCELLED")) {
+      if (isCancelledError(caught)) {
         setBusyMessage("");
-        pushToast("info", `${projectName}: загрузка отменена`, { title: "Download cancelled" });
+        pushToast("info", translate("modrinthContent.downloadCancelled", { projectName }), {
+          title: translate("toast.downloadCancelled"),
+        });
         return;
       }
       setActionError(message);
-      pushToast("error", message, { title: commands.installFailedTitle });
+      pushToast("error", message, { title: translate(commands.installFailedTitle) });
     } finally {
       setBusyProjectId(null);
       if (kind === "mods") setDownloadProgress(null);
@@ -402,19 +405,26 @@ export function useModrinthContent({
     try {
       setBusyProjectId(projectId);
       setActionError("");
-      setBusyMessage(commands.uninstallingMessage);
+      setBusyMessage(commands.uninstallingMessage());
       await invoke(commands.uninstall, {
         instanceId: target.id,
         filename: installedEntry.filename,
       });
       await refreshContent();
-      pushToast("info", `${installedEntry.title} удалён из ${target.name}`, {
-        title: commands.removedTitle,
-      });
+      pushToast(
+        "info",
+        translate("modrinthContent.removedFrom", {
+          title: installedEntry.title,
+          name: target.name,
+        }),
+        {
+          title: translate(commands.removedTitle),
+        },
+      );
     } catch (caught) {
       const message = toErrorMessage(caught);
       setActionError(message);
-      pushToast("error", message, { title: "Uninstall failed" });
+      pushToast("error", message, { title: translate("toast.uninstallFailed") });
     } finally {
       setBusyProjectId(null);
       setBusyMessage("");

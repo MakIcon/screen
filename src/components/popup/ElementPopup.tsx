@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "./ElementPopup.css";
+import { useTranslation } from "../../i18n/locale";
 
 export type PopupPlacement = "top" | "bottom" | "left" | "right";
 
@@ -23,6 +24,7 @@ export function ElementPopup({
   triggerRef,
   className,
 }: ElementPopupProps) {
+  const tr = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
 
   /* close on Escape */
@@ -77,7 +79,7 @@ export function ElementPopup({
         {title && (
           <div className="ep-header">
             <span className="ep-title">{title}</span>
-            <button className="ep-close" onClick={onClose} aria-label="Close">
+            <button className="ep-close" onClick={onClose} aria-label={tr("common.close2")}>
               <svg
                 width="14"
                 height="14"

@@ -1,4 +1,5 @@
 import type { PlaytimeSession } from "../../types";
+import { translateFor, type Locale } from "../../i18n/locale";
 
 export interface DayActivity {
   secs: number;
@@ -14,27 +15,16 @@ export function timestamp(raw: string): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-export function formatStatsDuration(raw: number): string {
+export function formatStatsDuration(raw: number, locale: Locale = "ru"): string {
   const secs = Math.max(0, Math.floor(raw));
   const hours = Math.floor(secs / 3600);
   const minutes = Math.floor((secs % 3600) / 60);
-  if (hours > 0) return minutes > 0 ? `${hours} ч ${minutes} мин` : `${hours} ч`;
-  if (minutes > 0) return `${minutes} мин`;
-  return secs > 0 ? `${secs} сек` : "0 мин";
-}
-
-export function statsCount(count: number, forms: [string, string, string]): string {
-  const mod100 = Math.abs(count) % 100;
-  const mod10 = mod100 % 10;
-  const form =
-    mod100 >= 11 && mod100 <= 14
-      ? forms[2]
-      : mod10 === 1
-        ? forms[0]
-        : mod10 >= 2 && mod10 <= 4
-          ? forms[1]
-          : forms[2];
-  return `${count} ${form}`;
+  if (hours > 0)
+    return minutes > 0
+      ? translateFor(locale, "duration.hoursMinutes", { hours, minutes })
+      : translateFor(locale, "duration.hours", { hours });
+  if (minutes > 0 || secs === 0) return translateFor(locale, "duration.minutes", { minutes });
+  return translateFor(locale, "duration.seconds", { seconds: secs });
 }
 
 // The log records the END of each session. Split at local midnights so a

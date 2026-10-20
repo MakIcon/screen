@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MineflayerActionIcon } from "./MineflayerActionIcon";
 import { WORKFLOW_STEP_LIMIT, type WorkflowDraftStep } from "./workflowDraft";
 import { WORKFLOW_PRESETS, WORKFLOW_PRESET_GROUPS, workflowTemplate } from "./workflowPresets";
+import { useTranslation } from "../../../i18n/locale";
 
 export function MineflayerWorkflowPresets({
   locked,
@@ -12,11 +13,12 @@ export function MineflayerWorkflowPresets({
   stepCount: number;
   onAppend: (steps: WorkflowDraftStep[]) => void;
 }) {
+  const tr = useTranslation();
   const [expanded, setExpanded] = useState(stepCount === 0);
   const [group, setGroup] = useState<string>("farm");
   const presets = WORKFLOW_PRESETS.filter((preset) => group === "all" || preset.group === group);
   return (
-    <section className="mf-preset-library" aria-label="Пресеты сценария">
+    <section className="mf-preset-library" aria-label={tr("bot.workflowPresets.workflowPresets")}>
       <button
         className="mf-preset-heading"
         type="button"
@@ -25,10 +27,12 @@ export function MineflayerWorkflowPresets({
         onClick={() => setExpanded(!expanded)}
       >
         <span className="mf-preset-heading-copy">
-          <span className="mf-preset-heading-title">ГОТОВЫЕ СЦЕНАРИИ</span>
+          <span className="mf-preset-heading-title">
+            {tr("bot.workflowPresets.readyMadeWorkflows")}
+          </span>
         </span>
         <span className="mf-preset-heading-action">
-          {expanded ? "Свернуть" : "Выбрать пресет"}
+          {expanded ? tr("bot.workflowPresets.collapse") : tr("bot.workflowPresets.chooseAPreset")}
           <svg
             className={expanded ? "is-expanded" : undefined}
             width="14"
@@ -43,20 +47,24 @@ export function MineflayerWorkflowPresets({
       </button>
       {expanded && (
         <div id="mf-preset-library" className="mf-preset-content">
-          <div className="mf-preset-filters" role="group" aria-label="Категория пресетов">
-            {[...WORKFLOW_PRESET_GROUPS, { id: "all", label: "Все" }].map((entry) => {
+          <div
+            className="mf-preset-filters"
+            role="group"
+            aria-label={tr("bot.workflowPresets.presetCategory")}
+          >
+            {[...WORKFLOW_PRESET_GROUPS, "all" as const].map((entry) => {
               const count =
-                entry.id === "all"
+                entry === "all"
                   ? WORKFLOW_PRESETS.length
-                  : WORKFLOW_PRESETS.filter((preset) => preset.group === entry.id).length;
+                  : WORKFLOW_PRESETS.filter((preset) => preset.group === entry).length;
               return (
                 <button
                   type="button"
-                  key={entry.id}
-                  aria-pressed={group === entry.id}
-                  onClick={() => setGroup(entry.id)}
+                  key={entry}
+                  aria-pressed={group === entry}
+                  onClick={() => setGroup(entry)}
                 >
-                  {entry.label}
+                  {tr(`bot.presetGroup.${entry}`)}
                   <span className="mf-preset-filter-count">{count}</span>
                 </button>
               );
@@ -64,30 +72,41 @@ export function MineflayerWorkflowPresets({
           </div>
           <div className="mf-preset-grid">
             {presets.map((preset) => {
+              const text = {
+                label: tr(`bot.preset.${preset.id}.label`),
+                description: tr(`bot.preset.${preset.id}.description`),
+                requires: tr(`bot.preset.${preset.id}.requires`),
+              };
               const overflow = stepCount + preset.steps.length > WORKFLOW_STEP_LIMIT;
               return (
                 <article className="mf-preset-card" key={preset.id}>
                   <div className="mf-preset-title">
                     <MineflayerActionIcon kind={preset.steps[0].kind} />
-                    <h4>{preset.label}</h4>
-                    <span>{preset.steps.length} шаг.</span>
+                    <h4>{text.label}</h4>
+                    <span>
+                      {tr("bot.workflowPresets.stepCount", { count: preset.steps.length })}
+                    </span>
                   </div>
-                  <p>{preset.description}</p>
+                  <p>{text.description}</p>
                   <p className="mf-preset-requires">
-                    <strong>Нужно:</strong> {preset.requires}
+                    <strong>{tr("bot.workflowPresets.requires")}</strong> {text.requires}
                   </p>
                   <button
                     type="button"
                     disabled={locked || overflow}
-                    aria-label={`Добавить пресет: ${preset.label}`}
+                    aria-label={`${tr("bot.workflowPresets.addPreset")}: ${text.label}`}
                     data-tooltip={
                       overflow
-                        ? `В плане может быть не больше ${WORKFLOW_STEP_LIMIT} шагов`
-                        : `Добавить ${preset.steps.length} шагов в конец плана`
+                        ? tr("bot.workflowPresets.aPlanCanHave", { WORKFLOW_STEP_LIMIT })
+                        : tr("bot.workflowPresets.addStepsToThe", {
+                            stepsCount: preset.steps.length,
+                          })
                     }
                     onClick={() => onAppend(workflowTemplate(preset.id))}
                   >
-                    {overflow ? "Не хватает места в плане" : "+ Добавить в план"}
+                    {overflow
+                      ? tr("bot.workflowPresets.notEnoughRoomIn")
+                      : tr("bot.workflowPresets.addToPlan")}
                   </button>
                 </article>
               );

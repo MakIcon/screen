@@ -1,3 +1,4 @@
+import { useAppearanceText } from "../../appearance/localization";
 import {
   useMemo,
   useRef,
@@ -78,6 +79,7 @@ function pointerPositionIn(event: ReactPointerEvent, element: Element | null) {
 }
 
 export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProps) {
+  const copy = useAppearanceText();
   const geometryPadRef = useRef<HTMLDivElement>(null);
   const curveHandleRef = useRef<"midpoint" | "softness">("midpoint");
   const gradientType = style?.backgroundGradientType ?? "linear";
@@ -217,11 +219,11 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
       <section className="gradient-graph-panel">
         <header className="gradient-graph-panel__head">
           <div>
-            <span>SHAPE & DIRECTION</span>
-            <small>DRAG THE CANVAS OR USE PRECISE CONTROLS</small>
+            <span>{copy("SHAPE & DIRECTION")}</span>
+            <small>{copy("DRAG THE CANVAS OR USE PRECISE CONTROLS")}</small>
           </div>
           <button type="button" onClick={resetGeometry}>
-            RESET
+            {copy("RESET")}
           </button>
         </header>
 
@@ -233,7 +235,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
               className={gradientType === option.id ? "active" : ""}
               onClick={() => onChange({ backgroundGradientType: option.id })}
             >
-              {option.label}
+              {copy(option.label)}
             </button>
           ))}
         </div>
@@ -244,7 +246,9 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
               ref={geometryPadRef}
               className="gradient-geometry-pad"
               role="slider"
-              aria-label={gradientType === "linear" ? "Gradient angle" : "Gradient origin"}
+              aria-label={
+                gradientType === "linear" ? copy("Gradient angle") : copy("Gradient origin")
+              }
               aria-valuemin={0}
               aria-valuemax={gradientType === "linear" ? 360 : 100}
               aria-valuenow={Math.round(gradientType === "linear" ? gradientAngle : centerX)}
@@ -339,13 +343,15 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                   <circle className="gradient-geometry-tip" cx={vectorEndX} cy={vectorEndY} r="3" />
                 )}
               </svg>
-              <small>{gradientType === "linear" ? "DRAG DIRECTION" : "DRAG ORIGIN"}</small>
+              <small>
+                {gradientType === "linear" ? copy("DRAG DIRECTION") : copy("DRAG ORIGIN")}
+              </small>
             </div>
 
             {gradientType !== "linear" && (
               <div className="gradient-origin-preset-group">
-                <span>ORIGIN PRESETS</span>
-                <div className="gradient-origin-presets" aria-label="Origin presets">
+                <span>{copy("ORIGIN PRESETS")}</span>
+                <div className="gradient-origin-presets" aria-label={copy("Origin presets")}>
                   {ORIGIN_PRESETS.map((preset) => (
                     <button
                       key={`${preset.x}-${preset.y}`}
@@ -355,8 +361,8 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                           ? "active"
                           : ""
                       }
-                      aria-label={`Origin ${preset.x}%, ${preset.y}%`}
-                      data-tooltip={`Origin ${preset.x}%, ${preset.y}%`}
+                      aria-label={copy("Origin {x}%, {y}%", { x: preset.x, y: preset.y })}
+                      data-tooltip={copy("Origin {x}%, {y}%", { x: preset.x, y: preset.y })}
                       onClick={() =>
                         onChange({
                           backgroundGradientCenterX: preset.x,
@@ -374,24 +380,24 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
             {gradientType === "linear" && (
               <>
                 <div className="gradient-direction-presets">
-                  <span>DIRECTION PRESETS</span>
+                  <span>{copy("DIRECTION PRESETS")}</span>
                   <div>
                     {DIRECTION_PRESETS.map((preset) => (
                       <button
                         key={preset.angle}
                         type="button"
                         className={Math.abs(gradientAngle - preset.angle) < 0.5 ? "active" : ""}
-                        aria-label={preset.name}
-                        data-tooltip={`${preset.name} · ${preset.angle}°`}
+                        aria-label={copy(preset.name)}
+                        data-tooltip={`${copy(preset.name)} · ${preset.angle}°`}
                         onClick={() => onChange({ backgroundGradientAngle: preset.angle })}
                       >
-                        {preset.label}
+                        {copy(preset.label)}
                       </button>
                     ))}
                   </div>
                 </div>
                 <RangeField
-                  label="ANGLE"
+                  label={copy("ANGLE")}
                   value={Math.round(gradientAngle)}
                   min={0}
                   max={360}
@@ -404,7 +410,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
 
             {gradientType === "radial" && (
               <div className="gradient-radial-shape">
-                <span>RADIAL SHAPE</span>
+                <span>{copy("RADIAL SHAPE")}</span>
                 <div>
                   {(["circle", "ellipse"] as const).map((shape) => (
                     <button
@@ -413,7 +419,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                       className={radialShape === shape ? "active" : ""}
                       onClick={() => selectRadialShape(shape)}
                     >
-                      {shape.toUpperCase()}
+                      {copy(shape.toUpperCase())}
                     </button>
                   ))}
                 </div>
@@ -424,7 +430,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
               <>
                 <div className="gradient-origin-fields">
                   <RangeField
-                    label="ORIGIN X"
+                    label={copy("ORIGIN X")}
                     value={Math.round(centerX)}
                     min={0}
                     max={100}
@@ -435,7 +441,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                     }
                   />
                   <RangeField
-                    label="ORIGIN Y"
+                    label={copy("ORIGIN Y")}
                     value={Math.round(centerY)}
                     min={0}
                     max={100}
@@ -449,7 +455,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                 {gradientType === "radial" && (
                   <>
                     <RangeField
-                      label="RADIUS"
+                      label={copy("RADIUS")}
                       value={Math.round(gradientScale)}
                       min={10}
                       max={200}
@@ -459,7 +465,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                     />
                     {radialShape === "ellipse" && (
                       <RangeField
-                        label="ASPECT"
+                        label={copy("ASPECT")}
                         value={Math.round(radialAspect * 100)}
                         min={25}
                         max={200}
@@ -474,7 +480,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                 )}
                 {gradientType === "conic" && (
                   <RangeField
-                    label="START ANGLE"
+                    label={copy("START ANGLE")}
                     value={Math.round(gradientAngle)}
                     min={0}
                     max={360}
@@ -485,7 +491,9 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                 )}
               </>
             )}
-            <small className="gradient-precision-hint">SHIFT + ARROWS = 10× PRECISION STEP</small>
+            <small className="gradient-precision-hint">
+              {copy("SHIFT + ARROWS = 10× PRECISION STEP")}
+            </small>
           </div>
         </div>
       </section>
@@ -493,8 +501,8 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
       <section className="gradient-graph-panel">
         <header className="gradient-graph-panel__head">
           <div>
-            <span>TRANSITION CURVE</span>
-            <small>DRAG BOTH HANDLES TO SHAPE THE COLOR BLEND</small>
+            <span>{copy("TRANSITION CURVE")}</span>
+            <small>{copy("DRAG BOTH HANDLES TO SHAPE THE COLOR BLEND")}</small>
           </div>
           <button
             type="button"
@@ -505,7 +513,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
               })
             }
           >
-            RESET
+            {copy("RESET")}
           </button>
         </header>
 
@@ -522,7 +530,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
                 })
               }
             >
-              {preset.label}
+              {copy(preset.label)}
             </button>
           ))}
         </div>
@@ -531,7 +539,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
           <svg
             viewBox="0 0 100 100"
             role="slider"
-            aria-label="Gradient transition curve"
+            aria-label={copy("Gradient transition curve")}
             aria-valuemin={5}
             aria-valuemax={95}
             aria-valuenow={Math.round(gradientMidpoint * 100)}
@@ -597,14 +605,14 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
             />
           </svg>
           <div>
-            <span>INPUT</span>
-            <span>COLOR MIX</span>
+            <span>{copy("INPUT")}</span>
+            <span>{copy("COLOR MIX")}</span>
           </div>
         </div>
 
         <div className="gradient-curve-fields">
           <RangeField
-            label="MIDPOINT"
+            label={copy("MIDPOINT")}
             value={Math.round(gradientMidpoint * 100)}
             min={5}
             max={95}
@@ -613,7 +621,7 @@ export function GradientGraphEditor({ style, onChange }: GradientGraphEditorProp
             onChange={(value) => onChange({ backgroundGradientMidpoint: value / 100 })}
           />
           <RangeField
-            label="SOFTNESS"
+            label={copy("SOFTNESS")}
             value={Math.round(gradientSoftness * 100)}
             min={0}
             max={100}

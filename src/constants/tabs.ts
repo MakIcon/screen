@@ -18,6 +18,7 @@ export const TAB_INDEX: Record<TabKey, string> = {
   settings: "06.",
 };
 
+/** English tab names for the English-only Appearance Studio; the launcher uses `tabs.*` messages. */
 export const TAB_TITLE: Record<TabKey, string> = {
   overview: "OVERVIEW",
   instances: "BUILDS",

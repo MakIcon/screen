@@ -376,29 +376,41 @@ fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
 }
 
 #[tauri::command]
-pub async fn read_slbuild_file(path: String) -> Result<InstanceExportData, String> {
-    let raw = fs::read_to_string(&path)
-        .await
-        .map_err(|e| format!("read .slbuild error: {e}"))?;
-    let data: InstanceExportData =
-        serde_json::from_str(&raw).map_err(|e| format!("parse .slbuild error: {e}"))?;
-    if data.version.trim().is_empty() || data.loader.trim().is_empty() {
-        return Err("Invalid .slbuild: version or loader is missing".to_string());
+pub async fn read_slbuild_file(
+    path: String,
+) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let raw = fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("read .slbuild error: {e}"))?;
+        let data: InstanceExportData =
+            serde_json::from_str(&raw).map_err(|e| format!("parse .slbuild error: {e}"))?;
+        if data.version.trim().is_empty() || data.loader.trim().is_empty() {
+            return Err("Invalid .slbuild: version or loader is missing".to_string());
+        }
+        if data.schema_version == 0 || data.schema_version > 2 {
+            return Err(format!(
+                "Unsupported .slbuild schema version: {}",
+                data.schema_version
+            ));
+        }
+        Ok(data)
     }
-    if data.schema_version == 0 || data.schema_version > 2 {
-        return Err(format!(
-            "Unsupported .slbuild schema version: {}",
-            data.schema_version
-        ));
-    }
-    Ok(data)
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn inspect_mrpack(path: String) -> Result<InstanceExportData, String> {
-    tokio::task::spawn_blocking(move || read_bundle(Path::new(&path)).and_then(bundle_summary))
-        .await
-        .map_err(|e| format!("mrpack inspection task failed: {e}"))?
+pub async fn inspect_mrpack(
+    path: String,
+) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        tokio::task::spawn_blocking(move || read_bundle(Path::new(&path)).and_then(bundle_summary))
+            .await
+            .map_err(|e| format!("mrpack inspection task failed: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn read_state(path: &Path) -> HashMap<String, InstalledModEntry> {
@@ -550,159 +562,163 @@ pub async fn export_instance_mrpack(
     instance_id: String,
     output_path: String,
     options: MrpackExportOptions,
-) -> Result<String, String> {
-    let instance = read_instances()
-        .await?
-        .into_iter()
-        .find(|value| value.id == instance_id)
-        .ok_or_else(|| "Instance not found".to_string())?;
-    let game_dir = PathBuf::from(&instance.game_dir);
+) -> Result<String, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let instance = read_instances()
+            .await?
+            .into_iter()
+            .find(|value| value.id == instance_id)
+            .ok_or_else(|| "Instance not found".to_string())?;
+        let game_dir = PathBuf::from(&instance.game_dir);
 
-    let mut files = Vec::new();
-    if options.include_mods {
-        files.extend(
-            collect_indexed_category(
-                &game_dir,
-                "mods",
-                ".screenlauncher-modrinth.json",
-                "required",
-            )
-            .await,
-        );
-    }
-    if options.include_shaders {
-        files.extend(
-            collect_indexed_category(
-                &game_dir,
-                "shaderpacks",
-                ".screenlauncher-modrinth-shaderpacks.json",
-                "unsupported",
-            )
-            .await,
-        );
-    }
-    if options.include_resource_packs {
-        files.extend(
-            collect_indexed_category(
-                &game_dir,
-                "resourcepacks",
-                ".screenlauncher-modrinth-resourcepacks.json",
-                "unsupported",
-            )
-            .await,
-        );
-    }
-
-    let mut dependencies = BTreeMap::new();
-    dependencies.insert("minecraft".to_string(), instance.version.clone());
-    if let Some((dependency, version)) =
-        loader_dependency(&instance.loader, instance.loader_version.as_deref())?
-    {
-        dependencies.insert(dependency, version);
-    }
-
-    let pack_name = if options.include_name && !instance.name.trim().is_empty() {
-        instance.name.clone()
-    } else {
-        "ScreenLauncher Build".to_string()
-    };
-    let index = MrpackIndex {
-        format_version: 1,
-        game: "minecraft".to_string(),
-        version_id: "1.0.0".to_string(),
-        name: pack_name,
-        summary: Some("Exported by ScreenLauncher".to_string()),
-        files,
-        dependencies,
-    };
-
-    let mut screen_meta = get_instance_export_data(instance.id.clone()).await?;
-    screen_meta.name = if options.include_name {
-        screen_meta.name
-    } else {
-        String::new()
-    };
-    screen_meta.ram = if options.include_ram {
-        screen_meta.ram
-    } else {
-        0
-    };
-    if !options.include_java_args {
-        screen_meta.java_args = None;
-    }
-    if !options.include_java_path {
-        screen_meta.java_path = None;
-    }
-    if !options.include_environment_variables {
-        screen_meta.environment_variables.clear();
-    }
-    if !options.include_window {
-        screen_meta.window_width = None;
-        screen_meta.window_height = None;
-        screen_meta.fullscreen = false;
-    }
-    screen_meta.mods.clear();
-    screen_meta.shaders.clear();
-    screen_meta.resource_packs.clear();
-
-    let output = PathBuf::from(&output_path);
-    let indexed = index
-        .files
-        .iter()
-        .map(|file| file.path.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
-    let index_raw = serde_json::to_vec_pretty(&index)
-        .map_err(|e| format!("serialize mrpack index error: {e}"))?;
-    let meta_raw = serde_json::to_vec_pretty(&screen_meta)
-        .map_err(|e| format!("serialize ScreenLauncher metadata error: {e}"))?;
-    let game_dir_for_zip = game_dir.clone();
-    let options_for_zip = options.clone();
-    let output_for_result = output.clone();
-
-    tokio::task::spawn_blocking(move || -> Result<(), String> {
-        if let Some(parent) = output.parent() {
-            std_fs::create_dir_all(parent)
-                .map_err(|e| format!("create mrpack output directory error: {e}"))?;
+        let mut files = Vec::new();
+        if options.include_mods {
+            files.extend(
+                collect_indexed_category(
+                    &game_dir,
+                    "mods",
+                    ".screenlauncher-modrinth.json",
+                    "required",
+                )
+                .await,
+            );
         }
-        let temp_path = output.with_extension("mrpack.part");
-        if temp_path.exists() {
-            let _ = std_fs::remove_file(&temp_path);
+        if options.include_shaders {
+            files.extend(
+                collect_indexed_category(
+                    &game_dir,
+                    "shaderpacks",
+                    ".screenlauncher-modrinth-shaderpacks.json",
+                    "unsupported",
+                )
+                .await,
+            );
         }
-        let file = File::create(&temp_path).map_err(|e| format!("create mrpack error: {e}"))?;
-        let mut zip = ZipWriter::new(file);
-        let zip_options = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated)
-            .unix_permissions(0o644);
-
-        zip.start_file(INDEX_FILE, zip_options)
-            .map_err(|e| format!("write mrpack index entry error: {e}"))?;
-        zip.write_all(&index_raw)
-            .map_err(|e| format!("write mrpack index error: {e}"))?;
-        zip.start_file(SCREEN_META_FILE, zip_options)
-            .map_err(|e| format!("write ScreenLauncher metadata entry error: {e}"))?;
-        zip.write_all(&meta_raw)
-            .map_err(|e| format!("write ScreenLauncher metadata error: {e}"))?;
-        add_overrides_to_zip(
-            &mut zip,
-            &game_dir_for_zip,
-            &game_dir_for_zip,
-            &indexed,
-            &options_for_zip,
-            zip_options,
-        )?;
-        zip.finish()
-            .map_err(|e| format!("finish mrpack error: {e}"))?;
-
-        if output.exists() {
-            std_fs::remove_file(&output).map_err(|e| format!("replace mrpack error: {e}"))?;
+        if options.include_resource_packs {
+            files.extend(
+                collect_indexed_category(
+                    &game_dir,
+                    "resourcepacks",
+                    ".screenlauncher-modrinth-resourcepacks.json",
+                    "unsupported",
+                )
+                .await,
+            );
         }
-        std_fs::rename(&temp_path, &output).map_err(|e| format!("save mrpack error: {e}"))?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("mrpack export task failed: {e}"))??;
 
-    Ok(output_for_result.to_string_lossy().to_string())
+        let mut dependencies = BTreeMap::new();
+        dependencies.insert("minecraft".to_string(), instance.version.clone());
+        if let Some((dependency, version)) =
+            loader_dependency(&instance.loader, instance.loader_version.as_deref())?
+        {
+            dependencies.insert(dependency, version);
+        }
+
+        let pack_name = if options.include_name && !instance.name.trim().is_empty() {
+            instance.name.clone()
+        } else {
+            "ScreenLauncher Build".to_string()
+        };
+        let index = MrpackIndex {
+            format_version: 1,
+            game: "minecraft".to_string(),
+            version_id: "1.0.0".to_string(),
+            name: pack_name,
+            summary: Some("Exported by ScreenLauncher".to_string()),
+            files,
+            dependencies,
+        };
+
+        let mut screen_meta = get_instance_export_data(instance.id.clone()).await?;
+        screen_meta.name = if options.include_name {
+            screen_meta.name
+        } else {
+            String::new()
+        };
+        screen_meta.ram = if options.include_ram {
+            screen_meta.ram
+        } else {
+            0
+        };
+        if !options.include_java_args {
+            screen_meta.java_args = None;
+        }
+        if !options.include_java_path {
+            screen_meta.java_path = None;
+        }
+        if !options.include_environment_variables {
+            screen_meta.environment_variables.clear();
+        }
+        if !options.include_window {
+            screen_meta.window_width = None;
+            screen_meta.window_height = None;
+            screen_meta.fullscreen = false;
+        }
+        screen_meta.mods.clear();
+        screen_meta.shaders.clear();
+        screen_meta.resource_packs.clear();
+
+        let output = PathBuf::from(&output_path);
+        let indexed = index
+            .files
+            .iter()
+            .map(|file| file.path.to_ascii_lowercase())
+            .collect::<HashSet<_>>();
+        let index_raw = serde_json::to_vec_pretty(&index)
+            .map_err(|e| format!("serialize mrpack index error: {e}"))?;
+        let meta_raw = serde_json::to_vec_pretty(&screen_meta)
+            .map_err(|e| format!("serialize ScreenLauncher metadata error: {e}"))?;
+        let game_dir_for_zip = game_dir.clone();
+        let options_for_zip = options.clone();
+        let output_for_result = output.clone();
+
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            if let Some(parent) = output.parent() {
+                std_fs::create_dir_all(parent)
+                    .map_err(|e| format!("create mrpack output directory error: {e}"))?;
+            }
+            let temp_path = output.with_extension("mrpack.part");
+            if temp_path.exists() {
+                let _ = std_fs::remove_file(&temp_path);
+            }
+            let file = File::create(&temp_path).map_err(|e| format!("create mrpack error: {e}"))?;
+            let mut zip = ZipWriter::new(file);
+            let zip_options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .unix_permissions(0o644);
+
+            zip.start_file(INDEX_FILE, zip_options)
+                .map_err(|e| format!("write mrpack index entry error: {e}"))?;
+            zip.write_all(&index_raw)
+                .map_err(|e| format!("write mrpack index error: {e}"))?;
+            zip.start_file(SCREEN_META_FILE, zip_options)
+                .map_err(|e| format!("write ScreenLauncher metadata entry error: {e}"))?;
+            zip.write_all(&meta_raw)
+                .map_err(|e| format!("write ScreenLauncher metadata error: {e}"))?;
+            add_overrides_to_zip(
+                &mut zip,
+                &game_dir_for_zip,
+                &game_dir_for_zip,
+                &indexed,
+                &options_for_zip,
+                zip_options,
+            )?;
+            zip.finish()
+                .map_err(|e| format!("finish mrpack error: {e}"))?;
+
+            if output.exists() {
+                std_fs::remove_file(&output).map_err(|e| format!("replace mrpack error: {e}"))?;
+            }
+            std_fs::rename(&temp_path, &output).map_err(|e| format!("save mrpack error: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("mrpack export task failed: {e}"))??;
+
+        Ok(output_for_result.to_string_lossy().to_string())
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn verify_download(path: &Path, hashes: &HashMap<String, String>) -> Result<(), String> {
@@ -848,11 +864,15 @@ pub async fn import_mrpack(
     operation_id: String,
     path: String,
     options: MrpackImportOptions,
-) -> Result<InstanceItem, String> {
-    let context = ImportContext::start(app, operation_id).await?;
-    let result = import_mrpack_inner(path, options, &context).await;
-    context.finish().await;
-    result
+) -> Result<InstanceItem, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let context = ImportContext::start(app, operation_id).await?;
+        let result = import_mrpack_inner(path, options, &context).await;
+        context.finish().await;
+        result
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn import_mrpack_inner(

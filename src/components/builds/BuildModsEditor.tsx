@@ -5,6 +5,7 @@ import type { InstalledModView } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 import { logger } from "../../utils/logger";
 import "./BuildModsEditor.css";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   instanceId: string | null;
@@ -32,6 +33,7 @@ function ModIcon({ src, title }: { src?: string | null; title: string }) {
 }
 
 export function BuildModsEditor({ instanceId, loader }: Props) {
+  const tr = useTranslation();
   const [mods, setMods] = useState<InstalledModView[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -91,8 +93,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
     if (!instanceId) {
       return (
         <div className="bme-empty">
-          <strong>NO BUILD YET</strong>
-          <p>Сохрани сборку, чтобы управлять её модами.</p>
+          <strong>{tr("buildMods.noBuildYet")}</strong>
+          <p>{tr("buildMods.saveTheBuildTo")}</p>
         </div>
       );
     }
@@ -100,8 +102,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
     if (isVanilla) {
       return (
         <div className="bme-empty">
-          <strong>VANILLA</strong>
-          <p>Ванильные сборки не используют моды.</p>
+          <strong>{tr("buildMods.vanilla")}</strong>
+          <p>{tr("buildMods.vanillaBuildsDontUse")}</p>
         </div>
       );
     }
@@ -109,8 +111,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
     if (loading) {
       return (
         <div className="bme-empty">
-          <strong>LOADING</strong>
-          <p>Читаю установленные моды.</p>
+          <strong>{tr("buildMods.loading")}</strong>
+          <p>{tr("buildMods.readingInstalledMods")}</p>
         </div>
       );
     }
@@ -118,7 +120,7 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
     if (error) {
       return (
         <div className="bme-empty">
-          <strong>ERROR</strong>
+          <strong>{tr("buildMods.error")}</strong>
           <p>{error}</p>
         </div>
       );
@@ -127,8 +129,8 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
     if (mods.length === 0) {
       return (
         <div className="bme-empty">
-          <strong>EMPTY</strong>
-          <p>В этой сборке пока нет установленных модов.</p>
+          <strong>{tr("buildMods.empty")}</strong>
+          <p>{tr("buildMods.thisBuildHasNo")}</p>
         </div>
       );
     }
@@ -150,13 +152,17 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
                 </div>
                 <div className="bme-row-actions">
                   <em className="bme-source">
-                    {mod.enabled ? mod.source.toUpperCase() : "OFF"}
+                    {mod.enabled ? mod.source.toUpperCase() : tr("common.offCaps")}
                   </em>
                   <button
                     type="button"
                     className={`bme-toggle ${mod.enabled ? "enabled" : ""}`}
-                    data-tooltip={mod.enabled ? "Отключить мод" : "Включить мод"}
-                    aria-label={mod.enabled ? "Отключить мод" : "Включить мод"}
+                    data-tooltip={
+                      mod.enabled ? tr("buildMods.disableMod") : tr("buildMods.enableMod")
+                    }
+                    aria-label={
+                      mod.enabled ? tr("buildMods.disableMod") : tr("buildMods.enableMod")
+                    }
                     aria-pressed={mod.enabled}
                     disabled={busy}
                     onClick={() => void toggleMod(mod.filename, !mod.enabled)}
@@ -177,12 +183,12 @@ export function BuildModsEditor({ instanceId, loader }: Props) {
       <div className="bme-panel">
         <div className="bme-panel-head">
           <div className="bme-panel-title">
-            <span className="brs-panel-kicker">MODS</span>
-            <strong>INSTALLED</strong>
+            <span className="brs-panel-kicker">{tr("common.modsCaps")}</span>
+            <strong>{tr("buildMods.installed")}</strong>
           </div>
           {instanceId && !isVanilla && (
             <span className="bme-count">
-              {enabledCount}/{mods.length} ON
+              {enabledCount}/{mods.length} {tr("common.onCaps")}
             </span>
           )}
         </div>

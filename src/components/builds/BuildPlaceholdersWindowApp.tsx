@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../appearance/useAppearance";
 import { logger } from "../../utils/logger";
+import { useLocale, useTranslation, Trans } from "../../i18n/locale";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { usePinnedPaperDrag } from "./usePinnedPaperDrag";
 import {
@@ -55,6 +56,8 @@ function CopyIcon({ copied }: { copied: boolean }) {
 
 export function BuildPlaceholdersWindowApp() {
   useAppearance();
+  const locale = useLocale();
+  const tr = useTranslation();
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<GuidePlaceholderGroup | "all">("all");
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export function BuildPlaceholdersWindowApp() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLElement>(null);
   const startDrag = usePinnedPaperDrag(paperRef, dragAnimationEnabled);
-  const placeholders = findGuidePlaceholders(query, group);
+  const placeholders = findGuidePlaceholders(query, group, locale);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -106,7 +109,7 @@ export function BuildPlaceholdersWindowApp() {
   }
 
   return (
-    <main className="bpg-surface" lang="ru">
+    <main className="bpg-surface" lang={locale}>
       <article
         className="bpg-paper"
         aria-labelledby="bpg-title"
@@ -120,9 +123,9 @@ export function BuildPlaceholdersWindowApp() {
           <button
             type="button"
             className="bpg-preference-toggle"
-            aria-label="Наклон листа в покое"
+            aria-label={tr("buildPlaceholders.restingTilt")}
             aria-pressed={restTiltEnabled}
-            data-tooltip="Лёгкий наклон листа в покое"
+            data-tooltip={tr("buildPlaceholders.slightTiltOfThe")}
             onClick={toggleRestTilt}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -136,28 +139,32 @@ export function BuildPlaceholdersWindowApp() {
                 transform={restTiltEnabled ? "rotate(-12 7 7)" : undefined}
               />
             </svg>
-            <span>Наклон</span>
-            <span className="bpg-preference-state">{restTiltEnabled ? "Вкл" : "Выкл"}</span>
+            <span>{tr("buildPlaceholders.tilt")}</span>
+            <span className="bpg-preference-state">
+              {restTiltEnabled ? tr("common.on") : tr("common.off")}
+            </span>
           </button>
           <button
             type="button"
             className="bpg-preference-toggle"
-            aria-label="Анимация при перетаскивании"
+            aria-label={tr("buildPlaceholders.dragAnimation")}
             aria-pressed={dragAnimationEnabled}
-            data-tooltip="Качание листа и подъём пина при перетаскивании"
+            data-tooltip={tr("buildPlaceholders.sheetSwayAndPin")}
             onClick={toggleDragAnimation}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <rect x="5" y="2" width="7" height="10" stroke="currentColor" strokeWidth="1.2" />
               <path d="M1 4h2M0 7h3M1 10h2" stroke="currentColor" strokeWidth="1.2" />
             </svg>
-            <span>Анимация</span>
-            <span className="bpg-preference-state">{dragAnimationEnabled ? "Вкл" : "Выкл"}</span>
+            <span>{tr("buildPlaceholders.animation")}</span>
+            <span className="bpg-preference-state">
+              {dragAnimationEnabled ? tr("common.on") : tr("common.off")}
+            </span>
           </button>
           {isTauri() && (
             <button
               type="button"
-              aria-label="Свернуть окно"
+              aria-label={tr("buildPlaceholders.minimizeWindow")}
               onClick={() => void getCurrentWindow().minimize().catch(logger.error)}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -165,7 +172,11 @@ export function BuildPlaceholdersWindowApp() {
               </svg>
             </button>
           )}
-          <button type="button" aria-label="Закрыть окно" onClick={closeGuide}>
+          <button
+            type="button"
+            aria-label={tr("buildPlaceholders.closeWindow")}
+            onClick={closeGuide}
+          >
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
               <path d="m3 3 8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" />
             </svg>
@@ -178,9 +189,9 @@ export function BuildPlaceholdersWindowApp() {
               startDrag(event);
           }}
         >
-          <span className="bpg-kicker">SCREENLAUNCHER · ПАМЯТКА</span>
-          <h1 id="bpg-title">Плейсхолдеры</h1>
-          <p>Подставляют данные в текст. Нажми на код, чтобы скопировать.</p>
+          <span className="bpg-kicker">{tr("buildPlaceholders.screenlauncherCheatSheet")}</span>
+          <h1 id="bpg-title">{tr("buildPlaceholders.placeholders")}</h1>
+          <p>{tr("buildPlaceholders.theyInsertDataInto")}</p>
         </header>
 
         <div className="bpg-controls">
@@ -191,41 +202,43 @@ export function BuildPlaceholdersWindowApp() {
             </svg>
             <input
               type="search"
-              aria-label="Найти плейсхолдер"
-              placeholder="Найти по названию или смыслу…"
+              aria-label={tr("buildPlaceholders.findAPlaceholder")}
+              placeholder={tr("buildPlaceholders.searchByNameOr")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <nav className="bpg-filters" aria-label="Группы плейсхолдеров">
-            {[{ id: "all" as const, label: "Все" }, ...PLACEHOLDER_GUIDE_GROUPS].map((item) => (
+          <nav className="bpg-filters" aria-label={tr("buildPlaceholders.placeholderGroups")}>
+            {(["all", ...PLACEHOLDER_GUIDE_GROUPS] as const).map((item) => (
               <button
-                key={item.id}
+                key={item}
                 type="button"
-                aria-pressed={group === item.id}
-                onClick={() => setGroup(item.id)}
+                aria-pressed={group === item}
+                onClick={() => setGroup(item)}
               >
-                {item.label}
+                {item === "all"
+                  ? tr("buildPlaceholders.all")
+                  : tr(`placeholderGuide.group.${item}`)}
               </button>
             ))}
           </nav>
           <div className="bpg-case-note">
             {group === "bot" ? (
-              <span>Эти плейсхолдеры работают только в сообщении Mineflayer-бота при входе.</span>
+              <span>{tr("buildPlaceholders.thesePlaceholdersOnlyWork")}</span>
             ) : (
               <>
                 <code>^%build_loader%</code>
                 <span>→</span>
                 <strong>FABRIC</strong>
                 <span>
-                  Знак <code>^</code> делает буквы заглавными.
+                  <Trans k="buildPlaceholders.caretHint" values={{ caret: <code>^</code> }} />
                 </span>
               </>
             )}
           </div>
           {copyError && (
             <p className="bpg-copy-error" role="alert">
-              Не удалось скопировать. Можно выделить код и скопировать вручную.
+              {tr("buildPlaceholders.copyFailedYouCan")}
             </p>
           )}
         </div>
@@ -233,11 +246,11 @@ export function BuildPlaceholdersWindowApp() {
         <div className="bpg-list-shell" ref={scrollRef}>
           <CustomScrollArea className="bpg-scroll">
             {PLACEHOLDER_GUIDE_GROUPS.map((item) => {
-              const entries = placeholders.filter((placeholder) => placeholder.group === item.id);
+              const entries = placeholders.filter((placeholder) => placeholder.group === item);
               if (entries.length === 0) return null;
               return (
-                <section className="bpg-group" key={item.id} aria-labelledby={`bpg-${item.id}`}>
-                  <h2 id={`bpg-${item.id}`}>{item.label}</h2>
+                <section className="bpg-group" key={item} aria-labelledby={`bpg-${item}`}>
+                  <h2 id={`bpg-${item}`}>{tr(`placeholderGuide.group.${item}`)}</h2>
                   <dl className="bpg-entries">
                     {entries.map((placeholder) => (
                       <div className="bpg-entry" key={placeholder.key}>
@@ -253,8 +266,12 @@ export function BuildPlaceholdersWindowApp() {
                                 key={token}
                                 type="button"
                                 className={`bpg-token ${copiedToken === token ? "bpg-token--copied" : ""}`}
-                                aria-label={`Скопировать ${token}`}
-                                data-tooltip={copiedToken === token ? "Скопировано" : "Скопировать"}
+                                aria-label={tr("buildPlaceholders.copy", { token })}
+                                data-tooltip={
+                                  copiedToken === token
+                                    ? tr("buildPlaceholders.copied")
+                                    : tr("buildPlaceholders.copy2")
+                                }
                                 onClick={() => void copyToken(token)}
                               >
                                 <code>{token}</code>
@@ -263,7 +280,7 @@ export function BuildPlaceholdersWindowApp() {
                             ))}
                           </div>
                         </dt>
-                        <dd>{getPlaceholderGuideDescription(placeholder)}</dd>
+                        <dd>{getPlaceholderGuideDescription(placeholder, locale)}</dd>
                       </div>
                     ))}
                   </dl>
@@ -271,12 +288,12 @@ export function BuildPlaceholdersWindowApp() {
               );
             })}
             {placeholders.length === 0 && (
-              <p className="bpg-empty">Ничего не найдено. Попробуй другое слово.</p>
+              <p className="bpg-empty">{tr("buildPlaceholders.nothingFoundTryAnother")}</p>
             )}
           </CustomScrollArea>
         </div>
         <span className="bpg-copy-status" role="status" aria-live="polite">
-          {copiedToken ? `Скопировано: ${copiedToken}` : ""}
+          {copiedToken ? `${tr("buildPlaceholders.copied")}: ${copiedToken}` : ""}
         </span>
       </article>
     </main>

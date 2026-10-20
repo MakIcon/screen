@@ -305,7 +305,11 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
             }
         }
         "production_started" => {
-            if runtime.last_error.as_deref().is_some_and(|message| message.starts_with("production:")) {
+            if runtime
+                .last_error
+                .as_deref()
+                .is_some_and(|message| message.starts_with("production:"))
+            {
                 runtime.last_error = None;
             }
         }
@@ -315,7 +319,9 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
                 .or(event.message)
                 .unwrap_or_else(|| "unknown worker error".to_string());
             runtime.last_error = Some(message.clone());
-            if runtime.state != "connected" { runtime.state = "error".to_string(); }
+            if runtime.state != "connected" {
+                runtime.state = "error".to_string();
+            }
             push_log(runtime, format!("error: {message}"));
         }
         "end" => {
@@ -340,12 +346,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
     }
 }
 
-fn apply_worker_line(
-    runtime: &mut MineflayerBotRuntime,
-    line: &str,
-    label: &str,
-    generation: u64,
-) {
+fn apply_worker_line(runtime: &mut MineflayerBotRuntime, line: &str, label: &str, generation: u64) {
     // Output from a stopped worker must not overwrite a newer connection.
     if runtime.generation != generation {
         return;
@@ -366,8 +367,7 @@ fn spawn_log_reader<R>(
     state: Arc<Mutex<MineflayerBotRuntime>>,
     label: &'static str,
     generation: u64,
-)
-where
+) where
     R: std::io::Read + Send + 'static,
 {
     thread::spawn(move || {
@@ -515,20 +515,25 @@ fn node_executable() -> &'static str {
 #[tauri::command]
 pub async fn get_mineflayer_bot_status(
     state: State<'_, MineflayerBotState>,
-) -> Result<MineflayerBotStatus, String> {
-    current_status(&state)
+) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async { current_status(&state) }.await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 // Keep the full registry/textures out of the frequently polled status snapshot.
 #[tauri::command]
 pub async fn get_minecraft_catalog(
     state: State<'_, MineflayerBotState>,
-) -> Result<Option<serde_json::Value>, String> {
-    let runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
-    Ok(runtime.catalog.clone())
+) -> Result<Option<serde_json::Value>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        Ok(runtime.catalog.clone())
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -536,9 +541,12 @@ pub async fn send_mineflayer_bot_chat(
     state: State<'_, MineflayerBotState>,
     message: String,
     command: Option<bool>,
-) -> Result<(), String> {
-    let message = validate_chat_message(&message)?;
-    send_worker_request(state, serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "message": message })).await
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let message = validate_chat_message(&message)?;
+        send_worker_request(state, serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "message": message })).await
+    }.await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -547,17 +555,27 @@ pub async fn control_mineflayer_bot_workflow(
     action: String,
     steps: Option<serde_json::Value>,
     name: Option<String>,
-) -> Result<(), String> {
-    validate_workflow_request(&action, steps.as_ref())?;
-    send_worker_request(state, serde_json::json!({ "type": "workflow", "action": action, "steps": steps, "name": name })).await
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        validate_workflow_request(&action, steps.as_ref())?;
+        send_worker_request(state, serde_json::json!({ "type": "workflow", "action": action, "steps": steps, "name": name })).await
+    }.await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
-fn validate_workflow_request(action: &str, steps: Option<&serde_json::Value>) -> Result<(), String> {
+fn validate_workflow_request(
+    action: &str,
+    steps: Option<&serde_json::Value>,
+) -> Result<(), String> {
     if !["start", "pause", "resume", "stop"].contains(&action) {
         return Err("Неизвестное действие сценария".to_string());
     }
-    if action == "start" && !steps.and_then(|value| value.as_array())
-        .map(|items| !items.is_empty() && items.len() <= WORKFLOW_STEP_LIMIT).unwrap_or(false) {
+    if action == "start"
+        && !steps
+            .and_then(|value| value.as_array())
+            .map(|items| !items.is_empty() && items.len() <= WORKFLOW_STEP_LIMIT)
+            .unwrap_or(false)
+    {
         return Err("Добавьте от 1 до 100 шагов".to_string());
     }
     Ok(())
@@ -567,11 +585,27 @@ fn validate_workflow_request(action: &str, steps: Option<&serde_json::Value>) ->
 pub async fn configure_mineflayer_bot_storage(
     state: State<'_, MineflayerBotState>,
     groups: Vec<crate::models::MineflayerStorageGroup>,
-) -> Result<(), String> {
-    if groups.len() > 32 || groups.iter().any(|group| group.chests.len() > 32 || group.filters.len() > 64 || group.name.chars().count() > 64) {
-        return Err("Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой".to_string());
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        if groups.len() > 32
+            || groups.iter().any(|group| {
+                group.chests.len() > 32
+                    || group.filters.len() > 64
+                    || group.name.chars().count() > 64
+            })
+        {
+            return Err(
+                "Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой".to_string(),
+            );
+        }
+        send_worker_request(
+            state,
+            serde_json::json!({ "type": "storage_config", "groups": groups }),
+        )
+        .await
     }
-    send_worker_request(state, serde_json::json!({ "type": "storage_config", "groups": groups })).await
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn send_worker_request(
@@ -595,10 +629,7 @@ async fn send_worker_request(
             .as_mut()
             .and_then(|child| child.stdin.as_mut())
             .ok_or_else(|| "Канал отправки сообщений боту недоступен".to_string())?;
-        write_worker_message(
-            stdin,
-            &payload,
-        )?;
+        write_worker_message(stdin, &payload)?;
         runtime.pending_chat.insert(request_id.clone(), reply);
     }
 
@@ -617,29 +648,33 @@ async fn send_worker_request(
 #[tauri::command]
 pub async fn stop_mineflayer_bot(
     state: State<'_, MineflayerBotState>,
-) -> Result<MineflayerBotStatus, String> {
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
 
-    runtime.generation += 1;
-    if let Some(mut child) = runtime.child.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+        runtime.generation += 1;
+        if let Some(mut child) = runtime.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        fail_pending_chat(&mut runtime);
+
+        runtime.pid = None;
+        runtime.state = "stopped".to_string();
+        runtime.inventory_url = None;
+        runtime.inventory = None;
+        runtime.gathering = None;
+        runtime.catalog = None;
+        push_log(&mut runtime, "stop requested from launcher");
+        publish_status(&mut runtime);
+        Ok(snapshot_status(&runtime))
     }
-
-    fail_pending_chat(&mut runtime);
-
-    runtime.pid = None;
-    runtime.state = "stopped".to_string();
-    runtime.inventory_url = None;
-    runtime.inventory = None;
-    runtime.gathering = None;
-    runtime.catalog = None;
-    push_log(&mut runtime, "stop requested from launcher");
-    publish_status(&mut runtime);
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -649,190 +684,196 @@ pub async fn start_mineflayer_bot(
     launcher_nickname: String,
     launcher_account_type: String,
     launcher_ms_account_id: Option<String>,
-) -> Result<MineflayerBotStatus, String> {
-    let settings = read_settings().await?;
-    let plugin = settings.plugins.mineflayer_bot;
+) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let plugin = settings.plugins.mineflayer_bot;
 
-    if !plugin.enabled {
-        return Err("Mineflayer Bot extension is disabled".to_string());
-    }
+        if !plugin.enabled {
+            return Err("Mineflayer Bot extension is disabled".to_string());
+        }
 
-    let host = plugin.host.trim().to_string();
-    if host.is_empty() {
-        return Err("Set a server host for the bot".to_string());
-    }
+        let host = plugin.host.trim().to_string();
+        if host.is_empty() {
+            return Err("Set a server host for the bot".to_string());
+        }
 
-    if plugin.port == 0 {
-        return Err("Server port must be between 1 and 65535".to_string());
-    }
+        if plugin.port == 0 {
+            return Err("Server port must be between 1 and 65535".to_string());
+        }
 
-    let command_prefix = clean_player_name(&plugin.command_prefix, "!");
-    let command_source = match plugin.command_source.trim().to_ascii_lowercase().as_str() {
-        "chat" => "chat",
-        "whisper" => "whisper",
-        _ => "both",
-    }
-    .to_string();
-    let owner_name = resolve_owner_name(
-        &launcher_nickname,
-        &launcher_account_type,
-        launcher_ms_account_id.as_deref(),
-    )
-    .await?;
-    let account = resolve_bot_account(
-        &plugin,
-        &launcher_account_type,
-        launcher_ms_account_id.as_deref(),
-    )
-    .await?;
-    let bot_username = account.username.clone();
-    let server_label = format!("{}:{}", host, plugin.port);
-    let version = clean_player_name(&plugin.version, "");
-    let config = WorkerConfig {
-        combat: plugin.combat.clone(),
-        server: WorkerServerConfig {
-            host,
-            port: plugin.port,
-            version: if version.is_empty() {
-                None
-            } else {
-                Some(version)
+        let command_prefix = clean_player_name(&plugin.command_prefix, "!");
+        let command_source = match plugin.command_source.trim().to_ascii_lowercase().as_str() {
+            "chat" => "chat",
+            "whisper" => "whisper",
+            _ => "both",
+        }
+        .to_string();
+        let owner_name = resolve_owner_name(
+            &launcher_nickname,
+            &launcher_account_type,
+            launcher_ms_account_id.as_deref(),
+        )
+        .await?;
+        let account = resolve_bot_account(
+            &plugin,
+            &launcher_account_type,
+            launcher_ms_account_id.as_deref(),
+        )
+        .await?;
+        let bot_username = account.username.clone();
+        let server_label = format!("{}:{}", host, plugin.port);
+        let version = clean_player_name(&plugin.version, "");
+        let config = WorkerConfig {
+            combat: plugin.combat.clone(),
+            server: WorkerServerConfig {
+                host,
+                port: plugin.port,
+                version: if version.is_empty() {
+                    None
+                } else {
+                    Some(version)
+                },
             },
-        },
-        owner_name: owner_name.clone(),
-        account,
-        commands: WorkerCommandConfig {
-            prefix: command_prefix,
-            source: command_source,
-            extra_owners: parse_extra_owners(&plugin.extra_owners),
-            cooldown_ms: plugin.command_cooldown_ms.min(10_000),
-            send_feedback: plugin.send_chat_feedback,
-            allow_say: plugin.allow_say_command,
-            allow_quit: plugin.allow_quit_command,
-        },
-        movement: WorkerMovementConfig {
-            follow_distance: plugin.follow_distance.clamp(1, 16),
-            goto_radius: plugin.goto_radius.clamp(1, 16),
-            allow_sprinting: plugin.allow_sprinting,
-            allow_low_ceiling_jumps: plugin.allow_low_ceiling_jumps,
-            allow_parkour: plugin.allow_parkour,
-            allow_air_strafe: plugin.allow_air_strafe,
-            can_dig: plugin.can_dig,
-            max_drop_down: plugin.max_drop_down.clamp(1, 16),
-            allow_water_drop: plugin.allow_water_drop,
-            allow_bucket_water_drop: plugin.allow_bucket_water_drop,
-        },
-        connection: WorkerConnectionConfig {
-            auto_reconnect: plugin.auto_reconnect,
-            reconnect_delay_ms: u64::from(plugin.reconnect_delay_seconds.clamp(1, 300)) * 1_000,
-            max_reconnect_attempts: plugin.max_reconnect_attempts.min(100),
-            check_timeout_interval_ms: u64::from(plugin.connect_timeout_seconds.clamp(5, 300))
-                * 1_000,
-            auto_respawn: plugin.auto_respawn,
-        },
-        behavior: WorkerBehaviorConfig {
-            stay_on_water: plugin.stay_on_water,
-            anti_knockback: plugin.anti_knockback,
-            auto_follow_on_spawn: plugin.auto_follow_on_spawn,
-            announce_on_spawn: plugin.announce_on_spawn,
-            spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),
-            log_path_updates: plugin.log_path_updates,
-        },
-        survival: plugin.survival.clone(),
-        gathering: crate::models::MineflayerGatheringSettings {
-            tunnel_width: plugin.gathering.tunnel_width.clamp(1, 3),
-            tunnel_height: plugin.gathering.tunnel_height.clamp(2, 4),
-            stair_width: plugin.gathering.stair_width.clamp(1, 3),
-            stair_height: plugin.gathering.stair_height.clamp(3, 4),
-            place_torches: plugin.gathering.place_torches,
-            torch_interval: plugin.gathering.torch_interval.clamp(4, 16),
-            defend_mobs: plugin.gathering.defend_mobs,
-            defend_players: plugin.gathering.defend_players,
-            defend_arrows: plugin.gathering.defend_arrows,
-            storage_groups: plugin.gathering.storage_groups.clone(),
-        },
-    };
+            owner_name: owner_name.clone(),
+            account,
+            commands: WorkerCommandConfig {
+                prefix: command_prefix,
+                source: command_source,
+                extra_owners: parse_extra_owners(&plugin.extra_owners),
+                cooldown_ms: plugin.command_cooldown_ms.min(10_000),
+                send_feedback: plugin.send_chat_feedback,
+                allow_say: plugin.allow_say_command,
+                allow_quit: plugin.allow_quit_command,
+            },
+            movement: WorkerMovementConfig {
+                follow_distance: plugin.follow_distance.clamp(1, 16),
+                goto_radius: plugin.goto_radius.clamp(1, 16),
+                allow_sprinting: plugin.allow_sprinting,
+                allow_low_ceiling_jumps: plugin.allow_low_ceiling_jumps,
+                allow_parkour: plugin.allow_parkour,
+                allow_air_strafe: plugin.allow_air_strafe,
+                can_dig: plugin.can_dig,
+                max_drop_down: plugin.max_drop_down.clamp(1, 16),
+                allow_water_drop: plugin.allow_water_drop,
+                allow_bucket_water_drop: plugin.allow_bucket_water_drop,
+            },
+            connection: WorkerConnectionConfig {
+                auto_reconnect: plugin.auto_reconnect,
+                reconnect_delay_ms: u64::from(plugin.reconnect_delay_seconds.clamp(1, 300)) * 1_000,
+                max_reconnect_attempts: plugin.max_reconnect_attempts.min(100),
+                check_timeout_interval_ms: u64::from(plugin.connect_timeout_seconds.clamp(5, 300))
+                    * 1_000,
+                auto_respawn: plugin.auto_respawn,
+            },
+            behavior: WorkerBehaviorConfig {
+                stay_on_water: plugin.stay_on_water,
+                anti_knockback: plugin.anti_knockback,
+                auto_follow_on_spawn: plugin.auto_follow_on_spawn,
+                announce_on_spawn: plugin.announce_on_spawn,
+                spawn_message: plugin.spawn_message.trim().chars().take(200).collect(),
+                log_path_updates: plugin.log_path_updates,
+            },
+            survival: plugin.survival.clone(),
+            gathering: crate::models::MineflayerGatheringSettings {
+                tunnel_width: plugin.gathering.tunnel_width.clamp(1, 3),
+                tunnel_height: plugin.gathering.tunnel_height.clamp(2, 4),
+                stair_width: plugin.gathering.stair_width.clamp(1, 3),
+                stair_height: plugin.gathering.stair_height.clamp(3, 4),
+                place_torches: plugin.gathering.place_torches,
+                torch_interval: plugin.gathering.torch_interval.clamp(4, 16),
+                defend_mobs: plugin.gathering.defend_mobs,
+                defend_players: plugin.gathering.defend_players,
+                defend_arrows: plugin.gathering.defend_arrows,
+                storage_groups: plugin.gathering.storage_groups.clone(),
+            },
+        };
 
-    let (worker, runtime_dir) = worker_path()?;
-    if !worker.exists() {
-        return Err(format!("Mineflayer worker not found: {}", worker.display()));
-    }
+        let (worker, runtime_dir) = worker_path()?;
+        if !worker.exists() {
+            return Err(format!("Mineflayer worker not found: {}", worker.display()));
+        }
 
-    {
-        let mut runtime = state.inner.lock()
+        {
+            let mut runtime = state
+                .inner
+                .lock()
+                .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+            refresh_child_state(&mut runtime);
+            if runtime.child.is_some() {
+                return Err("Mineflayer bot is already running".to_string());
+            }
+        }
+        super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
+        super::optional_extensions::ensure_mineflayer_dependencies(&runtime_dir).await?;
+
+        let mut runtime = state
+            .inner
+            .lock()
             .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
         refresh_child_state(&mut runtime);
         if runtime.child.is_some() {
             return Err("Mineflayer bot is already running".to_string());
         }
+
+        let mut command = Command::new(node_executable());
+        command
+            .arg("--no-deprecation")
+            .arg(&worker)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        command.current_dir(&runtime_dir);
+        command.env("NODE_PATH", runtime_dir.join("node_modules"));
+
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = command.spawn().map_err(|error| {
+            format!("start node worker error: {error}. Install Node.js 22+ and retry.")
+        })?;
+
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "failed to open bot worker stdin".to_string())?;
+        if let Err(error) = write_worker_message(stdin, &config) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("write bot config error: {error}"));
+        }
+
+        runtime.app = Some(app);
+        runtime.generation += 1;
+        let generation = runtime.generation;
+        if let Some(stdout) = child.stdout.take() {
+            spawn_log_reader(stdout, state.inner.clone(), "stdout", generation);
+        }
+        if let Some(stderr) = child.stderr.take() {
+            spawn_log_reader(stderr, state.inner.clone(), "stderr", generation);
+        }
+
+        runtime.child = Some(child);
+        runtime.pid = runtime.child.as_ref().map(|child| child.id());
+        runtime.state = "starting".to_string();
+        runtime.owner_name = Some(owner_name);
+        runtime.bot_username = Some(bot_username);
+        runtime.server = Some(server_label);
+        runtime.last_error = None;
+        runtime.logs.clear();
+        runtime.inventory_url = None;
+        runtime.inventory = None;
+        runtime.gathering = None;
+        runtime.catalog = None;
+        push_log(&mut runtime, "start requested from launcher");
+        publish_status(&mut runtime);
+        spawn_exit_watcher(state.inner.clone(), generation);
+
+        Ok(snapshot_status(&runtime))
     }
-    super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
-    super::optional_extensions::ensure_mineflayer_dependencies(&runtime_dir).await?;
-
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
-    refresh_child_state(&mut runtime);
-    if runtime.child.is_some() {
-        return Err("Mineflayer bot is already running".to_string());
-    }
-
-    let mut command = Command::new(node_executable());
-    command
-        .arg("--no-deprecation")
-        .arg(&worker)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    command.current_dir(&runtime_dir);
-    command.env("NODE_PATH", runtime_dir.join("node_modules"));
-
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = command.spawn().map_err(|error| {
-        format!("start node worker error: {error}. Install Node.js 22+ and retry.")
-    })?;
-
-    let stdin = child
-        .stdin
-        .as_mut()
-        .ok_or_else(|| "failed to open bot worker stdin".to_string())?;
-    if let Err(error) = write_worker_message(stdin, &config) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!("write bot config error: {error}"));
-    }
-
-    runtime.app = Some(app);
-    runtime.generation += 1;
-    let generation = runtime.generation;
-    if let Some(stdout) = child.stdout.take() {
-        spawn_log_reader(stdout, state.inner.clone(), "stdout", generation);
-    }
-    if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(stderr, state.inner.clone(), "stderr", generation);
-    }
-
-    runtime.child = Some(child);
-    runtime.pid = runtime.child.as_ref().map(|child| child.id());
-    runtime.state = "starting".to_string();
-    runtime.owner_name = Some(owner_name);
-    runtime.bot_username = Some(bot_username);
-    runtime.server = Some(server_label);
-    runtime.last_error = None;
-    runtime.logs.clear();
-    runtime.inventory_url = None;
-    runtime.inventory = None;
-    runtime.gathering = None;
-    runtime.catalog = None;
-    push_log(&mut runtime, "start requested from launcher");
-    publish_status(&mut runtime);
-    spawn_exit_watcher(state.inner.clone(), generation);
-
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]
@@ -955,7 +996,10 @@ mod tests {
 
     #[test]
     fn worker_progress_inventory_and_command_errors_keep_connected_controls_available() {
-        let mut runtime = MineflayerBotRuntime { state: "connected".into(), ..Default::default() };
+        let mut runtime = MineflayerBotRuntime {
+            state: "connected".into(),
+            ..Default::default()
+        };
         for json in [
             serde_json::json!({ "type": "gathering", "gathering": { "phase": "dig", "mined": 3 } }),
             serde_json::json!({ "type": "inventory", "inventoryUrl": "http://127.0.0.1:12345/" }),
@@ -967,12 +1011,24 @@ mod tests {
         }
         assert_eq!(runtime.state, "connected");
         assert_eq!(runtime.gathering.as_ref().unwrap()["mined"], 3);
-        assert_eq!(runtime.inventory_url.as_deref(), Some("http://127.0.0.1:12345/"));
+        assert_eq!(
+            runtime.inventory_url.as_deref(),
+            Some("http://127.0.0.1:12345/")
+        );
         assert_eq!(runtime.inventory.as_ref().unwrap()["health"], 6);
         assert_eq!(runtime.inventory.as_ref().unwrap()["food"], 18);
-        assert_eq!(runtime.catalog.as_ref().unwrap()["entries"][0]["name"], "diamond_ore");
-        assert!(serde_json::to_value(super::snapshot_status(&runtime)).unwrap().get("catalog").is_none());
-        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "end" })).unwrap());
+        assert_eq!(
+            runtime.catalog.as_ref().unwrap()["entries"][0]["name"],
+            "diamond_ore"
+        );
+        assert!(serde_json::to_value(super::snapshot_status(&runtime))
+            .unwrap()
+            .get("catalog")
+            .is_none());
+        update_from_worker_event(
+            &mut runtime,
+            serde_json::from_value(serde_json::json!({ "type": "end" })).unwrap(),
+        );
         assert!(runtime.inventory_url.is_none());
         assert!(runtime.inventory.is_none());
         assert!(runtime.gathering.is_none());
@@ -981,17 +1037,30 @@ mod tests {
 
     #[test]
     fn a_new_production_job_clears_only_the_previous_production_error() {
-        let mut runtime = MineflayerBotRuntime { state: "connected".into(), last_error: Some("production: missing ingredient".into()), ..Default::default() };
-        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap());
+        let mut runtime = MineflayerBotRuntime {
+            state: "connected".into(),
+            last_error: Some("production: missing ingredient".into()),
+            ..Default::default()
+        };
+        update_from_worker_event(
+            &mut runtime,
+            serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap(),
+        );
         assert!(runtime.last_error.is_none());
         runtime.last_error = Some("connection failed".into());
-        update_from_worker_event(&mut runtime, serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap());
+        update_from_worker_event(
+            &mut runtime,
+            serde_json::from_value(serde_json::json!({ "type": "production_started" })).unwrap(),
+        );
         assert_eq!(runtime.last_error.as_deref(), Some("connection failed"));
     }
 
     #[test]
     fn workflow_accepts_100_steps_and_rejects_101_before_sending_to_worker() {
-        let steps = serde_json::json!(vec![serde_json::json!({ "kind": "craft", "item": "stick", "count": 8 }); 100]);
+        let steps = serde_json::json!(vec![
+            serde_json::json!({ "kind": "craft", "item": "stick", "count": 8 });
+            100
+        ]);
         assert!(super::validate_workflow_request("start", Some(&steps)).is_ok());
         let oversized = serde_json::json!(vec![serde_json::json!({ "kind": "return" }); 101]);
         assert!(super::validate_workflow_request("start", Some(&oversized)).is_err());

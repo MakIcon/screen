@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ScreenLauncher — Localization QA</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        font:
+          14px Arial,
+          sans-serif;
+        background: #e9e7e1;
+        color: #222;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      button,
+      select {
+        padding: 8px 12px;
+        font: inherit;
+      }
+      iframe {
+        display: block;
+        border: 1px solid #bbb;
+        background: #f8f7f2;
+      }
+      output {
+        white-space: pre-wrap;
+        line-height: 1.5;
+      }
+      .preview {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+      }
+      aside {
+        max-width: 420px;
+      }
+      .ok {
+        color: #235e37;
+      }
+      .error {
+        color: #aa270b;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Локализация / Localization QA</strong>
+      <label
+        >Язык / Language
+        <select id="language">
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+        </select></label
+      >
+      <label
+        >Ширина / Width
+        <select id="width">
+          <option>560</option>
+          <option selected>640</option>
+          <option>900</option>
+        </select></label
+      >
+      <label
+        >Высота / Height
+        <select id="height">
+          <option>600</option>
+          <option selected>760</option>
+        </select></label
+      >
+      <button id="audit">Проверить все разделы / Check all sections</button>
+    </header>
+    <div class="preview">
+      <iframe
+        id="studio"
+        title="Редактор оформления / Appearance editor"
+        width="640"
+        height="760"
+      ></iframe>
+      <aside>
+        <p>
+          Проверка настоящего редактора на минимальной и обычной ширине. Изменения не сохраняются.
+        </p>
+        <p>Checks the actual editor at minimum and normal widths. Changes are not saved.</p>
+        <output id="result">Выберите язык и ширину, затем запустите проверку.</output>
+      </aside>
+    </div>
+    <script type="module">
+      import { saveLocale } from "/src/i18n/locale.ts";
+
+      const frame = document.getElementById("studio");
+      const result = document.getElementById("result");
+      const language = document.getElementById("language");
+      const width = document.getElementById("width");
+      const height = document.getElementById("height");
+      const button = document.getElementById("audit");
+      const params = new URLSearchParams(location.search);
+      language.value = params.get("lang") === "en" ? "en" : "ru";
+      width.value = ["560", "640", "900"].includes(params.get("width"))
+        ? params.get("width")
+        : "640";
+      saveLocale(language.value);
+      frame.width = width.value;
+      height.value = params.get("height") === "600" ? "600" : "760";
+      frame.height = height.value;
+      frame.src = "/?window=appearance";
+      language.onchange = () => saveLocale(language.value);
+      width.onchange = () => {
+        frame.width = width.value;
+      };
+      height.onchange = () => {
+        frame.height = height.value;
+      };
+
+      const settle = () =>
+        new Promise((resolve) =>
+          frame.contentWindow.requestAnimationFrame(() =>
+            frame.contentWindow.requestAnimationFrame(resolve),
+          ),
+        );
+      const problems = [];
+      function inspect(label) {
+        const doc = frame.contentDocument;
+        for (const el of doc.querySelectorAll(
+          "button, .appearance-studio-titlebar, .appearance-studio-actions, .studio-segmented",
+        )) {
+          const rect = el.getBoundingClientRect();
+          if (!rect.width || !rect.height || el.closest("[hidden]")) continue;
+          if (el.scrollWidth > el.clientWidth + 1)
+            problems.push(
+              `${label}: ${el.textContent.trim().replace(/\s+/g, " ").slice(0, 100)} (${el.scrollWidth}/${el.clientWidth})`,
+            );
+        }
+      }
+      button.onclick = async () => {
+        button.disabled = true;
+        problems.length = 0;
+        result.textContent = "Проверка… / Checking…";
+        try {
+          await frame.contentDocument.fonts.ready;
+          const sections = [
+            ...frame.contentDocument.querySelectorAll(".appearance-studio-categories button"),
+          ];
+          if (!sections.length)
+            throw new Error("Редактор ещё загружается / Editor is still loading");
+          for (const section of sections) {
+            section.click();
+            await settle();
+            inspect(section.textContent.trim().replace(/\s+/g, " "));
+            if (section === sections[0]) {
+              const gradient = [
+                ...frame.contentDocument.querySelectorAll(".studio-segmented button"),
+              ].find((el) => /^(GRADIENT|ГРАДИЕНТ)$/.test(el.textContent.trim()));
+              gradient?.click();
+              await settle();
+              inspect("Gradient editor");
+            }
+          }
+          sections[0]?.click();
+          await settle();
+          result.className = problems.length ? "error" : "ok";
+          result.textContent = problems.length
+            ? `${problems.length} проблем / issues:\n${[...new Set(problems)].join("\n")}`
+            : `✓ ${language.value.toUpperCase()} · ${width.value}×${height.value}px · ${sections.length} разделов / sections\nПереполнений кнопок не найдено.\nNo overflowing buttons found.`;
+          result.dataset.passed = String(problems.length === 0);
+        } catch (error) {
+          result.className = "error";
+          result.textContent = String(error);
+          result.dataset.passed = "false";
+        } finally {
+          button.disabled = false;
+        }
+      };
+    </script>
+  </body>
+</html>

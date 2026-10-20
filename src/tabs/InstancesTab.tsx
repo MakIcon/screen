@@ -26,6 +26,7 @@ import {
 } from "../utils/placeholders";
 import type { DropdownKey, InstanceItem, InstallProgressPayload, LoaderType } from "../types";
 import type { PlaceholderTarget } from "../hooks/usePlaceholders";
+import { useTranslation } from "../i18n/locale";
 
 interface InstancesTabProps {
   // Instance list
@@ -190,6 +191,7 @@ export function InstancesTab({
   setScreenshotsInstanceId,
   openBuildCardSettings,
 }: InstancesTabProps) {
+  const tr = useTranslation();
   const [buildNameDraft, setBuildNameDraft] = useState(selectedInstance?.name ?? "");
   const [renamingBuild, setRenamingBuild] = useState(false);
   useEffect(() => {
@@ -240,13 +242,13 @@ export function InstancesTab({
         {/* ── Instance list ── */}
         <div className="panel-card instances-list-card" data-guide-target="build-library">
           <div className="card-topline build-library-heading">
-            <span className="panel-label">INSTANCE LIBRARY</span>
+            <span className="panel-label">{tr("instances.instanceLibrary")}</span>
             <div className="build-library-actions" data-guide-target="build-library-actions">
               <button
                 className="ghost-action build-library-trash-action"
                 type="button"
-                data-tooltip="Корзина сборок"
-                aria-label="Корзина сборок"
+                data-tooltip={tr("instances.buildTrash")}
+                aria-label={tr("instances.buildTrash")}
                 onClick={onOpenTrash}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -257,13 +259,13 @@ export function InstancesTab({
                     strokeLinejoin="round"
                   />
                 </svg>
-                <span>TRASH</span>
+                <span>{tr("instances.trash")}</span>
               </button>
               <button
                 className="ghost-action icon-square-action"
                 type="button"
-                data-tooltip="Импортировать сборку из файла"
-                aria-label="Импортировать сборку из файла"
+                data-tooltip={tr("instances.importBuildFromFile")}
+                aria-label={tr("instances.importBuildFromFile")}
                 onClick={handleImportBuild}
               >
                 <svg
@@ -290,7 +292,7 @@ export function InstancesTab({
                   setCreateError("");
                 }}
               >
-                CREATE BUILD
+                {tr("instances.createBuild")}
               </button>
             </div>
           </div>
@@ -332,8 +334,8 @@ export function InstancesTab({
 
             {instances.length === 0 ? (
               <div className="empty-state-box">
-                <strong>NO BUILDS YET</strong>
-                <p>Создай первую сборку, чтобы начать установку.</p>
+                <strong>{tr("instances.noBuildsYet")}</strong>
+                <p>{tr("instances.createYourFirstBuild")}</p>
               </div>
             ) : (
               sortedInstances.map((instance) => {
@@ -377,7 +379,9 @@ export function InstancesTab({
                     }}
                     type="button"
                   >
-                    {isDropTarget && <div className="card-drop-overlay">ОТПУСТИ ФАЙЛ</div>}
+                    {isDropTarget && (
+                      <div className="card-drop-overlay">{tr("instances.dropFile")}</div>
+                    )}
                     <BuildCardVerticalBody appearance={cardAppearance}>
                       <div className="instance-card-top">
                         <span
@@ -431,12 +435,12 @@ export function InstancesTab({
           <div className="panel-card instance-details-card" data-guide-target="build-details">
             {showCreator ? (
               <>
-                <span className="panel-label">CREATE NEW BUILD</span>
+                <span className="panel-label">{tr("instances.createNewBuild")}</span>
                 <div className="form-grid single-form-grid">
                   <label className="field">
-                    <span>BUILD NAME</span>
+                    <span>{tr("instances.buildName")}</span>
                     <input
-                      placeholder="My Vanilla Build"
+                      placeholder={tr("instances.myVanillaBuild")}
                       value={createBuildName}
                       onChange={(e) => setCreateBuildName(e.target.value)}
                     />
@@ -449,8 +453,8 @@ export function InstancesTab({
                   data-guide-target="build-create-fields"
                 >
                   <InlineDropdown
-                    label="MC VERSION"
-                    value={createVersion || "SELECT VERSION"}
+                    label={tr("instances.mcVersion")}
+                    value={createVersion || tr("instances.selectVersion")}
                     options={minecraftVersions}
                     isOpen={openDropdown === "create-version"}
                     onToggle={() =>
@@ -464,7 +468,7 @@ export function InstancesTab({
 
                   <div className="create-loader-stack">
                     <InlineDropdown
-                      label="LOADER"
+                      label={tr("instances.loader")}
                       value={createLoader}
                       options={LOADER_OPTIONS}
                       isOpen={openDropdown === "create-loader"}
@@ -485,15 +489,17 @@ export function InstancesTab({
                   <div className="detail-grid detail-grid-create" style={{ marginTop: 24 }}>
                     <div className="detail-block create-loader-detail-block">
                       <span className="detail-title">
-                        {createLoader.toUpperCase()} LOADER VERSION
+                        {createLoader.toUpperCase()} {tr("instances.loaderVersion")}
                       </span>
                       <InlineDropdown
                         label=""
                         value={
                           loaderVersionsLoading
-                            ? "LOADING..."
+                            ? tr("instances.loading")
                             : createLoaderVersion ||
-                              "SELECT " + createLoader.toUpperCase() + " VERSION"
+                              tr("instances.selectLoaderVersion", {
+                                loader: createLoader.toUpperCase(),
+                              })
                         }
                         options={loaderVersions}
                         isOpen={openDropdown === "create-loader-version"}
@@ -526,13 +532,13 @@ export function InstancesTab({
                     onClick={handleCreateBuild}
                     disabled={working}
                     data-mascot-stealable
-                    data-mascot-label="CREATE BUILD"
+                    data-mascot-label={tr("instances.createBuild")}
                   >
-                    {working ? "WORKING..." : "CREATE BUILD"}
+                    {working ? tr("common.working") : tr("instances.createBuild")}
                   </button>
                   {instances.length > 0 && (
                     <button className="ghost-action" onClick={() => setCreateMode(false)}>
-                      CANCEL
+                      {tr("common.cancel")}
                     </button>
                   )}
                   {advancedSettingsEnabled && (
@@ -540,8 +546,8 @@ export function InstancesTab({
                       className="ghost-action icon-square-action settings-icon-action"
                       type="button"
                       onClick={() => openBuildCardSettings(null)}
-                      data-tooltip="Build settings"
-                      aria-label="Build settings"
+                      data-tooltip={tr("instances.buildSettings")}
+                      aria-label={tr("instances.buildSettings")}
                     >
                       <SettingsGearIcon />
                     </button>
@@ -551,14 +557,14 @@ export function InstancesTab({
             ) : (
               <>
                 <div className="card-topline">
-                  <span className="panel-label">BUILD CONFIGURATION</span>
+                  <span className="panel-label">{tr("instances.buildConfiguration")}</span>
                   {selectedInstance && (
                     <button
                       className="ghost-action"
                       type="button"
                       onClick={() => onOpenWorldBackups(selectedInstance.id)}
                     >
-                      WORLD BACKUPS
+                      {tr("instances.worldBackups")}
                     </button>
                   )}
                 </div>
@@ -568,7 +574,7 @@ export function InstancesTab({
                     {renamingBuild ? (
                       <>
                         <label className="field build-name-field">
-                          <span>RENAME BUILD</span>
+                          <span>{tr("instances.renameBuild")}</span>
                           <input
                             autoFocus
                             value={buildNameDraft}
@@ -588,8 +594,8 @@ export function InstancesTab({
                             !buildNameDraft.trim() ||
                             buildNameDraft.trim() === selectedInstance.name
                           }
-                          aria-label="Сохранить новое имя"
-                          data-tooltip="Сохранить новое имя"
+                          aria-label={tr("instances.saveNewName")}
+                          data-tooltip={tr("instances.saveNewName")}
                           onClick={() => void commitBuildRename()}
                         >
                           <ConfirmIcon />
@@ -598,8 +604,8 @@ export function InstancesTab({
                           className="ghost-action build-identity-action"
                           type="button"
                           disabled={working}
-                          aria-label="Отменить переименование"
-                          data-tooltip="Отменить переименование"
+                          aria-label={tr("instances.cancelRename")}
+                          data-tooltip={tr("instances.cancelRename")}
                           onClick={cancelBuildRename}
                         >
                           <CancelIcon />
@@ -608,18 +614,18 @@ export function InstancesTab({
                     ) : (
                       <>
                         <div className="field build-name-field">
-                          <span>BUILD NAME</span>
+                          <span>{tr("instances.buildName")}</span>
                           <div className="build-name-value">{selectedInstance.name}</div>
                         </div>
                         <button
                           className="ghost-action build-identity-action"
                           type="button"
                           disabled={working || isRunning(selectedInstance.id)}
-                          aria-label="Переименовать сборку"
+                          aria-label={tr("instances.renameBuild2")}
                           data-tooltip={
                             isRunning(selectedInstance.id)
-                              ? "Останови сборку перед переименованием"
-                              : "Переименовать сборку"
+                              ? tr("instances.stopTheGameBefore")
+                              : tr("instances.renameBuild2")
                           }
                           onClick={() => setRenamingBuild(true)}
                         >
@@ -631,10 +637,14 @@ export function InstancesTab({
                           disabled={working}
                           aria-pressed={selectedInstance.pinned}
                           aria-label={
-                            selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"
+                            selectedInstance.pinned
+                              ? tr("instances.unpinBuild")
+                              : tr("instances.pinBuild")
                           }
                           data-tooltip={
-                            selectedInstance.pinned ? "Открепить сборку" : "Закрепить сборку"
+                            selectedInstance.pinned
+                              ? tr("instances.unpinBuild")
+                              : tr("instances.pinBuild")
                           }
                           onClick={() =>
                             void handleTogglePin(selectedInstance.id, !selectedInstance.pinned)
@@ -648,7 +658,7 @@ export function InstancesTab({
                 )}
 
                 <BuildConfigurationGrid
-                  buildName={selectedInstance?.name || "NO BUILD"}
+                  buildName={selectedInstance?.name || tr("instances.noBuild")}
                   buildOptions={instances.map((instance) => instance.name)}
                   isOpen={openDropdown === "build"}
                   onToggle={() => setOpenDropdown(openDropdown === "build" ? null : "build")}
@@ -701,7 +711,7 @@ export function InstancesTab({
                       onClick={() => handleLaunchSelected()}
                       disabled={working}
                       data-mascot-stealable
-                      data-mascot-label="PLAY BUILD"
+                      data-mascot-label={tr("buildPlay.playBuild")}
                     />
                   )}
                   <button
@@ -709,27 +719,34 @@ export function InstancesTab({
                     type="button"
                     onClick={handleInstallSelected}
                     disabled={working}
+                    data-tooltip={tr("instances.installHint")}
                     data-mascot-stealable
-                    data-mascot-label="INSTALL"
+                    data-mascot-label={tr("common.install")}
                   >
-                    INSTALL
+                    {tr("common.install")}
                   </button>
-                  <button className="ghost-action" type="button" onClick={handleOpenFolder}>
-                    FOLDER
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={handleOpenFolder}
+                    data-tooltip={tr("instances.folder")}
+                  >
+                    {tr("instances.folder")}
                   </button>
                   <button
                     className="ghost-action"
                     type="button"
                     onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}
+                    data-tooltip={tr("instances.stats")}
                   >
-                    STATS
+                    {tr("instances.stats")}
                   </button>
                   <div className="instance-side-actions">
                     <button
                       className="ghost-action icon-square-action export-action"
                       type="button"
-                      data-tooltip="Экспортировать сборку"
-                      aria-label="Экспортировать сборку"
+                      data-tooltip={tr("instances.exportBuild")}
+                      aria-label={tr("instances.exportBuild")}
                       onClick={() => selectedInstance && handleExportInstance(selectedInstance.id)}
                     >
                       <svg
@@ -753,8 +770,8 @@ export function InstancesTab({
                         className="ghost-action icon-square-action settings-icon-action"
                         type="button"
                         onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
-                        data-tooltip="Build settings"
-                        aria-label="Build settings"
+                        data-tooltip={tr("instances.buildSettings")}
+                        aria-label={tr("instances.buildSettings")}
                       >
                         <SettingsGearIcon />
                       </button>
@@ -762,8 +779,8 @@ export function InstancesTab({
                     <button
                       className="ghost-action icon-square-action screenshots-action"
                       type="button"
-                      data-tooltip="Screenshots"
-                      aria-label="Screenshots"
+                      data-tooltip={tr("instances.screenshots")}
+                      aria-label={tr("instances.screenshots")}
                       onClick={() =>
                         selectedInstance && setScreenshotsInstanceId(selectedInstance.id)
                       }
@@ -787,8 +804,8 @@ export function InstancesTab({
                     <button
                       className="ghost-action icon-square-action trash-action"
                       type="button"
-                      data-tooltip="Удалить сборку"
-                      aria-label="Удалить сборку"
+                      data-tooltip={tr("instances.deleteBuild")}
+                      aria-label={tr("instances.deleteBuild")}
                       disabled={
                         working || (selectedInstance ? isRunning(selectedInstance.id) : false)
                       }
@@ -841,8 +858,8 @@ export function InstancesTab({
                       }
                     >
                       {failedBuildAction.action === "install"
-                        ? "ПОВТОРИТЬ УСТАНОВКУ"
-                        : "ПОВТОРИТЬ ЗАПУСК"}
+                        ? tr("instances.retryInstall")
+                        : tr("instances.retryLaunch")}
                     </button>
                   )}
               </div>

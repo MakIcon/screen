@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import type { InstanceItem, ModrinthModDependencies, ModrinthModDependency } from "../../types";
+import type { InstanceItem, ModrinthModDependencies } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 import { ModrinthProjectIcon } from "./ModrinthProjectIcon";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   projectId: string;
@@ -10,13 +11,8 @@ type Props = {
   busy: boolean;
 };
 
-const STATUS_LABEL: Record<ModrinthModDependency["status"], string> = {
-  download: "Будет скачан",
-  installed: "Уже установлен",
-  enable: "Будет включён",
-};
-
 export function ModrinthDependenciesSection({ projectId, target, busy }: Props) {
+  const tr = useTranslation();
   const [details, setDetails] = useState<ModrinthModDependencies | null>(null);
   const [loading, setLoading] = useState(Boolean(target));
   const [error, setError] = useState("");
@@ -46,11 +42,13 @@ export function ModrinthDependenciesSection({ projectId, target, busy }: Props) 
   return (
     <section
       className="modrinth-detail-dependencies"
-      aria-label="Обязательные зависимости мода"
+      aria-label={tr("modrinthDependencies.requiredModDependencies")}
       aria-busy={loading}
     >
       <div className="modrinth-dependencies-heading">
-        <span className="modrinth-detail-section-label">ОБЯЗАТЕЛЬНЫЕ ЗАВИСИМОСТИ</span>
+        <span className="modrinth-detail-section-label">
+          {tr("modrinthDependencies.requiredDependencies")}
+        </span>
         {!loading && !error && details && (
           <span className="modrinth-dependencies-count">{details.dependencies.length}</span>
         )}
@@ -58,38 +56,39 @@ export function ModrinthDependenciesSection({ projectId, target, busy }: Props) 
       {target && (
         <p className="modrinth-dependencies-context">
           Minecraft {target.version} · {target.loader}
-          {!loading && !error && details && ` · Версия мода ${details.versionNumber}`}
+          {!loading &&
+            !error &&
+            details &&
+            ` · ${tr("modrinthDependencies.modVersion")} ${details.versionNumber}`}
         </p>
       )}
       {!target ? (
-        <p className="modrinth-dependencies-note">
-          Выбери сборку, чтобы увидеть зависимости для её версии Minecraft.
-        </p>
+        <p className="modrinth-dependencies-note">{tr("modrinthDependencies.chooseABuildTo")}</p>
       ) : loading ? (
         <div className="modrinth-dependencies-loading" role="status">
           <span className="catalog-loading-spinner" aria-hidden="true" />
-          Проверяем обязательные зависимости…
+          {tr("modrinthDependencies.checkingRequiredDependencies")}
         </div>
       ) : error ? (
         <div className="modrinth-dependencies-error" role="alert">
-          <p>Не удалось проверить зависимости: {error}</p>
+          <p>
+            {tr("modrinthDependencies.couldNotCheckDependencies")}: {error}
+          </p>
           <button
             className="modrinth-detail-secondary"
             type="button"
             disabled={busy}
             onClick={() => setRetry((value) => value + 1)}
           >
-            Повторить
+            {tr("common.retry")}
           </button>
         </div>
       ) : details?.dependencies.length === 0 ? (
-        <p className="modrinth-dependencies-note">
-          У этой версии мода нет обязательных зависимостей.
-        </p>
+        <p className="modrinth-dependencies-note">{tr("modrinthDependencies.thisModVersionHas")}</p>
       ) : details ? (
         <>
           <p className="modrinth-dependencies-note">
-            Устанавливаются автоматически вместе с модом.
+            {tr("modrinthDependencies.theseInstallAutomaticallyWith")}
           </p>
           <ul className="modrinth-dependencies-list">
             {details.dependencies.map((dependency) => (
@@ -102,14 +101,14 @@ export function ModrinthDependenciesSection({ projectId, target, busy }: Props) 
                 <div className="modrinth-dependency-copy">
                   <strong>{dependency.title}</strong>
                   <span>
-                    Версия {dependency.versionNumber}
-                    {!dependency.direct && " · Вложенная зависимость"}
+                    {tr("modrinthDependencies.version")} {dependency.versionNumber}
+                    {!dependency.direct && tr("modrinthDependencies.transitiveDependency")}
                   </span>
                 </div>
                 <span
                   className={`modrinth-dependency-status modrinth-dependency-status--${dependency.status}`}
                 >
-                  {STATUS_LABEL[dependency.status]}
+                  {tr(`modrinthDependencies.status.${dependency.status}`)}
                 </span>
               </li>
             ))}

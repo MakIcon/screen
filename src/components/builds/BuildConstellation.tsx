@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { translateFor, useLocale, useTranslation } from "../../i18n/locale";
 import { invoke } from "@tauri-apps/api/core";
 import type { InstalledModView, ModrinthSearchResponse } from "../../types";
 import { StatsIcon } from "./StatsIcon";
@@ -102,6 +103,8 @@ export function BuildConstellation({
   loading,
   onContentChange,
 }: Props) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -1123,7 +1126,7 @@ export function BuildConstellation({
           ctx.fillText(label, w.x, by + 3);
           ctx.font = "700 8px Inter, sans-serif";
           ctx.fillStyle = `rgba(${RGB[w.kind]}, 0.95)`;
-          ctx.fillText("ПОЙМАЙ МЕНЯ", w.x, by + 16);
+          ctx.fillText(translateFor(locale, "buildConstellation.catchMe"), w.x, by + 16);
         }
         ctx.globalAlpha = 1;
       }
@@ -1327,7 +1330,10 @@ export function BuildConstellation({
         ctx.setLineDash([]);
 
         const col = active ? "#ef4444" : "rgba(255,255,255,0.82)";
-        const label = active ? "ОТПУСТИ" : "УДАЛИТЬ";
+        const label = translateFor(
+          locale,
+          active ? "buildConstellation.drop" : "common.deleteCaps",
+        );
         const cy = tr.y + tr.h / 2;
         const iconScale = active ? 1.35 : 1.2;
         const iconW = 14 * iconScale;
@@ -1387,19 +1393,22 @@ export function BuildConstellation({
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("dblclick", onDbl);
     };
-  }, [loading, instanceId]);
+  }, [loading, instanceId, locale]);
 
   if (loading)
     return (
       <div className="stats-state" role="status">
-        Загрузка…
+        {tr("common.loading")}
       </div>
     );
 
   return (
     <div className="constellation-root">
       <div className="constellation-toolbar">
-        <div className="constellation-legend" data-tooltip="Линии связывают звёзды одного автора">
+        <div
+          className="constellation-legend"
+          data-tooltip={tr("buildConstellation.linesConnectStarsBy")}
+        >
           {(["mod", "shader", "pack"] as const).map((kind) => (
             <button
               key={kind}
@@ -1409,7 +1418,11 @@ export function BuildConstellation({
               onClick={() => setKindFilter(kindFilter === kind ? "all" : kind)}
             >
               <i style={{ background: COLORS[kind].core }} />
-              {kind === "mod" ? "МОД" : kind === "shader" ? "ШЕЙДЕР" : "РЕС. ПАК"}
+              {kind === "mod"
+                ? tr("buildConstellation.mod")
+                : kind === "shader"
+                  ? tr("buildConstellation.shader")
+                  : tr("buildConstellation.pack")}
             </button>
           ))}
         </div>
@@ -1417,16 +1430,16 @@ export function BuildConstellation({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск"
-            aria-label="Поиск по названию или автору"
+            placeholder={tr("buildConstellation.search")}
+            aria-label={tr("buildConstellation.searchByNameOr")}
           />
         </label>
         <div className="constellation-actions">
           <button
             type="button"
             className={`stats-icon-btn${showLabels ? " active" : ""}`}
-            aria-label="Подписи"
-            data-tooltip="Подписи"
+            aria-label={tr("buildConstellation.labels")}
+            data-tooltip={tr("buildConstellation.labels")}
             aria-pressed={showLabels}
             onClick={() => setShowLabels(!showLabels)}
           >
@@ -1435,8 +1448,8 @@ export function BuildConstellation({
           <button
             type="button"
             className={`stats-icon-btn${paused ? " active" : ""}`}
-            aria-label={paused ? "Продолжить" : "Пауза"}
-            data-tooltip={paused ? "Продолжить" : "Пауза"}
+            aria-label={paused ? tr("buildConstellation.resume") : tr("buildConstellation.pause")}
+            data-tooltip={paused ? tr("buildConstellation.resume") : tr("buildConstellation.pause")}
             aria-pressed={paused}
             onClick={() => setPaused(!paused)}
           >
@@ -1445,8 +1458,8 @@ export function BuildConstellation({
           <button
             type="button"
             className="stats-icon-btn"
-            aria-label="Собрать звёзды"
-            data-tooltip="Собрать звёзды"
+            aria-label={tr("buildConstellation.gatherStars")}
+            data-tooltip={tr("buildConstellation.gatherStars")}
             onClick={() => resetRef.current?.()}
           >
             <StatsIcon name="reset" />
@@ -1471,14 +1484,14 @@ export function BuildConstellation({
             (node) =>
               `${node.label} ${node.author}`.toLowerCase().includes(query.trim().toLowerCase()) &&
               (kindFilter === "all" || kindFilter === node.kind),
-          ) && <span>Нет совпадений</span>}
+          ) && <span>{tr("buildConstellation.noMatches")}</span>}
         </div>
       )}
       <div className="constellation-canvas-wrap" ref={wrapRef}>
         <canvas
           ref={canvasRef}
           role="img"
-          aria-label="Интерактивное созвездие установленного контента. Поиск и кнопки над картой позволяют выделять звёзды."
+          aria-label={tr("buildConstellation.interactiveConstellationOfInstalled")}
         />
       </div>
     </div>

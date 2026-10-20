@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../appearance/useAppearance";
 import type { InstallProgressPayload } from "../../types";
+import { useLocale, useTranslation } from "../../i18n/locale";
+import { installProgressCopy } from "../../utils/installProgress";
 
 export const INSTALL_PROGRESS_WINDOW_LABEL = "install-progress";
 export const INSTALL_PROGRESS_WINDOW_EVENT = "install-progress-window-update";
@@ -42,15 +44,16 @@ function clampProgressPercent(value: number) {
 }
 
 export function InstallProgressWindowApp() {
+  const tr = useTranslation();
+  const locale = useLocale();
   useAppearance();
   const [state, setState] = useState<InstallProgressWindowState>(() =>
     readPersistedInstallProgressState(),
   );
   const progress = state.progress;
-  const phase = progress?.phase.trim().toUpperCase() || "WAITING";
+  const { phase, detail } = installProgressCopy(progress, locale);
   const percent = clampProgressPercent(progress?.percent ?? 0);
-  const detail = progress?.detail.trim() ?? "";
-  const message = state.busyMessage.trim() || detail || "Waiting for build task";
+  const message = detail || tr("progress.waiting");
   const hasCount = Boolean(progress && progress.total > 1);
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export function InstallProgressWindowApp() {
       <div className="install-progress-window-shell">
         <div className="install-progress-titlebar" onMouseDown={startDrag}>
           <div className="install-progress-titlebar-title">
-            <span>BUILD TASK</span>
+            <span>{tr("installProgress.buildTask")}</span>
             <strong>{phase}</strong>
           </div>
           <div
@@ -89,7 +92,7 @@ export function InstallProgressWindowApp() {
             <button
               className="install-progress-window-action"
               type="button"
-              aria-label="Minimize"
+              aria-label={tr("installProgress.minimize")}
               onClick={() => void getCurrentWindow().minimize()}
             >
               -
@@ -97,7 +100,7 @@ export function InstallProgressWindowApp() {
             <button
               className="install-progress-window-action install-progress-window-action--close"
               type="button"
-              aria-label="Close"
+              aria-label={tr("common.close2")}
               onClick={() => void getCurrentWindow().close()}
             >
               x
@@ -109,7 +112,9 @@ export function InstallProgressWindowApp() {
           {progress ? (
             <>
               <div className="install-progress-message-card">
-                <span className="install-progress-card-label">CURRENT STEP</span>
+                <span className="install-progress-card-label">
+                  {tr("installProgress.currentStep")}
+                </span>
                 <p>{message}</p>
               </div>
 
@@ -123,7 +128,7 @@ export function InstallProgressWindowApp() {
                 </div>
                 {hasCount && (
                   <div className="download-progress-meta">
-                    <span>{detail || "Working"}</span>
+                    <span>{detail || tr("progress.working")}</span>
                     <strong>
                       {progress.current} / {progress.total}
                     </strong>
@@ -132,7 +137,7 @@ export function InstallProgressWindowApp() {
               </div>
             </>
           ) : (
-            <p className="install-progress-empty">WAITING FOR BUILD TASK</p>
+            <p className="install-progress-empty">{tr("installProgress.waitingForBuildTask")}</p>
           )}
         </div>
       </div>

@@ -2366,6 +2366,7 @@ button {
 .appearance-studio-actions {
   min-height: 70px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -2376,6 +2377,7 @@ button {
 
 .appearance-save-state {
   min-width: 0;
+  flex: 1 1 140px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2423,14 +2425,20 @@ button {
 
 .appearance-studio-action-buttons {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 300px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
 }
 
 .appearance-studio-actions button {
-  height: 34px;
-  padding: 0 11px;
+  min-height: 34px;
+  height: auto;
+  padding: 8px 11px;
+  line-height: 1.3;
+  white-space: normal;
   border: 1px solid var(--line-strong);
   border-radius: var(--ui-radius);
   background: transparent;

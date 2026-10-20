@@ -1,3 +1,4 @@
+import { appearanceText } from "./localization";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -89,7 +90,7 @@ export async function openAppearanceStudioWindow() {
 
   const studioWindow = new WebviewWindow(APPEARANCE_STUDIO_WINDOW_LABEL, {
     url: getAppearanceStudioWindowUrl(),
-    title: "ScreenLauncher — Appearance Studio",
+    title: appearanceText("ScreenLauncher — Appearance Studio"),
     width: APPEARANCE_STUDIO_WIDTH,
     height: APPEARANCE_STUDIO_HEIGHT,
     minWidth: 560,

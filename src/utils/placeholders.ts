@@ -1,6 +1,8 @@
 import { formatLastPlayed, formatPlaytime } from "./playtime";
+import { intlLocale, isPlainMessageKey, translateFor, type Locale } from "../i18n/locale";
 
 export type PlaceholderContext = {
+  locale?: Locale;
   launcherName: string;
   launcherRamGb: number;
   systemRamGb: number;
@@ -186,7 +188,7 @@ export const AVAILABLE_PLACEHOLDERS: readonly PlaceholderDefinition[] = [
     key: "build_source",
     token: "%build_source%",
     label: "BUILD SOURCE",
-    description: "Where the build metadata came from, currently Official.",
+    description: "Build origin: Official for a new build, Imported for an imported build.",
     group: "build",
   },
   {
@@ -249,21 +251,6 @@ export type PlaceholderTemplateSegment =
 
 export type PlaceholderTemplateCase = "none" | "value" | "uppercase" | "mixed";
 
-const FRIENDLY_PLACEHOLDER_VALUES: Record<string, string> = {
-  empty: "Empty",
-  fabric: "Fabric",
-  forge: "Forge",
-  microsoft: "Microsoft",
-  neoforge: "NeoForge",
-  offline: "Offline",
-  official: "Official",
-  quilt: "Quilt",
-  ready: "Ready",
-  running: "Running",
-  updating: "Updating",
-  vanilla: "Vanilla",
-};
-
 const PLACEHOLDER_BY_KEY = new Map<string, PlaceholderDefinition>();
 for (const definition of AVAILABLE_PLACEHOLDERS) {
   PLACEHOLDER_BY_KEY.set(definition.key, definition);
@@ -280,12 +267,12 @@ const placeholderValueAttributesCache = new WeakMap<
   PlaceholderValueAttributes
 >();
 
-function toFriendlyPlaceholderValue(value: string): string {
+function toFriendlyPlaceholderValue(value: string, locale: Locale = "en"): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
 
-  const mapped = FRIENDLY_PLACEHOLDER_VALUES[trimmed.toLowerCase()];
-  if (mapped) return mapped;
+  const key = `placeholderValue.${trimmed.toLowerCase()}`;
+  if (isPlainMessageKey(key)) return translateFor(locale, key);
 
   if (/^[A-Z0-9_\-\s]+$/.test(trimmed)) {
     return trimmed
@@ -297,10 +284,11 @@ function toFriendlyPlaceholderValue(value: string): string {
   return trimmed;
 }
 
-function formatBuildCreated(raw: string): string {
+function formatBuildCreated(raw: string, locale: Locale = "en"): string {
   const timestamp = Number.parseInt(raw, 10);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Unknown";
-  return new Date(timestamp * 1_000).toLocaleDateString("en-US", {
+  if (!Number.isFinite(timestamp) || timestamp <= 0)
+    return translateFor(locale, "placeholderValue.unknown");
+  return new Date(timestamp * 1_000).toLocaleDateString(intlLocale(locale), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -333,11 +321,11 @@ function resolvePlaceholderValue(key: string, ctx: PlaceholderContext): string |
     case "build_version":
       return ctx.buildVersion;
     case "build_loader":
-      return toFriendlyPlaceholderValue(ctx.buildLoader);
+      return toFriendlyPlaceholderValue(ctx.buildLoader, ctx.locale);
     case "build_loader_version":
       return ctx.buildLoaderVersion || "—";
     case "build_full_loader": {
-      const loader = toFriendlyPlaceholderValue(ctx.buildLoader);
+      const loader = toFriendlyPlaceholderValue(ctx.buildLoader, ctx.locale);
       return ctx.buildLoaderVersion ? `${loader} ${ctx.buildLoaderVersion}` : loader;
     }
     case "build_ram":
@@ -345,21 +333,21 @@ function resolvePlaceholderValue(key: string, ctx: PlaceholderContext): string |
     case "build_ram_value":
       return `${ctx.buildRam}`;
     case "build_playtime":
-      return formatPlaytime(ctx.buildPlaytimeSecs);
+      return formatPlaytime(ctx.buildPlaytimeSecs, ctx.locale);
     case "build_last_played":
-      return formatLastPlayed(ctx.buildLastPlayed);
+      return formatLastPlayed(ctx.buildLastPlayed, ctx.locale);
     case "build_created":
-      return formatBuildCreated(ctx.buildCreatedAt);
+      return formatBuildCreated(ctx.buildCreatedAt, ctx.locale);
     case "build_status":
-      return toFriendlyPlaceholderValue(ctx.buildStatus);
+      return toFriendlyPlaceholderValue(ctx.buildStatus, ctx.locale);
     case "build_state":
-      return toFriendlyPlaceholderValue(ctx.buildState);
+      return toFriendlyPlaceholderValue(ctx.buildState, ctx.locale);
     case "build_source":
-      return toFriendlyPlaceholderValue(ctx.buildSource);
+      return toFriendlyPlaceholderValue(ctx.buildSource, ctx.locale);
     case "account_type":
-      return toFriendlyPlaceholderValue(ctx.accountType);
+      return toFriendlyPlaceholderValue(ctx.accountType, ctx.locale);
     case "total_playtime":
-      return formatPlaytime(ctx.totalPlaytimeSecs);
+      return formatPlaytime(ctx.totalPlaytimeSecs, ctx.locale);
     case "total_builds":
       return `${ctx.totalBuilds}`;
     case "total_modded_builds":

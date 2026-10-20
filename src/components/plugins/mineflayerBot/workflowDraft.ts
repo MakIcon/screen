@@ -1,22 +1,35 @@
 import type { MineflayerWorkflowStep } from "../../../types";
+import { translate, type PlainMessageKey } from "../../../i18n/locale";
+
+type Translate = (key: PlainMessageKey) => string;
 
 export type WorkflowDraftStep = MineflayerWorkflowStep & { id: string };
 export { workflowTemplate } from "./workflowPresets";
 export const WORKFLOW_DRAFT_KEY = "screenlauncher.mineflayer.workflow.v1";
 export const WORKFLOW_STEP_LIMIT = 100;
 export const WORKFLOW_ACTIONS = [
-  { kind: "mine", label: "Добыть блоки", note: "Руды, камень и другие блоки" },
-  { kind: "forest", label: "Заготовить дерево", note: "Срубить и подобрать брёвна" },
-  { kind: "till", label: "Вспахать землю", note: "Подготовить грядки рядом с водой" },
-  { kind: "plant", label: "Посадить семена", note: "Засадить пустые грядки" },
-  { kind: "harvest", label: "Собрать урожай", note: "Только зрелые растения, с пересадкой" },
-  { kind: "farm", label: "Обработать огород", note: "Собрать, вспахать и посадить за один проход" },
-  { kind: "craft", label: "Скрафтить", note: "Ингредиенты и инструменты" },
-  { kind: "smelt", label: "Переплавить", note: "Металлы, еда и материалы" },
-  { kind: "return", label: "Вернуться к старту", note: "К месту запуска сценария" },
-  { kind: "collect", label: "Подобрать предметы", note: "Собрать дроп поблизости" },
-  { kind: "deposit", label: "Сложить в сундуки", note: "Выгрузить на настроенный склад" },
+  { kind: "mine" },
+  { kind: "forest" },
+  { kind: "till" },
+  { kind: "plant" },
+  { kind: "harvest" },
+  { kind: "farm" },
+  { kind: "craft" },
+  { kind: "smelt" },
+  { kind: "return" },
+  { kind: "collect" },
+  { kind: "deposit" },
 ] as const;
+
+/** Display name of a workflow action; components pass their `tr` so the text follows the language. */
+export const workflowActionLabel = (
+  kind: MineflayerWorkflowStep["kind"],
+  tr: Translate = translate,
+) => tr(`bot.action.${kind}.label`);
+export const workflowActionNote = (
+  kind: MineflayerWorkflowStep["kind"],
+  tr: Translate = translate,
+) => tr(`bot.action.${kind}.note`);
 
 export function newWorkflowStep(kind: MineflayerWorkflowStep["kind"]): WorkflowDraftStep {
   const defaults: Record<MineflayerWorkflowStep["kind"], MineflayerWorkflowStep> = {

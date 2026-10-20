@@ -1,5 +1,6 @@
 import type { EnvironmentVariable } from "../../types";
 import { getEnvironmentVariablesError } from "../../utils/environmentVariables";
+import { useLocale, useTranslation } from "../../i18n/locale";
 
 type Props = {
   entries: EnvironmentVariable[];
@@ -7,7 +8,9 @@ type Props = {
 };
 
 export function BuildEnvironmentVariablesEditor({ entries, onChange }: Props) {
-  const error = getEnvironmentVariablesError(entries);
+  const locale = useLocale();
+  const tr = useTranslation();
+  const error = getEnvironmentVariablesError(entries, locale);
   const update = (index: number, changes: Partial<EnvironmentVariable>) => {
     onChange(
       entries.map((entry, current) => (current === index ? { ...entry, ...changes } : entry)),
@@ -17,56 +20,56 @@ export function BuildEnvironmentVariablesEditor({ entries, onChange }: Props) {
   return (
     <section className="brs-section brs-environment-section">
       <div className="brs-section-head">
-        <span>ENVIRONMENT</span>
+        <span>{tr("buildEnvironmentVariables.environment")}</span>
         <button
           className="brs-compact-action"
           type="button"
           onClick={() => onChange([...entries, { name: "", value: "" }])}
         >
-          ADD
+          {tr("buildEnvironmentVariables.add")}
         </button>
       </div>
-      <p className="brs-note">
-        Переменные передаются игре при запуске. Значения вводятся как есть, без кавычек и
-        подстановок.
-      </p>
+      <p className="brs-note">{tr("buildEnvironmentVariables.variablesArePassedTo")}</p>
       {entries.length === 0 && (
-        <p className="brs-note">
-          Используется окружение системы. Добавьте переменную, чтобы переопределить её для этой
-          сборки.
-        </p>
+        <p className="brs-note">{tr("buildEnvironmentVariables.theSystemEnvironmentIs")}</p>
       )}
       {entries.map((entry, index) => (
         <div className="brs-env-entry" key={index}>
           <div className="brs-env-name-row">
             <label className="brs-field">
-              <span>NAME</span>
+              <span>{tr("buildEnvironmentVariables.name")}</span>
               <input
                 value={entry.name}
                 placeholder="VARIABLE_NAME"
                 spellCheck={false}
                 autoComplete="off"
-                aria-label={`Environment variable ${index + 1} name`}
+                aria-label={tr("buildEnvironmentVariables.nameLabel", {
+                  label: tr("buildEnvironmentVariables.environmentVariable"),
+                  index: index + 1,
+                })}
                 onChange={(event) => update(index, { name: event.target.value })}
               />
             </label>
             <button
               className="brs-compact-action"
               type="button"
-              aria-label={`Remove environment variable ${index + 1}`}
+              aria-label={`${tr("buildEnvironmentVariables.removeEnvironmentVariable")} ${index + 1}`}
               onClick={() => onChange(entries.filter((_, current) => current !== index))}
             >
-              REMOVE
+              {tr("common.remove")}
             </button>
           </div>
           <label className="brs-field">
-            <span>VALUE</span>
+            <span>{tr("buildEnvironmentVariables.value")}</span>
             <input
               value={entry.value}
-              placeholder="Значение (можно оставить пустым)"
+              placeholder={tr("buildEnvironmentVariables.valueCanBeEmpty")}
               spellCheck={false}
               autoComplete="off"
-              aria-label={`Environment variable ${index + 1} value`}
+              aria-label={tr("buildEnvironmentVariables.valueLabel", {
+                label: tr("buildEnvironmentVariables.environmentVariable2"),
+                index: index + 1,
+              })}
               onChange={(event) => update(index, { value: event.target.value })}
             />
           </label>

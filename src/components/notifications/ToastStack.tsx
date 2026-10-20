@@ -1,10 +1,5 @@
 import type { Toast, ToastKind } from "../../hooks/useToasts";
-
-const DEFAULT_TITLE: Record<ToastKind, string> = {
-  info: "DONE",
-  warning: "HEADS UP",
-  error: "ERROR",
-};
+import { useTranslation } from "../../i18n/locale";
 
 function ToastIcon({ kind }: { kind: ToastKind }) {
   if (kind === "error") {
@@ -51,10 +46,11 @@ export function ToastStack({
   toasts: Toast[];
   onDismiss: (id: number) => void;
 }) {
+  const tr = useTranslation();
   if (toasts.length === 0) return null;
 
   return (
-    <div className="toast-stack" role="region" aria-label="Notifications">
+    <div className="toast-stack" role="region" aria-label={tr("toast.notifications")}>
       {toasts.map((toast) => (
         <div
           key={toast.id}
@@ -65,13 +61,13 @@ export function ToastStack({
             <ToastIcon kind={toast.kind} />
           </span>
           <div className="toast-body">
-            <span className="toast-title">{toast.title ?? DEFAULT_TITLE[toast.kind]}</span>
+            <span className="toast-title">{toast.title ?? tr(`toast.default.${toast.kind}`)}</span>
             <span className="toast-message">{toast.message}</span>
           </div>
           <button
             type="button"
             className="toast-close"
-            aria-label="Dismiss"
+            aria-label={tr("toast.dismiss")}
             onClick={() => onDismiss(toast.id)}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">

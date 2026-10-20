@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { useAppearanceComponentSettings } from "../../appearance/useAppearanceComponentSettings";
 import "./ElementToggle.css";
+import { useTranslation } from "../../i18n/locale";
 
 interface ElementToggleProps {
   title: string;
@@ -39,6 +40,7 @@ export function ElementToggle({
   onToggleExpanded,
   guideTarget,
 }: ElementToggleProps) {
+  const tr = useTranslation();
   const { settings, appearanceProps } = useAppearanceComponentSettings("toggle", {
     title,
     note,
@@ -71,7 +73,10 @@ export function ElementToggle({
             onClick={onToggleExpanded}
             aria-expanded={expanded}
             aria-controls={expandedControls}
-            aria-label={`${expanded ? "Скрыть" : "Показать"} дополнительные настройки ${settings.title}`}
+            aria-label={tr("elementToggle.toggleSettings", {
+              action: expanded ? tr("elementToggle.hide") : tr("elementToggle.show"),
+              title: settings.title,
+            })}
           >
             <svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true">
               <path d="m1 1.5 5 5 5-5" stroke="currentColor" strokeWidth="1.4" />

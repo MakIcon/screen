@@ -18,7 +18,8 @@ import {
   subscribePluginSettings,
 } from "./components/plugins/pluginSettingsSync";
 import "./App.css";
-import { TAB_INDEX, TAB_ORDER, TAB_TITLE } from "./constants/tabs";
+import { TAB_INDEX, TAB_ORDER } from "./constants/tabs";
+import { useLocale, useTranslation } from "./i18n/locale";
 import { useWindowPhase } from "./hooks/useWindowPhase";
 import { AUTO_UPDATE_DELAY_MS, useLauncherUpdater } from "./updater/useLauncherUpdater";
 import { LauncherUpdateOverlay } from "./updater/LauncherUpdateOverlay";
@@ -32,7 +33,7 @@ import {
   environmentVariablesToEntries,
   environmentVariablesToRecord,
 } from "./utils/environmentVariables";
-import { toErrorMessage } from "./utils/errors";
+import { toErrorDetails, toErrorMessage } from "./utils/errors";
 import { loadStartupValue } from "./utils/launcherStartup";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -90,7 +91,7 @@ import type {
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
 import { LauncherGuide } from "./components/guide/LauncherGuide";
-import { LAUNCHER_GUIDE_STEPS } from "./components/guide/launcherGuideSteps";
+import { LAUNCHER_GUIDE_STEPS, localizeGuideSteps } from "./components/guide/launcherGuideSteps";
 import { useToasts } from "./hooks/useToasts";
 import { formatLastPlayed } from "./utils/playtime";
 import {
@@ -186,6 +187,10 @@ const CLOSE_EFFECT_CLASS: Record<CloseAnimationId, string> = {
 };
 
 export default function App() {
+  const locale = useLocale();
+  const tr = useTranslation();
+  const tabTitle = (tab: TabKey) => tr(`tabs.${tab}`);
+  const localizedGuideSteps = useMemo(() => localizeGuideSteps(LAUNCHER_GUIDE_STEPS, tr), [tr]);
   const [phase, setPhase] = useState("init");
   const [closeEffect, setCloseEffect] = useState<CloseAnimationId | null>(null);
   const [previewCloseEffect, setPreviewCloseEffect] = useState<CloseAnimationId | null>(null);
@@ -388,11 +393,11 @@ export default function App() {
       const instanceName =
         initialSnapshot?.instanceName ||
         instances.find((instance) => instance.id === id)?.name ||
-        "Build logs";
+        tr("ui.buildLogs");
 
       const logWindow = new WebviewWindow(label, {
         url: getBuildLogsWindowUrl(id, payloadKey),
-        title: `${instanceName} logs`,
+        title: `${instanceName} · ${tr("ui.buildLogs")}`,
         width: 1040,
         height: 740,
         minWidth: 720,
@@ -408,11 +413,11 @@ export default function App() {
       });
       void logWindow.once("tauri://error", (event) => {
         logger.error("log window create failed", event.payload);
-        setActionError(`Log window failed: ${String(event.payload)}`);
+        setActionError(tr("errors.log_window"));
       });
     } catch (error) {
       logger.error("open build logs failed", error);
-      setActionError(`Log window failed: ${toErrorMessage(error)}`);
+      setActionError(tr("errors.log_window"));
     }
   };
 
@@ -823,11 +828,11 @@ export default function App() {
     if (result.status === "up-to-date") {
       pushToast(
         "info",
-        `Установлена последняя версия${launcherUpdater.currentVersion ? ` ${launcherUpdater.currentVersion}` : ""}.`,
-        { title: "Up to date" },
+        `${tr("app.youHaveTheLatest")}${launcherUpdater.currentVersion ? ` ${launcherUpdater.currentVersion}` : ""}.`,
+        { title: tr("toast.upToDate") },
       );
     } else if (result.status === "error") {
-      pushToast("error", result.message, { title: "Update check failed" });
+      pushToast("error", result.message, { title: tr("toast.updateCheckFailed") });
     }
   };
 
@@ -853,11 +858,11 @@ export default function App() {
 
     const nextName = (changes.name ?? target.name).trim();
     if (!nextName) {
-      setActionError("Build name is empty");
+      setActionError(tr("errors.name_required"));
       return false;
     }
     if (changes.name !== undefined && isRunning(id)) {
-      setActionError("Stop the build before renaming it");
+      setActionError(tr("instances.stopTheGameBefore"));
       return false;
     }
 
@@ -930,9 +935,10 @@ export default function App() {
           playerName: activePlayerName,
           accountType: overrides.accountType ?? accountType,
           buildState: overrides.buildState ?? "",
+          locale,
         }),
       ),
-    [accountType, activePlayerName, instances, settingsRamDraft, systemRamGb],
+    [accountType, activePlayerName, instances, settingsRamDraft, systemRamGb, locale],
   );
 
   const createPreviewName = createBuildName.trim() || "MY BUILD";
@@ -1124,7 +1130,7 @@ export default function App() {
 
         const progressWindow = new WebviewWindow(INSTALL_PROGRESS_WINDOW_LABEL, {
           url: getInstallProgressWindowUrl(),
-          title: "Build task",
+          title: tr("dialog.buildTask"),
           width: 520,
           height: 238,
           minWidth: 420,
@@ -1154,7 +1160,7 @@ export default function App() {
     };
 
     void syncProgressWindow();
-  }, [busyMessage, installProgress]);
+  }, [busyMessage, installProgress, tr]);
   useEffect(() => {
     const unlistenExit = win.listen<MinecraftExitPayload>("minecraft-process-exited", (event) => {
       const payload = event.payload;
@@ -1365,7 +1371,7 @@ export default function App() {
         setLoaderVersions(versions);
         if (versions.length === 0) {
           setCreateError(
-            "No compatible " + createLoader + " versions for Minecraft " + createVersion,
+            tr("app.noCompatibleLoader", { loader: createLoader, version: createVersion }),
           );
         }
         setCreateLoaderVersion((current) => {
@@ -1387,7 +1393,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [createLoader, createVersion]);
+  }, [createLoader, createVersion, tr]);
 
   useEffect(() => {
     const processes = runtimeMonitor.snapshot?.processes;
@@ -1523,9 +1529,9 @@ export default function App() {
 
   const handleCustomizeAppearance = useCallback(() => {
     void openAppearanceStudioWindow().catch((error) => {
-      pushToast("error", toErrorMessage(error), { title: "Couldn't open Appearance Studio" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntOpenAppearanceStudio") });
     });
-  }, [pushToast]);
+  }, [pushToast, tr]);
 
   useEffect(() => {
     const openStudioFromShortcut = (event: KeyboardEvent) => {
@@ -1623,7 +1629,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save RAM" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveRam") });
     }
   };
 
@@ -1634,7 +1640,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save setting" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveSetting") });
     }
   };
 
@@ -1645,7 +1651,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save setting" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveSetting") });
     }
   };
 
@@ -1656,7 +1662,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save mascot setting" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveMascotSetting") });
     }
   };
 
@@ -1667,7 +1673,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save mascot settings" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveMascotSettings") });
     }
   };
 
@@ -1680,7 +1686,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save network" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveNetwork") });
       throw error;
     }
   };
@@ -1701,7 +1707,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't save plugins" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSavePlugins") });
     }
   };
 
@@ -1712,22 +1718,22 @@ export default function App() {
 
       const cleanName = createBuildName.trim();
       if (!cleanName) {
-        setCreateError("Введите название сборки");
+        setCreateError(tr("app.enterABuildName"));
         return;
       }
 
       if (!createVersion) {
-        setCreateError("Выберите версию Minecraft");
+        setCreateError(tr("app.chooseAMinecraftVersion"));
         return;
       }
 
       if (createLoader !== "Vanilla" && !createLoaderVersion) {
-        setCreateError("Выберите версию " + createLoader + " Loader");
+        setCreateError(tr("app.chooseALoaderVersion", { createLoader }));
         return;
       }
 
       setWorking(true);
-      setBusyMessage("Creating build...");
+      setBusyMessage(tr("app.creatingBuild"));
       const createRuntime = createRuntimeSettingsTouched
         ? normalizeRuntimeSettingsDraft(
             {
@@ -1778,12 +1784,16 @@ export default function App() {
         fullscreen: false,
       });
       setCreateRuntimeSettingsTouched(false);
-      setBusyMessage("Build created");
-      pushToast("info", `Сборка ${cleanName} создана`, { title: "Build created" });
+      setBusyMessage(tr("app.buildCreated"));
+      pushToast("info", tr("app.buildCreatedCleanName", { cleanName }), {
+        title: tr("app.buildCreated"),
+      });
     } catch (error) {
       logger.error(error);
       setCreateError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Create failed" });
+      pushToast("error", toErrorMessage(error), {
+        title: tr("app.createFailed"),
+      });
     } finally {
       setWorking(false);
     }
@@ -1801,9 +1811,9 @@ export default function App() {
         current: 0,
         total: 1,
         percent: 0,
-        detail: "Preparing install",
+        detail: tr("progress.preparingInstall"),
       });
-      setBusyMessage("Installing Minecraft files...");
+      setBusyMessage(tr("app.installingMinecraftFiles"));
 
       await invoke<ActionResult>("install_instance", { instanceId: selectedInstance.id });
       await refreshInstances(selectedInstance.id);
@@ -1813,17 +1823,19 @@ export default function App() {
         current: 1,
         total: 1,
         percent: 100,
-        detail: "Install complete",
+        detail: tr("progress.installComplete"),
       });
-      setBusyMessage("Install finished");
-      pushToast("info", `Файлы ${selectedInstance.name} установлены`, {
-        title: "Install complete",
+      setBusyMessage(tr("app.installFinished"));
+      pushToast("info", tr("app.filesInstalled", { name: selectedInstance.name }), {
+        title: tr("app.installComplete"),
       });
     } catch (error) {
       logger.error(error);
       setFailedBuildAction({ id: selectedInstance.id, action: "install" });
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Install failed" });
+      pushToast("error", toErrorMessage(error), {
+        title: tr("app.installFailed"),
+      });
       await refreshInstances(selectedInstance.id).catch((refreshError) =>
         logger.error(refreshError),
       );
@@ -1840,7 +1852,7 @@ export default function App() {
     const target = instanceToLaunch ?? selectedInstance;
     if (!target) return;
     if (accountType === "MICROSOFT" && !activeMsAccountId) {
-      setActionError("Select a Microsoft account before launching");
+      setActionError(tr("app.selectAMicrosoftAccount"));
       setShowMsModal(true);
       return;
     }
@@ -1856,9 +1868,9 @@ export default function App() {
         current: 0,
         total: 1,
         percent: 0,
-        detail: "Preparing launch",
+        detail: tr("progress.preparingLaunch"),
       });
-      setBusyMessage("Installing/checking files and launching...");
+      setBusyMessage(tr("progress.checkingAndLaunching"));
 
       const result = await invoke<ActionResult>("launch_instance", {
         instanceId: target.id,
@@ -1876,16 +1888,18 @@ export default function App() {
         current: 1,
         total: 1,
         percent: 100,
-        detail: "Launch complete",
+        detail: tr("progress.launchComplete"),
       });
-      setBusyMessage("Minecraft launched");
-      pushToast("info", `${target.name} запущена`, { title: "Minecraft launched" });
+      setBusyMessage(tr("app.minecraftLaunched"));
+      pushToast("info", tr("app.launched", { name: target.name }), {
+        title: tr("app.minecraftLaunched"),
+      });
     } catch (error) {
       logger.error(error);
       const message = toErrorMessage(error);
       setFailedBuildAction({ id: target.id, action: "launch" });
       setActionError(message);
-      pushToast("error", message, { title: `${target.name} failed to start` });
+      pushToast("error", message, { title: tr("app.launchFailedName", { name: target.name }) });
       await refreshInstances(target.id).catch((refreshError) => logger.error(refreshError));
       void openBuildLogs(target.id, {
         instanceId: target.id,
@@ -1894,11 +1908,11 @@ export default function App() {
         exitCode: null,
         runtimeSecs: 0,
         crashed: true,
-        reason: "Minecraft did not start.",
+        reason: tr("app.gameDidNotStart"),
         logPath: null,
         minecraftLogPath: null,
         crashReportPath: null,
-        logTail: message,
+        logTail: toErrorDetails(error),
         crashReportTail: null,
         hint: null,
       });
@@ -1916,13 +1930,13 @@ export default function App() {
     if (pid === undefined) return;
 
     setActionError("");
-    setBusyMessage("Stopping Minecraft...");
+    setBusyMessage(tr("progress.stoppingGame"));
 
     try {
       markIntentionalStop(`${instanceId}:${pid}`);
       const result = await invoke<ActionResult>("stop_instance", { pid });
       if (result.message.includes("force-stopped")) {
-        pushToast("warning", result.message, { title: "Forced stop" });
+        pushToast("warning", result.message, { title: tr("toast.forcedStop") });
       }
     } catch (error) {
       logger.error(error);
@@ -1930,7 +1944,7 @@ export default function App() {
       if (stillAlive) {
         clearIntentionalStop(`${instanceId}:${pid}`);
         setActionError(toErrorMessage(error));
-        pushToast("error", toErrorMessage(error), { title: "Stop failed" });
+        pushToast("error", toErrorMessage(error), { title: tr("toast.stopFailed") });
         setBusyMessage("");
         return;
       }
@@ -1938,9 +1952,9 @@ export default function App() {
 
     const stillAlive = await invoke<boolean>("is_process_alive", { pid }).catch(() => false);
     if (stillAlive) {
-      setActionError("Minecraft is still running after the stop request.");
-      pushToast("warning", "Minecraft всё ещё работает после команды остановки.", {
-        title: "Still running",
+      setActionError(tr("app.minecraftIsStillRunning"));
+      pushToast("warning", tr("app.minecraftIsStillRunning"), {
+        title: tr("app.stillRunning"),
       });
       setBusyMessage("");
       return;
@@ -1953,8 +1967,8 @@ export default function App() {
   const handleDeleteInstance = async (instanceId: string) => {
     if (working) return;
     if (isRunning(instanceId)) {
-      pushToast("warning", "Сначала останови игру, затем перемести сборку в корзину.", {
-        title: "Build is running",
+      pushToast("warning", tr("app.stopTheGameBefore"), {
+        title: tr("app.buildIsRunning"),
       });
       return;
     }
@@ -1972,14 +1986,14 @@ export default function App() {
     try {
       await invoke("delete_instance", { instanceId: id });
       removeRunning(id);
-      pushToast("info", `Сборка ${deletedName} перемещена в корзину`.trim(), {
-        title: "Build moved to trash",
+      pushToast("info", tr("app.buildMovedToTrash", { deletedName }).trim(), {
+        title: tr("app.buildMovedToTrash2"),
       });
       await refreshInstances();
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Delete failed" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.deleteFailed") });
     }
   };
 
@@ -2000,7 +2014,9 @@ export default function App() {
       const restored = await invoke<InstanceItem>("restore_instance", { instanceId: id });
       setDeletedInstances(await invoke<InstanceItem[]>("list_deleted_instances"));
       await refreshInstances(restored.id);
-      pushToast("info", `Сборка ${restored.name} восстановлена`, { title: "Build restored" });
+      pushToast("info", tr("app.buildRestored", { name: restored.name }), {
+        title: tr("app.buildRestored2"),
+      });
     } catch (error) {
       setTrashError(toErrorMessage(error));
     } finally {
@@ -2019,7 +2035,9 @@ export default function App() {
         delete nextAppearances[id];
         await persistBuildCardAppearances(nextAppearances);
       }
-      pushToast("info", "Сборка удалена окончательно", { title: "Build deleted" });
+      pushToast("info", tr("app.buildPermanentlyDeleted"), {
+        title: tr("app.buildDeleted"),
+      });
     } catch (error) {
       setTrashError(toErrorMessage(error));
     } finally {
@@ -2040,8 +2058,8 @@ export default function App() {
       );
       if (nextVisible) setSelectedInstanceId(nextVisible.id);
     }
-    pushToast("warning", `Заяц спрятал ${hiddenName} только из списка — файлы не удалены.`, {
-      title: "Mascot chaos",
+    pushToast("warning", tr("app.theMascotHidFrom", { hiddenName }), {
+      title: tr("app.mascotChaos"),
     });
   };
 
@@ -2054,7 +2072,7 @@ export default function App() {
     } catch (error) {
       logger.error(error);
       setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: "Couldn't open folder" });
+      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntOpenFolder") });
     }
   };
 
@@ -2085,8 +2103,8 @@ export default function App() {
     }
     const contentFiles = paths.filter((p) => /\.(jar|zip)$/i.test(p));
     if (contentFiles.length === 0) {
-      pushToast("warning", "Перетащи .jar/.zip на сборку или .mrpack/.slbuild для импорта", {
-        title: "Nothing to install",
+      pushToast("warning", tr("app.dropJarZipOn"), {
+        title: tr("app.nothingToInstall"),
       });
       return;
     }
@@ -2094,8 +2112,8 @@ export default function App() {
     // selected build so a drop anywhere in the window still lands somewhere.
     const targetId = findInstanceAtPoint(physX, physY) ?? selectedInstanceId ?? null;
     if (!targetId) {
-      pushToast("warning", "Сначала выбери сборку, в которую установить файлы", {
-        title: "No build selected",
+      pushToast("warning", tr("app.chooseABuildFor"), {
+        title: tr("app.noBuildSelected"),
       });
       return;
     }
@@ -2109,7 +2127,7 @@ export default function App() {
         await refreshInstances(targetId);
       }
     } catch (err) {
-      pushToast("error", toErrorMessage(err), { title: "Install failed" });
+      pushToast("error", toErrorMessage(err), { title: tr("toast.installFailed") });
     }
   };
 
@@ -2383,24 +2401,24 @@ export default function App() {
           }
         }}
       >
-        <div className="nav-brand">ARCHIVE // MINECRAFT LAUNCHER</div>
+        <div className="nav-brand">{tr("ui.brand")}</div>
         <div className="nav-controls">
           <button
             onClick={startLauncherGuide}
             type="button"
             data-guide-target="guide-replay"
-            aria-label="Запустить тур по лаунчеру"
+            aria-label={tr("app.startTheLauncherGuide")}
           >
-            GUIDE
+            {tr("app.guide")}
           </button>
           <button onClick={() => void win.minimize()} type="button">
-            MINIMIZE
+            {tr("app.minimize")}
           </button>
           <button onClick={() => void handleMaximize()} type="button">
-            EXPAND
+            {tr("app.expand")}
           </button>
           <button onClick={() => void handleClose()} className="close-btn" type="button">
-            CLOSE
+            {tr("common.close")}
           </button>
         </div>
       </header>
@@ -2410,7 +2428,7 @@ export default function App() {
           <div className="sidebar-main">
             <div className="sidebar-session-summary">
               <div data-guide-target="player-summary">
-                <small>PLAYER</small>
+                <small>{tr("app.player")}</small>
                 <strong
                   data-tooltip={resolve("%player_name%")}
                   data-guide-value
@@ -2420,7 +2438,7 @@ export default function App() {
                 </strong>
               </div>
               <div>
-                <small>BUILD</small>
+                <small>{tr("common.buildCaps")}</small>
                 <strong
                   data-tooltip={resolve("%build_name%")}
                   {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}
@@ -2437,7 +2455,7 @@ export default function App() {
                   ? " legacy-layout"
                   : ""
               }`}
-              aria-label="Launcher sections"
+              aria-label={tr("app.launcherSections")}
               data-guide-target="navigation"
             >
               {TAB_ORDER.map((tab) => (
@@ -2454,7 +2472,7 @@ export default function App() {
                   data-tab-key={tab}
                 >
                   <span>{TAB_INDEX[tab].replace(".", "")}</span>
-                  <strong>{TAB_TITLE[tab]}</strong>
+                  <strong>{tabTitle(tab)}</strong>
                 </button>
               ))}
             </nav>
@@ -2508,8 +2526,8 @@ export default function App() {
       </main>
 
       <footer className="gallery-footer">
-        <div className="footer-left">SCREENLAUNCHER / {TAB_TITLE[activeTab]}</div>
-        <div className="footer-right">CREATE / INSTALL / PLAY ↓</div>
+        <div className="footer-left">SCREENLAUNCHER / {tabTitle(activeTab)}</div>
+        <div className="footer-right">{tr("app.createInstallPlay")}</div>
       </footer>
 
       <Suspense fallback={null}>
@@ -2523,7 +2541,7 @@ export default function App() {
       <LauncherGuide
         active={firstLaunchGuideActive}
         containerRef={galleryRootRef}
-        steps={LAUNCHER_GUIDE_STEPS}
+        steps={localizedGuideSteps}
         onComplete={finishFirstLaunchGuide}
         onSkip={finishFirstLaunchGuide}
         onStepChange={handleGuideStepChange}
@@ -2596,7 +2614,7 @@ export default function App() {
                   strokeLinejoin="round"
                 />
               </svg>
-              <strong>ОТПУСТИ — ИМПОРТ СБОРКИ</strong>
+              <strong>{tr("app.dropToImportBuild")}</strong>
               <span>.mrpack / .slbuild</span>
             </div>
           </div>
@@ -2619,10 +2637,10 @@ export default function App() {
                   </svg>
                   <strong>
                     {fallbackName
-                      ? `ОТПУСТИ — В СБОРКУ ${fallbackName.toUpperCase()}`
-                      : "ВЫБЕРИ СБОРКУ"}
+                      ? tr("app.dropIntoBuild", { value: fallbackName.toUpperCase() })
+                      : tr("app.chooseABuild")}
                   </strong>
-                  <span>{fallbackName ? ".jar / .zip" : "сначала выбери сборку"}</span>
+                  <span>{fallbackName ? ".jar / .zip" : tr("app.selectABuildFirst")}</span>
                 </div>
               </div>
             );
@@ -2690,8 +2708,8 @@ export default function App() {
             buildRamGb={buildRuntimeSettingsDraft.ram}
             lastPlayedLabel={
               buildSettingsTargetInstance
-                ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0")
-                : "Never played"
+                ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0", locale)
+                : tr("app.neverPlayed")
             }
             badgePreviewText={buildCardPreviewBadgeText}
             resolvePreviewText={(template) =>
@@ -2749,19 +2767,16 @@ export default function App() {
             }}
           >
             <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-              <span className="confirm-label">DELETE BUILD</span>
+              <span className="confirm-label">{tr("app.deleteBuild")}</span>
               <p className="confirm-title">{confirmPendingName}</p>
-              <p className="confirm-body">
-                Сборка будет скрыта из списка. Файлы останутся на диске, и сборку можно будет
-                восстановить из корзины.
-              </p>
+              <p className="confirm-body">{tr("app.theBuildWillBe")}</p>
               <div className="confirm-actions">
                 <button
                   className="primary-action kill-action confirm-btn-delete"
                   type="button"
                   onClick={handleDeleteConfirmed}
                 >
-                  MOVE TO TRASH
+                  {tr("app.moveToTrash")}
                 </button>
                 <button
                   className="ghost-action"
@@ -2771,7 +2786,7 @@ export default function App() {
                     setConfirmPendingName("");
                   }}
                 >
-                  CANCEL
+                  {tr("common.cancel")}
                 </button>
               </div>
             </div>
@@ -2812,9 +2827,9 @@ export default function App() {
             }}
           >
             <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
-              <span className="confirm-label">DELETE BUILD</span>
+              <span className="confirm-label">{tr("app.deleteBuild")}</span>
               <p className="confirm-title">{mascotConfirmPendingName}</p>
-              <p className="confirm-body">Все файлы сборки будут удалены с диска безвозвратно.</p>
+              <p className="confirm-body">{tr("app.allBuildFilesWill")}</p>
               <div className="confirm-actions">
                 <button
                   className="primary-action kill-action confirm-btn-delete"
@@ -2822,7 +2837,7 @@ export default function App() {
                   data-mascot-fake-delete
                   onClick={handleMascotDeleteConfirmed}
                 >
-                  DELETE
+                  {tr("common.deleteCaps")}
                 </button>
                 <button
                   className="ghost-action"
@@ -2832,7 +2847,7 @@ export default function App() {
                     setMascotConfirmPendingName("");
                   }}
                 >
-                  CANCEL
+                  {tr("common.cancel")}
                 </button>
               </div>
             </div>

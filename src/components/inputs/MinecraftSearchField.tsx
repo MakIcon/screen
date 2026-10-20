@@ -11,6 +11,7 @@ import {
   type MinecraftSearchSection,
 } from "./minecraftSearch";
 import "./MinecraftSearchField.css";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   label: string;
@@ -36,6 +37,7 @@ export function MinecraftSearchField({
   sections,
 }: Props) {
   const id = useId();
+  const tr = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -225,8 +227,14 @@ export function MinecraftSearchField({
             onPointerDown={(event) => event.preventDefault()}
           >
             <div className="minecraft-search-heading">
-              <span>{scope === "blocks" ? "Блоки и группы" : "Предметы"}</span>
-              <small>{catalog ? `${matches.length} · ${catalog.version}` : "Каталог"}</small>
+              <span>
+                {scope === "blocks"
+                  ? tr("minecraftSearch.blocksAndGroups")
+                  : tr("minecraftSearch.items")}
+              </span>
+              <small>
+                {catalog ? `${matches.length} · ${catalog.version}` : tr("minecraftSearch.catalog")}
+              </small>
             </div>
             <CustomScrollArea className="minecraft-search-scroll">
               <div
@@ -274,11 +282,11 @@ export function MinecraftSearchField({
                           <span className="minecraft-search-kind">
                             {entry.kind === "group"
                               ? entry.blocks
-                                ? `${entry.blocks.length} блоков`
-                                : "Группа"
+                                ? tr("minecraftSearch.blocks", { blocksCount: entry.blocks.length })
+                                : tr("minecraftSearch.group")
                               : entry.kind === "block"
-                                ? "Блок"
-                                : "Предмет"}
+                                ? tr("minecraftSearch.block")
+                                : tr("minecraftSearch.item")}
                           </span>
                         </button>
                       );
@@ -289,15 +297,15 @@ export function MinecraftSearchField({
               {!matches.length && (
                 <p className="minecraft-search-empty" role="status">
                   {catalog
-                    ? "Ничего не найдено. Попробуйте название или ID Minecraft."
-                    : "Каталог пока недоступен. Можно ввести ID Minecraft вручную."}
+                    ? tr("minecraftSearch.nothingFoundTryA")
+                    : tr("minecraftSearch.theCatalogIsUnavailable")}
                 </p>
               )}
             </CustomScrollArea>
             {!!matches.length && (
               <div className="minecraft-search-hint">
-                ↑ ↓ выбор · Enter подтвердить
-                {multiple ? " · Ctrl — добавить/снять · Shift — диапазон" : ""}
+                {tr("minecraftSearch.selectEnterConfirm")}
+                {multiple ? tr("minecraftSearch.ctrlAddRemoveShift") : ""}
               </div>
             )}
           </div>,

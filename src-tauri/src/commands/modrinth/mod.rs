@@ -539,38 +539,42 @@ async fn fetch_project_icon_url(
 #[tauri::command]
 pub async fn get_modrinth_project_icons(
     project_ids: Vec<String>,
-) -> Result<HashMap<String, Option<String>>, String> {
-    let client = build_client()?;
-    let unique_ids = project_ids
-        .into_iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect::<HashSet<_>>();
+) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let client = build_client()?;
+        let unique_ids = project_ids
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect::<HashSet<_>>();
 
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
-        MAX_CONCURRENT_METADATA_REQUESTS,
-    ));
-    let mut tasks = tokio::task::JoinSet::new();
-    for project_id in unique_ids {
-        let client = client.clone();
-        let semaphore = semaphore.clone();
-        tasks.spawn(async move {
-            let _permit = semaphore.acquire_owned().await;
-            let icon_url = fetch_project_icon_url(&client, &project_id)
-                .await
-                .unwrap_or(None);
-            (project_id, icon_url)
-        });
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            MAX_CONCURRENT_METADATA_REQUESTS,
+        ));
+        let mut tasks = tokio::task::JoinSet::new();
+        for project_id in unique_ids {
+            let client = client.clone();
+            let semaphore = semaphore.clone();
+            tasks.spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let icon_url = fetch_project_icon_url(&client, &project_id)
+                    .await
+                    .unwrap_or(None);
+                (project_id, icon_url)
+            });
+        }
+
+        let mut result = HashMap::new();
+        while let Some(joined) = tasks.join_next().await {
+            let (project_id, icon_url) =
+                joined.map_err(|error| format!("project icon task join error: {error}"))?;
+            result.insert(project_id, icon_url);
+        }
+
+        Ok(result)
     }
-
-    let mut result = HashMap::new();
-    while let Some(joined) = tasks.join_next().await {
-        let (project_id, icon_url) =
-            joined.map_err(|error| format!("project icon task join error: {error}"))?;
-        result.insert(project_id, icon_url);
-    }
-
-    Ok(result)
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -664,27 +668,32 @@ async fn find_content_icon(client: &Client, request: &ContentIconRequest) -> Opt
 #[tauri::command]
 pub async fn resolve_modrinth_content_icons(
     requests: Vec<ContentIconRequest>,
-) -> Result<HashMap<String, Option<String>>, String> {
-    let client = build_client()?;
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
-        MAX_CONCURRENT_METADATA_REQUESTS,
-    ));
-    let mut tasks = tokio::task::JoinSet::new();
-    for request in requests.into_iter().take(100) {
-        let client = client.clone();
-        let semaphore = semaphore.clone();
-        tasks.spawn(async move {
-            let _permit = semaphore.acquire_owned().await;
-            let icon = find_content_icon(&client, &request).await;
-            (request.key, icon)
-        });
+) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let client = build_client()?;
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            MAX_CONCURRENT_METADATA_REQUESTS,
+        ));
+        let mut tasks = tokio::task::JoinSet::new();
+        for request in requests.into_iter().take(100) {
+            let client = client.clone();
+            let semaphore = semaphore.clone();
+            tasks.spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let icon = find_content_icon(&client, &request).await;
+                (request.key, icon)
+            });
+        }
+        let mut result = HashMap::new();
+        while let Some(joined) = tasks.join_next().await {
+            let (key, icon) =
+                joined.map_err(|error| format!("content icon task error: {error}"))?;
+            result.insert(key, icon);
+        }
+        Ok(result)
     }
-    let mut result = HashMap::new();
-    while let Some(joined) = tasks.join_next().await {
-        let (key, icon) = joined.map_err(|error| format!("content icon task error: {error}"))?;
-        result.insert(key, icon);
-    }
-    Ok(result)
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Option<String>, String> {
@@ -714,38 +723,42 @@ async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Optio
 #[tauri::command]
 pub async fn get_modrinth_project_authors(
     project_ids: Vec<String>,
-) -> Result<HashMap<String, Option<String>>, String> {
-    let client = build_client()?;
-    let unique_ids = project_ids
-        .into_iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect::<HashSet<_>>();
+) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let client = build_client()?;
+        let unique_ids = project_ids
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect::<HashSet<_>>();
 
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
-        MAX_CONCURRENT_METADATA_REQUESTS,
-    ));
-    let mut tasks = tokio::task::JoinSet::new();
-    for project_id in unique_ids {
-        let client = client.clone();
-        let semaphore = semaphore.clone();
-        tasks.spawn(async move {
-            let _permit = semaphore.acquire_owned().await;
-            let author = fetch_project_author(&client, &project_id)
-                .await
-                .unwrap_or(None);
-            (project_id, author)
-        });
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
+            MAX_CONCURRENT_METADATA_REQUESTS,
+        ));
+        let mut tasks = tokio::task::JoinSet::new();
+        for project_id in unique_ids {
+            let client = client.clone();
+            let semaphore = semaphore.clone();
+            tasks.spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let author = fetch_project_author(&client, &project_id)
+                    .await
+                    .unwrap_or(None);
+                (project_id, author)
+            });
+        }
+
+        let mut result = HashMap::new();
+        while let Some(joined) = tasks.join_next().await {
+            let (project_id, author) =
+                joined.map_err(|error| format!("project author task join error: {error}"))?;
+            result.insert(project_id, author);
+        }
+
+        Ok(result)
     }
-
-    let mut result = HashMap::new();
-    while let Some(joined) = tasks.join_next().await {
-        let (project_id, author) =
-            joined.map_err(|error| format!("project author task join error: {error}"))?;
-        result.insert(project_id, author);
-    }
-
-    Ok(result)
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn download_file_with_control(
@@ -811,107 +824,111 @@ async fn download_file_with_control(
 #[tauri::command]
 pub async fn get_modrinth_project_details(
     project_id: String,
-) -> Result<ModrinthProjectDetails, String> {
-    let project_id = project_id.trim();
-    if project_id.is_empty() {
-        return Err("Project id is empty".to_string());
-    }
+) -> Result<ModrinthProjectDetails, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let project_id = project_id.trim();
+        if project_id.is_empty() {
+            return Err("Project id is empty".to_string());
+        }
 
-    let client = build_client()?;
-    let project: Value = http_json(
-        &client,
-        &format!("{MODRINTH_API_BASE}/project/{project_id}"),
-    )
-    .await?;
-    let author = fetch_project_author(&client, project_id)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "Modrinth".to_string());
-    let license = project
-        .get("license")
-        .and_then(|value| {
-            value
+        let client = build_client()?;
+        let project: Value = http_json(
+            &client,
+            &format!("{MODRINTH_API_BASE}/project/{project_id}"),
+        )
+        .await?;
+        let author = fetch_project_author(&client, project_id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "Modrinth".to_string());
+        let license = project
+            .get("license")
+            .and_then(|value| {
+                value
+                    .get("id")
+                    .or_else(|| value.get("name"))
+                    .and_then(Value::as_str)
+            })
+            .map(str::to_string);
+
+        Ok(ModrinthProjectDetails {
+            project_id: project
                 .get("id")
-                .or_else(|| value.get("name"))
                 .and_then(Value::as_str)
+                .unwrap_or(project_id)
+                .to_string(),
+            slug: project
+                .get("slug")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            title: project
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown project")
+                .to_string(),
+            author,
+            description: project
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            body: project
+                .get("body")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            project_type: project
+                .get("project_type")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            categories: as_string_vec(project.get("categories")),
+            game_versions: as_string_vec(project.get("game_versions")),
+            loaders: as_string_vec(project.get("loaders")),
+            downloads: project
+                .get("downloads")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            follows: project
+                .get("followers")
+                .or_else(|| project.get("follows"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            icon_url: project
+                .get("icon_url")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            published: project
+                .get("published")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            updated: project
+                .get("updated")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            license,
+            source_url: project
+                .get("source_url")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            issues_url: project
+                .get("issues_url")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            wiki_url: project
+                .get("wiki_url")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            discord_url: project
+                .get("discord_url")
+                .and_then(Value::as_str)
+                .map(str::to_string),
         })
-        .map(str::to_string);
-
-    Ok(ModrinthProjectDetails {
-        project_id: project
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or(project_id)
-            .to_string(),
-        slug: project
-            .get("slug")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        title: project
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("Unknown project")
-            .to_string(),
-        author,
-        description: project
-            .get("description")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        body: project
-            .get("body")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        project_type: project
-            .get("project_type")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        categories: as_string_vec(project.get("categories")),
-        game_versions: as_string_vec(project.get("game_versions")),
-        loaders: as_string_vec(project.get("loaders")),
-        downloads: project
-            .get("downloads")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        follows: project
-            .get("followers")
-            .or_else(|| project.get("follows"))
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        icon_url: project
-            .get("icon_url")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        published: project
-            .get("published")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        updated: project
-            .get("updated")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        license,
-        source_url: project
-            .get("source_url")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        issues_url: project
-            .get("issues_url")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        wiki_url: project
-            .get("wiki_url")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        discord_url: project
-            .get("discord_url")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 pub(crate) async fn resolve_project_version(

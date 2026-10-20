@@ -8,7 +8,7 @@ use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use tauri::State;
 
 use crate::{
-    models::{DiscordRpcPluginSettings, InstanceItem},
+    models::{DiscordRpcPluginSettings, InstanceItem, InstanceSource},
     paths::{detect_system_memory_gb, read_instances, read_settings},
 };
 
@@ -531,7 +531,14 @@ fn placeholder_pairs(
         ),
         ("build_status", to_friendly_value(&instance.status)),
         ("build_state", "Running".to_string()),
-        ("build_source", "Official".to_string()),
+        (
+            "build_source",
+            match instance.source {
+                InstanceSource::Official => "Official",
+                InstanceSource::Imported => "Imported",
+            }
+            .to_string(),
+        ),
         ("account_type", to_friendly_value(account_type)),
         ("total_playtime", format_playtime(total_playtime_secs)),
         ("total_time_in_game", format_playtime(total_playtime_secs)),
@@ -585,6 +592,7 @@ fn launcher_placeholder_instance(instances: &[InstanceItem]) -> InstanceItem {
     instances.last().cloned().unwrap_or_else(|| InstanceItem {
         id: LAUNCHER_RPC_SESSION_ID.to_string(),
         name: "ScreenLauncher".to_string(),
+        source: InstanceSource::Official,
         pinned: false,
         version: "Launcher".to_string(),
         loader: "Ready".to_string(),
@@ -748,47 +756,51 @@ pub async fn start_discord_rpc_for_launcher(
     state: State<'_, DiscordRpcState>,
     account_type: String,
     player_name: String,
-) -> Result<(), String> {
-    let settings = read_settings().await?;
-    let plugin = settings.plugins.discord_rpc;
-    let application_id = plugin.application_id.trim().to_string();
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let plugin = settings.plugins.discord_rpc;
+        let application_id = plugin.application_id.trim().to_string();
 
-    rpc_log!(
-        "cmd start_for_launcher: enabled={} app_id_len={} mode='{}'",
-        plugin.enabled,
-        application_id.len(),
-        plugin.display_mode
-    );
+        rpc_log!(
+            "cmd start_for_launcher: enabled={} app_id_len={} mode='{}'",
+            plugin.enabled,
+            application_id.len(),
+            plugin.display_mode
+        );
 
-    if !plugin.enabled || application_id.is_empty() {
-        rpc_log!("cmd start_for_launcher: disabled or empty app id -> clearing");
-        state.clear_target(None);
-        return Ok(());
+        if !plugin.enabled || application_id.is_empty() {
+            rpc_log!("cmd start_for_launcher: disabled or empty app id -> clearing");
+            state.clear_target(None);
+            return Ok(());
+        }
+
+        let mode = parse_display_mode(&plugin.display_mode);
+        // In Minecraft-only mode there is no launcher presence; it appears once an
+        // instance is running.
+        if mode == DiscordRpcDisplayMode::Minecraft {
+            rpc_log!("cmd start_for_launcher: minecraft-only mode, nothing to show idle");
+            return Ok(());
+        }
+
+        let instances = read_instances().await?;
+        let instance = launcher_placeholder_instance(&instances);
+        let snapshot = build_snapshot(
+            &plugin,
+            DiscordRpcDisplayMode::Launcher,
+            &instances,
+            &instance,
+            &account_type,
+            &player_name,
+            application_id,
+            LAUNCHER_RPC_SESSION_ID.to_string(),
+        );
+
+        state.set_target(snapshot);
+        Ok(())
     }
-
-    let mode = parse_display_mode(&plugin.display_mode);
-    // In Minecraft-only mode there is no launcher presence; it appears once an
-    // instance is running.
-    if mode == DiscordRpcDisplayMode::Minecraft {
-        rpc_log!("cmd start_for_launcher: minecraft-only mode, nothing to show idle");
-        return Ok(());
-    }
-
-    let instances = read_instances().await?;
-    let instance = launcher_placeholder_instance(&instances);
-    let snapshot = build_snapshot(
-        &plugin,
-        DiscordRpcDisplayMode::Launcher,
-        &instances,
-        &instance,
-        &account_type,
-        &player_name,
-        application_id,
-        LAUNCHER_RPC_SESSION_ID.to_string(),
-    );
-
-    state.set_target(snapshot);
-    Ok(())
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -797,70 +809,77 @@ pub async fn start_discord_rpc_for_instance(
     instance_id: String,
     account_type: String,
     player_name: String,
-) -> Result<(), String> {
-    let settings = read_settings().await?;
-    let plugin = settings.plugins.discord_rpc;
-    let application_id = plugin.application_id.trim().to_string();
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let plugin = settings.plugins.discord_rpc;
+        let application_id = plugin.application_id.trim().to_string();
 
-    rpc_log!(
-        "cmd start_for_instance '{instance_id}': enabled={} app_id_len={} mode='{}'",
-        plugin.enabled,
-        application_id.len(),
-        plugin.display_mode
-    );
+        rpc_log!(
+            "cmd start_for_instance '{instance_id}': enabled={} app_id_len={} mode='{}'",
+            plugin.enabled,
+            application_id.len(),
+            plugin.display_mode
+        );
 
-    if !plugin.enabled || application_id.is_empty() {
-        rpc_log!("cmd start_for_instance: disabled or empty app id -> clearing");
-        state.clear_target(None);
-        return Ok(());
-    }
+        if !plugin.enabled || application_id.is_empty() {
+            rpc_log!("cmd start_for_instance: disabled or empty app id -> clearing");
+            state.clear_target(None);
+            return Ok(());
+        }
 
-    let instances = read_instances().await?;
-    let instance = instances
-        .iter()
-        .find(|item| item.id == instance_id)
-        .cloned()
-        .ok_or_else(|| "Instance not found".to_string())?;
+        let instances = read_instances().await?;
+        let instance = instances
+            .iter()
+            .find(|item| item.id == instance_id)
+            .cloned()
+            .ok_or_else(|| "Instance not found".to_string())?;
 
-    let mode = parse_display_mode(&plugin.display_mode);
+        let mode = parse_display_mode(&plugin.display_mode);
 
-    // Launcher mode keeps showing the launcher presence even while playing.
-    if mode == DiscordRpcDisplayMode::Launcher {
+        // Launcher mode keeps showing the launcher presence even while playing.
+        if mode == DiscordRpcDisplayMode::Launcher {
+            let snapshot = build_snapshot(
+                &plugin,
+                DiscordRpcDisplayMode::Launcher,
+                &instances,
+                &launcher_placeholder_instance(&instances),
+                &account_type,
+                &player_name,
+                application_id,
+                LAUNCHER_RPC_SESSION_ID.to_string(),
+            );
+            state.set_target(snapshot);
+            return Ok(());
+        }
+
         let snapshot = build_snapshot(
             &plugin,
-            DiscordRpcDisplayMode::Launcher,
+            mode,
             &instances,
-            &launcher_placeholder_instance(&instances),
+            &instance,
             &account_type,
             &player_name,
             application_id,
-            LAUNCHER_RPC_SESSION_ID.to_string(),
+            instance_id,
         );
         state.set_target(snapshot);
-        return Ok(());
+        Ok(())
     }
-
-    let snapshot = build_snapshot(
-        &plugin,
-        mode,
-        &instances,
-        &instance,
-        &account_type,
-        &player_name,
-        application_id,
-        instance_id,
-    );
-    state.set_target(snapshot);
-    Ok(())
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub fn stop_discord_rpc_for_instance(
     state: State<'_, DiscordRpcState>,
     instance_id: Option<String>,
-) -> Result<(), String> {
-    state.clear_target(instance_id.as_deref());
-    Ok(())
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = (|| {
+        state.clear_target(instance_id.as_deref());
+        Ok(())
+    })();
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]
@@ -871,6 +890,7 @@ mod tests {
         InstanceItem {
             id: id.to_string(),
             name: format!("{loader} Pack"),
+            source: InstanceSource::Official,
             pinned: false,
             version: "1.21.1".to_string(),
             loader: loader.to_string(),
@@ -904,6 +924,23 @@ mod tests {
         );
 
         assert_eq!(resolved, "Makar · Fabric 0.16.14 · 12 GB · 1 · 16 GB");
+    }
+
+    #[test]
+    fn resolves_imported_build_source() {
+        let mut imported = instance("imported", "fabric", None, 4);
+        imported.source = InstanceSource::Imported;
+
+        assert_eq!(
+            resolve_rpc_template(
+                "%build_source% / ^%build_source%",
+                &[imported.clone()],
+                &imported,
+                "offline",
+                "Player",
+            ),
+            "Imported / IMPORTED"
+        );
     }
 
     #[test]

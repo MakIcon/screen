@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { toErrorMessage } from "../../utils/errors";
 import { logger } from "../../utils/logger";
+import { useTranslation } from "../../i18n/locale";
 import type {
   ActionResult,
   InstanceItem,
@@ -33,8 +34,8 @@ function formatRuntime(seconds: number) {
   return `${mins}m ${secs}s`;
 }
 
-function pathLabel(path?: string | null) {
-  if (!path) return "NOT CREATED YET";
+function pathLabel(path?: string | null, missing = "NOT CREATED YET") {
+  if (!path) return missing;
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
 }
@@ -45,6 +46,7 @@ export function BuildLogsModal({
   standalone = false,
   onClose,
 }: Props) {
+  const tr = useTranslation();
   const [snapshot, setSnapshot] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(
     initialLog,
   );
@@ -59,8 +61,8 @@ export function BuildLogsModal({
   const hasCrashReport = Boolean(snapshot?.crashReportTail);
   const bodyText =
     activeTab === "crash"
-      ? snapshot?.crashReportTail || "No crash report was found for this launch."
-      : snapshot?.logTail || "No launch log has been created yet.";
+      ? snapshot?.crashReportTail || tr("buildLogs.noCrashReportWas")
+      : snapshot?.logTail || tr("buildLogs.noLaunchLogHas");
 
   const refreshLogs = useCallback(async () => {
     setLoading(true);
@@ -70,7 +72,9 @@ export function BuildLogsModal({
         instanceId: instance.id,
       });
       setSnapshot(latest);
-      setActiveTab((current) => (current === "crash" && !latest.crashReportTail ? "main" : current));
+      setActiveTab((current) =>
+        current === "crash" && !latest.crashReportTail ? "main" : current,
+      );
     } catch (err) {
       logger.error(err);
       setError(toErrorMessage(err));
@@ -126,36 +130,41 @@ export function BuildLogsModal({
 
   const metaRows = useMemo(() => {
     const rows = [
-      { label: "JVM LOG", value: pathLabel(snapshot?.logPath), title: snapshot?.logPath },
+      {
+        label: tr("buildLogs.jvmLog"),
+        value: pathLabel(snapshot?.logPath, tr("buildLogs.notCreatedYet")),
+        title: snapshot?.logPath,
+      },
       {
         label: "LATEST.LOG",
-        value: pathLabel(snapshot?.minecraftLogPath),
+        value: pathLabel(snapshot?.minecraftLogPath, tr("buildLogs.notCreatedYet")),
         title: snapshot?.minecraftLogPath,
       },
       {
-        label: "CRASH REPORT",
-        value: pathLabel(snapshot?.crashReportPath),
+        label: tr("buildLogs.crashReport"),
+        value: pathLabel(snapshot?.crashReportPath, tr("buildLogs.notCreatedYet")),
         title: snapshot?.crashReportPath,
       },
     ];
 
     if (exitPayload) {
       rows.unshift({
-        label: "EXIT",
-        value: exitPayload.exitCode === null || exitPayload.exitCode === undefined
-          ? "UNKNOWN"
-          : String(exitPayload.exitCode),
+        label: tr("buildLogs.exit"),
+        value:
+          exitPayload.exitCode === null || exitPayload.exitCode === undefined
+            ? tr("buildLogs.unknown")
+            : String(exitPayload.exitCode),
         title: exitPayload.reason,
       });
       rows.unshift({
-        label: "RUNTIME",
+        label: tr("buildLogs.runtime"),
         value: formatRuntime(exitPayload.runtimeSecs),
         title: exitPayload.reason,
       });
     }
 
     return rows;
-  }, [exitPayload, snapshot]);
+  }, [exitPayload, snapshot, tr]);
 
   const handleStandaloneDrag = () => {
     if (!standalone) return;
@@ -185,14 +194,19 @@ export function BuildLogsModal({
         >
           <div className="build-logs-titlebar-title">
             <span>SCREENLAUNCHER</span>
-            <strong>{exitPayload?.crashed ? "CRASH LOG" : "BUILD LOGS"}</strong>
+            <strong>
+              {exitPayload?.crashed ? tr("buildLogs.crashLog") : tr("buildLogs.buildLogs")}
+            </strong>
           </div>
-          <div className="build-logs-window-actions" onMouseDown={(event) => event.stopPropagation()}>
+          <div
+            className="build-logs-window-actions"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
               className="build-logs-window-action"
               onClick={handleStandaloneMinimize}
-              aria-label="Minimize"
+              aria-label={tr("buildLogs.minimize")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                 <path d="M2 7h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -202,7 +216,7 @@ export function BuildLogsModal({
               type="button"
               className="build-logs-window-action"
               onClick={handleStandaloneToggleMaximize}
-              aria-label="Maximize"
+              aria-label={tr("buildLogs.maximize")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                 <path d="M3 3h6v6H3z" stroke="currentColor" strokeWidth="1.3" />
@@ -212,10 +226,15 @@ export function BuildLogsModal({
               type="button"
               className="build-logs-window-action build-logs-window-action--close"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={tr("common.close2")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M3 3l6 6M9 3L3 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                <path
+                  d="M3 3l6 6M9 3L3 9"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
               </svg>
             </button>
           </div>
@@ -227,7 +246,7 @@ export function BuildLogsModal({
           className="bce-hdr-close build-logs-modal-close"
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={tr("common.close2")}
         >
           <svg
             width="11"
@@ -245,89 +264,116 @@ export function BuildLogsModal({
         </button>
       )}
 
-        <div className="build-logs-head">
-          <span className="confirm-label">
-            {exitPayload?.crashed ? "CRASH LOG" : "BUILD LOGS"}
-          </span>
-          <h2 className="build-logs-name">{instance.name}</h2>
-          {exitPayload && <p className="build-logs-reason">{exitPayload.reason}</p>}
+      <div className="build-logs-head">
+        <span className="confirm-label">
+          {exitPayload?.crashed ? tr("buildLogs.crashLog") : tr("buildLogs.buildLogs")}
+        </span>
+        <h2 className="build-logs-name">{instance.name}</h2>
+        {exitPayload && <p className="build-logs-reason">{exitPayload.reason}</p>}
+      </div>
+
+      {error && <div className="screenshots-error">{error}</div>}
+
+      {snapshot?.hint && (
+        <div className="build-logs-hint">
+          <strong>{tr("buildLogs.likelyCause")}</strong>
+          <span>{snapshot.hint}</span>
         </div>
+      )}
 
-        {error && <div className="screenshots-error">{error}</div>}
-
-        {snapshot?.hint && (
-          <div className="build-logs-hint">
-            <strong>LIKELY CAUSE</strong>
-            <span>{snapshot.hint}</span>
+      <div className="build-logs-meta">
+        {metaRows.map((row) => (
+          <div
+            className="build-logs-meta-item"
+            key={row.label}
+            data-tooltip={row.title || row.value}
+          >
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
           </div>
+        ))}
+      </div>
+
+      <div className="build-logs-tabs">
+        <button
+          className={`build-logs-tab${activeTab === "main" ? " active" : ""}`}
+          type="button"
+          onClick={() => setActiveTab("main")}
+        >
+          {tr("buildLogs.jvmOutput")}
+        </button>
+        <button
+          className={`build-logs-tab${activeTab === "crash" ? " active" : ""}`}
+          type="button"
+          onClick={() => setActiveTab("crash")}
+          disabled={!hasCrashReport}
+        >
+          {tr("buildLogs.crashReport")}
+        </button>
+        <button
+          className={`build-logs-copy${copied ? " copied" : ""}`}
+          type="button"
+          onClick={copyActiveLog}
+          disabled={loading || !bodyText}
+          data-tooltip={`${tr("buildLogs.copy")} ${activeTab === "crash" ? tr("buildLogs.crashReport2") : tr("buildLogs.jvmOutput2")}`}
+        >
+          {copied ? (
+            <>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path
+                  d="M2.5 6.5l2.5 2.5 4.5-5.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {tr("buildLogs.copied")}
+            </>
+          ) : (
+            <>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <rect
+                  x="3.5"
+                  y="3.5"
+                  width="6"
+                  height="6"
+                  rx="1"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <path
+                  d="M2.5 7.5V2.5h5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              {tr("buildLogs.copy2")}
+            </>
+          )}
+        </button>
+      </div>
+
+      <CustomScrollArea className="build-logs-body" onWheel={(event) => event.stopPropagation()}>
+        {loading ? (
+          <div className="build-logs-empty">{tr("buildLogs.loadingLogs")}</div>
+        ) : (
+          <pre>{bodyText}</pre>
         )}
+      </CustomScrollArea>
 
-        <div className="build-logs-meta">
-          {metaRows.map((row) => (
-            <div className="build-logs-meta-item" key={row.label} data-tooltip={row.title || row.value}>
-              <span>{row.label}</span>
-              <strong>{row.value}</strong>
-            </div>
-          ))}
-        </div>
-
-        <div className="build-logs-tabs">
-          <button
-            className={`build-logs-tab${activeTab === "main" ? " active" : ""}`}
-            type="button"
-            onClick={() => setActiveTab("main")}
-          >
-            JVM OUTPUT
-          </button>
-          <button
-            className={`build-logs-tab${activeTab === "crash" ? " active" : ""}`}
-            type="button"
-            onClick={() => setActiveTab("crash")}
-            disabled={!hasCrashReport}
-          >
-            CRASH REPORT
-          </button>
-          <button
-            className={`build-logs-copy${copied ? " copied" : ""}`}
-            type="button"
-            onClick={copyActiveLog}
-            disabled={loading || !bodyText}
-            data-tooltip={`Скопировать ${activeTab === "crash" ? "CRASH REPORT" : "JVM OUTPUT"}`}
-          >
-            {copied ? (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M2.5 6.5l2.5 2.5 4.5-5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                COPIED
-              </>
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <rect x="3.5" y="3.5" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
-                  <path d="M2.5 7.5V2.5h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
-                COPY
-              </>
-            )}
-          </button>
-        </div>
-
-        <CustomScrollArea className="build-logs-body" onWheel={(event) => event.stopPropagation()}>
-          {loading ? <div className="build-logs-empty">LOADING LOGS...</div> : <pre>{bodyText}</pre>}
-        </CustomScrollArea>
-
-        <div className="build-logs-actions">
-          <button className="primary-action" type="button" onClick={openBuildFolder}>
-            OPEN FOLDER
-          </button>
-          <button className="ghost-action" type="button" onClick={refreshLogs}>
-            REFRESH
-          </button>
-          <button className="ghost-action" type="button" onClick={onClose}>
-            CLOSE
-          </button>
-        </div>
+      <div className="build-logs-actions">
+        <button className="primary-action" type="button" onClick={openBuildFolder}>
+          {tr("buildLogs.openFolder")}
+        </button>
+        <button className="ghost-action" type="button" onClick={refreshLogs}>
+          {tr("common.refresh")}
+        </button>
+        <button className="ghost-action" type="button" onClick={onClose}>
+          {tr("common.close")}
+        </button>
+      </div>
     </div>
   );
 

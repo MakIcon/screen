@@ -21,8 +21,10 @@ pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
 const MINEFLAYER_KNOCKBACK: &str = include_str!("../../../extensions/mineflayer-bot/knockback.cjs");
 const MINEFLAYER_COMBAT: &str = include_str!("../../../extensions/mineflayer-bot/combat.cjs");
-const MINEFLAYER_COMBAT_BRAIN: &str = include_str!("../../../extensions/mineflayer-bot/combat-brain.cjs");
-const MINEFLAYER_COMBAT_FOOTWORK: &str = include_str!("../../../extensions/mineflayer-bot/combat-footwork.cjs");
+const MINEFLAYER_COMBAT_BRAIN: &str =
+    include_str!("../../../extensions/mineflayer-bot/combat-brain.cjs");
+const MINEFLAYER_COMBAT_FOOTWORK: &str =
+    include_str!("../../../extensions/mineflayer-bot/combat-footwork.cjs");
 const MINEFLAYER_PEARLS: &str = include_str!("../../../extensions/mineflayer-bot/pearls.cjs");
 const MINEFLAYER_CRYSTALS: &str = include_str!("../../../extensions/mineflayer-bot/crystals.cjs");
 const MINEFLAYER_CRYSTAL_MOVEMENT: &str =
@@ -54,29 +56,98 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
 
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("worker.cjs", MINEFLAYER_WORKER),
-    ("fabric.cjs", include_str!("../../../extensions/mineflayer-bot/fabric.cjs")),
-    ("mineflayer-fabric.cjs", include_str!("../../../extensions/mineflayer-bot/mineflayer-fabric.cjs")),
-    ("FABRIC.md", include_str!("../../../extensions/mineflayer-bot/FABRIC.md")),
-    ("FABRIC-LICENSE", include_str!("../../../extensions/mineflayer-bot/FABRIC-LICENSE")),
-    ("FABRIC-NOTICE", include_str!("../../../extensions/mineflayer-bot/FABRIC-NOTICE")),
-    ("production.cjs", include_str!("../../../extensions/mineflayer-bot/production.cjs")),
-    ("workflow.cjs", include_str!("../../../extensions/mineflayer-bot/workflow.cjs")),
-    ("production-plan.cjs", include_str!("../../../extensions/mineflayer-bot/production-plan.cjs")),
-    ("storage-scan.cjs", include_str!("../../../extensions/mineflayer-bot/storage-scan.cjs")),
-    ("production-commands.cjs", include_str!("../../../extensions/mineflayer-bot/production-commands.cjs")),
-    ("PRODUCTION.md", include_str!("../../../extensions/mineflayer-bot/PRODUCTION.md")),
-    ("web-inventory.cjs", include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs")),
-    ("gathering.cjs", include_str!("../../../extensions/mineflayer-bot/gathering.cjs")),
-    ("farming.cjs", include_str!("../../../extensions/mineflayer-bot/farming.cjs")),
-    ("FARMING.md", include_str!("../../../extensions/mineflayer-bot/FARMING.md")),
-    ("gathering-defense.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-defense.cjs")),
-    ("gathering-storage.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-storage.cjs")),
-    ("storage-filters.json", include_str!("../../../extensions/mineflayer-bot/storage-filters.json")),
-    ("gathering-plan.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-plan.cjs")),
-    ("gathering-defaults.json", include_str!("../../../extensions/mineflayer-bot/gathering-defaults.json")),
-    ("gathering-scan.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-scan.cjs")),
-    ("gathering-commands.cjs", include_str!("../../../extensions/mineflayer-bot/gathering-commands.cjs")),
-    ("GATHERING.md", include_str!("../../../extensions/mineflayer-bot/GATHERING.md")),
+    (
+        "fabric.cjs",
+        include_str!("../../../extensions/mineflayer-bot/fabric.cjs"),
+    ),
+    (
+        "mineflayer-fabric.cjs",
+        include_str!("../../../extensions/mineflayer-bot/mineflayer-fabric.cjs"),
+    ),
+    (
+        "FABRIC.md",
+        include_str!("../../../extensions/mineflayer-bot/FABRIC.md"),
+    ),
+    (
+        "FABRIC-LICENSE",
+        include_str!("../../../extensions/mineflayer-bot/FABRIC-LICENSE"),
+    ),
+    (
+        "FABRIC-NOTICE",
+        include_str!("../../../extensions/mineflayer-bot/FABRIC-NOTICE"),
+    ),
+    (
+        "production.cjs",
+        include_str!("../../../extensions/mineflayer-bot/production.cjs"),
+    ),
+    (
+        "workflow.cjs",
+        include_str!("../../../extensions/mineflayer-bot/workflow.cjs"),
+    ),
+    (
+        "production-plan.cjs",
+        include_str!("../../../extensions/mineflayer-bot/production-plan.cjs"),
+    ),
+    (
+        "storage-scan.cjs",
+        include_str!("../../../extensions/mineflayer-bot/storage-scan.cjs"),
+    ),
+    (
+        "production-commands.cjs",
+        include_str!("../../../extensions/mineflayer-bot/production-commands.cjs"),
+    ),
+    (
+        "PRODUCTION.md",
+        include_str!("../../../extensions/mineflayer-bot/PRODUCTION.md"),
+    ),
+    (
+        "web-inventory.cjs",
+        include_str!("../../../extensions/mineflayer-bot/web-inventory.cjs"),
+    ),
+    (
+        "gathering.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering.cjs"),
+    ),
+    (
+        "farming.cjs",
+        include_str!("../../../extensions/mineflayer-bot/farming.cjs"),
+    ),
+    (
+        "FARMING.md",
+        include_str!("../../../extensions/mineflayer-bot/FARMING.md"),
+    ),
+    (
+        "gathering-defense.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering-defense.cjs"),
+    ),
+    (
+        "gathering-storage.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering-storage.cjs"),
+    ),
+    (
+        "storage-filters.json",
+        include_str!("../../../extensions/mineflayer-bot/storage-filters.json"),
+    ),
+    (
+        "gathering-plan.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering-plan.cjs"),
+    ),
+    (
+        "gathering-defaults.json",
+        include_str!("../../../extensions/mineflayer-bot/gathering-defaults.json"),
+    ),
+    (
+        "gathering-scan.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering-scan.cjs"),
+    ),
+    (
+        "gathering-commands.cjs",
+        include_str!("../../../extensions/mineflayer-bot/gathering-commands.cjs"),
+    ),
+    (
+        "GATHERING.md",
+        include_str!("../../../extensions/mineflayer-bot/GATHERING.md"),
+    ),
     ("knockback.cjs", MINEFLAYER_KNOCKBACK),
     ("combat.cjs", MINEFLAYER_COMBAT),
     ("combat-brain.cjs", MINEFLAYER_COMBAT_BRAIN),
@@ -85,27 +156,60 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("crystals.cjs", MINEFLAYER_CRYSTALS),
     ("crystal-movement.cjs", MINEFLAYER_CRYSTAL_MOVEMENT),
     ("bow-defense.cjs", MINEFLAYER_BOW_DEFENSE),
-    ("bow-aim.cjs", include_str!("../../../extensions/mineflayer-bot/bow-aim.cjs")),
+    (
+        "bow-aim.cjs",
+        include_str!("../../../extensions/mineflayer-bot/bow-aim.cjs"),
+    ),
     ("combat-inventory.cjs", MINEFLAYER_COMBAT_INVENTORY),
     ("armor-manager.cjs", MINEFLAYER_ARMOR_MANAGER),
-    ("auto-eat.cjs", include_str!("../../../extensions/mineflayer-bot/auto-eat.cjs")),
-    ("auto-buff.cjs", include_str!("../../../extensions/mineflayer-bot/auto-buff.cjs")),
-    ("potion-data.cjs", include_str!("../../../extensions/mineflayer-bot/potion-data.cjs")),
-    ("emergency-mlg.cjs", include_str!("../../../extensions/mineflayer-bot/emergency-mlg.cjs")),
-    ("survival.cjs", include_str!("../../../extensions/mineflayer-bot/survival.cjs")),
-    ("survival-defaults.json", include_str!("../../../extensions/mineflayer-bot/survival-defaults.json")),
-    ("SURVIVAL.md", include_str!("../../../extensions/mineflayer-bot/SURVIVAL.md")),
-    ("AUTO-EAT-LICENSE", include_str!("../../../extensions/mineflayer-bot/AUTO-EAT-LICENSE")),
+    (
+        "auto-eat.cjs",
+        include_str!("../../../extensions/mineflayer-bot/auto-eat.cjs"),
+    ),
+    (
+        "auto-buff.cjs",
+        include_str!("../../../extensions/mineflayer-bot/auto-buff.cjs"),
+    ),
+    (
+        "potion-data.cjs",
+        include_str!("../../../extensions/mineflayer-bot/potion-data.cjs"),
+    ),
+    (
+        "emergency-mlg.cjs",
+        include_str!("../../../extensions/mineflayer-bot/emergency-mlg.cjs"),
+    ),
+    (
+        "survival.cjs",
+        include_str!("../../../extensions/mineflayer-bot/survival.cjs"),
+    ),
+    (
+        "survival-defaults.json",
+        include_str!("../../../extensions/mineflayer-bot/survival-defaults.json"),
+    ),
+    (
+        "SURVIVAL.md",
+        include_str!("../../../extensions/mineflayer-bot/SURVIVAL.md"),
+    ),
+    (
+        "AUTO-EAT-LICENSE",
+        include_str!("../../../extensions/mineflayer-bot/AUTO-EAT-LICENSE"),
+    ),
     ("melee-shield.cjs", MINEFLAYER_MELEE_SHIELD),
     ("mace.cjs", MINEFLAYER_MACE),
     ("combat-defaults.json", MINEFLAYER_COMBAT_DEFAULTS),
-    ("COMBAT.md", include_str!("../../../extensions/mineflayer-bot/COMBAT.md")),
+    (
+        "COMBAT.md",
+        include_str!("../../../extensions/mineflayer-bot/COMBAT.md"),
+    ),
     ("pathfinder.cjs", MINEFLAYER_PATHFINDER),
     ("extension.json", MINEFLAYER_MANIFEST),
     ("package.json", MINEFLAYER_PACKAGE),
     ("package-lock.json", MINEFLAYER_PACKAGE_LOCK),
     ("COPYING", MINEFLAYER_COPYING),
-    ("BARITONE-LICENSE", include_str!("../../../extensions/mineflayer-bot/BARITONE-LICENSE")),
+    (
+        "BARITONE-LICENSE",
+        include_str!("../../../extensions/mineflayer-bot/BARITONE-LICENSE"),
+    ),
     ("THIRD-PARTY-NOTICES.md", MINEFLAYER_NOTICES),
     ("pathfinder-source.json", MINEFLAYER_SOURCE),
     ("restore-pathfinder-source.cjs", MINEFLAYER_RESTORE_SOURCE),
@@ -176,7 +280,11 @@ pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), String> {
         let current = match fs::read_to_string(&path) {
             Ok(current) => Some(current),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(error) => return Err(format!("Read Mineflayer package file {name} error: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "Read Mineflayer package file {name} error: {error}"
+                ))
+            }
         };
         if current.as_deref() != Some(contents) {
             fs::write(&path, contents)
@@ -348,11 +456,24 @@ async fn install_mineflayer_dependencies(staging: &Path) -> Result<(), String> {
 pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result<(), String> {
     // Existing installations are synchronized on startup. A new worker also
     // needs its newly introduced dependencies before Node loads it.
-    for (name, version) in [("mineflayer-statemachine", "1.7.0"), ("mineflayer-tool", "1.2.0"), ("mineflayer-web-inventory", "1.8.5")] {
-        let path = runtime_dir.join("node_modules").join(name).join("package.json");
-        let installed = fs::read_to_string(path).ok()
+    for (name, version) in [
+        ("mineflayer-statemachine", "1.7.0"),
+        ("mineflayer-tool", "1.2.0"),
+        ("mineflayer-web-inventory", "1.8.5"),
+    ] {
+        let path = runtime_dir
+            .join("node_modules")
+            .join(name)
+            .join("package.json");
+        let installed = fs::read_to_string(path)
+            .ok()
             .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
-        if installed.as_ref().and_then(|json| json.get("version")).and_then(|v| v.as_str()) != Some(version) {
+        if installed
+            .as_ref()
+            .and_then(|json| json.get("version"))
+            .and_then(|v| v.as_str())
+            != Some(version)
+        {
             install_mineflayer_dependencies(runtime_dir).await?;
             break;
         }
@@ -402,15 +523,19 @@ async fn install_mineflayer_package() -> Result<OptionalExtensionStatus, String>
 #[tauri::command]
 pub async fn install_optional_extension(
     extension_id: String,
-) -> Result<OptionalExtensionStatus, String> {
-    match extension_id.as_str() {
-        MINEFLAYER_BOT_ID => install_mineflayer_package().await,
-        BLUE_MAP_SERVER_ID => {
-            super::blue_map::install_server_package().await?;
-            Ok(blue_map_status())
+) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        match extension_id.as_str() {
+            MINEFLAYER_BOT_ID => install_mineflayer_package().await,
+            BLUE_MAP_SERVER_ID => {
+                super::blue_map::install_server_package().await?;
+                Ok(blue_map_status())
+            }
+            _ => Err(format!("Unknown optional extension: {extension_id}")),
         }
-        _ => Err(format!("Unknown optional extension: {extension_id}")),
     }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 async fn uninstall_mineflayer_package() -> Result<OptionalExtensionStatus, String> {
@@ -462,18 +587,22 @@ pub async fn uninstall_optional_extension(
     extension_id: String,
     mineflayer_state: State<'_, MineflayerBotState>,
     blue_map_state: State<'_, BlueMapState>,
-) -> Result<OptionalExtensionStatus, String> {
-    match extension_id.as_str() {
-        MINEFLAYER_BOT_ID => {
-            mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
-            uninstall_mineflayer_package().await
+) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        match extension_id.as_str() {
+            MINEFLAYER_BOT_ID => {
+                mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
+                uninstall_mineflayer_package().await
+            }
+            BLUE_MAP_SERVER_ID => {
+                blue_map::stop_bluemap(blue_map_state).await?;
+                uninstall_blue_map_package().await
+            }
+            _ => Err(format!("Unknown optional extension: {extension_id}")),
         }
-        BLUE_MAP_SERVER_ID => {
-            blue_map::stop_bluemap(blue_map_state).await?;
-            uninstall_blue_map_package().await
-        }
-        _ => Err(format!("Unknown optional extension: {extension_id}")),
     }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]
@@ -482,10 +611,17 @@ mod tests {
 
     #[tokio::test]
     async fn fabric_runtime_is_installed_and_refreshed_with_the_worker() {
-        let directory = std::env::temp_dir().join(format!("screen-fabric-test-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("screen-fabric-test-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&directory).unwrap();
         write_mineflayer_scaffold(&directory).await.unwrap();
-        for name in ["fabric.cjs", "mineflayer-fabric.cjs", "FABRIC.md", "FABRIC-LICENSE", "FABRIC-NOTICE"] {
+        for name in [
+            "fabric.cjs",
+            "mineflayer-fabric.cjs",
+            "FABRIC.md",
+            "FABRIC-LICENSE",
+            "FABRIC-NOTICE",
+        ] {
             assert!(directory.join(name).is_file(), "missing {name}");
         }
         fs::write(directory.join("mineflayer-fabric.cjs"), "stale library").unwrap();
@@ -493,7 +629,9 @@ mod tests {
         let library = fs::read_to_string(directory.join("mineflayer-fabric.cjs")).unwrap();
         assert!(library.contains("mineflayer-fabric 0.2.1"));
         assert!(library.contains("blockCollisionShapes"));
-        assert!(fs::read_to_string(directory.join("worker.cjs")).unwrap().contains("installFabricSupport(bot, emit)"));
+        assert!(fs::read_to_string(directory.join("worker.cjs"))
+            .unwrap()
+            .contains("installFabricSupport(bot, emit)"));
         assert_eq!(directory.parent(), Some(std::env::temp_dir().as_path()));
         fs::remove_dir_all(directory).unwrap();
     }

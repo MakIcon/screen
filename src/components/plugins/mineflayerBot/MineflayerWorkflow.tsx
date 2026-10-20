@@ -8,7 +8,9 @@ import type {
   MineflayerGatheringSettings,
 } from "../../../types";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
-import { FARMING_KINDS, FARMING_NOTE, farmCropLabel } from "./farming";
+import { FARMING_KINDS, farmingNote, farmCropLabel } from "./farming";
+import { localizeCatalog } from "./catalogLocalization";
+import { useLocale, useTranslation } from "../../../i18n/locale";
 import { MineflayerFarmCropField } from "./MineflayerFarmCropField";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
@@ -22,7 +24,7 @@ import {
   readCustomWorkflowName,
   readWorkflowNameVariant,
   findWorkflowNameVariant,
-  WORKFLOW_ITEM_LABELS,
+  workflowItemLabel,
 } from "./workflowName";
 import {
   WORKFLOW_HISTORY_KEY,
@@ -34,6 +36,8 @@ import {
 } from "./workflowHistory";
 import {
   WORKFLOW_ACTIONS,
+  workflowActionLabel,
+  workflowActionNote,
   WORKFLOW_DRAFT_KEY,
   WORKFLOW_STEP_LIMIT,
   newWorkflowStep,
@@ -102,20 +106,6 @@ function loadNameVariant() {
   }
 }
 
-const ACTION_LABELS: Record<MineflayerWorkflowStep["kind"], string> = {
-  mine: "Добыть",
-  forest: "Дерево",
-  till: "Вспахать",
-  plant: "Посадить",
-  harvest: "Урожай",
-  farm: "Огород",
-  craft: "Крафт",
-  smelt: "Переплавка",
-  return: "Вернуться",
-  collect: "Подобрать",
-  deposit: "В сундуки",
-};
-
 export function MineflayerWorkflow({
   connected,
   status,
@@ -131,6 +121,8 @@ export function MineflayerWorkflow({
   onOpenConnection: () => void;
   onOpenStorage: () => void;
 }) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [steps, setSteps] = useState<WorkflowDraftStep[]>(loadDraft);
   const [customName, setCustomName] = useState(loadName);
   const [nameVariant, setNameVariant] = useState(loadNameVariant);
@@ -145,15 +137,16 @@ export function MineflayerWorkflow({
   const [error, setError] = useState("");
   const [catalog, setCatalog] = useState(bundledCatalog as MinecraftCatalog);
   const searchCatalog = useMemo(
-    () => ({
-      ...catalog,
-      entries: catalog.entries.map((entry) =>
-        WORKFLOW_ITEM_LABELS[entry.name]
-          ? { ...entry, displayName: WORKFLOW_ITEM_LABELS[entry.name] }
-          : entry,
-      ),
-    }),
-    [catalog],
+    () =>
+      localizeCatalog({
+        ...catalog,
+        entries: catalog.entries.map((entry) =>
+          entry.kind === "group"
+            ? entry
+            : { ...entry, displayName: workflowItemLabel(entry.name, locale) },
+        ),
+      }),
+    [catalog, locale],
   );
   const workflow = connected ? status?.inventory?.workflow : null;
   const running = Boolean(
@@ -247,7 +240,10 @@ export function MineflayerWorkflow({
         setCustomName(readCustomWorkflowName(event.newValue));
         setNameVariant(readWorkflowNameVariant(event.newValue));
       } else if (event.key === WORKFLOW_HISTORY_KEY) {
-        const merged = mergeWorkflowHistory(historyRef.current, readWorkflowHistory(event.newValue));
+        const merged = mergeWorkflowHistory(
+          historyRef.current,
+          readWorkflowHistory(event.newValue),
+        );
         if (JSON.stringify(merged) !== JSON.stringify(historyRef.current)) {
           historyRef.current = merged;
           setHistory(merged);
@@ -323,25 +319,44 @@ export function MineflayerWorkflow({
             searchCatalog.entries.find((entry) => entry.name === name.trim())?.displayName ||
             name.trim(),
         )
-        .join(", ") || "Выберите предмет"
+        .join(", ") || tr("bot.workflow.chooseAnItem")
     );
   }
   function detail(step: MineflayerWorkflowStep) {
     if (step.kind === "mine")
-      return `${itemName(step.item)} · блоков: ${step.count} · радиус ${step.radius}`;
-    if (step.kind === "forest") return `Брёвна: ${step.count} · радиус ${step.radius}`;
+      return tr("bot.workflow.mineDetail", {
+        item: itemName(step.item),
+        count: step.count ?? 0,
+        radius: step.radius ?? 0,
+      });
+    if (step.kind === "forest")
+      return tr("bot.workflow.forestDetail", { count: step.count ?? 0, radius: step.radius ?? 0 });
     if (FARMING_KINDS.includes(step.kind))
-      return `${step.kind === "till" ? "Грядки рядом с водой" : farmCropLabel(step.item)} · ${step.count ? `до ${step.count} действий` : "все доступные"} · радиус ${step.radius}${["harvest", "farm"].includes(step.kind) ? (step.replant === false ? " · без пересадки" : " · с пересадкой") : ""}`;
-    if (step.kind === "collect") return `В радиусе ${step.radius} блоков`;
-    if (step.kind === "return") return "К месту запуска сценария";
-    if (step.kind === "deposit") return "В сундуки настроенного склада";
-    return `${itemName(step.item)} × ${step.count} · ${step.mode === "table" ? "верстак" : step.mode === "inventory" ? "инвентарь" : step.mode === "blast_furnace" ? "плавильная печь" : step.mode === "smoker" ? "коптильня" : "автоматически"}`;
+      return `${step.kind === "till" ? tr("bot.workflow.bedsNextToWater") : farmCropLabel(step.item)} · ${step.count ? tr("bot.workflow.upToActions", { count: step.count }) : tr("bot.workflow.allAvailable")} · ${tr("bot.workflow.radiusValue", { radius: step.radius ?? 0 })}${["harvest", "farm"].includes(step.kind) ? (step.replant === false ? ` · ${tr("bot.workflow.noReplanting")}` : ` · ${tr("bot.workflow.withReplanting")}`) : ""}`;
+    if (step.kind === "collect")
+      return tr("bot.workflow.withinBlocks", { radius: step.radius ?? 0 });
+    if (step.kind === "return") return tr("bot.workflow.toWhereTheWorkflow");
+    if (step.kind === "deposit") return tr("bot.workflow.intoTheConfiguredStorage");
+    return `${itemName(step.item)} × ${step.count} · ${
+      step.mode === "table"
+        ? tr("bot.workflow.craftingTable")
+        : step.mode === "inventory"
+          ? tr("bot.workflow.inventory")
+          : step.mode === "blast_furnace"
+            ? tr("bot.workflow.blastFurnace")
+            : step.mode === "smoker"
+              ? tr("bot.workflow.smoker")
+              : tr("bot.workflow.automatic")
+    }`;
   }
   const number = (step: WorkflowDraftStep, key: "count" | "radius", label: string, max: number) => (
     <label className="mineflayer-bot-field">
       <span>{label}</span>
       <CustomNumberInput
-        ariaLabel={`${label}, шаг ${steps.findIndex((entry) => entry.id === step.id) + 1}`}
+        ariaLabel={tr("bot.workflow.stepLabel", {
+          label,
+          index: steps.findIndex((entry) => entry.id === step.id) + 1,
+        })}
         value={step[key] ?? 1}
         min={key === "radius" ? 4 : FARMING_KINDS.includes(step.kind) ? 0 : 1}
         max={max}
@@ -354,17 +369,17 @@ export function MineflayerWorkflow({
 
   return (
     <div className="mf-workflow">
-      <section className="mf-workflow-actions" aria-label="Добавить действие">
+      <section className="mf-workflow-actions" aria-label={tr("bot.workflow.addAnAction")}>
         <div className="mf-actions-heading">
-          <h3>ДОБАВИТЬ ДЕЙСТВИЕ</h3>
+          <h3>{tr("bot.workflow.addAnAction2")}</h3>
           <button
             type="button"
             className="mf-button mf-storage-button"
             onClick={onOpenStorage}
-            data-tooltip="Сундуки и сортировка добычи"
+            data-tooltip={tr("bot.workflow.chestsAndLootSorting")}
           >
             <MineflayerActionIcon kind="deposit" />
-            Настроить склад
+            {tr("bot.workflow.setUpStorage")}
           </button>
         </div>
         <div className="mf-action-buttons">
@@ -373,23 +388,27 @@ export function MineflayerWorkflow({
               key={action.kind}
               type="button"
               disabled={!canAdd}
-              aria-label={`Добавить: ${action.label}`}
-              data-tooltip={action.note}
+              aria-label={`${tr("bot.workflow.add")}: ${workflowActionLabel(action.kind, tr)}`}
+              data-tooltip={workflowActionNote(action.kind, tr)}
               onClick={() => append([newWorkflowStep(action.kind)])}
             >
               <MineflayerActionIcon kind={action.kind} />
-              <span>{ACTION_LABELS[action.kind]}</span>
+              <span>{tr(`bot.action.${action.kind}.short`)}</span>
             </button>
           ))}
         </div>
         <MineflayerWorkflowPresets locked={locked} stepCount={steps.length} onAppend={append} />
       </section>
-      <section ref={planRef} className="mf-workflow-plan" aria-label="Последовательность действий">
+      <section
+        ref={planRef}
+        className="mf-workflow-plan"
+        aria-label={tr("bot.workflow.actionSequence")}
+      >
         <div className="mf-workflow-name">
-          <label htmlFor="mf-workflow-name">НАЗВАНИЕ СЦЕНАРИЯ</label>
+          <label htmlFor="mf-workflow-name">{tr("bot.workflow.workflowName")}</label>
           <input
             id="mf-workflow-name"
-            aria-label="Название сценария"
+            aria-label={tr("bot.workflow.workflowName2")}
             value={running ? workflow?.name || name : (customName ?? automaticName)}
             placeholder={automaticName}
             maxLength={120}
@@ -404,18 +423,18 @@ export function MineflayerWorkflow({
             className="mf-name-auto"
             aria-pressed={customName === null}
             disabled={locked || !steps.length}
-            data-tooltip="Подобрать автоматическое название"
+            data-tooltip={tr("bot.workflow.generateAnAutomaticName")}
             onClick={() => {
               setCustomName(null);
               setNameVariant((value) => (customName === null ? value + 1 : 0));
             }}
           >
-            Авто
+            {tr("common.auto")}
           </button>
         </div>
         <header className="mf-plan-header">
           <h4>
-            ПОРЯДОК ДЕЙСТВИЙ{" "}
+            {tr("bot.workflow.actionOrder")}{" "}
             <span>
               {shownSteps.length} / {WORKFLOW_STEP_LIMIT}
             </span>
@@ -432,7 +451,7 @@ export function MineflayerWorkflow({
               setError("");
             }}
           >
-            Очистить
+            {tr("bot.workflow.clear")}
           </button>
           <div className="mf-plan-run-actions">
             {running ? (
@@ -450,8 +469,8 @@ export function MineflayerWorkflow({
                   }
                 >
                   {workflow?.phase === "paused" || workflow?.phase === "pausing"
-                    ? "Продолжить"
-                    : "Пауза после шага"}
+                    ? tr("bot.workflow.resume")
+                    : tr("bot.workflow.pauseAfterStep")}
                 </button>
                 <button
                   type="button"
@@ -459,7 +478,7 @@ export function MineflayerWorkflow({
                   disabled={sending || workflow?.phase === "stopping"}
                   onClick={() => void control("stop")}
                 >
-                  Остановить
+                  {tr("bot.workflow.stop")}
                 </button>
               </>
             ) : (
@@ -478,7 +497,7 @@ export function MineflayerWorkflow({
                 onClick={() => void control("start")}
               >
                 <WorkflowIcon kind="play" />
-                {sending ? "Запускаю…" : "Запустить сценарий"}
+                {sending ? tr("bot.workflow.starting") : tr("bot.workflow.runWorkflow")}
               </button>
             )}
           </div>
@@ -493,16 +512,16 @@ export function MineflayerWorkflow({
                 <div>
                   <strong>
                     {workflow.phase === "complete"
-                      ? "Сценарий выполнен"
+                      ? tr("bot.workflow.workflowCompleted")
                       : workflow.phase === "paused"
-                        ? "На паузе"
+                        ? tr("bot.workflow.paused")
                         : workflow.phase === "pausing"
-                          ? "Завершаю шаг перед паузой"
+                          ? tr("bot.workflow.finishingTheStepBefore")
                           : workflow.phase === "stopped"
-                            ? "Сценарий остановлен"
+                            ? tr("bot.workflow.workflowStopped")
                             : workflow.phase === "error"
-                              ? "Нужна ваша помощь"
-                              : "Выполняю сценарий"}
+                              ? tr("bot.workflow.yourHelpIsNeeded")
+                              : tr("bot.workflow.runningTheWorkflow")}
                   </strong>
                   <span>
                     {completed} / {workflow.steps.length}
@@ -511,7 +530,7 @@ export function MineflayerWorkflow({
                 <progress
                   max={workflow.steps.length || 1}
                   value={completed}
-                  aria-label="Завершённые шаги"
+                  aria-label={tr("bot.workflow.completedSteps")}
                 />
                 <p>
                   {workflow.message}
@@ -526,8 +545,8 @@ export function MineflayerWorkflow({
         </header>
         {!shownSteps.length ? (
           <div className="mf-plan-empty">
-            <p>В сценарии пока нет действий.</p>
-            <span>Добавьте действие сверху. Его параметры откроются здесь.</span>
+            <p>{tr("bot.workflow.thisWorkflowHasNo")}</p>
+            <span>{tr("bot.workflow.addAnActionAbove")}</span>
           </div>
         ) : (
           <ol
@@ -549,7 +568,7 @@ export function MineflayerWorkflow({
                     {!locked && steps.length > 1 && (
                       <span
                         className="mf-step-grip"
-                        data-tooltip="Зажмите и перетащите шаг"
+                        data-tooltip={tr("bot.workflow.holdAndDragThe")}
                         aria-hidden="true"
                       >
                         <WorkflowIcon kind="grip" />
@@ -568,9 +587,7 @@ export function MineflayerWorkflow({
                     >
                       <MineflayerActionIcon kind={step.kind} />
                       <span>
-                        <strong>
-                          {WORKFLOW_ACTIONS.find((action) => action.kind === step.kind)?.label}
-                        </strong>
+                        <strong>{workflowActionLabel(step.kind, tr)}</strong>
                         <small>{detail(step)}</small>
                       </span>
                       {!locked && (
@@ -583,8 +600,8 @@ export function MineflayerWorkflow({
                       <div className="mf-step-tools">
                         <button
                           type="button"
-                          aria-label={`Поднять шаг ${index + 1}`}
-                          data-tooltip="Выше"
+                          aria-label={`${tr("bot.workflow.moveStepUp")} ${index + 1}`}
+                          data-tooltip={tr("bot.workflow.up")}
                           disabled={index === 0}
                           onClick={() =>
                             setSteps((current) => moveWorkflowStep(current, step.id, -1))
@@ -594,8 +611,8 @@ export function MineflayerWorkflow({
                         </button>
                         <button
                           type="button"
-                          aria-label={`Опустить шаг ${index + 1}`}
-                          data-tooltip="Ниже"
+                          aria-label={`${tr("bot.workflow.moveStepDown")} ${index + 1}`}
+                          data-tooltip={tr("bot.workflow.down")}
                           disabled={index === steps.length - 1}
                           onClick={() =>
                             setSteps((current) => moveWorkflowStep(current, step.id, 1))
@@ -605,8 +622,8 @@ export function MineflayerWorkflow({
                         </button>
                         <button
                           type="button"
-                          aria-label={`Дублировать шаг ${index + 1}`}
-                          data-tooltip="Дублировать"
+                          aria-label={`${tr("bot.workflow.duplicateStep")} ${index + 1}`}
+                          data-tooltip={tr("bot.workflow.duplicate")}
                           disabled={!canAdd}
                           onClick={() => {
                             const copy = { ...step, id: crypto.randomUUID() };
@@ -622,8 +639,8 @@ export function MineflayerWorkflow({
                         </button>
                         <button
                           type="button"
-                          aria-label={`Удалить шаг ${index + 1}`}
-                          data-tooltip="Удалить"
+                          aria-label={`${tr("bot.workflow.deleteStep")} ${index + 1}`}
+                          data-tooltip={tr("bot.workflow.delete")}
                           onClick={() =>
                             setSteps((current) => current.filter((entry) => entry.id !== step.id))
                           }
@@ -646,10 +663,10 @@ export function MineflayerWorkflow({
                           <MinecraftSearchField
                             label={
                               step.kind === "mine"
-                                ? "ЧТО ДОБЫТЬ"
+                                ? tr("bot.workflow.whatToMine")
                                 : step.kind === "smelt"
-                                  ? "СЫРЬЁ"
-                                  : "РЕЗУЛЬТАТ КРАФТА"
+                                  ? tr("bot.workflow.rawMaterial")
+                                  : tr("bot.workflow.craftResult")
                             }
                             value={step.item || ""}
                             onChange={(item) => patch(step.id, { item })}
@@ -665,12 +682,12 @@ export function MineflayerWorkflow({
                             step,
                             "count",
                             step.kind === "mine"
-                              ? "КОЛИЧЕСТВО БЛОКОВ"
+                              ? tr("bot.workflow.blockCount")
                               : FARMING_KINDS.includes(step.kind)
-                                ? "ДЕЙСТВИЯ · 0 = ВСЕ"
+                                ? tr("bot.workflow.actions0All")
                                 : step.kind === "forest"
-                                  ? "КОЛИЧЕСТВО БРЁВЕН"
-                                  : "КОЛИЧЕСТВО ПРЕДМЕТОВ",
+                                  ? tr("bot.workflow.logCount")
+                                  : tr("bot.workflow.itemCount"),
                             step.kind === "mine" || FARMING_KINDS.includes(step.kind)
                               ? 4096
                               : step.kind === "smelt"
@@ -678,7 +695,7 @@ export function MineflayerWorkflow({
                                 : 256,
                           )}
                         {["mine", "forest", "collect", ...FARMING_KINDS].includes(step.kind) &&
-                          number(step, "radius", "РАДИУС · БЛОКОВ", 64)}
+                          number(step, "radius", tr("bot.workflow.radiusBlocks"), 64)}
                       </div>
                       {["harvest", "farm"].includes(step.kind) && (
                         <label className="mineflayer-bot-field">
@@ -690,31 +707,37 @@ export function MineflayerWorkflow({
                                 patch(step.id, { replant: event.target.checked })
                               }
                             />{" "}
-                            ПЕРЕСАЖИВАТЬ ПОСЛЕ СБОРА
+                            {tr("bot.workflow.replantAfterHarvest")}
                           </span>
                         </label>
                       )}
                       {["craft", "smelt"].includes(step.kind) && (
                         <div className="mf-step-mode">
                           <span className="mf-eyebrow">
-                            {step.kind === "craft" ? "МЕСТО КРАФТА" : "ТИП ПЕЧИ"}
+                            {step.kind === "craft"
+                              ? tr("bot.workflow.craftingSpot")
+                              : tr("bot.workflow.furnaceType")}
                           </span>
                           <div
                             className="mineflayer-bot-mode"
                             role="group"
-                            aria-label={step.kind === "craft" ? "Место крафта" : "Тип печи"}
+                            aria-label={
+                              step.kind === "craft"
+                                ? tr("bot.workflow.craftingSpot2")
+                                : tr("bot.workflow.furnaceType2")
+                            }
                           >
                             {(step.kind === "craft"
                               ? [
-                                  ["auto", "Авто"],
-                                  ["inventory", "Инвентарь"],
-                                  ["table", "Верстак"],
+                                  ["auto", tr("common.auto")],
+                                  ["inventory", tr("bot.workflow.inventory2")],
+                                  ["table", tr("bot.workflow.craftingTable2")],
                                 ]
                               : [
-                                  ["auto", "Авто"],
-                                  ["furnace", "Печь"],
-                                  ["blast_furnace", "Плавильная"],
-                                  ["smoker", "Коптильня"],
+                                  ["auto", tr("common.auto")],
+                                  ["furnace", tr("bot.workflow.furnace")],
+                                  ["blast_furnace", tr("bot.workflow.blastFurnace2")],
+                                  ["smoker", tr("bot.workflow.smoker2")],
                                 ]
                             ).map(([mode, label]) => (
                               <button
@@ -732,18 +755,18 @@ export function MineflayerWorkflow({
                       )}
                       <p>
                         {FARMING_KINDS.includes(step.kind)
-                          ? FARMING_NOTE
+                          ? farmingNote()
                           : step.kind === "craft"
-                            ? "Промежуточные ингредиенты, включая доски, бот скрафтит сам. В режиме «Авто» найдёт верстак в 32 блоках или сделает и поставит его."
+                            ? tr("bot.workflow.theBotCraftsIntermediate")
                             : step.kind === "smelt"
-                              ? "Печь должна быть рядом, а сырьё и топливо — в инвентаре. Бот сам подберёт топливо и заберёт результат."
+                              ? tr("bot.workflow.aFurnaceMustBe")
                               : step.kind === "return"
-                                ? "Бот вернётся к месту запуска сценария. Запускайте сценарий рядом с печью и местом для крафта."
+                                ? tr("bot.workflow.theBotReturnsTo")
                                 : step.kind === "deposit"
-                                  ? "Используются группы сундуков из настроек склада."
+                                  ? tr("bot.workflow.usesTheChestGroups")
                                   : step.kind === "mine"
-                                    ? "Количество считается в блоках. Для железа нужна каменная кирка или лучше."
-                                    : "Действие начнётся после завершения предыдущего шага."}
+                                    ? tr("bot.workflow.theCountIsIn")
+                                    : tr("bot.workflow.theActionStartsAfter")}
                       </p>
                     </div>
                   )}
@@ -756,17 +779,17 @@ export function MineflayerWorkflow({
           <p>
             {!connected ? (
               <>
-                Подключите бота, чтобы запустить сценарий.{" "}
+                {tr("bot.workflow.connectTheBotTo")}{" "}
                 <button type="button" className="mf-text-button" onClick={onOpenConnection}>
-                  Подключение ↗
+                  {tr("bot.workflow.connection")}
                 </button>
               </>
             ) : running ? (
-              "Пауза сработает после текущего шага. Остановка прервёт работу сразу."
+              tr("bot.workflow.pauseTakesEffectAfter")
             ) : otherWork ? (
-              "Бот занят. Завершите текущую работу перед запуском."
+              tr("bot.workflow.theBotIsBusy")
             ) : (
-              "При ошибке выполнение остановится на проблемном шаге."
+              tr("bot.workflow.ifAnErrorOccurs")
             )}
           </p>
         </footer>
@@ -782,9 +805,7 @@ export function MineflayerWorkflow({
             <WorkflowIcon kind="grip" />
             <MineflayerActionIcon kind={draggedStep.kind} />
             <span>
-              <strong>
-                {WORKFLOW_ACTIONS.find((action) => action.kind === draggedStep.kind)?.label}
-              </strong>
+              <strong>{workflowActionLabel(draggedStep.kind, tr)}</strong>
               <small>{detail(draggedStep)}</small>
             </span>
           </div>,
@@ -811,12 +832,8 @@ export function MineflayerWorkflow({
         </p>
       )}
       <details className="mf-workflow-footnote">
-        <summary>Что нужно для пресета «Железные инструменты»</summary>
-        <p>
-          Для заготовки железных инструментов нужны каменная кирка, доступные руды, деревья и пустая
-          печь рядом с местом запуска. После добычи бот вернётся к старту. Доски и верстак изготовит
-          из дерева.
-        </p>
+        <summary>{tr("bot.workflow.whatTheIronTools")}</summary>
+        <p>{tr("bot.workflow.ironToolsNeedA")}</p>
       </details>
     </div>
   );

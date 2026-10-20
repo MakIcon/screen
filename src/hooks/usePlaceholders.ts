@@ -2,12 +2,14 @@ import { useMemo } from "react";
 import { resolvePlaceholders, type PlaceholderContext } from "../utils/placeholders";
 import { formatLastPlayed, formatPlaytime, sumPlaytimeSecs } from "../utils/playtime";
 import type { InstanceItem } from "../types";
+import { useLocale, type Locale } from "../i18n/locale";
 
 export type PlaceholderTarget =
   | Partial<
       Pick<
         InstanceItem,
         | "name"
+        | "source"
         | "version"
         | "loader"
         | "loaderVersion"
@@ -29,6 +31,7 @@ type BuildPlaceholderContextOptions = {
   playerName?: string | null;
   accountType?: string | null;
   buildState?: string | null;
+  locale?: Locale;
 };
 
 export function buildPlaceholderContext({
@@ -39,11 +42,13 @@ export function buildPlaceholderContext({
   playerName,
   accountType,
   buildState,
+  locale,
 }: BuildPlaceholderContextOptions): PlaceholderContext {
   const totalVanillaBuilds = instances.filter(
     (instance) => instance.loader.trim().toLowerCase() === "vanilla",
   ).length;
   return {
+    locale,
     launcherName: "ScreenLauncher",
     launcherRamGb: launcherRamGb ?? 0,
     systemRamGb,
@@ -58,7 +63,7 @@ export function buildPlaceholderContext({
     buildCreatedAt: target?.createdAt ?? "0",
     buildStatus: target?.status ?? "—",
     buildState: buildState ?? "",
-    buildSource: "OFFICIAL",
+    buildSource: target?.source ?? "official",
     accountType: accountType ?? "OFFLINE",
     totalPlaytimeSecs: sumPlaytimeSecs(instances),
     totalBuilds: instances.length,
@@ -89,50 +94,28 @@ export function usePlaceholders(
   playerName: string,
   buildState = "",
 ): (template: string) => string {
+  const locale = useLocale();
   return useMemo(() => {
-    const totalVanillaBuilds = instances.filter(
-      (instance) => instance.loader.trim().toLowerCase() === "vanilla",
-    ).length;
-    const ctx: PlaceholderContext = {
-      launcherName: "ScreenLauncher",
+    const ctx = buildPlaceholderContext({
+      locale,
+      instances,
+      target: selectedInstance,
       launcherRamGb,
       systemRamGb,
       playerName,
       accountType,
       buildState,
-      buildName: selectedInstance?.name ?? "—",
-      buildVersion: selectedInstance?.version ?? "—",
-      buildLoader: selectedInstance?.loader ?? "—",
-      buildLoaderVersion: selectedInstance?.loaderVersion ?? "",
-      buildRam: selectedInstance?.ram ?? 0,
-      buildPlaytimeSecs: selectedInstance?.playtimeSecs ?? 0,
-      buildLastPlayed: selectedInstance?.lastPlayed ?? "0",
-      buildCreatedAt: selectedInstance?.createdAt ?? "0",
-      buildStatus: selectedInstance?.status ?? "—",
-      buildSource: "OFFICIAL",
-      totalPlaytimeSecs: sumPlaytimeSecs(instances),
-      totalBuilds: instances.length,
-      totalModdedBuilds: instances.length - totalVanillaBuilds,
-      totalVanillaBuilds,
-      totalAllocatedRamGb: instances.reduce((total, instance) => total + (instance.ram ?? 0), 0),
-    };
+    });
     return (template: string) => resolvePlaceholders(template, ctx);
   }, [
+    locale,
     systemRamGb,
     launcherRamGb,
     instances,
     accountType,
     playerName,
     buildState,
-    selectedInstance?.name,
-    selectedInstance?.version,
-    selectedInstance?.loader,
-    selectedInstance?.loaderVersion,
-    selectedInstance?.ram,
-    selectedInstance?.playtimeSecs,
-    selectedInstance?.lastPlayed,
-    selectedInstance?.createdAt,
-    selectedInstance?.status,
+    selectedInstance,
   ]);
 }
 

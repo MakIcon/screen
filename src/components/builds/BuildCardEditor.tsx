@@ -31,6 +31,7 @@ import {
   createPlaceholderAppearanceAttributes,
   createPlaceholderValueAttributes,
 } from "../../utils/placeholders";
+import { useTranslation } from "../../i18n/locale";
 
 type DragSession = {
   id: string;
@@ -139,6 +140,7 @@ export function BuildCardEditor({
   onSave,
   showHeader = true,
 }: Props) {
+  const tr = useTranslation();
   const [layoutOpen, setLayoutOpen] = useState(true);
   const [gridEnabled, setGridEnabled] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -367,19 +369,24 @@ export function BuildCardEditor({
     <div className="bce-editor" {...createPlaceholderValueAttributes(resolvePreviewText)}>
       {showHeader && (
         <div className="bce-header">
-          <span className="bce-header-title">CARD APPEARANCE</span>
+          <span className="bce-header-title">{tr("buildCard.cardAppearance")}</span>
           <div className="bce-header-actions">
             <button className="bce-hdr-btn" type="button" onClick={onResetAll}>
-              RESET
+              {tr("buildCard.reset")}
             </button>
             <button
               className="bce-hdr-btn bce-hdr-btn--save"
               type="button"
               onClick={() => void onSave()}
             >
-              SAVE
+              {tr("buildCard.save")}
             </button>
-            <button className="bce-hdr-close" type="button" onClick={onClose} aria-label="Close">
+            <button
+              className="bce-hdr-close"
+              type="button"
+              onClick={onClose}
+              aria-label={tr("common.close2")}
+            >
               <svg
                 width="11"
                 height="11"
@@ -401,7 +408,9 @@ export function BuildCardEditor({
       <div className="bce-layout" style={layoutStyle}>
         <div className="bce-preview-col">
           <span className="bce-preview-label">
-            {draft.backgroundMode === "draw" && !gridEnabled ? "Drawing canvas" : "Preview"}
+            {draft.backgroundMode === "draw" && !gridEnabled
+              ? tr("ui.drawingCanvas")
+              : tr("ui.preview")}
           </span>
           <div className="bce-preview-stage">
             {draft.backgroundMode === "draw" && !gridEnabled ? (
@@ -503,11 +512,11 @@ export function BuildCardEditor({
             />
 
             <EditorSection
-              title="Layout"
+              title={tr("buildCard.layout")}
               open={layoutOpen}
               onToggle={() => setLayoutOpen((prev) => !prev)}
             >
-              <EditorRow label="Height">
+              <EditorRow label={tr("buildCard.height")}>
                 <div className="bce-slider-field">
                   <span className="bce-slider-value">{heightValue}px</span>
                   <div className="bce-slider">
@@ -526,7 +535,7 @@ export function BuildCardEditor({
                   </div>
                 </div>
               </EditorRow>
-              <EditorRow label="Vertical">
+              <EditorRow label={tr("buildCard.vertical")}>
                 <div className="bce-mode-switch">
                   {(["top", "center", "bottom"] as const).map((align) => (
                     <button
@@ -537,19 +546,23 @@ export function BuildCardEditor({
                         onDraftChange((prev) => ({ ...prev, contentVerticalAlign: align }))
                       }
                     >
-                      {align === "top" ? "Top" : align === "center" ? "Center" : "Bottom"}
+                      {align === "top"
+                        ? tr("buildCard.top")
+                        : align === "center"
+                          ? tr("buildCard.center")
+                          : tr("buildCard.bottom")}
                     </button>
                   ))}
                 </div>
               </EditorRow>
-              <EditorRow label="Grid">
+              <EditorRow label={tr("buildCard.grid")}>
                 <div className="bce-mode-switch">
                   <button
                     type="button"
                     className={`bce-mode-pill ${gridEnabled ? "bce-mode-pill--active" : ""}`}
                     onClick={() => setGridEnabled(true)}
                   >
-                    On · edit
+                    {tr("buildCard.onEdit")}
                   </button>
                   <button
                     type="button"
@@ -559,35 +572,33 @@ export function BuildCardEditor({
                       setSelectedElementId(null);
                     }}
                   >
-                    Off · lock
+                    {tr("buildCard.offLock")}
                   </button>
                 </div>
               </EditorRow>
-              <EditorRow label="Positions">
+              <EditorRow label={tr("buildCard.positions")}>
                 <button
                   type="button"
                   className="bce-mini-btn"
                   onClick={() => onDraftChange((prev) => ({ ...prev, layoutOffsets: {} }))}
                   disabled={Object.keys(draft.layoutOffsets).length === 0}
                 >
-                  RESET POSITIONS
+                  {tr("buildCard.resetPositions")}
                 </button>
               </EditorRow>
-              <EditorRow label="Sizes">
+              <EditorRow label={tr("buildCard.sizes")}>
                 <button
                   type="button"
                   className="bce-mini-btn"
                   onClick={() => onDraftChange((prev) => ({ ...prev, elementScales: {} }))}
                   disabled={Object.keys(draft.elementScales).length === 0}
                 >
-                  RESET SIZES
+                  {tr("buildCard.resetSizes")}
                 </button>
               </EditorRow>
               <p className="bce-grid-hint">
-                Turn on the grid, then select any text, tag or pin. Drag it to move, or pull its
-                bottom-right handle to resize. Positions snap to {BUILD_CARD_GRID_SIZE}px cells.
-                {" The pin appears on pinned builds."}
-                {draft.backgroundMode === "draw" && " Turn it off to continue drawing."}
+                {tr("buildCard.turnOnTheGrid", { gridSize: BUILD_CARD_GRID_SIZE })}
+                {draft.backgroundMode === "draw" && ` ${tr("buildCard.turnItOffTo")}`}
               </p>
             </EditorSection>
 

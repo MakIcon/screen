@@ -5,7 +5,8 @@ import { BuildConstellation } from "./BuildConstellation";
 import { BuildActivityCalendar } from "./BuildActivityCalendar";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { StatsIcon } from "./StatsIcon";
-import { activityByDay, dayKey, formatStatsDuration, statsCount, timestamp } from "./buildStats";
+import { activityByDay, dayKey, formatStatsDuration, timestamp } from "./buildStats";
+import { intlLocale, useLocale, useTranslation } from "../../i18n/locale";
 
 type StatsTab = "timeline" | "heatmap" | "constellation";
 type EventKind = "created" | "mod" | "pack" | "shader" | "launched";
@@ -23,24 +24,8 @@ interface Props {
   onClose: () => void;
 }
 
-const KIND_TAG: Record<EventKind, string> = {
-  created: "Создание",
-  mod: "Мод",
-  pack: "Ресурс-пак",
-  shader: "Шейдер",
-  launched: "Игра",
-};
-const FILTERS: { id: EventFilter; label: string }[] = [
-  { id: "all", label: "Все события" },
-  { id: "launched", label: "Игра" },
-  { id: "mod", label: "Моды" },
-  { id: "resources", label: "Ресурсы" },
-];
-const TABS: { id: StatsTab; label: string }[] = [
-  { id: "timeline", label: "Хронология" },
-  { id: "heatmap", label: "Тепловая карта" },
-  { id: "constellation", label: "Созвездие" },
-];
+const FILTERS: EventFilter[] = ["all", "launched", "mod", "resources"];
+const TABS: StatsTab[] = ["timeline", "heatmap", "constellation"];
 
 function EventIcon({ event }: { event: TLEvent }) {
   return event.iconUrl ? (
@@ -55,6 +40,8 @@ function EventIcon({ event }: { event: TLEvent }) {
 }
 
 export function BuildStatsModal({ instance, onClose }: Props) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [tab, setTab] = useState<StatsTab>("timeline");
   const [horizontal, setHorizontal] = useState(false);
   const [filter, setFilter] = useState<EventFilter>("all");
@@ -203,7 +190,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
         title: instance.name,
         detail: [
           `Minecraft ${instance.version} · ${instance.loader}${instance.loaderVersion ? ` ${instance.loaderVersion}` : ""}`,
-          `${instance.ram} ГБ памяти`,
+          `${instance.ram} ${tr("buildStats.gbMemory")}`,
         ],
       });
     const add = (item: InstalledModView, kind: EventKind) => {
@@ -219,7 +206,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
         detail: [
           author,
           item.versionNumber ? `v${item.versionNumber}` : "",
-          !item.enabled ? "Отключён" : "",
+          !item.enabled ? tr("buildStats.disabled") : "",
         ].filter(Boolean),
       });
     };
@@ -235,14 +222,17 @@ export function BuildStatsModal({ instance, onClose }: Props) {
     );
     validSessions.forEach((session, index) => {
       const time = (ts: number) =>
-        new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        new Date(ts * 1000).toLocaleTimeString(intlLocale(locale), {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
       list.push({
         id: `session:${session.ts}:${index}`,
         kind: "launched",
         ts: session.ts,
-        title: "Игровой сеанс",
+        title: tr("buildStats.gameSession"),
         detail: [
-          formatStatsDuration(session.secs),
+          formatStatsDuration(session.secs, locale),
           `${time(session.ts - session.secs)} — ${time(session.ts)}`,
         ],
       });
@@ -257,11 +247,11 @@ export function BuildStatsModal({ instance, onClose }: Props) {
         id: "last-launch",
         kind: "launched",
         ts: lastTs,
-        title: "Последний запуск",
-        detail: instance.status === "RUNNING" ? ["В игре"] : [],
+        title: tr("buildStats.lastLaunch"),
+        detail: instance.status === "RUNNING" ? [tr("buildStats.inGame")] : [],
       });
     return list.sort((a, b) => (newestFirst ? b.ts - a.ts : a.ts - b.ts));
-  }, [instance, mods, packs, shaders, sessions, icons, authors, newestFirst]);
+  }, [instance, mods, packs, shaders, sessions, icons, authors, newestFirst, locale, tr]);
   const visibleEvents = events.filter(
     (event) =>
       filter === "all" ||
@@ -289,29 +279,33 @@ export function BuildStatsModal({ instance, onClose }: Props) {
         <button
           className="stats-close"
           type="button"
-          aria-label="Закрыть статистику"
+          aria-label={tr("buildStats.closeStatistics")}
           onClick={onClose}
         >
           ✕
         </button>
         <header className="stats-modal-head">
-          <span className="confirm-label">STATS</span>
+          <span className="confirm-label">{tr("buildStats.stats")}</span>
           <h2 className="stats-modal-name" id="build-stats-title">
             {instance.name}
           </h2>
         </header>
-        <div className="stats-tab-bar" role="tablist" aria-label="Раздел статистики">
+        <div
+          className="stats-tab-bar"
+          role="tablist"
+          aria-label={tr("buildStats.statisticsSection")}
+        >
           {TABS.map((item, index) => (
             <button
-              key={item.id}
+              key={item}
               type="button"
               role="tab"
-              aria-selected={tab === item.id}
-              aria-controls={`stats-panel-${item.id}`}
-              id={`stats-tab-${item.id}`}
-              tabIndex={tab === item.id ? 0 : -1}
-              className={`stats-tab-btn${tab === item.id ? " active" : ""}`}
-              onClick={() => setTab(item.id)}
+              aria-selected={tab === item}
+              aria-controls={`stats-panel-${item}`}
+              id={`stats-tab-${item}`}
+              tabIndex={tab === item ? 0 : -1}
+              className={`stats-tab-btn${tab === item ? " active" : ""}`}
+              onClick={() => setTab(item)}
               onKeyDown={(event) => {
                 let next: number;
                 if (event.key === "ArrowRight") next = (index + 1) % TABS.length;
@@ -320,11 +314,11 @@ export function BuildStatsModal({ instance, onClose }: Props) {
                 else if (event.key === "End") next = TABS.length - 1;
                 else return;
                 event.preventDefault();
-                setTab(TABS[next].id);
-                document.getElementById(`stats-tab-${TABS[next].id}`)?.focus();
+                setTab(TABS[next]);
+                document.getElementById(`stats-tab-${TABS[next]}`)?.focus();
               }}
             >
-              {item.label}
+              {tr(`buildStats.tab.${item}`)}
             </button>
           ))}
           {tab === "timeline" && (
@@ -332,8 +326,8 @@ export function BuildStatsModal({ instance, onClose }: Props) {
               <button
                 type="button"
                 className={`stats-icon-btn${!horizontal ? " active" : ""}`}
-                aria-label="Вертикальная хронология"
-                data-tooltip="Вертикально"
+                aria-label={tr("buildStats.verticalTimeline")}
+                data-tooltip={tr("buildStats.vertical")}
                 aria-pressed={!horizontal}
                 onClick={() => setHorizontal(false)}
               >
@@ -342,8 +336,8 @@ export function BuildStatsModal({ instance, onClose }: Props) {
               <button
                 type="button"
                 className={`stats-icon-btn${horizontal ? " active" : ""}`}
-                aria-label="Горизонтальная хронология"
-                data-tooltip="Горизонтально"
+                aria-label={tr("buildStats.horizontalTimeline")}
+                data-tooltip={tr("buildStats.horizontal")}
                 aria-pressed={horizontal}
                 onClick={() => setHorizontal(true)}
               >
@@ -366,33 +360,37 @@ export function BuildStatsModal({ instance, onClose }: Props) {
           >
             {(contentError || sessionsError) && (
               <div className="stats-error" role="status">
-                <span>Часть данных не удалось загрузить.</span>
+                <span>{tr("buildStats.someDataCouldNot")}</span>
                 <button type="button" onClick={() => setRefresh((value) => value + 1)}>
-                  Повторить
+                  {tr("common.retry")}
                 </button>
               </div>
             )}
             {tab === "timeline" && (
               <>
                 <div className="tl-toolbar">
-                  <div className="tl-filters" aria-label="Фильтр событий">
+                  <div className="tl-filters" aria-label={tr("buildStats.eventFilter")}>
                     {FILTERS.map((item) => (
                       <button
-                        key={item.id}
+                        key={item}
                         type="button"
-                        aria-pressed={filter === item.id}
-                        className={filter === item.id ? "active" : ""}
-                        onClick={() => setFilter(item.id)}
+                        aria-pressed={filter === item}
+                        className={filter === item ? "active" : ""}
+                        onClick={() => setFilter(item)}
                       >
-                        {item.label}
+                        {tr(`buildStats.filter.${item}`)}
                       </button>
                     ))}
                   </div>
                   <button
                     className="stats-icon-btn tl-sort"
                     type="button"
-                    aria-label={newestFirst ? "Сначала новые" : "Сначала старые"}
-                    data-tooltip={newestFirst ? "Сначала новые" : "Сначала старые"}
+                    aria-label={
+                      newestFirst ? tr("buildStats.newestFirst") : tr("buildStats.oldestFirst")
+                    }
+                    data-tooltip={
+                      newestFirst ? tr("buildStats.newestFirst") : tr("buildStats.oldestFirst")
+                    }
                     onClick={() => setNewestFirst(!newestFirst)}
                   >
                     <StatsIcon name={newestFirst ? "sort-down" : "sort-up"} />
@@ -400,23 +398,23 @@ export function BuildStatsModal({ instance, onClose }: Props) {
                 </div>
                 {loading || sessionsLoading ? (
                   <div className="stats-state" role="status">
-                    Загрузка…
+                    {tr("common.loading")}
                   </div>
                 ) : visibleEvents.length === 0 ? (
-                  <div className="stats-state">Нет событий</div>
+                  <div className="stats-state">{tr("buildStats.noEvents")}</div>
                 ) : horizontal ? (
                   <CustomScrollArea
                     className="tl-horizontal-scroll"
                     orientation="horizontal"
                     thumbThickness={7}
                     tabIndex={0}
-                    aria-label="Лента событий, прокручивается горизонтально"
+                    aria-label={tr("buildStats.horizontallyScrollingEventTimeline")}
                   >
                     <div className="tl-filmstrip">
                       {visibleEvents.map((event) => (
                         <article key={event.id} className={`tl-film-card tl-kind--${event.kind}`}>
                           <time dateTime={new Date(event.ts * 1000).toISOString()}>
-                            {new Date(event.ts * 1000).toLocaleDateString("ru-RU", {
+                            {new Date(event.ts * 1000).toLocaleDateString(intlLocale(locale), {
                               day: "numeric",
                               month: "short",
                               year: "numeric",
@@ -427,7 +425,7 @@ export function BuildStatsModal({ instance, onClose }: Props) {
                               <EventIcon event={event} />
                             </div>
                           </div>
-                          <span className="tl-tag">{KIND_TAG[event.kind]}</span>
+                          <span className="tl-tag">{tr(`buildStats.kind.${event.kind}`)}</span>
                           <h4>{event.title}</h4>
                           <p>{event.detail.join(" · ")}</p>
                         </article>
@@ -440,15 +438,13 @@ export function BuildStatsModal({ instance, onClose }: Props) {
                       <section key={key} className="tl-day-group">
                         <div className="tl-day-heading">
                           <time dateTime={key}>
-                            {new Date(`${key}T12:00:00`).toLocaleDateString("ru-RU", {
+                            {new Date(`${key}T12:00:00`).toLocaleDateString(intlLocale(locale), {
                               day: "numeric",
                               month: "long",
                               year: "numeric",
                             })}
                           </time>
-                          <span>
-                            {statsCount(dayEvents.length, ["событие", "события", "событий"])}
-                          </span>
+                          <span>{tr("buildStats.events", { count: dayEvents.length })}</span>
                         </div>
                         <div className="tl-day-events">
                           {dayEvents.map((event) => (
@@ -458,12 +454,17 @@ export function BuildStatsModal({ instance, onClose }: Props) {
                               </div>
                               <div className="tl-event-body">
                                 <div className="tl-header">
-                                  <span className="tl-tag">{KIND_TAG[event.kind]}</span>
+                                  <span className="tl-tag">
+                                    {tr(`buildStats.kind.${event.kind}`)}
+                                  </span>
                                   <time dateTime={new Date(event.ts * 1000).toISOString()}>
-                                    {new Date(event.ts * 1000).toLocaleTimeString("ru-RU", {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
+                                    {new Date(event.ts * 1000).toLocaleTimeString(
+                                      intlLocale(locale),
+                                      {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    )}
                                   </time>
                                 </div>
                                 <h4>{event.title}</h4>

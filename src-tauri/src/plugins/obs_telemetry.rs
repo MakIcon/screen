@@ -893,78 +893,91 @@ pub async fn prepare_obs_telemetry_for_launch(
 #[tauri::command]
 pub async fn get_obs_telemetry_status(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, String> {
-    current_status(&state)
+) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async { current_status(&state) }.await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn start_obs_telemetry(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, String> {
-    let settings = read_settings().await?;
-    let plugin = settings.plugins.obs_telemetry;
+) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let plugin = settings.plugins.obs_telemetry;
 
-    if !plugin.enabled {
-        return Err("OBS Telemetry extension is disabled".to_string());
+        if !plugin.enabled {
+            return Err("OBS Telemetry extension is disabled".to_string());
+        }
+
+        ensure_obs_telemetry_started(&state, &plugin)?;
+        let runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        Ok(snapshot_status(&runtime))
     }
-
-    ensure_obs_telemetry_started(&state, &plugin)?;
-    let runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn stop_obs_telemetry(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, String> {
-    let server = {
+) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let server = {
+            let mut runtime = state
+                .inner
+                .lock()
+                .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+            runtime.server.take()
+        };
+
+        if let Some(mut server) = server {
+            let _ = server.shutdown.send(());
+            if let Some(handle) = server.handle.take() {
+                let _ = handle.join();
+            }
+        }
+
         let mut runtime = state
             .inner
             .lock()
             .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
-        runtime.server.take()
-    };
-
-    if let Some(mut server) = server {
-        let _ = server.shutdown.send(());
-        if let Some(handle) = server.handle.take() {
-            let _ = handle.join();
-        }
+        runtime.state = "stopped".to_string();
+        runtime.token.clear();
+        push_log(&mut runtime, "stop requested from launcher");
+        Ok(snapshot_status(&runtime))
     }
-
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
-    runtime.state = "stopped".to_string();
-    runtime.token.clear();
-    push_log(&mut runtime, "stop requested from launcher");
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn open_obs_telemetry_overlay(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ActionResult, String> {
-    let url = {
-        let runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
-        overlay_url(runtime.port)
-    };
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let url = {
+            let runtime = state
+                .inner
+                .lock()
+                .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+            overlay_url(runtime.port)
+        };
 
-    tauri_plugin_opener::open_url(&url, None::<&str>)
-        .map_err(|error| format!("open OBS overlay error: {error}"))?;
+        tauri_plugin_opener::open_url(&url, None::<&str>)
+            .map_err(|error| format!("open OBS overlay error: {error}"))?;
 
-    Ok(ActionResult {
-        ok: true,
-        message: "OBS telemetry overlay opened".to_string(),
-        pid: None,
-    })
+        Ok(ActionResult {
+            ok: true,
+            message: "OBS telemetry overlay opened".to_string(),
+            pid: None,
+        })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 const OBS_OVERLAY_HTML_V2: &str = include_str!("obs_overlay.html");

@@ -1,3 +1,5 @@
+import { TAB_TITLE } from "../constants/tabs";
+import { useAppearanceText } from "./localization";
 import { useEffect, useState } from "react";
 import { DISPLAY_FONT_OPTIONS, FONT_OPTIONS, customFontStack } from "./profile";
 import { ColorField, RangeField, Section, SelectField } from "./StudioFields";
@@ -413,6 +415,7 @@ function NumberListField({
   activeMax: number;
   onChange: (value: number[]) => void;
 }) {
+  const copy = useAppearanceText();
   const serialized = value.join(", ");
   const [draft, setDraft] = useState(serialized);
 
@@ -431,7 +434,7 @@ function NumberListField({
 
   return (
     <label className="studio-text-field studio-text-field--single-line">
-      <span>CUSTOM TICK VALUES</span>
+      <span>{copy("CUSTOM TICK VALUES")}</span>
       <input
         value={draft}
         spellCheck={false}
@@ -443,7 +446,8 @@ function NumberListField({
         }}
       />
       <small>
-        ALLOWED: {min} TO {max} · VALUES OUTSIDE {activeMin}–{activeMax} STAY SAVED
+        {copy("ALLOWED:")} {min} {copy("TO")} {max} {copy("· VALUES OUTSIDE")} {activeMin}–
+        {activeMax} {copy("STAY SAVED")}
       </small>
     </label>
   );
@@ -481,17 +485,19 @@ export function ElementInspector({
   onComponentChange,
   onStateTransitionChange,
 }: ElementInspectorProps) {
+  const copy = useAppearanceText();
   if (!target) {
     return (
       <div className="appearance-element-empty">
-        <span>09 / ELEMENT INSPECTOR</span>
-        <strong>PICK ANY OBJECT IN THE LAUNCHER</strong>
+        <span>{copy("09 / ELEMENT INSPECTOR")}</span>
+        <strong>{copy("PICK ANY OBJECT IN THE LAUNCHER")}</strong>
         <p>
-          Select a button, title, card or control. Its text and visual settings will appear here and
-          update live in the main window.
+          {copy(
+            "Select a button, title, card or control. Its text and visual settings will appear here and update live in the main window.",
+          )}
         </p>
         <button type="button" onClick={onPick}>
-          START ELEMENT PICKER →
+          {copy("START ELEMENT PICKER →")}
         </button>
       </div>
     );
@@ -652,8 +658,9 @@ export function ElementInspector({
     <div className="appearance-element-inspector">
       <div className="appearance-element-summary">
         <span>
-          {target.tab ? target.tab.toUpperCase() : "ALL TABS"} ·{" "}
-          {(target.kind ?? "element").toUpperCase()} · {interactionState.toUpperCase()}
+          {target.tab ? TAB_TITLE[target.tab] : copy("ALL TABS")} ·{" "}
+          {copy(target.kind === "input" ? "FIELD" : (target.kind ?? "element").toUpperCase())} ·{" "}
+          {copy(interactionState.toUpperCase())}
         </span>
         <strong>{target.label}</strong>
         <small>{target.id}</small>
@@ -661,11 +668,13 @@ export function ElementInspector({
 
       {interactionState !== "normal" && (
         <Section
-          title={`${interactionState.toUpperCase()} TRANSITION`}
-          note="The launcher pins this state on the selected element while you edit it. Zero milliseconds makes the change instant."
+          title={copy("{state} transition", { state: copy(interactionState.toUpperCase()) })}
+          note={copy(
+            "The launcher pins this state on the selected element while you edit it. Zero milliseconds makes the change instant.",
+          )}
         >
           <RangeField
-            label="DURATION"
+            label={copy("DURATION")}
             value={stateTransitionMs}
             min={0}
             max={2_000}
@@ -675,7 +684,7 @@ export function ElementInspector({
             onChange={(stateTransitionMs) => onStateTransitionChange({ stateTransitionMs })}
           />
           <SelectField
-            label="EASING"
+            label={copy("EASING")}
             value={stateEasing}
             options={HOVER_EASINGS}
             onChange={(stateEasing) => onStateTransitionChange({ stateEasing })}
@@ -685,13 +694,17 @@ export function ElementInspector({
 
       {interactionState === "normal" && supportsVisibleText && (
         <Section
-          title="VISIBLE TEXT"
-          note="Changes the primary visible label without replacing the button or breaking its click behavior."
+          title={copy("VISIBLE TEXT")}
+          note={copy(
+            "Changes the primary visible label without replacing the button or breaking its click behavior.",
+          )}
         >
           <>
             <div className="studio-text-field">
               <span>
-                {target.textTarget?.template ? "TEXT / PLACEHOLDER TEMPLATE" : "ELEMENT LABEL"}
+                {target.textTarget?.template
+                  ? copy("TEXT / PLACEHOLDER TEMPLATE")
+                  : copy("ELEMENT LABEL")}
               </span>
               <PlaceholderTemplateEditor
                 value={displayedText}
@@ -708,7 +721,7 @@ export function ElementInspector({
               disabled={!hasTextOverride}
               onClick={() => onTextChange(undefined)}
             >
-              RESTORE ORIGINAL TEXT
+              {copy("RESTORE ORIGINAL TEXT")}
             </button>
           </>
         </Section>
@@ -716,8 +729,10 @@ export function ElementInspector({
 
       {interactionState === "normal" && (
         <Section
-          title="ELEMENT MATERIALS"
-          note="One-click materials style the entire picked element, including its surface, border, text and effects."
+          title={copy("ELEMENT MATERIALS")}
+          note={copy(
+            "One-click materials style the entire picked element, including its surface, border, text and effects.",
+          )}
         >
           <div className="studio-material-preset-grid">
             {ELEMENT_MATERIAL_PRESETS.map((preset) => (
@@ -729,8 +744,8 @@ export function ElementInspector({
                 onClick={() => onStyleChange(preset.style)}
               >
                 <i aria-hidden="true" />
-                <strong>{preset.label}</strong>
-                <small>{preset.note}</small>
+                <strong>{copy(preset.label)}</strong>
+                <small>{copy(preset.note)}</small>
               </button>
             ))}
           </div>
@@ -738,17 +753,19 @@ export function ElementInspector({
       )}
 
       <Section
-        title="SIZE & BOX"
-        note="AUTO is detected separately for every axis. Fixed-size controls start at their measured pixels; flexible controls start at 0 AUTO."
+        title={copy("SIZE & BOX")}
+        note={copy(
+          "AUTO is detected separately for every axis. Fixed-size controls start at their measured pixels; flexible controls start at 0 AUTO.",
+        )}
       >
         <RangeField
-          label="WIDTH"
+          label={copy("WIDTH")}
           value={style?.width ?? initialWidth}
           min={0}
           max={1_200}
           defaultValue={defaultWidth}
           suffix=" PX"
-          zeroSuffix={widthAuto ? " AUTO" : undefined}
+          zeroSuffix={widthAuto ? copy(" AUTO") : undefined}
           onChange={(width) =>
             onStyleChange({
               width: interactionState === "normal" && width === initialWidth ? undefined : width,
@@ -756,13 +773,13 @@ export function ElementInspector({
           }
         />
         <RangeField
-          label="HEIGHT"
+          label={copy("HEIGHT")}
           value={style?.height ?? initialHeight}
           min={0}
           max={800}
           defaultValue={defaultHeight}
           suffix=" PX"
-          zeroSuffix={heightAuto ? " AUTO" : undefined}
+          zeroSuffix={heightAuto ? copy(" AUTO") : undefined}
           onChange={(height) =>
             onStyleChange({
               height:
@@ -771,13 +788,13 @@ export function ElementInspector({
           }
         />
         <RangeField
-          label="MIN WIDTH"
+          label={copy("MIN WIDTH")}
           value={style?.minWidth ?? initialMinWidth}
           min={0}
           max={1_200}
           defaultValue={defaultMinWidth}
           suffix=" PX"
-          zeroSuffix={minWidthAuto ? " AUTO" : undefined}
+          zeroSuffix={minWidthAuto ? copy(" AUTO") : undefined}
           onChange={(minWidth) =>
             onStyleChange({
               minWidth:
@@ -788,13 +805,13 @@ export function ElementInspector({
           }
         />
         <RangeField
-          label="MIN HEIGHT"
+          label={copy("MIN HEIGHT")}
           value={style?.minHeight ?? initialMinHeight}
           min={0}
           max={800}
           defaultValue={defaultMinHeight}
           suffix=" PX"
-          zeroSuffix={minHeightAuto ? " AUTO" : undefined}
+          zeroSuffix={minHeightAuto ? copy(" AUTO") : undefined}
           onChange={(minHeight) =>
             onStyleChange({
               minHeight:
@@ -808,11 +825,13 @@ export function ElementInspector({
 
       {interactionState === "normal" && sliderSettings && (
         <Section
-          title="SLIDER PROPS"
-          note="These are live component props: the selected ElementSlider is rebuilt with the new range, step, header and ticks."
+          title={copy("SLIDER PROPS")}
+          note={copy(
+            "These are live component props: the selected ElementSlider is rebuilt with the new range, step, header and ticks.",
+          )}
         >
           <label className="studio-text-field studio-text-field--single-line">
-            <span>HEADER LABEL</span>
+            <span>{copy("HEADER LABEL")}</span>
             <input
               value={sliderSettings.label}
               maxLength={80}
@@ -821,7 +840,7 @@ export function ElementInspector({
             />
           </label>
           <RangeField
-            label="MIN"
+            label={copy("MIN")}
             value={sliderSettings.min}
             min={sliderHardMin}
             max={Math.max(-999, sliderActiveMax - 0.01)}
@@ -837,24 +856,26 @@ export function ElementInspector({
                   className={sliderSettings.maxMode === "system" ? "active" : ""}
                   onClick={() => patchSlider({ maxMode: "system" })}
                 >
-                  USE REAL RAM · {sliderSettings.systemMax} GB
+                  {copy("USE REAL RAM ·")} {sliderSettings.systemMax} {copy("GB")}
                 </button>
                 <button
                   type="button"
                   className={sliderSettings.maxMode === "custom" ? "active" : ""}
                   onClick={() => patchSlider({ maxMode: "custom" })}
                 >
-                  MANUAL MAX ≤ {sliderSettings.systemMax} GB
+                  {copy("MANUAL MAX ≤")} {sliderSettings.systemMax} {copy("GB")}
                 </button>
               </div>
               <div className="studio-unavailable-note">
-                This is the launcher RAM slider. Its hard ceiling is the detected system memory, so
-                an appearance profile can never set it above {sliderSettings.systemMax} GB.
+                {copy(
+                  "This is the launcher RAM slider. Its hard ceiling is the detected system memory, so an appearance profile can never set it above",
+                )}{" "}
+                {sliderSettings.systemMax} {copy("GB.")}
               </div>
             </>
           )}
           <RangeField
-            label={sliderSettings.maxMode === "system" ? "MAX · SYSTEM RAM" : "MAX"}
+            label={sliderSettings.maxMode === "system" ? copy("MAX · SYSTEM RAM") : copy("MAX")}
             value={sliderActiveMax}
             min={sliderMaximumFloor}
             max={sliderHardMax}
@@ -866,7 +887,9 @@ export function ElementInspector({
             onChange={(max) => patchSlider({ max })}
           />
           <RangeField
-            label={sliderSettings.constraint === "system-ram" ? "STEP · WHOLE GB" : "STEP"}
+            label={
+              sliderSettings.constraint === "system-ram" ? copy("STEP · WHOLE GB") : copy("STEP")
+            }
             value={sliderSettings.step}
             min={sliderSettings.constraint === "system-ram" ? 1 : 0.01}
             max={sliderSettings.constraint === "system-ram" ? sliderHardMax : 100}
@@ -875,7 +898,7 @@ export function ElementInspector({
             onChange={(step) => patchSlider({ step })}
           />
           <RangeField
-            label="DEFAULT VALUE"
+            label={copy("DEFAULT VALUE")}
             value={sliderSettings.defaultValue}
             min={sliderSettings.min}
             max={sliderActiveMax}
@@ -884,45 +907,45 @@ export function ElementInspector({
             onChange={(defaultValue) => patchSlider({ defaultValue })}
           />
           <SelectField
-            label="SHOW HEADER LABEL"
+            label={copy("SHOW HEADER LABEL")}
             value={sliderSettings.showHeader ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchSlider({ showHeader: value === "on" })}
           />
           <SelectField
-            label="SHOW VALUE"
+            label={copy("SHOW VALUE")}
             value={sliderSettings.showValue ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchSlider({ showValue: value === "on" })}
           />
           <SelectField
-            label="EDIT VALUE BY KEYBOARD"
+            label={copy("EDIT VALUE BY KEYBOARD")}
             value={sliderSettings.valueEditable ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchSlider({ valueEditable: value === "on" })}
           />
           <SelectField
-            label="ARROW KEY CONTROL"
+            label={copy("ARROW KEY CONTROL")}
             value={sliderSettings.keyboardEnabled ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchSlider({ keyboardEnabled: value === "on" })}
           />
           <SelectField
-            label="DEFAULT VALUE MARKER"
+            label={copy("DEFAULT VALUE MARKER")}
             value={sliderSettings.showDefaultMarker ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchSlider({ showDefaultMarker: value === "on" })}
           />
           {sliderSettings.showDefaultMarker && (
             <SelectField
-              label="SNAP TO DEFAULT MARKER"
+              label={copy("SNAP TO DEFAULT MARKER")}
               value={sliderSettings.defaultMarkerMagnetic ? "on" : "off"}
               options={BOOLEAN_OPTIONS}
               onChange={(value) => patchSlider({ defaultMarkerMagnetic: value === "on" })}
             />
           )}
           <SelectField
-            label="TICK LABEL MODE"
+            label={copy("TICK LABEL MODE")}
             value={sliderSettings.tickMode}
             options={TICK_MODES}
             onChange={(tickMode) => patchSlider({ tickMode })}
@@ -938,19 +961,20 @@ export function ElementInspector({
             />
           )}
           <div className="studio-unavailable-note">
-            DEFAULT VALUE affects uncontrolled sliders. Controlled sliders such as launcher RAM keep
-            their real saved value, while MIN, MAX, STEP and TICKS still apply live.
+            {copy(
+              "DEFAULT VALUE affects uncontrolled sliders. Controlled sliders such as launcher RAM keep their real saved value, while MIN, MAX, STEP and TICKS still apply live.",
+            )}
           </div>
         </Section>
       )}
 
       {interactionState === "normal" && toggleSettings && (
         <Section
-          title="TOGGLE PROPS"
-          note="Controls the selected ElementToggle structure and switch size."
+          title={copy("TOGGLE PROPS")}
+          note={copy("Controls the selected ElementToggle structure and switch size.")}
         >
           <label className="studio-text-field studio-text-field--single-line">
-            <span>TITLE</span>
+            <span>{copy("TITLE")}</span>
             <input
               value={toggleSettings.title}
               maxLength={120}
@@ -959,7 +983,7 @@ export function ElementInspector({
             />
           </label>
           <label className="studio-text-field">
-            <span>NOTE</span>
+            <span>{copy("NOTE")}</span>
             <textarea
               value={toggleSettings.note}
               maxLength={240}
@@ -969,19 +993,19 @@ export function ElementInspector({
             />
           </label>
           <SelectField
-            label="SHOW NOTE"
+            label={copy("SHOW NOTE")}
             value={toggleSettings.showNote ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchToggle({ showNote: value === "on" })}
           />
           <SelectField
-            label="COMPACT MODE"
+            label={copy("COMPACT MODE")}
             value={toggleSettings.compact ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchToggle({ compact: value === "on" })}
           />
           <RangeField
-            label="SWITCH SCALE"
+            label={copy("SWITCH SCALE")}
             value={toggleSettings.switchScale}
             min={0.65}
             max={1.6}
@@ -994,11 +1018,11 @@ export function ElementInspector({
 
       {interactionState === "normal" && checkboxSettings && (
         <Section
-          title="CHECKBOX PROPS"
-          note="Fine-tune the indicator independently from its label."
+          title={copy("CHECKBOX PROPS")}
+          note={copy("Fine-tune the indicator independently from its label.")}
         >
           <label className="studio-text-field studio-text-field--single-line">
-            <span>LABEL</span>
+            <span>{copy("LABEL")}</span>
             <input
               value={checkboxSettings.label}
               maxLength={120}
@@ -1007,7 +1031,7 @@ export function ElementInspector({
             />
           </label>
           <RangeField
-            label="INDICATOR SIZE"
+            label={copy("INDICATOR SIZE")}
             value={checkboxSettings.indicatorSize}
             min={10}
             max={36}
@@ -1016,7 +1040,7 @@ export function ElementInspector({
             onChange={(indicatorSize) => patchCheckbox({ indicatorSize })}
           />
           <RangeField
-            label="LABEL GAP"
+            label={copy("LABEL GAP")}
             value={checkboxSettings.labelGap}
             min={0}
             max={40}
@@ -1029,11 +1053,11 @@ export function ElementInspector({
 
       {interactionState === "normal" && dropdownSettings && (
         <Section
-          title="DROPDOWN PROPS"
-          note="Changes the selected InlineDropdown and its option list."
+          title={copy("DROPDOWN PROPS")}
+          note={copy("Changes the selected InlineDropdown and its option list.")}
         >
           <label className="studio-text-field studio-text-field--single-line">
-            <span>LABEL</span>
+            <span>{copy("LABEL")}</span>
             <input
               value={dropdownSettings.label}
               maxLength={120}
@@ -1042,13 +1066,13 @@ export function ElementInspector({
             />
           </label>
           <SelectField
-            label="SHOW LABEL"
+            label={copy("SHOW LABEL")}
             value={dropdownSettings.showLabel ? "on" : "off"}
             options={BOOLEAN_OPTIONS}
             onChange={(value) => patchDropdown({ showLabel: value === "on" })}
           />
           <RangeField
-            label="VISIBLE ITEMS"
+            label={copy("VISIBLE ITEMS")}
             value={dropdownSettings.visibleItems}
             min={1}
             max={12}
@@ -1056,7 +1080,7 @@ export function ElementInspector({
             onChange={(visibleItems) => patchDropdown({ visibleItems })}
           />
           <RangeField
-            label="ITEM HEIGHT"
+            label={copy("ITEM HEIGHT")}
             value={dropdownSettings.itemHeight}
             min={28}
             max={96}
@@ -1069,7 +1093,10 @@ export function ElementInspector({
 
       {supportsTypography && (
         <>
-          <Section title="TEXT PRESETS" note="Apply a complete material treatment in one click.">
+          <Section
+            title={copy("TEXT PRESETS")}
+            note={copy("Apply a complete material treatment in one click.")}
+          >
             <div className="studio-text-preset-grid">
               {TEXT_PRESETS.map((preset) => (
                 <button
@@ -1078,27 +1105,31 @@ export function ElementInspector({
                   data-preset={preset.id}
                   onClick={() => onStyleChange(preset.style)}
                 >
-                  <strong>{preset.label}</strong>
-                  <small>{preset.note}</small>
+                  <strong>{copy(preset.label)}</strong>
+                  <small>{copy(preset.note)}</small>
                 </button>
               ))}
             </div>
           </Section>
-          <Section title="TYPOGRAPHY" note="Fine controls apply only to this selected object.">
+          <Section
+            title={copy("TYPOGRAPHY")}
+            note={copy("Fine controls apply only to this selected object.")}
+          >
             <SelectField
-              label="FONT FAMILY"
+              label={copy("FONT FAMILY")}
               value={selectedFont}
               options={fontOptions}
+              translateOptions={false}
               onChange={(fontFamily) => onStyleChange({ fontFamily })}
             />
             <SelectField
-              label="TEXT ALIGN"
+              label={copy("TEXT ALIGN")}
               value={style?.textAlign ?? "center"}
               options={TEXT_ALIGNMENTS}
               onChange={(textAlign) => onStyleChange({ textAlign })}
             />
             <RangeField
-              label="FONT SIZE"
+              label={copy("FONT SIZE")}
               value={style?.fontSize ?? 14}
               min={6}
               max={96}
@@ -1106,7 +1137,7 @@ export function ElementInspector({
               onChange={(fontSize) => onStyleChange({ fontSize })}
             />
             <RangeField
-              label="FONT WEIGHT"
+              label={copy("FONT WEIGHT")}
               value={style?.fontWeight ?? 700}
               min={100}
               max={900}
@@ -1114,7 +1145,7 @@ export function ElementInspector({
               onChange={(fontWeight) => onStyleChange({ fontWeight })}
             />
             <RangeField
-              label="LETTER SPACING"
+              label={copy("LETTER SPACING")}
               value={style?.letterSpacing ?? 0}
               min={-2}
               max={10}
@@ -1123,7 +1154,7 @@ export function ElementInspector({
               onChange={(letterSpacing) => onStyleChange({ letterSpacing })}
             />
             <RangeField
-              label="LINE HEIGHT"
+              label={copy("LINE HEIGHT")}
               value={style?.lineHeight ?? 1.2}
               min={0.7}
               max={2.5}
@@ -1131,9 +1162,12 @@ export function ElementInspector({
               onChange={(lineHeight) => onStyleChange({ lineHeight })}
             />
           </Section>
-          <Section title="TEXT DECORATION" note="Decoration, casing, shadow, glow and outline.">
+          <Section
+            title={copy("TEXT DECORATION")}
+            note={copy("Decoration, casing, shadow, glow and outline.")}
+          >
             <SelectField
-              label="DECORATION"
+              label={copy("DECORATION")}
               value={style?.textDecoration ?? "none"}
               options={TEXT_DECORATIONS}
               onChange={(textDecoration) => onStyleChange({ textDecoration })}
@@ -1141,20 +1175,20 @@ export function ElementInspector({
             {(style?.textDecoration ?? "none") !== "none" && (
               <>
                 <SelectField
-                  label="DECORATION STYLE"
+                  label={copy("DECORATION STYLE")}
                   value={style?.textDecorationStyle ?? "solid"}
                   options={TEXT_DECORATION_STYLES}
                   onChange={(textDecorationStyle) => onStyleChange({ textDecorationStyle })}
                 />
                 <div className="studio-color-grid studio-color-grid--single">
                   <ColorField
-                    label="DECORATION COLOR"
+                    label={copy("DECORATION COLOR")}
                     value={style?.textDecorationColor ?? profile.colors.accent}
                     onChange={(textDecorationColor) => onStyleChange({ textDecorationColor })}
                   />
                 </div>
                 <RangeField
-                  label="DECORATION THICKNESS"
+                  label={copy("DECORATION THICKNESS")}
                   value={style?.textDecorationThickness ?? 1}
                   min={0}
                   max={12}
@@ -1163,7 +1197,7 @@ export function ElementInspector({
                   onChange={(textDecorationThickness) => onStyleChange({ textDecorationThickness })}
                 />
                 <RangeField
-                  label="UNDERLINE OFFSET"
+                  label={copy("UNDERLINE OFFSET")}
                   value={style?.textUnderlineOffset ?? 2}
                   min={-8}
                   max={24}
@@ -1174,26 +1208,26 @@ export function ElementInspector({
               </>
             )}
             <SelectField
-              label="TEXT CASE"
+              label={copy("TEXT CASE")}
               value={style?.textTransform ?? "none"}
               options={TEXT_TRANSFORMS}
               onChange={(textTransform) => onStyleChange({ textTransform })}
             />
             <div className="studio-color-grid">
               <ColorField
-                label="TEXT SHADOW"
+                label={copy("TEXT SHADOW")}
                 value={style?.textShadowColor ?? "#000000"}
                 onChange={(textShadowColor) => onStyleChange({ textShadowColor })}
               />
               <ColorField
-                label="TEXT OUTLINE"
+                label={copy("TEXT OUTLINE")}
                 value={style?.textStrokeColor ?? profile.colors.text}
                 onChange={(textStrokeColor) => onStyleChange({ textStrokeColor })}
               />
             </div>
             <div className="studio-field-grid">
               <RangeField
-                label="SHADOW X"
+                label={copy("SHADOW X")}
                 value={style?.textShadowX ?? 0}
                 min={-40}
                 max={40}
@@ -1201,7 +1235,7 @@ export function ElementInspector({
                 onChange={(textShadowX) => onStyleChange({ textShadowX })}
               />
               <RangeField
-                label="SHADOW Y"
+                label={copy("SHADOW Y")}
                 value={style?.textShadowY ?? 2}
                 min={-40}
                 max={40}
@@ -1210,7 +1244,7 @@ export function ElementInspector({
               />
             </div>
             <RangeField
-              label="SHADOW BLUR / GLOW"
+              label={copy("SHADOW BLUR / GLOW")}
               value={style?.textShadowBlur ?? 0}
               min={0}
               max={80}
@@ -1218,7 +1252,7 @@ export function ElementInspector({
               onChange={(textShadowBlur) => onStyleChange({ textShadowBlur })}
             />
             <RangeField
-              label="TEXT OUTLINE WIDTH"
+              label={copy("TEXT OUTLINE WIDTH")}
               value={style?.textStrokeWidth ?? 0}
               min={0}
               max={8}
@@ -1231,7 +1265,7 @@ export function ElementInspector({
       )}
 
       {supportsSurface && (
-        <Section title="SURFACE & BORDER">
+        <Section title={copy("SURFACE & BORDER")}>
           <ElementBackgroundPicker
             style={style}
             fallbackColor={profile.colors.surface}
@@ -1246,13 +1280,13 @@ export function ElementInspector({
           />
           <div className="studio-color-grid studio-color-grid--single">
             <ColorField
-              label="BORDER"
+              label={copy("BORDER")}
               value={style?.borderColor ?? profile.colors.accent}
               onChange={(borderColor) => onStyleChange({ borderColor })}
             />
           </div>
           <RangeField
-            label="CORNER RADIUS"
+            label={copy("CORNER RADIUS")}
             value={style?.radius ?? profile.shape.radius}
             min={0}
             max={40}
@@ -1260,7 +1294,7 @@ export function ElementInspector({
             onChange={(radius) => onStyleChange({ radius })}
           />
           <RangeField
-            label="BORDER WIDTH"
+            label={copy("BORDER WIDTH")}
             value={style?.borderWidth ?? 0}
             min={0}
             max={8}
@@ -1269,7 +1303,7 @@ export function ElementInspector({
             onChange={(borderWidth) => onStyleChange({ borderWidth })}
           />
           <RangeField
-            label={`WHOLE ELEMENT OPACITY${elementOpacitySource}`}
+            label={copy("WHOLE ELEMENT OPACITY") + copy(elementOpacitySource)}
             value={effectiveElementOpacity}
             min={0}
             max={1}
@@ -1278,7 +1312,7 @@ export function ElementInspector({
             onChange={(elementOpacity) => onStyleChange({ elementOpacity })}
           />
           <RangeField
-            label="BACKGROUND OPACITY"
+            label={copy("BACKGROUND OPACITY")}
             value={style?.backgroundOpacity ?? style?.opacity ?? 1}
             min={0}
             max={1}
@@ -1286,7 +1320,7 @@ export function ElementInspector({
             onChange={(backgroundOpacity) => onStyleChange({ backgroundOpacity })}
           />
           <RangeField
-            label="CONTENT OPACITY"
+            label={copy("CONTENT OPACITY")}
             value={style?.contentOpacity ?? style?.opacity ?? 1}
             min={0}
             max={1}
@@ -1298,11 +1332,11 @@ export function ElementInspector({
 
       {supportsSpacing && (
         <Section
-          title="SPACING"
-          note="Use padding to make a button or card larger without fixed sizing."
+          title={copy("SPACING")}
+          note={copy("Use padding to make a button or card larger without fixed sizing.")}
         >
           <RangeField
-            label="HORIZONTAL PADDING"
+            label={copy("HORIZONTAL PADDING")}
             value={style?.paddingX ?? 0}
             min={0}
             max={64}
@@ -1310,7 +1344,7 @@ export function ElementInspector({
             onChange={(paddingX) => onStyleChange({ paddingX })}
           />
           <RangeField
-            label="VERTICAL PADDING"
+            label={copy("VERTICAL PADDING")}
             value={style?.paddingY ?? 0}
             min={0}
             max={48}
@@ -1322,11 +1356,11 @@ export function ElementInspector({
 
       {interactionState === "normal" && (
         <Section
-          title="ENTRANCE ANIMATION"
-          note="Plays when the element is mounted, including when its tab appears."
+          title={copy("ENTRANCE ANIMATION")}
+          note={copy("Plays when the element is mounted, including when its tab appears.")}
         >
           <SelectField
-            label="APPEAR EFFECT"
+            label={copy("APPEAR EFFECT")}
             value={style?.entranceAnimation ?? "none"}
             options={ENTRANCE_ANIMATIONS}
             onChange={(entranceAnimation) => onStyleChange({ entranceAnimation })}
@@ -1334,7 +1368,7 @@ export function ElementInspector({
           {(style?.entranceAnimation ?? "none") !== "none" && (
             <>
               <RangeField
-                label="DURATION"
+                label={copy("DURATION")}
                 value={style?.entranceDuration ?? 600}
                 min={100}
                 max={5_000}
@@ -1343,7 +1377,7 @@ export function ElementInspector({
                 onChange={(entranceDuration) => onStyleChange({ entranceDuration })}
               />
               <RangeField
-                label="DELAY"
+                label={copy("DELAY")}
                 value={style?.entranceDelay ?? 0}
                 min={0}
                 max={5_000}
@@ -1352,7 +1386,7 @@ export function ElementInspector({
                 onChange={(entranceDelay) => onStyleChange({ entranceDelay })}
               />
               <SelectField
-                label="EASING"
+                label={copy("EASING")}
                 value={style?.entranceEasing ?? "ease-out"}
                 options={HOVER_EASINGS}
                 onChange={(entranceEasing) => onStyleChange({ entranceEasing })}
@@ -1360,11 +1394,13 @@ export function ElementInspector({
               {style?.entranceAnimation === "custom" && (
                 <div className="studio-custom-animation">
                   <div className="studio-custom-animation__head">
-                    <span>START FRAME</span>
-                    <small>The element animates from these values to its current style.</small>
+                    <span>{copy("START FRAME")}</span>
+                    <small>
+                      {copy("The element animates from these values to its current style.")}
+                    </small>
                   </div>
                   <RangeField
-                    label="START OPACITY"
+                    label={copy("START OPACITY")}
                     value={Math.round((style.entranceFromOpacity ?? 0) * 100)}
                     min={0}
                     max={100}
@@ -1373,7 +1409,7 @@ export function ElementInspector({
                   />
                   <div className="studio-field-grid">
                     <RangeField
-                      label="START X"
+                      label={copy("START X")}
                       value={style.entranceFromX ?? 0}
                       min={-800}
                       max={800}
@@ -1381,7 +1417,7 @@ export function ElementInspector({
                       onChange={(entranceFromX) => onStyleChange({ entranceFromX })}
                     />
                     <RangeField
-                      label="START Y"
+                      label={copy("START Y")}
                       value={style.entranceFromY ?? 24}
                       min={-600}
                       max={600}
@@ -1391,7 +1427,7 @@ export function ElementInspector({
                   </div>
                   <div className="studio-field-grid">
                     <RangeField
-                      label="START SCALE"
+                      label={copy("START SCALE")}
                       value={Math.round((style.entranceFromScale ?? 0.9) * 100)}
                       min={25}
                       max={200}
@@ -1399,7 +1435,7 @@ export function ElementInspector({
                       onChange={(value) => onStyleChange({ entranceFromScale: value / 100 })}
                     />
                     <RangeField
-                      label="START ROTATION"
+                      label={copy("START ROTATION")}
                       value={style.entranceFromRotate ?? 0}
                       min={-360}
                       max={360}
@@ -1409,7 +1445,7 @@ export function ElementInspector({
                     />
                   </div>
                   <RangeField
-                    label="START BLUR"
+                    label={copy("START BLUR")}
                     value={style.entranceFromBlur ?? 0}
                     min={0}
                     max={80}
@@ -1424,12 +1460,14 @@ export function ElementInspector({
       )}
 
       <Section
-        title="POSITION & STACKING"
-        note="Offsets move the element visually without removing it from layout. Margins, order and alignment participate in the parent layout."
+        title={copy("POSITION & STACKING")}
+        note={copy(
+          "Offsets move the element visually without removing it from layout. Margins, order and alignment participate in the parent layout.",
+        )}
       >
         <div className="studio-field-grid">
           <RangeField
-            label="X OFFSET"
+            label={copy("X OFFSET")}
             value={style?.offsetX ?? 0}
             min={-800}
             max={800}
@@ -1438,7 +1476,7 @@ export function ElementInspector({
             onChange={(offsetX) => onStyleChange({ offsetX })}
           />
           <RangeField
-            label="Y OFFSET"
+            label={copy("Y OFFSET")}
             value={style?.offsetY ?? 0}
             min={-600}
             max={600}
@@ -1449,7 +1487,7 @@ export function ElementInspector({
         </div>
         <div className="studio-field-grid">
           <RangeField
-            label="MARGIN TOP"
+            label={copy("MARGIN TOP")}
             value={style?.marginTop ?? 0}
             min={-200}
             max={400}
@@ -1457,7 +1495,7 @@ export function ElementInspector({
             onChange={(marginTop) => onStyleChange({ marginTop })}
           />
           <RangeField
-            label="MARGIN RIGHT"
+            label={copy("MARGIN RIGHT")}
             value={style?.marginRight ?? 0}
             min={-200}
             max={400}
@@ -1465,7 +1503,7 @@ export function ElementInspector({
             onChange={(marginRight) => onStyleChange({ marginRight })}
           />
           <RangeField
-            label="MARGIN BOTTOM"
+            label={copy("MARGIN BOTTOM")}
             value={style?.marginBottom ?? 0}
             min={-200}
             max={400}
@@ -1473,7 +1511,7 @@ export function ElementInspector({
             onChange={(marginBottom) => onStyleChange({ marginBottom })}
           />
           <RangeField
-            label="MARGIN LEFT"
+            label={copy("MARGIN LEFT")}
             value={style?.marginLeft ?? 0}
             min={-200}
             max={400}
@@ -1483,7 +1521,7 @@ export function ElementInspector({
         </div>
         <div className="studio-field-grid">
           <RangeField
-            label="ORDER"
+            label={copy("ORDER")}
             value={style?.order ?? 0}
             min={-100}
             max={100}
@@ -1491,7 +1529,7 @@ export function ElementInspector({
             onChange={(order) => onStyleChange({ order })}
           />
           <RangeField
-            label="Z-INDEX"
+            label={copy("Z-INDEX")}
             value={style?.zIndex ?? 0}
             min={-100}
             max={1000}
@@ -1501,13 +1539,13 @@ export function ElementInspector({
         </div>
         <div className="studio-field-grid">
           <SelectField
-            label="ALIGN SELF"
+            label={copy("ALIGN SELF")}
             value={style?.alignSelf ?? "auto"}
             options={ALIGNMENTS}
             onChange={(alignSelf) => onStyleChange({ alignSelf })}
           />
           <SelectField
-            label="JUSTIFY SELF"
+            label={copy("JUSTIFY SELF")}
             value={style?.justifySelf ?? "auto"}
             options={ALIGNMENTS}
             onChange={(justifySelf) => onStyleChange({ justifySelf })}
@@ -1517,18 +1555,20 @@ export function ElementInspector({
 
       {target.kind === "list" && (
         <Section
-          title="CHILD LAYOUT"
-          note="Container-only controls, equivalent to changing display, direction, columns and gap in CSS."
+          title={copy("CHILD LAYOUT")}
+          note={copy(
+            "Container-only controls, equivalent to changing display, direction, columns and gap in CSS.",
+          )}
         >
           <SelectField
-            label="LAYOUT"
+            label={copy("LAYOUT")}
             value={style?.layout ?? "default"}
             options={LAYOUTS}
             onChange={(layout) => onStyleChange({ layout })}
           />
           {(style?.layout ?? "default") === "grid" && (
             <RangeField
-              label="GRID COLUMNS"
+              label={copy("GRID COLUMNS")}
               value={style?.columns ?? 2}
               min={1}
               max={12}
@@ -1536,7 +1576,7 @@ export function ElementInspector({
             />
           )}
           <RangeField
-            label="CHILD GAP"
+            label={copy("CHILD GAP")}
             value={style?.gap ?? 0}
             min={0}
             max={96}
@@ -1547,30 +1587,32 @@ export function ElementInspector({
       )}
 
       <Section
-        title="ADVANCED EFFECTS"
-        note={`Every value belongs to the selected ${interactionState.toUpperCase()} state.`}
+        title={copy("ADVANCED EFFECTS")}
+        note={copy("Every value belongs to the selected {state} state.", {
+          state: copy(interactionState.toUpperCase()),
+        })}
       >
         <SelectField
-          label="SHADOW PRESET"
+          label={copy("SHADOW PRESET")}
           value={style?.shadow ?? "none"}
           options={SHADOWS}
           onChange={(shadow) => onStyleChange({ shadow })}
         />
         <div className="studio-color-grid">
           <ColorField
-            label="CUSTOM SHADOW"
+            label={copy("CUSTOM SHADOW")}
             value={style?.shadowColor ?? "#000000"}
             onChange={(shadowColor) => onStyleChange({ shadowColor })}
           />
           <ColorField
-            label="GLOW"
+            label={copy("GLOW")}
             value={style?.glowColor ?? profile.colors.accent}
             onChange={(glowColor) => onStyleChange({ glowColor })}
           />
         </div>
         <div className="studio-field-grid">
           <RangeField
-            label="SHADOW X"
+            label={copy("SHADOW X")}
             value={style?.shadowX ?? 0}
             min={-100}
             max={100}
@@ -1578,7 +1620,7 @@ export function ElementInspector({
             onChange={(shadowX) => onStyleChange({ shadowX })}
           />
           <RangeField
-            label="SHADOW Y"
+            label={copy("SHADOW Y")}
             value={style?.shadowY ?? 8}
             min={-100}
             max={100}
@@ -1586,7 +1628,7 @@ export function ElementInspector({
             onChange={(shadowY) => onStyleChange({ shadowY })}
           />
           <RangeField
-            label="SHADOW BLUR"
+            label={copy("SHADOW BLUR")}
             value={style?.shadowBlur ?? 24}
             min={0}
             max={160}
@@ -1594,7 +1636,7 @@ export function ElementInspector({
             onChange={(shadowBlur) => onStyleChange({ shadowBlur })}
           />
           <RangeField
-            label="SHADOW SPREAD"
+            label={copy("SHADOW SPREAD")}
             value={style?.shadowSpread ?? 0}
             min={-40}
             max={80}
@@ -1604,7 +1646,7 @@ export function ElementInspector({
         </div>
         <div className="studio-field-grid">
           <RangeField
-            label="GLOW INTENSITY"
+            label={copy("GLOW INTENSITY")}
             value={style?.glowIntensity ?? 0}
             min={0}
             max={1}
@@ -1612,7 +1654,7 @@ export function ElementInspector({
             onChange={(glowIntensity) => onStyleChange({ glowIntensity })}
           />
           <RangeField
-            label="GLOW BLUR"
+            label={copy("GLOW BLUR")}
             value={style?.glowBlur ?? 24}
             min={0}
             max={160}
@@ -1622,19 +1664,19 @@ export function ElementInspector({
         </div>
         <div className="studio-color-grid">
           <ColorField
-            label="OUTLINE"
+            label={copy("OUTLINE")}
             value={style?.outlineColor ?? profile.colors.accent}
             onChange={(outlineColor) => onStyleChange({ outlineColor })}
           />
           <ColorField
-            label="GLASS TINT"
+            label={copy("GLASS TINT")}
             value={style?.glassTint ?? profile.colors.surface}
             onChange={(glassTint) => onStyleChange({ glassTint })}
           />
         </div>
         <div className="studio-field-grid">
           <RangeField
-            label="OUTLINE WIDTH"
+            label={copy("OUTLINE WIDTH")}
             value={style?.outlineWidth ?? 0}
             min={0}
             max={12}
@@ -1643,7 +1685,7 @@ export function ElementInspector({
             onChange={(outlineWidth) => onStyleChange({ outlineWidth })}
           />
           <RangeField
-            label="OUTLINE OFFSET"
+            label={copy("OUTLINE OFFSET")}
             value={style?.outlineOffset ?? 0}
             min={-20}
             max={40}
@@ -1651,7 +1693,7 @@ export function ElementInspector({
             onChange={(outlineOffset) => onStyleChange({ outlineOffset })}
           />
           <RangeField
-            label="BACKDROP BLUR"
+            label={copy("BACKDROP BLUR")}
             value={style?.backdropBlur ?? 0}
             min={0}
             max={80}
@@ -1659,7 +1701,7 @@ export function ElementInspector({
             onChange={(backdropBlur) => onStyleChange({ backdropBlur })}
           />
           <RangeField
-            label="GRAIN / NOISE"
+            label={copy("GRAIN / NOISE")}
             value={style?.grainOpacity ?? 0}
             min={0}
             max={0.6}
@@ -1668,7 +1710,7 @@ export function ElementInspector({
           />
         </div>
         <SelectField
-          label="GLASS EFFECT"
+          label={copy("GLASS EFFECT")}
           value={style?.glassEffect ? "on" : "off"}
           options={BOOLEAN_OPTIONS}
           onChange={(value) => onStyleChange({ glassEffect: value === "on" })}
@@ -1676,7 +1718,7 @@ export function ElementInspector({
         {style?.glassEffect && (
           <div className="studio-field-grid">
             <RangeField
-              label="GLASS OPACITY"
+              label={copy("GLASS OPACITY")}
               value={style.glassOpacity ?? 0.18}
               min={0}
               max={1}
@@ -1684,7 +1726,7 @@ export function ElementInspector({
               onChange={(glassOpacity) => onStyleChange({ glassOpacity })}
             />
             <RangeField
-              label="GLASS SATURATION"
+              label={copy("GLASS SATURATION")}
               value={style.glassSaturation ?? 1.35}
               min={0}
               max={3}
@@ -1696,7 +1738,7 @@ export function ElementInspector({
         {interactionState === "normal" && (
           <>
             <SelectField
-              label="LIQUID GLASS SHADER"
+              label={copy("LIQUID GLASS SHADER")}
               value={style?.liquidGlass ? "on" : "off"}
               options={BOOLEAN_OPTIONS}
               onChange={(value) =>
@@ -1710,7 +1752,7 @@ export function ElementInspector({
               <>
                 <div className="studio-field-grid">
                   <RangeField
-                    label="LIQUID BLUR"
+                    label={copy("LIQUID BLUR")}
                     value={style.liquidGlassBlur ?? 0.25}
                     min={0}
                     max={1}
@@ -1718,7 +1760,7 @@ export function ElementInspector({
                     onChange={(liquidGlassBlur) => onStyleChange({ liquidGlassBlur })}
                   />
                   <RangeField
-                    label="REFRACTION"
+                    label={copy("REFRACTION")}
                     value={style.liquidGlassRefraction ?? 0.69}
                     min={0}
                     max={1}
@@ -1726,7 +1768,7 @@ export function ElementInspector({
                     onChange={(liquidGlassRefraction) => onStyleChange({ liquidGlassRefraction })}
                   />
                   <RangeField
-                    label="CHROMATIC EDGE"
+                    label={copy("CHROMATIC EDGE")}
                     value={style.liquidGlassChromaticAberration ?? 0.05}
                     min={0}
                     max={0.35}
@@ -1736,7 +1778,7 @@ export function ElementInspector({
                     }
                   />
                   <RangeField
-                    label="EDGE HIGHLIGHT"
+                    label={copy("EDGE HIGHLIGHT")}
                     value={style.liquidGlassEdgeHighlight ?? 0.12}
                     min={0}
                     max={1}
@@ -1747,7 +1789,7 @@ export function ElementInspector({
                   />
                 </div>
                 <RangeField
-                  label="SPECULAR LIGHT"
+                  label={copy("SPECULAR LIGHT")}
                   value={style.liquidGlassSpecular ?? 0.2}
                   min={0}
                   max={1}
@@ -1759,7 +1801,7 @@ export function ElementInspector({
           </>
         )}
         <RangeField
-          label="SCALE"
+          label={copy("SCALE")}
           value={style?.scale ?? 1}
           min={0.5}
           max={1.5}
@@ -1767,7 +1809,7 @@ export function ElementInspector({
           onChange={(scale) => onStyleChange({ scale })}
         />
         <RangeField
-          label="ROTATION"
+          label={copy("ROTATION")}
           value={style?.rotate ?? 0}
           min={-180}
           max={180}

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { drawSVCanvas, hexToHsv, hsvToRgb, rgbToHex } from "./Colorutils";
 import "./ColorPicker.css";
+import { useTranslation } from "../../i18n/locale";
 
 type HsvColor = [number, number, number];
 type RgbInput = { r: string; g: string; b: string };
@@ -46,6 +47,7 @@ function hexFromHsv(hsv: HsvColor) {
 }
 
 export function PickerPanel({ value, onChange }: PickerPanelProps) {
+  const tr = useTranslation();
   const initialHex = parseHex(value, true) ?? "#000000";
   const initialHsv = hexToHsv(initialHex) as HsvColor;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -234,7 +236,10 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
           height={CANVAS_HEIGHT}
           tabIndex={0}
           role="group"
-          aria-label={`Saturation ${saturationPercent}%, brightness ${brightnessPercent}%. Use arrow keys to adjust.`}
+          aria-label={tr("colorPicker.saturationBrightnessUseArrow", {
+            saturationPercent,
+            brightnessPercent,
+          })}
           onKeyDown={onSVKeyDown}
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -257,9 +262,11 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
           className="cp-eyedropper"
           onClick={pickEye}
           data-tooltip={
-            eyedropperSupported ? "Pick color from screen" : "Screen color picker is unavailable"
+            eyedropperSupported
+              ? tr("colorPicker.pickColorFromScreen")
+              : tr("ui.screenColorUnavailable")
           }
-          aria-label="Pick color from screen"
+          aria-label={tr("colorPicker.pickColorFromScreen")}
           disabled={!eyedropperSupported}
         >
           <svg
@@ -282,17 +289,17 @@ export function PickerPanel({ value, onChange }: PickerPanelProps) {
           className="cp-preview"
           style={{ backgroundColor: previewColor }}
           role="img"
-          aria-label={`Selected color ${previewColor}`}
+          aria-label={tr("colorPicker.selectedColor", { previewColor })}
         />
 
         <div className="cp-hue-control">
           <div className="cp-control-meta" aria-hidden="true">
-            <span>Hue</span>
+            <span>{tr("colorPicker.hue")}</span>
             <output>{Math.round(hsv[0])}°</output>
           </div>
           <ElementSlider
             className="cp-hue-slider"
-            label="Hue"
+            label={tr("colorPicker.hue")}
             min={0}
             max={360}
             step={1}
@@ -354,6 +361,7 @@ interface ColorPickerProps {
 }
 
 export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
+  const tr = useTranslation();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, side: "bottom" });
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -441,7 +449,7 @@ export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
         aria-expanded={open}
         aria-controls={open ? popupId : undefined}
         aria-label={label ? `${label}: ${displayValue}` : undefined}
-        data-tooltip={`Choose color ${displayValue}`}
+        data-tooltip={tr("ui.chooseColor", { color: displayValue })}
       >
         <span
           className="cp-trigger__swatch"
@@ -475,7 +483,7 @@ export function ColorPicker({ value, onChange, label }: ColorPickerProps) {
             style={{ top: position.top, left: position.left }}
             data-side={position.side}
             role="dialog"
-            aria-label={label ? `${label} color picker` : "Color picker"}
+            aria-label={label ? tr("ui.namedColorPicker", { label }) : tr("ui.colorPicker")}
           >
             <PickerPanel value={displayValue} onChange={onChange} />
           </div>,

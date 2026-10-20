@@ -5,6 +5,7 @@ export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "Forge" | "NeoForge";
 export type InstanceItem = {
   id: string;
   name: string;
+  source?: "official" | "imported";
   pinned: boolean;
   version: string;
   loader: LoaderType | string;

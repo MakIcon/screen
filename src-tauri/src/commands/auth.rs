@@ -996,36 +996,53 @@ fn upsert_account(
 }
 
 #[tauri::command]
-pub async fn list_microsoft_accounts() -> Result<Vec<MicrosoftAccountSummary>, String> {
-    Ok(read_accounts()
-        .await?
-        .iter()
-        .map(MicrosoftAccountSummary::from)
-        .collect())
-}
-
-#[tauri::command]
-pub async fn remove_microsoft_account(id: String) -> Result<(), String> {
-    let _guard = accounts_lock().lock().await;
-    let mut accounts = read_accounts_unlocked().await?;
-    accounts.retain(|a| a.id != id);
-    write_accounts_unlocked(&accounts).await
-}
-
-#[tauri::command]
-pub async fn get_minecraft_profile(account_id: String) -> Result<MinecraftProfile, String> {
-    let mut account = refreshed_account_by_id(&account_id).await?;
-    let client = crate::minecraft::mirrors::build_client()?;
-    match fetch_minecraft_profile_with_retry(&client, &account).await {
-        Ok(profile) => Ok(profile),
-        Err(error) if error.should_reauthenticate() => {
-            account = force_refreshed_account_by_id(&account_id).await?;
-            fetch_minecraft_profile_with_retry(&client, &account)
-                .await
-                .map_err(MinecraftProfileError::into_message)
-        }
-        Err(error) => Err(error.into_message()),
+pub async fn list_microsoft_accounts(
+) -> Result<Vec<MicrosoftAccountSummary>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        Ok(read_accounts()
+            .await?
+            .iter()
+            .map(MicrosoftAccountSummary::from)
+            .collect())
     }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
+}
+
+#[tauri::command]
+pub async fn remove_microsoft_account(
+    id: String,
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let _guard = accounts_lock().lock().await;
+        let mut accounts = read_accounts_unlocked().await?;
+        accounts.retain(|a| a.id != id);
+        write_accounts_unlocked(&accounts).await
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_minecraft_profile(
+    account_id: String,
+) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mut account = refreshed_account_by_id(&account_id).await?;
+        let client = crate::minecraft::mirrors::build_client()?;
+        match fetch_minecraft_profile_with_retry(&client, &account).await {
+            Ok(profile) => Ok(profile),
+            Err(error) if error.should_reauthenticate() => {
+                account = force_refreshed_account_by_id(&account_id).await?;
+                fetch_minecraft_profile_with_retry(&client, &account)
+                    .await
+                    .map_err(MinecraftProfileError::into_message)
+            }
+            Err(error) => Err(error.into_message()),
+        }
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -1034,165 +1051,191 @@ pub async fn upload_minecraft_skin(
     variant: String,
     file_name: String,
     data: Vec<u8>,
-) -> Result<MinecraftProfile, String> {
-    ensure_png_skin_file(&file_name, &data)?;
+) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        ensure_png_skin_file(&file_name, &data)?;
 
-    let account = refreshed_account_by_id(&account_id).await?;
-    let client = crate::minecraft::mirrors::build_client()?;
-    let normalized_variant = normalize_skin_variant(&variant)?;
-    let part = multipart::Part::bytes(data)
-        .file_name(file_name)
-        .mime_str("image/png")
-        .map_err(|e| format!("Skin mime error: {e}"))?;
-    let form = multipart::Form::new()
-        .text("variant", normalized_variant.to_string())
-        .part("file", part);
+        let account = refreshed_account_by_id(&account_id).await?;
+        let client = crate::minecraft::mirrors::build_client()?;
+        let normalized_variant = normalize_skin_variant(&variant)?;
+        let part = multipart::Part::bytes(data)
+            .file_name(file_name)
+            .mime_str("image/png")
+            .map_err(|e| format!("Skin mime error: {e}"))?;
+        let form = multipart::Form::new()
+            .text("variant", normalized_variant.to_string())
+            .part("file", part);
 
-    let resp = client
-        .post(format!("{MC_PROFILE_URL}/skins"))
-        .bearer_auth(&account.access_token)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("Upload skin request: {e}"))?;
+        let resp = client
+            .post(format!("{MC_PROFILE_URL}/skins"))
+            .bearer_auth(&account.access_token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| format!("Upload skin request: {e}"))?;
 
-    profile_from_mutation_response(&client, &account, resp, "Upload skin").await
+        profile_from_mutation_response(&client, &account, resp, "Upload skin").await
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn reset_minecraft_skin(account_id: String) -> Result<MinecraftProfile, String> {
-    let account = refreshed_account_by_id(&account_id).await?;
-    let client = crate::minecraft::mirrors::build_client()?;
-    let resp = client
-        .delete(format!("{MC_PROFILE_URL}/skins/active"))
-        .bearer_auth(&account.access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Reset skin request: {e}"))?;
+pub async fn reset_minecraft_skin(
+    account_id: String,
+) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let account = refreshed_account_by_id(&account_id).await?;
+        let client = crate::minecraft::mirrors::build_client()?;
+        let resp = client
+            .delete(format!("{MC_PROFILE_URL}/skins/active"))
+            .bearer_auth(&account.access_token)
+            .send()
+            .await
+            .map_err(|e| format!("Reset skin request: {e}"))?;
 
-    profile_from_mutation_response(&client, &account, resp, "Reset skin").await
+        profile_from_mutation_response(&client, &account, resp, "Reset skin").await
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn set_minecraft_cape(
     account_id: String,
     cape_id: String,
-) -> Result<MinecraftProfile, String> {
-    let account = refreshed_account_by_id(&account_id).await?;
-    let client = crate::minecraft::mirrors::build_client()?;
-    let resp = client
-        .put(format!("{MC_PROFILE_URL}/capes/active"))
-        .bearer_auth(&account.access_token)
-        .json(&CapeSelectionRequest { cape_id })
-        .send()
-        .await
-        .map_err(|e| format!("Set cape request: {e}"))?;
+) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let account = refreshed_account_by_id(&account_id).await?;
+        let client = crate::minecraft::mirrors::build_client()?;
+        let resp = client
+            .put(format!("{MC_PROFILE_URL}/capes/active"))
+            .bearer_auth(&account.access_token)
+            .json(&CapeSelectionRequest { cape_id })
+            .send()
+            .await
+            .map_err(|e| format!("Set cape request: {e}"))?;
 
-    profile_from_mutation_response(&client, &account, resp, "Set cape").await
-}
-
-#[tauri::command]
-pub async fn hide_minecraft_cape(account_id: String) -> Result<MinecraftProfile, String> {
-    let account = refreshed_account_by_id(&account_id).await?;
-    let client = crate::minecraft::mirrors::build_client()?;
-    let resp = client
-        .delete(format!("{MC_PROFILE_URL}/capes/active"))
-        .bearer_auth(&account.access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Hide cape request: {e}"))?;
-
-    profile_from_mutation_response(&client, &account, resp, "Hide cape").await
-}
-
-#[tauri::command]
-pub async fn start_microsoft_auth(app: AppHandle) -> Result<MicrosoftAccountSummary, String> {
-    // If the auth window is already open, focus it and return an error
-    if let Some(existing) = app.get_webview_window("ms-login") {
-        let _ = existing.set_focus();
-        return Err("Auth window already open — complete sign-in in the open window".into());
+        profile_from_mutation_response(&client, &account, resp, "Set cape").await
     }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
+}
 
-    let auth_url = build_auth_url();
+#[tauri::command]
+pub async fn hide_minecraft_cape(
+    account_id: String,
+) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let account = refreshed_account_by_id(&account_id).await?;
+        let client = crate::minecraft::mirrors::build_client()?;
+        let resp = client
+            .delete(format!("{MC_PROFILE_URL}/capes/active"))
+            .bearer_auth(&account.access_token)
+            .send()
+            .await
+            .map_err(|e| format!("Hide cape request: {e}"))?;
 
-    let (tx, rx) = oneshot::channel::<Result<String, String>>();
-    let shared = Arc::new(Mutex::new(Some(tx)));
-    let shared_close = shared.clone();
+        profile_from_mutation_response(&client, &account, resp, "Hide cape").await
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
+}
 
-    let window = WebviewWindowBuilder::new(
-        &app,
-        "ms-login",
-        WebviewUrl::External(auth_url.parse().map_err(|e| format!("URL parse: {e}"))?),
-    )
-    .title("Sign in with Microsoft")
-    .inner_size(480.0, 680.0)
-    .center()
-    .resizable(false)
-    .always_on_top(true)
-    .on_navigation(move |url| {
-        if url.as_str().starts_with(MS_REDIRECT_URI) {
-            let code = url
-                .query_pairs()
-                .find(|(k, _)| k == "code")
-                .map(|(_, v)| v.into_owned());
-            if let Ok(mut guard) = shared.lock() {
-                if let Some(tx) = guard.take() {
-                    match code {
-                        Some(c) => {
-                            let _ = tx.send(Ok(c));
-                        }
-                        None => {
-                            let _ = tx.send(Err("No auth code in redirect URL".into()));
+#[tauri::command]
+pub async fn start_microsoft_auth(
+    app: AppHandle,
+) -> Result<MicrosoftAccountSummary, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        // If the auth window is already open, focus it and return an error
+        if let Some(existing) = app.get_webview_window("ms-login") {
+            let _ = existing.set_focus();
+            return Err("Auth window already open — complete sign-in in the open window".into());
+        }
+
+        let auth_url = build_auth_url();
+
+        let (tx, rx) = oneshot::channel::<Result<String, String>>();
+        let shared = Arc::new(Mutex::new(Some(tx)));
+        let shared_close = shared.clone();
+
+        let window = WebviewWindowBuilder::new(
+            &app,
+            "ms-login",
+            WebviewUrl::External(auth_url.parse().map_err(|e| format!("URL parse: {e}"))?),
+        )
+        .title("Sign in with Microsoft")
+        .inner_size(480.0, 680.0)
+        .center()
+        .resizable(false)
+        .always_on_top(true)
+        .on_navigation(move |url| {
+            if url.as_str().starts_with(MS_REDIRECT_URI) {
+                let code = url
+                    .query_pairs()
+                    .find(|(k, _)| k == "code")
+                    .map(|(_, v)| v.into_owned());
+                if let Ok(mut guard) = shared.lock() {
+                    if let Some(tx) = guard.take() {
+                        match code {
+                            Some(c) => {
+                                let _ = tx.send(Ok(c));
+                            }
+                            None => {
+                                let _ = tx.send(Err("No auth code in redirect URL".into()));
+                            }
                         }
                     }
                 }
+                return false; // block navigation to the desktop redirect page
             }
-            return false; // block navigation to the desktop redirect page
-        }
-        true
-    })
-    .build()
-    .map_err(|e| format!("Failed to open auth window: {e}"))?;
+            true
+        })
+        .build()
+        .map_err(|e| format!("Failed to open auth window: {e}"))?;
 
-    // Detect user closing window (cancel)
-    window.on_window_event(move |event| {
-        if matches!(event, tauri::WindowEvent::Destroyed) {
-            if let Ok(mut guard) = shared_close.lock() {
-                if let Some(tx) = guard.take() {
-                    let _ = tx.send(Err("Sign-in cancelled".into()));
+        // Detect user closing window (cancel)
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Ok(mut guard) = shared_close.lock() {
+                    if let Some(tx) = guard.take() {
+                        let _ = tx.send(Err("Sign-in cancelled".into()));
+                    }
                 }
             }
+        });
+
+        let _ = window.set_focus();
+
+        // Wait for code (blocks until user logs in or closes the window)
+        let code = rx
+            .await
+            .map_err(|_| "Auth window closed unexpectedly".to_string())??;
+
+        // Close the window
+        if let Some(win) = app.get_webview_window("ms-login") {
+            let _ = win.close();
         }
-    });
 
-    let _ = window.set_focus();
+        // Exchange code for MS tokens
+        let client = crate::minecraft::mirrors::build_client()?;
+        let ms_tokens = exchange_code(&client, &code).await?;
+        let refresh_token = ms_tokens.refresh_token.unwrap_or_default();
+        let ms_expires = ms_tokens.expires_in.unwrap_or(3600);
 
-    // Wait for code (blocks until user logs in or closes the window)
-    let code = rx
-        .await
-        .map_err(|_| "Auth window closed unexpectedly".to_string())??;
+        // Complete auth chain
+        let account = do_auth_chain(&ms_tokens.access_token, refresh_token, ms_expires).await?;
 
-    // Close the window
-    if let Some(win) = app.get_webview_window("ms-login") {
-        let _ = win.close();
+        // Preserve the launcher-side ID so selections and plugin references stay valid.
+        let _guard = accounts_lock().lock().await;
+        let mut accounts = read_accounts_unlocked().await?;
+        let account = upsert_account(&mut accounts, account)?;
+        write_accounts_unlocked(&accounts).await?;
+
+        Ok(MicrosoftAccountSummary::from(&account))
     }
-
-    // Exchange code for MS tokens
-    let client = crate::minecraft::mirrors::build_client()?;
-    let ms_tokens = exchange_code(&client, &code).await?;
-    let refresh_token = ms_tokens.refresh_token.unwrap_or_default();
-    let ms_expires = ms_tokens.expires_in.unwrap_or(3600);
-
-    // Complete auth chain
-    let account = do_auth_chain(&ms_tokens.access_token, refresh_token, ms_expires).await?;
-
-    // Preserve the launcher-side ID so selections and plugin references stay valid.
-    let _guard = accounts_lock().lock().await;
-    let mut accounts = read_accounts_unlocked().await?;
-    let account = upsert_account(&mut accounts, account)?;
-    write_accounts_unlocked(&accounts).await?;
-
-    Ok(MicrosoftAccountSummary::from(&account))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 import type { PlaceholderAppearanceAttributes } from "../../utils/placeholders";
 import { InfoPanel } from "../display/InfoPanel";
 import { InlineDropdown } from "../inputs/InlineDropdown";
+import { useTranslation } from "../../i18n/locale";
 
 interface BuildConfigurationGridProps {
   buildName: string;
@@ -38,10 +39,11 @@ export function BuildConfigurationGrid({
   className = "",
   valueAppearances,
 }: BuildConfigurationGridProps) {
+  const tr = useTranslation();
   return (
     <div className={`inline-dropdown-grid${className ? ` ${className}` : ""}`}>
       <InlineDropdown
-        label="SELECT BUILD"
+        label={tr("buildConfigurationGrid.selectBuild")}
         value={buildName}
         options={buildOptions}
         isOpen={isOpen}
@@ -51,23 +53,23 @@ export function BuildConfigurationGrid({
       />
 
       <InfoPanel
-        label="MC VERSION"
+        label={tr("buildConfigurationGrid.mcVersion")}
         value={version}
-        placeholder="SELECT VERSION"
+        placeholder={tr("buildConfigurationGrid.selectVersion")}
         bottomSpace={bottomSpace}
         valueAppearance={valueAppearances?.version}
       />
 
       <InfoPanel
-        label="LOADER"
+        label={tr("buildConfigurationGrid.loader")}
         value={loader}
-        placeholder="SELECT LOADER"
+        placeholder={tr("buildConfigurationGrid.selectLoader")}
         bottomSpace={bottomSpace}
         valueAppearance={valueAppearances?.loader}
       />
 
       <InfoPanel
-        label="SOURCE"
+        label={tr("buildConfigurationGrid.source")}
         value={source}
         bottomSpace={bottomSpace}
         valueAppearance={valueAppearances?.source}
@@ -75,9 +77,9 @@ export function BuildConfigurationGrid({
 
       <InfoPanel
         className="info-panel--right-column"
-        label="TIME IN BUILD"
+        label={tr("buildConfigurationGrid.timeInBuild")}
         value={playtime}
-        placeholder="0 hrs on record"
+        placeholder={tr("buildConfigurationGrid.0HrsOnRecord")}
         bottomSpace={bottomSpace}
         valueAppearance={valueAppearances?.playtime}
       />

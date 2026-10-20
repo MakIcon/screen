@@ -11,24 +11,12 @@ import { normalizeObsTelemetrySettings } from "../pluginSettings";
 import { toErrorMessage } from "../../../utils/errors";
 import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
 import "./ObsTelemetryPlugin.css";
+import { isPlainMessageKey, translate, useTranslation } from "../../../i18n/locale";
 
-const OVERLAY_LABELS: Record<string, string> = {
-  all: "Весь оверлей",
-  settings: "Настройки оверлея",
-  health: "Здоровье",
-  food: "Еда",
-  xp: "Опыт",
-  armor: "Броня",
-  helmet: "Шлем",
-  chestplate: "Нагрудник",
-  leggings: "Поножи",
-  boots: "Ботинки",
-  coords: "Координаты",
-  items: "Предметы",
-  mainHand: "Основная рука",
-  offhand: "Вторая рука",
-  dimension: "Измерение",
-};
+function overlayLabel(key: string, tr: ReturnType<typeof useTranslation>) {
+  const messageKey = `obsTelemetry.overlay.${key}`;
+  return isPlainMessageKey(messageKey) ? tr(messageKey) : key;
+}
 
 function formatStatusValue(value?: string | number | null) {
   if (value === null || value === undefined || value === "") return "—";
@@ -53,7 +41,7 @@ function formatCoords(payload?: ObsTelemetryPayload | null) {
 
 function formatItemName(payload?: ObsTelemetryPayload | null) {
   const item = payload?.heldItem;
-  if (!item?.displayName) return "Пусто";
+  if (!item?.displayName) return translate("common.empty");
   return item.count > 1 ? `${item.displayName} x${item.count}` : item.displayName;
 }
 
@@ -64,6 +52,7 @@ function ObsTelemetrySettingsEditor({
   settings: ObsTelemetryPluginSettings;
   onChange: (settings: ObsTelemetryPluginSettings) => void;
 }) {
+  const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const status = monitor.snapshot?.obsTelemetry ?? null;
   const [busy, setBusy] = useState(false);
@@ -165,12 +154,12 @@ function ObsTelemetrySettingsEditor({
   return (
     <div className="obs-telemetry-settings">
       <PluginSettingsGroup
-        title="ИСТОЧНИК ДЛЯ OBS"
-        description="Добавьте этот адрес как источник «Браузер» в OBS"
+        title={tr("obsTelemetry.obsSource")}
+        description={tr("obsTelemetry.addThisAddressAs")}
         collapsible={false}
       >
         <label className="obs-telemetry-field">
-          <span>ПОРТ OBS</span>
+          <span>{tr("obsTelemetry.obsPort")}</span>
           <input
             value={settings.port}
             inputMode="numeric"
@@ -179,11 +168,11 @@ function ObsTelemetrySettingsEditor({
         </label>
 
         <label className="obs-telemetry-field obs-telemetry-field--wide">
-          <span>АДРЕС ОСНОВНОГО ОВЕРЛЕЯ</span>
+          <span>{tr("obsTelemetry.mainOverlayAddress")}</span>
           <input value={overlayUrl} readOnly spellCheck={false} />
         </label>
       </PluginSettingsGroup>
-      <div className="obs-telemetry-subhead">УПРАВЛЕНИЕ ОВЕРЛЕЕМ</div>
+      <div className="obs-telemetry-subhead">{tr("obsTelemetry.overlayControls")}</div>
 
       <div className="obs-telemetry-controls">
         <button
@@ -191,54 +180,54 @@ function ObsTelemetrySettingsEditor({
           disabled={!settings.enabled || busy || status?.running}
           onClick={() => void startServer()}
         >
-          {busy ? "Выполняется…" : "ЗАПУСТИТЬ"}
+          {busy ? tr("obsTelemetry.working") : tr("obsTelemetry.start")}
         </button>
         <button type="button" disabled={busy || !status?.running} onClick={() => void stopServer()}>
-          ОСТАНОВИТЬ
+          {tr("obsTelemetry.stop")}
         </button>
         <button type="button" disabled={busy} onClick={() => void refreshStatus()}>
-          ОБНОВИТЬ
+          {tr("common.refresh")}
         </button>
         <button type="button" disabled={busy} onClick={() => void openOverlay()}>
-          ОТКРЫТЬ
+          {tr("obsTelemetry.open")}
         </button>
         <button type="button" onClick={() => void copySourceUrl(overlayUrl)}>
-          {copiedUrl === overlayUrl ? "СКОПИРОВАНО" : "КОПИРОВАТЬ АДРЕС"}
+          {copiedUrl === overlayUrl ? tr("obsTelemetry.copied") : tr("obsTelemetry.copyAddress")}
         </button>
       </div>
 
       <PluginSettingsGroup
-        title="ОТДЕЛЬНЫЕ ВИДЖЕТЫ"
-        description="Здоровье, броня, координаты и другие источники · нажмите, чтобы скопировать адрес"
+        title={tr("obsTelemetry.individualWidgets")}
+        description={tr("obsTelemetry.healthArmorCoordinatesAnd")}
       >
         <div className="obs-telemetry-links">
           {Object.entries(overlayUrls).map(([key, url]) => (
             <button key={key} type="button" onClick={() => void copySourceUrl(url)}>
-              <span>{copiedUrl === url ? "Скопировано" : (OVERLAY_LABELS[key] ?? key)}</span>
+              <span>{copiedUrl === url ? tr("obsTelemetry.copied2") : overlayLabel(key, tr)}</span>
               <strong>{url}</strong>
             </button>
           ))}
         </div>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="ДАННЫЕ И ЖУРНАЛ"
-        description="Состояние сервера и последние данные игрока"
+        title={tr("obsTelemetry.dataAndLog")}
+        description={tr("obsTelemetry.serverStateAndThe")}
       >
         <div className="obs-telemetry-status">
           <div>
-            <span>СЕРВЕР</span>
+            <span>{tr("obsTelemetry.server")}</span>
             <strong>{formatStatusValue(status?.state)}</strong>
           </div>
           <div>
-            <span>ДАННЫЕ В ЭФИРЕ</span>
-            <strong>{isLive ? "Да" : "Нет"}</strong>
+            <span>{tr("obsTelemetry.liveData")}</span>
+            <strong>{isLive ? tr("obsTelemetry.yes") : tr("obsTelemetry.no")}</strong>
           </div>
           <div>
-            <span>ИГРОК</span>
+            <span>{tr("obsTelemetry.player")}</span>
             <strong>{formatStatusValue(status?.lastPlayerName)}</strong>
           </div>
           <div>
-            <span>ОБНОВЛЕНИЕ</span>
+            <span>{tr("obsTelemetry.updated")}</span>
             <strong>{formatAge(status?.lastUpdateAgeMs)}</strong>
           </div>
           <div>
@@ -249,30 +238,30 @@ function ObsTelemetrySettingsEditor({
 
         <div className="obs-telemetry-readout">
           <div>
-            <span>ЗДОРОВЬЕ</span>
+            <span>{tr("obsTelemetry.health")}</span>
             <strong>{formatHealth(status?.lastPayload)}</strong>
           </div>
           <div>
-            <span>БРОНЯ</span>
+            <span>{tr("obsTelemetry.armor")}</span>
             <strong>{formatStatusValue(status?.lastPayload?.armor)}</strong>
           </div>
           <div>
-            <span>ЕДА</span>
+            <span>{tr("obsTelemetry.food")}</span>
             <strong>{formatStatusValue(status?.lastPayload?.food)}</strong>
           </div>
           <div>
-            <span>КООРДИНАТЫ</span>
+            <span>{tr("obsTelemetry.coordinates")}</span>
             <strong>{formatCoords(status?.lastPayload)}</strong>
           </div>
           <div>
-            <span>В РУКЕ</span>
+            <span>{tr("obsTelemetry.inHand")}</span>
             <strong>{formatItemName(status?.lastPayload)}</strong>
           </div>
         </div>
 
         <div className="obs-telemetry-log" aria-live="polite">
           {(status?.logs ?? []).length === 0 ? (
-            <span>Пока нет событий</span>
+            <span>{tr("common.noEventsYet")}</span>
           ) : (
             status?.logs
               .slice(-12)

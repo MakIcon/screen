@@ -8,6 +8,7 @@ import type { PluginSettingsProps } from "../pluginTypes";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { DEFAULT_BLUE_MAP_SETTINGS, normalizeBlueMapSettings } from "../pluginSettings";
 import "./BlueMapPlugin.css";
+import { useTranslation } from "../../../i18n/locale";
 
 const DEFAULT_MAP_URL = DEFAULT_BLUE_MAP_SETTINGS.mapUrl;
 
@@ -30,6 +31,7 @@ function BlueMapSettingsEditor({
   settings: BlueMapPluginSettings;
   onChange: (settings: BlueMapPluginSettings) => void;
 }) {
+  const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const status = monitor.snapshot?.blueMap ?? null;
   const packageInstalled = Boolean(
@@ -139,12 +141,12 @@ function BlueMapSettingsEditor({
   return (
     <div className="blue-map-settings">
       <PluginSettingsGroup
-        title="КАРТА МИРА"
-        description="Адрес интерактивной карты"
+        title={tr("blueMap.worldMap")}
+        description={tr("blueMap.addressOfTheInteractive")}
         collapsible={false}
       >
         <label className="blue-map-field blue-map-field--full">
-          <span>АДРЕС КАРТЫ</span>
+          <span>{tr("blueMap.mapAddress")}</span>
           <input
             value={settings.mapUrl}
             placeholder={DEFAULT_MAP_URL}
@@ -154,11 +156,11 @@ function BlueMapSettingsEditor({
         </label>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="СЕРВЕР И JAVA"
-        description="Путь к BlueMap, рабочая папка и параметры обновления"
+        title={tr("blueMap.serverAndJava")}
+        description={tr("blueMap.bluemapPathWorkingFolder")}
       >
         <label className="blue-map-field blue-map-field--full">
-          <span>ФАЙЛ BLUEMAP CLI · JAR</span>
+          <span>{tr("blueMap.bluemapCliFileJar")}</span>
           <input
             value={settings.cliJarPath}
             placeholder="C:\\Program Files\\BlueMap\\BlueMap-cli.jar"
@@ -168,17 +170,17 @@ function BlueMapSettingsEditor({
         </label>
 
         <label className="blue-map-field">
-          <span>РАБОЧАЯ ПАПКА</span>
+          <span>{tr("blueMap.workingFolder")}</span>
           <input
             value={settings.workingDir}
-            placeholder="Папка с JAR-файлом"
+            placeholder={tr("blueMap.folderContainingTheJar")}
             spellCheck={false}
             onChange={(event) => update({ workingDir: event.target.value })}
           />
         </label>
 
         <label className="blue-map-field">
-          <span>ПУТЬ К JAVA</span>
+          <span>{tr("common.javaPath")}</span>
           <input
             value={settings.javaPath}
             placeholder="java"
@@ -189,50 +191,50 @@ function BlueMapSettingsEditor({
 
         <div className="blue-map-checkboxes">
           <ElementCheckbox
-            label="ФОНОВЫЙ РЕНДЕР"
+            label={tr("blueMap.backgroundRender")}
             checked={settings.renderOnStart}
             onChange={(renderOnStart) => update({ renderOnStart })}
           />
           <ElementCheckbox
-            label="ОБНОВЛЕНИЕ КАРТЫ"
+            label={tr("blueMap.mapUpdate")}
             checked={settings.updateOnStart}
             onChange={(updateOnStart) => update({ updateOnStart })}
           />
         </div>
       </PluginSettingsGroup>
-      <div className="blue-map-subhead">УПРАВЛЕНИЕ КАРТОЙ</div>
+      <div className="blue-map-subhead">{tr("blueMap.mapControls")}</div>
 
       <div className="blue-map-controls">
         <button type="button" disabled={!canSetup} onClick={() => void setupBlueMap()}>
-          ПОДГОТОВИТЬ
+          {tr("blueMap.prepare")}
         </button>
         <button type="button" disabled={!canStart} onClick={() => void startBlueMap()}>
-          {busy ? "Выполняется…" : "ЗАПУСТИТЬ"}
+          {busy ? tr("blueMap.working") : tr("blueMap.start")}
         </button>
         <button type="button" disabled={!canStop} onClick={() => void stopBlueMap()}>
-          ОСТАНОВИТЬ
+          {tr("blueMap.stop")}
         </button>
         <button type="button" disabled={busy} onClick={() => void monitor.refresh()}>
-          ОБНОВИТЬ
+          {tr("common.refresh")}
         </button>
         <button
           type="button"
           disabled={!canOpen}
           onClick={() => setPreviewOpen((current) => !current)}
         >
-          {previewOpen ? "СКРЫТЬ КАРТУ" : "ПОКАЗАТЬ КАРТУ"}
+          {previewOpen ? tr("blueMap.hideMap") : tr("blueMap.showMap")}
         </button>
         <button type="button" disabled={!canOpen} onClick={() => void openBrowser()}>
-          В БРАУЗЕРЕ
+          {tr("blueMap.inBrowser")}
         </button>
         <button type="button" disabled={!canOpen} onClick={() => void openWindow()}>
-          В ОКНЕ
+          {tr("blueMap.inWindow")}
         </button>
       </div>
 
       <div className="blue-map-status">
         <div>
-          <span>СОСТОЯНИЕ</span>
+          <span>{tr("blueMap.state")}</span>
           <strong>{formatStatusValue(status?.state)}</strong>
         </div>
         <div>
@@ -244,11 +246,11 @@ function BlueMapSettingsEditor({
           <strong>{formatStatusValue(status?.url ?? previewUrl)}</strong>
         </div>
         <div>
-          <span>РАБОЧАЯ ПАПКА</span>
+          <span>{tr("blueMap.workingFolder")}</span>
           <strong>{formatStatusValue(status?.workingDir || settings.workingDir)}</strong>
         </div>
         <div>
-          <span>МИР</span>
+          <span>{tr("blueMap.world")}</span>
           <strong>{formatStatusValue(status?.worldPath)}</strong>
         </div>
       </div>
@@ -264,12 +266,12 @@ function BlueMapSettingsEditor({
       )}
 
       <PluginSettingsGroup
-        title="ЖУРНАЛ СЕРВЕРА"
-        description={`${status?.logs.length ?? 0} событий · сообщения BlueMap`}
+        title={tr("blueMap.serverLog")}
+        description={tr("blueMap.eventsBluemapMessages", { value: status?.logs.length ?? 0 })}
       >
         <div className="blue-map-log" aria-live="polite">
           {(status?.logs ?? []).length === 0 ? (
-            <span>Пока нет событий</span>
+            <span>{tr("common.noEventsYet")}</span>
           ) : (
             status?.logs
               .slice(-12)

@@ -22,10 +22,12 @@ import {
   JAVA_CHOICES,
   LANGUAGE_CHOICES,
   MIRROR_OPTIONS,
+  localizeChoices,
 } from "../settings/settingsChoices";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import type { ModrinthProject } from "../../types";
 import { GuidePointer } from "./GuidePointer";
+import { useTranslation, type PlainMessageKey } from "../../i18n/locale";
 import { guideMaximumSceneHeight } from "./guidePreviewLayout";
 import {
   guideSearchCameraTransform,
@@ -37,22 +39,22 @@ import {
 export type LauncherGuideScene =
   | {
       kind: "dropdown";
-      label: string;
+      label: PlainMessageKey;
       initialValue: string;
       options: string[];
       selectedValue: string;
       variant?: "default" | "account";
     }
   | { kind: "build-config" }
-  | { kind: "play"; idleLabel?: string }
-  | { kind: "search"; label: string; placeholder: string; value: string }
+  | { kind: "play"; idleLabel?: PlainMessageKey }
+  | { kind: "search"; label: PlainMessageKey; placeholder: PlainMessageKey; value: string }
   | { kind: "slider"; startPercent?: number; endPercent?: number }
   | { kind: "choice"; group: "appearance" | "source" | "java" | "language" }
   | { kind: "catalog"; contentKind: ModrinthContentKind }
   | {
       kind: "preference";
-      title: string;
-      note: string;
+      title: PlainMessageKey;
+      note: PlainMessageKey;
       initialEnabled?: boolean;
       action?: "toggle" | "expand";
     };
@@ -101,7 +103,6 @@ function PlayScene({ idleLabel }: Extract<LauncherGuideScene, { kind: "play" }>)
       <BuildPlayButton
         state={state}
         idleLabel={idleLabel}
-        startingLabel="STARTING"
         disabled={state === "starting"}
         onClick={() => setState("starting")}
       />
@@ -117,6 +118,7 @@ function DropdownScene({
   selectedValue,
   variant = "default",
 }: Extract<LauncherGuideScene, { kind: "dropdown" }>) {
+  const tr = useTranslation();
   const measuring = useContext(SceneMeasurementContext);
   const [isOpen, setIsOpen] = useState(Boolean(measuring));
   const [value, setValue] = useState(initialValue);
@@ -141,7 +143,7 @@ function DropdownScene({
         className={`launcher-guide-real-dropdown${variant === "account" ? " mockup-block mockup-account-dropdown" : ""}`}
       >
         <InlineDropdown
-          label={label}
+          label={tr(label)}
           value={value}
           options={options}
           isOpen={isOpen}
@@ -226,6 +228,7 @@ function SearchScene({
   value,
   sourceElement,
 }: Extract<LauncherGuideScene, { kind: "search" }> & { sourceElement: HTMLElement }) {
+  const tr = useTranslation();
   const toolbarWidth = Math.max(440, sourceElement.offsetWidth);
   const [typedValue, setTypedValue] = useState("");
   const [focused, setFocused] = useState(false);
@@ -280,8 +283,8 @@ function SearchScene({
     <div ref={rootRef} className="launcher-guide-scene launcher-guide-search-scene">
       <div className="launcher-guide-search-camera" style={{ width: toolbarWidth }}>
         <CatalogSearchToolbar
-          label={label}
-          placeholder={placeholder}
+          label={tr(label)}
+          placeholder={tr(placeholder)}
           value={typedValue}
           className={
             focused
@@ -302,6 +305,7 @@ function SliderScene({
   endPercent = 66,
   sourceElement,
 }: Extract<LauncherGuideScene, { kind: "slider" }> & { sourceElement: HTMLElement }) {
+  const tr = useTranslation();
   const sourceThumb = sourceElement.querySelector("[role='slider']");
   const min = Number(sourceThumb?.getAttribute("aria-valuemin") ?? 1);
   const max = Number(sourceThumb?.getAttribute("aria-valuemax") ?? 64);
@@ -340,7 +344,7 @@ function SliderScene({
     <div ref={rootRef} className="launcher-guide-scene launcher-guide-slider-scene">
       <div className="settings-element-slider launcher-guide-real-slider">
         <ElementSlider
-          label="RAM"
+          label={tr("ui.ram")}
           min={min}
           max={max}
           defaultValue={4}
@@ -375,7 +379,11 @@ function ChoiceScene({
           ? JAVA_CHOICES
           : LANGUAGE_CHOICES;
   const studioVisible = Boolean(sourceElement.querySelector(".theme-switch-btn--studio"));
-  const options = available.filter((option) => option.value !== "studio" || studioVisible);
+  const tr = useTranslation();
+  const options = localizeChoices(
+    available.filter((option) => option.value !== "studio" || studioVisible),
+    tr,
+  );
   const [value, setValue] = useState(
     group === "appearance"
       ? "light"
@@ -528,6 +536,7 @@ function PreferenceScene({
   initialEnabled = false,
   action = "toggle",
 }: Extract<LauncherGuideScene, { kind: "preference" }>) {
+  const tr = useTranslation();
   const measuring = useContext(SceneMeasurementContext);
   const [active, setActive] = useState(measuring && action === "expand" ? true : initialEnabled);
   const selector = action === "expand" ? ".settings-toggle-expand" : ".toggle-switch";
@@ -537,24 +546,24 @@ function PreferenceScene({
     <div ref={rootRef} className="launcher-guide-scene launcher-guide-preference-scene">
       {action === "expand" ? (
         <ExpandableSettingsGroup
-          title={title}
-          note={note}
+          title={tr(title)}
+          note={tr(note)}
           enabled
           expanded={active}
           onToggle={() => {}}
           onToggleExpanded={() => setActive((value) => !value)}
         >
           <div className="launcher-guide-real-preference-details">
-            <span>NAME</span>
+            <span>{tr("launcherGuideScenes.name")}</span>
             <strong>PIXEL</strong>
-            <span>MOVEMENT</span>
-            <strong>ON</strong>
+            <span>{tr("launcherGuideScenes.movement")}</span>
+            <strong>{tr("common.onCaps")}</strong>
           </div>
         </ExpandableSettingsGroup>
       ) : (
         <ElementToggle
-          title={title}
-          note={note}
+          title={tr(title)}
+          note={tr(note)}
           enabled={active}
           onToggle={() => setActive((value) => !value)}
         />

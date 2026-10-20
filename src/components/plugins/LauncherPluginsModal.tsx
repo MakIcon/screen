@@ -18,6 +18,8 @@ import type { PluginId } from "./pluginTypes";
 import { pluginStatusLabel } from "./pluginStatus";
 import { openMineflayerBotWindow } from "./mineflayerBot/mineflayerBotWindow";
 import { logger } from "../../utils/logger";
+import { useLocale, useTranslation } from "../../i18n/locale";
+import { pluginCopy } from "./pluginLocalization";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
@@ -41,6 +43,8 @@ export function LauncherPluginsModal({
   onClose,
   onSave,
 }: LauncherPluginsModalProps) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [draft, setDraft] = useState<LauncherPluginsSettings>(() =>
     normalizeLauncherPluginsSettings(settings),
   );
@@ -229,13 +233,15 @@ export function LauncherPluginsModal({
         }}
       >
         <div>
-          <h2>{standalone ? "УПРАВЛЕНИЕ БОТОМ" : "РАСШИРЕНИЯ"}</h2>
+          <h2>
+            {standalone ? tr("launcherPlugins.botManager") : tr("launcherPlugins.extensions")}
+          </h2>
         </div>
 
         {!standalone && (
-          <div className="plugins-summary" aria-label="Состояние расширений">
-            <span>{PLUGIN_DEFINITIONS.length} всего</span>
-            <strong>{enabledCount} включено</strong>
+          <div className="plugins-summary" aria-label={tr("launcherPlugins.extensionStatus")}>
+            <span>{tr("launcherPlugins.totalCount", { count: PLUGIN_DEFINITIONS.length })}</span>
+            <strong>{tr("launcherPlugins.enabledCount", { count: enabledCount })}</strong>
           </div>
         )}
 
@@ -245,7 +251,7 @@ export function LauncherPluginsModal({
               <button
                 type="button"
                 className="plugins-close"
-                aria-label="Свернуть окно"
+                aria-label={tr("launcherPlugins.minimizeWindow")}
                 onClick={() => void getCurrentWindow().minimize().catch(logger.error)}
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -255,7 +261,7 @@ export function LauncherPluginsModal({
               <button
                 type="button"
                 className="plugins-close"
-                aria-label="Развернуть или восстановить окно"
+                aria-label={tr("launcherPlugins.maximizeOrRestoreWindow")}
                 onClick={() => void getCurrentWindow().toggleMaximize().catch(logger.error)}
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -268,7 +274,11 @@ export function LauncherPluginsModal({
             className="plugins-close"
             type="button"
             onClick={onClose}
-            aria-label={standalone ? "Закрыть окно управления ботом" : "Закрыть расширения"}
+            aria-label={
+              standalone
+                ? tr("launcherPlugins.closeBotManager")
+                : tr("launcherPlugins.closeExtensions")
+            }
           >
             <svg
               width="11"
@@ -290,7 +300,7 @@ export function LauncherPluginsModal({
       <div className="plugins-layout">
         {!standalone && (
           <aside className="plugins-catalog">
-            <nav className="plugins-list" aria-label="Расширения">
+            <nav className="plugins-list" aria-label={tr("launcherPlugins.extensions2")}>
               {PLUGIN_DEFINITIONS.map((definition) => (
                 <PluginCard
                   key={definition.id}
@@ -326,11 +336,11 @@ export function LauncherPluginsModal({
                 <h3 id="plugin-detail-title">{selectedDefinition.title}</h3>
                 {selectedPackageReady && (
                   <strong className={`plugin-status plugin-status--${selectedStatusTone}`}>
-                    {pluginStatusLabel(selectedStatus)}
+                    {pluginStatusLabel(selectedStatus, locale)}
                   </strong>
                 )}
               </div>
-              <p>{selectedDefinition.description}</p>
+              <p>{pluginCopy(selectedDefinition, locale).description}</p>
               {selectedExtensionId && installError?.id === selectedExtensionId && (
                 <span className="plugin-install-error">{installError.message}</span>
               )}
@@ -357,7 +367,9 @@ export function LauncherPluginsModal({
                       strokeWidth="1.3"
                     />
                   </svg>
-                  {openingWindow ? "Открываем…" : "В отдельном окне"}
+                  {openingWindow
+                    ? tr("launcherPlugins.opening")
+                    : tr("launcherPlugins.openInASeparate")}
                 </button>
               )}
               <button
@@ -381,16 +393,16 @@ export function LauncherPluginsModal({
                 }}
               >
                 {selectedExtensionChecking
-                  ? "Проверка…"
+                  ? tr("launcherPlugins.checking")
                   : selectedInstalling
-                    ? "Установка…"
+                    ? tr("launcherPlugins.installing")
                     : selectedUninstalling
-                      ? "Удаление…"
+                      ? tr("launcherPlugins.removing")
                       : !selectedPackageReady
-                        ? "Установить"
+                        ? tr("launcherPlugins.install")
                         : selectedEnabled
-                          ? "Выключить"
-                          : "Включить"}
+                          ? tr("launcherPlugins.disable")
+                          : tr("common.enable")}
               </button>
 
               {selectedExtensionId && selectedPackageReady && (
@@ -412,10 +424,10 @@ export function LauncherPluginsModal({
                   }}
                 >
                   {selectedUninstalling
-                    ? "Удаление…"
+                    ? tr("launcherPlugins.removing")
                     : confirmUninstallId === selectedExtensionId
-                      ? "Подтвердить удаление"
-                      : "Удалить пакет"}
+                      ? tr("launcherPlugins.confirmRemoval")
+                      : tr("launcherPlugins.removePackage")}
                 </button>
               )}
             </div>
@@ -425,17 +437,21 @@ export function LauncherPluginsModal({
             key={selectedPluginId}
             className="plugin-detail-settings"
             onWheel={stopWheelNavigation}
-            aria-label={`Настройки ${selectedDefinition.title}`}
+            aria-label={`${tr("launcherPlugins.settingsFor")} ${selectedDefinition.title}`}
           >
             {!selectedPackageReady && (
               <div className="plugin-package-notice">
                 {selectedExtensionChecking
-                  ? "Проверяем, установлен ли пакет расширения…"
-                  : "Установите пакет кнопкой выше, чтобы включить расширение. Настройки можно подготовить заранее."}
+                  ? tr("launcherPlugins.checkingWhetherTheExtension")
+                  : tr("launcherPlugins.installThePackageWith")}
               </div>
             )}
             <Suspense
-              fallback={<div className="plugin-settings-loading">Загружаем настройки…</div>}
+              fallback={
+                <div className="plugin-settings-loading">
+                  {tr("launcherPlugins.loadingSettings")}
+                </div>
+              }
             >
               <SelectedPluginSettings
                 plugins={draft}
@@ -447,16 +463,16 @@ export function LauncherPluginsModal({
         </section>
       </div>
       <div className="plugins-footer">
-        <span>Настройки сохраняются автоматически</span>
+        <span>{tr("launcherPlugins.settingsAreSavedAutomatically")}</span>
         <button type="button" onClick={onClose}>
-          {standalone ? "Закрыть" : "Готово"}
+          {standalone ? tr("common.close2") : tr("launcherPlugins.done")}
         </button>
       </div>
     </div>
   );
 
   return standalone ? (
-    <main className="launcher-plugins-dialog mineflayer-bot-window" lang="ru">
+    <main className="launcher-plugins-dialog mineflayer-bot-window" lang={locale}>
       {content}
     </main>
   ) : (

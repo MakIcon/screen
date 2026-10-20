@@ -3,6 +3,7 @@ import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { HoverRevealValue } from "../components/display/HoverRevealValue";
 import type { DropdownKey, MicrosoftAccount } from "../types";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
+import { useTranslation } from "../i18n/locale";
 
 interface OverviewPanelProps {
   resolve: (template: string) => string;
@@ -31,6 +32,7 @@ export function OverviewPanel({
   activeMsAccountId,
   onOpenMsModal,
 }: OverviewPanelProps) {
+  const tr = useTranslation();
   const activeMs = msAccounts.find((a) => a.id === activeMsAccountId) ?? null;
   const [editingNickname, setEditingNickname] = useState(false);
 
@@ -39,14 +41,14 @@ export function OverviewPanel({
       <div className="lines-pattern" />
       <div className="mockup-overlay">
         <div className="mockup-block">
-          <span className="mockup-label">ACTIVE BUILD</span>
+          <span className="mockup-label">{tr("overview.activeBuild")}</span>
           <strong {...createPlaceholderAppearanceAttributes("%build_name%", resolve)}>
             {resolve("%build_name%")}
           </strong>
         </div>
 
         <div className="mockup-block">
-          <span className="mockup-label">TOTAL TIME IN GAME</span>
+          <span className="mockup-label">{tr("overview.totalTimeInGame")}</span>
           <strong {...createPlaceholderAppearanceAttributes("%total_playtime%", resolve)}>
             {resolve("%total_playtime%")}
           </strong>
@@ -56,7 +58,7 @@ export function OverviewPanel({
           {/* Nickname (only visible for offline) */}
           {accountType === "OFFLINE" && (
             <div className="mockup-block" data-guide-target="nickname">
-              <span className="mockup-label">NICKNAME</span>
+              <span className="mockup-label">{tr("overview.nickname")}</span>
               <HoverRevealValue value={nickname}>
                 {editingNickname ? (
                   <input
@@ -97,7 +99,7 @@ export function OverviewPanel({
           {/* Microsoft account display */}
           {accountType === "MICROSOFT" && (
             <div className="mockup-block mockup-ms-account">
-              <span className="mockup-label">LOGGED IN</span>
+              <span className="mockup-label">{tr("overview.loggedIn")}</span>
               {activeMs ? (
                 <HoverRevealValue value={activeMs.username}>
                   <button className="mockup-ms-row" onClick={onOpenMsModal}>
@@ -122,7 +124,7 @@ export function OverviewPanel({
                 </HoverRevealValue>
               ) : (
                 <button className="mockup-ms-row mockup-ms-row--empty" onClick={onOpenMsModal}>
-                  <span className="mockup-ms-none">No account — click to add</span>
+                  <span className="mockup-ms-none">{tr("overview.noAccountClickTo")}</span>
                 </button>
               )}
             </div>
@@ -130,7 +132,7 @@ export function OverviewPanel({
 
           <div className="mockup-block mockup-account-dropdown" data-guide-target="account-type">
             <InlineDropdown
-              label="ACCOUNT"
+              label={tr("overview.account")}
               value={accountType}
               options={["OFFLINE", "MICROSOFT"]}
               isOpen={openDropdown === "account"}

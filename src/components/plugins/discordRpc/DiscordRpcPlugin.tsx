@@ -3,17 +3,11 @@ import type { PluginSettingsProps } from "../pluginTypes";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { PlaceholderGuideButton } from "../../placeholders/PlaceholderGuideButton";
 import "./DiscordRpcPlugin.css";
+import { useTranslation } from "../../../i18n/locale";
 
 type DiscordRpcDisplayMode = DiscordRpcPluginSettings["displayMode"];
 
-const DISCORD_RPC_DISPLAY_MODES: {
-  id: DiscordRpcDisplayMode;
-  label: string;
-}[] = [
-  { id: "minecraft", label: "Minecraft" },
-  { id: "launcher", label: "Лаунчер" },
-  { id: "combined", label: "Игра и лаунчер" },
-];
+const DISCORD_RPC_DISPLAY_MODES: DiscordRpcDisplayMode[] = ["minecraft", "launcher", "combined"];
 
 function DiscordRpcSettingsEditor({
   settings,
@@ -22,6 +16,7 @@ function DiscordRpcSettingsEditor({
   settings: DiscordRpcPluginSettings;
   onChange: (settings: DiscordRpcPluginSettings) => void;
 }) {
+  const tr = useTranslation();
   const update = (patch: Partial<DiscordRpcPluginSettings>) => {
     onChange({ ...settings, ...patch });
   };
@@ -51,36 +46,36 @@ function DiscordRpcSettingsEditor({
   return (
     <div className="discord-rpc-editor">
       <PluginSettingsGroup
-        title="ПОДКЛЮЧЕНИЕ К DISCORD"
-        description="Приложение Discord и режим отображения"
+        title={tr("discordRpc.connectToDiscord")}
+        description={tr("discordRpc.discordApplicationAndDisplay")}
         collapsible={false}
       >
         <div className="drpc-config">
           <label className="drpc-config-field drpc-config-field--app">
-            <span>APPLICATION ID</span>
+            <span>{tr("ui.applicationId")}</span>
             <input
               value={settings.applicationId}
-              placeholder="ID приложения Discord"
+              placeholder={tr("discordRpc.discordApplicationId")}
               spellCheck={false}
               onChange={(event) => update({ applicationId: event.target.value })}
             />
           </label>
           <div className="drpc-config-field drpc-config-field--grow">
-            <span>ЧТО ПОКАЗЫВАТЬ В ПРОФИЛЕ</span>
+            <span>{tr("discordRpc.whatToShowIn")}</span>
             <div
               className="discord-rpc-segmented-control"
               role="group"
-              aria-label="Режим отображения"
+              aria-label={tr("discordRpc.displayMode")}
             >
               {DISCORD_RPC_DISPLAY_MODES.map((mode) => (
                 <button
-                  key={mode.id}
+                  key={mode}
                   type="button"
-                  aria-pressed={settings.displayMode === mode.id}
-                  className={settings.displayMode === mode.id ? "active" : ""}
-                  onClick={() => update({ displayMode: mode.id })}
+                  aria-pressed={settings.displayMode === mode}
+                  className={settings.displayMode === mode ? "active" : ""}
+                  onClick={() => update({ displayMode: mode })}
                 >
-                  {mode.label}
+                  {tr(`discordRpc.mode.${mode}`)}
                 </button>
               ))}
             </div>
@@ -88,12 +83,12 @@ function DiscordRpcSettingsEditor({
         </div>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="ТЕКСТ СТАТУСА"
-        description="Название активности и две строки в профиле"
+        title={tr("discordRpc.statusText")}
+        description={tr("discordRpc.activityNameAndTwo")}
         collapsible={false}
       >
         <label className="drpc-config-field">
-          <span>НАЗВАНИЕ АКТИВНОСТИ</span>
+          <span>{tr("discordRpc.activityName")}</span>
           <input
             value={settings.activityNameTemplate}
             placeholder="ScreenLauncher"
@@ -101,7 +96,7 @@ function DiscordRpcSettingsEditor({
           />
         </label>
         <label className="drpc-config-field">
-          <span>ОСНОВНАЯ СТРОКА</span>
+          <span>{tr("discordRpc.mainLine")}</span>
           <input
             value={settings[modeTemplates.detailsKey]}
             placeholder={modeTemplates.detailsPlaceholder}
@@ -109,7 +104,7 @@ function DiscordRpcSettingsEditor({
           />
         </label>
         <label className="drpc-config-field">
-          <span>ДОПОЛНИТЕЛЬНАЯ СТРОКА</span>
+          <span>{tr("discordRpc.secondLine")}</span>
           <input
             value={settings[modeTemplates.stateKey]}
             placeholder={modeTemplates.statePlaceholder}
@@ -117,8 +112,8 @@ function DiscordRpcSettingsEditor({
           />
         </label>
         <PlaceholderGuideButton />
-        <div className="drpc-card" aria-label="Предпросмотр шаблона статуса">
-          <div className="drpc-card-title">ПРЕДПРОСМОТР ШАБЛОНА</div>
+        <div className="drpc-card" aria-label={tr("discordRpc.statusTemplatePreview")}>
+          <div className="drpc-card-title">{tr("discordRpc.templatePreview")}</div>
           <div className="drpc-line drpc-line--name">
             {settings.activityNameTemplate || "ScreenLauncher"}
           </div>
@@ -128,13 +123,13 @@ function DiscordRpcSettingsEditor({
           <div className="drpc-line drpc-line--state">
             {settings[modeTemplates.stateKey] || modeTemplates.statePlaceholder}
           </div>
-          <span className="drpc-timer is-on">0:00 в игре</span>
+          <span className="drpc-timer is-on">{tr("discordRpc.000InGame")}</span>
         </div>
       </PluginSettingsGroup>
-      <PluginSettingsGroup title="ИЗОБРАЖЕНИЯ И КНОПКА" collapsible={false}>
+      <PluginSettingsGroup title={tr("discordRpc.imagesAndButton")} collapsible={false}>
         <div className="plugin-settings-fields">
           <label className="drpc-config-field">
-            <span>КЛЮЧ БОЛЬШОГО ИЗОБРАЖЕНИЯ</span>
+            <span>{tr("discordRpc.largeImageKey")}</span>
             <input
               value={settings.largeImageKey}
               placeholder="minecraft"
@@ -142,7 +137,7 @@ function DiscordRpcSettingsEditor({
             />
           </label>
           <label className="drpc-config-field">
-            <span>КЛЮЧ МАЛЕНЬКОГО ИЗОБРАЖЕНИЯ</span>
+            <span>{tr("discordRpc.smallImageKey")}</span>
             <input
               value={settings.smallImageKey}
               placeholder="launcher"
@@ -150,15 +145,15 @@ function DiscordRpcSettingsEditor({
             />
           </label>
           <label className="drpc-config-field">
-            <span>ТЕКСТ КНОПКИ</span>
+            <span>{tr("discordRpc.buttonText")}</span>
             <input
               value={settings.buttonLabel}
-              placeholder="Необязательно"
+              placeholder={tr("discordRpc.optional")}
               onChange={(event) => update({ buttonLabel: event.target.value })}
             />
           </label>
           <label className="drpc-config-field">
-            <span>ССЫЛКА КНОПКИ</span>
+            <span>{tr("discordRpc.buttonLink")}</span>
             <input
               value={settings.buttonUrl}
               placeholder="https://example.com"
@@ -166,10 +161,7 @@ function DiscordRpcSettingsEditor({
             />
           </label>
         </div>
-        <p className="drpc-hint">
-          Укажите названия изображений, загруженных в Discord Developer Portal → Rich Presence → Art
-          Assets. Кнопка появится, когда вы зададите её текст.
-        </p>
+        <p className="drpc-hint">{tr("discordRpc.enterTheNamesOf")}</p>
       </PluginSettingsGroup>
     </div>
   );

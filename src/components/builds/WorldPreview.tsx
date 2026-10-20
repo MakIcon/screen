@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   instanceId: string;
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export function WorldPreview({ instanceId, worldName, backupId, revision }: Props) {
+  const tr = useTranslation();
   const [source, setSource] = useState("");
 
   useEffect(() => {
@@ -40,9 +42,9 @@ export function WorldPreview({ instanceId, worldName, backupId, revision }: Prop
         <img src={source} alt="" draggable={false} onError={() => setSource("")} />
       ) : (
         <span>
-          Нет
+          {tr("worldPreview.no")}
           <br />
-          превью
+          {tr("worldPreview.preview")}
         </span>
       )}
     </span>

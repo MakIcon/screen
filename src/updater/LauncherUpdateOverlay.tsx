@@ -9,6 +9,7 @@ import {
   progressRatio,
 } from "./updateProgress";
 import "./LauncherUpdateOverlay.css";
+import { Trans, useTranslation } from "../i18n/locale";
 
 type Props = {
   state: VisibleUpdateState;
@@ -17,8 +18,6 @@ type Props = {
   onLater: () => void;
   onDragStart?: () => void;
 };
-
-const STEPS = ["Загрузка", "Проверка", "Перезапуск"] as const;
 
 function LauncherMark() {
   return (
@@ -37,6 +36,12 @@ export function LauncherUpdateOverlay({
   onLater,
   onDragStart,
 }: Props) {
+  const tr = useTranslation();
+  const steps = [
+    tr("launcherUpdate.step.download"),
+    tr("launcherUpdate.step.verify"),
+    tr("launcherUpdate.step.restart"),
+  ];
   const [notesOpen, setNotesOpen] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(() => Math.ceil(autoStartDelayMs / 1000));
   const { info } = state;
@@ -99,7 +104,7 @@ export function LauncherUpdateOverlay({
           </span>
         </span>
         <span className="launcher-update__kicker">
-          {error ? "Обновление прервано" : "Новая версия"}
+          {error ? tr("launcherUpdate.updateInterrupted") : tr("launcherUpdate.newVersion")}
         </span>
       </header>
 
@@ -114,32 +119,32 @@ export function LauncherUpdateOverlay({
             <h2 id="launcher-update-title" className="launcher-update__title">
               {error ? (
                 <>
-                  Не получилось
-                  <br />
-                  обновить лаунчер.
+                  <Trans k="launcherUpdate.couldNotUpdate" values={{ br: <br /> }} />
                 </>
               ) : installing ? (
                 <>
-                  Ещё мгновение.
-                  <br />И можно продолжать.
+                  {tr("launcherUpdate.justAMoment")}
+                  <br />
+                  {tr("launcherUpdate.almostReadyToGo")}
                 </>
               ) : (
                 <>
-                  Немного лучше.
-                  <br />С каждым запуском.
+                  {tr("launcherUpdate.aLittleBetter")}
+                  <br />
+                  {tr("launcherUpdate.withEveryLaunch")}
                 </>
               )}
             </h2>
             <p className="launcher-update__sub">
               {error
-                ? "Текущая версия готова к работе."
+                ? tr("launcherUpdate.yourCurrentVersionIs")
                 : installing
-                  ? "Лаунчер закроется и откроется сам."
+                  ? tr("launcherUpdate.theLauncherWillClose")
                   : state.stage === "available"
-                    ? "Доступно обновление лаунчера."
-                    : "Обновляем лаунчер."}
+                    ? tr("launcherUpdate.aLauncherUpdateIs")
+                    : tr("launcherUpdate.updatingTheLauncher")}
               <br />
-              Твои сборки и настройки останутся на месте.
+              {tr("launcherUpdate.yourBuildsAndSettings")}
             </p>
           </div>
           {transferVisible && (
@@ -157,35 +162,39 @@ export function LauncherUpdateOverlay({
             <div className="launcher-update__progress-head">
               <span role="status">
                 {installing
-                  ? "Устанавливаем обновление"
+                  ? tr("launcherUpdate.installingUpdate")
                   : verifying
-                    ? "Проверяем подпись файла"
-                    : "Скачиваем обновление"}
+                    ? tr("launcherUpdate.verifyingFileSignature")
+                    : tr("launcherUpdate.downloadingUpdate")}
               </span>
               <span>
                 {installing
-                  ? "Перезапуск автоматически"
+                  ? tr("launcherUpdate.restartingAutomatically")
                   : verifying
-                    ? "Почти готово"
+                    ? tr("launcherUpdate.almostReady")
                     : eta
-                      ? `Осталось ${eta}`
+                      ? `${tr("launcherUpdate.remaining")} ${eta}`
                       : ""}
               </span>
             </div>
             <div
               className="launcher-update__track"
               role="progressbar"
-              aria-label={installing ? "Установка обновления" : "Загрузка обновления"}
+              aria-label={
+                installing
+                  ? tr("launcherUpdate.installingUpdate2")
+                  : tr("launcherUpdate.downloadingUpdate2")
+              }
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={installing ? undefined : (percent ?? undefined)}
               aria-valuetext={
                 installing
-                  ? "Установка"
+                  ? tr("launcherUpdate.installing")
                   : verifying
-                    ? "Проверка подписи"
+                    ? tr("launcherUpdate.verifyingSignature")
                     : percent === null
-                      ? "Размер загрузки пока неизвестен"
+                      ? tr("launcherUpdate.downloadSizeIsUnknown")
                       : undefined
               }
             >
@@ -199,8 +208,13 @@ export function LauncherUpdateOverlay({
             <div className="launcher-update__meta">
               <span>
                 {downloading
-                  ? `${formatMegabytes(state.downloaded)}${state.total !== null ? ` из ${formatMegabytes(state.total)}` : ""}`
-                  : "Применяем новую версию"}
+                  ? state.total !== null
+                    ? tr("launcherUpdate.progressOf", {
+                        downloaded: formatMegabytes(state.downloaded),
+                        total: formatMegabytes(state.total),
+                      })
+                    : formatMegabytes(state.downloaded)
+                  : tr("launcherUpdate.applyingTheNewVersion")}
               </span>
               <span>
                 {downloading && state.bytesPerSecond && !verifying
@@ -221,15 +235,16 @@ export function LauncherUpdateOverlay({
             >
               <span className="launcher-update__primary-fill" aria-hidden="true" />
               <span className="launcher-update__primary-label">
-                Обновить сейчас{autoStart && <em>{secondsLeft}</em>}
+                {tr("launcherUpdate.updateNow")}
+                {autoStart && <em>{secondsLeft}</em>}
               </span>
             </button>
             <button type="button" className="launcher-update__secondary" onClick={onLater}>
-              Позже
+              {tr("launcherUpdate.later")}
             </button>
             {autoStart && (
               <span className="launcher-update__countdown-hint">
-                Начнём автоматически через {secondsLeft} с
+                {tr("launcherUpdate.autoStart", { seconds: secondsLeft })}
               </span>
             )}
           </div>
@@ -240,17 +255,22 @@ export function LauncherUpdateOverlay({
             <p role="alert">{state.message}</p>
             <div className="launcher-update__actions">
               <button type="button" className="launcher-update__primary" onClick={onUpdate}>
-                <span className="launcher-update__primary-label">Попробовать ещё раз</span>
+                <span className="launcher-update__primary-label">
+                  {tr("launcherUpdate.tryAgain")}
+                </span>
               </button>
               <button type="button" className="launcher-update__secondary" onClick={onLater}>
-                Продолжить без обновления
+                {tr("launcherUpdate.continueWithoutUpdating")}
               </button>
             </div>
           </div>
         )}
 
         {notes.length > 0 && (
-          <section className="launcher-update__notes" aria-label="Описание обновления">
+          <section
+            className="launcher-update__notes"
+            aria-label={tr("launcherUpdate.releaseNotes")}
+          >
             <button
               type="button"
               className="launcher-update__notes-toggle"
@@ -261,7 +281,7 @@ export function LauncherUpdateOverlay({
               <span className="launcher-update__notes-icon" aria-hidden="true">
                 {notesOpen ? "−" : "+"}
               </span>
-              Что нового
+              {tr("launcherUpdate.whatsNew")}
             </button>
             <div
               id="launcher-update-notes"
@@ -283,8 +303,8 @@ export function LauncherUpdateOverlay({
       </main>
 
       <footer className="launcher-update__footer">
-        <ol className="launcher-update__steps" aria-label="Этапы обновления">
-          {STEPS.map((label, index) => (
+        <ol className="launcher-update__steps" aria-label={tr("launcherUpdate.updateSteps")}>
+          {steps.map((label, index) => (
             <li
               key={label}
               className={index < step ? "is-done" : index === step ? "is-active" : undefined}

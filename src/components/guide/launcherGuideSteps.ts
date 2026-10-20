@@ -1,4 +1,11 @@
+import { isPlainMessageKey, type useTranslation } from "../../i18n/locale";
 import type { LauncherGuideStep } from "./LauncherGuide";
+
+/** A tour step without its text; the text comes from `guide.<stepId>.*` messages. */
+export type LauncherGuideStepDefinition = Omit<
+  LauncherGuideStep,
+  "eyebrow" | "title" | "description"
+>;
 
 const target = (id: string) => `[data-guide-target='${id}']`;
 
@@ -6,36 +13,24 @@ const target = (id: string) => `[data-guide-target='${id}']`;
  * The launcher tour is intentionally data-driven: a new step only needs a
  * selector here and a matching data-guide-target on any rendered element.
  */
-export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
+export const LAUNCHER_GUIDE_STEPS: LauncherGuideStepDefinition[] = [
   {
     id: "navigation",
     tab: "overview",
-    eyebrow: "НАВИГАЦИЯ / ОСНОВЫ",
-    title: "ВСЕ РАЗДЕЛЫ — СЛЕВА",
-    description:
-      "Здесь находятся все разделы лаунчера. Переключайся кликом или колесом мыши; активная вкладка всегда подсвечена.",
     targets: [target("navigation")],
     placement: "right",
   },
   {
     id: "overview-home",
     tab: "overview",
-    eyebrow: "OVERVIEW / ГЛАВНАЯ",
-    title: "БЫСТРЫЙ СТАРТ",
-    description:
-      "Главная показывает последнюю выбранную сборку, время игры и основную кнопку запуска. Если сборок пока нет, отсюда можно сразу перейти к их созданию.",
     targets: [target("overview-hero")],
     showPreview: true,
-    scene: { kind: "play", idleLabel: "PLAY LAST" },
+    scene: { kind: "play", idleLabel: "overview.playLast2" },
     placement: "right",
   },
   {
     id: "nickname",
     tab: "overview",
-    eyebrow: "OVERVIEW / ИГРОК",
-    title: "НИК ДЛЯ OFFLINE-РЕЖИМА",
-    description:
-      "Нажми на ник, чтобы изменить его. В offline-режиме Minecraft запустится под этим именем; значение сразу обновится в карточке игрока слева.",
     targets: [target("nickname"), target("player-summary")],
     showPreview: true,
     previewValue: "SCREEN",
@@ -49,15 +44,11 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "account",
     tab: "overview",
-    eyebrow: "OVERVIEW / АККАУНТ",
-    title: "OFFLINE ИЛИ MICROSOFT",
-    description:
-      "В ACCOUNT выбери способ входа. OFFLINE использует указанный ник, а MICROSOFT откроет менеджер аккаунтов для официальной авторизации.",
     targets: [target("account-type"), target("overview-profile"), target("player-summary")],
     showPreview: true,
     scene: {
       kind: "dropdown",
-      label: "ACCOUNT",
+      label: "overview.account",
       initialValue: "OFFLINE",
       options: ["OFFLINE", "MICROSOFT"],
       selectedValue: "MICROSOFT",
@@ -68,20 +59,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "build-library",
     tab: "instances",
-    eyebrow: "BUILDS / БИБЛИОТЕКА",
-    title: "ТВОИ СБОРКИ",
-    description:
-      "Каждая карточка — отдельный Minecraft-инстанс со своей версией, загрузчиком, модами, настройками и временем игры. Нажми карточку, чтобы выбрать её.",
     targets: [target("build-library")],
     placement: "right",
   },
   {
     id: "build-create-import",
     tab: "instances",
-    eyebrow: "BUILDS / ДОБАВЛЕНИЕ",
-    title: "СОЗДАТЬ ИЛИ ИМПОРТИРОВАТЬ",
-    description:
-      "CREATE BUILD открывает мастер новой сборки. Кнопка со стрелкой импортирует готовый архив или mrpack-файл.",
     targets: [target("build-library-actions")],
     showPreview: true,
     demoAction: "click",
@@ -93,10 +76,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "build-editor",
     tab: "instances",
-    eyebrow: "BUILDS / КОНФИГУРАЦИЯ",
-    title: "ВЕРСИЯ, LOADER И ПРОФИЛЬ",
-    description:
-      "Здесь задаются имя, версия Minecraft и загрузчик новой сборки либо показываются параметры выбранной. Fabric, Quilt, Forge и NeoForge позволяют ставить моды.",
     targets: [target("build-create-fields"), target("build-details")],
     showPreview: true,
     scene: { kind: "build-config" },
@@ -105,10 +84,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "build-actions",
     tab: "instances",
-    eyebrow: "BUILDS / ДЕЙСТВИЯ",
-    title: "ЗАПУСК И УПРАВЛЕНИЕ",
-    description:
-      "PLAY запускает сборку, INSTALL заранее скачивает файлы, FOLDER открывает папку, STATS — статистику. Справа доступны экспорт, скриншоты, оформление и удаление.",
     targets: [target("build-actions"), target("build-create-actions"), target("build-details")],
     showPreview: true,
     scene: { kind: "play" },
@@ -117,16 +92,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "mods-search",
     tab: "mods",
-    eyebrow: "MODRINTH / ПОИСК",
-    title: "НАЙДИ НУЖНЫЙ МОД",
-    description:
-      "Поиск работает по каталогу Modrinth и учитывает версию выбранной сборки. Вводи название мода или ключевые слова.",
     targets: [target("mods-search")],
     showPreview: true,
     scene: {
       kind: "search",
-      label: "MODRINTH SEARCH",
-      placeholder: "Search compatible mods...",
+      label: "modrinthContent.mods.searchLabel",
+      placeholder: "modrinthContent.mods.searchPlaceholder",
       value: "sodium",
     },
     placement: "below",
@@ -134,10 +105,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "mods-catalog",
     tab: "mods",
-    eyebrow: "MODRINTH / КАТАЛОГ",
-    title: "КАРТОЧКИ МОДОВ",
-    description:
-      "Открой карточку для подробностей или нажми INSTALL. Лаунчер подберёт совместимый файл и зависимости; установленные моды можно обновлять и удалять.",
     targets: [target("mods-catalog")],
     showPreview: true,
     scene: { kind: "catalog", contentKind: "mods" },
@@ -146,15 +113,11 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "mods-target",
     tab: "mods",
-    eyebrow: "MODRINTH / ЦЕЛЬ",
-    title: "ВЫБЕРИ СБОРКУ",
-    description:
-      "TARGET BUILD определяет, куда будет установлен мод. Для модов здесь показываются только совместимые modded-сборки.",
     targets: [target("mods-target")],
     showPreview: true,
     scene: {
       kind: "dropdown",
-      label: "MODDED BUILD",
+      label: "modrinthContent.mods.targetDropdownLabel",
       initialValue: "AURORA FORGE",
       options: ["AURORA FORGE", "NIGHTFALL", "SILK ROAD"],
       selectedValue: "NIGHTFALL",
@@ -164,26 +127,18 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "mods-installed",
     tab: "mods",
-    eyebrow: "MODRINTH / УСТАНОВЛЕНО",
-    title: "СПИСОК МОДОВ СБОРКИ",
-    description:
-      "В нижней части панели видны уже установленные моды выбранной сборки. Здесь же их можно быстро удалить.",
     targets: [target("mods-installed")],
     placement: "left",
   },
   {
     id: "packs-search",
     tab: "resourcepacks",
-    eyebrow: "PACKS / ПОИСК",
-    title: "ПОИСК РЕСУРСПАКОВ",
-    description:
-      "Ищи текстуры и визуальные наборы на Modrinth. Каталог автоматически ориентируется на версию выбранной сборки.",
     targets: [target("resourcepacks-search")],
     showPreview: true,
     scene: {
       kind: "search",
-      label: "PACK SEARCH",
-      placeholder: "Search resource packs...",
+      label: "modrinthContent.resourcepacks.searchLabel",
+      placeholder: "modrinthContent.resourcepacks.searchPlaceholder",
       value: "faithful",
     },
     placement: "below",
@@ -191,10 +146,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "packs-catalog",
     tab: "resourcepacks",
-    eyebrow: "PACKS / КАТАЛОГ",
-    title: "УСТАНОВКА В ОДИН КЛИК",
-    description:
-      "Карточка показывает автора, описание и популярность ресурспака. INSTALL добавляет его в папку resourcepacks выбранной сборки.",
     targets: [target("resourcepacks-catalog")],
     showPreview: true,
     scene: { kind: "catalog", contentKind: "resourcepacks" },
@@ -203,15 +154,11 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "packs-target",
     tab: "resourcepacks",
-    eyebrow: "PACKS / ЦЕЛЬ",
-    title: "КУДА СТАВИТЬ ПАК",
-    description:
-      "Перед установкой проверь TARGET BUILD. Ресурспаки не зависят от загрузчика, поэтому можно выбрать любую сборку подходящей версии.",
     targets: [target("resourcepacks-target")],
     showPreview: true,
     scene: {
       kind: "dropdown",
-      label: "TARGET BUILD",
+      label: "modrinthContent.resourcepacks.targetDropdownLabel",
       initialValue: "SILK ROAD",
       options: ["SILK ROAD", "AURORA FORGE", "NIGHTFALL"],
       selectedValue: "AURORA FORGE",
@@ -221,26 +168,18 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "packs-installed",
     tab: "resourcepacks",
-    eyebrow: "PACKS / УСТАНОВЛЕНО",
-    title: "УПРАВЛЕНИЕ РЕСУРСПАКАМИ",
-    description:
-      "Здесь перечислены ресурспаки в выбранной сборке. Удаление убирает файл из её папки, не затрагивая другие сборки.",
     targets: [target("resourcepacks-installed")],
     placement: "left",
   },
   {
     id: "shaders-search",
     tab: "shaders",
-    eyebrow: "SHADERS / ПОИСК",
-    title: "НАЙДИ ШЕЙДЕРПАК",
-    description:
-      "Поиск открывает каталог шейдеров Modrinth. Можно искать по названию, стилю освещения или нужной производительности.",
     targets: [target("shaders-search")],
     showPreview: true,
     scene: {
       kind: "search",
-      label: "SHADER SEARCH",
-      placeholder: "Search shader packs...",
+      label: "modrinthContent.shaders.searchLabel",
+      placeholder: "modrinthContent.shaders.searchPlaceholder",
       value: "complementary",
     },
     placement: "below",
@@ -248,10 +187,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "shaders-catalog",
     tab: "shaders",
-    eyebrow: "SHADERS / КАТАЛОГ",
-    title: "СКАЧИВАНИЕ ШЕЙДЕРОВ",
-    description:
-      "INSTALL скачивает совместимую версию в shaderpacks. Открой карточку, чтобы прочитать полное описание перед установкой.",
     targets: [target("shaders-catalog")],
     showPreview: true,
     scene: { kind: "catalog", contentKind: "shaders" },
@@ -260,15 +195,11 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "shaders-target",
     tab: "shaders",
-    eyebrow: "SHADERS / СОВМЕСТИМОСТЬ",
-    title: "ПРОВЕРЬ IRIS",
-    description:
-      "В TARGET BUILD выбери нужную сборку. Для Fabric лаунчер показывает наличие Iris: без Iris или аналога Minecraft не сможет включить шейдер.",
     targets: [target("shaders-target")],
     showPreview: true,
     scene: {
       kind: "dropdown",
-      label: "IRIS BUILD",
+      label: "modrinthContent.shaders.targetDropdownLabel",
       initialValue: "AURORA FORGE",
       options: ["AURORA FORGE", "NIGHTFALL", "SILK ROAD"],
       selectedValue: "NIGHTFALL",
@@ -278,20 +209,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "shaders-installed",
     tab: "shaders",
-    eyebrow: "SHADERS / УСТАНОВЛЕНО",
-    title: "СПИСОК ШЕЙДЕРПАКОВ",
-    description:
-      "Ниже видны скачанные шейдерпаки выбранной сборки. Ненужный пакет можно удалить прямо из этого списка.",
     targets: [target("shaders-installed")],
     placement: "left",
   },
   {
     id: "settings-ram",
     tab: "settings",
-    eyebrow: "SETTINGS / ПАМЯТЬ",
-    title: "СКОЛЬКО RAM ДАТЬ MINECRAFT",
-    description:
-      "Ползунок задаёт память по умолчанию для игры. Обычной сборке хватает 4–6 GB; тяжёлым модпакам нужно больше, но оставляй память и системе.",
     targets: [target("settings-ram")],
     showPreview: true,
     scene: { kind: "slider", startPercent: 28, endPercent: 66 },
@@ -300,10 +223,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-appearance",
     tab: "settings",
-    eyebrow: "SETTINGS / ВНЕШНИЙ ВИД",
-    title: "ТЕМА ЛАУНЧЕРА",
-    description:
-      "LIGHT, DARK и VOID мгновенно меняют тему. При включённых advanced-настройках STUDIO открывает редактор и подсвечивается после применения собственного дизайна.",
     targets: [target("settings-appearance")],
     showPreview: true,
     scene: { kind: "choice", group: "appearance" },
@@ -312,10 +231,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-source",
     tab: "settings",
-    eyebrow: "SETTINGS / СЕТЬ",
-    title: "ИСТОЧНИК ЗАГРУЗОК",
-    description:
-      "OFFICIAL использует серверы Mojang, MIRROR — зеркало, AUTO пробует оптимальный маршрут и при необходимости переключается автоматически.",
     targets: [target("settings-source")],
     showPreview: true,
     scene: { kind: "choice", group: "source" },
@@ -324,10 +239,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-auto-java",
     tab: "settings",
-    eyebrow: "SETTINGS / JAVA",
-    title: "АВТОУСТАНОВКА JAVA",
-    description:
-      "Когда опция включена, лаунчер сам скачает подходящую Java для версии Minecraft. Выключай только если хочешь управлять Java вручную.",
     targets: [target("settings-auto-java")],
     showPreview: true,
     scene: { kind: "choice", group: "java" },
@@ -336,10 +247,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-language",
     tab: "settings",
-    eyebrow: "SETTINGS / ЯЗЫК",
-    title: "ЯЗЫК ИНТЕРФЕЙСА",
-    description:
-      "Здесь выбирается язык лаунчера. RU активен сейчас; EN переключит интерфейс на английский, когда локализация будет доступна.",
     targets: [target("settings-language")],
     showPreview: true,
     scene: { kind: "choice", group: "language" },
@@ -348,10 +255,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-preferences",
     tab: "settings",
-    eyebrow: "SETTINGS / PREFERENCES",
-    title: "ПОВЕДЕНИЕ ЛАУНЧЕРА",
-    description:
-      "В блоке PREFERENCES находятся переключатели запуска, навигации, версий и дополнительных возможностей. Сейчас разберём каждый из них.",
     targets: [target("settings-preferences")],
     placement: "left",
     spotlightPadding: 5,
@@ -359,16 +262,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-optimized",
     tab: "settings",
-    eyebrow: "PREFERENCES / JAVA",
-    title: "OPTIMIZED JAVA ARGUMENTS",
-    description:
-      "Добавляет проверенный набор G1GC-аргументов и фиксированный heap для более стабильной работы. Выключи, если используешь собственные аргументы Java.",
     targets: [target("settings-optimized")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "OPTIMIZED JAVA ARGUMENTS",
-      note: "G1GC-настройки и фиксированный heap.",
+      title: "settings.optimizedJavaArguments",
+      note: "settings.launchWithG1gcSettings",
       initialEnabled: false,
     },
     placement: "left",
@@ -376,16 +275,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-wheel",
     tab: "settings",
-    eyebrow: "PREFERENCES / НАВИГАЦИЯ",
-    title: "WHEEL TAB SWITCHING",
-    description:
-      "Разрешает переключать основные вкладки колесом мыши. Внутри списков колесо продолжает прокручивать содержимое, а не менять раздел.",
     targets: [target("settings-wheel")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "WHEEL TAB SWITCHING",
-      note: "Переключение вкладок колесом мыши.",
+      title: "settings.wheelTabSwitching",
+      note: "settings.switchTabsWithThe",
       initialEnabled: false,
     },
     placement: "left",
@@ -393,16 +288,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-mascot",
     tab: "settings",
-    eyebrow: "PREFERENCES / МАСКОТ",
-    title: "LAUNCHER MASCOT",
-    description:
-      "Включает интерактивного маскота. Стрелка раскрывает имя, движение, реакции, перенос элементов и другие отдельные способности.",
     targets: [target("settings-mascot")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "LAUNCHER MASCOT",
-      note: "Имя, движение и реакции маскота.",
+      title: "settings.launcherMascot",
+      note: "settings.theMascotWalksAround",
       action: "expand",
     },
     placement: "left",
@@ -410,16 +301,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-snapshots",
     tab: "settings",
-    eyebrow: "PREFERENCES / ВЕРСИИ",
-    title: "SHOW SNAPSHOTS",
-    description:
-      "Добавляет экспериментальные snapshot-версии Minecraft в список создания сборки. Они могут быть нестабильными и несовместимыми с модами.",
     targets: [target("settings-snapshots")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "SHOW SNAPSHOTS",
-      note: "Экспериментальные snapshot-версии.",
+      title: "settings.showSnapshots",
+      note: "settings.showSnapshotVersionsIn",
       initialEnabled: false,
     },
     placement: "left",
@@ -427,16 +314,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-prereleases",
     tab: "settings",
-    eyebrow: "PREFERENCES / ВЕРСИИ",
-    title: "SHOW PRE-RELEASES",
-    description:
-      "Показывает pre-release и release candidate версии — почти готовые релизы для раннего тестирования.",
     targets: [target("settings-prereleases")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "SHOW PRE-RELEASES",
-      note: "Pre-release и release candidate версии.",
+      title: "settings.showPreReleases",
+      note: "settings.showPreReleaseAnd",
       initialEnabled: false,
     },
     placement: "left",
@@ -444,16 +327,12 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "settings-advanced",
     tab: "settings",
-    eyebrow: "PREFERENCES / ADVANCED",
-    title: "ADVANCED SETTINGS",
-    description:
-      "Открывает оформление карточек сборок, Appearance Studio и менеджер расширений. Это режим для глубокой кастомизации лаунчера.",
     targets: [target("settings-advanced")],
     showPreview: true,
     scene: {
       kind: "preference",
-      title: "ADVANCED SETTINGS",
-      note: "Расширенное оформление и менеджер дополнений.",
+      title: "settings.advancedSettings",
+      note: "settings.enablesBuildSettingsAnd",
       initialEnabled: false,
     },
     placement: "left",
@@ -461,10 +340,6 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
   {
     id: "guide-replay",
     tab: "settings",
-    eyebrow: "ПОДСКАЗКИ / ГОТОВО",
-    title: "ТУР МОЖНО ПОВТОРИТЬ",
-    description:
-      "Кнопка GUIDE в верхней панели всегда запускает эти подсказки заново. Первый автоматический показ после завершения больше не будет мешать.",
     targets: [target("guide-replay")],
     showPreview: true,
     demoAction: "click",
@@ -472,3 +347,26 @@ export const LAUNCHER_GUIDE_STEPS: LauncherGuideStep[] = [
     placement: "below",
   },
 ];
+
+/** Message key prefix of a step: "overview-home" → "guide.overviewHome". */
+export function guideStepKey(id: string): string {
+  return `guide.${id.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}`;
+}
+
+export function localizeGuideSteps(
+  steps: LauncherGuideStepDefinition[],
+  tr: ReturnType<typeof useTranslation>,
+): LauncherGuideStep[] {
+  return steps.map((step) => {
+    const text = (field: "eyebrow" | "title" | "description") => {
+      const key = `${guideStepKey(step.id)}.${field}`;
+      return isPlainMessageKey(key) ? tr(key) : "";
+    };
+    return {
+      ...step,
+      eyebrow: text("eyebrow"),
+      title: text("title"),
+      description: text("description"),
+    };
+  });
+}

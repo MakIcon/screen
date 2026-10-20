@@ -116,20 +116,26 @@ impl ImportContext {
 }
 
 #[tauri::command]
-pub async fn cancel_import(operation_id: String) -> Result<(), String> {
-    if operation_id.trim().is_empty() {
-        return Err("Import operation id is empty".to_string());
+pub async fn cancel_import(
+    operation_id: String,
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        if operation_id.trim().is_empty() {
+            return Err("Import operation id is empty".to_string());
+        }
+        let mut registry = active_imports().lock().await;
+        if let Some(sender) = registry.active.get(&operation_id) {
+            return sender
+                .send(true)
+                .map_err(|_| "Import is no longer active".to_string());
+        }
+        // The user can click Cancel before the import command has registered.
+        if registry.pending_cancel.len() >= 128 {
+            registry.pending_cancel.clear();
+        }
+        registry.pending_cancel.insert(operation_id);
+        Ok(())
     }
-    let mut registry = active_imports().lock().await;
-    if let Some(sender) = registry.active.get(&operation_id) {
-        return sender
-            .send(true)
-            .map_err(|_| "Import is no longer active".to_string());
-    }
-    // The user can click Cancel before the import command has registered.
-    if registry.pending_cancel.len() >= 128 {
-        registry.pending_cancel.clear();
-    }
-    registry.pending_cancel.insert(operation_id);
-    Ok(())
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }

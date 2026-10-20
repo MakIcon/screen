@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ModrinthProjectModal } from "../components/modrinth/ModrinthProjectModal";
 import { CatalogProjectCard } from "../components/modrinth/CatalogProjectCard";
 import { CatalogSearchToolbar } from "../components/modrinth/CatalogSearchToolbar";
@@ -14,104 +14,75 @@ import {
   createPlaceholderAppearanceAttributes,
   createPlaceholderValueAttributes,
 } from "../utils/placeholders";
+import { useTranslation } from "../i18n/locale";
 
-type ContentPresentation = {
-  searchLabel: string;
-  searchPlaceholder: string;
-  catalogLabel: string;
-  noTargetTitle: string;
-  noTargetText: string;
-  loadingTitle: string;
-  loadingText: string;
-  emptyText: string;
-  loadingMoreText: string;
-  targetSectionLabel: string;
-  targetDropdownLabel: string;
-  targetPlaceholder: string;
+/** Text fields resolve to `modrinthContent.<kind>.<field>` messages. */
+const TEXT_FIELDS = [
+  "searchLabel",
+  "searchPlaceholder",
+  "catalogLabel",
+  "noTargetTitle",
+  "noTargetText",
+  "loadingTitle",
+  "loadingText",
+  "emptyText",
+  "loadingMoreText",
+  "targetSectionLabel",
+  "targetDropdownLabel",
+  "targetPlaceholder",
+  "detailLabel",
+  "installedLabel",
+  "installedLoadingText",
+  "installedEmptyText",
+  "deleteTitle",
+] as const;
+type TextField = (typeof TEXT_FIELDS)[number];
+
+type ContentPresentation = Record<TextField, string> & {
   dropdownKey: Exclude<DropdownKey, null>;
-  detailLabel: string;
   detailValue: (target: InstanceItem | null) => string;
-  installedLabel: string;
-  installedLoadingText: string;
-  installedEmptyText: string;
-  deleteTitle: string;
   fallbackCategory: (target: InstanceItem | null) => string;
   installedCatalogMode: "update" | "downloaded";
   showInstanceInfo?: boolean;
 };
 
-const CONTENT_PRESENTATION: Record<ModrinthContentKind, ContentPresentation> = {
+const CONTENT_BEHAVIOR: Record<
+  ModrinthContentKind,
+  Omit<ContentPresentation, TextField | "fallbackCategory">
+> = {
   mods: {
-    searchLabel: "MODRINTH SEARCH",
-    searchPlaceholder: "Search compatible mods...",
-    catalogLabel: "DISCOVER / INSTALL",
-    noTargetTitle: "NO MODDED BUILDS",
-    noTargetText: "Создай Fabric, Quilt или NeoForge-сборку во вкладке BUILDS.",
-    loadingTitle: "LOADING MODS",
-    loadingText: "Подтягиваю список модов с Modrinth.",
-    emptyText: "Попробуй другой запрос или другую сборку.",
-    loadingMoreText: "Loading more mods...",
-    targetSectionLabel: "CURRENT TARGET",
-    targetDropdownLabel: "MODDED BUILD",
-    targetPlaceholder: "SELECT MODDED BUILD",
     dropdownKey: "target-mods",
-    detailLabel: "LOADER",
     detailValue: (target) => target?.loader ?? "—",
-    installedLabel: "INSTALLED MODS",
-    installedLoadingText: "Reading installed mods...",
-    installedEmptyText: "Пока что в этой сборке нет установленных модов.",
-    deleteTitle: "Удалить мод",
-    fallbackCategory: (target) => target?.loader ?? "Mod",
     installedCatalogMode: "update",
   },
   resourcepacks: {
-    searchLabel: "PACK SEARCH",
-    searchPlaceholder: "Search resource packs...",
-    catalogLabel: "RESOURCE PACKS",
-    noTargetTitle: "NO BUILDS",
-    noTargetText: "Создай сборку во вкладке BUILDS, чтобы ставить resource packs с Modrinth.",
-    loadingTitle: "LOADING RESOURCE PACKS",
-    loadingText: "Подгружаю каталог resource packs.",
-    emptyText: "Попробуй другой запрос или другую версию Minecraft.",
-    loadingMoreText: "Loading more packs...",
-    targetSectionLabel: "ACTIVE PROFILE",
-    targetDropdownLabel: "TARGET BUILD",
-    targetPlaceholder: "SELECT BUILD",
     dropdownKey: "target-packs",
-    detailLabel: "FOLDER",
     detailValue: () => "RESOURCEPACKS",
-    installedLabel: "INSTALLED PACKS",
-    installedLoadingText: "Reading installed resource packs...",
-    installedEmptyText: "Пока что в этой сборке нет установленных resource packs.",
-    deleteTitle: "Удалить ресурс-пак",
-    fallbackCategory: () => "Resource Pack",
     installedCatalogMode: "update",
   },
   shaders: {
-    searchLabel: "SHADER SEARCH",
-    searchPlaceholder: "Search shaders...",
-    catalogLabel: "SHADERPACKS",
-    noTargetTitle: "NO BUILDS",
-    noTargetText: "Создай сборку во вкладке BUILDS, чтобы ставить shaderpacks с Modrinth.",
-    loadingTitle: "LOADING SHADERS",
-    loadingText: "Подгружаю каталог shaderpacks.",
-    emptyText: "Попробуй другой запрос или другую версию Minecraft.",
-    loadingMoreText: "Loading more shaders...",
-    targetSectionLabel: "ACTIVE PROFILE",
-    targetDropdownLabel: "TARGET BUILD",
-    targetPlaceholder: "SELECT BUILD",
     dropdownKey: "target-shaders",
-    detailLabel: "FOLDER",
     detailValue: () => "SHADERPACKS",
-    installedLabel: "INSTALLED SHADERS",
-    installedLoadingText: "Reading installed shaders...",
-    installedEmptyText: "Пока что в этой сборке нет установленных shaderpacks.",
-    deleteTitle: "Удалить шейдер",
-    fallbackCategory: () => "Shader",
     installedCatalogMode: "downloaded",
     showInstanceInfo: true,
   },
 };
+
+function contentPresentation(
+  kind: ModrinthContentKind,
+  tr: ReturnType<typeof useTranslation>,
+): ContentPresentation {
+  const text = Object.fromEntries(
+    TEXT_FIELDS.map((field) => [field, tr(`modrinthContent.${kind}.${field}`)]),
+  ) as Record<TextField, string>;
+  const category = tr(`modrinthContent.${kind}.fallbackCategory`);
+  return {
+    ...CONTENT_BEHAVIOR[kind],
+    ...text,
+    // Mods fall back to the loader name; the other kinds to their own category.
+    fallbackCategory: (target) => (kind === "mods" ? (target?.loader ?? category) : category),
+  };
+}
 
 type ModrinthContentTabProps = {
   kind: ModrinthContentKind;
@@ -162,7 +133,8 @@ export function ModrinthContentTab({
   projectIcons,
   requestProjectIcons,
 }: ModrinthContentTabProps) {
-  const copy = CONTENT_PRESENTATION[kind];
+  const tr = useTranslation();
+  const copy = useMemo(() => contentPresentation(kind, tr), [kind, tr]);
   const iconKind = kind === "resourcepacks" ? "resourcePacks" : kind;
   const {
     search,
@@ -228,7 +200,7 @@ export function ModrinthContentTab({
           <div className="card-topline">
             <span className="panel-label">{copy.catalogLabel}</span>
             <span className="status-code">
-              {visibleItems.length} / {totalHits} RESULTS
+              {visibleItems.length} / {totalHits} {tr("modrinthContent.results")}
             </span>
           </div>
 
@@ -261,7 +233,7 @@ export function ModrinthContentTab({
                 </div>
               ) : visibleItems.length === 0 ? (
                 <div className="empty-state-box">
-                  <strong>NOTHING FOUND</strong>
+                  <strong>{tr("modrinthContent.nothingFound")}</strong>
                   <p>{copy.emptyText}</p>
                 </div>
               ) : (
@@ -337,7 +309,7 @@ export function ModrinthContentTab({
 
           <div className="detail-grid detail-grid--sidebar">
             <div className="detail-block">
-              <span className="detail-title">TARGET VERSION</span>
+              <span className="detail-title">{tr("modrinthContent.targetVersion")}</span>
               <span
                 className="detail-value"
                 {...createPlaceholderAppearanceAttributes("%build_version%", (template) =>
@@ -378,7 +350,7 @@ export function ModrinthContentTab({
                 </div>
               ) : visibleInstalledItems.length === 0 ? (
                 <div className="empty-state-box compact-empty">
-                  <strong>EMPTY</strong>
+                  <strong>{tr("modrinthContent.empty")}</strong>
                   <p>{copy.installedEmptyText}</p>
                 </div>
               ) : (

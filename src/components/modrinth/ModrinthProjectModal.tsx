@@ -12,6 +12,7 @@ import type {
 import { toErrorMessage } from "../../utils/errors";
 import { ModrinthProjectIcon } from "./ModrinthProjectIcon";
 import { ModrinthDependenciesSection } from "./ModrinthDependenciesSection";
+import { intlLocale, useLocale, useTranslation, type Locale } from "../../i18n/locale";
 export { ModrinthProjectIcon } from "./ModrinthProjectIcon";
 
 type ModrinthProjectModalProps = {
@@ -27,23 +28,21 @@ type ModrinthProjectModalProps = {
   onDownloadCancel?: () => Promise<void>;
 };
 
-const CONTENT_LABEL: Record<ModrinthContentKind, string> = {
-  mods: "MOD",
-  resourcepacks: "RESOURCE PACK",
-  shaders: "SHADERPACK",
-};
-
-function formatCount(value: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
-    value,
-  );
+function formatCount(value: number, locale: Locale) {
+  return new Intl.NumberFormat(intlLocale(locale), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
-function formatDate(value?: string | null) {
+function formatDate(value: string | null | undefined, locale: Locale) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(intlLocale(locale), {
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 function toReadableText(body: string) {
@@ -193,6 +192,8 @@ export function ModrinthProjectModal({
   onDownloadPause,
   onDownloadCancel,
 }: ModrinthProjectModalProps) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [details, setDetails] = useState<ModrinthProjectDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -252,7 +253,7 @@ export function ModrinthProjectModal({
     projectDetails?.categories[0] ??
     project.displayCategories[0] ??
     project.categories[0] ??
-    CONTENT_LABEL[kind];
+    tr(`modrinthProject.kind.${kind}`);
   const showRemove = project.installed;
   const isShader = kind === "shaders";
 
@@ -269,7 +270,7 @@ export function ModrinthProjectModal({
           className="modrinth-detail-close"
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={tr("common.close2")}
         >
           <span />
           <span />
@@ -282,34 +283,37 @@ export function ModrinthProjectModal({
             className="modrinth-project-icon--large"
           />
           <div className="modrinth-detail-heading">
-            <span className="modrinth-detail-kicker">{CONTENT_LABEL[kind]} / MODRINTH</span>
+            <span className="modrinth-detail-kicker">
+              {tr(`modrinthProject.kind.${kind}`)} / MODRINTH
+            </span>
             <h2 id="modrinth-detail-title">{fullProject.title}</h2>
             <p>
-              BY {fullProject.author.toUpperCase()} · {category.toUpperCase()}
+              {tr("modrinthProject.by")} {fullProject.author.toUpperCase()} ·{" "}
+              {category.toUpperCase()}
             </p>
           </div>
         </header>
 
         <div className="modrinth-detail-summary">
-          {description || "No short description was provided for this project."}
+          {description || tr("modrinthProject.noShortDescriptionWas")}
         </div>
 
-        <div className="modrinth-detail-stats" aria-label="Project statistics">
+        <div className="modrinth-detail-stats" aria-label={tr("modrinthProject.projectStatistics")}>
           <div>
-            <strong>{formatCount(projectDetails?.downloads ?? project.downloads)}</strong>
-            <span>DOWNLOADS</span>
+            <strong>{formatCount(projectDetails?.downloads ?? project.downloads, locale)}</strong>
+            <span>{tr("modrinthProject.downloads")}</span>
           </div>
           <div>
-            <strong>{formatCount(projectDetails?.follows ?? project.follows)}</strong>
-            <span>FOLLOWERS</span>
+            <strong>{formatCount(projectDetails?.follows ?? project.follows, locale)}</strong>
+            <span>{tr("modrinthProject.followers")}</span>
           </div>
           <div>
-            <strong>{formatDate(projectDetails?.updated)}</strong>
-            <span>UPDATED</span>
+            <strong>{formatDate(projectDetails?.updated, locale)}</strong>
+            <span>{tr("modrinthProject.updated")}</span>
           </div>
           <div>
             <strong>{projectDetails?.license ?? "—"}</strong>
-            <span>LICENSE</span>
+            <span>{tr("modrinthProject.license")}</span>
           </div>
         </div>
 
@@ -317,7 +321,7 @@ export function ModrinthProjectModal({
           {loading && (
             <div className="modrinth-detail-loading">
               <span className="catalog-loading-spinner" aria-hidden="true" />
-              LOADING PROJECT DETAILS
+              {tr("modrinthProject.loadingProjectDetails")}
             </div>
           )}
 
@@ -334,7 +338,9 @@ export function ModrinthProjectModal({
 
           {body && (
             <section className="modrinth-detail-description">
-              <span className="modrinth-detail-section-label">ABOUT THIS PROJECT</span>
+              <span className="modrinth-detail-section-label">
+                {tr("modrinthProject.aboutThisProject")}
+              </span>
               {body.split(/\n{2,}/).map((paragraph, index) => (
                 <p key={`${index}-${paragraph.slice(0, 24)}`}>
                   {renderMarkdownText(paragraph, `paragraph-${index}`)}
@@ -344,7 +350,7 @@ export function ModrinthProjectModal({
           )}
 
           <DetailChips
-            label="CATEGORIES"
+            label={tr("modrinthProject.categories")}
             values={projectDetails?.categories ?? project.categories}
           />
         </div>
@@ -352,7 +358,11 @@ export function ModrinthProjectModal({
         {busy && downloadProgress && (
           <div className="modrinth-detail-download-progress">
             <div>
-              <strong>{downloadProgress.state === "paused" ? "PAUSED" : "DOWNLOADING"}</strong>
+              <strong>
+                {downloadProgress.state === "paused"
+                  ? tr("common.paused")
+                  : tr("common.downloading")}
+              </strong>
               <span>{Math.round(downloadProgress.percent)}%</span>
             </div>
             <i>
@@ -363,10 +373,10 @@ export function ModrinthProjectModal({
                 type="button"
                 onClick={() => void onDownloadPause?.(downloadProgress.state !== "paused")}
               >
-                {downloadProgress.state === "paused" ? "RESUME" : "PAUSE"}
+                {downloadProgress.state === "paused" ? tr("common.resume") : tr("common.pause")}
               </button>
               <button type="button" onClick={() => void onDownloadCancel?.()}>
-                CANCEL
+                {tr("common.cancel")}
               </button>
             </div>
           </div>
@@ -380,7 +390,7 @@ export function ModrinthProjectModal({
               disabled={busy}
               onClick={onUninstall}
             >
-              {busy ? "WORKING..." : "REMOVE"}
+              {busy ? tr("common.working") : tr("common.remove")}
             </button>
           )}
           <button
@@ -390,12 +400,12 @@ export function ModrinthProjectModal({
             onClick={onInstall}
           >
             {busy
-              ? "INSTALLING..."
+              ? tr("modrinthProject.installing")
               : project.installed
                 ? isShader
-                  ? "DOWNLOADED"
-                  : "UPDATE"
-                : "INSTALL"}
+                  ? tr("modrinthProject.downloaded")
+                  : tr("modrinthProject.update")
+                : tr("common.install")}
             {!busy && !(isShader && project.installed) && <InstallIcon />}
           </button>
         </footer>

@@ -1,3 +1,4 @@
+import { useAppearanceText } from "./localization";
 import {
   useEffect,
   useMemo,
@@ -69,6 +70,7 @@ export function ElementBackgroundPicker({
   gradientOnly = false,
   enableMotion = true,
 }: ElementBackgroundPickerProps) {
+  const copy = useAppearanceText();
   const [selectedStopIndex, setSelectedStopIndex] = useState(0);
   const [textPreviewTone, setTextPreviewTone] = useState<"light" | "dark">("dark");
   const [previewStuck, setPreviewStuck] = useState(false);
@@ -325,7 +327,7 @@ export function ElementBackgroundPicker({
                 className={kind === option ? "active" : ""}
                 onClick={() => selectKind(option)}
               >
-                {option.toUpperCase()}
+                {copy(option === "solid" ? "SOLID COLOR" : "GRADIENT")}
               </button>
             ))}
           </div>
@@ -354,12 +356,15 @@ export function ElementBackgroundPicker({
               WebkitTextFillColor: kind === "gradient" ? "transparent" : undefined,
             }}
           >
-            TEXT PREVIEW
+            {copy("TEXT PREVIEW")}
           </strong>
         )}
         <span>
           {kind === "gradient"
-            ? `${gradientType.toUpperCase()} · ${stops.length} STOPS`
+            ? copy("Gradient type: {type} · stops: {count}", {
+                type: copy(gradientType.toUpperCase()),
+                count: stops.length,
+              })
             : solidColor.toUpperCase()}
         </span>
         {previewMode === "text" && (
@@ -367,10 +372,14 @@ export function ElementBackgroundPicker({
             type="button"
             className="element-background-picker__contrast"
             onClick={() => setTextPreviewTone((tone) => (tone === "dark" ? "light" : "dark"))}
-            data-tooltip="Switch text preview background"
-            aria-label={`Preview text on ${textPreviewTone === "dark" ? "light" : "dark"} background`}
+            data-tooltip={copy("Switch text preview background")}
+            aria-label={copy(
+              textPreviewTone === "dark"
+                ? "Preview text on light background"
+                : "Preview text on dark background",
+            )}
           >
-            {textPreviewTone === "dark" ? "☀ LIGHT" : "● DARK"}
+            {textPreviewTone === "dark" ? copy("☀ LIGHT") : copy("● DARK")}
           </button>
         )}
       </div>
@@ -385,8 +394,8 @@ export function ElementBackgroundPicker({
         <div className="element-gradient-editor">
           <div className="element-gradient-editor__section element-gradient-editor__presets">
             <div className="element-gradient-editor__section-head">
-              <span>GRADIENT PALETTES</span>
-              <small>ONE CLICK, THEN MAKE IT YOURS</small>
+              <span>{copy("GRADIENT PALETTES")}</span>
+              <small>{copy("ONE CLICK, THEN MAKE IT YOURS")}</small>
             </div>
             <div className="element-gradient-presets">
               {PRESET_PREVIEWS.map((preset) => (
@@ -395,11 +404,11 @@ export function ElementBackgroundPicker({
                   type="button"
                   className={isGradientPresetActive(style, preset) ? "active" : ""}
                   onClick={() => applyPreset(preset)}
-                  aria-label={`Apply ${preset.name.toLowerCase()} gradient`}
+                  aria-label={copy("Apply {name} gradient", { name: copy(preset.name) })}
                 >
                   <i style={{ backgroundImage: preset.image }} aria-hidden="true" />
-                  <strong>{preset.name}</strong>
-                  <small>{preset.detail}</small>
+                  <strong>{copy(preset.name)}</strong>
+                  <small>{copy(preset.detail)}</small>
                 </button>
               ))}
             </div>
@@ -407,18 +416,25 @@ export function ElementBackgroundPicker({
 
           <div className="element-gradient-editor__section element-gradient-editor__stops-section">
             <div className="element-gradient-editor__section-head">
-              <span>COLOR STOPS</span>
+              <span>{copy("COLOR STOPS")}</span>
               <div>
-                <button type="button" onClick={reverseStops} data-tooltip="Reverse gradient">
-                  ↔ REVERSE
+                <button
+                  type="button"
+                  onClick={reverseStops}
+                  data-tooltip={copy("Reverse gradient")}
+                >
+                  {copy("↔ REVERSE")}
                 </button>
                 <button
                   type="button"
                   onClick={addStopInLargestGap}
                   disabled={stops.length >= MAX_GRADIENT_STOPS}
-                  data-tooltip={`Add color stop (${stops.length}/${MAX_GRADIENT_STOPS})`}
+                  data-tooltip={copy("Add color stop ({count}/{max})", {
+                    count: stops.length,
+                    max: MAX_GRADIENT_STOPS,
+                  })}
                 >
-                  + ADD
+                  {copy("+ ADD")}
                 </button>
               </div>
             </div>
@@ -431,7 +447,7 @@ export function ElementBackgroundPicker({
                 if (event.target !== event.currentTarget) return;
                 addStopAt(pointerPositionIn(event, event.currentTarget));
               }}
-              data-tooltip="Click to add a color stop"
+              data-tooltip={copy("Click to add a color stop")}
             >
               {stops.map((stop, index) => (
                 <button
@@ -439,7 +455,10 @@ export function ElementBackgroundPicker({
                   type="button"
                   className={index === activeStopIndex ? "active" : ""}
                   style={{ left: `${stop.position}%`, background: stop.color }}
-                  aria-label={`Gradient stop ${index + 1} at ${Math.round(stop.position)}%`}
+                  aria-label={copy("Gradient stop {index} at {position}%", {
+                    index: index + 1,
+                    position: Math.round(stop.position),
+                  })}
                   onPointerDown={(event) => {
                     event.stopPropagation();
                     dragStop(event, index);
@@ -463,15 +482,17 @@ export function ElementBackgroundPicker({
 
             <div className="element-gradient-stop-editor">
               <label>
-                <span>STOP {String(activeStopIndex + 1).padStart(2, "0")} COLOR</span>
+                <span>
+                  {copy("STOP")} {String(activeStopIndex + 1).padStart(2, "0")} {copy("COLOR")}
+                </span>
                 <ColorPicker
                   value={activeStop.color}
                   onChange={(color) => updateStop(activeStopIndex, { color })}
-                  label={`Gradient stop ${activeStopIndex + 1}`}
+                  label={copy("Gradient stop {index}", { index: activeStopIndex + 1 })}
                 />
               </label>
               <RangeField
-                label="POSITION"
+                label={copy("POSITION")}
                 value={Math.round(activeStop.position)}
                 min={0}
                 max={100}
@@ -484,9 +505,9 @@ export function ElementBackgroundPicker({
                 className="element-gradient-stop-editor__remove"
                 disabled={stops.length <= 2}
                 onClick={removeActiveStop}
-                data-tooltip="Remove selected color stop"
+                data-tooltip={copy("Remove selected color stop")}
               >
-                REMOVE
+                {copy("REMOVE")}
               </button>
             </div>
           </div>
@@ -494,7 +515,7 @@ export function ElementBackgroundPicker({
           <GradientGraphEditor style={style} onChange={onChange} />
 
           <RangeField
-            label="GRADIENT STRENGTH"
+            label={copy("GRADIENT STRENGTH")}
             value={Math.round(gradientStrength * 100)}
             min={0}
             max={100}
@@ -505,7 +526,7 @@ export function ElementBackgroundPicker({
           {enableMotion && (
             <>
               <SelectField
-                label="GRADIENT MOTION"
+                label={copy("GRADIENT MOTION")}
                 value={gradientAnimation}
                 options={GRADIENT_ANIMATIONS}
                 onChange={(backgroundGradientAnimation) =>
@@ -515,7 +536,7 @@ export function ElementBackgroundPicker({
               {gradientAnimation !== "none" && (
                 <>
                   <RangeField
-                    label="MOTION DURATION"
+                    label={copy("MOTION DURATION")}
                     value={gradientAnimationDuration}
                     min={500}
                     max={30_000}
@@ -526,7 +547,7 @@ export function ElementBackgroundPicker({
                     }
                   />
                   <SelectField
-                    label="MOTION DIRECTION"
+                    label={copy("MOTION DIRECTION")}
                     value={gradientAnimationDirection}
                     options={GRADIENT_DIRECTIONS}
                     onChange={(backgroundGradientAnimationDirection) =>
@@ -534,7 +555,7 @@ export function ElementBackgroundPicker({
                     }
                   />
                   <SelectField
-                    label="MOTION EASING"
+                    label={copy("MOTION EASING")}
                     value={gradientAnimationEasing}
                     options={GRADIENT_EASINGS}
                     onChange={(backgroundGradientAnimationEasing) =>
@@ -544,12 +565,12 @@ export function ElementBackgroundPicker({
                   {gradientAnimation === "custom" && (
                     <div className="element-gradient-editor__section element-gradient-editor__custom-motion">
                       <div className="element-gradient-editor__section-head">
-                        <span>CUSTOM KEYFRAMES</span>
-                        <small>FROM → TO</small>
+                        <span>{copy("CUSTOM KEYFRAMES")}</span>
+                        <small>{copy("FROM → TO")}</small>
                       </div>
                       <div className="studio-field-grid">
                         <RangeField
-                          label="START X"
+                          label={copy("START X")}
                           value={
                             style?.backgroundGradientAnimationStartX ??
                             DEFAULT_CUSTOM_GRADIENT_ANIMATION.startX
@@ -562,7 +583,7 @@ export function ElementBackgroundPicker({
                           }
                         />
                         <RangeField
-                          label="START Y"
+                          label={copy("START Y")}
                           value={
                             style?.backgroundGradientAnimationStartY ??
                             DEFAULT_CUSTOM_GRADIENT_ANIMATION.startY
@@ -577,7 +598,7 @@ export function ElementBackgroundPicker({
                       </div>
                       <div className="studio-field-grid">
                         <RangeField
-                          label="END X"
+                          label={copy("END X")}
                           value={
                             style?.backgroundGradientAnimationEndX ??
                             DEFAULT_CUSTOM_GRADIENT_ANIMATION.endX
@@ -590,7 +611,7 @@ export function ElementBackgroundPicker({
                           }
                         />
                         <RangeField
-                          label="END Y"
+                          label={copy("END Y")}
                           value={
                             style?.backgroundGradientAnimationEndY ??
                             DEFAULT_CUSTOM_GRADIENT_ANIMATION.endY
@@ -604,7 +625,7 @@ export function ElementBackgroundPicker({
                         />
                       </div>
                       <RangeField
-                        label="GRADIENT ZOOM"
+                        label={copy("GRADIENT ZOOM")}
                         value={
                           style?.backgroundGradientAnimationScale ??
                           DEFAULT_CUSTOM_GRADIENT_ANIMATION.scale
@@ -618,7 +639,7 @@ export function ElementBackgroundPicker({
                         }
                       />
                       <RangeField
-                        label="HUE SHIFT"
+                        label={copy("HUE SHIFT")}
                         value={
                           style?.backgroundGradientAnimationHue ??
                           DEFAULT_CUSTOM_GRADIENT_ANIMATION.hue
@@ -633,7 +654,7 @@ export function ElementBackgroundPicker({
                       />
                       <div className="studio-field-grid">
                         <RangeField
-                          label="END SATURATION"
+                          label={copy("END SATURATION")}
                           value={Math.round(
                             (style?.backgroundGradientAnimationSaturation ??
                               DEFAULT_CUSTOM_GRADIENT_ANIMATION.saturation) * 100,
@@ -647,7 +668,7 @@ export function ElementBackgroundPicker({
                           }
                         />
                         <RangeField
-                          label="END BRIGHTNESS"
+                          label={copy("END BRIGHTNESS")}
                           value={Math.round(
                             (style?.backgroundGradientAnimationBrightness ??
                               DEFAULT_CUSTOM_GRADIENT_ANIMATION.brightness) * 100,

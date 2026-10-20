@@ -1,4 +1,5 @@
 import { FARM_CROPS } from "./farming";
+import { useTranslation } from "../../../i18n/locale";
 
 export function MineflayerFarmCropField({
   value,
@@ -7,17 +8,18 @@ export function MineflayerFarmCropField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const tr = useTranslation();
   return (
     <label className="mineflayer-bot-field">
-      <span>КУЛЬТУРА</span>
+      <span>{tr("bot.farmCrop.crop")}</span>
       <select
         className="mineflayer-farm-select"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {FARM_CROPS.map(([name, label]) => (
+        {FARM_CROPS.map((name) => (
           <option key={name} value={name}>
-            {label}
+            {tr(`bot.crop.${name}`)}
           </option>
         ))}
       </select>

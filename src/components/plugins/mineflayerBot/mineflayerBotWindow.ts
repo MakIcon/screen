@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { translate } from "../../../i18n/locale";
 
 export const MINEFLAYER_BOT_WINDOW_LABEL = "mineflayer-bot";
 let openingWindow: Promise<void> | null = null;
@@ -20,7 +21,7 @@ export async function openMineflayerBotWindow(): Promise<void> {
       MINEFLAYER_BOT_WINDOW_LABEL,
       "popup,width=1120,height=840",
     );
-    if (!popup) throw new Error("Не удалось открыть окно управления ботом.");
+    if (!popup) throw new Error(translate("bot.main.couldNotOpenThe"));
     popup.focus();
     return;
   }
@@ -31,7 +32,7 @@ export async function openMineflayerBotWindow(): Promise<void> {
     if (!botWindow) {
       botWindow = new WebviewWindow(MINEFLAYER_BOT_WINDOW_LABEL, {
         url: getMineflayerBotWindowUrl(),
-        title: "ScreenLauncher — Управление ботом",
+        title: translate("bot.main.screenlauncherBotControl"),
         width: 1120,
         height: 840,
         minWidth: 720,

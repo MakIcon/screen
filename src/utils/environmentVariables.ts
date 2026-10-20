@@ -1,20 +1,25 @@
 import type { EnvironmentVariable } from "../types";
+import { translateFor, type Locale } from "../i18n/locale";
 
 export function environmentVariablesToEntries(variables: Record<string, string> = {}) {
   return Object.entries(variables).map(([name, value]) => ({ name, value }));
 }
 
-export function getEnvironmentVariablesError(entries: EnvironmentVariable[]) {
+export function getEnvironmentVariablesError(
+  entries: EnvironmentVariable[],
+  locale: Locale = "ru",
+) {
   const names = new Set<string>();
   for (const { name: rawName, value } of entries) {
     const name = rawName.trim();
     if (!name && !value) continue;
     if (!name || /[=\0]/.test(name)) {
-      return "Укажите имя переменной без знака = и символа NUL.";
+      return translateFor(locale, "environmentVariables.invalidName");
     }
-    if (value.includes("\0")) return `Значение переменной ${name} содержит NUL.`;
+    if (value.includes("\0"))
+      return translateFor(locale, "environmentVariables.valueHasNul", { name });
     const key = name.toLowerCase();
-    if (names.has(key)) return `Переменная ${name} уже добавлена (регистр букв не учитывается).`;
+    if (names.has(key)) return translateFor(locale, "environmentVariables.duplicate", { name });
     names.add(key);
   }
   return null;

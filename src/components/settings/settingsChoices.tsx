@@ -1,9 +1,23 @@
 import type { SettingsChoiceOption } from "./SettingsChoiceSwitch";
 import type { MirrorMode } from "../../types";
-export const MIRROR_OPTIONS: { value: MirrorMode; label: string }[] = [
-  { value: "official", label: "OFFICIAL" },
-  { value: "auto", label: "AUTO" },
-  { value: "mirror", label: "MIRROR" },
+import type { PlainMessageKey, useTranslation } from "../../i18n/locale";
+
+/** A choice whose label is a message key; `localizeChoices` turns it into display text. */
+export type SettingsChoiceDefinition = Omit<SettingsChoiceOption, "label"> & {
+  label: PlainMessageKey;
+};
+
+export function localizeChoices(
+  choices: SettingsChoiceDefinition[],
+  tr: ReturnType<typeof useTranslation>,
+): SettingsChoiceOption[] {
+  return choices.map((choice) => ({ ...choice, label: tr(choice.label) }));
+}
+
+export const MIRROR_OPTIONS: (SettingsChoiceDefinition & { value: MirrorMode })[] = [
+  { value: "official", label: "settings.choice.official" },
+  { value: "auto", label: "settings.choice.auto" },
+  { value: "mirror", label: "settings.choice.mirror" },
 ];
 
 const SunIcon = () => (
@@ -157,22 +171,22 @@ const FlagUsIcon = () => (
   </svg>
 );
 
-export const APPEARANCE_CHOICES: SettingsChoiceOption[] = [
-  { value: "light", label: "LIGHT", icon: <SunIcon /> },
-  { value: "dark", label: "DARK", icon: <MoonIcon /> },
-  { value: "void", label: "VOID", icon: <VoidIcon /> },
+export const APPEARANCE_CHOICES: SettingsChoiceDefinition[] = [
+  { value: "light", label: "settings.choice.light", icon: <SunIcon /> },
+  { value: "dark", label: "settings.choice.dark", icon: <MoonIcon /> },
+  { value: "void", label: "settings.choice.void", icon: <VoidIcon /> },
   {
     value: "studio",
-    label: "STUDIO",
+    label: "settings.choice.studio",
     icon: <StudioIcon />,
     buttonProps: { className: "theme-switch-btn--studio" },
   },
 ];
-export const JAVA_CHOICES: SettingsChoiceOption[] = [
-  { value: "on", label: "ON", icon: <JavaIcon /> },
-  { value: "off", label: "OFF" },
+export const JAVA_CHOICES: SettingsChoiceDefinition[] = [
+  { value: "on", label: "common.onCaps", icon: <JavaIcon /> },
+  { value: "off", label: "common.offCaps" },
 ];
-export const LANGUAGE_CHOICES: SettingsChoiceOption[] = [
-  { value: "ru", label: "RU", icon: <FlagRuIcon /> },
-  { value: "en", label: "EN", icon: <FlagUsIcon /> },
+export const LANGUAGE_CHOICES: SettingsChoiceDefinition[] = [
+  { value: "ru", label: "settings.choice.ru", icon: <FlagRuIcon /> },
+  { value: "en", label: "settings.choice.en", icon: <FlagUsIcon /> },
 ];

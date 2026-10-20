@@ -18,6 +18,7 @@ import {
 import type { TabKey } from "../../types";
 import { LauncherGuideDemoScene, type LauncherGuideScene } from "./LauncherGuideScenes";
 import "./LauncherGuide.css";
+import { useTranslation } from "../../i18n/locale";
 
 export type LauncherGuidePlacement = "auto" | "above" | "right" | "below" | "left";
 export type LauncherGuideAnimation = "typewriter" | "pulse" | "none";
@@ -405,6 +406,7 @@ export function LauncherGuide({
   onStepChange,
   stepCompletion,
 }: LauncherGuideProps) {
+  const tr = useTranslation();
   const [stepIndex, setStepIndex] = useState(0);
   const [target, setTarget] = useState<TargetSnapshot | null>(null);
   const [cardSize, setCardSize] = useState<CardSize>({
@@ -873,7 +875,7 @@ export function LauncherGuide({
             type="button"
             onClick={() => (onSkip ?? onComplete)()}
           >
-            ПРОПУСТИТЬ
+            {tr("launcherGuide.skip")}
           </button>
           <div className="launcher-guide-step-actions">
             {stepIndex > 0 ? (
@@ -883,7 +885,7 @@ export function LauncherGuide({
                 onClick={() => setStepIndex((index) => Math.max(0, index - 1))}
               >
                 <span aria-hidden="true">←</span>
-                НАЗАД
+                {tr("launcherGuide.back")}
               </button>
             ) : null}
             <button
@@ -895,7 +897,7 @@ export function LauncherGuide({
                 else setStepIndex((index) => index + 1);
               }}
             >
-              {isLastStep ? "ГОТОВО" : "ДАЛЬШЕ"}
+              {isLastStep ? tr("launcherGuide.done") : tr("launcherGuide.next")}
               <span aria-hidden="true">→</span>
             </button>
           </div>

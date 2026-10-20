@@ -175,26 +175,42 @@
   opacity: 1;
 }
 
-/* Center every item on a single line so PLAY BUILD (taller) lines up by its
-   middle with INSTALL / FOLDER / STATS, like the CREATE BUILD row. The top
-   icon row floats above (see .instance-side-actions below), so extra top
-   margin reserves room for it. */
+/* Size translated actions by their labels; reserve space above for the icons. */
 .instance-actions.instance-actions-build {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(max-content, 1fr)) 42px;
   align-items: center;
   margin-top: 64px;
 }
 
-/* INSTALL / FOLDER / STATS grow to fill the row so the whole action area
-   spans the panel width and the icon cluster reaches the right edge
-   (aligned with the SOURCE / OFFICIAL column). PLAY BUILD keeps its size. */
 .instance-actions-build > .ghost-action {
-  flex: 1 1 0;
-  min-width: 0;
+  padding-inline: 10px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Reserve both labels so launching and stopping never resize the button. */
 .instance-actions-build > .primary-action {
-  flex: 0 0 auto;
+  padding-inline: 24px;
+}
+
+@container build-details (max-width: 500px) {
+  .instance-actions.instance-actions-build {
+    grid-template-columns: repeat(3, minmax(max-content, 1fr)) 42px;
+  }
+
+  .instance-actions-build > .primary-action {
+    grid-column: 1 / -1;
+  }
+
+  .instance-actions-build > .ghost-action {
+    min-width: 0;
+    padding-inline: 6px;
+    font-size: 10px;
+    letter-spacing: 0.25px;
+  }
 }
 
 .build-play-action .bpa-stack {
@@ -212,17 +228,14 @@
   pointer-events: none;
 }
 
-/* Only the trash icon sits on the button line; the other three icons are
-   absolutely positioned 54px above it (gear / camera / upload), so the icon
-   block no longer forces the row taller and PLAY BUILD can stay centered. */
+/* Anchor the floating icons to the whole action area, including when PLAY
+   takes its own row. Only the trash icon occupies a column in the grid. */
 .instance-side-actions {
-  position: relative;
-  width: 150px;
-  min-width: 150px;
+  position: static;
+  width: 42px;
+  min-width: 42px;
   height: 42px;
-  margin-left: -108px;
   flex-shrink: 0;
-  /* Empty area must not intercept clicks meant for the STATS button under it. */
   pointer-events: none;
 }
 
@@ -233,8 +246,7 @@
 
 /* Main line, far right */
 .instance-side-actions .trash-action {
-  right: 0;
-  top: 0;
+  position: static;
 }
 
 /* Floating row, 54px up (42px icon + 12px gap), right → left */

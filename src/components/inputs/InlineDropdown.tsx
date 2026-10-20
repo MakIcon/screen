@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { CustomArrow } from "../display/CustomArrow";
 import type { InstalledModView } from "../../types";
+import { translate, useTranslation } from "../../i18n/locale";
 
 interface InstanceInfo {
   name: string;
@@ -44,7 +45,7 @@ function getInstanceBadge(info: InstanceInfo, irisMap: Map<string, boolean>) {
     return irisMap.get(info.id) ? (
       <span className="pack-badge pack-source-modrinth">IRIS</span>
     ) : (
-      <span className="pack-badge pack-badge-no-iris">NO IRIS</span>
+      <span className="pack-badge pack-badge-no-iris">{translate("inlineDropdown.noIris")}</span>
     );
   }
 
@@ -70,6 +71,7 @@ export function InlineDropdown({
   compact = false,
   inlineMenu = false,
 }: InlineDropdownProps) {
+  const tr = useTranslation();
   const [irisMap, setIrisMap] = useState<Map<string, boolean>>(new Map());
   const [menuDirection, setMenuDirection] = useState<"down" | "up">("down");
   const [menuLayout, setMenuLayout] = useState<MenuLayout | null>(null);
@@ -227,7 +229,7 @@ export function InlineDropdown({
       <button
         type="button"
         className="inline-dropdown-trigger"
-        aria-label={label || "Select option"}
+        aria-label={label || tr("ui.selectOption")}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         onClick={(e) => {

@@ -1,9 +1,10 @@
+import { intlLocale, readLocale, translate } from "../i18n/locale";
+
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 
-const megabytesFormat = new Intl.NumberFormat("ru-RU", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+const intlTag = () => intlLocale(readLocale());
+const megabytesFormat = () =>
+  new Intl.NumberFormat(intlTag(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /** Downloaded share in 0..1, or null while the server hasn't told us the size. */
 export function progressRatio(downloaded: number, total: number | null): number | null {
@@ -12,20 +13,20 @@ export function progressRatio(downloaded: number, total: number | null): number 
 }
 
 export function formatMegabytes(bytes: number): string {
-  return `${megabytesFormat.format(Math.max(0, bytes) / BYTES_PER_MEGABYTE)} МБ`;
+  return `${megabytesFormat().format(Math.max(0, bytes) / BYTES_PER_MEGABYTE)} ${translate("updateProgress.mb")}`;
 }
 
 export function formatSpeed(bytesPerSecond: number): string {
-  return `${megabytesFormat.format(bytesPerSecond / BYTES_PER_MEGABYTE)} МБ/с`;
+  return `${megabytesFormat().format(bytesPerSecond / BYTES_PER_MEGABYTE)} ${translate("updateProgress.mbS")}`;
 }
 
 /** Rough time left, rounded so the label doesn't flicker on every chunk. */
 export function formatEta(remainingBytes: number, bytesPerSecond: number): string | null {
   if (bytesPerSecond <= 0 || remainingBytes <= 0) return null;
   const seconds = remainingBytes / bytesPerSecond;
-  if (seconds < 1) return "меньше секунды";
-  if (seconds < 60) return `~${Math.ceil(seconds)} с`;
-  return `~${Math.ceil(seconds / 60)} мин`;
+  if (seconds < 1) return translate("updateProgress.underASecond");
+  if (seconds < 60) return translate("updateProgress.seconds", { seconds: Math.ceil(seconds) });
+  return translate("updateProgress.minutes", { minutes: Math.ceil(seconds / 60) });
 }
 
 /**
@@ -53,11 +54,8 @@ export function createSpeedMeter(windowMs = 2000) {
   };
 }
 
-const releaseDateFormat = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
+const releaseDateFormat = () =>
+  new Intl.DateTimeFormat(intlTag(), { day: "numeric", month: "long", year: "numeric" });
 
 /**
  * The updater hands the date over as Rust's `OffsetDateTime` display string
@@ -68,7 +66,9 @@ export function formatReleaseDate(date: string | null): string | null {
   const match = date?.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return null;
   const [, year, month, day] = match.map(Number);
-  return releaseDateFormat.format(new Date(year, month - 1, day)).replace(/\s?г\.$/, "");
+  return releaseDateFormat()
+    .format(new Date(year, month - 1, day))
+    .replace(/\s?г\.$/, "");
 }
 
 export type ReleaseNoteLine = { kind: "heading" | "item" | "text"; text: string };
@@ -108,10 +108,10 @@ export function describeUpdateError(error: unknown): string {
   const text = raw.toLowerCase();
 
   if (text.includes("signature") || text.includes("minisign")) {
-    return "Подпись обновления не прошла проверку. Файл не установлен.";
+    return translate("updateProgress.theUpdateSignatureCheck");
   }
   if (text.includes("timed out") || text.includes("timeout")) {
-    return "Сервер обновлений не ответил вовремя. Проверь подключение и попробуй ещё раз.";
+    return translate("updateProgress.theUpdateServerDid");
   }
   if (
     text.includes("error sending request") ||
@@ -119,10 +119,10 @@ export function describeUpdateError(error: unknown): string {
     text.includes("connect") ||
     text.includes("network")
   ) {
-    return "Нет связи с сервером обновлений. Проверь подключение или прокси.";
+    return translate("updateProgress.cantReachTheUpdate");
   }
   if (text.includes("status code") || text.includes("release json") || text.includes("404")) {
-    return "Сервер обновлений вернул ошибку. Попробуй позже.";
+    return translate("updateProgress.theUpdateServerReturned");
   }
-  return raw.trim() || "Неизвестная ошибка обновления.";
+  return raw.trim() || translate("updateProgress.unknownUpdateError");
 }

@@ -1,3 +1,4 @@
+import { useAppearanceText } from "./localization";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ColorPicker } from "../components/color-picker/ColorPicker";
 import type { DrawingCursorPayload } from "./elementOverrides";
@@ -29,6 +30,7 @@ export function DrawingCanvas({
   onChange,
   onCursorChange,
 }: DrawingCanvasProps) {
+  const copy = useAppearanceText();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -163,11 +165,11 @@ export function DrawingCanvas({
   return (
     <div className="drawing-editor">
       <div className="drawing-toolbar">
-        <div className="studio-color-compact" data-tooltip="Brush color">
-          <ColorPicker value={brushColor} onChange={setBrushColor} label="Brush color" />
+        <div className="studio-color-compact" data-tooltip={copy("Brush color")}>
+          <ColorPicker value={brushColor} onChange={setBrushColor} label={copy("Brush color")} />
         </div>
         <label className="drawing-size">
-          <span>SIZE</span>
+          <span>{copy("SIZE")}</span>
           <input
             type="range"
             min="2"
@@ -181,10 +183,10 @@ export function DrawingCanvas({
           className={eraser ? "active" : ""}
           onClick={() => setEraser((current) => !current)}
         >
-          ERASER
+          {copy("ERASER")}
         </button>
         <button type="button" onClick={clearDrawing}>
-          CLEAR
+          {copy("CLEAR")}
         </button>
       </div>
 
@@ -206,9 +208,13 @@ export function DrawingCanvas({
           }}
         />
         <div className="drawing-layout-guides" aria-hidden="true">
-          <span className="drawing-layout-zone drawing-layout-zone--header">TITLE BAR</span>
-          <span className="drawing-layout-zone drawing-layout-zone--sidebar">LEFT PANEL</span>
-          <span className="drawing-layout-zone drawing-layout-zone--footer">FOOTER</span>
+          <span className="drawing-layout-zone drawing-layout-zone--header">
+            {copy("TITLE BAR")}
+          </span>
+          <span className="drawing-layout-zone drawing-layout-zone--sidebar">
+            {copy("LEFT PANEL")}
+          </span>
+          <span className="drawing-layout-zone drawing-layout-zone--footer">{copy("FOOTER")}</span>
           <i className="drawing-layout-line drawing-layout-line--header" />
           <i className="drawing-layout-line drawing-layout-line--sidebar" />
           <i className="drawing-layout-line drawing-layout-line--footer" />
@@ -219,12 +225,12 @@ export function DrawingCanvas({
         <input
           value={text}
           maxLength={80}
-          placeholder="TYPE SOMETHING ON THE CANVAS"
+          placeholder={copy("TYPE SOMETHING ON THE CANVAS")}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && addText()}
         />
         <button type="button" onClick={addText} disabled={!text.trim()}>
-          ADD TEXT
+          {copy("ADD TEXT")}
         </button>
       </div>
     </div>

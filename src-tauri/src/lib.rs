@@ -20,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            commands::errors::record_launcher_error,
             window_fx::start_gallery_unfold,
             window_fx::exit_launcher,
             commands::auth::start_microsoft_auth,

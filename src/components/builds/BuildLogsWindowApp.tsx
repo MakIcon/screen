@@ -1,3 +1,4 @@
+import { translate } from "../../i18n/locale";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -5,6 +6,7 @@ import { useAppearance } from "../../appearance/useAppearance";
 import type { InstanceItem, LaunchLogSnapshot, MinecraftExitPayload } from "../../types";
 import { toErrorMessage } from "../../utils/errors";
 import { BuildLogsModal } from "./BuildLogsModal";
+import { useTranslation } from "../../i18n/locale";
 
 const LOG_WINDOW_STORAGE_PREFIX = "screenlauncher-log-window";
 export const LOG_WINDOW_REFRESH_EVENT = "launch-log-window-refresh";
@@ -49,7 +51,7 @@ export function getBuildLogsWindowUrl(instanceId: string, payloadKey: string): s
 function createLogWindowInstance(instanceId: string, instanceName: string): InstanceItem {
   return {
     id: instanceId,
-    name: instanceName || "Build logs",
+    name: instanceName || translate("ui.buildLogs"),
     pinned: false,
     version: "",
     loader: "",
@@ -80,6 +82,7 @@ function consumeStoredPayload(payloadKey: string): StoredLogWindowPayload | null
 }
 
 export function BuildLogsWindowApp({ instanceId, payloadKey }: BuildLogsWindowRoute) {
+  const tr = useTranslation();
   useAppearance();
   const [instance, setInstance] = useState<InstanceItem | null>(null);
   const [initialLog, setInitialLog] = useState<LaunchLogSnapshot | MinecraftExitPayload | null>(
@@ -114,7 +117,7 @@ export function BuildLogsWindowApp({ instanceId, payloadKey }: BuildLogsWindowRo
         if (!alive) return;
         setInitialLog({
           instanceId: resolvedInstanceId,
-          instanceName: "Build logs",
+          instanceName: translate("ui.buildLogs"),
           logPath: null,
           minecraftLogPath: null,
           crashReportPath: null,
@@ -122,7 +125,7 @@ export function BuildLogsWindowApp({ instanceId, payloadKey }: BuildLogsWindowRo
           crashReportTail: null,
           hint: null,
         });
-        setInstance(createLogWindowInstance(resolvedInstanceId, "Build logs"));
+        setInstance(createLogWindowInstance(resolvedInstanceId, translate("ui.buildLogs")));
       }
     };
 
@@ -142,7 +145,7 @@ export function BuildLogsWindowApp({ instanceId, payloadKey }: BuildLogsWindowRo
     return (
       <div className="build-logs-window-root">
         <div className="build-logs-modal build-logs-modal--standalone">
-          <div className="build-logs-empty">LOADING LOGS...</div>
+          <div className="build-logs-empty">{tr("buildLogs.loadingLogs2")}</div>
         </div>
       </div>
     );

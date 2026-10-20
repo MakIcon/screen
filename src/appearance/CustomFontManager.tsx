@@ -1,3 +1,4 @@
+import { useAppearanceText } from "./localization";
 import { useRef, useState, type ChangeEvent } from "react";
 import { customFontStack } from "./profile";
 import type { AppearanceCustomFont } from "./types";
@@ -33,8 +34,9 @@ function readFileAsDataUrl(file: File) {
 }
 
 export function CustomFontManager({ fonts, onAdd, onRemove }: CustomFontManagerProps) {
+  const copy = useAppearanceText();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<string | { name: string }>("");
 
   const importFont = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -70,7 +72,7 @@ export function CustomFontManager({ fonts, onAdd, onRemove }: CustomFontManagerP
         dataUrl: `data:${metadata.mime};base64,${base64}`,
         format: metadata.format,
       });
-      setStatus(`${name.toUpperCase()} READY`);
+      setStatus({ name });
     } catch {
       setStatus("COULD NOT READ THIS FONT");
     }
@@ -90,12 +92,12 @@ export function CustomFontManager({ fonts, onAdd, onRemove }: CustomFontManagerP
         onClick={() => inputRef.current?.click()}
       >
         <span>＋</span>
-        <strong>UPLOAD FONT</strong>
-        <small>WOFF2 · WOFF · TTF · OTF · MAX 4.5 MB</small>
+        <strong>{copy("UPLOAD FONT")}</strong>
+        <small>{copy("WOFF2 · WOFF · TTF · OTF · MAX 4.5 MB")}</small>
       </button>
       {status && (
         <p role="status" aria-live="polite">
-          {status}
+          {typeof status === "string" ? copy(status) : copy("{name} ready", status)}
         </p>
       )}
       {fonts.length > 0 && (
@@ -106,9 +108,9 @@ export function CustomFontManager({ fonts, onAdd, onRemove }: CustomFontManagerP
               <button
                 type="button"
                 onClick={() => onRemove(font)}
-                aria-label={`Remove ${font.name}`}
+                aria-label={copy("Remove {name}", { name: font.name })}
               >
-                REMOVE
+                {copy("REMOVE")}
               </button>
             </div>
           ))}

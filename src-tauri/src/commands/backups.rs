@@ -585,49 +585,63 @@ pub async fn load_world_preview(
     instance_id: String,
     world_name: String,
     backup_id: Option<String>,
-) -> Result<Option<Vec<u8>>, String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    let game_dir = active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        let saves = match backup_id {
-            Some(id) => read_backup(&instance_id, &id, &root)?.0.join("saves"),
-            None => game_dir.join("saves"),
-        };
-        read_world_preview_sync(&saves, &world_name)
-    })
-    .await
-    .map_err(|error| format!("world preview task error: {error}"))?
+) -> Result<Option<Vec<u8>>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        let game_dir = active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            let saves = match backup_id {
+                Some(id) => read_backup(&instance_id, &id, &root)?.0.join("saves"),
+                None => game_dir.join("saves"),
+            };
+            read_world_preview_sync(&saves, &world_name)
+        })
+        .await
+        .map_err(|error| format!("world preview task error: {error}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn get_world_backup_state(instance_id: String) -> Result<WorldBackupState, String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    let game_dir = active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        backup_state_sync(&instance_id, &game_dir, &root)
-    })
-    .await
-    .map_err(|e| format!("backup list task error: {e}"))?
+pub async fn get_world_backup_state(
+    instance_id: String,
+) -> Result<WorldBackupState, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        let game_dir = active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            backup_state_sync(&instance_id, &game_dir, &root)
+        })
+        .await
+        .map_err(|e| format!("backup list task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
 pub async fn set_world_backup_selection(
     instance_id: String,
     world_names: Vec<String>,
-) -> Result<(), String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    let game_dir = active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        save_selection_sync(&game_dir, &root, &world_names)
-    })
-    .await
-    .map_err(|e| format!("backup selection task error: {e}"))?
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        let game_dir = active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            save_selection_sync(&game_dir, &root, &world_names)
+        })
+        .await
+        .map_err(|e| format!("backup selection task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -635,49 +649,66 @@ pub async fn create_world_backup(
     instance_id: String,
     world_names: Option<Vec<String>>,
     name: Option<String>,
-) -> Result<WorldBackupInfo, String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    let game_dir = active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        create_backup_sync(
-            &instance_id,
-            &game_dir,
-            &root,
-            world_names.as_deref(),
-            name.as_deref().unwrap_or_default(),
-            BackupKind::Manual,
-        )
-    })
-    .await
-    .map_err(|e| format!("backup task error: {e}"))?
+) -> Result<WorldBackupInfo, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        let game_dir = active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            create_backup_sync(
+                &instance_id,
+                &game_dir,
+                &root,
+                world_names.as_deref(),
+                name.as_deref().unwrap_or_default(),
+                BackupKind::Manual,
+            )
+        })
+        .await
+        .map_err(|e| format!("backup task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn list_world_backups(instance_id: String) -> Result<Vec<WorldBackupInfo>, String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        list_backups_sync(&instance_id, &root)
-    })
-    .await
-    .map_err(|e| format!("backup list task error: {e}"))?
+pub async fn list_world_backups(
+    instance_id: String,
+) -> Result<Vec<WorldBackupInfo>, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            list_backups_sync(&instance_id, &root)
+        })
+        .await
+        .map_err(|e| format!("backup list task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn delete_world_backup(instance_id: String, backup_id: String) -> Result<(), String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        delete_backup_sync(&instance_id, &backup_id, &root)
-    })
-    .await
-    .map_err(|e| format!("backup deletion task error: {e}"))?
+pub async fn delete_world_backup(
+    instance_id: String,
+    backup_id: String,
+) -> Result<(), crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            delete_backup_sync(&instance_id, &backup_id, &root)
+        })
+        .await
+        .map_err(|e| format!("backup deletion task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
@@ -685,22 +716,26 @@ pub async fn restore_world_backup(
     instance_id: String,
     backup_id: String,
     world_names: Option<Vec<String>>,
-) -> Result<WorldRestoreResult, String> {
-    let guard = BACKUP_OPERATIONS.lock().await;
-    let game_dir = active_game_dir(&instance_id).await?;
-    let root = backup_root(&instance_id)?;
-    tokio::task::spawn_blocking(move || {
-        let _guard = guard;
-        restore_backup_sync(
-            &instance_id,
-            &backup_id,
-            &game_dir,
-            &root,
-            world_names.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| format!("restore task error: {e}"))?
+) -> Result<WorldRestoreResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let guard = BACKUP_OPERATIONS.lock().await;
+        let game_dir = active_game_dir(&instance_id).await?;
+        let root = backup_root(&instance_id)?;
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            restore_backup_sync(
+                &instance_id,
+                &backup_id,
+                &game_dir,
+                &root,
+                world_names.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| format!("restore task error: {e}"))?
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[cfg(test)]

@@ -3,10 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type { WorldBackupInfo, WorldBackupState, WorldRestoreResult } from "../types";
 import type { PushToast } from "./useToasts";
 import { toErrorMessage } from "../utils/errors";
+import { useTranslation } from "../i18n/locale";
 
 type Operation = "create" | "restore" | "delete" | "refresh" | null;
 
 export function useWorldBackups(instanceId: string, running: boolean, pushToast: PushToast) {
+  const tr = useTranslation();
   const [data, setData] = useState<WorldBackupState>({
     worlds: [],
     backups: [],
@@ -64,13 +66,14 @@ export function useWorldBackups(instanceId: string, running: boolean, pushToast:
       await selectionWrites.current;
       const result = await task();
       const message = success(result);
-      if (message) pushToast("info", message, { title: "Резервные копии" });
+      if (message) pushToast("info", message, { title: tr("worldBackups.worldBackups") });
       // An operation that succeeded must stay successful even if refreshing fails.
       try {
         const state = await invoke<WorldBackupState>("get_world_backup_state", { instanceId });
         if (mounted.current) setData(state);
       } catch (cause) {
-        if (mounted.current) setError(`Не удалось обновить список: ${toErrorMessage(cause)}`);
+        if (mounted.current)
+          setError(`${tr("worldBackups.couldNotRefreshThe")}: ${toErrorMessage(cause)}`);
       }
       return true;
     } catch (cause) {
@@ -102,7 +105,7 @@ export function useWorldBackups(instanceId: string, running: boolean, pushToast:
       (backup) => {
         // Keep the confirmed result visible even if the following refresh fails.
         rememberBackup(backup);
-        return `Копия создана. Сохранено миров: ${backup.worldCount}.`;
+        return tr("worldBackups.backupCreatedWithWorlds", { worldCount: backup.worldCount });
       },
     );
 
@@ -120,8 +123,18 @@ export function useWorldBackups(instanceId: string, running: boolean, pushToast:
         if (mounted.current) setRestoredId(backupId);
         const worlds = result.restoredWorlds.slice(0, 3).join(", ");
         const extra =
-          result.restoredWorlds.length > 3 ? ` и ещё ${result.restoredWorlds.length - 3}` : "";
-        return `Восстановлено в игру: ${worlds}${extra}.${result.safetyBackup ? " Предыдущие версии сохранены в страховочной копии." : " Миры снова доступны в сборке."}`;
+          result.restoredWorlds.length > 3
+            ? tr("worldBackups.andMore", { value: result.restoredWorlds.length - 3 })
+            : "";
+        return tr("worldBackups.restoredToGame", {
+          worlds,
+          extra,
+          note: tr(
+            result.safetyBackup
+              ? "worldBackups.restoredNoteSafety"
+              : "worldBackups.restoredNoteAvailable",
+          ),
+        });
       },
     );
 
@@ -137,7 +150,7 @@ export function useWorldBackups(instanceId: string, running: boolean, pushToast:
           }));
           setRestoredId((current) => (current === backupId ? null : current));
         }
-        return "Копия удалена. Миры в игре сохранены.";
+        return tr("worldBackups.backupDeletedGameWorlds");
       },
     );
 

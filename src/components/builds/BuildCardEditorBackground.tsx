@@ -5,6 +5,7 @@ import { ElementSlider } from "../inputs/ElementSlider";
 import { ColorPicker } from "../color-picker/ColorPicker";
 import type { BuildCardAppearance, BuildCardBackgroundMode } from "./BuildCardSettingsPopup";
 import { EditorSection, EditorRow } from "./BuildCardEditorSection";
+import { useTranslation } from "../../i18n/locale";
 
 type Props = {
   draft: BuildCardAppearance;
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props) {
+  const tr = useTranslation();
   const [open, setOpen] = useState(true);
   const [fitOpen, setFitOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(() =>
@@ -51,7 +53,9 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
     onDraftChange((prev) => ({ ...prev, imageOpacity: v / 100 }));
   }
 
-  const fitLabel = draft.imageFit === "stretch" ? "FIT WHOLE IMAGE" : "FILL CARD";
+  const fitWhole = tr("buildCardEditorBackground.fitWholeImage");
+  const fillCard = tr("buildCardEditorBackground.fillCard");
+  const fitLabel = draft.imageFit === "stretch" ? fitWhole : fillCard;
   const opacityValue =
     mode === "color"
       ? Math.round(draft.backgroundOpacity * 100)
@@ -60,18 +64,18 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
         : Math.round(draft.imageOpacity * 100);
 
   const fitRow = (
-    <EditorRow label="Fit">
+    <EditorRow label={tr("buildCardEditorBackground.fit")}>
       <div className="bce-dropdown">
         <InlineDropdown
-          label="IMAGE FIT"
+          label={tr("buildCardEditorBackground.imageFit")}
           value={fitLabel}
-          options={["FILL CARD", "FIT WHOLE IMAGE"]}
+          options={[fillCard, fitWhole]}
           isOpen={fitOpen}
           onToggle={() => setFitOpen((prev) => !prev)}
           onSelect={(val) => {
             onDraftChange((prev) => ({
               ...prev,
-              imageFit: val === "FIT WHOLE IMAGE" ? "stretch" : "cover",
+              imageFit: val === fitWhole ? "stretch" : "cover",
             }));
             setFitOpen(false);
           }}
@@ -81,7 +85,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
   );
 
   const opacityRow = (
-    <EditorRow label="Opacity">
+    <EditorRow label={tr("buildCardEditorBackground.opacity")}>
       <div className="bce-slider-field">
         <span className="bce-slider-value">{opacityValue}%</span>
         <div className="bce-slider">
@@ -100,8 +104,12 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
   );
 
   return (
-    <EditorSection title="Background" open={open} onToggle={() => setOpen((prev) => !prev)}>
-      <EditorRow label="Type">
+    <EditorSection
+      title={tr("buildCardEditorBackground.background")}
+      open={open}
+      onToggle={() => setOpen((prev) => !prev)}
+    >
+      <EditorRow label={tr("buildCardEditorBackground.type")}>
         <div className="bce-mode-switch">
           {(["color", "image", "url", "draw"] as BuildCardBackgroundMode[]).map((entry) => (
             <button
@@ -111,12 +119,12 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
               onClick={() => switchMode(entry)}
             >
               {entry === "color"
-                ? "Color"
+                ? tr("buildCardEditorBackground.color")
                 : entry === "image"
-                  ? "Image"
+                  ? tr("buildCardEditorBackground.image")
                   : entry === "url"
                     ? "URL"
-                    : "Draw"}
+                    : tr("buildCardEditorBackground.draw")}
             </button>
           ))}
         </div>
@@ -124,7 +132,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
 
       {mode === "color" && (
         <>
-          <EditorRow label="Color" alignTop>
+          <EditorRow label={tr("buildCardEditorBackground.color")} alignTop>
             <ColorPicker
               value={draft.backgroundColor}
               onChange={(hex) => onDraftChange((prev) => ({ ...prev, backgroundColor: hex }))}
@@ -136,13 +144,13 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
 
       {mode === "image" && (
         <>
-          <EditorRow label="Source" alignTop>
+          <EditorRow label={tr("buildCardEditorBackground.source")} alignTop>
             <div className="bce-upload-area">
               <label className={`bce-upload-btn ${draft.image ? "bce-upload-btn--has-image" : ""}`}>
                 {draft.image ? (
                   <>
                     <img className="bce-upload-thumb" src={draft.image} alt="" />
-                    CHANGE IMAGE
+                    {tr("buildCardEditorBackground.changeImage")}
                   </>
                 ) : (
                   <>
@@ -160,7 +168,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
                       <line x1="7" y1="1" x2="7" y2="13" />
                       <line x1="1" y1="7" x2="13" y2="7" />
                     </svg>
-                    UPLOAD IMAGE
+                    {tr("buildCardEditorBackground.uploadImage")}
                   </>
                 )}
                 <input
@@ -179,7 +187,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
                   type="button"
                   onClick={() => onDraftChange((prev) => ({ ...prev, image: "" }))}
                 >
-                  CLEAR IMAGE
+                  {tr("buildCardEditorBackground.clearImage")}
                 </button>
               )}
             </div>
@@ -211,10 +219,8 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
 
       {mode === "draw" && (
         <>
-          <EditorRow label="Canvas" alignTop>
-            <p className="bce-drawing-hint">
-              Draw directly on the card canvas. Choose a brush color and size on the left.
-            </p>
+          <EditorRow label={tr("buildCardEditorBackground.canvas")} alignTop>
+            <p className="bce-drawing-hint">{tr("buildCardEditorBackground.drawDirectlyOnThe")}</p>
           </EditorRow>
           {opacityRow}
         </>

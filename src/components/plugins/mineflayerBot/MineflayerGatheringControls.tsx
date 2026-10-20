@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  isPlainMessageKey,
+  translate,
+  useLocale,
+  useTranslation,
+  Trans,
+} from "../../../i18n/locale";
+import { localizeCatalog } from "./catalogLocalization";
 import { invoke } from "@tauri-apps/api/core";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
@@ -8,7 +16,7 @@ import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { toErrorMessage } from "../../../utils/errors";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
-import { FARMING_KINDS, FARMING_NOTE, farmCropLabel } from "./farming";
+import { FARMING_KINDS, farmingNote, farmCropLabel } from "./farming";
 import { MineflayerFarmCropField } from "./MineflayerFarmCropField";
 import {
   formatBlockCoordinates,
@@ -32,29 +40,20 @@ type Mode =
   | "plant"
   | "harvest"
   | "farm";
-const MODES: Array<[Mode, string]> = [
-  ["mine", "Блоки и руды"],
-  ["forest", "Лес"],
-  ["quarry", "Область"],
-  ["collect", "Дроп"],
-  ["tunnel", "Туннель"],
-  ["till", "Вспашка"],
-  ["plant", "Посадка"],
-  ["harvest", "Урожай"],
-  ["farm", "Огород"],
+const MODES: Mode[] = [
+  "mine",
+  "forest",
+  "quarry",
+  "collect",
+  "tunnel",
+  "till",
+  "plant",
+  "harvest",
+  "farm",
 ];
-const PHASES: Record<string, string> = {
-  idle: "Готов к работе",
-  scan: "Ищет блоки",
-  move: "Подходит к блоку",
-  equip: "Выбирает инструмент",
-  dig: "Добывает",
-  farming: "Работает на грядках",
-  pickup: "Подбирает добычу",
-  deposit: "Выгружает",
-  deliver: "Несёт добычу к вам",
-  return: "Возвращается",
-  paused: "На паузе",
+const phaseLabel = (phase: string) => {
+  const key = `bot.gathering.phase.${phase}`;
+  return isPlainMessageKey(key) ? translate(key) : phase;
 };
 const OFFLINE_CATALOG = bundledCatalog as MinecraftCatalog;
 function WorkCancelIcon() {
@@ -74,27 +73,27 @@ function WorkCancelIcon() {
 }
 export function workTaskTitle(task: MineflayerWorkTask) {
   const farmTitles: Record<string, string> = {
-    till: "Вспашка земли",
-    plant: "Посадка семян",
-    harvest: "Сбор урожая",
-    farm: "Обработка огорода",
+    till: translate("bot.gathering.tillingSoil"),
+    plant: translate("bot.gathering.plantingSeeds"),
+    harvest: translate("bot.gathering.harvestingCrops"),
+    farm: translate("bot.gathering.tendingTheFarm"),
   };
   if (farmTitles[task.kind]) return farmTitles[task.kind];
-  if (task.tunnel) return "Проходка тоннеля";
-  if (task.kind === "forest") return "Заготовка леса";
-  if (task.kind === "quarry") return "Расчистка области";
-  if (task.kind === "collect") return "Сбор предметов";
-  if (task.kind === "deposit") return "Выгрузка в сундук";
-  if (task.kind === "deliver") return "Доставка владельцу";
+  if (task.tunnel) return translate("bot.gathering.diggingATunnel");
+  if (task.kind === "forest") return translate("bot.gathering.logging");
+  if (task.kind === "quarry") return translate("bot.gathering.clearingAnArea");
+  if (task.kind === "collect") return translate("bot.gathering.collectingItems");
+  if (task.kind === "deposit") return translate("bot.gathering.unloadingIntoAChest");
+  if (task.kind === "deliver") return translate("bot.gathering.deliveringToTheOwner");
   const labels: Record<string, string> = {
-    iron: "железо",
-    diamond: "алмазы",
-    gold: "золото",
-    coal: "уголь",
-    copper: "медь",
-    emerald: "изумруды",
-    redstone: "редстоун",
-    lapis: "лазурит",
+    iron: translate("bot.gathering.iron"),
+    diamond: translate("bot.gathering.diamonds"),
+    gold: translate("bot.gathering.gold"),
+    coal: translate("bot.gathering.coal"),
+    copper: translate("bot.gathering.copper"),
+    emerald: translate("bot.gathering.emeralds"),
+    redstone: translate("bot.gathering.redstone"),
+    lapis: translate("bot.gathering.lapis"),
   };
   const names = [
     ...new Set(
@@ -103,17 +102,22 @@ export function workTaskTitle(task: MineflayerWorkTask) {
       ),
     ),
   ];
-  return `Добыча · ${names.length > 3 ? "руды" : names.map((name) => labels[name] || name).join(", ") || "блоки"}`;
+  return `${translate("bot.gathering.mining")} · ${names.length > 3 ? translate("bot.gathering.ores") : names.map((name) => labels[name] || name).join(", ") || translate("bot.gathering.blocks")}`;
 }
 function taskDetail(task: MineflayerWorkTask) {
   const values = [];
-  if (task.radius) values.push(`радиус ${task.radius} блоков`);
+  if (task.radius) values.push(translate("bot.gathering.radiusBlocks", { count: task.radius }));
   if (task.kind === "mine") values.push(`Y ${task.minY}…${task.maxY}`);
-  if (task.area) values.push(`${task.area.volume.toLocaleString("ru-RU")} блоков в области`);
+  if (task.area)
+    values.push(translate("bot.gathering.blocksInTheArea", { count: task.area.volume }));
   if (task.item)
     values.push(FARMING_KINDS.includes(task.kind) ? farmCropLabel(task.item) : task.item);
   if (["mine", "forest"].includes(task.kind))
-    values.push(task.count ? `цель ${task.count} блоков` : "все доступные блоки");
+    values.push(
+      task.count
+        ? translate("bot.gathering.targetBlocks", { count: task.count })
+        : translate("bot.gathering.allAvailableBlocks"),
+    );
   return values.join(" · ");
 }
 
@@ -132,6 +136,8 @@ export function MineflayerGatheringControls({
   settings: MineflayerGatheringSettings;
   onSettingsChange: (settings: MineflayerGatheringSettings) => void;
 }) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [mode, setMode] = useState<Mode>("forest");
   const [blocks, setBlocks] = useState("iron");
   const [count, setCount] = useState(0),
@@ -155,7 +161,11 @@ export function MineflayerGatheringControls({
   const sendingRef = useRef(false);
   const disabled = !connected || sending;
   const [liveCatalog, setLiveCatalog] = useState<MinecraftCatalog | null>(null);
-  const catalog = connected && liveCatalog ? liveCatalog : OFFLINE_CATALOG;
+  const catalog = useMemo(
+    () => localizeCatalog(connected && liveCatalog ? liveCatalog : OFFLINE_CATALOG),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connected, liveCatalog, locale],
+  );
   const selection = connected ? status?.gathering?.selection : undefined;
   const capturedFirst = formatBlockCoordinates(selection?.areas.launcher?.[1]);
   const capturedSecond = formatBlockCoordinates(selection?.areas.launcher?.[2]);
@@ -223,22 +233,19 @@ export function MineflayerGatheringControls({
       if (capture) {
         const updated = await invoke<MineflayerBotStatus>("get_mineflayer_bot_status");
         const picked = updated.gathering?.selection?.areas.launcher?.[capture];
-        if (!picked)
-          throw new Error(
-            "Не удалось получить выбранную точку. Переподключите бота и повторите выбор.",
-          );
+        if (!picked) throw new Error(tr("bot.gathering.couldNotGetThe"));
         (capture === "1" ? setCorner1 : setCorner2)(formatBlockCoordinates(picked));
       }
       setFeedback(
         capture
-          ? `Угол ${capture} выбран. Координаты подставлены в форму.`
+          ? tr("bot.gathering.cornerSelectedTheCoordinates", { capture })
           : value === defenseCommand
-            ? "Защита при добыче применена к боту."
+            ? tr("bot.gathering.miningDefenseAppliedTo")
             : value === passageCommand
-              ? "Настройки применены. Следующий проход будет нового размера."
+              ? tr("bot.gathering.settingsAppliedTheNext")
               : value === "deliver"
-                ? "Бот несёт добычу к вам, затем вернётся к работе."
-                : "Команда принята. Текущий этап показан ниже.",
+                ? tr("bot.gathering.theBotIsBringing")
+                : tr("bot.gathering.commandAcceptedTheCurrent"),
       );
       await refresh();
     } catch (failure) {
@@ -286,10 +293,10 @@ export function MineflayerGatheringControls({
   const coordinateField = (corner: "1" | "2", value: string, change: (value: string) => void) => (
     <div className="mineflayer-coordinate-field">
       {text(
-        corner === "1" ? "ПЕРВЫЙ УГОЛ · X Y Z" : "ВТОРОЙ УГОЛ · X Y Z",
+        corner === "1" ? tr("bot.gathering.firstCornerXY") : tr("bot.gathering.secondCornerXY"),
         value,
         change,
-        "Выберите точку в игре или введите X Y Z",
+        tr("bot.gathering.pickAPointIn"),
       )}
       <div className="mineflayer-coordinate-actions">
         <button
@@ -297,14 +304,14 @@ export function MineflayerGatheringControls({
           disabled={disabled}
           onClick={() => void send(`area launcher ${corner} owner`, corner)}
         >
-          Моя позиция
+          {tr("bot.gathering.myPosition")}
         </button>
         <button
           type="button"
           disabled={disabled}
           onClick={() => void send(`area launcher ${corner} look`, corner)}
         >
-          Блок под прицелом
+          {tr("bot.gathering.blockImAimingAt")}
         </button>
       </div>
     </div>
@@ -315,38 +322,46 @@ export function MineflayerGatheringControls({
   const history = progress?.history || [];
   return (
     <PluginSettingsGroup
-      title="ЗАДАЧИ ДОБЫЧИ"
-      description="Добавляйте работу в очередь. Бот выполняет задачи по порядку и хранит добычу в инвентаре."
+      title={tr("bot.gathering.gatheringTasks")}
+      description={tr("bot.gathering.addWorkToThe")}
       collapsible={false}
     >
       {!connected && (
         <p role="status" className="mineflayer-bot-combat-note">
-          Можно настроить задачу заранее. Для запуска нажмите «Подключить бота».
+          {tr("bot.gathering.youCanSetUp")}
         </p>
       )}
       <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
         <button type="button" disabled={disabled} onClick={() => void send("deliver")}>
-          ПРИНЕСТИ МНЕ ДОБЫЧУ
+          {tr("bot.gathering.bringMeTheLoot")}
         </button>
         <button type="button" onClick={onOpenInventory}>
-          ИНВЕНТАРЬ И СОСТОЯНИЕ
+          {tr("bot.gathering.inventoryAndStatus")}
         </button>
       </div>
       <div className="mineflayer-bot-gathering-progress" role="status" aria-live="polite">
         <strong>
-          {progress ? PHASES[progress.phase] || progress.phase : "Добавьте первую задачу"}
+          {progress ? phaseLabel(progress.phase) : tr("bot.gathering.addYourFirstTask")}
         </strong>
         {status?.gathering && (
           <span>
             {active && FARMING_KINDS.includes(active.kind)
-              ? `Вспахано: ${active.tilled || 0} · Посажено: ${active.planted || 0} · Урожай: ${active.harvested || 0}`
-              : `Добыто: ${status.gathering.mined}`}{" "}
-            · Подобрано: {status.gathering.collected} · В очереди: {status.gathering.queued}
+              ? tr("bot.gathering.farmStats", {
+                  tilled: active.tilled || 0,
+                  planted: active.planted || 0,
+                  harvested: active.harvested || 0,
+                })
+              : tr("bot.gathering.minedStat", { mined: status.gathering.mined })}{" "}
+            ·{" "}
+            {tr("bot.gathering.queueStats", {
+              collected: status.gathering.collected,
+              queued: status.gathering.queued,
+            })}
           </span>
         )}
         {status?.gathering?.reason && <p>{status.gathering.reason}</p>}
       </div>
-      <div className="mineflayer-work-list" aria-label="Список задач">
+      <div className="mineflayer-work-list" aria-label={tr("bot.gathering.taskList")}>
         {active && (
           <article
             className={`mineflayer-work-card is-current${progress?.phase === "paused" ? " is-paused" : ""}`}
@@ -355,29 +370,33 @@ export function MineflayerGatheringControls({
             <div className="mineflayer-work-content">
               <div className="mineflayer-work-heading">
                 <strong>{workTaskTitle(active)}</strong>
-                <span className="mineflayer-work-badge">{PHASES[progress?.phase || "idle"]}</span>
+                <span className="mineflayer-work-badge">
+                  {phaseLabel(progress?.phase || "idle")}
+                </span>
               </div>
               <p>{taskDetail(active)}</p>
               <div className="mineflayer-work-counts">
                 <span>
-                  {FARMING_KINDS.includes(active.kind) ? "Действий" : "Добыто"}{" "}
+                  {FARMING_KINDS.includes(active.kind)
+                    ? tr("bot.gathering.actions")
+                    : tr("bot.gathering.mined")}{" "}
                   <b>
                     {active.mined}
                     {active.count ? ` / ${active.count}` : ""}
                   </b>
                 </span>
                 <span>
-                  Подобрано <b>{active.collected}</b>
+                  {tr("bot.gathering.collected")} <b>{active.collected}</b>
                 </span>
                 {active.delivered > 0 && (
                   <span>
-                    Передано <b>{active.delivered}</b>
+                    {tr("bot.gathering.delivered")} <b>{active.delivered}</b>
                   </span>
                 )}
               </div>
               {active.count > 0 && (
                 <progress
-                  aria-label="Выполнение текущей задачи"
+                  aria-label={tr("bot.gathering.currentTaskProgress")}
                   max={active.count}
                   value={Math.min(active.mined, active.count)}
                 />
@@ -387,8 +406,8 @@ export function MineflayerGatheringControls({
               type="button"
               className="mineflayer-work-icon is-danger"
               disabled={disabled}
-              aria-label={`Отменить задачу ${active.id}`}
-              data-tooltip="Отменить текущую задачу"
+              aria-label={`${tr("bot.gathering.cancelTask")} ${active.id}`}
+              data-tooltip={tr("bot.gathering.cancelTheCurrentTask")}
               onClick={() => void send(`work cancel ${active.id}`)}
             >
               <WorkCancelIcon />
@@ -397,16 +416,17 @@ export function MineflayerGatheringControls({
         )}
         {progress?.suspended && (
           <p className="mineflayer-work-empty">
-            После доставки: #{progress.suspended.id} · {workTaskTitle(progress.suspended)}
+            {tr("bot.gathering.afterDelivery")}: #{progress.suspended.id} ·{" "}
+            {workTaskTitle(progress.suspended)}
           </p>
         )}
         <div className="mineflayer-work-subhead">
           <strong>
-            ОЧЕРЕДЬ <span>{queue.length}</span>
+            {tr("bot.gathering.queue")} <span>{queue.length}</span>
           </strong>
           {queue.length > 0 && (
             <button type="button" disabled={disabled} onClick={() => void send("work clear")}>
-              Очистить очередь
+              {tr("bot.gathering.clearQueue")}
             </button>
           )}
         </div>
@@ -425,8 +445,8 @@ export function MineflayerGatheringControls({
                   type="button"
                   className="mineflayer-work-icon"
                   disabled={disabled || index === 0}
-                  aria-label={`Поднять задачу ${task.id}`}
-                  data-tooltip="Выше"
+                  aria-label={`${tr("bot.gathering.moveTaskUp")} ${task.id}`}
+                  data-tooltip={tr("bot.gathering.up")}
                   onClick={() => void send(`work move ${task.id} up`)}
                 >
                   ↑
@@ -435,8 +455,8 @@ export function MineflayerGatheringControls({
                   type="button"
                   className="mineflayer-work-icon"
                   disabled={disabled || index === queue.length - 1}
-                  aria-label={`Опустить задачу ${task.id}`}
-                  data-tooltip="Ниже"
+                  aria-label={`${tr("bot.gathering.moveTaskDown")} ${task.id}`}
+                  data-tooltip={tr("bot.gathering.down")}
                   onClick={() => void send(`work move ${task.id} down`)}
                 >
                   ↓
@@ -445,8 +465,8 @@ export function MineflayerGatheringControls({
                   type="button"
                   className="mineflayer-work-icon is-danger"
                   disabled={disabled}
-                  aria-label={`Удалить задачу ${task.id}`}
-                  data-tooltip="Удалить"
+                  aria-label={`${tr("bot.gathering.removeTask")} ${task.id}`}
+                  data-tooltip={tr("bot.gathering.remove")}
                   onClick={() => void send(`work remove ${task.id}`)}
                 >
                   <WorkCancelIcon />
@@ -457,9 +477,7 @@ export function MineflayerGatheringControls({
         </ol>
         {!queue.length && (
           <p className="mineflayer-work-empty">
-            {active
-              ? "Следующая задача появится здесь после добавления."
-              : "Очередь пуста. Выберите работу ниже."}
+            {active ? tr("bot.gathering.theNextTaskWill") : tr("bot.gathering.theQueueIsEmpty")}
           </p>
         )}
         <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
@@ -468,14 +486,14 @@ export function MineflayerGatheringControls({
             disabled={disabled || (!active && !queue.length)}
             onClick={() => void send(progress?.phase === "paused" ? "work resume" : "work pause")}
           >
-            {progress?.phase === "paused" ? "ПРОДОЛЖИТЬ" : "ПАУЗА"}
+            {progress?.phase === "paused" ? tr("common.resume") : tr("common.pause")}
           </button>
           <button
             type="button"
             disabled={disabled || (!active && !queue.length)}
             onClick={() => void send("work stop")}
           >
-            ОТМЕНИТЬ ВСЁ
+            {tr("bot.gathering.cancelAll")}
           </button>
         </div>
       </div>
@@ -485,16 +503,16 @@ export function MineflayerGatheringControls({
         aria-expanded={showForm}
         onClick={() => setShowForm(!showForm)}
       >
-        <span>{showForm ? "−" : "+"}</span> ДОБАВИТЬ ЗАДАЧУ
+        <span>{showForm ? "−" : "+"}</span> {tr("bot.gathering.addATask")}
       </button>
       {showForm && (
         <div className="mineflayer-work-form">
           <div
             className="mineflayer-bot-mode mineflayer-bot-gathering-modes"
             role="group"
-            aria-label="Вид работы"
+            aria-label={tr("bot.gathering.typeOfWork")}
           >
-            {MODES.map(([value, label]) => (
+            {MODES.map((value) => (
               <button
                 key={value}
                 type="button"
@@ -509,7 +527,7 @@ export function MineflayerGatheringControls({
                   setError("");
                 }}
               >
-                {label}
+                {tr(`bot.gathering.mode.${value}`)}
               </button>
             ))}
           </div>
@@ -524,25 +542,27 @@ export function MineflayerGatheringControls({
                 {farming && mode !== "till" && (
                   <MineflayerFarmCropField value={crop} onChange={setCrop} />
                 )}
-                {farming && number("ДЕЙСТВИЯ · 0 = ВСЕ", count, setCount, 0, 4096)}
+                {farming && number(tr("bot.gathering.actions0All"), count, setCount, 0, 4096)}
                 {mode === "mine" && (
                   <MinecraftSearchField
-                    label="БЛОКИ ИЛИ ГРУППА"
+                    label={tr("bot.gathering.blocksOrGroup")}
                     value={blocks}
                     onChange={setBlocks}
                     catalog={catalog}
                     scope="blocks"
                     multiple
                     disabled={sending}
-                    placeholder="Название или ID · diamond, iron, ores"
+                    placeholder={tr("bot.gathering.nameOrIdDiamond")}
                   />
                 )}
                 {(mode === "mine" || mode === "forest") &&
-                  number("КОЛИЧЕСТВО БЛОКОВ · 0 = ВСЕ", count, setCount, 0, 1000000)}
+                  number(tr("bot.gathering.blockCount0All"), count, setCount, 0, 1000000)}
                 {mode !== "quarry" &&
                   mode !== "tunnel" &&
                   number(
-                    mode === "mine" ? "РАДИУС ПО ГОРИЗОНТАЛИ" : "РАДИУС · БЛОКИ",
+                    mode === "mine"
+                      ? tr("bot.gathering.horizontalRadius")
+                      : tr("bot.gathering.radiusBlocks2"),
                     radius,
                     setRadius,
                     1,
@@ -550,19 +570,19 @@ export function MineflayerGatheringControls({
                   )}
                 {mode === "mine" && !autoDepth && (
                   <>
-                    {number("МИНИМАЛЬНАЯ ВЫСОТА Y", minY, setMinY, -64, 319)}
-                    {number("МАКСИМАЛЬНАЯ ВЫСОТА Y", maxY, setMaxY, -64, 319)}
+                    {number(tr("bot.gathering.minimumY"), minY, setMinY, -64, 319)}
+                    {number(tr("bot.gathering.maximumY"), maxY, setMaxY, -64, 319)}
                   </>
                 )}
                 {mode === "collect" && (
                   <MinecraftSearchField
-                    label="ПРЕДМЕТ · ПУСТО = ВСЕ"
+                    label={tr("bot.gathering.itemEmptyAll")}
                     value={item}
                     onChange={setItem}
                     catalog={catalog}
                     scope="items"
                     disabled={sending}
-                    placeholder="Название или ID · diamond, raw_iron"
+                    placeholder={tr("bot.gathering.nameOrIdDiamondRawIron")}
                   />
                 )}
                 {mode === "quarry" && (
@@ -571,42 +591,46 @@ export function MineflayerGatheringControls({
                     {coordinateField("2", corner2, setCorner2)}
                   </>
                 )}
-                {mode === "tunnel" && <>{number("ДЛИНА", length, setLength, 1, 128)}</>}
+                {mode === "tunnel" && (
+                  <>{number(tr("bot.gathering.length"), length, setLength, 1, 128)}</>
+                )}
               </div>
               {mode === "harvest" && (
                 <ElementToggle
-                  title="ПЕРЕСАЖИВАТЬ ПОСЛЕ СБОРА"
-                  note="Использовать семена из инвентаря и собранного урожая"
+                  title={tr("bot.gathering.replantAfterHarvest")}
+                  note={tr("bot.gathering.useSeedsFromThe")}
                   enabled={replant}
                   onToggle={() => setReplant(!replant)}
                 />
               )}
               {mode === "quarry" && (
                 <div className="mineflayer-coordinate-guide">
+                  <p>{tr("bot.gathering.standInTheCorner")}</p>
                   <p>
-                    Встаньте в нужном углу или наведитесь на его блок, затем выберите точку. Бот
-                    должен видеть вас; блок под прицелом — не дальше 6 блоков.
-                  </p>
-                  <p>
-                    Можно отметить оба угла прямо в игровом чате: <code>!area launcher 1 look</code>{" "}
-                    и <code>!area launcher 2 look</code>. Вместо <code>!</code> используйте свой
-                    префикс.
+                    <Trans
+                      k="bot.gathering.chatCornersHint"
+                      values={{
+                        first: <code>!area launcher 1 look</code>,
+                        second: <code>!area launcher 2 look</code>,
+                        prefix: <code>!</code>,
+                      }}
+                    />
                   </p>
                   {areaPreview ? (
                     <strong className={areaPreview.valid ? "" : "is-error"}>
                       {areaPreview.size.x} × {areaPreview.size.y} × {areaPreview.size.z} ·{" "}
-                      {areaPreview.volume.toLocaleString("ru-RU")} блоков
-                      {!areaPreview.valid && " · превышен лимит 32 768"}
+                      {tr("bot.gathering.areaBlocks", { count: areaPreview.volume })}
+                      {!areaPreview.valid && ` · ${tr("bot.gathering.limitOf32768")}`}
                     </strong>
                   ) : (corner1.trim() && !first) || (corner2.trim() && !second) ? (
-                    <strong className="is-error">Нужны три числа X Y Z для каждого угла.</strong>
+                    <strong className="is-error">{tr("bot.gathering.eachCornerNeedsThree")}</strong>
                   ) : null}
                 </div>
               )}
               {mode === "mine" && (
                 <ElementToggle
-                  title="ИСКАТЬ ПО ВСЕЙ ГЛУБИНЕ"
-                  note="От нижней границы мира; проверяет загруженные чанки"
+                  title={tr("bot.gathering.searchAllDepths")}
+                  note={tr("bot.gathering.fromTheBottomOf")}
                   enabled={autoDepth}
                   onToggle={() => setAutoDepth(!autoDepth)}
                 />
@@ -614,14 +638,14 @@ export function MineflayerGatheringControls({
               {mode === "forest" && (
                 <div className="mineflayer-bot-toggle-grid">
                   <ElementToggle
-                    title="УБИРАТЬ ЛИСТВУ"
-                    note="Вместе со стволами"
+                    title={tr("bot.gathering.removeLeaves")}
+                    note={tr("bot.gathering.alongWithTheTrunks")}
                     enabled={leaves}
                     onToggle={() => setLeaves(!leaves)}
                   />
                   <ElementToggle
-                    title="ПОДСТАВЛЯТЬ БЛОКИ ДЛЯ ВЫСОКИХ ДЕРЕВЬЕВ"
-                    note="Использует блоки из инвентаря"
+                    title={tr("bot.gathering.scaffoldForTallTrees")}
+                    note={tr("bot.gathering.usesBlocksFromThe")}
                     enabled={scaffold}
                     onToggle={() => setScaffold(!scaffold)}
                   />
@@ -629,16 +653,16 @@ export function MineflayerGatheringControls({
               )}
               <p className="mineflayer-bot-combat-note">
                 {farming
-                  ? FARMING_NOTE
+                  ? farmingNote()
                   : mode === "mine"
-                    ? "Ищет руду под землёй и прокладывает проход к залежи. Радиус ограничивает поиск по горизонтали, высота задаётся отдельно. Нужна подходящая кирка."
+                    ? tr("bot.gathering.looksForOreUnderground")
                     : mode === "forest"
-                      ? "Срубает стволы выбранного леса. Для подъёма нужны строительные блоки; при спуске разбирает опоры под собой. Остальные опоры остаются."
+                      ? tr("bot.gathering.chopsTheTrunksOf")
                       : mode === "quarry"
-                        ? "Расчищает включительно между углами, сверху вниз. Максимум 32 768 блоков."
+                        ? tr("bot.gathering.clearsEverythingBetweenThe")
                         : mode === "tunnel"
-                          ? "Копает вперёд по направлению взгляда бота. Пол под туннелем сохраняется."
-                          : "Подбирает лежащие предметы в заданном радиусе."}
+                          ? tr("bot.gathering.digsForwardInThe")
+                          : tr("bot.gathering.picksUpItemsLying")}
               </p>
               <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
                 <button
@@ -649,7 +673,7 @@ export function MineflayerGatheringControls({
                     (mode === "quarry" && !areaPreview?.valid)
                   }
                 >
-                  {active ? "ДОБАВИТЬ В ОЧЕРЕДЬ" : "ДОБАВИТЬ И НАЧАТЬ"}
+                  {active ? tr("bot.gathering.addToQueue") : tr("bot.gathering.addAndStart")}
                 </button>
               </div>
             </fieldset>
@@ -658,7 +682,9 @@ export function MineflayerGatheringControls({
       )}
       {history.length > 0 && (
         <details className="mineflayer-work-history">
-          <summary>Завершённые задачи · {history.length}</summary>
+          <summary>
+            {tr("bot.gathering.completedTasks")} · {history.length}
+          </summary>
           {[...history].reverse().map((task) => (
             <div key={task.id}>
               <strong>
@@ -667,9 +693,13 @@ export function MineflayerGatheringControls({
               <span>
                 {task.outcome} ·{" "}
                 {FARMING_KINDS.includes(task.kind)
-                  ? `вспахано ${task.tilled || 0} · посажено ${task.planted || 0} · урожай ${task.harvested || 0}`
-                  : `добыто ${task.mined}`}{" "}
-                · подобрано {task.collected}
+                  ? tr("bot.gathering.historyFarm", {
+                      tilled: task.tilled || 0,
+                      planted: task.planted || 0,
+                      harvested: task.harvested || 0,
+                    })
+                  : tr("bot.gathering.historyMined", { mined: task.mined })}{" "}
+                · {tr("bot.gathering.historyCollected", { collected: task.collected })}
               </span>
               {task.reason && <p>{task.reason}</p>}
             </div>
@@ -677,87 +707,79 @@ export function MineflayerGatheringControls({
         </details>
       )}
       <PluginSettingsGroup
-        title="ЗАЩИТА ПРИ ДОБЫЧЕ"
-        description="Самозащита во время добычи руды, заготовки леса, сбора и выгрузки"
+        title={tr("bot.gathering.defenseWhileGathering")}
+        description={tr("bot.gathering.selfDefenseWhileMining")}
       >
         <ElementToggle
-          title="ЗАЩИЩАТЬСЯ ОТ МОБОВ"
-          note="Отбивается от опасных мобов рядом и тех, кто напал на бота"
+          title={tr("bot.gathering.defendAgainstMobs")}
+          note={tr("bot.gathering.fightsOffDangerousMobs")}
           enabled={settings.defendMobs}
           onToggle={() => updatePassages({ defendMobs: !settings.defendMobs })}
         />
         <ElementToggle
-          title="ЗАЩИЩАТЬСЯ ОТ ИГРОКОВ"
-          note="Отвечает на удары; через 3 секунды без новых ударов возвращается к работе"
+          title={tr("bot.gathering.defendAgainstPlayers")}
+          note={tr("bot.gathering.hitsBackReturnsTo")}
           enabled={settings.defendPlayers}
           onToggle={() => updatePassages({ defendPlayers: !settings.defendPlayers })}
         />
         <ElementToggle
-          title="ЗАЩИЩАТЬСЯ ОТ СТРЕЛ"
-          note="Использует имеющуюся защиту щитом, а без щита ищет безопасный отход"
+          title={tr("bot.gathering.defendAgainstArrows")}
+          note={tr("bot.gathering.usesAShieldIf")}
           enabled={settings.defendArrows}
           onToggle={() => updatePassages({ defendArrows: !settings.defendArrows })}
         />
-        <p className="mineflayer-bot-combat-note">
-          Использует текущие настройки ближнего боя. При низком здоровье, без оружия или рядом с
-          крипером отходит по безопасному пути. После опасности продолжает ту же задачу. Ручная
-          пауза сохраняется. Настройки действуют и при выключенном автоматическом PvP.
-        </p>
+        <p className="mineflayer-bot-combat-note">{tr("bot.gathering.usesTheCurrentMelee")}</p>
         <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
           <button type="button" disabled={disabled} onClick={() => void send(defenseCommand)}>
-            ПРИМЕНИТЬ К БОТУ
+            {tr("bot.gathering.applyToBot")}
           </button>
         </div>
       </PluginSettingsGroup>
       <PluginSettingsGroup
-        title="ТОННЕЛИ И ОСВЕЩЕНИЕ"
-        description="Размер проходов при добыче руды, лестницы и факелы на стенах"
+        title={tr("bot.gathering.tunnelsAndLighting")}
+        description={tr("bot.gathering.passageSizeWhenMining")}
       >
         <div className="mineflayer-bot-grid">
           {number(
-            "ШИРИНА ТОННЕЛЯ · БЛОКИ",
+            tr("bot.gathering.tunnelWidthBlocks"),
             settings.tunnelWidth,
             (tunnelWidth) => updatePassages({ tunnelWidth }),
             1,
             3,
           )}
           {number(
-            "ВЫСОТА ТОННЕЛЯ · БЛОКИ",
+            tr("bot.gathering.tunnelHeightBlocks"),
             settings.tunnelHeight,
             (tunnelHeight) => updatePassages({ tunnelHeight }),
             2,
             4,
           )}
           {number(
-            "ШИРИНА ЛЕСТНИЦЫ · БЛОКИ",
+            tr("bot.gathering.stairWidthBlocks"),
             settings.stairWidth,
             (stairWidth) => updatePassages({ stairWidth }),
             1,
             3,
           )}
           {number(
-            "ПРОСВЕТ ЛЕСТНИЦЫ · БЛОКИ",
+            tr("bot.gathering.stairClearanceBlocks"),
             settings.stairHeight,
             (stairHeight) => updatePassages({ stairHeight }),
             3,
             4,
           )}
         </div>
-        <p className="mineflayer-bot-combat-note">
-          Ровные тоннели по умолчанию 2 × 2. Лестницы поднимаются или опускаются на один блок за
-          шаг; просвет от пола — минимум три блока, чтобы прыгать без удара головой. Для доставки и
-          возвращения бот ищет путь по готовым проходам.
-        </p>
+        <p className="mineflayer-bot-combat-note">{tr("bot.gathering.flatTunnelsAre2")}</p>
         <ElementToggle
-          title="СТАВИТЬ ФАКЕЛЫ В ПЕЩЕРЕ"
-          note="Использует обычные факелы из инвентаря и крепит их к стенам"
+          title={tr("bot.gathering.placeTorchesInCaves")}
+          note={tr("bot.gathering.usesRegularTorchesFrom")}
           enabled={settings.placeTorches}
           onToggle={() => updatePassages({ placeTorches: !settings.placeTorches })}
         />
         {settings.placeTorches && (
           <div className="mineflayer-bot-grid">
             {number(
-              "ИНТЕРВАЛ ФАКЕЛОВ · БЛОКИ",
+              tr("bot.gathering.torchSpacingBlocks"),
               settings.torchInterval,
               (torchInterval) => updatePassages({ torchInterval }),
               4,
@@ -765,14 +787,10 @@ export function MineflayerGatheringControls({
             )}
           </div>
         )}
-        <p className="mineflayer-bot-combat-note">
-          Интервал по умолчанию — 8 блоков. Если факелов или подходящей стены нет, бот продолжает
-          работу. Настройки сохраняются и применяются при добавлении добычи или тоннеля; для текущей
-          работы нажмите «Применить к боту».
-        </p>
+        <p className="mineflayer-bot-combat-note">{tr("bot.gathering.theDefaultSpacingIs")}</p>
         <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
           <button type="button" disabled={disabled} onClick={() => void send(passageCommand)}>
-            ПРИМЕНИТЬ К БОТУ
+            {tr("bot.gathering.applyToBot")}
           </button>
         </div>
       </PluginSettingsGroup>
@@ -786,12 +804,7 @@ export function MineflayerGatheringControls({
         refresh={refresh}
         onDeposit={() => void send("deposit")}
       />
-      <p className="mineflayer-bot-combat-note">
-        Добыча хранится в инвентаре бота. «Принести мне добычу» — подходит к владельцу, выбрасывает
-        добычу перед ним и возвращается. Инструменты, броня, еда и до 64 строительных блоков для
-        пути сохраняются. При заполнении инвентаря бот раскладывает добычу по настроенным группам
-        сундуков. Предметы без подходящей группы остаются у бота.
-      </p>
+      <p className="mineflayer-bot-combat-note">{tr("bot.gathering.lootIsKeptIn")}</p>
       {(error || feedback) && (
         <p
           className={`mineflayer-bot-chat-feedback${error ? " is-error" : ""}`}

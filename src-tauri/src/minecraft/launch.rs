@@ -875,6 +875,7 @@ mod tests {
         InstanceItem {
             id: "inst-test".to_string(),
             name: "Test".to_string(),
+            source: Default::default(),
             pinned: false,
             version: "1.21.1".to_string(),
             loader: loader.to_string(),

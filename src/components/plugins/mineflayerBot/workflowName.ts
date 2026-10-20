@@ -1,46 +1,20 @@
 import type { MineflayerWorkflowStep } from "../../../types";
 import bundledCatalog from "../../../data/minecraftCatalog.json";
+import { isPlainMessageKey, readLocale, translateFor, type Locale } from "../../../i18n/locale";
 
-export const WORKFLOW_ITEM_LABELS: Record<string, string> = {
-  iron: "Железо",
-  coal: "Уголь",
-  gold: "Золото",
-  copper: "Медь",
-  diamond: "Алмазы",
-  emerald: "Изумруды",
-  redstone: "Редстоун",
-  lapis: "Лазурит",
-  stone: "Камень",
-  cobblestone: "Булыжник",
-  dirt: "Земля",
-  sand: "Песок",
-  stick: "Палки",
-  raw_iron: "Рудное железо",
-  iron_ingot: "Железный слиток",
-  iron_pickaxe: "Железная кирка",
-  iron_axe: "Железный топор",
-  iron_sword: "Железный меч",
-  iron_shovel: "Железная лопата",
-  wooden_spear: "Деревянное копьё",
-  stone_spear: "Каменное копьё",
-  iron_spear: "Железное копьё",
-  golden_spear: "Золотое копьё",
-  diamond_spear: "Алмазное копьё",
-  netherite_spear: "Незеритовое копьё",
-  crafting_table: "Верстак",
-  oak_planks: "Дубовые доски",
-  spruce_planks: "Еловые доски",
-  birch_planks: "Берёзовые доски",
-};
 const catalogNames = new Map(
   bundledCatalog.entries.map((entry) => [entry.name, entry.displayName]),
 );
 const shorten = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
-const itemName = (value: string) => {
+/** Item name for workflow texts: a `bot.item.*` message when the launcher has one, else the catalog name. */
+export function workflowItemLabel(value: string, locale: Locale = readLocale()): string {
   const name = value.trim().replace(/^minecraft:/, "");
-  return WORKFLOW_ITEM_LABELS[name] || catalogNames.get(name) || name.replace(/_/g, " ");
-};
+  const key = `bot.item.${name}`;
+  if (isPlainMessageKey(key)) return translateFor(locale, key);
+  return catalogNames.get(name) || name.replace(/_/g, " ");
+}
+const itemName = workflowItemLabel;
 
 const SHORT_NAME_LIMIT = 36;
 const THEMES = {
@@ -322,6 +296,64 @@ const NOUNS = {
 } satisfies Record<string, Noun[]>;
 type Purpose = keyof typeof NOUNS;
 
+// English names are plain "<adjective> <noun>" pairs, so they need no grammatical gender.
+const NAME_THEMES_EN: Record<NameTheme, string[]> = {
+  wood: ["Forest", "Resinous", "Taiga", "Timber"],
+  oak: ["Oak", "Sturdy", "Forest"],
+  birch: ["Birch", "Bright", "Whitewood"],
+  spruce: ["Spruce", "Taiga", "Northern", "Pine"],
+  darkOak: ["Shady", "Dark", "Oaken"],
+  paleOak: ["Pale", "Twilight", "Quiet"],
+  jungle: ["Tropical", "Jungle", "Green"],
+  acacia: ["Acacia", "Sunny", "Dry"],
+  mangrove: ["Mangrove", "Swamp", "Coastal"],
+  cherry: ["Cherry", "Pink", "Orchard"],
+  bamboo: ["Bamboo", "Reed", "Green"],
+  iron: ["Iron", "Tempered", "Ore", "Metallic"],
+  gold: ["Golden", "Gilded", "Precious"],
+  copper: ["Copper", "Weathered", "Ore"],
+  diamond: ["Diamond", "Crystal", "Precious"],
+  emerald: ["Emerald", "Green", "Gem"],
+  netherite: ["Netherite", "Ancient", "Fireproof"],
+  coal: ["Coal", "Black", "Fuel"],
+  stone: ["Stone", "Rocky", "Granite", "Deep"],
+  redstone: ["Redstone", "Pulse", "Signal"],
+  lapis: ["Lapis", "Azure", "Gem"],
+  sand: ["Sandy", "Dune", "Desert"],
+  glass: ["Glass", "Clear", "Stained"],
+  food: ["Hearty", "Homemade", "Edible", "Trail"],
+  ocean: ["Sea", "Underwater", "Coastal"],
+  ice: ["Icy", "Snowy", "Frosty"],
+  quartz: ["Quartz", "White", "Crystal"],
+  amethyst: ["Amethyst", "Violet", "Crystal"],
+  obsidian: ["Obsidian", "Volcanic", "Black"],
+  nether: ["Nether", "Crimson", "Ashen"],
+  end: ["Ender", "Void", "Chorus"],
+  sculk: ["Sculk", "Deep", "Shadow"],
+  farming: ["Farmer's", "Bountiful", "Field"],
+  textile: ["Woolen", "Warm", "Soft"],
+  leather: ["Leather", "Trail", "Tough"],
+  clay: ["Clay", "Brick", "Terracotta"],
+  dye: ["Colorful", "Vivid", "Motley"],
+  cargo: ["Cargo", "Reserve", "Distant", "Trail"],
+  mining: ["Miner's", "Ore", "Underground", "Deep"],
+  field: ["Field", "Trail", "Distant", "Night"],
+};
+const NOUNS_EN: Record<Purpose, string[]> = {
+  delivery: ["Caravan", "Convoy", "Haul", "Shipment", "Run"],
+  return: ["Route", "Run", "Trek", "Expedition", "Loop", "Crossing"],
+  workshop: ["Workshop", "Guild", "Production", "Factory", "Works", "Shop"],
+  equipment: ["Armory", "Gear", "Rig", "Kit", "Outfit", "Forge"],
+  building: ["Build", "Project", "Stock", "Batch", "Supply", "Shop"],
+  mechanism: ["Mechanism", "Circuit", "Assembly", "Automation", "Contour", "System"],
+  smelting: ["Smeltery", "Forge", "Furnace", "Foundry", "Stock", "Works"],
+  cooking: ["Kitchen", "Hearth", "Stash", "Ration", "Treat", "Provisions"],
+  forest: ["Logging", "Lumber Camp", "Clearing", "Stock", "Guild", "Stash"],
+  mining: ["Mine", "Dig", "Face", "Vein", "Claim", "Shaft"],
+  collect: ["Pickup", "Search", "Haul", "Stash", "Find", "Trek"],
+  travel: ["Route", "Crossing", "Expedition", "Scouting", "Trek", "Run"],
+};
+
 function nameTheme(step: MineflayerWorkflowStep): NameTheme | undefined {
   for (const token of (step.item || "").toLowerCase().split(",")) {
     const extra = EXTRA_MATERIALS.find(([, pattern]) =>
@@ -366,7 +398,7 @@ function nameHash(value: string): number {
   for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
   return hash >>> 0;
 }
-function nameOptions(steps: MineflayerWorkflowStep[]) {
+function nameOptions(steps: MineflayerWorkflowStep[], locale: Locale = readLocale()) {
   const production = steps.filter((step) => step.kind === "craft" || step.kind === "smelt");
   const theme =
     [...production].reverse().map(nameTheme).find(Boolean) ||
@@ -376,8 +408,13 @@ function nameOptions(steps: MineflayerWorkflowStep[]) {
       : steps.some((step) => step.kind === "mine")
         ? "mining"
         : "field");
-  const adjectives: Adjective[] = NAME_THEMES[theme];
-  const nouns: Noun[] = NOUNS[namePurpose(steps)];
+  const purpose = namePurpose(steps);
+  const adjectives: Adjective[] =
+    locale === "en"
+      ? NAME_THEMES_EN[theme].map((word) => [word, word, word] as const)
+      : NAME_THEMES[theme];
+  const nouns: Noun[] =
+    locale === "en" ? NOUNS_EN[purpose].map((word) => [word, 0] as const) : NOUNS[purpose];
   // Amounts and radius do not rename a plan. Its actions and materials do.
   const signature = steps
     .map((step) => `${step.kind}:${(step.item || "").toLowerCase()}`)
@@ -403,49 +440,59 @@ export function readWorkflowNameVariant(value: string | null): number {
   }
 }
 
-function workflowLabels(steps: MineflayerWorkflowStep[]): string[] {
+function workflowLabels(steps: MineflayerWorkflowStep[], locale: Locale = readLocale()): string[] {
   return steps.map((step) => {
     const item = (step.item || "")
       .split(",")
       .filter((name) => name.trim())
-      .map(itemName)
+      .map((name) => itemName(name, locale))
       .join(", ");
     const amount = step.count && step.count > 1 ? ` × ${step.count}` : "";
     switch (step.kind) {
       case "forest":
-        return `Дерево${amount}`;
+        return translateFor(locale, "bot.workflowName.wood", { amount });
       case "till":
-        return "Вспашка грядок";
+        return translateFor(locale, "bot.workflowName.till");
       case "plant":
-        return "Посадка семян";
+        return translateFor(locale, "bot.workflowName.plant");
       case "harvest":
-        return "Сбор урожая";
+        return translateFor(locale, "bot.workflowName.harvest");
       case "farm":
-        return "Обработка огорода";
+        return translateFor(locale, "bot.workflowName.farm");
       case "mine":
-        return `Добыча: ${shorten(item || "блоки", 36)}${amount}`;
+        return translateFor(locale, "bot.workflowName.mine", {
+          item: shorten(item || translateFor(locale, "bot.workflowName.mineFallback"), 36),
+          amount,
+        });
       case "craft":
-        return `${shorten(item || "Крафт", 36)}${amount}`;
+        return `${shorten(item || translateFor(locale, "bot.workflowName.craftFallback"), 36)}${amount}`;
       case "smelt":
-        return `Переплавка: ${shorten(item || "материалы", 32)}${amount}`;
+        return translateFor(locale, "bot.workflowName.smelt", {
+          item: shorten(item || translateFor(locale, "bot.workflowName.smeltFallback"), 32),
+          amount,
+        });
       case "collect":
-        return "Сбор предметов";
+        return translateFor(locale, "bot.workflowName.collect");
       case "deposit":
-        return "На склад";
+        return translateFor(locale, "bot.workflowName.deposit");
       case "return":
-        return "Возвращение";
+        return translateFor(locale, "bot.workflowName.return");
     }
   });
 }
 
 /** Short sequences describe their steps; longer ones get a stable, meaningful nickname. */
-export function workflowName(steps: MineflayerWorkflowStep[], variant = 0): string {
-  if (!steps.length) return "Новый сценарий";
+export function workflowName(
+  steps: MineflayerWorkflowStep[],
+  variant = 0,
+  locale: Locale = readLocale(),
+): string {
+  if (!steps.length) return translateFor(locale, "bot.workflowName.new");
   if (steps.length <= 2 && variant === 0) {
-    const description = workflowLabels(steps).join(" → ");
+    const description = workflowLabels(steps, locale).join(" → ");
     if (description.length <= SHORT_NAME_LIMIT && !description.includes("…")) return description;
   }
-  return compactWorkflowName(nameOptions(steps), variant);
+  return compactWorkflowName(nameOptions(steps, locale), variant);
 }
 
 export function findWorkflowNameVariant(
@@ -454,9 +501,13 @@ export function findWorkflowNameVariant(
 ): number | null {
   if (value === workflowName(steps)) return 0;
   if (!steps.length) return null;
-  const options = nameOptions(steps);
-  for (let variant = 1; variant <= options.count; variant++)
-    if (compactWorkflowName(options, variant) === value) return variant;
+  // A name saved in the other interface language is still an automatic name.
+  for (const locale of ["ru", "en"] as const) {
+    if (value === workflowName(steps, 0, locale)) return 0;
+    const options = nameOptions(steps, locale);
+    for (let variant = 1; variant <= options.count; variant++)
+      if (compactWorkflowName(options, variant) === value) return variant;
+  }
   return null;
 }
 
@@ -466,25 +517,33 @@ export function isAutomaticWorkflowName(value: string, steps: MineflayerWorkflow
   if (!steps.length) return false;
   if (findWorkflowNameVariant(value, steps) !== null) return false;
   if (value === legacyCompactWorkflowName(steps)) return true;
-  const labels = workflowLabels(steps);
-  const result =
-    labels.length <= 3
-      ? labels
-          .map((label) =>
-            shorten(label, Math.floor((120 - (labels.length - 1) * 3) / labels.length)),
-          )
-          .join(" → ")
-      : `${shorten(labels[0], 42)} → … → ${shorten(labels[labels.length - 1], 42)} · ${steps.length} шагов`;
-  return value === shorten(result, 120);
+  return (["ru", "en"] as const).some((locale) => {
+    if (value === workflowName(steps, 0, locale)) return true;
+    const labels = workflowLabels(steps, locale);
+    const result =
+      labels.length <= 3
+        ? labels
+            .map((label) =>
+              shorten(label, Math.floor((120 - (labels.length - 1) * 3) / labels.length)),
+            )
+            .join(" → ")
+        : `${shorten(labels[0], 42)} → … → ${shorten(labels[labels.length - 1], 42)} · ${steps.length} ${locale === "ru" ? "шагов" : "steps"}`; // exact format of names saved by older versions
+    return value === shorten(result, 120);
+  });
 }
 
 export function isGenericWorkflowName(value: unknown): boolean {
   return (
     typeof value !== "string" ||
     !value.trim() ||
-    ["мой сценарий", "новый сценарий", "без названия"].includes(
-      value.trim().toLocaleLowerCase("ru-RU"),
-    )
+    [
+      "мой сценарий",
+      "новый сценарий",
+      "без названия",
+      "my workflow",
+      "new workflow",
+      "untitled",
+    ].includes(value.trim().toLocaleLowerCase("ru-RU"))
   );
 }
 

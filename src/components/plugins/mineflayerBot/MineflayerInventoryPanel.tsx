@@ -1,16 +1,17 @@
 import { useState } from "react";
 import type { MineflayerBotStatus, MineflayerInventoryItem } from "../../../types";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
+import { translate, useTranslation } from "../../../i18n/locale";
 
-const EQUIPMENT: Array<[number, string]> = [
-  [5, "Шлем"],
-  [6, "Нагрудник"],
-  [7, "Поножи"],
-  [8, "Ботинки"],
-  [45, "Вторая рука"],
-];
+const EQUIPMENT = [
+  [5, "helmet"],
+  [6, "chestplate"],
+  [7, "leggings"],
+  [8, "boots"],
+  [45, "offhand"],
+] as const;
 function itemTitle(item: MineflayerInventoryItem) {
-  return `${item.displayName} × ${item.count}${item.maxDurability ? ` · прочность ${item.durability}/${item.maxDurability}` : ""}`;
+  return `${item.displayName} × ${item.count}${item.maxDurability ? ` · ${translate("bot.inventory.durabilityValue", { current: item.durability ?? 0, max: item.maxDurability })}` : ""}`;
 }
 export function MineflayerInventoryPanel({
   status,
@@ -19,6 +20,7 @@ export function MineflayerInventoryPanel({
   status: MineflayerBotStatus | null;
   onOpenTasks: () => void;
 }) {
+  const tr = useTranslation();
   const [selected, setSelected] = useState<number | null>(null);
   const connected = Boolean(status?.running && status.state === "connected");
   const inventory = connected ? status?.inventory : null;
@@ -34,11 +36,11 @@ export function MineflayerInventoryPanel({
         disabled={!inventory}
         aria-label={
           item
-            ? `${label || `Слот ${index}`}: ${itemTitle(item)}`
-            : `${label || `Слот ${index}`}: пусто`
+            ? `${label || `${tr("bot.inventory.slot")} ${index}`}: ${itemTitle(item)}`
+            : `${label || `${tr("bot.inventory.slot")} ${index}`}: ${tr("bot.inventory.empty")}`
         }
         aria-pressed={selected === index}
-        data-tooltip={item ? itemTitle(item) : label || "Пустой слот"}
+        data-tooltip={item ? itemTitle(item) : label || tr("bot.inventory.emptySlot")}
         onClick={() => setSelected(selected === index ? null : index)}
       >
         {item ? (
@@ -66,7 +68,7 @@ export function MineflayerInventoryPanel({
     ? [
         {
           key: "health",
-          label: "ЗДОРОВЬЕ",
+          label: tr("bot.inventory.health"),
           value: inventory.health,
           max: inventory.maxHealth,
           symbol: "♥",
@@ -74,44 +76,48 @@ export function MineflayerInventoryPanel({
         },
         {
           key: "food",
-          label: "СЫТОСТЬ",
+          label: tr("bot.inventory.hunger"),
           value: inventory.food,
           max: 20,
           symbol: "◆",
-          note: `Насыщение ${Math.round(inventory.saturation * 10) / 10}`,
+          note: `${tr("bot.inventory.saturation")} ${Math.round(inventory.saturation * 10) / 10}`,
         },
         {
           key: "armor",
-          label: "БРОНЯ",
+          label: tr("bot.inventory.armor"),
           value: inventory.armor,
           max: 20,
           symbol: "⬡",
-          note: "Очки защиты",
+          note: tr("bot.inventory.armorPoints"),
         },
       ]
     : [];
   return (
     <PluginSettingsGroup
-      title="ИНВЕНТАРЬ И СОСТОЯНИЕ"
-      description="Предметы, экипировка и показатели бота обновляются во время игры."
+      title={tr("bot.inventory.inventoryAndStatus")}
+      description={tr("bot.inventory.theBotsItemsEquipment")}
       collapsible={false}
     >
       <div className="mineflayer-inventory-header">
         <div>
-          <strong>{inventory?.username || status?.botUsername || "Бот"}</strong>
-          <span className={connected ? "is-online" : ""}>{connected ? "В игре" : "Отключён"}</span>
+          <strong>{inventory?.username || status?.botUsername || tr("bot.inventory.bot")}</strong>
+          <span className={connected ? "is-online" : ""}>
+            {connected ? tr("bot.inventory.inGame") : tr("bot.inventory.disconnected")}
+          </span>
         </div>
         <button type="button" onClick={onOpenTasks}>
-          К задачам добычи →
+          {tr("bot.inventory.toGatheringTasks")}
         </button>
       </div>
       {!inventory ? (
         <div className="mineflayer-inventory-empty" role="status">
-          <strong>{connected ? "Получаем инвентарь…" : "Подключите бота"}</strong>
+          <strong>
+            {connected ? tr("bot.inventory.loadingInventory") : tr("bot.inventory.connectTheBot")}
+          </strong>
           <p>
             {connected
-              ? "Показатели появятся после загрузки персонажа."
-              : "Нажмите «Подключить бота», чтобы видеть предметы и состояние."}
+              ? tr("bot.inventory.statsWillAppearOnce")
+              : tr("bot.inventory.clickConnectBotTo")}
           </p>
         </div>
       ) : (
@@ -140,33 +146,41 @@ export function MineflayerInventoryPanel({
           <div className="mineflayer-inventory-layout">
             <div className="mineflayer-inventory-bag">
               <div className="mineflayer-work-subhead">
-                <strong>РЮКЗАК</strong>
+                <strong>{tr("bot.inventory.backpack")}</strong>
                 <span>
-                  {inventory.occupied} / {inventory.capacity} слотов
+                  {tr("bot.inventory.occupancy", {
+                    occupied: inventory.occupied,
+                    count: inventory.capacity,
+                  })}
                 </span>
               </div>
-              <div className="mineflayer-inventory-grid" aria-label="Основной инвентарь">
+              <div
+                className="mineflayer-inventory-grid"
+                aria-label={tr("bot.inventory.mainInventory")}
+              >
                 {Array.from({ length: 27 }, (_, i) => slot(i + 9))}
               </div>
               <div className="mineflayer-work-subhead">
-                <strong>БЫСТРЫЙ ДОСТУП</strong>
-                <span>В руке: слот {inventory.selectedSlot - 35}</span>
+                <strong>{tr("bot.inventory.hotbar")}</strong>
+                <span>
+                  {tr("bot.inventory.inHandSlot")} {inventory.selectedSlot - 35}
+                </span>
               </div>
-              <div className="mineflayer-inventory-grid" aria-label="Панель быстрого доступа">
+              <div className="mineflayer-inventory-grid" aria-label={tr("bot.inventory.hotbar2")}>
                 {Array.from({ length: 9 }, (_, i) => slot(i + 36))}
               </div>
             </div>
             <div className="mineflayer-inventory-equipment">
               <div className="mineflayer-work-subhead">
-                <strong>ЭКИПИРОВКА</strong>
+                <strong>{tr("bot.inventory.equipment")}</strong>
               </div>
               {EQUIPMENT.filter(([index]) => index < inventory.slots.length).map(
-                ([index, label]) => (
+                ([index, slotName]) => (
                   <div className="mineflayer-equipment-row" key={index}>
-                    {slot(index, label)}
+                    {slot(index, tr(`bot.inventory.slot.${slotName}`))}
                     <div>
-                      <span>{label}</span>
-                      <strong>{inventory.slots[index]?.displayName || "Пусто"}</strong>
+                      <span>{tr(`bot.inventory.slot.${slotName}`)}</span>
+                      <strong>{inventory.slots[index]?.displayName || tr("common.empty")}</strong>
                     </div>
                   </div>
                 ),
@@ -180,9 +194,9 @@ export function MineflayerInventoryPanel({
                 <div>
                   <strong>{selectedItem.displayName}</strong>
                   <p>
-                    {selectedItem.count} шт.
+                    {tr("bot.inventory.itemCount", { count: selectedItem.count })}
                     {selectedItem.maxDurability
-                      ? ` · прочность ${selectedItem.durability} / ${selectedItem.maxDurability}`
+                      ? ` · ${tr("bot.inventory.durabilityValue", { current: selectedItem.durability ?? 0, max: selectedItem.maxDurability })}`
                       : ""}
                   </p>
                   {selectedItem.enchants.length > 0 && (
@@ -197,8 +211,8 @@ export function MineflayerInventoryPanel({
             ) : (
               <p>
                 {selected === null
-                  ? "Выберите предмет, чтобы увидеть количество, прочность и зачарования."
-                  : "Этот слот пуст."}
+                  ? tr("bot.inventory.selectAnItemTo")
+                  : tr("bot.inventory.thisSlotIsEmpty")}
               </p>
             )}
           </div>

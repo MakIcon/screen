@@ -3,22 +3,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { toErrorMessage } from "../../utils/errors";
 import { logger } from "../../utils/logger";
-import type {
-  ActionResult,
-  InstanceItem,
-  ScreenshotImage,
-  ScreenshotItem,
-} from "../../types";
+import type { ActionResult, InstanceItem, ScreenshotImage, ScreenshotItem } from "../../types";
+import {
+  useLocale,
+  useTranslation,
+  type Locale,
+  intlLocale,
+  translateFor,
+} from "../../i18n/locale";
 
 interface Props {
   instance: InstanceItem;
   onClose: () => void;
 }
 
-function formatScreenshotDate(timestamp: number) {
-  if (!timestamp) return "UNKNOWN DATE";
+function formatScreenshotDate(timestamp: number, locale: Locale) {
+  if (!timestamp) return translateFor(locale, "buildScreenshots.unknownDate");
 
-  return new Intl.DateTimeFormat("ru-RU", {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -34,6 +36,8 @@ function formatBytes(bytes: number) {
 }
 
 export function BuildScreenshotsModal({ instance, onClose }: Props) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [screenshots, setScreenshots] = useState<ScreenshotItem[]>([]);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [selectedDataUrl, setSelectedDataUrl] = useState("");
@@ -136,7 +140,7 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
           className="bce-hdr-close screenshots-modal-close"
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={tr("common.close2")}
         >
           <svg
             width="11"
@@ -154,18 +158,18 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
         </button>
 
         <div className="screenshots-modal-head">
-          <span className="confirm-label">SCREENSHOTS</span>
+          <span className="confirm-label">{tr("buildScreenshots.screenshots")}</span>
           <h2 className="screenshots-modal-name">{instance.name}</h2>
         </div>
 
         {error && <div className="screenshots-error">{error}</div>}
 
         {loading ? (
-          <div className="screenshots-empty">LOADING SCREENSHOTS...</div>
+          <div className="screenshots-empty">{tr("buildScreenshots.loadingScreenshots")}</div>
         ) : screenshots.length === 0 ? (
           <div className="screenshots-empty">
-            <strong>NO SCREENSHOTS YET</strong>
-            <span>They will appear here after Minecraft saves them in this build.</span>
+            <strong>{tr("buildScreenshots.noScreenshotsYet")}</strong>
+            <span>{tr("buildScreenshots.theyWillAppearHere")}</span>
           </div>
         ) : (
           <div className="screenshots-layout">
@@ -176,15 +180,13 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
               {screenshots.map((item) => (
                 <button
                   key={item.fileName}
-                  className={`screenshot-row${
-                    item.fileName === selectedFileName ? " active" : ""
-                  }`}
+                  className={`screenshot-row${item.fileName === selectedFileName ? " active" : ""}`}
                   type="button"
                   onClick={() => setSelectedFileName(item.fileName)}
                 >
                   <span className="screenshot-row-name">{item.fileName}</span>
                   <span className="screenshot-row-meta">
-                    {formatScreenshotDate(item.modifiedAt)}
+                    {formatScreenshotDate(item.modifiedAt, locale)}
                   </span>
                   <span className="screenshot-row-meta">{formatBytes(item.sizeBytes)}</span>
                 </button>
@@ -193,15 +195,19 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
 
             <div className="screenshots-preview">
               {previewLoading ? (
-                <div className="screenshots-preview-empty">LOADING IMAGE...</div>
+                <div className="screenshots-preview-empty">
+                  {tr("buildScreenshots.loadingImage")}
+                </div>
               ) : selectedDataUrl ? (
                 <img
                   src={selectedDataUrl}
-                  alt={selectedScreenshot?.fileName ?? "Screenshot"}
+                  alt={selectedScreenshot?.fileName ?? tr("buildScreenshots.screenshot")}
                   className="screenshots-preview-image"
                 />
               ) : (
-                <div className="screenshots-preview-empty">SELECT SCREENSHOT</div>
+                <div className="screenshots-preview-empty">
+                  {tr("buildScreenshots.selectScreenshot")}
+                </div>
               )}
             </div>
           </div>
@@ -209,13 +215,13 @@ export function BuildScreenshotsModal({ instance, onClose }: Props) {
 
         <div className="screenshots-actions">
           <button className="primary-action" type="button" onClick={openScreenshotsFolder}>
-            OPEN FOLDER
+            {tr("buildScreenshots.openFolder")}
           </button>
           <button className="ghost-action" type="button" onClick={refreshScreenshots}>
-            REFRESH
+            {tr("common.refresh")}
           </button>
           <button className="ghost-action" type="button" onClick={onClose}>
-            CLOSE
+            {tr("common.close")}
           </button>
         </div>
       </div>

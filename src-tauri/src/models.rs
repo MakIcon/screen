@@ -44,11 +44,21 @@ pub struct ManifestVersion {
     pub compliance_level: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InstanceSource {
+    #[default]
+    Official,
+    Imported,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceItem {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub source: InstanceSource,
     #[serde(default)]
     pub pinned: bool,
     pub version: String,
@@ -1424,8 +1434,26 @@ pub struct ImportInstanceResult {
 #[cfg(test)]
 mod loader_schema_tests {
     use super::{
-        InstanceExportData, LauncherSettings, MascotSettings, MineflayerBotPluginSettings,
+        InstanceExportData, InstanceItem, InstanceSource, LauncherSettings, MascotSettings,
+        MineflayerBotPluginSettings,
     };
+
+    #[test]
+    fn instance_source_defaults_for_legacy_builds_and_persists_imported_builds() {
+        let legacy = serde_json::json!({
+            "id": "inst-test", "name": "Legacy build", "version": "1.21.1",
+            "loader": "Vanilla", "status": "READY", "ram": 4,
+            "lastPlayed": "NEVER", "createdAt": "0", "gameDir": "minecraft"
+        });
+        let mut instance: InstanceItem = serde_json::from_value(legacy).unwrap();
+        assert_eq!(instance.source, InstanceSource::Official);
+
+        instance.source = InstanceSource::Imported;
+        let saved = serde_json::to_value(instance).unwrap();
+        assert_eq!(saved["source"], "imported");
+        let restored: InstanceItem = serde_json::from_value(saved).unwrap();
+        assert_eq!(restored.source, InstanceSource::Imported);
+    }
 
     #[test]
     fn reads_legacy_fabric_loader_version_and_writes_loader_version() {

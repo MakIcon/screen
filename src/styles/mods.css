@@ -136,6 +136,7 @@
 /* ── Modrinth card ── */
 
 .mod-card.modrinth-card {
+  container: catalog-card / inline-size;
   border: 1px solid var(--line);
   background: var(--bg-card-strong);
   padding: 18px 24px 14px 24px;
@@ -508,7 +509,8 @@
 
 .modrinth-card .mod-card-head {
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  gap: 12px;
 }
 
 .modrinth-card .mod-card-project {
@@ -516,7 +518,7 @@
   align-items: center;
   gap: 13px;
   min-width: 0;
-  flex: 1 1 190px;
+  flex: 1 1 0;
 }
 
 .modrinth-card .mod-title-row {
@@ -535,11 +537,27 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   max-width: 100%;
   margin-inline-start: auto;
-  gap: 8px;
+  gap: 6px;
+}
+
+.mod-card-actions .catalog-action {
+  white-space: nowrap;
+}
+
+/* Stack the header deliberately only when the card is too narrow for a
+   readable title alongside both translated actions. */
+@container catalog-card (max-width: 340px) {
+  .modrinth-card .mod-card-head {
+    flex-wrap: wrap;
+  }
+
+  .modrinth-card .mod-card-project {
+    flex-basis: 100%;
+  }
 }
 
 .modrinth-project-icon {

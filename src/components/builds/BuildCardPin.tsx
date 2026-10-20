@@ -8,6 +8,7 @@ import {
   type BuildCardAppearance,
   type BuildCardPinAnchor,
 } from "./BuildCardSettingsPopup";
+import { useTranslation } from "../../i18n/locale";
 
 export function PinIcon({ className = "" }: { className?: string }) {
   return (
@@ -34,6 +35,7 @@ export function BuildCardPin({
   selected = false,
   onAnchorChange,
 }: Props) {
+  const tr = useTranslation();
   const pinRef = useRef<HTMLSpanElement>(null);
   const [card, setCard] = useState<HTMLElement | null>(null);
   const [capturedAnchor, setCapturedAnchor] = useState<BuildCardPinAnchor | null>(null);
@@ -84,8 +86,8 @@ export function BuildCardPin({
       data-card-move-id={movable ? BUILD_CARD_PIN_ELEMENT_ID : undefined}
       tabIndex={movable ? 0 : undefined}
       style={style}
-      data-tooltip={movable ? undefined : "Закреплённая сборка"}
-      aria-label="Закреплённая сборка"
+      data-tooltip={movable ? undefined : tr("buildCardPin.pinnedBuild")}
+      aria-label={tr("buildCardPin.pinnedBuild")}
     >
       <PinIcon />
       {movable && selected && (

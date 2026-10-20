@@ -19,13 +19,11 @@ export type PluginSettingsProps = {
 export type PluginDefinition = {
   id: PluginId;
   title: string;
-  tag: string;
   mark?: string;
   icon?: {
     src: string;
     alt: string;
   };
-  description: string;
   optionalExtensionId?: OptionalExtensionId;
   getEnabled: (plugins: LauncherPluginsSettings) => boolean;
   getStatus: (plugins: LauncherPluginsSettings) => string;

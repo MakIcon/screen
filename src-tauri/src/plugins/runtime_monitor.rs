@@ -43,12 +43,16 @@ pub async fn get_runtime_monitor_activity(
     pids: Vec<u32>,
     blue_map_state: State<'_, BlueMapState>,
     obs_telemetry_state: State<'_, ObsTelemetryState>,
-) -> Result<RuntimeMonitorActivity, String> {
-    Ok(RuntimeMonitorActivity {
-        blue_map: blue_map::current_status(&blue_map_state)?,
-        obs_telemetry: obs_telemetry::current_status(&obs_telemetry_state)?,
-        processes: process_statuses(pids),
-    })
+) -> Result<RuntimeMonitorActivity, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        Ok(RuntimeMonitorActivity {
+            blue_map: blue_map::current_status(&blue_map_state)?,
+            obs_telemetry: obs_telemetry::current_status(&obs_telemetry_state)?,
+            processes: process_statuses(pids),
+        })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 fn process_statuses(pids: Vec<u32>) -> Vec<RuntimeProcessStatus> {
@@ -66,17 +70,21 @@ pub async fn get_runtime_monitor_snapshot(
     mineflayer_state: State<'_, MineflayerBotState>,
     blue_map_state: State<'_, BlueMapState>,
     obs_telemetry_state: State<'_, ObsTelemetryState>,
-) -> Result<RuntimeMonitorSnapshot, String> {
-    let mineflayer_bot = mineflayer_bot::current_status(&mineflayer_state)?;
-    let blue_map = blue_map::current_status(&blue_map_state)?;
-    let obs_telemetry = obs_telemetry::current_status(&obs_telemetry_state)?;
-    let processes = process_statuses(pids);
+) -> Result<RuntimeMonitorSnapshot, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mineflayer_bot = mineflayer_bot::current_status(&mineflayer_state)?;
+        let blue_map = blue_map::current_status(&blue_map_state)?;
+        let obs_telemetry = obs_telemetry::current_status(&obs_telemetry_state)?;
+        let processes = process_statuses(pids);
 
-    Ok(RuntimeMonitorSnapshot {
-        mineflayer_bot,
-        blue_map,
-        obs_telemetry,
-        processes,
-        optional_extensions: optional_extensions::statuses(),
-    })
+        Ok(RuntimeMonitorSnapshot {
+            mineflayer_bot,
+            blue_map,
+            obs_telemetry,
+            processes,
+            optional_extensions: optional_extensions::statuses(),
+        })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }

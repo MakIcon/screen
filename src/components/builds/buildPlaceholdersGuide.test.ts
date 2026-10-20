@@ -13,7 +13,7 @@ describe("placeholder guide catalogue", () => {
     );
     for (const placeholder of AVAILABLE_PLACEHOLDERS) {
       expect(getPlaceholderGuideDescription(placeholder)).toMatch(/[а-яё]/i);
-      expect(PLACEHOLDER_GUIDE_GROUPS.map((group) => group.id)).toContain(placeholder.group);
+      expect(PLACEHOLDER_GUIDE_GROUPS).toContain(placeholder.group);
     }
   });
 

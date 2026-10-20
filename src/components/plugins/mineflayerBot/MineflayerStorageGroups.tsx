@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from "react";
+import { useLocale, useTranslation } from "../../../i18n/locale";
+import { localizeCatalog, localizeStorageFilter } from "./catalogLocalization";
 import { invoke } from "@tauri-apps/api/core";
 import { ExpandablePanel } from "../../layout/ExpandablePanel";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
@@ -37,6 +39,8 @@ export function MineflayerStorageGroups({
   refresh,
   onDeposit,
 }: Props) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState<Record<string, string>>({});
   const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
@@ -48,7 +52,8 @@ export function MineflayerStorageGroups({
   latest.current = groups;
   const change = useRef(onChange);
   change.current = onChange;
-  const options = useMemo(() => storageCatalog(catalog), [catalog]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const options = useMemo(() => storageCatalog(localizeCatalog(catalog)), [catalog, locale]);
   const production = connected ? status?.inventory?.production : null;
   const scan = production?.storageScan;
   const scanning = scan?.state === "running";
@@ -71,7 +76,9 @@ export function MineflayerStorageGroups({
       ...latest.current,
       {
         id,
-        name: chests.length ? "Общий склад" : "Новая группа",
+        name: chests.length
+          ? tr("bot.storageGroups.sharedStorage")
+          : tr("bot.storageGroups.newGroup"),
         enabled: true,
         filters: ["#all"],
         chests,
@@ -85,14 +92,17 @@ export function MineflayerStorageGroups({
     const group = latest.current.find((entry) => entry.id === id);
     if (!group) return;
     if (group.chests.some((entry) => storagePositionKey(entry) === storagePositionKey(point))) {
-      setFeedback("Этот сундук уже добавлен в группу.");
+      setFeedback(tr("bot.storageGroups.thisChestIsAlready"));
       return;
     }
-    if (group.chests.length >= 32) throw new Error("В группу можно добавить до 32 сундуков");
+    if (group.chests.length >= 32) throw new Error(tr("bot.storageGroups.aGroupCanHold"));
     patch(id, { chests: [...group.chests, point] });
     setCoordinates((current) => ({ ...current, [id]: "" }));
     setFeedback(
-      `Сундук ${formatBlockCoordinates(point)} добавлен в «${group.name || "Новая группа"}».`,
+      tr("bot.storageGroups.chestAddedTo", {
+        chest: formatBlockCoordinates(point),
+        group: group.name || tr("bot.storageGroups.newGroup"),
+      }),
     );
   }
   async function capture(id: string) {
@@ -104,7 +114,7 @@ export function MineflayerStorageGroups({
       await invoke("send_mineflayer_bot_chat", { message: "stash pick", command: true });
       const updated = await invoke<MineflayerBotStatus>("get_mineflayer_bot_status");
       const point = updated.gathering?.selection?.storagePick;
-      if (!point) throw new Error("Не удалось получить выбранный сундук. Повторите выбор.");
+      if (!point) throw new Error(tr("bot.storageGroups.couldNotGetThe"));
       addChest(id, point);
       await refresh();
     } catch (failure) {
@@ -121,7 +131,7 @@ export function MineflayerStorageGroups({
     try {
       await invoke("configure_mineflayer_bot_storage", { groups: latest.current });
       await refresh();
-      setFeedback("Группы применены к боту. Он будет раскладывать добычу по выбранным ресурсам.");
+      setFeedback(tr("bot.storageGroups.groupsAppliedToThe"));
     } catch (failure) {
       setError(toErrorMessage(failure));
     } finally {
@@ -140,9 +150,7 @@ export function MineflayerStorageGroups({
         command: true,
       });
       await refresh();
-      setFeedback(
-        "Бот проверяет содержимое сундуков. Найденные назначения сохранятся автоматически.",
-      );
+      setFeedback(tr("bot.storageGroups.theBotIsChecking"));
     } catch (failure) {
       setError(toErrorMessage(failure));
     } finally {
@@ -166,35 +174,36 @@ export function MineflayerStorageGroups({
           : [...group.filters.filter((value) => value !== "#all"), token];
     patch(group.id, {
       filters: next,
-      ...(group.name === "Новая группа" ? { name: label(token) } : {}),
+      ...(group.name === "Новая группа" || group.name === "New group"
+        ? { name: label(token) }
+        : {}),
     });
   }
   return (
-    <ExpandablePanel title="СУНДУКИ И СОРТИРОВКА" icon={<span className="mineflayer-chest-icon" />}>
+    <ExpandablePanel
+      title={tr("bot.storageGroups.chestsAndSorting")}
+      icon={<span className="mineflayer-chest-icon" />}
+    >
       <div className="mineflayer-storage">
         <div className="mineflayer-storage-toolbar">
           <div>
-            <strong>СКЛАД ДОБЫЧИ</strong>
+            <strong>{tr("bot.storageGroups.lootStorage")}</strong>
             <span>
-              Групп: {groups.length} · {storageChestCount(total)}
+              {tr("bot.storageGroups.groups")}: {groups.length} · {storageChestCount(total)}
             </span>
           </div>
           <button type="button" disabled={pending || groups.length >= 32} onClick={() => create()}>
-            <span aria-hidden="true">＋</span> ДОБАВИТЬ ГРУППУ
+            <span aria-hidden="true">＋</span> {tr("bot.storageGroups.addGroup")}
           </button>
         </div>
         <div className="mineflayer-storage-scan">
-          <strong>АВТОСКАНИРОВАНИЕ СУНДУКОВ</strong>
-          <p>
-            Бот найдёт сундуки, бочки и шалкеры, подойдёт к ним и определит назначение по
-            содержимому. Из пустых выделит больше места под массовые блоки и мусор, отдельный склад
-            — под ценности. Настроенные группы сохраняются.
-          </p>
+          <strong>{tr("bot.storageGroups.autoScanChests")}</strong>
+          <p>{tr("bot.storageGroups.theBotFindsChests")}</p>
           <div className="mineflayer-bot-grid">
             <label className="mineflayer-bot-field">
-              <span>РАДИУС ВОКРУГ БОТА · БЛОКОВ</span>
+              <span>{tr("bot.storageGroups.radiusAroundTheBot")}</span>
               <CustomNumberInput
-                ariaLabel="Радиус сканирования сундуков"
+                ariaLabel={tr("bot.storageGroups.chestScanRadius")}
                 background="transparent"
                 min={4}
                 max={64}
@@ -209,30 +218,35 @@ export function MineflayerStorageGroups({
               disabled={pending || !connected}
               onClick={() => void scanChests()}
             >
-              {busy === "scan" || scanning ? "СКАНИРУЮ…" : "СКАНИРОВАТЬ И РАСПРЕДЕЛИТЬ"}
+              {busy === "scan" || scanning
+                ? tr("bot.storageGroups.scanning")
+                : tr("bot.storageGroups.scanAndAssign")}
             </button>
           </div>
-          <small>
-            Двойной сундук считается одним хранилищем. За проход проверяется до 64 контейнеров.
-            Назначение определяет дальнейшую выгрузку добычи; содержимое сундуков остаётся на месте.
-          </small>
+          <small>{tr("bot.storageGroups.aDoubleChestCounts")}</small>
           {scan && (
             <>
               <p role="status" aria-live="polite">
                 {scanning
-                  ? `Проверено ${scan.records.length}/${scan.total}. ${production?.message || ""}`
+                  ? `${tr("bot.storageGroups.checked")} ${scan.records.length}/${scan.total}. ${production?.message || ""}`
                   : scan.state === "complete"
-                    ? `Сканирование завершено: найдено ${scan.total}, добавлено ${scan.added}.`
+                    ? tr("bot.storageGroups.scanCompleteFoundAdded", {
+                        total: scan.total,
+                        added: scan.added,
+                      })
                     : scan.state === "cancelled"
-                      ? "Сканирование остановлено. Группы сохранены."
-                      : "Сканирование не завершилось; проверьте журнал бота."}
+                      ? tr("bot.storageGroups.scanStoppedGroupsWere")
+                      : tr("bot.storageGroups.theScanDidNot")}
               </p>
               {scanning && (
                 <button type="button" disabled={!connected} onClick={() => void stopScan()}>
-                  ОСТАНОВИТЬ СКАНИРОВАНИЕ
+                  {tr("bot.storageGroups.stopScan")}
                 </button>
               )}
-              <div className="mineflayer-storage-scan-results" aria-label="Найденные сундуки">
+              <div
+                className="mineflayer-storage-scan-results"
+                aria-label={tr("bot.storageGroups.chestsFound")}
+              >
                 {scan.records.map((record) => (
                   <div
                     key={storagePositionKey(record.position)}
@@ -240,20 +254,20 @@ export function MineflayerStorageGroups({
                   >
                     <strong>
                       {record.label}
-                      {record.configured ? " · уже настроен" : ""}
+                      {record.configured ? ` · ${tr("bot.storageGroups.alreadyConfigured")}` : ""}
                     </strong>
                     <span>
                       {formatBlockCoordinates(record.position)} ·{" "}
                       {record.positions.length === 2
-                        ? "Двойной сундук"
+                        ? tr("bot.storageGroups.doubleChest")
                         : record.name === "barrel"
-                          ? "Бочка"
-                          : "Контейнер"}{" "}
-                      · {record.distance} бл.
+                          ? tr("bot.storageGroups.barrel")
+                          : tr("bot.storageGroups.container")}{" "}
+                      · {tr("units.blocksShort", { value: record.distance })}
                     </span>
                     <small>
                       {record.error ||
-                        `Свободно слотов: ${record.freeSlots}/${record.totalSlots}${
+                        `${tr("bot.storageGroups.freeSlots")}: ${record.freeSlots}/${record.totalSlots}${
                           record.contents?.length
                             ? ` · ${record.contents
                                 .slice(0, 3)
@@ -278,19 +292,16 @@ export function MineflayerStorageGroups({
             <span className="mineflayer-storage-empty-icon" aria-hidden="true">
               <span className="mineflayer-chest-icon" />
             </span>
-            <strong>Для каждого ресурса — свой склад</strong>
-            <p>
-              Создайте группу, выберите, что в неё складывать, и добавьте один или несколько
-              сундуков.
-            </p>
+            <strong>{tr("bot.storageGroups.aSeparateStorageFor")}</strong>
+            <p>{tr("bot.storageGroups.createAGroupChoose")}</p>
             <div className="mineflayer-storage-examples">
-              <span>Древесина → 3 сундука</span>
-              <span>Алмазы → 1 сундук</span>
-              <span>Камень → 2 сундука</span>
+              <span>{tr("bot.storageGroups.wood3Chests")}</span>
+              <span>{tr("bot.storageGroups.diamonds1Chest")}</span>
+              <span>{tr("bot.storageGroups.stone2Chests")}</span>
             </div>
             {legacy && (
               <button type="button" disabled={pending} onClick={() => create([legacy])}>
-                ДОБАВИТЬ ВЫБРАННЫЙ СУНДУК · {formatBlockCoordinates(legacy)}
+                {tr("bot.storageGroups.addSelectedChest")} · {formatBlockCoordinates(legacy)}
               </button>
             )}
           </div>
@@ -321,13 +332,16 @@ export function MineflayerStorageGroups({
                       )}
                     </span>
                     <span className="mineflayer-storage-group-title">
-                      <strong>{group.name || "Новая группа"}</strong>
-                      <small>{group.filters.map(label).join(" · ") || "Выберите ресурсы"}</small>
+                      <strong>{group.name || tr("bot.storageGroups.newGroup")}</strong>
+                      <small>
+                        {group.filters.map(label).join(" · ") ||
+                          tr("bot.storageGroups.chooseResources")}
+                      </small>
                     </span>
                     <span className={`mineflayer-storage-count${!ready ? " is-empty" : ""}`}>
                       {group.chests.length
                         ? storageChestCount(group.chests.length)
-                        : "Нет сундуков"}
+                        : tr("bot.storageGroups.noChests")}
                     </span>
                     <span className="mineflayer-storage-chevron" aria-hidden="true">
                       {open ? "−" : "+"}
@@ -337,22 +351,22 @@ export function MineflayerStorageGroups({
                     type="button"
                     className={`mineflayer-storage-enable${group.enabled ? " is-enabled" : ""}`}
                     disabled={pending}
-                    aria-label={`${group.enabled ? "Выключить" : "Включить"} группу ${group.name}`}
+                    aria-label={`${group.enabled ? tr("bot.storageGroups.disableGroup") : tr("bot.storageGroups.enableGroup")} ${group.name}`}
                     aria-pressed={group.enabled}
                     onClick={() => patch(group.id, { enabled: !group.enabled })}
                   >
                     <span />
-                    {group.enabled ? "ВКЛ" : "ВЫКЛ"}
+                    {group.enabled ? tr("common.onCaps") : tr("common.offCaps")}
                   </button>
                 </div>
                 {open && (
                   <div className="mineflayer-storage-group-body">
                     <label className="mineflayer-bot-field">
-                      <span>НАЗВАНИЕ ГРУППЫ</span>
+                      <span>{tr("bot.storageGroups.groupName")}</span>
                       <input
                         value={group.name}
                         maxLength={64}
-                        placeholder="Например, древесина на базе"
+                        placeholder={tr("bot.storageGroups.forExampleWoodAt")}
                         disabled={pending}
                         onChange={(event) => patch(group.id, { name: event.target.value })}
                       />
@@ -360,34 +374,39 @@ export function MineflayerStorageGroups({
                     <div
                       className="mineflayer-storage-presets"
                       role="group"
-                      aria-label="Группы ресурсов"
+                      aria-label={tr("bot.storageGroups.resourceGroups")}
                     >
-                      {STORAGE_FILTERS.filter((filter) => !filter.material).map((filter) => (
-                        <button
-                          type="button"
-                          key={filter.name}
-                          disabled={pending}
-                          aria-pressed={group.filters.includes(filter.name)}
-                          className={group.filters.includes(filter.name) ? "active" : ""}
-                          onClick={() => preset(group, filter.name)}
-                        >
-                          {filter.displayName}
-                        </button>
-                      ))}
+                      {STORAGE_FILTERS.filter((filter) => !filter.material)
+                        .map(localizeStorageFilter)
+                        .map((filter) => (
+                          <button
+                            type="button"
+                            key={filter.name}
+                            disabled={pending}
+                            aria-pressed={group.filters.includes(filter.name)}
+                            className={group.filters.includes(filter.name) ? "active" : ""}
+                            onClick={() => preset(group, filter.name)}
+                          >
+                            {filter.displayName}
+                          </button>
+                        ))}
                     </div>
                     <MinecraftSearchField
-                      label="ЧТО СКЛАДЫВАТЬ"
+                      label={tr("bot.storageGroups.whatToStore")}
                       value={filterDraft[group.id] ?? group.filters.join(", ")}
                       catalog={options}
                       scope="items"
                       multiple
                       disabled={pending}
                       sections={[
-                        { id: "storage", label: "Категории склада" },
-                        { id: "resources", label: "Ресурсы по материалу" },
-                        { id: "item", label: "Предметы и блоки" },
+                        { id: "storage", label: tr("bot.storageGroups.storageCategories") },
+                        {
+                          id: "resources",
+                          label: tr("bot.storageGroups.resourcesByMaterial"),
+                        },
+                        { id: "item", label: tr("bot.storageGroups.itemsAndBlocks") },
                       ]}
-                      placeholder="Предмет, блок или несколько ресурсов"
+                      placeholder={tr("bot.storageGroups.anItemABlock")}
                       onChange={(value) => {
                         const tokens = minecraftSelectedNames(value);
                         if (
@@ -409,7 +428,7 @@ export function MineflayerStorageGroups({
                           <button
                             type="button"
                             disabled={pending}
-                            aria-label={`Убрать ресурс ${label(token)}`}
+                            aria-label={`${tr("bot.storageGroups.removeResource")} ${label(token)}`}
                             onClick={() =>
                               patch(group.id, {
                                 filters: group.filters.filter((value) => value !== token),
@@ -422,8 +441,8 @@ export function MineflayerStorageGroups({
                       ))}
                     </div>
                     <div className="mineflayer-storage-chests-head">
-                      <strong>СУНДУКИ В ГРУППЕ</strong>
-                      <span>Заполняются по порядку</span>
+                      <strong>{tr("bot.storageGroups.chestsInGroup")}</strong>
+                      <span>{tr("bot.storageGroups.filledInOrder")}</span>
                     </div>
                     <ol className="mineflayer-storage-chests">
                       {group.chests.map((chest, chestIndex) => {
@@ -441,17 +460,17 @@ export function MineflayerStorageGroups({
                                 data-tooltip={progress.message}
                               >
                                 {progress.state === "ok"
-                                  ? "Выгружено"
+                                  ? tr("bot.storageGroups.unloaded")
                                   : progress.state === "full"
-                                    ? "Заполнен"
-                                    : "Недоступен"}
+                                    ? tr("bot.storageGroups.full")
+                                    : tr("bot.storageGroups.unavailable")}
                               </span>
                             )}
                             <div className="mineflayer-storage-row-actions">
                               <button
                                 type="button"
                                 disabled={pending || chestIndex === 0}
-                                aria-label={`Поднять сундук ${chestIndex + 1}`}
+                                aria-label={`${tr("bot.storageGroups.moveChestUp")} ${chestIndex + 1}`}
                                 onClick={() => {
                                   const chests = [...group.chests];
                                   [chests[chestIndex], chests[chestIndex - 1]] = [
@@ -466,7 +485,7 @@ export function MineflayerStorageGroups({
                               <button
                                 type="button"
                                 disabled={pending || chestIndex === group.chests.length - 1}
-                                aria-label={`Опустить сундук ${chestIndex + 1}`}
+                                aria-label={`${tr("bot.storageGroups.moveChestDown")} ${chestIndex + 1}`}
                                 onClick={() => {
                                   const chests = [...group.chests];
                                   [chests[chestIndex], chests[chestIndex + 1]] = [
@@ -482,7 +501,7 @@ export function MineflayerStorageGroups({
                                 type="button"
                                 className="is-danger"
                                 disabled={pending}
-                                aria-label={`Удалить сундук ${formatBlockCoordinates(chest)}`}
+                                aria-label={`${tr("bot.storageGroups.removeChest")} ${formatBlockCoordinates(chest)}`}
                                 onClick={() =>
                                   patch(group.id, {
                                     chests: group.chests.filter(
@@ -500,7 +519,7 @@ export function MineflayerStorageGroups({
                     </ol>
                     {!group.chests.length && (
                       <p className="mineflayer-storage-chests-empty">
-                        Добавьте сундук под прицелом или введите координаты ниже.
+                        {tr("bot.storageGroups.addTheChestYou")}
                       </p>
                     )}
                     <div className="mineflayer-storage-add-chest">
@@ -509,11 +528,13 @@ export function MineflayerStorageGroups({
                         disabled={pending || !connected || group.chests.length >= 32}
                         onClick={() => void capture(group.id)}
                       >
-                        {busy === group.id ? "ВЫБИРАЮ…" : "⊕ ПОД ПРИЦЕЛОМ"}
+                        {busy === group.id
+                          ? tr("bot.storageGroups.selecting")
+                          : tr("bot.storageGroups.aimedAt")}
                       </button>
                       <div>
                         <input
-                          aria-label={`Координаты сундука для ${group.name}`}
+                          aria-label={`${tr("bot.storageGroups.chestCoordinatesFor")} ${group.name}`}
                           placeholder="X Y Z"
                           value={coordinates[group.id] || ""}
                           disabled={pending}
@@ -533,7 +554,7 @@ export function MineflayerStorageGroups({
                         <button
                           type="button"
                           disabled={pending || !point || group.chests.length >= 32}
-                          aria-label="Добавить сундук по координатам"
+                          aria-label={tr("bot.storageGroups.addAChestBy")}
                           onClick={() => {
                             if (point) addChest(group.id, point);
                           }}
@@ -543,12 +564,14 @@ export function MineflayerStorageGroups({
                       </div>
                     </div>
                     <div className="mineflayer-storage-group-footer">
-                      <span>Приоритет группы · {index + 1}</span>
+                      <span>
+                        {tr("bot.storageGroups.groupPriority")} · {index + 1}
+                      </span>
                       <div className="mineflayer-storage-row-actions">
                         <button
                           type="button"
                           disabled={pending || index === 0}
-                          aria-label={`Поднять группу ${group.name}`}
+                          aria-label={`${tr("bot.storageGroups.moveGroupUp")} ${group.name}`}
                           onClick={() => onChange(moveStorageGroup(groups, group.id, -1))}
                         >
                           ↑
@@ -556,7 +579,7 @@ export function MineflayerStorageGroups({
                         <button
                           type="button"
                           disabled={pending || index === groups.length - 1}
-                          aria-label={`Опустить группу ${group.name}`}
+                          aria-label={`${tr("bot.storageGroups.moveGroupDown")} ${group.name}`}
                           onClick={() => onChange(moveStorageGroup(groups, group.id, 1))}
                         >
                           ↓
@@ -567,7 +590,7 @@ export function MineflayerStorageGroups({
                           disabled={pending}
                           onClick={() => onChange(groups.filter((entry) => entry.id !== group.id))}
                         >
-                          УДАЛИТЬ ГРУППУ
+                          {tr("bot.storageGroups.deleteGroup")}
                         </button>
                       </div>
                     </div>
@@ -577,27 +600,23 @@ export function MineflayerStorageGroups({
             );
           })}
         </div>
-        <p className="mineflayer-bot-combat-note">
-          Группы сохраняются в лаунчере. Конкретные ресурсы проверяются сверху вниз; «Всё остальное»
-          используется для оставшейся добычи. Если сундук заполнен или недоступен, бот пробует
-          следующий в той же группе. Инструменты и еду оставляет у себя.
-        </p>
+        <p className="mineflayer-bot-combat-note">{tr("bot.storageGroups.groupsAreSavedIn")}</p>
         <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
           <button type="button" disabled={pending || !connected} onClick={() => void apply()}>
-            {busy === "apply" ? "ПРИМЕНЯЮ…" : "ПРИМЕНИТЬ К БОТУ"}
+            {busy === "apply"
+              ? tr("bot.storageGroups.applying")
+              : tr("bot.storageGroups.applyToBot")}
           </button>
           <button
             type="button"
             disabled={pending || !connected || (!total && !legacy)}
             onClick={onDeposit}
           >
-            ВЫГРУЗИТЬ ДОБЫЧУ
+            {tr("bot.storageGroups.unloadLoot")}
           </button>
         </div>
         <p className="mineflayer-bot-combat-note">
-          Перед началом и продолжением работы, а также выгрузкой группы применяются автоматически.
-          Для выбора под прицелом наведитесь на контейнер в пределах 6 блоков; бот должен видеть
-          вас. Подходят сундуки, бочки и шалкеровые ящики.
+          {tr("bot.storageGroups.groupsAreAppliedAutomatically")}
         </p>
         {(feedback || error) && (
           <p

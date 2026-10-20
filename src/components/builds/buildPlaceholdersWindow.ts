@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { translate } from "../../i18n/locale";
 
 export const BUILD_PLACEHOLDERS_WINDOW_LABEL = "build-placeholders";
 let openingWindow: Promise<void> | null = null;
@@ -20,7 +21,7 @@ export async function openBuildPlaceholdersWindow(): Promise<void> {
       BUILD_PLACEHOLDERS_WINDOW_LABEL,
       "popup,width=892,height=848",
     );
-    if (!popup) throw new Error("Не удалось открыть окно плейсхолдеров.");
+    if (!popup) throw new Error(translate("buildPlaceholders.openFailed"));
     popup.focus();
     return;
   }
@@ -31,7 +32,7 @@ export async function openBuildPlaceholdersWindow(): Promise<void> {
     if (!guide) {
       guide = new WebviewWindow(BUILD_PLACEHOLDERS_WINDOW_LABEL, {
         url: getBuildPlaceholdersWindowUrl(),
-        title: "ScreenLauncher — Плейсхолдеры",
+        title: translate("buildPlaceholders.windowTitle"),
         width: 892,
         height: 848,
         minWidth: 600,

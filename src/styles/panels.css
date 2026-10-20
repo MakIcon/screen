@@ -707,6 +707,7 @@
 }
 
 .instance-details-card {
+  container: build-details / inline-size;
   display: flex;
   flex-direction: column;
   max-height: 100%;

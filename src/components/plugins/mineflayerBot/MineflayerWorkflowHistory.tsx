@@ -1,13 +1,24 @@
 import { useState } from "react";
 import type { MineflayerWorkflowStep } from "../../../types";
 import type { WorkflowHistoryEntry } from "./workflowHistory";
-import { WORKFLOW_ACTIONS } from "./workflowDraft";
+import { workflowActionLabel } from "./workflowDraft";
+import { translate, useLocale, useTranslation, intlLocale } from "../../../i18n/locale";
 import { MineflayerActionIcon } from "./MineflayerActionIcon";
 
-const states = { complete: "Выполнен", stopped: "Остановлен", error: "Прерван" };
+const stateLabel = (phase: "complete" | "stopped" | "error") =>
+  ({
+    complete: translate("bot.workflowHistory.completed"),
+    stopped: translate("bot.workflowHistory.stopped"),
+    error: translate("bot.workflowHistory.interrupted"),
+  })[phase];
 function duration(entry: WorkflowHistoryEntry) {
   const seconds = Math.max(1, Math.round((entry.finishedAt - entry.startedAt) / 1000));
-  return seconds < 60 ? `${seconds} сек.` : `${Math.floor(seconds / 60)} мин. ${seconds % 60} сек.`;
+  return seconds < 60
+    ? translate("duration.seconds", { seconds })
+    : translate("duration.minutesSeconds", {
+        minutes: Math.floor(seconds / 60),
+        seconds: seconds % 60,
+      });
 }
 
 export function MineflayerWorkflowHistory({
@@ -21,34 +32,40 @@ export function MineflayerWorkflowHistory({
   detail: (step: MineflayerWorkflowStep) => string;
   onRepeat: (entry: WorkflowHistoryEntry) => void;
 }) {
+  const locale = useLocale();
+  const tr = useTranslation();
   const [view, setView] = useState<"complete" | "all">("complete");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const complete = entries.filter((entry) => entry.phase === "complete");
   const shown = view === "complete" ? complete : entries;
   return (
-    <section className="mf-history" aria-label="История сценариев">
+    <section className="mf-history" aria-label={tr("bot.workflowHistory.workflowHistory")}>
       <header className="mf-history-header">
         <h3 aria-live="polite">
-          ЗАВЕРШЁННЫЕ СЦЕНАРИИ <span>{complete.length}</span>
+          {tr("bot.workflowHistory.completedWorkflows")} <span>{complete.length}</span>
         </h3>
-        <div className="mf-history-filters" role="group" aria-label="Показать сценарии">
+        <div
+          className="mf-history-filters"
+          role="group"
+          aria-label={tr("bot.workflowHistory.showWorkflows")}
+        >
           <button
             type="button"
             aria-pressed={view === "complete"}
             onClick={() => setView("complete")}
           >
-            Выполненные
+            {tr("bot.workflowHistory.completed2")}
           </button>
           <button type="button" aria-pressed={view === "all"} onClick={() => setView("all")}>
-            Все запуски
+            {tr("bot.workflowHistory.allRuns")}
           </button>
         </div>
       </header>
       {!shown.length ? (
         <p className="mf-history-empty">
           {view === "complete"
-            ? "Выполненные сценарии появятся здесь — с шагами и временем работы."
-            : "Здесь сохраняются результаты запусков сценариев."}
+            ? tr("bot.workflowHistory.completedWorkflowsWillAppear")
+            : tr("bot.workflowHistory.workflowRunResultsAre")}
         </p>
       ) : (
         <div className="mf-history-list">
@@ -76,12 +93,13 @@ export function MineflayerWorkflowHistory({
                   <span className="mf-history-copy">
                     <strong>{entry.name}</strong>
                     <span>
-                      {states[entry.phase]} · {completed} / {entry.steps.length} шагов ·{" "}
-                      {duration(entry)}
+                      {stateLabel(entry.phase)} ·{" "}
+                      {tr("bot.workflowHistory.progress", { completed, count: entry.steps.length })}{" "}
+                      · {duration(entry)}
                     </span>
                   </span>
                   <time dateTime={new Date(entry.finishedAt).toISOString()}>
-                    {new Date(entry.finishedAt).toLocaleString("ru-RU", {
+                    {new Date(entry.finishedAt).toLocaleString(intlLocale(locale), {
                       day: "numeric",
                       month: "short",
                       hour: "2-digit",
@@ -106,21 +124,19 @@ export function MineflayerWorkflowHistory({
                             className={`mf-history-step-state is-${step.state}`}
                             aria-label={
                               step.state === "complete"
-                                ? "Выполнен"
+                                ? tr("bot.workflowHistory.completed")
                                 : step.state === "error"
-                                  ? "Ошибка"
+                                  ? tr("bot.workflowHistory.error")
                                   : step.state === "stopped"
-                                    ? "Остановлен"
-                                    : "Не выполнен"
+                                    ? tr("bot.workflowHistory.stopped")
+                                    : tr("bot.workflowHistory.notRun")
                             }
                           >
                             {step.state === "complete" ? "✓" : index + 1}
                           </span>
                           <MineflayerActionIcon kind={step.kind} />
                           <span>
-                            <strong>
-                              {WORKFLOW_ACTIONS.find((action) => action.kind === step.kind)?.label}
-                            </strong>
+                            <strong>{workflowActionLabel(step.kind, tr)}</strong>
                             <small>{detail(step)}</small>
                           </span>
                         </li>
@@ -136,9 +152,9 @@ export function MineflayerWorkflowHistory({
                         className="mf-button"
                         disabled={locked}
                         onClick={() => onRepeat(entry)}
-                        data-tooltip="Загрузить шаги в редактор сценария"
+                        data-tooltip={tr("bot.workflowHistory.loadTheStepsInto")}
                       >
-                        Повторить сценарий
+                        {tr("bot.workflowHistory.repeatWorkflow")}
                       </button>
                     </footer>
                   </div>

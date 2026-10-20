@@ -997,87 +997,119 @@ async fn prepare_bluemap_settings(
 }
 
 #[tauri::command]
-pub async fn get_bluemap_status(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, String> {
-    current_status(&state)
+pub async fn get_bluemap_status(
+    state: State<'_, BlueMapState>,
+) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async { current_status(&state) }.await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn stop_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, String> {
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+pub async fn stop_bluemap(
+    state: State<'_, BlueMapState>,
+) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
 
-    if let Some(mut child) = runtime.child.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+        if let Some(mut child) = runtime.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        runtime.pid = None;
+        runtime.state = "stopped".to_string();
+        push_log(&mut runtime, "stop requested from launcher");
+        Ok(snapshot_status(&runtime))
     }
-
-    runtime.pid = None;
-    runtime.state = "stopped".to_string();
-    push_log(&mut runtime, "stop requested from launcher");
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn prepare_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, String> {
-    let mut settings = read_settings().await?;
-    let prepared = prepare_bluemap_settings(&mut settings).await?;
+pub async fn prepare_bluemap(
+    state: State<'_, BlueMapState>,
+) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mut settings = read_settings().await?;
+        let prepared = prepare_bluemap_settings(&mut settings).await?;
 
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-    refresh_child_state(&mut runtime);
-    runtime.url = prepared.map_url;
-    runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
-    runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
-    runtime.world_path = prepared
-        .world_path
-        .as_ref()
-        .map(|path| path.to_string_lossy().to_string());
-    runtime.last_error = None;
-    push_log(
-        &mut runtime,
-        if prepared.downloaded {
-            "downloaded BlueMap CLI jar"
-        } else {
-            "found local BlueMap CLI jar"
-        },
-    );
-    push_log(&mut runtime, format!("java: {}", prepared.java_bin));
-    if prepared.generated_config {
-        push_log(&mut runtime, "generated BlueMap config files");
-    }
-    if let Some((requested_port, selected_port)) = prepared.port_remapped {
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+        refresh_child_state(&mut runtime);
+        runtime.url = prepared.map_url;
+        runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
+        runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
+        runtime.world_path = prepared
+            .world_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string());
+        runtime.last_error = None;
         push_log(
             &mut runtime,
-            format!("port {requested_port} was busy; using {selected_port}"),
+            if prepared.downloaded {
+                "downloaded BlueMap CLI jar"
+            } else {
+                "found local BlueMap CLI jar"
+            },
         );
+        push_log(&mut runtime, format!("java: {}", prepared.java_bin));
+        if prepared.generated_config {
+            push_log(&mut runtime, "generated BlueMap config files");
+        }
+        if let Some((requested_port, selected_port)) = prepared.port_remapped {
+            push_log(
+                &mut runtime,
+                format!("port {requested_port} was busy; using {selected_port}"),
+            );
+        }
+        if let Some(world_path) = runtime.world_path.clone() {
+            push_log(&mut runtime, format!("world: {world_path}"));
+        } else {
+            push_log(&mut runtime, "no Minecraft world found for map config");
+        }
+        Ok(snapshot_status(&runtime))
     }
-    if let Some(world_path) = runtime.world_path.clone() {
-        push_log(&mut runtime, format!("world: {world_path}"));
-    } else {
-        push_log(&mut runtime, "no Minecraft world found for map config");
-    }
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn start_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, String> {
-    let mut settings = read_settings().await?;
-    let mut plugin = settings.blue_map_plugin().clone();
+pub async fn start_bluemap(
+    state: State<'_, BlueMapState>,
+) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let mut settings = read_settings().await?;
+        let mut plugin = settings.blue_map_plugin().clone();
 
-    if !plugin.enabled {
-        return Err("BlueMap extension is disabled".to_string());
-    }
+        if !plugin.enabled {
+            return Err("BlueMap extension is disabled".to_string());
+        }
 
-    if plugin.render_on_start && !plugin.update_on_start {
-        settings.blue_map_plugin_mut().update_on_start = true;
-        plugin.update_on_start = true;
-    }
+        if plugin.render_on_start && !plugin.update_on_start {
+            settings.blue_map_plugin_mut().update_on_start = true;
+            plugin.update_on_start = true;
+        }
 
-    {
+        {
+            let mut runtime = state
+                .inner
+                .lock()
+                .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+            refresh_child_state(&mut runtime);
+            if runtime.child.is_some() {
+                return Err("BlueMap is already running".to_string());
+            }
+        }
+
+        let prepared = prepare_bluemap_settings(&mut settings).await?;
+        let render_on_start = plugin.render_on_start;
+        let update_on_start = plugin.update_on_start;
+
         let mut runtime = state
             .inner
             .lock()
@@ -1086,178 +1118,178 @@ pub async fn start_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStat
         if runtime.child.is_some() {
             return Err("BlueMap is already running".to_string());
         }
-    }
+        runtime.state = if render_on_start {
+            "rendering".to_string()
+        } else if update_on_start {
+            "updating".to_string()
+        } else {
+            "starting".to_string()
+        };
+        runtime.url = prepared.map_url.clone();
+        runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
+        runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
+        runtime.world_path = prepared
+            .world_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string());
+        runtime.last_error = None;
+        runtime.logs.clear();
+        if prepared.downloaded {
+            push_log(&mut runtime, "downloaded BlueMap CLI jar");
+        } else {
+            push_log(&mut runtime, "found local BlueMap CLI jar");
+        }
+        push_log(&mut runtime, format!("java: {}", prepared.java_bin));
+        if prepared.generated_config {
+            push_log(&mut runtime, "generated BlueMap config files");
+        }
+        if let Some((requested_port, selected_port)) = prepared.port_remapped {
+            push_log(
+                &mut runtime,
+                format!("port {requested_port} was busy; using {selected_port}"),
+            );
+        }
+        if let Some(world_path) = runtime.world_path.clone() {
+            push_log(&mut runtime, format!("world: {world_path}"));
+        } else {
+            push_log(&mut runtime, "no Minecraft world found for map config");
+        }
+        if render_on_start {
+            push_log(&mut runtime, "background render enabled");
+        }
+        if update_on_start {
+            push_log(&mut runtime, "live update enabled");
+        }
+        push_log(&mut runtime, "webserver will start immediately");
+        drop(runtime);
 
-    let prepared = prepare_bluemap_settings(&mut settings).await?;
-    let render_on_start = plugin.render_on_start;
-    let update_on_start = plugin.update_on_start;
+        let mut command = Command::new(&prepared.java_bin);
+        command.arg("-jar").arg(&prepared.cli_jar);
+        if render_on_start {
+            command.arg("-r");
+        }
+        if update_on_start {
+            command.arg("-u");
+        }
+        command
+            .arg("-w")
+            .current_dir(&prepared.working_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-    refresh_child_state(&mut runtime);
-    if runtime.child.is_some() {
-        return Err("BlueMap is already running".to_string());
-    }
-    runtime.state = if render_on_start {
-        "rendering".to_string()
-    } else if update_on_start {
-        "updating".to_string()
-    } else {
-        "starting".to_string()
-    };
-    runtime.url = prepared.map_url.clone();
-    runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
-    runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
-    runtime.world_path = prepared
-        .world_path
-        .as_ref()
-        .map(|path| path.to_string_lossy().to_string());
-    runtime.last_error = None;
-    runtime.logs.clear();
-    if prepared.downloaded {
-        push_log(&mut runtime, "downloaded BlueMap CLI jar");
-    } else {
-        push_log(&mut runtime, "found local BlueMap CLI jar");
-    }
-    push_log(&mut runtime, format!("java: {}", prepared.java_bin));
-    if prepared.generated_config {
-        push_log(&mut runtime, "generated BlueMap config files");
-    }
-    if let Some((requested_port, selected_port)) = prepared.port_remapped {
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = command.spawn().map_err(|error| {
+            format!("start BlueMap CLI error: {error}. Install Java and retry.")
+        })?;
+
+        if let Some(stdout) = child.stdout.take() {
+            spawn_log_reader(stdout, state.inner.clone(), "stdout");
+        }
+        if let Some(stderr) = child.stderr.take() {
+            spawn_log_reader(stderr, state.inner.clone(), "stderr");
+        }
+
+        let mut runtime = state
+            .inner
+            .lock()
+            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+        runtime.child = Some(child);
+        runtime.pid = runtime.child.as_ref().map(|child| child.id());
+        runtime.state = if render_on_start {
+            "rendering".to_string()
+        } else if update_on_start {
+            "updating".to_string()
+        } else {
+            "starting".to_string()
+        };
+        runtime.url = prepared.map_url;
+        runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
+        runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
+        runtime.world_path = prepared
+            .world_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string());
+        runtime.last_error = None;
         push_log(
             &mut runtime,
-            format!("port {requested_port} was busy; using {selected_port}"),
+            format!(
+                "start requested from launcher: {}",
+                [
+                    "-jar",
+                    "<bluemap>",
+                    if render_on_start { "-r" } else { "" },
+                    if update_on_start { "-u" } else { "" },
+                    "-w"
+                ]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+            ),
         );
-    }
-    if let Some(world_path) = runtime.world_path.clone() {
-        push_log(&mut runtime, format!("world: {world_path}"));
-    } else {
-        push_log(&mut runtime, "no Minecraft world found for map config");
-    }
-    if render_on_start {
-        push_log(&mut runtime, "background render enabled");
-    }
-    if update_on_start {
-        push_log(&mut runtime, "live update enabled");
-    }
-    push_log(&mut runtime, "webserver will start immediately");
-    drop(runtime);
 
-    let mut command = Command::new(&prepared.java_bin);
-    command.arg("-jar").arg(&prepared.cli_jar);
-    if render_on_start {
-        command.arg("-r");
+        Ok(snapshot_status(&runtime))
     }
-    if update_on_start {
-        command.arg("-u");
-    }
-    command
-        .arg("-w")
-        .current_dir(&prepared.working_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("start BlueMap CLI error: {error}. Install Java and retry."))?;
-
-    if let Some(stdout) = child.stdout.take() {
-        spawn_log_reader(stdout, state.inner.clone(), "stdout");
-    }
-    if let Some(stderr) = child.stderr.take() {
-        spawn_log_reader(stderr, state.inner.clone(), "stderr");
-    }
-
-    let mut runtime = state
-        .inner
-        .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-    runtime.child = Some(child);
-    runtime.pid = runtime.child.as_ref().map(|child| child.id());
-    runtime.state = if render_on_start {
-        "rendering".to_string()
-    } else if update_on_start {
-        "updating".to_string()
-    } else {
-        "starting".to_string()
-    };
-    runtime.url = prepared.map_url;
-    runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
-    runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
-    runtime.world_path = prepared
-        .world_path
-        .as_ref()
-        .map(|path| path.to_string_lossy().to_string());
-    runtime.last_error = None;
-    push_log(
-        &mut runtime,
-        format!(
-            "start requested from launcher: {}",
-            [
-                "-jar",
-                "<bluemap>",
-                if render_on_start { "-r" } else { "" },
-                if update_on_start { "-u" } else { "" },
-                "-w"
-            ]
-            .into_iter()
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ")
-        ),
-    );
-
-    Ok(snapshot_status(&runtime))
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }
 
 #[tauri::command]
-pub async fn open_bluemap_browser() -> Result<ActionResult, String> {
-    let settings = read_settings().await?;
-    let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
+pub async fn open_bluemap_browser() -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
 
-    tauri_plugin_opener::open_url(&url, None::<&str>)
-        .map_err(|error| format!("open browser error: {error}"))?;
+        tauri_plugin_opener::open_url(&url, None::<&str>)
+            .map_err(|error| format!("open browser error: {error}"))?;
 
-    Ok(ActionResult {
-        ok: true,
-        message: "BlueMap opened in browser".to_string(),
-        pid: None,
-    })
-}
-
-#[tauri::command]
-pub async fn open_bluemap_window(app: AppHandle) -> Result<ActionResult, String> {
-    let settings = read_settings().await?;
-    let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
-    if let Some(existing) = app.get_webview_window("bluemap-map") {
-        let _ = existing.set_focus();
-        return Ok(ActionResult {
+        Ok(ActionResult {
             ok: true,
-            message: "BlueMap window focused".to_string(),
+            message: "BlueMap opened in browser".to_string(),
             pid: None,
-        });
+        })
     }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
+}
 
-    let parsed = Url::parse(&url).map_err(|error| format!("BlueMap URL parse error: {error}"))?;
-    let window = WebviewWindowBuilder::new(&app, "bluemap-map", WebviewUrl::External(parsed))
-        .title("BlueMap")
-        .inner_size(1180.0, 760.0)
-        .min_inner_size(720.0, 480.0)
-        .center()
-        .resizable(true)
-        .build()
-        .map_err(|error| format!("open BlueMap window error: {error}"))?;
+#[tauri::command]
+pub async fn open_bluemap_window(
+    app: AppHandle,
+) -> Result<ActionResult, crate::commands::errors::CommandError> {
+    let result: Result<_, String> = async {
+        let settings = read_settings().await?;
+        let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
+        if let Some(existing) = app.get_webview_window("bluemap-map") {
+            let _ = existing.set_focus();
+            return Ok(ActionResult {
+                ok: true,
+                message: "BlueMap window focused".to_string(),
+                pid: None,
+            });
+        }
 
-    let _ = window.set_focus();
+        let parsed =
+            Url::parse(&url).map_err(|error| format!("BlueMap URL parse error: {error}"))?;
+        let window = WebviewWindowBuilder::new(&app, "bluemap-map", WebviewUrl::External(parsed))
+            .title("BlueMap")
+            .inner_size(1180.0, 760.0)
+            .min_inner_size(720.0, 480.0)
+            .center()
+            .resizable(true)
+            .build()
+            .map_err(|error| format!("open BlueMap window error: {error}"))?;
 
-    Ok(ActionResult {
-        ok: true,
-        message: "BlueMap opened in launcher window".to_string(),
-        pid: None,
-    })
+        let _ = window.set_focus();
+
+        Ok(ActionResult {
+            ok: true,
+            message: "BlueMap opened in launcher window".to_string(),
+            pid: None,
+        })
+    }
+    .await;
+    result.map_err(crate::commands::errors::CommandError::from)
 }

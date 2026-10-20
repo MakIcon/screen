@@ -18,7 +18,8 @@ import {
   hasWindowSettingsData,
 } from "../utils/instanceTransfer";
 import { logger } from "../utils/logger";
-import { toErrorMessage } from "../utils/errors";
+import { isCancelledError, toErrorMessage } from "../utils/errors";
+import { translate } from "../i18n/locale";
 
 const DEFAULT_OPTIONS: InstanceTransferOptions = {
   name: true,
@@ -161,8 +162,8 @@ export function useInstanceTransfers({
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
     setExportInstanceId(null);
-    pushToast("info", `${exportData.name} экспортирована (.slbuild)`, {
-      title: "Build exported",
+    pushToast("info", translate("instanceTransfers.exportedSlbuild", { name: exportData.name }), {
+      title: translate("toast.buildExported"),
     });
   };
 
@@ -171,9 +172,9 @@ export function useInstanceTransfers({
     setExportError("");
     try {
       const selectedPath = await saveDialog({
-        title: "Export Modrinth pack",
+        title: translate("dialog.exportModrinthPack"),
         defaultPath: `${exportSlug(exportOptions.name ? exportData.name : "build")}.mrpack`,
-        filters: [{ name: "Modrinth pack", extensions: ["mrpack"] }],
+        filters: [{ name: translate("ui.modrinthPack"), extensions: ["mrpack"] }],
       });
       if (!selectedPath) return;
       const outputPath = selectedPath.toLowerCase().endsWith(".mrpack")
@@ -196,12 +197,12 @@ export function useInstanceTransfers({
         },
       });
       setExportInstanceId(null);
-      pushToast("info", `${exportData.name} экспортирована (.mrpack)`, {
-        title: "Build exported",
+      pushToast("info", translate("instanceTransfers.exportedMrpack", { name: exportData.name }), {
+        title: translate("toast.buildExported"),
       });
     } catch (caught) {
       setExportError(toErrorMessage(caught));
-      pushToast("error", toErrorMessage(caught), { title: "Export failed" });
+      pushToast("error", toErrorMessage(caught), { title: translate("toast.exportFailed") });
     } finally {
       setExportWorking(false);
     }
@@ -249,10 +250,12 @@ export function useInstanceTransfers({
   const handleImportBuild = async () => {
     try {
       const selectedPath = await openDialog({
-        title: "Import build",
+        title: translate("dialog.importBuild"),
         multiple: false,
         directory: false,
-        filters: [{ name: "Launcher builds", extensions: ["slbuild", "mrpack", "json"] }],
+        filters: [
+          { name: translate("ui.launcherBuilds"), extensions: ["slbuild", "mrpack", "json"] },
+        ],
       });
       if (!selectedPath || Array.isArray(selectedPath)) return;
       await importBuildFromPath(selectedPath);
@@ -303,7 +306,9 @@ export function useInstanceTransfers({
         setImportResult({ ...importResult, items: nextItems });
         await refreshInstances(importResult.instance.id);
         if (nextItems.every((entry) => entry.success)) {
-          pushToast("info", "Все компоненты сборки установлены", { title: "Import complete" });
+          pushToast("info", translate("instanceTransfers.allBuildComponentsAre"), {
+            title: translate("toast.importComplete"),
+          });
         }
         return;
       }
@@ -331,7 +336,11 @@ export function useInstanceTransfers({
         setImportModalOpen(false);
         setImportData(null);
         setImportSourcePath("");
-        pushToast("info", `Сборка ${newInstance.name} импортирована`, { title: "Build imported" });
+        pushToast(
+          "info",
+          translate("instanceTransfers.buildImported", { name: newInstance.name }),
+          { title: translate("toast.buildImported") },
+        );
       } else {
         const result = await invoke<ImportInstanceResult>("import_instance", {
           operationId,
@@ -360,26 +369,28 @@ export function useInstanceTransfers({
         pushToast(
           failedCount ? "warning" : "info",
           failedCount
-            ? `Сборка создана, не удалось установить ${failedCount} компонентов`
-            : `Сборка ${result.instance.name} импортирована`,
+            ? translate("instanceTransfers.buildCreatedButComponents", { failedCount })
+            : translate("instanceTransfers.buildImported", { name: result.instance.name }),
           {
-            title: failedCount ? "Import incomplete" : "Build imported",
+            title: translate(failedCount ? "toast.importIncomplete" : "toast.buildImported"),
           },
         );
       }
     } catch (caught) {
-      if (toErrorMessage(caught).includes("IMPORT_CANCELLED")) {
+      if (isCancelledError(caught)) {
         await refreshInstances();
         setImportError(
           importResult
-            ? "Повторная установка отменена. Уже установленные файлы сохранены."
-            : "Импорт отменён. Можно изменить параметры и повторить.",
+            ? translate("instanceTransfers.reinstallCancelledFilesThat")
+            : translate("instanceTransfers.importCancelledYouCan"),
         );
-        pushToast("info", "Импорт сборки отменён", { title: "Import cancelled" });
+        pushToast("info", translate("instanceTransfers.buildImportCancelled"), {
+          title: translate("toast.importCancelled"),
+        });
         return;
       }
       setImportError(toErrorMessage(caught));
-      pushToast("error", toErrorMessage(caught), { title: "Import failed" });
+      pushToast("error", toErrorMessage(caught), { title: translate("toast.importFailed") });
     } finally {
       importOperationIdRef.current = null;
       setImportProgress(null);
