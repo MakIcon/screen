@@ -14,8 +14,9 @@ export function languageWaveDelay(
   return Math.round(progress(top, height) * 520 + progress(left, width) * 160);
 }
 
-const DURATION = 500;
-const REVEAL_AT = 110;
+const DURATION = 460;
+// Switch language while the turning face is hidden between its two halves.
+const REVEAL_AT = 210;
 
 /** Keep React's text node in place, and never overwrite a later render or a removed node. */
 export function deferLanguageText(node: Pick<Text, "data" | "isConnected">, previous: string) {
@@ -179,9 +180,6 @@ export function installLanguageTransition(): () => void {
         }
 
         const viewport = { width: window.innerWidth, height: window.innerHeight };
-        const accent =
-          getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() ||
-          "#c2410c";
         const candidates = new Set([...pending].map((change) => change.element));
         const groups = new Map<HTMLElement, PendingChange[]>();
         for (const change of pending) {
@@ -226,36 +224,35 @@ export function installLanguageTransition(): () => void {
             reveal();
           }, delay + REVEAL_AT);
           timers.add(timer);
-          const shadow = style.textShadow === "none" ? "" : `${style.textShadow}, `;
-          const lift = style.translate === "none";
+          const turn = style.rotate === "none";
+          const blurred = `${style.filter === "none" ? "" : `${style.filter} `}blur(2px)`;
           const animation = element.animate(
             [
               {
                 offset: 0,
-                easing: "cubic-bezier(0.22, 0.7, 0.3, 1)",
-                color: style.color,
-                textShadow: style.textShadow,
-                ...(lift && { translate: "0 0" }),
+                easing: "cubic-bezier(0.55, 0, 0.85, 0.4)",
+                opacity: style.opacity,
+                filter: style.filter,
+                ...(turn && { rotate: "x 0deg" }),
               },
               {
-                offset: REVEAL_AT / DURATION,
-                easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-                color: `color-mix(in srgb, ${style.color} 75%, ${accent})`,
-                textShadow: `${shadow}0 0 12px color-mix(in srgb, ${accent} 45%, transparent)`,
-                ...(lift && { translate: "0 -4px" }),
+                offset: 0.4,
+                opacity: 0,
+                filter: blurred,
+                ...(turn && { rotate: "x -78deg" }),
               },
               {
-                offset: 0.65,
-                easing: "ease-out",
-                color: style.color,
-                textShadow: `${shadow}0 0 5px color-mix(in srgb, ${accent} 18%, transparent)`,
-                ...(lift && { translate: "0 1px" }),
+                offset: 0.5,
+                easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+                opacity: 0,
+                filter: blurred,
+                ...(turn && { rotate: "x 78deg" }),
               },
               {
                 offset: 1,
-                color: style.color,
-                textShadow: style.textShadow,
-                ...(lift && { translate: "0 0" }),
+                opacity: style.opacity,
+                filter: style.filter,
+                ...(turn && { rotate: "x 0deg" }),
               },
             ],
             {
