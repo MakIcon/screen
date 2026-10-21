@@ -90,6 +90,10 @@ import type {
   UpdateInstancePayload,
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
+import { CommandPalette } from "./components/command-palette/CommandPalette";
+import { createLauncherCommands } from "./components/command-palette/launcherCommands";
+import type { SettingsCommandTarget } from "./components/command-palette/settingsCommands";
+import type { PaletteProject } from "./components/command-palette/paletteCatalog";
 import { LauncherGuide } from "./components/guide/LauncherGuide";
 import { LAUNCHER_GUIDE_STEPS, localizeGuideSteps } from "./components/guide/launcherGuideSteps";
 import { useToasts } from "./hooks/useToasts";
@@ -196,6 +200,13 @@ export default function App() {
   const [previewCloseEffect, setPreviewCloseEffect] = useState<CloseAnimationId | null>(null);
   const [drawingCursor, setDrawingCursor] = useState<DrawingCursorPayload | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [settingsCommandTarget, setSettingsCommandTarget] = useState<SettingsCommandTarget | null>(
+    null,
+  );
+  const [catalogProjectRequest, setCatalogProjectRequest] = useState<PaletteProject | null>(null);
+  useEffect(() => {
+    setCatalogProjectRequest((current) => (current && current.kind !== activeTab ? null : current));
+  }, [activeTab]);
   const [tabAnimating, setTabAnimating] = useState(false);
 
   const [manifest, setManifest] = useState<MinecraftManifest | null>(null);
@@ -477,6 +488,7 @@ export default function App() {
   const win = useMemo(() => getCurrentWindow(), []);
   const closeStartedRef = useRef(false);
   const galleryRootRef = useRef<HTMLDivElement | null>(null);
+  const sessionSummaryRef = useRef<HTMLDivElement | null>(null);
   const openingPreviewRef = useRef<Animation | null>(null);
   const closePreviewTimerRef = useRef(0);
   const revealFrameRef = useRef(0);
@@ -1059,6 +1071,15 @@ export default function App() {
     setBusyMessage,
     pushToast,
   });
+
+  const paletteCatalogTargets = useMemo(
+    () => ({
+      mods: selectedModTarget,
+      resourcepacks: selectedInstance,
+      shaders: selectedInstance,
+    }),
+    [selectedModTarget, selectedInstance],
+  );
 
   const availableManifestVersions = useMemo(() => {
     if (!manifest) return [];
@@ -2262,6 +2283,10 @@ export default function App() {
         return (
           <ModrinthContentTab
             kind="mods"
+            requestedProject={
+              catalogProjectRequest?.kind === "mods" ? catalogProjectRequest.project : null
+            }
+            onCloseProject={() => setCatalogProjectRequest(null)}
             controller={modsContent}
             targetInstances={moddedInstances}
             selectedTarget={selectedModTarget}
@@ -2280,6 +2305,10 @@ export default function App() {
         return (
           <ModrinthContentTab
             kind="resourcepacks"
+            requestedProject={
+              catalogProjectRequest?.kind === "resourcepacks" ? catalogProjectRequest.project : null
+            }
+            onCloseProject={() => setCatalogProjectRequest(null)}
             controller={resourcePacksContent}
             targetInstances={instances}
             selectedTarget={selectedInstance}
@@ -2298,6 +2327,10 @@ export default function App() {
         return (
           <ModrinthContentTab
             kind="shaders"
+            requestedProject={
+              catalogProjectRequest?.kind === "shaders" ? catalogProjectRequest.project : null
+            }
+            onCloseProject={() => setCatalogProjectRequest(null)}
             controller={shadersContent}
             targetInstances={instances}
             selectedTarget={selectedInstance}
@@ -2315,6 +2348,7 @@ export default function App() {
       case "settings":
         return (
           <SettingsTab
+            commandTarget={settingsCommandTarget}
             systemRamGb={systemRamGb}
             settingsRamDraft={settingsRamDraft}
             resolve={resolve}
@@ -2388,6 +2422,62 @@ export default function App() {
     if (step.tab) setActiveTab(step.tab);
   }, []);
 
+  const quickCommands = createLauncherCommands({
+    tr,
+    locale,
+    instances: mascotVisibleInstances,
+    selectedName: selectedInstance?.name,
+    navigate: setTabAnimated,
+    selectBuild: (id) => {
+      setSelectedInstanceId(id);
+      setTabAnimated("overview");
+    },
+    revealSetting: (id) => {
+      setSettingsCommandTarget((current) => ({ id, sequence: (current?.sequence ?? 0) + 1 }));
+      setTabAnimated("settings");
+    },
+    actions: {
+      create: () => {
+        setCreateMode(true);
+        setTabAnimated("instances");
+      },
+      import: !working && !importWorking ? () => void handleImportBuild() : undefined,
+      trash: () => void openTrash(),
+      accounts: () => setShowMsModal(true),
+      appearance: handleCustomizeAppearance,
+      updates: !launcherUpdater.checking ? () => void checkLauncherUpdates() : undefined,
+      guide: startLauncherGuide,
+      ...(selectedInstance
+        ? {
+            "open-folder": () => void handleOpenFolder(),
+            launch:
+              !working && !isRunning(selectedInstance.id)
+                ? () => void handleLaunchSelected()
+                : undefined,
+            stop:
+              !working && isRunning(selectedInstance.id)
+                ? () => void handleStopGame(selectedInstance.id)
+                : undefined,
+            install:
+              !working && !isRunning(selectedInstance.id)
+                ? () => void handleInstallSelected()
+                : undefined,
+            export:
+              !working && !exportWorking
+                ? () => void handleExportInstance(selectedInstance.id)
+                : undefined,
+            "build-settings": advancedSettingsEnabled
+              ? () => openBuildCardSettings(selectedInstance.id)
+              : undefined,
+            logs: () => void openBuildLogs(selectedInstance.id),
+            screenshots: () => setScreenshotsInstanceId(selectedInstance.id),
+            stats: () => setStatsInstanceId(selectedInstance.id),
+            backups: () => setBackupsInstanceId(selectedInstance.id),
+          }
+        : {}),
+    },
+  });
+
   const mainUI = (
     <div className="ui-container" onWheel={onWheelTabs}>
       <div className="appearance-background appearance-background--launcher" />
@@ -2403,6 +2493,34 @@ export default function App() {
       >
         <div className="nav-brand">{tr("ui.brand")}</div>
         <div className="nav-controls">
+          <CommandPalette
+            commands={quickCommands}
+            disabled={firstLaunchGuideActive}
+            animationsEnabled={appearance.motion.enabled}
+            catalogTargets={paletteCatalogTargets}
+            sessionAnchor={sessionSummaryRef}
+            session={{ playerName: resolve("%player_name%"), buildName: resolve("%build_name%") }}
+            onSearchContent={(kind, query) => {
+              setCatalogProjectRequest(null);
+              ({
+                mods: modsContent,
+                resourcepacks: resourcePacksContent,
+                shaders: shadersContent,
+              })[kind].setSearch(query);
+              setTabAnimated(kind);
+            }}
+            onOpenProject={(kind, project) => {
+              const target = paletteCatalogTargets[kind];
+              if (target) setSelectedInstanceId(target.id);
+              ({
+                mods: modsContent,
+                resourcepacks: resourcePacksContent,
+                shaders: shadersContent,
+              })[kind].setSearch(project.title);
+              setCatalogProjectRequest({ kind, project });
+              setTabAnimated(kind);
+            }}
+          />
           <button
             onClick={startLauncherGuide}
             type="button"
@@ -2426,8 +2544,8 @@ export default function App() {
       <main className="gallery-content">
         <aside className="sidebar">
           <div className="sidebar-main">
-            <div className="sidebar-session-summary">
-              <div data-guide-target="player-summary">
+            <div ref={sessionSummaryRef} className="sidebar-session-summary">
+              <div className="sidebar-session-field" data-guide-target="player-summary">
                 <small>{tr("app.player")}</small>
                 <strong
                   data-tooltip={resolve("%player_name%")}
@@ -2437,7 +2555,7 @@ export default function App() {
                   {resolve("%player_name%")}
                 </strong>
               </div>
-              <div>
+              <div className="sidebar-session-field">
                 <small>{tr("common.buildCaps")}</small>
                 <strong
                   data-tooltip={resolve("%build_name%")}

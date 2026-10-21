@@ -156,29 +156,29 @@
   border-bottom: 1px solid var(--line);
 }
 
-.sidebar-session-summary > div {
+.sidebar-session-field {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.sidebar-session-summary small,
-.sidebar-session-summary strong {
+.sidebar-session-field > small,
+.sidebar-session-field > strong {
   overflow: hidden;
   display: block;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-session-summary small {
+.sidebar-session-field > small {
   color: var(--muted-soft);
   font-size: 7px;
   font-weight: 700;
   letter-spacing: 1px;
 }
 
-.sidebar-session-summary strong {
+.sidebar-session-field > strong {
   color: var(--ink);
   font-size: 9px;
   font-weight: 750;

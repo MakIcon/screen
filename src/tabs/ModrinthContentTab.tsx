@@ -4,7 +4,7 @@ import { CatalogProjectCard } from "../components/modrinth/CatalogProjectCard";
 import { CatalogSearchToolbar } from "../components/modrinth/CatalogSearchToolbar";
 import { ExportedItemIcon } from "../components/transfer/ExportedItemIcon";
 import type { ContentIconCandidate } from "../hooks/useContentIcons";
-import type { ExportedItem } from "../types";
+import type { ExportedItem, ModrinthProject } from "../types";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import type { ModrinthContentController, ModrinthContentKind } from "../hooks/useModrinthContent";
@@ -85,6 +85,8 @@ function contentPresentation(
 }
 
 type ModrinthContentTabProps = {
+  requestedProject?: ModrinthProject | null;
+  onCloseProject?: () => void;
   kind: ModrinthContentKind;
   controller: ModrinthContentController;
   targetInstances: InstanceItem[];
@@ -119,6 +121,8 @@ function TrashIcon() {
 }
 
 export function ModrinthContentTab({
+  requestedProject,
+  onCloseProject,
   kind,
   controller,
   targetInstances,
@@ -154,17 +158,30 @@ export function ModrinthContentTab({
     setDownloadPaused,
     cancelDownload,
   } = controller;
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectSelection, setProjectSelection] = useState<ModrinthProject | null>(null);
   const hiddenProjectIds = new Set(mascotHiddenProjectIds);
   const visibleItems = items.filter((item) => !hiddenProjectIds.has(item.projectId));
-  const selectedProject = items.find((item) => item.projectId === selectedProjectId) ?? null;
+  const selectedProjectSource =
+    items.find((item) => item.projectId === projectSelection?.projectId) ?? projectSelection;
+  const selectedProject = useMemo(
+    () =>
+      selectedProjectSource
+        ? {
+            ...selectedProjectSource,
+            installed: installedLoading
+              ? selectedProjectSource.installed
+              : installedItems.some((item) => item.projectId === selectedProjectSource.projectId),
+          }
+        : null,
+    [selectedProjectSource, installedLoading, installedItems],
+  );
   const visibleInstalledItems = installedItems.filter(
     (item) => !item.projectId || !hiddenProjectIds.has(item.projectId),
   );
 
   useEffect(() => {
-    setSelectedProjectId(null);
-  }, [kind, selectedTarget?.id]);
+    setProjectSelection(requestedProject ?? null);
+  }, [kind, selectedTarget?.id, requestedProject]);
 
   useEffect(() => {
     void requestLocalIcons(
@@ -256,7 +273,7 @@ export function ModrinthContentTab({
                         contentBusy={contentBusy}
                         installedCatalogMode={copy.installedCatalogMode}
                         downloadProgress={downloadProgress}
-                        onOpen={() => setSelectedProjectId(item.projectId)}
+                        onOpen={() => setProjectSelection(item)}
                         onInstall={() => void install(item.projectId)}
                         onUninstall={() => void uninstall(item.projectId)}
                         setDownloadPaused={setDownloadPaused}
@@ -406,7 +423,10 @@ export function ModrinthContentTab({
         project={selectedProject}
         target={selectedTarget}
         busy={busyProjectId !== null}
-        onClose={() => setSelectedProjectId(null)}
+        onClose={() => {
+          setProjectSelection(null);
+          onCloseProject?.();
+        }}
         onInstall={() => {
           if (selectedProject) void install(selectedProject.projectId);
         }}

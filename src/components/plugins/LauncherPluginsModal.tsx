@@ -23,6 +23,7 @@ import { pluginCopy } from "./pluginLocalization";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
+  initialPluginId?: PluginId;
   settings?: LauncherPluginsSettings | null;
   launcherNickname: string;
   launcherAccountType: string;
@@ -34,6 +35,7 @@ type LauncherPluginsModalProps = {
 };
 
 export function LauncherPluginsModal({
+  initialPluginId,
   settings,
   launcherNickname,
   launcherAccountType,
@@ -63,8 +65,11 @@ export function LauncherPluginsModal({
     message: string;
   } | null>(null);
   const [selectedPluginId, setSelectedPluginId] = useState<PluginId>(
-    standalone ? "mineflayerBot" : PLUGIN_DEFINITIONS[0].id,
+    standalone ? "mineflayerBot" : (initialPluginId ?? PLUGIN_DEFINITIONS[0].id),
   );
+  useEffect(() => {
+    if (initialPluginId && !standalone) setSelectedPluginId(initialPluginId);
+  }, [initialPluginId, standalone]);
   const selectedDefinition =
     PLUGIN_DEFINITIONS.find((definition) => definition.id === selectedPluginId) ??
     PLUGIN_DEFINITIONS[0];

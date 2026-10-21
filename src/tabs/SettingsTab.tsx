@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { SettingsCommandTarget } from "../components/command-palette/settingsCommands";
 import { SettingsChoiceSwitch } from "../components/settings/SettingsChoiceSwitch";
 import {
   APPEARANCE_CHOICES,
@@ -29,6 +30,7 @@ import type {
 } from "../types";
 
 interface SettingsTabProps {
+  commandTarget?: SettingsCommandTarget | null;
   systemRamGb: number;
   settingsRamDraft: number;
   resolve: (template: string) => string;
@@ -71,6 +73,7 @@ interface SettingsTabProps {
 }
 
 export function SettingsTab({
+  commandTarget,
   systemRamGb,
   settingsRamDraft,
   resolve,
@@ -115,6 +118,47 @@ export function SettingsTab({
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
   const [mascotSettingsOpen, setMascotSettingsOpen] = useState(false);
   const [mascotNameDraft, setMascotNameDraft] = useState(mascotSettings.name);
+  const sectionRef = useRef<HTMLElement>(null);
+  const requestedPlugin = PLUGIN_DEFINITIONS.find(
+    (definition) => commandTarget?.id === `plugin:${definition.id}`,
+  );
+
+  useEffect(() => {
+    if (!commandTarget) return;
+    if (commandTarget.id === "settings-extensions" || commandTarget.id.startsWith("plugin:")) {
+      setPluginsModalOpen(true);
+      return;
+    }
+    setPluginsModalOpen(false);
+    if (commandTarget.id.startsWith("settings-mascot-")) setMascotSettingsOpen(true);
+    let frame = 0;
+    let timer = 0;
+    let attempts = 0;
+    let highlighted: HTMLElement | null = null;
+    const reveal = () => {
+      const target = sectionRef.current?.querySelector<HTMLElement>(
+        `[data-guide-target="${commandTarget.id}"]`,
+      );
+      if (!target && attempts++ < 30) {
+        frame = window.requestAnimationFrame(reveal);
+        return;
+      }
+      if (!target) return;
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      target
+        .querySelector<HTMLElement>("input, button, select, [tabindex]")
+        ?.focus({ preventScroll: true });
+      target.classList.add("command-target-highlight");
+      highlighted = target;
+      timer = window.setTimeout(() => target.classList.remove("command-target-highlight"), 2400);
+    };
+    frame = window.requestAnimationFrame(reveal);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      highlighted?.classList.remove("command-target-highlight");
+    };
+  }, [commandTarget]);
 
   useEffect(() => {
     setMascotNameDraft(mascotSettings.name);
@@ -145,7 +189,7 @@ export function SettingsTab({
   };
 
   return (
-    <section className="launcher-panel">
+    <section ref={sectionRef} className="launcher-panel">
       <div className="panel-grid simple-two-col-fixed settings-panel-grid">
         <div className="panel-card settings-main-card" data-guide-target="settings-main">
           <CustomScrollArea className="settings-main-scroll">
@@ -307,7 +351,7 @@ export function SettingsTab({
                   mascotOffSwitch
                   guideTarget="settings-mascot"
                 >
-                  <label className="mascot-name-field">
+                  <label className="mascot-name-field" data-guide-target="settings-mascot-name">
                     <span>{tr("settings.mascotName")}</span>
                     <input
                       type="text"
@@ -330,6 +374,7 @@ export function SettingsTab({
 
                   <ElementToggle
                     title={tr("settings.showMascotName")}
+                    guideTarget="settings-mascot-show-name"
                     note={tr("settings.showTheMascotsName")}
                     enabled={mascotSettings.showName}
                     onToggle={() => updateMascotFlag("showName", !mascotSettings.showName)}
@@ -338,6 +383,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.rageMode")}
+                    guideTarget="settings-mascot-rage"
                     note={tr("settings.hardThrowsBuildUp")}
                     enabled={mascotSettings.rageEnabled}
                     onToggle={() => updateMascotFlag("rageEnabled", !mascotSettings.rageEnabled)}
@@ -346,6 +392,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.waterBowl")}
+                    guideTarget="settings-mascot-bowl"
                     note={tr("settings.showABowlThe")}
                     enabled={mascotSettings.bowlEnabled}
                     onToggle={() => updateMascotFlag("bowlEnabled", !mascotSettings.bowlEnabled)}
@@ -354,6 +401,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.autonomousMovement")}
+                    guideTarget="settings-mascot-movement"
                     note={tr("settings.allowTheMascotTo")}
                     enabled={mascotSettings.movementEnabled}
                     onToggle={() =>
@@ -364,6 +412,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.playWithControls")}
+                    guideTarget="settings-mascot-interactions"
                     note={tr("settings.jumpOntoButtonsFields")}
                     enabled={mascotSettings.interactionsEnabled}
                     onToggle={() =>
@@ -374,6 +423,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.carryUiElements")}
+                    guideTarget="settings-mascot-carry"
                     note={tr("settings.pickUpAndCarry")}
                     enabled={mascotSettings.carryElementsEnabled}
                     onToggle={() =>
@@ -384,6 +434,7 @@ export function SettingsTab({
                   />
                   <ElementToggle
                     title={tr("settings.scrollLists")}
+                    guideTarget="settings-mascot-scroll"
                     note={tr("settings.walkUpToLists")}
                     enabled={mascotSettings.scrollListsEnabled}
                     onToggle={() =>
@@ -449,6 +500,7 @@ export function SettingsTab({
 
       {pluginsModalOpen && (
         <LauncherPluginsModal
+          initialPluginId={requestedPlugin?.id}
           settings={pluginsSettings}
           launcherNickname={launcherNickname}
           launcherAccountType={launcherAccountType}
