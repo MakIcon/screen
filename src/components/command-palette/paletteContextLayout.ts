@@ -1,3 +1,5 @@
+import { getPaletteElasticConnector, type PaletteConnection } from "./paletteElasticMotion";
+
 type Rect = { left: number; top: number; width: number; height: number };
 
 export type PaletteContextLayout = {
@@ -6,11 +8,7 @@ export type PaletteContextLayout = {
   spotlight: Rect | null;
   connector: string | null;
   clipPath: string | undefined;
-  connection: {
-    start: { x: number; y: number };
-    end: { x: number; y: number };
-    edge: "left" | "top";
-  } | null;
+  connection: PaletteConnection | null;
 };
 
 export function getPaletteContextLayout(
@@ -52,7 +50,6 @@ export function getPaletteContextLayout(
   const spotlight = { left, top, width: right - left, height: bottom - top };
   const availableWidth = width - right - 32 - margin;
   let panel: Rect;
-  let connector: string;
   let connection: NonNullable<PaletteContextLayout["connection"]>;
   if (availableWidth >= 300 && height - top - margin >= 180) {
     const panelWidth = Math.min(640, availableWidth);
@@ -65,10 +62,6 @@ export function getPaletteContextLayout(
     };
     const sourceY = top + spotlight.height / 2;
     const targetY = Math.min(top + panel.height - 16, Math.max(top + 16, sourceY));
-    connector =
-      sourceY === targetY
-        ? `M ${right} ${sourceY} H ${panelLeft}`
-        : `M ${right} ${sourceY} H ${panelLeft - 16} V ${targetY} H ${panelLeft}`;
     connection = {
       start: { x: right, y: sourceY },
       end: { x: panelLeft, y: targetY },
@@ -81,7 +74,6 @@ export function getPaletteContextLayout(
       width: fallbackWidth,
       height: Math.min(560, height - bottom - 24 - margin),
     };
-    connector = `M ${left + spotlight.width / 2} ${bottom} V ${bottom + 12} H ${panel.left + 40} V ${panel.top}`;
     connection = {
       start: { x: left + spotlight.width / 2, y: bottom },
       end: { x: panel.left + 40, y: panel.top },
@@ -91,5 +83,12 @@ export function getPaletteContextLayout(
 
   // The scrim's background AND backdrop blur are clipped away from the real sidebar div.
   const clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${left}px ${top}px, ${left}px ${bottom}px, ${right}px ${bottom}px, ${right}px ${top}px, ${left}px ${top}px, 0 0)`;
-  return { viewport: { width, height }, panel, spotlight, connector, clipPath, connection };
+  return {
+    viewport: { width, height },
+    panel,
+    spotlight,
+    connector: getPaletteElasticConnector(connection).path,
+    clipPath,
+    connection,
+  };
 }

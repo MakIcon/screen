@@ -16,6 +16,7 @@ import type { PaletteCatalogTargets } from "./paletteCatalog";
 import { usePaletteCatalog } from "./usePaletteCatalog";
 import { getPaletteContextLayout, type PaletteContextLayout } from "./paletteContextLayout";
 import { usePalettePresence } from "./usePalettePresence";
+import { usePaletteElasticDrag } from "./usePaletteElasticDrag";
 import {
   filterPaletteCommands,
   isCommandPaletteShortcut,
@@ -81,6 +82,7 @@ export function CommandPalette({
   const open = presence.present;
   const togglePresence = presence.toggle;
   const [contextLayout, setContextLayout] = useState<PaletteContextLayout | null>(null);
+  usePaletteElasticDrag(dialogRef, contextLayout, presence.phase, presence.animated);
   const [query, setQuery] = useState("");
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const search = parsePaletteQuery(query);
@@ -122,12 +124,6 @@ export function CommandPalette({
     : undefined;
   const contentTarget = selectedContentKind ? catalogTargets[selectedContentKind] : null;
 
-  const show = () => {
-    if (presence.show()) {
-      setQuery("");
-      setActiveCommandId(null);
-    }
-  };
   const close = () => presence.close();
   const execute = (command: PaletteCommand) => {
     presence.close(command.run);
@@ -136,14 +132,27 @@ export function CommandPalette({
   useLayoutEffect(() => {
     if (!open) return;
     const anchor = sessionAnchor.current;
-    const measure = () =>
-      setContextLayout(
-        getPaletteContextLayout(
-          anchor?.getBoundingClientRect() ?? null,
-          window.innerWidth,
-          window.innerHeight,
-        ),
+    const measure = () => {
+      const next = getPaletteContextLayout(
+        anchor?.getBoundingClientRect() ?? null,
+        window.innerWidth,
+        window.innerHeight,
       );
+      // Scrolling the results also fires this listener; leave a live drag undisturbed.
+      setContextLayout((previous) =>
+        previous !== null &&
+        previous.clipPath === next.clipPath &&
+        previous.connector === next.connector &&
+        previous.viewport.width === next.viewport.width &&
+        previous.viewport.height === next.viewport.height &&
+        previous.panel.left === next.panel.left &&
+        previous.panel.top === next.panel.top &&
+        previous.panel.width === next.panel.width &&
+        previous.panel.height === next.panel.height
+          ? previous
+          : next,
+      );
+    };
     measure();
     const observer = new ResizeObserver(measure);
     if (anchor) {
@@ -218,21 +227,6 @@ export function CommandPalette({
 
   return (
     <>
-      <button
-        className="command-palette-trigger"
-        type="button"
-        disabled={disabled}
-        onClick={show}
-        onMouseDown={(event) => event.stopPropagation()}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={`${id}-dialog`}
-        aria-label={tr("commandPalette.open")}
-        title={tr("commandPalette.open")}
-      >
-        <CommandIcon icon="search" />
-        <kbd>{tr("commandPalette.shortcut")}</kbd>
-      </button>
       <dialog
         ref={dialogRef}
         id={`${id}-dialog`}
@@ -339,8 +333,7 @@ export function CommandPalette({
           </>
         )}
         <div
-          className="command-palette"
-          data-connection-edge={contextLayout?.connection?.edge ?? "top"}
+          className="command-palette-drag-shell"
           style={
             contextLayout
               ? {
@@ -355,122 +348,130 @@ export function CommandPalette({
               : undefined
           }
         >
-          <div className="command-palette-heading">
-            <span id={`${id}-title`}>{tr("commandPalette.title")}</span>
-            <kbd>{tr("commandPalette.shortcut")}</kbd>
-          </div>
-          {contentTarget && contentTarget.name !== session.buildName && (
-            <div className="command-palette-destination">
-              {tr("commandPalette.contentTarget", { name: contentTarget.name })}
-            </div>
-          )}
-          {!contextLayout?.spotlight && (
-            <div className="command-palette-context-inline">
-              <span>
-                <small>{tr("app.player")}</small>
-                <strong>{session.playerName}</strong>
-              </span>
-              <span>
-                <small>{tr("common.buildCaps")}</small>
-                <strong>{session.buildName}</strong>
-              </span>
-            </div>
-          )}
-          <div className="command-palette-search">
-            <CommandIcon icon="search" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActiveCommandId(null);
-              }}
-              placeholder={tr("commandPalette.placeholder")}
-              aria-label={tr("commandPalette.placeholder")}
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={open}
-              aria-controls={`${id}-results`}
-              aria-activedescendant={activeId}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <button
-              className="command-palette-close"
-              type="button"
-              onClick={close}
-              aria-label={tr("common.close")}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path
-                  d="m3 3 6 6m0-6-6 6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-          <CustomScrollArea
-            className="command-palette-scroll"
-            onWheel={(event) => event.stopPropagation()}
+          <div
+            className="command-palette"
+            data-connection-edge={contextLayout?.connection?.edge ?? "top"}
           >
-            <div
-              className="command-palette-results"
-              id={`${id}-results`}
-              role="listbox"
-              aria-label={tr("commandPalette.results")}
-              aria-busy={catalog.loading}
-            >
-              {results.map((command, index) => (
-                <button
-                  key={command.id}
-                  id={`${id}-option-${index}`}
-                  className="command-palette-result"
-                  style={
-                    { "--palette-row-delay": `${100 + Math.min(index, 6) * 14}ms` } as CSSProperties
-                  }
-                  type="button"
-                  role="option"
-                  aria-selected={index === selectedIndex}
-                  tabIndex={-1}
-                  onMouseMove={() => setActiveCommandId(command.id)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => execute(command)}
-                >
-                  <span className="command-palette-icon">
-                    {command.id.startsWith("project:") ? (
-                      <ModrinthProjectIcon iconUrl={command.imageUrl} title={command.label} />
-                    ) : (
-                      <CommandIcon icon={command.icon} />
-                    )}
-                  </span>
-                  <span className="command-palette-copy">
-                    <strong>{command.label}</strong>
-                    {command.description && <small>{command.description}</small>}
-                  </span>
-                  {command.category && (
-                    <em className="command-palette-category">{command.category}</em>
-                  )}
-                </button>
-              ))}
-              {results.length === 0 && (
-                <p className="command-palette-empty">{tr("commandPalette.empty")}</p>
-              )}
+            <div className="command-palette-heading" title={tr("commandPalette.drag")}>
+              <span id={`${id}-title`}>{tr("commandPalette.title")}</span>
+              <span className="command-palette-drag-grip" aria-hidden="true" />
+              <kbd>{tr("commandPalette.shortcut")}</kbd>
             </div>
-            {catalog.loading && (
-              <p className="command-palette-status" role="status">
-                {tr("commandPalette.loading")}
-              </p>
+            {contentTarget && contentTarget.name !== session.buildName && (
+              <div className="command-palette-destination">
+                {tr("commandPalette.contentTarget", { name: contentTarget.name })}
+              </div>
             )}
-            {catalog.failed.length > 0 && (
-              <p className="command-palette-status" role="status">
-                {tr("commandPalette.catalogError", {
-                  kinds: catalog.failed.map((kind) => tr(`commandPalette.${kind}`)).join(", "),
-                })}
-              </p>
+            {!contextLayout?.spotlight && (
+              <div className="command-palette-context-inline">
+                <span>
+                  <small>{tr("app.player")}</small>
+                  <strong>{session.playerName}</strong>
+                </span>
+                <span>
+                  <small>{tr("common.buildCaps")}</small>
+                  <strong>{session.buildName}</strong>
+                </span>
+              </div>
             )}
-          </CustomScrollArea>
+            <div className="command-palette-search">
+              <CommandIcon icon="search" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActiveCommandId(null);
+                }}
+                placeholder={tr("commandPalette.placeholder")}
+                aria-label={tr("commandPalette.placeholder")}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={open}
+                aria-controls={`${id}-results`}
+                aria-activedescendant={activeId}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                className="command-palette-close"
+                type="button"
+                onClick={close}
+                aria-label={tr("common.close")}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path
+                    d="m3 3 6 6m0-6-6 6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+            <CustomScrollArea
+              className="command-palette-scroll"
+              onWheel={(event) => event.stopPropagation()}
+            >
+              <div
+                className="command-palette-results"
+                id={`${id}-results`}
+                role="listbox"
+                aria-label={tr("commandPalette.results")}
+                aria-busy={catalog.loading}
+              >
+                {results.map((command, index) => (
+                  <button
+                    key={command.id}
+                    id={`${id}-option-${index}`}
+                    className="command-palette-result"
+                    style={
+                      {
+                        "--palette-row-delay": `${100 + Math.min(index, 6) * 14}ms`,
+                      } as CSSProperties
+                    }
+                    type="button"
+                    role="option"
+                    aria-selected={index === selectedIndex}
+                    tabIndex={-1}
+                    onMouseMove={() => setActiveCommandId(command.id)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => execute(command)}
+                  >
+                    <span className="command-palette-icon">
+                      {command.id.startsWith("project:") ? (
+                        <ModrinthProjectIcon iconUrl={command.imageUrl} title={command.label} />
+                      ) : (
+                        <CommandIcon icon={command.icon} />
+                      )}
+                    </span>
+                    <span className="command-palette-copy">
+                      <strong>{command.label}</strong>
+                      {command.description && <small>{command.description}</small>}
+                    </span>
+                    {command.category && (
+                      <em className="command-palette-category">{command.category}</em>
+                    )}
+                  </button>
+                ))}
+                {results.length === 0 && (
+                  <p className="command-palette-empty">{tr("commandPalette.empty")}</p>
+                )}
+              </div>
+              {catalog.loading && (
+                <p className="command-palette-status" role="status">
+                  {tr("commandPalette.loading")}
+                </p>
+              )}
+              {catalog.failed.length > 0 && (
+                <p className="command-palette-status" role="status">
+                  {tr("commandPalette.catalogError", {
+                    kinds: catalog.failed.map((kind) => tr(`commandPalette.${kind}`)).join(", "),
+                  })}
+                </p>
+              )}
+            </CustomScrollArea>
+          </div>
         </div>
       </dialog>
     </>

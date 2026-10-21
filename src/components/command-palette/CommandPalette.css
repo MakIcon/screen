@@ -1,23 +1,3 @@
-.nav-controls .command-palette-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-.command-palette-trigger:hover,
-.command-palette-trigger[aria-expanded="true"] {
-  color: var(--accent);
-}
-.command-palette-trigger svg {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-}
-.command-palette-trigger:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.command-palette-trigger kbd,
 .command-palette kbd {
   padding: 3px 5px;
   border: 1px solid var(--line-strong);
@@ -131,16 +111,26 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.command-palette {
-  --palette-enter-x: -10px;
-  --palette-enter-y: 0px;
+.command-palette-drag-shell {
   position: absolute;
   left: 20px;
   top: 20px;
-  display: flex;
-  flex-direction: column;
   width: min(640px, calc(100vw - 40px));
   max-height: min(560px, calc(100dvh - 40px));
+}
+.command-palette-drag-shell[data-moving="true"] {
+  will-change: transform;
+}
+.command-palette {
+  --palette-enter-x: -10px;
+  --palette-enter-y: 0px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: inherit;
+  transform-origin: inherit;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line-strong);
@@ -193,17 +183,43 @@
   font-size: 11px;
 }
 .command-palette-heading {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
   gap: 12px;
-  padding: 16px 20px 0;
+  padding: 16px 20px 4px;
   color: var(--muted-strong);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.command-palette-drag-grip {
+  position: absolute;
+  top: 7px;
+  left: calc(50% - 14px);
+  width: 28px;
+  height: 3px;
+  border-top: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.22;
+  transition:
+    opacity 140ms ease,
+    color 140ms ease;
+}
+.command-palette-heading:hover .command-palette-drag-grip,
+.command-palette-drag-shell[data-dragging="true"] .command-palette-drag-grip {
+  color: var(--accent);
+  opacity: 0.7;
+}
+.command-palette-drag-shell[data-dragging="true"] .command-palette-heading {
+  cursor: grabbing;
 }
 .command-palette-search {
   position: relative;
@@ -376,8 +392,7 @@
   font-size: 11px;
   line-height: 1.6;
 }
-.command-palette .command-palette-close:focus-visible,
-.command-palette-trigger:focus-visible {
+.command-palette .command-palette-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
@@ -439,7 +454,7 @@
   transform: translateY(4px);
 }
 
-.command-palette-layer[data-phase="closing"] .command-palette {
+.command-palette-layer[data-phase="closing"] .command-palette-drag-shell {
   pointer-events: none;
 }
 .command-palette-layer[data-phase="closing"] *,
