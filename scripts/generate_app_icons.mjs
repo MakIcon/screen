@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { Buffer } from "node:buffer";
 import { createRequire } from "node:module";
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
@@ -11,6 +11,8 @@ const require = createRequire(import.meta.url);
 const cli = join(dirname(require.resolve("@tauri-apps/cli")), "tauri.js");
 const publicDirectory = join(root, "public");
 const iconDirectory = join(root, "src-tauri", "icons");
+const icnsPath = join(iconDirectory, "icon.icns");
+const previousIcns = existsSync(icnsPath) ? readFileSync(icnsPath) : undefined;
 const source = join(publicDirectory, "launcher-icon.svg");
 const svg = readFileSync(source, "utf8");
 
@@ -25,7 +27,32 @@ function generate(...args) {
   });
 }
 
+function normalizeIcns(bytes) {
+  if (bytes.toString("ascii", 0, 4) !== "icns" || bytes.readUInt32BE(4) !== bytes.length) {
+    throw new Error("Invalid ICNS header");
+  }
+  const entries = [];
+  for (let offset = 8; offset < bytes.length; ) {
+    if (offset + 8 > bytes.length) throw new Error("Truncated ICNS entry");
+    const length = bytes.readUInt32BE(offset + 4);
+    if (length < 8 || offset + length > bytes.length) throw new Error("Invalid ICNS entry");
+    entries.push(bytes.subarray(offset, offset + length));
+    offset += length;
+  }
+  return Buffer.concat([bytes.subarray(0, 8), ...entries.sort(Buffer.compare)]);
+}
+
 generate("--output", iconDirectory);
+
+// Tauri emits ICNS entries in random order. Preserve an equivalent existing
+// file; use a stable order when the artwork changes or the file is first made.
+const generatedIcns = readFileSync(icnsPath);
+const normalizedIcns = normalizeIcns(generatedIcns);
+const stableIcns =
+  previousIcns && normalizeIcns(previousIcns).equals(normalizedIcns)
+    ? previousIcns
+    : normalizedIcns;
+if (!generatedIcns.equals(stableIcns)) writeFileSync(icnsPath, stableIcns);
 
 const sizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 180, 192, 256, 384, 512, 1024];
 generate("--output", iconDirectory, ...sizes.flatMap((size) => ["--png", String(size)]));
