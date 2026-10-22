@@ -47,6 +47,25 @@ describe("elastic palette motion", () => {
     expect(mesh.every((corner) => Math.abs(corner.x - 120) < 0.5)).toBe(true);
   });
 
+  it("bends gradually instead of snapping when shaken quickly", () => {
+    let mesh = restingPaletteMesh();
+    let previous = 0;
+    let largest = 0;
+    let fastest = 0;
+    for (let i = 0; i < 120; i++) {
+      const target = { x: 150 * Math.sin(2 * Math.PI * 3 * (i / 60)), y: 0 };
+      mesh = advancePaletteMesh(mesh, target, grabbedTopEdge, 1 / 60, true);
+      const shear =
+        getPaletteMeshOffset(mesh, size, 0.5, 0).x - getPaletteMeshOffset(mesh, size, 0.5, 1).x;
+      largest = Math.max(largest, Math.abs(shear));
+      fastest = Math.max(fastest, Math.abs(shear - previous));
+      previous = shear;
+    }
+    expect(largest).toBeGreaterThan(20);
+    expect(largest).toBeLessThan(80);
+    expect(fastest).toBeLessThan(24);
+  });
+
   it.each([30, 60, 144])("wobbles back through the origin then settles at %s Hz", (fps) => {
     let mesh = uniformPaletteMesh({ x: 120, y: -60 });
     let crossed = false;

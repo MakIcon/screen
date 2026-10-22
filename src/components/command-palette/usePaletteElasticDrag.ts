@@ -15,6 +15,7 @@ import {
   resistPaletteDrag,
   restingPaletteMesh,
   uniformPaletteMesh,
+  type PaletteMesh,
 } from "./paletteElasticMotion";
 
 type DragSession = {
@@ -47,7 +48,7 @@ export function usePaletteElasticDrag(
     const heading = shell?.querySelector<HTMLElement>(".command-palette-heading");
     if (!present || !layout || !dialog || !shell || !heading) return;
     const panel = shell.querySelector<HTMLElement>(".command-palette");
-    const waveFilter = panel ? createPaletteWaveFilter(dialog, panel) : null;
+    const waveFilter = panel ? createPaletteWaveFilter(dialog, panel, () => render(false)) : null;
     const track = dialog.querySelector<SVGPathElement>(".command-palette-connection-track");
     const line = dialog.querySelector<SVGPathElement>(".command-palette-connection-line");
     const port = dialog.querySelector<SVGCircleElement>(".command-palette-connection-port--end");
@@ -55,6 +56,8 @@ export function usePaletteElasticDrag(
     const grab = { u: 0.5, v: 0.05 };
     let weights = getPaletteMeshWeights(grab, layout.panel);
     let target = { x: 0, y: 0 };
+    // The sheet is driven by a slightly smoothed pointer, so jerky shaking bends it gradually.
+    let pull = target;
     let drag: DragSession | null = null;
     let frame = 0;
     let lastTime = 0;
@@ -76,15 +79,24 @@ export function usePaletteElasticDrag(
     });
     let size = measure();
     const visibleMesh = () => (drag ? pinPaletteMesh(mesh, size, grab, target) : mesh);
+    // The wave texture reaches the screen a frame or two late. Position the panel by the
+    // shape that is actually shown, otherwise fast reversals tear it away from the pointer.
+    const shownMesh = (visible: PaletteMesh) => {
+      if (!waveFilter) return visible;
+      const anchor = drag ? grab : { u: 0.5, v: 0.5 };
+      const point = getPaletteMeshOffset(visible, size, anchor.u, anchor.v);
+      return pinPaletteMesh(waveFilter.shown ?? restingPaletteMesh(), size, anchor, point);
+    };
 
     const render = (updateWave = true) => {
       const atRest = !drag && isPaletteMeshAtRest(mesh);
       const visible = visibleMesh();
-      shell.style.transform = atRest ? "" : getPaletteMeshTransform(visible, size);
       if (updateWave) {
         if (animated && !atRest) waveFilter?.render(visible, size);
         else waveFilter?.reset();
       }
+      const shown = shownMesh(visible);
+      shell.style.transform = atRest ? "" : getPaletteMeshTransform(shown, size);
       if (atRest) delete shell.dataset.moving;
       else shell.dataset.moving = "true";
       if (layout.connection) {
@@ -93,7 +105,7 @@ export function usePaletteElasticDrag(
         const offset = atRest
           ? { x: 0, y: 0 }
           : getPaletteMeshOffset(
-              visible,
+              shown,
               size,
               (end.x - layout.panel.left) / size.width,
               (end.y - layout.panel.top) / size.height,
@@ -114,8 +126,15 @@ export function usePaletteElasticDrag(
       frame = 0;
       const elapsed = lastTime ? (now - lastTime) / 1000 : 1 / 60;
       lastTime = now;
+      if (drag) {
+        const follow = 1 - Math.exp(-elapsed / 0.06);
+        pull = {
+          x: pull.x + (target.x - pull.x) * follow,
+          y: pull.y + (target.y - pull.y) * follow,
+        };
+      } else pull = target;
       mesh = constrainPaletteMesh(
-        advancePaletteMesh(mesh, target, weights, elapsed, drag !== null),
+        advancePaletteMesh(mesh, pull, weights, elapsed, drag !== null),
         size,
       );
       const settled = isPaletteMeshSettled(mesh, target);
@@ -136,7 +155,10 @@ export function usePaletteElasticDrag(
     const finish = () => {
       if (!drag) return;
       const ended = drag;
-      mesh = visibleMesh();
+      // Continue from the shape on screen so the release does not jump.
+      const visible = visibleMesh();
+      const shown = shownMesh(visible);
+      mesh = visible.map((point, i) => ({ ...point, x: shown[i].x, y: shown[i].y }));
       drag = null;
       suppressClick = ended.moved;
       delete shell.dataset.dragging;
@@ -175,6 +197,7 @@ export function usePaletteElasticDrag(
         moved: false,
       };
       target = { x: held.x, y: held.y };
+      pull = target;
       shell.dataset.dragging = "true";
     };
     const onMove = (event: PointerEvent) => {

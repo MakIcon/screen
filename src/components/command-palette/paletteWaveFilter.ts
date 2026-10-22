@@ -32,7 +32,11 @@ export function paletteWaveSource(
   return result;
 }
 
-export function createPaletteWaveFilter(dialog: HTMLDialogElement, panel: HTMLElement) {
+export function createPaletteWaveFilter(
+  dialog: HTMLDialogElement,
+  panel: HTMLElement,
+  onShow?: () => void,
+) {
   const filter = dialog.querySelector<SVGFilterElement>(".command-palette-wave-filter");
   const image = filter?.querySelector("feImage");
   const displacement = filter?.querySelector("feDisplacementMap");
@@ -46,10 +50,13 @@ export function createPaletteWaveFilter(dialog: HTMLDialogElement, panel: HTMLEl
   let generation = 0;
   let dimensions = "";
   let decoding = false;
-  let pending: { url: string; generation: number } | null = null;
+  let pending: { url: string; generation: number; mesh: PaletteMesh } | null = null;
+  // The mesh whose texture is on screen; the panel transform must match it, not the newest frame.
+  let shown: PaletteMesh | null = null;
   const reset = () => {
     generation++;
     pending = null;
+    shown = null;
     panel.style.filter = "";
     image.removeAttribute("href");
   };
@@ -68,6 +75,8 @@ export function createPaletteWaveFilter(dialog: HTMLDialogElement, panel: HTMLEl
         if (texture.generation !== generation) return;
         image.setAttribute("href", texture.url);
         panel.style.filter = `url("#${filter.id}")`;
+        shown = texture.mesh;
+        onShow?.();
       })
       .catch(() => {})
       .finally(() => {
@@ -78,6 +87,9 @@ export function createPaletteWaveFilter(dialog: HTMLDialogElement, panel: HTMLEl
 
   return {
     reset,
+    get shown() {
+      return shown;
+    },
     render(mesh: PaletteMesh, size: PaletteSize) {
       const base = getPaletteMeshOffset(mesh, size, 0.5, 0.5);
       const amplitude = Math.max(
@@ -121,7 +133,7 @@ export function createPaletteWaveFilter(dialog: HTMLDialogElement, panel: HTMLEl
         }
       }
       context.putImageData(pixels, 0, 0);
-      pending = { url: canvas.toDataURL(), generation };
+      pending = { url: canvas.toDataURL(), generation, mesh };
       upload();
     },
   };

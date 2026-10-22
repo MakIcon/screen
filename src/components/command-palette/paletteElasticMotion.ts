@@ -51,8 +51,9 @@ export function advancePaletteMesh(
   const next = mesh.map((point) => ({ ...point }));
   const forceX = new Float64Array(next.length);
   const forceY = new Float64Array(next.length);
-  const stiffness = weights.map((weight) => (dragging ? 900 - weight * 830 : 360 - weight * 290));
-  const damping = weights.map((weight) => (dragging ? 20 - weight * 10 : 18 - weight * 8));
+  // While dragging the sheet is well damped: shaking it quickly must not hit resonance.
+  const stiffness = weights.map((weight) => (dragging ? 600 - weight * 490 : 360 - weight * 290));
+  const damping = weights.map((weight) => (dragging ? 34 - weight * 8 : 18 - weight * 8));
 
   for (let step = 0; step < steps; step++) {
     for (let i = 0; i < next.length; i++) {
