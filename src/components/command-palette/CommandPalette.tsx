@@ -248,6 +248,28 @@ export function CommandPalette({
         }}
         onWheel={(event) => event.stopPropagation()}
       >
+        <svg className="command-palette-wave-defs" width="0" height="0" aria-hidden="true">
+          <defs>
+            <filter
+              id={`${id}-waves`}
+              className="command-palette-wave-filter"
+              filterUnits="userSpaceOnUse"
+              colorInterpolationFilters="sRGB"
+            >
+              <feImage result="wave-field" preserveAspectRatio="none" />
+              <feGaussianBlur in="wave-field" stdDeviation="3" result="smooth-wave-field" />
+              <feDisplacementMap
+                in="SourceGraphic"
+                in2="smooth-wave-field"
+                scale="0"
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="warped-panel"
+              />
+              <feGaussianBlur in="warped-panel" stdDeviation="0.2" />
+            </filter>
+          </defs>
+        </svg>
         <div
           className="command-palette-scrim"
           style={{ clipPath: contextLayout?.clipPath }}
@@ -341,9 +363,6 @@ export function CommandPalette({
                   top: contextLayout.panel.top,
                   width: contextLayout.panel.width,
                   maxHeight: contextLayout.panel.height,
-                  transformOrigin: contextLayout.connection
-                    ? `${contextLayout.connection.end.x - contextLayout.panel.left}px ${contextLayout.connection.end.y - contextLayout.panel.top}px`
-                    : "50% 0",
                 }
               : undefined
           }
@@ -351,6 +370,11 @@ export function CommandPalette({
           <div
             className="command-palette"
             data-connection-edge={contextLayout?.connection?.edge ?? "top"}
+            style={{
+              transformOrigin: contextLayout?.connection
+                ? `${contextLayout.connection.end.x - contextLayout.panel.left}px ${contextLayout.connection.end.y - contextLayout.panel.top}px`
+                : "50% 0",
+            }}
           >
             <div className="command-palette-heading" title={tr("commandPalette.drag")}>
               <span id={`${id}-title`}>{tr("commandPalette.title")}</span>

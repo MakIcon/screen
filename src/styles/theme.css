@@ -41,6 +41,7 @@
   --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.08);
   --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.06);
   --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.14);
+  --surface-drop-shadow-strong: 0 24px 30px rgba(0, 0, 0, 0.14);
 
   /* Slider */
   --slider-shell: #f0ede8;
@@ -93,6 +94,7 @@
   --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.35);
   --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.3);
   --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --surface-drop-shadow-strong: 0 24px 30px rgba(0, 0, 0, 0.5);
 
   --slider-shell: #1e1d1b;
   --slider-shell-line: #2a2825;
@@ -144,6 +146,7 @@
   --surface-shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.55);
   --surface-shadow-up: 0 -10px 25px rgba(0, 0, 0, 0.5);
   --surface-shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.75);
+  --surface-drop-shadow-strong: 0 24px 30px rgba(0, 0, 0, 0.75);
 
   --slider-shell: #0d0d0d;
   --slider-shell-line: #181818;

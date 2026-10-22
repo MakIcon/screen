@@ -117,9 +117,15 @@
   top: 20px;
   width: min(640px, calc(100vw - 40px));
   max-height: min(560px, calc(100dvh - 40px));
+  transform-origin: center;
+  filter: drop-shadow(var(--surface-drop-shadow-strong));
 }
 .command-palette-drag-shell[data-moving="true"] {
   will-change: transform;
+}
+.command-palette-wave-defs {
+  position: absolute;
+  pointer-events: none;
 }
 .command-palette {
   --palette-enter-x: -10px;
@@ -137,7 +143,6 @@
   border-radius: 0;
   background: var(--bg-overlay);
   color: var(--ink);
-  box-shadow: var(--surface-shadow-strong);
   font:
     13px "Inter",
     sans-serif;

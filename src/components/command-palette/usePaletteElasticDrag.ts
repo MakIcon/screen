@@ -1,12 +1,20 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import type { PaletteContextLayout } from "./paletteContextLayout";
+import type { PalettePhase } from "./usePalettePresence";
+import { createPaletteWaveFilter } from "./paletteWaveFilter";
 import {
-  advancePaletteSpring,
+  advancePaletteMesh,
+  constrainPaletteMesh,
   getPaletteElasticConnector,
-  getPaletteElasticTransform,
-  isPaletteSpringSettled,
+  getPaletteMeshOffset,
+  getPaletteMeshTransform,
+  getPaletteMeshWeights,
+  isPaletteMeshAtRest,
+  isPaletteMeshSettled,
+  pinPaletteMesh,
   resistPaletteDrag,
-  restingPaletteSpring,
+  restingPaletteMesh,
+  uniformPaletteMesh,
 } from "./paletteElasticMotion";
 
 type DragSession = {
@@ -21,7 +29,7 @@ type DragSession = {
 export function usePaletteElasticDrag(
   dialogRef: RefObject<HTMLDialogElement | null>,
   layout: PaletteContextLayout | null,
-  phase: string,
+  phase: PalettePhase,
   animated: boolean,
 ) {
   const phaseRef = useRef(phase);
@@ -38,10 +46,14 @@ export function usePaletteElasticDrag(
     const shell = dialog?.querySelector<HTMLElement>(".command-palette-drag-shell");
     const heading = shell?.querySelector<HTMLElement>(".command-palette-heading");
     if (!present || !layout || !dialog || !shell || !heading) return;
+    const panel = shell.querySelector<HTMLElement>(".command-palette");
+    const waveFilter = panel ? createPaletteWaveFilter(dialog, panel) : null;
     const track = dialog.querySelector<SVGPathElement>(".command-palette-connection-track");
     const line = dialog.querySelector<SVGPathElement>(".command-palette-connection-line");
     const port = dialog.querySelector<SVGCircleElement>(".command-palette-connection-port--end");
-    let motion = restingPaletteSpring();
+    let mesh = restingPaletteMesh();
+    const grab = { u: 0.5, v: 0.05 };
+    let weights = getPaletteMeshWeights(grab, layout.panel);
     let target = { x: 0, y: 0 };
     let drag: DragSession | null = null;
     let frame = 0;
@@ -49,24 +61,44 @@ export function usePaletteElasticDrag(
     let suppressClick = false;
     let disposed = false;
     const bounds = {
-      left: Math.min(220, Math.max(0, layout.panel.left - 14)),
+      left: Math.min(360, Math.max(0, layout.panel.left - 14)),
       right: Math.min(
-        220,
-        Math.max(0, layout.viewport.width - layout.panel.left - layout.panel.width - 14),
+        360,
+        Math.max(0, layout.viewport.width - layout.panel.left - layout.panel.width + 100),
       ),
-      up: Math.min(140, Math.max(0, layout.panel.top - 14)),
-      // The body may dip below the window temporarily; the drag handle stays reachable.
-      down: Math.min(180, Math.max(0, layout.viewport.height - layout.panel.top - 90)),
+      up: Math.min(180, Math.max(0, layout.panel.top - 14)),
+      down: Math.min(260, Math.max(0, layout.viewport.height - layout.panel.top - 90)),
     };
 
-    const render = () => {
-      const atRest = !drag && motion.x === 0 && motion.y === 0;
-      shell.style.transform = atRest ? "" : getPaletteElasticTransform(motion, animated);
+    const measure = () => ({
+      width: shell.offsetWidth || layout.panel.width,
+      height: shell.offsetHeight || layout.panel.height,
+    });
+    let size = measure();
+    const visibleMesh = () => (drag ? pinPaletteMesh(mesh, size, grab, target) : mesh);
+
+    const render = (updateWave = true) => {
+      const atRest = !drag && isPaletteMeshAtRest(mesh);
+      const visible = visibleMesh();
+      shell.style.transform = atRest ? "" : getPaletteMeshTransform(visible, size);
+      if (updateWave) {
+        if (animated && !atRest) waveFilter?.render(visible, size);
+        else waveFilter?.reset();
+      }
       if (atRest) delete shell.dataset.moving;
       else shell.dataset.moving = "true";
       if (layout.connection) {
-        // Both transforms pivot at this attachment, so deformation never detaches the line.
-        const connector = getPaletteElasticConnector(layout.connection, motion);
+        // The attachment rides on the deformed panel, so the line never detaches.
+        const { end } = layout.connection;
+        const offset = atRest
+          ? { x: 0, y: 0 }
+          : getPaletteMeshOffset(
+              visible,
+              size,
+              (end.x - layout.panel.left) / size.width,
+              (end.y - layout.panel.top) / size.height,
+            );
+        const connector = getPaletteElasticConnector(layout.connection, offset);
         track?.setAttribute("d", connector.path);
         line?.setAttribute("d", connector.path);
         port?.setAttribute("cx", String(connector.end.x));
@@ -74,7 +106,7 @@ export function usePaletteElasticDrag(
         if (line)
           line.style.strokeWidth = atRest
             ? ""
-            : String(1.5 - Math.min(Math.hypot(motion.x, motion.y) / 800, 0.4));
+            : String(1.5 - Math.min(Math.hypot(offset.x, offset.y) / 800, 0.4));
       }
     };
 
@@ -82,9 +114,12 @@ export function usePaletteElasticDrag(
       frame = 0;
       const elapsed = lastTime ? (now - lastTime) / 1000 : 1 / 60;
       lastTime = now;
-      motion = advancePaletteSpring(motion, target, elapsed);
-      const settled = isPaletteSpringSettled(motion, target);
-      if (settled) motion = { ...target, vx: 0, vy: 0 };
+      mesh = constrainPaletteMesh(
+        advancePaletteMesh(mesh, target, weights, elapsed, drag !== null),
+        size,
+      );
+      const settled = isPaletteMeshSettled(mesh, target);
+      if (settled) mesh = uniformPaletteMesh(target);
       render();
       if (!settled && !disposed) frame = requestAnimationFrame(tick);
       else lastTime = 0;
@@ -93,7 +128,7 @@ export function usePaletteElasticDrag(
     const wake = () => {
       if (disposed) return;
       if (!animated) {
-        motion = { ...target, vx: 0, vy: 0 };
+        mesh = uniformPaletteMesh(target);
         render();
       } else if (!frame) frame = requestAnimationFrame(tick);
     };
@@ -101,6 +136,7 @@ export function usePaletteElasticDrag(
     const finish = () => {
       if (!drag) return;
       const ended = drag;
+      mesh = visibleMesh();
       drag = null;
       suppressClick = ended.moved;
       delete shell.dataset.dragging;
@@ -122,16 +158,23 @@ export function usePaletteElasticDrag(
       event.preventDefault();
       event.stopPropagation();
       heading.setPointerCapture(event.pointerId);
-      // Re-grabbing a returning panel continues from its current location without a jump.
+      const box = shell.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) {
+        grab.u = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
+        grab.v = Math.max(0, Math.min(1, (event.clientY - box.top) / box.height));
+      }
+      size = measure();
+      weights = getPaletteMeshWeights(grab, size);
+      const held = getPaletteMeshOffset(mesh, size, grab.u, grab.v);
       drag = {
         pointerId: event.pointerId,
         x: event.clientX,
         y: event.clientY,
-        offsetX: motion.x,
-        offsetY: motion.y,
+        offsetX: held.x,
+        offsetY: held.y,
         moved: false,
       };
-      target = { x: motion.x, y: motion.y };
+      target = { x: held.x, y: held.y };
       shell.dataset.dragging = "true";
     };
     const onMove = (event: PointerEvent) => {
@@ -143,26 +186,15 @@ export function usePaletteElasticDrag(
       const dx = event.clientX - drag.x;
       const dy = event.clientY - drag.y;
       if (Math.hypot(dx, dy) > 3) drag.moved = true;
-      const rawX = drag.offsetX + dx;
-      const rawY = drag.offsetY + dy;
-      // Apply resistance to the delta, preserving the initial offset when re-grabbing.
       target = {
-        x: Math.max(
-          -bounds.left,
-          Math.min(
-            bounds.right,
-            drag.offsetX +
-              resistPaletteDrag(dx, Math.max(1, rawX < 0 ? bounds.left : bounds.right)),
-          ),
-        ),
-        y: Math.max(
-          -bounds.up,
-          Math.min(
-            bounds.down,
-            drag.offsetY + resistPaletteDrag(dy, Math.max(1, rawY < 0 ? bounds.up : bounds.down)),
-          ),
-        ),
+        x:
+          drag.offsetX +
+          resistPaletteDrag(dx, dx < 0 ? bounds.left + drag.offsetX : bounds.right - drag.offsetX),
+        y:
+          drag.offsetY +
+          resistPaletteDrag(dy, dy < 0 ? bounds.up + drag.offsetY : bounds.down - drag.offsetY),
       };
+      if (animated) render(false);
       wake();
     };
     const onEnd = (event: PointerEvent) => {
@@ -181,31 +213,33 @@ export function usePaletteElasticDrag(
       suppressClick = false;
     };
 
+    const observer = new ResizeObserver(() => {
+      size = measure();
+      weights = getPaletteMeshWeights(grab, size);
+      render();
+    });
+    observer.observe(shell);
+    const events = new AbortController();
+    const listen = { signal: events.signal };
+    heading.addEventListener("pointerdown", onDown, listen);
+    heading.addEventListener("lostpointercapture", onEnd, listen);
+    window.addEventListener("pointermove", onMove, listen);
+    window.addEventListener("pointerup", onEnd, listen);
+    window.addEventListener("pointercancel", onEnd, listen);
+    window.addEventListener("blur", finish, listen);
+    document.addEventListener("visibilitychange", onVisibility, listen);
+    dialog.addEventListener("click", onClick, { ...listen, capture: true });
+    dialog.addEventListener("pointerdown", onNewPointer, { ...listen, capture: true });
     render();
-    heading.addEventListener("pointerdown", onDown);
-    heading.addEventListener("lostpointercapture", onEnd);
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd);
-    window.addEventListener("pointercancel", onEnd);
-    window.addEventListener("blur", finish);
-    document.addEventListener("visibilitychange", onVisibility);
-    dialog.addEventListener("click", onClick, true);
-    dialog.addEventListener("pointerdown", onNewPointer, true);
     return () => {
       disposed = true;
       finish();
       if (frame) cancelAnimationFrame(frame);
       finishRef.current = null;
-      heading.removeEventListener("pointerdown", onDown);
-      heading.removeEventListener("lostpointercapture", onEnd);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-      window.removeEventListener("pointercancel", onEnd);
-      window.removeEventListener("blur", finish);
-      document.removeEventListener("visibilitychange", onVisibility);
-      dialog.removeEventListener("click", onClick, true);
-      dialog.removeEventListener("pointerdown", onNewPointer, true);
-      motion = restingPaletteSpring();
+      events.abort();
+      observer.disconnect();
+      waveFilter?.reset();
+      mesh = restingPaletteMesh();
       render();
     };
   }, [dialogRef, layout, present, animated]);

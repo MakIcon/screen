@@ -1,79 +1,192 @@
 export type ElasticPoint = { x: number; y: number };
-export type PaletteConnection = {
-  start: ElasticPoint;
-  end: ElasticPoint;
-  edge: "left" | "top";
-};
-export type PaletteSpring = ElasticPoint & { vx: number; vy: number };
+export type PaletteConnection = { start: ElasticPoint; end: ElasticPoint; edge: "left" | "top" };
+export type MeshPoint = ElasticPoint & { vx: number; vy: number };
+export type PaletteMesh = readonly MeshPoint[];
+export type PaletteSize = { width: number; height: number };
 
-export const restingPaletteSpring = (): PaletteSpring => ({ x: 0, y: 0, vx: 0, vy: 0 });
-
+export const PALETTE_GRID = 6;
+const LAST = PALETTE_GRID - 1;
 const clamp = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
 
-// Resistance increases with distance; even a pointer outside the window cannot pull it away.
+export const restingPaletteMesh = () => uniformPaletteMesh({ x: 0, y: 0 });
+
+export function uniformPaletteMesh(target: ElasticPoint): PaletteMesh {
+  return Array.from({ length: PALETTE_GRID ** 2 }, () => ({ ...target, vx: 0, vy: 0 }));
+}
+
 export function resistPaletteDrag(distance: number, limit: number): number {
-  return limit > 0 ? (distance * limit) / (limit + Math.abs(distance)) : 0;
-}
-
-export function advancePaletteSpring(
-  motion: PaletteSpring,
-  target: ElasticPoint,
-  elapsed: number,
-): PaletteSpring {
-  // Exact damped-spring solution: consistent at any refresh rate, including a throttled tab.
-  const duration = Math.max(0, Math.min(elapsed, 10));
-  const damping = 8.5;
-  const stiffness = 190;
-  const frequency = Math.sqrt(stiffness - damping * damping);
-  const decay = Math.exp(-damping * duration);
-  const cosine = Math.cos(frequency * duration);
-  const sine = Math.sin(frequency * duration);
-  const axis = (position: number, velocity: number, destination: number) => {
-    const offset = position - destination;
-    return {
-      position:
-        destination +
-        decay * (offset * cosine + ((velocity + damping * offset) / frequency) * sine),
-      velocity:
-        decay *
-        (velocity * cosine - ((damping * velocity + stiffness * offset) / frequency) * sine),
-    };
-  };
-  const x = axis(motion.x, motion.vx, target.x);
-  const y = axis(motion.y, motion.vy, target.y);
-  return { x: x.position, y: y.position, vx: x.velocity, vy: y.velocity };
-}
-
-export function isPaletteSpringSettled(motion: PaletteSpring, target: ElasticPoint): boolean {
+  if (limit <= 0) return 0;
+  const free = limit * 0.75;
+  const pull = Math.max(0, Math.abs(distance) - free);
+  const remaining = limit - free;
   return (
-    Math.hypot(motion.x - target.x, motion.y - target.y) < 0.025 &&
-    Math.hypot(motion.vx, motion.vy) < 0.15
+    Math.sign(distance) *
+    (Math.min(Math.abs(distance), free) + (pull * remaining) / (remaining + pull))
   );
 }
 
-export function getPaletteElasticTransform(motion: PaletteSpring, animated: boolean): string {
-  const translate = `translate3d(${motion.x.toFixed(3)}px, ${motion.y.toFixed(3)}px, 0)`;
-  if (!animated) return translate;
-  const tilt = clamp(motion.x * 0.006 + motion.vx * 0.002, 2.1);
-  const shear = clamp(-motion.x * 0.004 - motion.vx * 0.003, 2.4);
-  const stretchX = clamp(motion.x / 18000 + motion.vx / 40000, 0.022);
-  const stretchY = clamp(motion.y / 18000 + motion.vy / 40000, 0.022);
-  return `${translate} rotate(${tilt.toFixed(4)}deg) skewX(${shear.toFixed(4)}deg) scale(${(1 + stretchX - stretchY * 0.4).toFixed(5)}, ${(1 + stretchY - stretchX * 0.4).toFixed(5)})`;
+export function getPaletteMeshWeights(grab: { u: number; v: number }, size: PaletteSize): number[] {
+  const distances = Array.from({ length: PALETTE_GRID ** 2 }, (_, i) =>
+    Math.hypot(
+      ((i % PALETTE_GRID) / LAST - grab.u) * size.width,
+      (Math.floor(i / PALETTE_GRID) / LAST - grab.v) * size.height,
+    ),
+  );
+  const farthest = Math.max(...distances, 1);
+  return distances.map((distance) => distance / farthest);
+}
+
+export function advancePaletteMesh(
+  mesh: PaletteMesh,
+  target: ElasticPoint,
+  weights: readonly number[],
+  elapsed: number,
+  dragging = false,
+): PaletteMesh {
+  // Don't replay a hidden window's missed frames.
+  if (elapsed > 0.25) return uniformPaletteMesh(target);
+  const duration = Math.max(0, elapsed);
+  const steps = Math.max(1, Math.ceil(duration * 240));
+  const dt = duration / steps;
+  const next = mesh.map((point) => ({ ...point }));
+  const forceX = new Float64Array(next.length);
+  const forceY = new Float64Array(next.length);
+  const stiffness = weights.map((weight) => (dragging ? 900 - weight * 830 : 360 - weight * 290));
+  const damping = weights.map((weight) => (dragging ? 20 - weight * 10 : 18 - weight * 8));
+
+  for (let step = 0; step < steps; step++) {
+    for (let i = 0; i < next.length; i++) {
+      const point = next[i];
+      forceX[i] = stiffness[i] * (target.x - point.x) - damping[i] * point.vx;
+      forceY[i] = stiffness[i] * (target.y - point.y) - damping[i] * point.vy;
+    }
+    // Neighbouring springs carry a bend across the sheet, including the middle of each edge.
+    for (let i = 0; i < next.length; i++) {
+      const connect = (j: number) => {
+        const x = (next[j].x - next[i].x) * 100 + (next[j].vx - next[i].vx) * 1.5;
+        const y = (next[j].y - next[i].y) * 100 + (next[j].vy - next[i].vy) * 1.5;
+        forceX[i] += x;
+        forceY[i] += y;
+        forceX[j] -= x;
+        forceY[j] -= y;
+      };
+      if (i % PALETTE_GRID < LAST) connect(i + 1);
+      if (i < next.length - PALETTE_GRID) connect(i + PALETTE_GRID);
+    }
+    for (let i = 0; i < next.length; i++) {
+      const point = next[i];
+      point.vx += forceX[i] * dt;
+      point.vy += forceY[i] * dt;
+      point.x += point.vx * dt;
+      point.y += point.vy * dt;
+    }
+  }
+  return next;
+}
+
+export function isPaletteMeshSettled(mesh: PaletteMesh, target: ElasticPoint): boolean {
+  return mesh.every(
+    (p) => Math.hypot(p.x - target.x, p.y - target.y) < 0.04 && Math.hypot(p.vx, p.vy) < 0.25,
+  );
+}
+
+export function isPaletteMeshAtRest(mesh: PaletteMesh): boolean {
+  return mesh.every((p) => p.x === 0 && p.y === 0);
+}
+
+export function samplePaletteMesh(
+  mesh: PaletteMesh,
+  u: number,
+  v: number,
+  result: ElasticPoint,
+): ElasticPoint {
+  const x = Math.max(0, Math.min(1, u)) * LAST;
+  const y = Math.max(0, Math.min(1, v)) * LAST;
+  const col = Math.min(LAST - 1, Math.floor(x));
+  const row = Math.min(LAST - 1, Math.floor(y));
+  const a = mesh[row * PALETTE_GRID + col];
+  const b = mesh[row * PALETTE_GRID + col + 1];
+  const c = mesh[(row + 1) * PALETTE_GRID + col];
+  const d = mesh[(row + 1) * PALETTE_GRID + col + 1];
+  const tx = x - col;
+  const ty = y - row;
+  result.x = (a.x * (1 - tx) + b.x * tx) * (1 - ty) + (c.x * (1 - tx) + d.x * tx) * ty;
+  result.y = (a.y * (1 - tx) + b.y * tx) * (1 - ty) + (c.y * (1 - tx) + d.y * tx) * ty;
+  return result;
+}
+
+export function getPaletteMeshOffset(
+  mesh: PaletteMesh,
+  _size: PaletteSize,
+  u: number,
+  v: number,
+): ElasticPoint {
+  return samplePaletteMesh(mesh, u, v, { x: 0, y: 0 });
+}
+
+export const paletteWaveLimit = (size: PaletteSize) =>
+  Math.min(112, Math.min(size.width, size.height) * 0.32);
+
+export function constrainPaletteMesh(mesh: PaletteMesh, size: PaletteSize): PaletteMesh {
+  const center = getPaletteMeshOffset(mesh, size, 0.5, 0.5);
+  const cellWidth = size.width / LAST;
+  const cellHeight = size.height / LAST;
+  let gradient = 0;
+  let amplitude = 0;
+  for (const point of mesh)
+    amplitude = Math.max(amplitude, Math.abs(point.x - center.x), Math.abs(point.y - center.y));
+  for (let row = 0; row < LAST; row++) {
+    for (let col = 0; col < LAST; col++) {
+      const a = mesh[row * PALETTE_GRID + col];
+      const b = mesh[row * PALETTE_GRID + col + 1];
+      const c = mesh[(row + 1) * PALETTE_GRID + col];
+      const d = mesh[(row + 1) * PALETTE_GRID + col + 1];
+      for (const axis of ["x", "y"] as const) {
+        const horizontal = Math.max(Math.abs(b[axis] - a[axis]), Math.abs(d[axis] - c[axis]));
+        const vertical = Math.max(Math.abs(c[axis] - a[axis]), Math.abs(d[axis] - b[axis]));
+        gradient = Math.max(gradient, horizontal / cellWidth + vertical / cellHeight);
+      }
+    }
+  }
+  // Keep the sheet invertible: a sharp reversal must bend it without folding pixels over.
+  const scale = Math.min(1, 0.55 / gradient, paletteWaveLimit(size) / amplitude);
+  if (scale >= 1) return mesh;
+  return mesh.map((point) => ({
+    x: center.x + (point.x - center.x) * scale,
+    y: center.y + (point.y - center.y) * scale,
+    vx: point.vx * scale,
+    vy: point.vy * scale,
+  }));
+}
+
+export function pinPaletteMesh(
+  mesh: PaletteMesh,
+  size: PaletteSize,
+  grab: { u: number; v: number },
+  target: ElasticPoint,
+): PaletteMesh {
+  const held = getPaletteMeshOffset(mesh, size, grab.u, grab.v);
+  return mesh.map((p) => ({
+    ...p,
+    x: target.x + p.x - held.x,
+    y: target.y + p.y - held.y,
+  }));
+}
+
+export function getPaletteMeshTransform(mesh: PaletteMesh, size: PaletteSize): string {
+  const center = getPaletteMeshOffset(mesh, size, 0.5, 0.5);
+  return `translate3d(${center.x.toFixed(3)}px, ${center.y.toFixed(3)}px, 0)`;
 }
 
 export function getPaletteElasticConnector(
   connection: PaletteConnection,
-  motion: PaletteSpring = restingPaletteSpring(),
+  offset: ElasticPoint = { x: 0, y: 0 },
 ): { path: string; end: ElasticPoint } {
   const { start, edge } = connection;
-  const end = { x: connection.end.x + motion.x, y: connection.end.y + motion.y };
+  const end = { x: connection.end.x + offset.x, y: connection.end.y + offset.y };
   const span = edge === "left" ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y);
   const handle = Math.min(160, Math.max(12, span * 0.45));
-  const bow = clamp(
-    (edge === "left" ? motion.y : motion.x) * 0.08 +
-      (edge === "left" ? motion.vy : motion.vx) * 0.008,
-    24,
-  );
+  const bow = clamp((edge === "left" ? offset.y : offset.x) * 0.08, 24);
   const first =
     edge === "left"
       ? { x: start.x + handle, y: start.y + bow }

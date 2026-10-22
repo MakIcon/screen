@@ -22,6 +22,7 @@ vi.mock("react", () => ({
 }));
 import { getPaletteContextLayout } from "./paletteContextLayout";
 import { usePaletteElasticDrag } from "./usePaletteElasticDrag";
+import type { PalettePhase } from "./usePalettePresence";
 
 const layout = getPaletteContextLayout({ left: 24, top: 98, width: 132, height: 86 }, 1280, 720);
 let dialog: EventTarget & { querySelector: (selector: string) => any };
@@ -34,13 +35,16 @@ let shell: {
   style: { transform: string };
   dataset: Record<string, string>;
   querySelector: () => any;
+  offsetWidth: number;
+  offsetHeight: number;
+  getBoundingClientRect: () => { left: number; top: number; width: number; height: number };
 };
 let win: EventTarget;
 let doc: EventTarget;
 let ref: { current: HTMLDialogElement };
 let attributes: Record<string, string>;
 
-function RenderHarness(phase = "open", animated = true) {
+function RenderHarness(phase: PalettePhase = "open", animated = true) {
   runtime.cursor = 0;
   usePaletteElasticDrag(ref, layout, phase, animated);
   for (const effect of runtime.pending.splice(0)) effect();
@@ -84,7 +88,14 @@ describe("palette elastic dragging lifecycle", () => {
         pointer(heading, "lostpointercapture", { pointerId: id });
       }),
     });
-    shell = { style: { transform: "" }, dataset: {}, querySelector: () => heading };
+    shell = {
+      style: { transform: "" },
+      dataset: {},
+      querySelector: () => heading,
+      offsetWidth: 640,
+      offsetHeight: 400,
+      getBoundingClientRect: () => ({ ...layout.panel, height: 400 }),
+    };
     attributes = {};
     const svg = {
       style: { strokeWidth: "" },
@@ -93,7 +104,8 @@ describe("palette elastic dragging lifecycle", () => {
       },
     };
     dialog = Object.assign(new EventTarget(), {
-      querySelector: (selector: string) => (selector.includes("drag-shell") ? shell : svg),
+      querySelector: (selector: string) =>
+        selector.includes("wave-filter") ? null : selector.includes("drag-shell") ? shell : svg,
     });
     ref = { current: dialog as unknown as HTMLDialogElement };
     win = new EventTarget();
@@ -104,6 +116,13 @@ describe("palette elastic dragging lifecycle", () => {
       setTimeout(() => fn(performance.now()), 16),
     );
     vi.stubGlobal("cancelAnimationFrame", clearTimeout);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
   });
   afterEach(() => {
     unmount();
@@ -117,15 +136,23 @@ describe("palette elastic dragging lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
     await pull();
     expect(shell.dataset.dragging).toBe("true");
-    expect(shell.style.transform).toContain("skewX");
-    expect(Number(attributes.cx)).toBeGreaterThan(layout.connection!.end.x + 60);
-    expect(Number(attributes.cx)).toBeLessThan(layout.connection!.end.x + 200);
+    expect(shell.style.transform).toMatch(/^(matrix3d|translate3d)\(/);
+    expect(Number(attributes.cx)).toBeCloseTo(layout.connection!.end.x + 200, 0);
     pointer(win, "pointerup");
     await vi.advanceTimersByTimeAsync(2500);
     expect(shell.style.transform).toBe("");
     expect(shell.dataset).toEqual({});
     expect(Number(attributes.cx)).toBe(layout.connection!.end.x);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("follows the pointer immediately, before the first animation frame", () => {
+    RenderHarness();
+    pointer(heading, "pointerdown");
+    pointer(win, "pointermove", { clientX: 520, clientY: 180 });
+    expect(shell.style.transform).toBe("translate3d(120.000px, 60.000px, 0)");
+    expect(Number(attributes.cx)).toBe(layout.connection!.end.x + 120);
+    expect(Number(attributes.cy)).toBe(layout.connection!.end.y + 60);
   });
 
   it.each(["pointercancel", "blur", "lostpointercapture"])("returns after %s", async (type) => {
@@ -160,7 +187,7 @@ describe("palette elastic dragging lifecycle", () => {
     pointer(win, "pointermove");
     expect(Number(attributes.cx)).toBe(position);
     await vi.advanceTimersByTimeAsync(1500);
-    expect(Number(attributes.cx)).toBeCloseTo(position, 1);
+    expect(Math.abs(Number(attributes.cx) - position)).toBeLessThan(5);
     expect(shell.dataset.dragging).toBe("true");
   });
 
