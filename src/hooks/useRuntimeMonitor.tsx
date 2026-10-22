@@ -17,6 +17,25 @@ const STATUS_EVENT = "mineflayer-bot-status";
 const RECONCILE_INTERVAL_MS = 30_000;
 const ACTIVITY_INTERVAL_MS = 2_000;
 
+// IPC deserializes fresh objects even when no status has changed. Keep the
+// snapshot reference in that case so polling does not rerender the launcher.
+function sameRuntimeValue(current: unknown, next: unknown): boolean {
+  if (Object.is(current, next)) return true;
+  if (!current || !next || typeof current !== "object" || typeof next !== "object") return false;
+  if (Array.isArray(current) !== Array.isArray(next)) return false;
+  const previous = current as Record<string, unknown>;
+  const incoming = next as Record<string, unknown>;
+  const keys = Object.keys(incoming);
+  return (
+    Object.keys(previous).length === keys.length &&
+    keys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(previous, key) &&
+        sameRuntimeValue(previous[key], incoming[key]),
+    )
+  );
+}
+
 export type RuntimeMonitorController = {
   snapshot: RuntimeMonitorSnapshot | null;
   error: string;
@@ -56,7 +75,7 @@ export function useRuntimeMonitorController(
         latest && latest.revision > next.mineflayerBot.revision ? latest : next.mineflayerBot;
       botStatusRef.current = mineflayerBot;
       const merged = { ...next, mineflayerBot };
-      setSnapshot(merged);
+      setSnapshot((current) => (sameRuntimeValue(current, merged) ? current : merged));
       setError("");
       return merged;
     } catch (caught) {
@@ -121,7 +140,14 @@ export function useRuntimeMonitorController(
           pids: pidsRef.current,
         });
         if (!mountedRef.current) return;
-        setSnapshot((current) => (current ? { ...current, ...activity } : current));
+        setSnapshot((current) => {
+          if (!current) return current;
+          const changed = Object.entries(activity).some(
+            ([key, value]) =>
+              !sameRuntimeValue(current[key as keyof RuntimeMonitorActivity], value),
+          );
+          return changed ? { ...current, ...activity } : current;
+        });
         setError("");
       } catch (caught) {
         if (mountedRef.current) setError(toErrorMessage(caught));

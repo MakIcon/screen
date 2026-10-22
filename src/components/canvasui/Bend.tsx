@@ -8,8 +8,135 @@ import {
   type ReactNode,
 } from "react";
 
-import { createRectCache } from "../rect-cache";
-import { createScrollState } from "./scroll-state";
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
+
+function createRectCache(element: Element) {
+  let current = element.getBoundingClientRect();
+
+  const refresh = () => {
+    current = element.getBoundingClientRect();
+  };
+
+  const observer = new ResizeObserver(refresh);
+  observer.observe(element);
+  window.addEventListener("resize", refresh, { passive: true });
+  window.addEventListener("scroll", refresh, {
+    capture: true,
+    passive: true,
+  });
+
+  return {
+    get current() {
+      return current;
+    },
+    destroy() {
+      observer.disconnect();
+      window.removeEventListener("resize", refresh);
+      window.removeEventListener("scroll", refresh, true);
+    },
+  };
+}
 
 export interface BendOptions {
   /** Height of the folded region at each edge in CSS pixels. */
@@ -39,8 +166,6 @@ export interface BendOptions {
 }
 
 export interface BendElements {
-  /** The live DOM remains interactive when a raster bridge supplies the texture. */
-  raster?: boolean;
   /** Canvas with layoutsubtree that hosts the HTML content. */
   source: HTMLCanvasElement;
   /** The scrollable element inside the source canvas that gets captured. */
@@ -304,6 +429,8 @@ export function createBend(
     typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let contentDirty = false;
   let wake = () => {};
 
@@ -311,7 +438,7 @@ export function createBend(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         wake();
       } catch {}
@@ -403,7 +530,7 @@ export function createBend(
   }
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -412,14 +539,14 @@ export function createBend(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -436,11 +563,9 @@ export function createBend(
   let tiltXCurrent = 0;
   let tiltYCurrent = 0;
 
-  const scrollState = createScrollState(content, () => onScroll());
   function syncScroll() {
-    const scroller = scrollState.current;
-    const max = scroller.scrollHeight - scroller.clientHeight;
-    const t = scroller.scrollTop;
+    const max = content.scrollHeight - content.clientHeight;
+    const t = content.scrollTop;
     const e = Math.max(config.ease, 1);
     const ramp = (v: number) => {
       const x = Math.min(Math.max(v / e, 0), 1);
@@ -588,10 +713,9 @@ export function createBend(
 
   function onWheel(event: WheelEvent) {
     if (config.tumble <= 0 || reducedMotion) return;
-    const scroller = scrollState.current;
-    const max = scroller.scrollHeight - scroller.clientHeight;
+    const max = content.scrollHeight - content.clientHeight;
     if (max <= 1) return;
-    const st = scroller.scrollTop;
+    const st = content.scrollTop;
     if (event.deltaY > 0 && st >= max - 1) {
       over = Math.min(over + event.deltaY, 900);
     } else if (event.deltaY < 0 && st <= 1) {
@@ -831,7 +955,6 @@ export function createBend(
   }
 
   function updateHover(clientX: number, clientY: number) {
-    if (elements.raster) return;
     if (!htmlInCanvas) return;
     const local = clientToLocal(clientX, clientY);
     const { rect } = local;
@@ -847,7 +970,6 @@ export function createBend(
   }
 
   function onClick(event: MouseEvent) {
-    if (elements.raster) return;
     if (forwarding || !htmlInCanvas || event.button !== 0) return;
     const local = clientToLocal(event.clientX, event.clientY);
     const { rect } = local;
@@ -932,7 +1054,6 @@ export function createBend(
   let selecting = false;
 
   function onMouseDown(event: MouseEvent) {
-    if (elements.raster) return;
     if (forwarding || !htmlInCanvas || event.button !== 0) return;
     const m = remapped(event);
     if (!m) return;
@@ -974,7 +1095,7 @@ export function createBend(
   }
   motionQuery.addEventListener("change", onMotionChange);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     syncCanvasSize();
     syncScroll();
     start();
@@ -1013,7 +1134,6 @@ export function createBend(
       content.removeAttribute(CONTENT_ATTR);
       content.removeAttribute(CURSOR_ATTR);
       content.removeEventListener("scroll", onScroll);
-      scrollState.destroy();
       content.removeEventListener("wheel", onWheel);
       content.removeEventListener("pointermove", onPointerMove);
       content.removeEventListener("pointerleave", onPointerLeave);

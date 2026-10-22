@@ -213,6 +213,37 @@ describe("runtime monitor events", () => {
     expect(current?.blueMap.state).toBe("serving");
   });
 
+  it("does not rerender the launcher for unchanged two-second activity or full snapshots", async () => {
+    const initial = await start([10], true, true);
+    const unchanged = snapshot();
+    runtime.invoke.mockResolvedValue({
+      blueMap: unchanged.blueMap,
+      obsTelemetry: unchanged.obsTelemetry,
+      processes: unchanged.processes,
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(RenderHookHarness([10], true, true)).toBe(initial);
+
+    runtime.invoke.mockResolvedValue(snapshot());
+    await initial.refresh();
+    expect(RenderHookHarness([10], true, true)).toBe(initial);
+  });
+
+  it("still publishes nested telemetry changes when polling returns fresh objects", async () => {
+    const initial = await start([], true, true);
+    const changed = snapshot();
+    changed.obsTelemetry.overlayUrls = { inventory: "http://localhost/inventory" };
+    runtime.invoke.mockResolvedValue({
+      blueMap: changed.blueMap,
+      obsTelemetry: changed.obsTelemetry,
+      processes: changed.processes,
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    const next = RenderHookHarness([], true, true);
+    expect(next).not.toBe(initial);
+    expect(next.snapshot?.obsTelemetry.overlayUrls).toEqual(changed.obsTelemetry.overlayUrls);
+  });
+
   it("does not overwrite a newer event with a full snapshot that was already in flight", async () => {
     const controller = await start();
     const pending = deferred<RuntimeMonitorSnapshot>();

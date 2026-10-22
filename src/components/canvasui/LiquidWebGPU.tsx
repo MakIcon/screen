@@ -8,6 +8,109 @@ import {
   type ReactNode,
 } from "react";
 
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
+
 import {
   effect,
   frame as gpuFrame,
@@ -63,9 +166,9 @@ export interface LiquidElements {
 }
 
 export interface LiquidInstance {
-  /** Resolves after device initialization so raster hosts can fall back to WebGL. */
-  ready: Promise<boolean>;
-  /** Inject a splat at (x, y) in [0,1] space with velocity (dx, dy). */
+  /** Inject a splat at (x, y) in [0,1] space with velocity (dx, dy).
+   * Keeps the newest 64 pending calls while suspended; applies at most 8 per frame.
+   */
   splat: (x: number, y: number, dx: number, dy: number) => void;
   /** Update simulation options live, including simulation target resolution. */
   setOptions: (options: LiquidOptions) => void;
@@ -493,6 +596,8 @@ export function createLiquid(
       typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let contentDirty = false;
   let wake = () => {};
 
@@ -500,7 +605,7 @@ export function createLiquid(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         wake();
       } catch {}
@@ -525,7 +630,7 @@ export function createLiquid(
   }
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (screen) {
@@ -536,11 +641,11 @@ export function createLiquid(
       output.height = height;
     }
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -552,7 +657,13 @@ export function createLiquid(
   function ensureContentTexture(): Texture {
     const w = Math.max(1, source.width);
     const h = Math.max(1, source.height);
-    if (!contentTexture) {
+    if (
+      !contentTexture ||
+      contentTexture.size[0] !== w ||
+      contentTexture.size[1] !== h
+    ) {
+      // A new wrapper invalidates vgpu's cached bindings to the old texture.
+      contentTexture?.destroy();
       contentTexture = gpu!.device.createTexture({
         size: [w, h],
         format: "rgba8unorm",
@@ -565,8 +676,6 @@ export function createLiquid(
         { bytesPerRow: 4, rowsPerImage: 1 },
         [1, 1],
       );
-    } else if (contentTexture.size[0] !== w || contentTexture.size[1] !== h) {
-      contentTexture.resize([w, h]);
     }
     return contentTexture;
   }
@@ -798,7 +907,12 @@ export function createLiquid(
     fallback2d.drawImage(source, 0, 0, output.width, output.height);
   }
 
-  const queued: Array<[number, number, number, number]> = [];
+  const MAX_PENDING_SPLATS = 64;
+  const MAX_SPLATS_PER_FRAME = 8;
+  type Splat = [number, number, number, number];
+  const queued: Splat[] = [];
+  // Keep the latest pointer position without replaying a drag over later frames.
+  const pointerSplats = new Map<number, Splat>();
 
   let raf = 0;
   let lastTime = performance.now();
@@ -815,7 +929,7 @@ export function createLiquid(
 
   function frame(now: number) {
     if (destroyed) return;
-    if (!visible) {
+    if (!visible || document.hidden) {
       running = false;
       return;
     }
@@ -830,16 +944,25 @@ export function createLiquid(
     }
     const delta = Math.min((now - lastTime) / 1000, 1 / 30);
     lastTime = now;
-    if (queued.length > 0) {
+    if (queued.length > 0 || pointerSplats.size > 0) {
       idleAt = now + idleDelayMs();
-      while (queued.length > 0) {
-        const [x, y, dx, dy] = queued.pop()!;
-        applySplat(x, y, dx, dy);
+      let remaining = MAX_SPLATS_PER_FRAME;
+      // Reserve one slot so continuous pointer motion cannot starve API calls.
+      const pointerBudget = remaining - (queued.length > 0 ? 1 : 0);
+      let appliedPointers = 0;
+      for (const [id, splat] of pointerSplats) {
+        if (appliedPointers >= pointerBudget) break;
+        pointerSplats.delete(id);
+        applySplat(...splat);
+        appliedPointers++;
+        remaining--;
       }
+      const count = Math.min(queued.length, remaining);
+      for (let i = 0; i < count; i++) applySplat(...queued.shift()!);
     }
     step(delta);
     render();
-    if (now >= idleAt && !contentDirty) {
+    if (now >= idleAt && !contentDirty && queued.length === 0 && pointerSplats.size === 0) {
       running = false;
       return;
     }
@@ -847,7 +970,7 @@ export function createLiquid(
   }
 
   function start() {
-    if (destroyed || running || !visible) return;
+    if (destroyed || running || !visible || document.hidden) return;
     running = true;
     lastTime = performance.now();
     raf = requestAnimationFrame(frame);
@@ -858,9 +981,9 @@ export function createLiquid(
   const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   let reducedMotion = motionQuery.matches;
 
-  const ready = acquireGpu()
+  acquireGpu()
     .then((device) => {
-      if (destroyed) return false;
+      if (destroyed) return;
       gpu = device;
       screen = surface(gpu, output, {
         autoResize: false,
@@ -934,15 +1057,13 @@ export function createLiquid(
       };
       syncCanvasSize();
       start();
-      return true;
     })
     .catch((error) => {
-      if (destroyed) return false;
+      if (destroyed) return;
       console.warn("Liquid: WebGPU unavailable, showing content without the effect.", error);
       fallback2d = output.getContext("2d");
       contentDirty = true;
       start();
-      return false;
     });
 
   function onMotionChange() {
@@ -953,10 +1074,39 @@ export function createLiquid(
 
   const pointers = new Map<number, { x: number; y: number }>();
 
+  function enqueueSplat(splat: Splat) {
+    if (queued.length >= MAX_PENDING_SPLATS) queued.shift();
+    queued.push(splat);
+  }
+
+  function enqueuePointerSplat(id: number, splat: Splat) {
+    const previous = pointerSplats.get(id);
+    if (previous) {
+      splat[2] += previous[2];
+      splat[3] += previous[3];
+    } else if (pointerSplats.size >= MAX_SPLATS_PER_FRAME) {
+      pointerSplats.delete(pointerSplats.keys().next().value!);
+    }
+    pointerSplats.set(id, splat);
+  }
+
+  function suspend() {
+    cancelAnimationFrame(raf);
+    running = false;
+    pointers.clear();
+    pointerSplats.clear();
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) suspend();
+    else start();
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   const rectCache = createRectCache(output);
 
   function onPointerMove(event: PointerEvent) {
-    if (reducedMotion) return;
+    if (destroyed || reducedMotion || !visible || document.hidden) return;
     const rect = rectCache.current;
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
@@ -969,18 +1119,18 @@ export function createLiquid(
     if (!previous) return;
     const dx = (px - previous.x) * config.force;
     const dy = -(py - previous.y) * config.force;
-    queued.push([px / rect.width, 1 - py / rect.height, dx, dy]);
+    enqueuePointerSplat(event.pointerId, [px / rect.width, 1 - py / rect.height, dx, dy]);
     start();
   }
 
   function onPointerDown(event: PointerEvent) {
-    if (reducedMotion) return;
+    if (destroyed || reducedMotion || !visible || document.hidden) return;
     const rect = output.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     if (x < 0 || x > rect.width || y < 0 || y > rect.height) return;
     pointers.set(event.pointerId, { x, y });
-    queued.push([x / rect.width, 1 - y / rect.height, 1, 1]);
+    enqueuePointerSplat(event.pointerId, [x / rect.width, 1 - y / rect.height, 1, 1]);
     start();
   }
 
@@ -999,7 +1149,8 @@ export function createLiquid(
   listenTarget.addEventListener("pointerleave", onPointerLeave as EventListener);
   listenTarget.addEventListener("pointercancel", onPointerLeave as EventListener);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
+    if (destroyed) return;
     syncCanvasSize();
     start();
   });
@@ -1007,18 +1158,21 @@ export function createLiquid(
 
   const intersection = new IntersectionObserver((entries) => {
     visible = entries[entries.length - 1]?.isIntersecting ?? true;
+    if (destroyed) return;
     if (visible) start();
+    else suspend();
   });
   intersection.observe(output);
 
   return {
     splat(x, y, dx, dy) {
-      if (reducedMotion) return;
-      queued.push([x, y, dx, dy]);
+      if (destroyed || reducedMotion) return;
+      // Explicit API input is retained while suspended, up to the queue limit.
+      enqueueSplat([x, y, dx, dy]);
       start();
     },
-    ready,
     setOptions(next) {
+      if (destroyed) return;
       if (
         !Object.entries(next).some(
           ([key, value]) => config[key as keyof LiquidOptions] !== value,
@@ -1041,11 +1195,16 @@ export function createLiquid(
       start();
     },
     resize() {
+      if (destroyed) return;
       syncCanvasSize();
       start();
     },
     destroy() {
+      if (destroyed) return;
       destroyed = true;
+      queued.length = 0;
+      suspend();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       rectCache.destroy();
       cancelAnimationFrame(raf);
       observer.disconnect();
@@ -1063,7 +1222,6 @@ export function createLiquid(
     },
   };
 }
-
 
 export interface LiquidProps extends LiquidOptions {
   children: ReactNode;
@@ -1167,7 +1325,6 @@ export function Liquid({
     </div>
   );
 }
-
 
 
 export default Liquid;

@@ -1,6 +1,115 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
 
 export interface LaserOptions {
   /** Animation speed of the beam wave, flicker, and sparkle. 1 is normal. */
@@ -33,8 +142,6 @@ export interface LaserOptions {
   sparkle?: number;
   /** How much scrolling boosts the beam and the reveal glow (0 to 3). */
   reactivity?: number;
-  /** Opacity of the solid area below the beam. Set to 0 for overlay compositing. */
-  bezelOpacity?: number;
 }
 
 export interface LaserElements {
@@ -71,7 +178,6 @@ const DEFAULTS: Required<LaserOptions> = {
   shimmer: 12,
   sparkle: 0.25,
   reactivity: 1,
-  bezelOpacity: 0,
 };
 
 type PaintableCanvas = HTMLCanvasElement & {
@@ -114,7 +220,6 @@ uniform float uHeat;
 uniform float uShimmer;
 uniform float uSparkle;
 uniform vec3 uBezel;
-uniform float uBezelOpacity;
 uniform float uMaxX;
 uniform float uHasContent;
 
@@ -216,9 +321,8 @@ void main () {
   vec3 col;
   float alpha;
   if (dy < 0.0 && uHasContent > 0.5) {
-    float bezelAlpha = clamp(uBezelOpacity, 0.0, 1.0);
-    col = uBezel * bezelAlpha;
-    alpha = bezelAlpha;
+    col = uBezel;
+    alpha = 1.0;
   } else {
     col = vec3(0.0);
     alpha = 0.0;
@@ -282,7 +386,9 @@ export function supportsHtmlInCanvas(): boolean {
   const probe = document.createElement("canvas") as PaintableCanvas;
   const ctx = probe.getContext("2d") as ElementImageContext | null;
   return Boolean(
-    ctx && typeof ctx.drawElementImage === "function" && typeof probe.requestPaint === "function",
+    ctx &&
+    typeof ctx.drawElementImage === "function" &&
+    typeof probe.requestPaint === "function",
   );
 }
 
@@ -310,6 +416,8 @@ export function createLaser(
     typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let contentDirty = false;
   let wake = () => {};
 
@@ -317,7 +425,7 @@ export function createLaser(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         wake();
       } catch {}
@@ -350,7 +458,11 @@ export function createLaser(
 
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+    gl.STATIC_DRAW,
+  );
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
@@ -402,7 +514,7 @@ export function createLaser(
   }
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -411,7 +523,7 @@ export function createLaser(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     const viewW = Math.max(output.clientWidth, 1);
     beamCX = contentMaxX * 0.5;
@@ -421,19 +533,23 @@ export function createLaser(
       const childRect = child.getBoundingClientRect();
       const outputRect = output.getBoundingClientRect();
       const style = getComputedStyle(child);
-      const left = childRect.left - outputRect.left + (parseFloat(style.paddingLeft) || 0);
-      const right = childRect.right - outputRect.left - (parseFloat(style.paddingRight) || 0);
+      const left =
+        childRect.left - outputRect.left + (parseFloat(style.paddingLeft) || 0);
+      const right =
+        childRect.right -
+        outputRect.left -
+        (parseFloat(style.paddingRight) || 0);
       if (right - left > 48) {
         beamCX = ((left + right) * 0.5) / viewW;
         beamSpan = (right - left) / viewW;
       }
     }
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -447,14 +563,22 @@ export function createLaser(
     contentDirty = false;
     syncBezelColor();
     gl!.bindTexture(gl!.TEXTURE_2D, contentTexture);
-    gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, source);
+    gl!.texImage2D(
+      gl!.TEXTURE_2D,
+      0,
+      gl!.RGBA,
+      gl!.RGBA,
+      gl!.UNSIGNED_BYTE,
+      source,
+    );
   }
 
   let time = 0;
   let activity = 0;
 
   const fract = (x: number) => x - Math.floor(x);
-  const hash2 = (x: number, y: number) => fract(Math.sin(x * 89.44 + y * 19.36) * 22189.22);
+  const hash2 = (x: number, y: number) =>
+    fract(Math.sin(x * 89.44 + y * 19.36) * 22189.22);
   const smooth01 = (x: number) => x * x * (3 - 2 * x);
   function iHashCpu(vx: number, vy: number, r: number) {
     const fx = Math.floor(vx * r);
@@ -465,7 +589,9 @@ export function createLaser(
     const h11 = hash2((fx + 1) / r, (fy + 1) / r);
     const ix = smooth01(fract(vx * r));
     const iy = smooth01(fract(vy * r));
-    return (h00 * (1 - ix) + h10 * ix) * (1 - iy) + (h01 * (1 - ix) + h11 * ix) * iy;
+    return (
+      (h00 * (1 - ix) + h10 * ix) * (1 - iy) + (h01 * (1 - ix) + h11 * ix) * iy
+    );
   }
   function noiseCpu(vx: number, vy: number) {
     let sum = 0;
@@ -487,27 +613,45 @@ export function createLaser(
     gl!.uniform1f(uniforms.uTime, time);
     const dpr = output.width / Math.max(output.clientWidth, 1);
     const clientH = Math.max(output.clientHeight, 1);
-    gl!.uniform1f(uniforms.uBeamY, Math.min(Math.max(config.offset, 0) / clientH, 0.95));
+    gl!.uniform1f(
+      uniforms.uBeamY,
+      Math.min(Math.max(config.offset, 0) / clientH, 0.95),
+    );
     gl!.uniform1f(uniforms.uWaveAmp, Math.max(config.wave, 0) / clientH);
     gl!.uniform1f(uniforms.uBeamCX, beamCX);
-    gl!.uniform1f(uniforms.uBeamHalfW, Math.min(Math.max(config.width, 0.05), 1) * beamSpan * 0.5);
-    gl!.uniform1f(uniforms.uHalfCore, Math.max(config.thickness, 0.5) * dpr * 0.5);
+    gl!.uniform1f(
+      uniforms.uBeamHalfW,
+      Math.min(Math.max(config.width, 0.05), 1) * beamSpan * 0.5,
+    );
+    gl!.uniform1f(
+      uniforms.uHalfCore,
+      Math.max(config.thickness, 0.5) * dpr * 0.5,
+    );
     gl!.uniform1f(uniforms.uCore, Math.max(config.core, 0));
     gl!.uniform1f(uniforms.uRadius, Math.max(config.radius, 0.5) * dpr);
     gl!.uniform1f(uniforms.uGlow, Math.max(config.glow, 0));
-    gl!.uniform3f(uniforms.uColor, config.color[0], config.color[1], config.color[2]);
-    const flick = 1 - Math.min(Math.max(config.flicker, 0), 1) * noiseCpu(time * 1.8, 3.7);
+    gl!.uniform3f(
+      uniforms.uColor,
+      config.color[0],
+      config.color[1],
+      config.color[2],
+    );
+    const flick =
+      1 - Math.min(Math.max(config.flicker, 0), 1) * noiseCpu(time * 1.8, 3.7);
     const boost = 1 + Math.max(config.reactivity, 0) * activity * 1.6;
     gl!.uniform1f(uniforms.uBright, flick * boost);
     gl!.uniform1f(uniforms.uRevealH, Math.max(config.reveal, 0) / clientH);
-    gl!.uniform1f(uniforms.uHeat, Math.max(config.heat, 0) * (0.3 + 0.7 * activity));
+    gl!.uniform1f(
+      uniforms.uHeat,
+      Math.max(config.heat, 0) * (0.3 + 0.7 * activity),
+    );
     gl!.uniform1f(
       uniforms.uShimmer,
-      (Math.max(config.shimmer, 0) / Math.max(output.clientWidth, 1)) * (0.25 + 0.75 * activity),
+      (Math.max(config.shimmer, 0) / Math.max(output.clientWidth, 1)) *
+        (0.25 + 0.75 * activity),
     );
     gl!.uniform1f(uniforms.uSparkle, Math.max(config.sparkle, 0));
     gl!.uniform3f(uniforms.uBezel, bezel[0], bezel[1], bezel[2]);
-    gl!.uniform1f(uniforms.uBezelOpacity, config.bezelOpacity);
     gl!.uniform1f(uniforms.uMaxX, contentMaxX);
     gl!.uniform1f(uniforms.uHasContent, htmlInCanvas ? 1 : 0);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
@@ -572,7 +716,7 @@ export function createLaser(
   }
   motionQuery.addEventListener("change", onMotionChange);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     syncCanvasSize();
     start();
   });
@@ -587,7 +731,11 @@ export function createLaser(
 
   return {
     setOptions(next) {
-      if (!Object.entries(next).some(([key, value]) => config[key as keyof LaserOptions] !== value))
+      if (
+        !Object.entries(next).some(
+          ([key, value]) => config[key as keyof LaserOptions] !== value,
+        )
+      )
         return;
       Object.assign(config, next);
       start();
@@ -629,7 +777,11 @@ export function Laser({ children, className, style, ...options }: LaserProps) {
   const [initialOptions] = useState(options);
   const [failed, setFailed] = useState(false);
 
-  const supported = useSyncExternalStore(emptySubscribe, supportsHtmlInCanvas, () => false);
+  const supported = useSyncExternalStore(
+    emptySubscribe,
+    supportsHtmlInCanvas,
+    () => false,
+  );
   const native = supported && !failed;
 
   useEffect(() => {
@@ -637,7 +789,10 @@ export function Laser({ children, className, style, ...options }: LaserProps) {
     const content = contentRef.current;
     const output = outputRef.current;
     if (!source || !content || !output) return;
-    instanceRef.current = createLaser({ source, content, output }, initialOptions);
+    instanceRef.current = createLaser(
+      { source, content, output },
+      initialOptions,
+    );
     if (native && !instanceRef.current) setFailed(true);
     return () => {
       instanceRef.current?.destroy();
@@ -703,5 +858,6 @@ export function Laser({ children, className, style, ...options }: LaserProps) {
     </div>
   );
 }
+
 
 export default Laser;

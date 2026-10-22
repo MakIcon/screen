@@ -8,7 +8,135 @@ import {
   type ReactNode,
 } from "react";
 
-import { createRectCache } from "../rect-cache";
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
+
+function createRectCache(element: Element) {
+  let current = element.getBoundingClientRect();
+
+  const refresh = () => {
+    current = element.getBoundingClientRect();
+  };
+
+  const observer = new ResizeObserver(refresh);
+  observer.observe(element);
+  window.addEventListener("resize", refresh, { passive: true });
+  window.addEventListener("scroll", refresh, {
+    capture: true,
+    passive: true,
+  });
+
+  return {
+    get current() {
+      return current;
+    },
+    destroy() {
+      observer.disconnect();
+      window.removeEventListener("resize", refresh);
+      window.removeEventListener("scroll", refresh, true);
+    },
+  };
+}
 
 export type PeelSide = "left" | "right" | "top" | "bottom";
 
@@ -44,8 +172,6 @@ export interface PeelOptions {
 }
 
 export interface PeelElements {
-  /** Do not disable the real launcher controls underneath the raster layer. */
-  raster?: boolean;
   /** Canvas with layoutsubtree that hosts the HTML content. */
   source: HTMLCanvasElement;
   /** The element inside the source canvas that gets captured. */
@@ -231,6 +357,8 @@ export function createPeel(
     typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let wake = () => {};
   let capture = () => {};
 
@@ -330,7 +458,7 @@ export function createPeel(
     if (!htmlInCanvas) return;
     try {
       sourceCtx!.reset();
-      sourceCtx!.drawElementImage!(content, 0, 0);
+      drawHtmlInCanvas(source, sourceCtx!, content);
       gl!.bindTexture(gl!.TEXTURE_2D, contentTexture);
       gl!.texImage2D(
         gl!.TEXTURE_2D,
@@ -347,7 +475,7 @@ export function createPeel(
   };
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -356,14 +484,14 @@ export function createPeel(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -463,7 +591,6 @@ export function createPeel(
   }
 
   function syncContentEvents() {
-    if (elements.raster) return;
     const A = peel.a;
     const R = Math.max(config.curl * A, 0.001);
     const c = A * config.reveal + R + Math.max(config.bulge, 0) * A;
@@ -559,7 +686,7 @@ export function createPeel(
   const schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
   schemeQuery.addEventListener("change", onThemeShift);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     syncCanvasSize();
     start();
   });
@@ -631,7 +758,7 @@ export function createPeel(
       motionQuery.removeEventListener("change", onMotionChange);
       listenTarget.removeEventListener("pointermove", onPointerMove);
       listenTarget.removeEventListener("pointerleave", onPointerLeave);
-      if (!elements.raster) content.style.pointerEvents = "";
+      content.style.pointerEvents = "";
       if (under) under.style.visibility = "";
       gl!.deleteTexture(contentTexture);
       gl!.deleteProgram(sheet.program);

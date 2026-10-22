@@ -1,6 +1,115 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
 
 export interface HexFloatOptions {
   /** Width of each hex tile in CSS pixels. */
@@ -35,15 +144,11 @@ export interface HexFloatOptions {
   bloom?: number;
   /** Animated film grain over the final image (0 to 1). 0 skips the pass entirely. */
   grain?: number;
-  /** Preserve captured HTML colors while the hex geometry moves. */
-  preserveColor?: boolean;
   /** Seam color as [r, g, b] in 0-1 range, or "auto" to derive a dark seam from the page background. */
   gapColor?: [number, number, number] | "auto";
 }
 
 export interface HexFloatElements {
-  /** Keep hit testing on the live DOM when using raster capture. */
-  raster?: boolean;
   /** Canvas with layoutsubtree that hosts the HTML content. */
   source: HTMLCanvasElement;
   /** The element inside the source canvas that gets captured. */
@@ -78,7 +183,6 @@ const DEFAULTS: Required<HexFloatOptions> = {
   iridescence: 1,
   bloom: 0,
   grain: 0.8,
-  preserveColor: true,
   gapColor: "auto",
 };
 
@@ -115,7 +219,6 @@ uniform float uFloat;
 uniform float uShine;
 uniform float uLift;
 uniform float uIrid;
-uniform float uPreserveColor;
 uniform sampler2D uFlow;
 uniform vec2 uScroll;
 uniform float uTime;
@@ -334,8 +437,7 @@ vec4 shade (vec2 sUv) {
     vec3 face = mix(uBg, c.rgb, c.a);
     vec3 lit = face * (0.86 + 0.14 * diff + raised * 0.06)
       + specCol * 0.9 + fres * iridTint * 0.12 * uShine;
-    vec3 preserved = mix(lit, face, clamp(uPreserveColor, 0.0, 1.0));
-    return vec4(mix(preserved, face, fc), 1.0);
+    return vec4(mix(lit, face, fc), 1.0);
   }
 
   float wallAo = 1.0 - smoothstep(zc - th, floorZ, p.z) * 0.4;
@@ -597,7 +699,9 @@ export function supportsHtmlInCanvas(): boolean {
   const probe = document.createElement("canvas") as PaintableCanvas;
   const ctx = probe.getContext("2d") as ElementImageContext | null;
   return Boolean(
-    ctx && typeof ctx.drawElementImage === "function" && typeof probe.requestPaint === "function",
+    ctx &&
+    typeof ctx.drawElementImage === "function" &&
+    typeof probe.requestPaint === "function",
   );
 }
 
@@ -614,7 +718,10 @@ function patchHoverRules() {
       if (rule instanceof CSSStyleRule) {
         if (rule.selectorText.includes(":hover")) {
           try {
-            rule.selectorText = rule.selectorText.replace(/:hover\b/g, HOVER_REWRITE);
+            rule.selectorText = rule.selectorText.replace(
+              /:hover\b/g,
+              HOVER_REWRITE,
+            );
           } catch {}
         }
         if (rule.cssRules.length) walk(rule.cssRules);
@@ -652,7 +759,8 @@ export function createHexFloat(
   if (!gl || gl.isContextLost()) return null;
 
   const supportsFloatTargets = Boolean(
-    gl.getExtension("EXT_color_buffer_float") || gl.getExtension("EXT_color_buffer_half_float"),
+    gl.getExtension("EXT_color_buffer_float") ||
+      gl.getExtension("EXT_color_buffer_half_float"),
   );
   if (!supportsFloatTargets) return null;
 
@@ -664,6 +772,8 @@ export function createHexFloat(
     typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let contentDirty = false;
   let wake = () => {};
 
@@ -671,7 +781,7 @@ export function createHexFloat(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         wake();
       } catch {}
@@ -699,12 +809,19 @@ export function createHexFloat(
   const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
   for (let i = 0; i < count; i++) {
     const info = gl.getActiveUniform(program, i)!;
-    uniforms[info.name.replace("[0]", "")] = gl.getUniformLocation(program, info.name)!;
+    uniforms[info.name.replace("[0]", "")] = gl.getUniformLocation(
+      program,
+      info.name,
+    )!;
   }
 
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+    gl.STATIC_DRAW,
+  );
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
@@ -763,10 +880,26 @@ export function createHexFloat(
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_MAG_FILTER, filter);
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_S, gl!.CLAMP_TO_EDGE);
     gl!.texParameteri(gl!.TEXTURE_2D, gl!.TEXTURE_WRAP_T, gl!.CLAMP_TO_EDGE);
-    gl!.texImage2D(gl!.TEXTURE_2D, 0, internalFormat, size, size, 0, format, gl!.HALF_FLOAT, null);
+    gl!.texImage2D(
+      gl!.TEXTURE_2D,
+      0,
+      internalFormat,
+      size,
+      size,
+      0,
+      format,
+      gl!.HALF_FLOAT,
+      null,
+    );
     const fbo = gl!.createFramebuffer()!;
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, fbo);
-    gl!.framebufferTexture2D(gl!.FRAMEBUFFER, gl!.COLOR_ATTACHMENT0, gl!.TEXTURE_2D, texture, 0);
+    gl!.framebufferTexture2D(
+      gl!.FRAMEBUFFER,
+      gl!.COLOR_ATTACHMENT0,
+      gl!.TEXTURE_2D,
+      texture,
+      0,
+    );
     gl!.viewport(0, 0, size, size);
     gl!.clearColor(0, 0, 0, 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT);
@@ -833,7 +966,13 @@ export function createHexFloat(
     return unit;
   }
 
-  function applySplat(x: number, y: number, dx: number, dy: number, dye: number) {
+  function applySplat(
+    x: number,
+    y: number,
+    dx: number,
+    dy: number,
+    dye: number,
+  ) {
     const aspect = output.clientWidth / Math.max(output.clientHeight, 1);
     const rUv = Math.max(config.radius, 40) / Math.max(output.clientHeight, 1);
     const radius = rUv * rUv * 0.28;
@@ -842,12 +981,18 @@ export function createHexFloat(
     gl!.uniform1f(splatProgram.uniforms.uAspect, aspect);
     gl!.uniform2f(splatProgram.uniforms.uPoint, x, y);
     gl!.uniform1f(splatProgram.uniforms.uRadius, radius);
-    gl!.uniform1i(splatProgram.uniforms.uTarget, bindSimTexture(velocity.read.texture, 0));
+    gl!.uniform1i(
+      splatProgram.uniforms.uTarget,
+      bindSimTexture(velocity.read.texture, 0),
+    );
     gl!.uniform3f(splatProgram.uniforms.uColor, dx, dy, 0);
     blit(velocity.write);
     velocity.swap();
 
-    gl!.uniform1i(splatProgram.uniforms.uTarget, bindSimTexture(flow.read.texture, 0));
+    gl!.uniform1i(
+      splatProgram.uniforms.uTarget,
+      bindSimTexture(flow.read.texture, 0),
+    );
     gl!.uniform3f(splatProgram.uniforms.uColor, dye, 0, 0);
     blit(flow.write);
     flow.swap();
@@ -858,58 +1003,109 @@ export function createHexFloat(
 
     gl!.useProgram(curlProgram.program);
     gl!.uniform2f(curlProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(curlProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 0));
+    gl!.uniform1i(
+      curlProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 0),
+    );
     blit(curl);
 
     gl!.useProgram(vorticityProgram.program);
     gl!.uniform2f(vorticityProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(vorticityProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 0));
-    gl!.uniform1i(vorticityProgram.uniforms.uCurl, bindSimTexture(curl.texture, 1));
-    gl!.uniform1f(vorticityProgram.uniforms.uCurlStrength, Math.max(config.swirl, 0));
+    gl!.uniform1i(
+      vorticityProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 0),
+    );
+    gl!.uniform1i(
+      vorticityProgram.uniforms.uCurl,
+      bindSimTexture(curl.texture, 1),
+    );
+    gl!.uniform1f(
+      vorticityProgram.uniforms.uCurlStrength,
+      Math.max(config.swirl, 0),
+    );
     gl!.uniform1f(vorticityProgram.uniforms.uDt, SIM_DT);
     blit(velocity.write);
     velocity.swap();
 
     gl!.useProgram(divergenceProgram.program);
     gl!.uniform2f(divergenceProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(divergenceProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 0));
+    gl!.uniform1i(
+      divergenceProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 0),
+    );
     blit(divergence);
 
     gl!.useProgram(clearProgram.program);
-    gl!.uniform1i(clearProgram.uniforms.uTexture, bindSimTexture(pressure.read.texture, 0));
-    gl!.uniform1f(clearProgram.uniforms.uValue, Math.pow(PRESSURE_DECAY, delta * 60));
+    gl!.uniform1i(
+      clearProgram.uniforms.uTexture,
+      bindSimTexture(pressure.read.texture, 0),
+    );
+    gl!.uniform1f(
+      clearProgram.uniforms.uValue,
+      Math.pow(PRESSURE_DECAY, delta * 60),
+    );
     blit(pressure.write);
     pressure.swap();
 
     gl!.useProgram(pressureProgram.program);
     gl!.uniform2f(pressureProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(pressureProgram.uniforms.uDivergence, bindSimTexture(divergence.texture, 0));
+    gl!.uniform1i(
+      pressureProgram.uniforms.uDivergence,
+      bindSimTexture(divergence.texture, 0),
+    );
     for (let i = 0; i < PRESSURE_ITERATIONS; i++) {
-      gl!.uniform1i(pressureProgram.uniforms.uPressure, bindSimTexture(pressure.read.texture, 1));
+      gl!.uniform1i(
+        pressureProgram.uniforms.uPressure,
+        bindSimTexture(pressure.read.texture, 1),
+      );
       blit(pressure.write);
       pressure.swap();
     }
 
     gl!.useProgram(gradientProgram.program);
     gl!.uniform2f(gradientProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(gradientProgram.uniforms.uPressure, bindSimTexture(pressure.read.texture, 0));
-    gl!.uniform1i(gradientProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 1));
+    gl!.uniform1i(
+      gradientProgram.uniforms.uPressure,
+      bindSimTexture(pressure.read.texture, 0),
+    );
+    gl!.uniform1i(
+      gradientProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 1),
+    );
     blit(velocity.write);
     velocity.swap();
 
     gl!.useProgram(advectProgram.program);
     gl!.uniform2f(advectProgram.uniforms.texelSize, simTexel, simTexel);
-    gl!.uniform1i(advectProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 0));
-    gl!.uniform1i(advectProgram.uniforms.uSource, bindSimTexture(velocity.read.texture, 0));
+    gl!.uniform1i(
+      advectProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 0),
+    );
+    gl!.uniform1i(
+      advectProgram.uniforms.uSource,
+      bindSimTexture(velocity.read.texture, 0),
+    );
     gl!.uniform1f(advectProgram.uniforms.uDt, SIM_DT);
-    gl!.uniform1f(advectProgram.uniforms.uDissipation, Math.pow(VELOCITY_DISSIPATION, delta * 60));
+    gl!.uniform1f(
+      advectProgram.uniforms.uDissipation,
+      Math.pow(VELOCITY_DISSIPATION, delta * 60),
+    );
     blit(velocity.write);
     velocity.swap();
 
-    gl!.uniform1i(advectProgram.uniforms.uVelocity, bindSimTexture(velocity.read.texture, 0));
-    gl!.uniform1i(advectProgram.uniforms.uSource, bindSimTexture(flow.read.texture, 1));
+    gl!.uniform1i(
+      advectProgram.uniforms.uVelocity,
+      bindSimTexture(velocity.read.texture, 0),
+    );
+    gl!.uniform1i(
+      advectProgram.uniforms.uSource,
+      bindSimTexture(flow.read.texture, 1),
+    );
     const flowDissipation = 0.9 + Math.min(Math.max(config.trail, 0), 1) * 0.08;
-    gl!.uniform1f(advectProgram.uniforms.uDissipation, Math.pow(flowDissipation, delta * 60));
+    gl!.uniform1f(
+      advectProgram.uniforms.uDissipation,
+      Math.pow(flowDissipation, delta * 60),
+    );
     blit(flow.write);
     flow.swap();
   }
@@ -957,7 +1153,13 @@ export function createHexFloat(
     );
     const fbo = gl!.createFramebuffer()!;
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, fbo);
-    gl!.framebufferTexture2D(gl!.FRAMEBUFFER, gl!.COLOR_ATTACHMENT0, gl!.TEXTURE_2D, texture, 0);
+    gl!.framebufferTexture2D(
+      gl!.FRAMEBUFFER,
+      gl!.COLOR_ATTACHMENT0,
+      gl!.TEXTURE_2D,
+      texture,
+      0,
+    );
     return { fbo, texture, width, height };
   }
 
@@ -1032,7 +1234,7 @@ export function createHexFloat(
   }
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -1041,14 +1243,14 @@ export function createHexFloat(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -1061,7 +1263,14 @@ export function createHexFloat(
     if (!htmlInCanvas || !contentDirty) return;
     contentDirty = false;
     gl!.bindTexture(gl!.TEXTURE_2D, contentTexture);
-    gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, source);
+    gl!.texImage2D(
+      gl!.TEXTURE_2D,
+      0,
+      gl!.RGBA,
+      gl!.RGBA,
+      gl!.UNSIGNED_BYTE,
+      source,
+    );
   }
 
   let time = 0;
@@ -1092,26 +1301,34 @@ export function createHexFloat(
     gl!.uniform1f(uniforms.uSize, Math.max(config.size, 8) * dpr);
     gl!.uniform1f(uniforms.uGap, Math.max(config.gap, 0) * dpr);
     gl!.uniform1f(uniforms.uBevel, Math.max(config.bevel, 0) * dpr);
-    gl!.uniform1f(uniforms.uTilt, (Math.min(Math.max(config.tilt, -30), 30) * Math.PI) / 180);
-    gl!.uniform1f(uniforms.uDist, 2.6 - Math.min(Math.max(config.perspective, 0), 1) * 2.2);
+    gl!.uniform1f(
+      uniforms.uTilt,
+      (Math.min(Math.max(config.tilt, -30), 30) * Math.PI) / 180,
+    );
+    gl!.uniform1f(
+      uniforms.uDist,
+      2.6 - Math.min(Math.max(config.perspective, 0), 1) * 2.2,
+    );
     gl!.uniform1f(uniforms.uFloat, Math.max(config.float, 0));
     gl!.uniform1f(uniforms.uShine, Math.max(config.shine, 0));
     gl!.uniform1f(uniforms.uLift, Math.max(config.lift, 0));
-    gl!.uniform1f(uniforms.uIrid, config.preserveColor ? 0 : Math.max(config.iridescence, 0));
-    gl!.uniform1f(uniforms.uPreserveColor, config.preserveColor ? 1 : 0);
+    gl!.uniform1f(uniforms.uIrid, Math.max(config.iridescence, 0));
     gl!.activeTexture(gl!.TEXTURE1);
     gl!.bindTexture(gl!.TEXTURE_2D, flow.read.texture);
     gl!.uniform1i(uniforms.uFlow, 1);
-    gl!.uniform2f(uniforms.uScroll, content.scrollLeft * dpr, content.scrollTop * dpr);
+    gl!.uniform2f(
+      uniforms.uScroll,
+      content.scrollLeft * dpr,
+      content.scrollTop * dpr,
+    );
     gl!.uniform1f(uniforms.uTime, time);
     gl!.uniform1f(uniforms.uHasContent, htmlInCanvas ? 1 : 0);
     gl!.uniform1f(uniforms.uMaxX, contentMaxX);
     gl!.uniform3f(uniforms.uBg, bg[0], bg[1], bg[2]);
     gl!.uniform3f(uniforms.uGapColor, seam[0], seam[1], seam[2]);
 
-    const bloomOn = !config.preserveColor && config.bloom > 0.001;
-    const grainOn = !config.preserveColor && config.grain > 0.001;
-    const usePost = bloomOn || grainOn;
+    const bloomOn = config.bloom > 0.001;
+    const usePost = bloomOn || config.grain > 0.001;
     if (!usePost) {
       gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
       gl!.viewport(0, 0, output.width, output.height);
@@ -1124,20 +1341,32 @@ export function createHexFloat(
 
     if (bloomOn) {
       gl!.useProgram(brightProgram.program);
-      gl!.uniform1i(brightProgram.uniforms.uScene, bindSimTexture(sceneTarget!.texture, 0));
+      gl!.uniform1i(
+        brightProgram.uniforms.uScene,
+        bindSimTexture(sceneTarget!.texture, 0),
+      );
       blit(bloomA!);
 
       gl!.useProgram(blurProgram.program);
-      gl!.uniform1i(blurProgram.uniforms.uScene, bindSimTexture(bloomA!.texture, 0));
+      gl!.uniform1i(
+        blurProgram.uniforms.uScene,
+        bindSimTexture(bloomA!.texture, 0),
+      );
       gl!.uniform2f(blurProgram.uniforms.uDir, 1 / bloomA!.width, 0);
       blit(bloomB!);
-      gl!.uniform1i(blurProgram.uniforms.uScene, bindSimTexture(bloomB!.texture, 0));
+      gl!.uniform1i(
+        blurProgram.uniforms.uScene,
+        bindSimTexture(bloomB!.texture, 0),
+      );
       gl!.uniform2f(blurProgram.uniforms.uDir, 0, 1 / bloomA!.height);
       blit(bloomA!);
     }
 
     gl!.useProgram(compositeProgram.program);
-    gl!.uniform1i(compositeProgram.uniforms.uScene, bindSimTexture(sceneTarget!.texture, 0));
+    gl!.uniform1i(
+      compositeProgram.uniforms.uScene,
+      bindSimTexture(sceneTarget!.texture, 0),
+    );
     gl!.uniform1i(
       compositeProgram.uniforms.uBloomTex,
       bindSimTexture((bloomA ?? sceneTarget)!.texture, 1),
@@ -1148,7 +1377,7 @@ export function createHexFloat(
     );
     gl!.uniform1f(
       compositeProgram.uniforms.uGrainAmt,
-      grainOn ? Math.min(Math.max(config.grain, 0), 1) : 0,
+      Math.min(Math.max(config.grain, 0), 1),
     );
     gl!.uniform1f(compositeProgram.uniforms.uTime, time);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
@@ -1168,7 +1397,7 @@ export function createHexFloat(
   function animating(): boolean {
     if (reducedMotion) return false;
     if (config.float > 0) return true;
-    if (!config.preserveColor && config.grain > 0.001) return true;
+    if (config.grain > 0.001) return true;
     if (pointerOn) return true;
     if (performance.now() < simActiveUntil) return true;
     return false;
@@ -1246,7 +1475,10 @@ export function createHexFloat(
   }
   content.addEventListener("scroll", onScroll, { passive: true });
 
-  function contentPoint(clientX: number, clientY: number): { x: number; y: number } | null {
+  function contentPoint(
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } | null {
     const rect = output.getBoundingClientRect();
     const dpr = output.width / Math.max(output.clientWidth, 1);
     const w = output.width;
@@ -1265,7 +1497,8 @@ export function createHexFloat(
     const dist = 2.6 - Math.min(Math.max(config.perspective, 0), 1) * 2.2;
     const d = h * dist;
     const focal = (d + Math.sqrt(d * d + h * h * sa * sa)) / (h * ca);
-    const dy = 0.5 * h - sa * d - (ca * d * (ca - focal * sa)) / (sa + focal * ca);
+    const dy =
+      0.5 * h - sa * d - (ca * d * (ca - focal * sa)) / (sa + focal * ca);
     const scrollX = content.scrollLeft * dpr;
     const scrollY = content.scrollTop * dpr;
     const roX = scrollX / cell + (0.5 * w) / cell;
@@ -1305,14 +1538,16 @@ export function createHexFloat(
     for (const el of next) el.setAttribute(HOVER_ATTR, "");
     hoverChain = Array.from(next);
     if (target) {
-      content.style.setProperty("--canvasui-cursor", getComputedStyle(target).cursor);
+      content.style.setProperty(
+        "--canvasui-cursor",
+        getComputedStyle(target).cursor,
+      );
     } else {
       content.style.removeProperty("--canvasui-cursor");
     }
   }
 
   function updateHover(clientX: number, clientY: number) {
-    if (elements.raster) return;
     if (!htmlInCanvas) return;
     const p = contentPoint(clientX, clientY);
     if (!p) {
@@ -1325,7 +1560,6 @@ export function createHexFloat(
   }
 
   function onClick(event: MouseEvent) {
-    if (elements.raster) return;
     if (forwarding || !htmlInCanvas) return;
     const p = contentPoint(event.clientX, event.clientY);
     if (!p) return;
@@ -1337,7 +1571,9 @@ export function createHexFloat(
     event.stopPropagation();
     const target = document.elementFromPoint(tx, ty);
     if (!target || !content.contains(target)) return;
-    const focusable = target.closest<HTMLElement>("a, button, input, select, textarea, [tabindex]");
+    const focusable = target.closest<HTMLElement>(
+      "a, button, input, select, textarea, [tabindex]",
+    );
     forwarding = true;
     try {
       focusable?.focus?.();
@@ -1362,7 +1598,10 @@ export function createHexFloat(
 
   content.addEventListener("click", onClick, true);
 
-  function caretAt(x: number, y: number): { node: Node; offset: number } | null {
+  function caretAt(
+    x: number,
+    y: number,
+  ): { node: Node; offset: number } | null {
     const doc = document as Document & {
       caretPositionFromPoint?: (
         x: number,
@@ -1391,7 +1630,6 @@ export function createHexFloat(
   let selecting = false;
 
   function onMouseDown(event: MouseEvent) {
-    if (elements.raster) return;
     if (forwarding || !htmlInCanvas || event.button !== 0) return;
     const m = remapped(event);
     if (!m) return;
@@ -1438,7 +1676,7 @@ export function createHexFloat(
   }
   motionQuery.addEventListener("change", onMotionChange);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     syncCanvasSize();
     start();
   });
@@ -1463,7 +1701,9 @@ export function createHexFloat(
   return {
     setOptions(next) {
       if (
-        !Object.entries(next).some(([key, value]) => config[key as keyof HexFloatOptions] !== value)
+        !Object.entries(next).some(
+          ([key, value]) => config[key as keyof HexFloatOptions] !== value,
+        )
       )
         return;
       Object.assign(config, next);
@@ -1509,7 +1749,12 @@ export interface HexFloatProps extends HexFloatOptions {
 
 const emptySubscribe = () => () => {};
 
-export function HexFloat({ children, className, style, ...options }: HexFloatProps) {
+export function HexFloat({
+  children,
+  className,
+  style,
+  ...options
+}: HexFloatProps) {
   const sourceRef = useRef<HTMLCanvasElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const outputRef = useRef<HTMLCanvasElement>(null);
@@ -1517,7 +1762,11 @@ export function HexFloat({ children, className, style, ...options }: HexFloatPro
   const [initialOptions] = useState(options);
   const [failed, setFailed] = useState(false);
 
-  const supported = useSyncExternalStore(emptySubscribe, supportsHtmlInCanvas, () => false);
+  const supported = useSyncExternalStore(
+    emptySubscribe,
+    supportsHtmlInCanvas,
+    () => false,
+  );
   const native = supported && !failed;
 
   useEffect(() => {
@@ -1525,7 +1774,10 @@ export function HexFloat({ children, className, style, ...options }: HexFloatPro
     const content = contentRef.current;
     const output = outputRef.current;
     if (!source || !content || !output) return;
-    instanceRef.current = createHexFloat({ source, content, output }, initialOptions);
+    instanceRef.current = createHexFloat(
+      { source, content, output },
+      initialOptions,
+    );
     if (native && !instanceRef.current) setFailed(true);
     return () => {
       instanceRef.current?.destroy();
@@ -1591,5 +1843,6 @@ export function HexFloat({ children, className, style, ...options }: HexFloatPro
     </div>
   );
 }
+
 
 export default HexFloat;

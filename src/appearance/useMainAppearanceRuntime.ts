@@ -27,6 +27,7 @@ const HOVER_PREVIEW_OPACITY_PROPERTY = "--appearance-preview-element-opacity";
 import type { TabKey } from "../types";
 import { APPEARANCE_PLACEHOLDER_VALUES_ATTRIBUTE } from "../utils/placeholders";
 import { useLiquidGlassEffects } from "./useLiquidGlassEffects";
+import { canvasUiMutationAffectsCapture } from "./canvasUiRuntime";
 
 type MainAppearanceRuntimeOptions = {
   rootRef: RefObject<HTMLElement | null>;
@@ -155,9 +156,10 @@ export function useMainAppearanceRuntime({
         current.elementOverrides.some((override) => override.text !== undefined);
       const relevant = mutations.some(
         (mutation) =>
-          mutation.type === "childList" ||
-          (hasTextOverrides &&
-            (mutation.type === "characterData" || mutation.type === "attributes")),
+          canvasUiMutationAffectsCapture(mutation) &&
+          (mutation.type === "childList" ||
+            (hasTextOverrides &&
+              (mutation.type === "characterData" || mutation.type === "attributes"))),
       );
       if (relevant) sync();
     });

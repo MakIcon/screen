@@ -8,6 +8,109 @@ import {
   type ReactNode,
 } from "react";
 
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
+
 export type AsciifyCharset = "ascii" | "blocks" | "binary";
 
 export interface AsciifyOptions {
@@ -299,9 +402,9 @@ function intersectFallbackRects(
 function paintFallbackSnapshot(
   content: HTMLElement,
   canvas: HTMLCanvasElement,
+  dpr: number,
 ) {
   const rootRect = content.getBoundingClientRect();
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(1, Math.round(rootRect.width * dpr));
   const height = Math.max(1, Math.round(rootRect.height * dpr));
   if (canvas.width !== width || canvas.height !== height) {
@@ -618,21 +721,21 @@ function paintFallbackText(
 
     if (preservesNewlines) {
       let position = 0;
-      for (const part of raw.split("")) {
+      for (const part of raw.split("\n")) {
         const start = position;
         position += part.length + 1;
         if (!part.trim()) continue;
         range.setStart(node, start);
         range.setEnd(node, start + part.length);
         const text = transform(
-          preservesSpaces ? part : part.replace(/\s+/g, "").trim(),
+          preservesSpaces ? part : part.replace(/\s+/g, " ").trim(),
         );
         drawAcrossRects(text, Array.from(range.getClientRects()));
       }
       continue;
     }
 
-    const text = transform(raw.replace(/\s+/g, "").trim());
+    const text = transform(raw.replace(/\s+/g, " ").trim());
     if (!text) continue;
     range.selectNodeContents(node);
     drawAcrossRects(text, Array.from(range.getClientRects()));
@@ -705,6 +808,8 @@ function initializeAsciify(
     typeof paintable.requestPaint === "function",
   );
 
+  if (htmlInCanvas) prepareHtmlInCanvas(source, content);
+
   let destroyed = false;
   let contentDirty = false;
   let wake = () => {};
@@ -721,7 +826,7 @@ function initializeAsciify(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         scheduleTextMask();
         wake();
@@ -745,7 +850,7 @@ function initializeAsciify(
     fallbackCaptureTimer = 0;
     fallbackScrollCaptureTimer = 0;
     try {
-      paintFallbackSnapshot(content, source);
+      paintFallbackSnapshot(content, source, getCanvasPixelRatio(output, gl!));
       if (destroyed) return;
       fallbackSource = source;
       capturedScrollLeft = content.scrollLeft;
@@ -917,7 +1022,7 @@ function initializeAsciify(
 
   function syncCanvasSize(): boolean {
     let changed = false;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -927,17 +1032,17 @@ function initializeAsciify(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
       if (
-        source.width !== cssWidth * dpr ||
-        source.height !== cssHeight * dpr
+        source.width !== sourceWidth ||
+        source.height !== sourceHeight
       ) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+        source.width = sourceWidth;
+        source.height = sourceHeight;
         changed = true;
       }
       paintable.requestPaint!();
@@ -1045,11 +1150,11 @@ function initializeAsciify(
       htmlInCanvas
         ? 0
         : (content.scrollLeft - capturedScrollLeft) /
-            Math.max((content.clientWidth || content.offsetWidth), 1),
+            Math.max(content.clientWidth, 1),
       htmlInCanvas
         ? 0
         : (content.scrollTop - capturedScrollTop) /
-            Math.max((content.clientHeight || content.offsetHeight), 1),
+            Math.max(content.clientHeight, 1),
     );
     gl!.uniform2f(uniforms.uResolution, output.width, output.height);
     const dpr = output.width / Math.max(output.clientWidth, 1);
@@ -1057,7 +1162,7 @@ function initializeAsciify(
     const dotCss = Math.max(1.25, glyphCss * 0.75);
     const texelsPerCss = htmlInCanvas
       ? dpr
-      : source.width / Math.max((content.clientWidth || content.offsetWidth), 1);
+      : source.width / Math.max(content.clientWidth, 1);
     gl!.uniform1f(uniforms.uDotPx, dotCss * dpr);
     gl!.uniform1f(
       uniforms.uDotLod,
@@ -1175,7 +1280,7 @@ function initializeAsciify(
     outputRect = output.getBoundingClientRect();
   };
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     refreshOutputRect();
     if (syncCanvasSize()) queueFallbackCapture();
     start();

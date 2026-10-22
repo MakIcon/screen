@@ -2,6 +2,40 @@ import type { CanvasUiEffectId } from "./types";
 
 export const CANVAS_UI_REPLACED_ATTRIBUTE = "data-canvas-ui-replaced";
 
+export const CANVAS_UI_CAPTURE_IGNORE_SELECTOR = [
+  ".canvas-ui-element-effects",
+  ".appearance-drawing-cursor",
+  ".canvas-ui-object-layer",
+  ".canvas-ui-element-object-layer",
+].join(", ");
+
+function captureStyle(style: string | null) {
+  return (style ?? "").replace(/--canvas-ui-pointer-[xy]\s*:[^;]*;?/g, "").trim();
+}
+
+// Texture uploads, overlay positioning and compatibility cursor variables are
+// renderer bookkeeping, not changes to the HTML being captured.
+export function canvasUiMutationAffectsCapture(record: MutationRecord) {
+  const target = record.target instanceof Element ? record.target : record.target.parentElement;
+  if (target?.closest(CANVAS_UI_CAPTURE_IGNORE_SELECTOR)) return false;
+  if (record.type === "attributes") {
+    if (record.oldValue === target?.getAttribute(record.attributeName ?? "")) return false;
+    if (
+      record.attributeName === CANVAS_UI_REPLACED_ATTRIBUTE ||
+      record.attributeName?.startsWith("data-canvas-ui-")
+    )
+      return false;
+    if (record.attributeName === "style")
+      return captureStyle(record.oldValue) !== captureStyle(target?.getAttribute("style") ?? null);
+  }
+  if (record.type === "childList") {
+    return [...record.addedNodes, ...record.removedNodes].some(
+      (node) => !(node instanceof Element && node.matches(CANVAS_UI_CAPTURE_IGNORE_SELECTOR)),
+    );
+  }
+  return true;
+}
+
 // These engines draw only a lens/atmosphere; all others render the source too.
 export function canvasUiReplacesContent(effect: CanvasUiEffectId) {
   return !["bubble", "glass", "magnify", "clouds", "asciify", "ascii-sweep", "laser"].includes(
@@ -9,16 +43,7 @@ export function canvasUiReplacesContent(effect: CanvasUiEffectId) {
   );
 }
 
-// Serialize DOM snapshots across effects. Cloning the whole document for every
-// selected element at once stalls WebView2 and can exhaust its canvas memory.
-let captureQueue: Promise<unknown> = Promise.resolve();
-export function queueCanvasUiCapture<T>(capture: () => Promise<T>): Promise<T> {
-  const next = captureQueue.then(capture, capture);
-  captureQueue = next.catch(() => undefined);
-  return next;
-}
-
-export function forwardCanvasUiPointer(event: Event, receiver: HTMLElement) {
+export function forwardCanvasUiPointer(event: Event, receiver: HTMLElement, boundary = receiver) {
   if (!(event instanceof PointerEvent)) return;
   const forwarded = new PointerEvent(event.type, {
     bubbles: true,
@@ -39,11 +64,11 @@ export function forwardCanvasUiPointer(event: Event, receiver: HTMLElement) {
   // letting window listeners process the same movement twice.
   Object.defineProperty(forwarded, "target", { value: event.target });
   const stop = (copy: Event) => copy.stopPropagation();
-  receiver.addEventListener(event.type, stop);
+  boundary.addEventListener(event.type, stop);
   try {
     receiver.dispatchEvent(forwarded);
   } finally {
-    receiver.removeEventListener(event.type, stop);
+    boundary.removeEventListener(event.type, stop);
   }
 }
 

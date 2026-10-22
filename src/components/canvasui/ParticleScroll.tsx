@@ -7,7 +7,109 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createScrollState } from "./scroll-state";
+
+const canvasDimensionLimits = new WeakMap<WebGLRenderingContext | WebGL2RenderingContext, number>();
+
+/** Keep the existing DPR budget, then account for browser pinch zoom. */
+function getCanvasPixelRatio(
+  element: HTMLElement,
+  context?: WebGLRenderingContext | WebGL2RenderingContext,
+): number {
+  const scale = window.visualViewport?.scale || 1;
+  const requested = Math.min(window.devicePixelRatio || 1, 2) * scale;
+  const width = Math.max(element.clientWidth, 1);
+  const height = Math.max(element.clientHeight, 1);
+  let maxDimension = 8192;
+  if (context) {
+    let limit = canvasDimensionLimits.get(context);
+    if (limit === undefined) {
+      limit = Math.min(
+        maxDimension,
+        context.getParameter(context.MAX_TEXTURE_SIZE),
+        context.getParameter(context.MAX_RENDERBUFFER_SIZE),
+      );
+      canvasDimensionLimits.set(context, limit);
+    }
+    maxDimension = limit;
+  }
+  // Rendering the full element preserves its CSS position and native input
+  // geometry while panning. Bound allocations when zooming large canvases.
+  return Math.min(
+    requested,
+    maxDimension / Math.max(width, height),
+    Math.sqrt(16_777_216 / (width * height)),
+  );
+}
+
+/** Pinch zoom changes visualViewport without resizing the element's CSS box. */
+function createCanvasResizeObserver(onResize: () => void) {
+  const viewport = window.visualViewport;
+  let frame = 0;
+  let disconnected = false;
+  const schedule = () => {
+    if (frame || disconnected) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      onResize();
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  window.addEventListener("resize", schedule, { passive: true });
+  viewport?.addEventListener("resize", schedule, { passive: true });
+  return {
+    observe(element: Element, options?: ResizeObserverOptions) {
+      observer.observe(element, options);
+    },
+    unobserve(element: Element) {
+      observer.unobserve(element);
+    },
+    disconnect() {
+      disconnected = true;
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      viewport?.removeEventListener("resize", schedule);
+    },
+  };
+}
+
+type HtmlInCanvasContext = CanvasRenderingContext2D & {
+  drawElementImage: (element: Element, x: number, y: number) => DOMMatrix | void;
+};
+
+type HtmlInCanvasElement = HTMLCanvasElement & {
+  updateElementGeometry?: (
+    element: Element,
+    options: { canvasTransform: DOMMatrix },
+  ) => void;
+};
+
+/** Configure the capture subtree for both generations of the experimental API. */
+function prepareHtmlInCanvas(source: HTMLCanvasElement, content: HTMLElement) {
+  if ("content" in source) {
+    source.setAttribute("content", "drawable");
+    content.setAttribute("drawable", "");
+  } else {
+    source.setAttribute("layoutsubtree", "");
+  }
+}
+
+/** Capture pixels and keep the native DOM hit-test region aligned with them. */
+function drawHtmlInCanvas(
+  source: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  content: HTMLElement,
+) {
+  const transform = (context as HtmlInCanvasContext).drawElementImage(content, 0, 0);
+  const canvas = source as HtmlInCanvasElement;
+  // Chrome 154 decoupled geometry from drawing before enabling automatic 2D
+  // synchronization. Older versions have no update method; newer versions
+  // synchronize automatically and return void. Use the returned matrix as-is:
+  // drawElementImage already accounts for the canvas's pixel density.
+  if (transform && typeof canvas.updateElementGeometry === "function") {
+    canvas.updateElementGeometry(content, { canvasTransform: transform });
+  }
+}
 
 export interface ParticleScrollOptions {
   /** Viewport fraction of the formation line. Content assembles as it scrolls up past this line and dissolves back below it. */
@@ -249,6 +351,19 @@ export function createParticleScroll(
   const config = { ...DEFAULTS, ...options };
   const { source, content, output } = elements;
 
+  const sourceCtx = source.getContext("2d") as ElementImageContext | null;
+  const paintable = source as PaintableCanvas;
+  const htmlInCanvas = Boolean(
+    source.contains(content) &&
+    sourceCtx &&
+    typeof sourceCtx.drawElementImage === "function" &&
+    typeof paintable.requestPaint === "function",
+  );
+
+  // No particle renderer is available without a DOM capture. Leave the plain
+  // HTML fallback to the browser without creating a GPU overlay.
+  if (!htmlInCanvas) return null;
+
   const gl = output.getContext("webgl2", {
     alpha: true,
     depth: false,
@@ -258,13 +373,7 @@ export function createParticleScroll(
   });
   if (!gl || gl.isContextLost()) return null;
 
-  const sourceCtx = source.getContext("2d") as ElementImageContext | null;
-  const paintable = source as PaintableCanvas;
-  const htmlInCanvas = Boolean(
-    sourceCtx &&
-    typeof sourceCtx.drawElementImage === "function" &&
-    typeof paintable.requestPaint === "function",
-  );
+  prepareHtmlInCanvas(source, content);
 
   let contentDirty = false;
   let wake = () => {};
@@ -273,7 +382,7 @@ export function createParticleScroll(
     paintable.onpaint = () => {
       try {
         sourceCtx!.reset();
-        sourceCtx!.drawElementImage!(content, 0, 0);
+        drawHtmlInCanvas(source, sourceCtx!, content);
         contentDirty = true;
         wake();
       } catch {}
@@ -387,7 +496,7 @@ export function createParticleScroll(
   }
 
   function syncCanvasSize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = getCanvasPixelRatio(output, gl!);
     const width = Math.max(1, Math.round(output.clientWidth * dpr));
     const height = Math.max(1, Math.round(output.clientHeight * dpr));
     if (output.width !== width || output.height !== height) {
@@ -396,14 +505,14 @@ export function createParticleScroll(
     }
     contentMaxX = Math.min(
       1,
-      Math.max(0.05, (content.clientWidth || content.offsetWidth) / Math.max(output.clientWidth, 1)),
+      Math.max(0.05, content.clientWidth / Math.max(output.clientWidth, 1)),
     );
     if (htmlInCanvas) {
-      const cssWidth = Math.max(1, Math.round(source.clientWidth));
-      const cssHeight = Math.max(1, Math.round(source.clientHeight));
-      if (source.width !== cssWidth * dpr || source.height !== cssHeight * dpr) {
-        source.width = cssWidth * dpr;
-        source.height = cssHeight * dpr;
+      const sourceWidth = Math.max(1, Math.round(source.clientWidth * dpr));
+      const sourceHeight = Math.max(1, Math.round(source.clientHeight * dpr));
+      if (source.width !== sourceWidth || source.height !== sourceHeight) {
+        source.width = sourceWidth;
+        source.height = sourceHeight;
       }
       paintable.requestPaint!();
     }
@@ -416,8 +525,7 @@ export function createParticleScroll(
   let introDone = false;
   let introWait = 0;
   let introReady = false;
-  const scrollState = createScrollState(content, () => onScroll());
-  let scrollSmooth = scrollState.current.scrollTop;
+  let scrollSmooth = content.scrollTop;
   syncCanvasSize();
   syncBgColor();
 
@@ -442,7 +550,7 @@ export function createParticleScroll(
     if (reducedMotion || !introDone) return 1;
     const h = Math.max(output.clientHeight, 1);
     const band = Math.max(config.band, 1);
-    const max = scrollState.current.scrollHeight - scrollState.current.clientHeight;
+    const max = content.scrollHeight - content.clientHeight;
     let line = Math.min(Math.max(config.point, 0), 1) * h;
     if (max <= 1) {
       line = h + band;
@@ -463,7 +571,7 @@ export function createParticleScroll(
     winStart: number,
     winLen: number,
   ) {
-    const docRows = Math.max(1, Math.ceil(scrollState.current.scrollHeight / density));
+    const docRows = Math.max(1, Math.ceil(content.scrollHeight / density));
     if (rowProgress.length !== docRows) {
       const next = new Float32Array(docRows);
       for (let i = 0; i < docRows; i++) {
@@ -520,7 +628,7 @@ export function createParticleScroll(
       Math.max(config.density, 1),
       Math.sqrt((w * h) / 800000),
     );
-    const scrollTop = scrollState.current.scrollTop;
+    const scrollTop = content.scrollTop;
     const gridX = Math.ceil(w / density);
     const winStart = Math.floor(scrollTop / density);
     const winLen = Math.ceil(h / density) + 2;
@@ -592,7 +700,7 @@ export function createParticleScroll(
   let running = false;
   let visible = true;
   let lag = 0;
-  let lastScrollTop = scrollState.current.scrollTop;
+  let lastScrollTop = content.scrollTop;
 
   function frame(now: number) {
     if (destroyed) return;
@@ -603,7 +711,7 @@ export function createParticleScroll(
     const delta = Math.min((now - lastTime) / 1000, 1 / 30);
     lastTime = now;
     time += delta;
-    const scrollTop = scrollState.current.scrollTop;
+    const scrollTop = content.scrollTop;
     lag += scrollTop - lastScrollTop;
     lastScrollTop = scrollTop;
     lag *= Math.exp(-delta / 0.22);
@@ -660,7 +768,7 @@ export function createParticleScroll(
   }
   motionQuery.addEventListener("change", onMotionChange);
 
-  const observer = new ResizeObserver(() => {
+  const observer = createCanvasResizeObserver(() => {
     syncCanvasSize();
     start();
   });
@@ -693,7 +801,6 @@ export function createParticleScroll(
       destroyed = true;
       cancelAnimationFrame(raf);
       content.removeEventListener("scroll", onScroll);
-      scrollState.destroy();
       observer.disconnect();
       intersection.disconnect();
       motionQuery.removeEventListener("change", onMotionChange);
@@ -805,6 +912,7 @@ export function ParticleScroll({
         ref={outputRef}
         aria-hidden
         style={{
+          display: native ? "block" : "none",
           position: "absolute",
           inset: 0,
           width: "100%",

@@ -5,6 +5,7 @@ import {
   CANVAS_UI_POINTER_EVENTS,
   canvasUiClipInsets,
   canvasUiLocalBounds,
+  canvasUiMutationAffectsCapture,
   forwardCanvasUiPointer,
   type CanvasUiBounds,
 } from "./canvasUiRuntime";
@@ -58,10 +59,20 @@ function ElementEffectFrame({
       if (objectEffect)
         CANVAS_UI_POINTER_EVENTS.forEach((type) => source?.removeEventListener(type, forward));
       source = next;
+      resizeObserver.disconnect();
+      resizeObserver.observe(root);
+      resizeObserver.observe(layer);
+      let ancestor = source;
+      while (ancestor && ancestor !== root) {
+        resizeObserver.observe(ancestor);
+        ancestor = ancestor.parentElement;
+      }
       if (objectEffect)
         CANVAS_UI_POINTER_EVENTS.forEach((type) => source?.addEventListener(type, forward));
     };
     const update = () => {
+      animationFrame = 0;
+      let moving = false;
       if (resolvePending || !source?.isConnected) {
         resolvePending = false;
         const tagged = Array.from(
@@ -91,6 +102,9 @@ function ElementEffectFrame({
             computed.visibility !== "hidden" &&
             computed.display !== "none" &&
             Number(computed.opacity) > 0;
+          moving ||= ancestor
+            .getAnimations()
+            .some((animation) => animation.playState === "running");
           if (ancestor !== source && ancestor !== root) ancestorOpacity *= Number(computed.opacity);
           if (ancestor !== source) {
             const clipX = /hidden|clip|scroll|auto/.test(computed.overflowX);
@@ -128,16 +142,69 @@ function ElementEffectFrame({
           source.classList.contains("appearance-pick-selected"),
         );
       }
-      animationFrame = requestAnimationFrame(update);
+      if (moving) scheduleUpdate();
     };
+    const scheduleUpdate = () => {
+      if (!animationFrame) animationFrame = requestAnimationFrame(update);
+    };
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    resizeObserver.observe(root);
+    resizeObserver.observe(layer);
     const observer = new MutationObserver((records) => {
-      if (records.some((record) => !layer.contains(record.target))) resolvePending = true;
+      const changes = records.filter(
+        (record) => !layer.contains(record.target) && canvasUiMutationAffectsCapture(record),
+      );
+      if (!changes.length) return;
+      if (changes.some((record) => record.type === "childList")) resolvePending = true;
+      scheduleUpdate();
     });
-    observer.observe(root, { childList: true, subtree: true });
+    observer.observe(root, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ["class", "style", "hidden", "open"],
+    });
+    observer.observe(document.head, { childList: true, characterData: true, subtree: true });
+    let ancestor = root.parentElement;
+    while (ancestor) {
+      observer.observe(ancestor, {
+        attributes: true,
+        attributeOldValue: true,
+        attributeFilter: ["class", "style"],
+      });
+      ancestor = ancestor.parentElement;
+    }
+    const motionEvents = [
+      "pointerover",
+      "pointerout",
+      "pointerdown",
+      "pointerup",
+      "focusin",
+      "focusout",
+      "transitionrun",
+      "transitionend",
+      "transitioncancel",
+      "animationstart",
+      "animationend",
+      "animationcancel",
+    ];
+    motionEvents.forEach((type) => root.addEventListener(type, scheduleUpdate, true));
+    window.addEventListener("scroll", scheduleUpdate, { capture: true, passive: true });
+    window.addEventListener("resize", scheduleUpdate, { passive: true });
+    document.fonts?.addEventListener("loadingdone", scheduleUpdate);
+    root.addEventListener("load", scheduleUpdate, true);
     update();
     return () => {
       observer.disconnect();
+      resizeObserver.disconnect();
       cancelAnimationFrame(animationFrame);
+      motionEvents.forEach((type) => root.removeEventListener(type, scheduleUpdate, true));
+      window.removeEventListener("scroll", scheduleUpdate, true);
+      window.removeEventListener("resize", scheduleUpdate);
+      document.fonts?.removeEventListener("loadingdone", scheduleUpdate);
+      root.removeEventListener("load", scheduleUpdate, true);
       if (objectEffect)
         CANVAS_UI_POINTER_EVENTS.forEach((type) => source?.removeEventListener(type, forward));
     };

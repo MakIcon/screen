@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   canvasUiClipInsets,
   canvasUiLocalBounds,
   canvasUiReplacesContent,
-  queueCanvasUiCapture,
+  canvasUiMutationAffectsCapture,
 } from "./canvasUiRuntime";
 
 describe("Canvas UI element geometry", () => {
@@ -36,6 +36,91 @@ describe("Canvas UI element geometry", () => {
   });
 });
 
+describe("native Canvas UI invalidation", () => {
+  class ElementStub {
+    constructor(
+      public renderer = false,
+      public style = "",
+    ) {}
+    closest() {
+      return this.renderer ? this : null;
+    }
+    matches() {
+      return this.renderer;
+    }
+    getAttribute() {
+      return this.style;
+    }
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  function mutation(record: Record<string, unknown>) {
+    vi.stubGlobal("Element", ElementStub);
+    return canvasUiMutationAffectsCapture({
+      target: new ElementStub(),
+      type: "attributes",
+      addedNodes: [],
+      removedNodes: [],
+      ...record,
+    } as unknown as MutationRecord);
+  }
+
+  it("ignores concealment and renderer changes to prevent feedback loops", () => {
+    expect(mutation({ attributeName: "data-canvas-ui-replaced" })).toBe(false);
+    expect(mutation({ attributeName: "data-canvas-ui-ready" })).toBe(false);
+    expect(mutation({ target: new ElementStub(true), type: "childList" })).toBe(false);
+  });
+
+  it("ignores insertion of an effect layer but tracks real content insertion", () => {
+    expect(mutation({ type: "childList", addedNodes: [new ElementStub(true)] })).toBe(false);
+    expect(mutation({ type: "childList", addedNodes: [new ElementStub()] })).toBe(true);
+  });
+
+  it("keeps source text and appearance updates live", () => {
+    expect(mutation({ type: "characterData" })).toBe(true);
+    expect(mutation({ attributeName: "class" })).toBe(true);
+    expect(
+      mutation({
+        attributeName: "style",
+        target: new ElementStub(false, "color: red"),
+        oldValue: "color: blue",
+      }),
+    ).toBe(true);
+    expect(
+      mutation({
+        attributeName: "style",
+        target: new ElementStub(false, "color: red"),
+        oldValue: "color: red",
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores repeated attribute writes from applying the same appearance", () => {
+    expect(
+      mutation({
+        attributeName: "class",
+        target: new ElementStub(false, "selected"),
+        oldValue: "selected",
+      }),
+    ).toBe(false);
+    expect(
+      mutation({
+        attributeName: "data-appearance-override",
+        target: new ElementStub(false, "element-1"),
+        oldValue: "element-1",
+      }),
+    ).toBe(false);
+    expect(
+      mutation({
+        attributeName: "class",
+        target: new ElementStub(false, "selected"),
+        oldValue: "",
+      }),
+    ).toBe(true);
+  });
+});
+
 describe("Canvas UI composition", () => {
   it("retains the DOM under lenses, and replaces it under full texture effects", () => {
     for (const effect of [
@@ -52,28 +137,5 @@ describe("Canvas UI composition", () => {
     for (const effect of ["glitch", "ripple", "cloth", "peel"] as const) {
       expect(canvasUiReplacesContent(effect)).toBe(true);
     }
-  });
-
-  it("serializes snapshots and recovers after a failed capture", async () => {
-    const calls: string[] = [];
-    let finish!: () => void;
-    const first = queueCanvasUiCapture(async () => {
-      calls.push("first");
-      await new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-      throw new Error("capture failed");
-    });
-    const second = queueCanvasUiCapture(async () => {
-      calls.push("second");
-      return 42;
-    });
-    await Promise.resolve();
-    expect(calls).toEqual(["first"]);
-    const failure = expect(first).rejects.toThrow("capture failed");
-    finish();
-    await failure;
-    expect(await second).toBe(42);
-    expect(calls).toEqual(["first", "second"]);
   });
 });

@@ -917,8 +917,7 @@ function buildElementOverrideStateRule(
     const targetOpacity = override.style.elementOpacity ?? 1;
     const animatesBlur =
       override.style.entranceAnimation === "blur" ||
-      (override.style.entranceAnimation === "custom" &&
-        (override.style.entranceFromBlur ?? 0) > 0);
+      (override.style.entranceAnimation === "custom" && (override.style.entranceFromBlur ?? 0) > 0);
     const end = `opacity: ${targetOpacity}; translate: 0 0; scale: 1; rotate: 0deg;${animatesBlur ? " filter: blur(0);" : ""}`;
     const start = (() => {
       switch (override.style.entranceAnimation) {
@@ -1183,7 +1182,8 @@ export function applyElementAppearanceOverrides(
     styleElement.id = OVERRIDE_STYLE_ID;
     document.head.append(styleElement);
   }
-  styleElement.textContent = rules.join("\n");
+  const css = rules.join("\n");
+  if (styleElement.textContent !== css) styleElement.textContent = css;
 }
 
 function eventElement(event: Event, root: HTMLElement) {

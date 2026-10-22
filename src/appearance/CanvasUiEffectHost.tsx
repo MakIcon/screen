@@ -2,7 +2,6 @@ import {
   lazy,
   Suspense,
   useEffect,
-  useRef,
   useState,
   useMemo,
   type ComponentType,
@@ -15,7 +14,7 @@ import {
   getCanvasUiEffect,
   resolveCanvasUiEffectProps,
 } from "./canvasUiCatalog";
-import { CanvasUiRasterFallback } from "./CanvasUiRasterFallback";
+import { CanvasUiNativeElementContent } from "./CanvasUiNativeElementContent";
 import { forwardCanvasUiPointer } from "./canvasUiRuntime";
 import type {
   CanvasUiEffectConfig,
@@ -120,21 +119,6 @@ function useHtmlInCanvasSupport() {
   return supported;
 }
 
-function CompatibilityLayer({ effect }: { effect: CanvasUiEffectId }) {
-  return <div className={`canvas-ui-compat-layer canvas-ui-compat-layer--${effect}`} aria-hidden />;
-}
-
-function optionNumber(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function optionColor(value: unknown) {
-  if (Array.isArray(value) && value.length === 3) {
-    return `rgb(${value.map((channel) => Math.round(optionNumber(channel, 1) * 255)).join(" ")})`;
-  }
-  return typeof value === "string" && value.startsWith("#") ? value : "#4f8aff";
-}
-
 function CanvasUiPageEffect({
   effect,
   renderer,
@@ -150,9 +134,7 @@ function CanvasUiPageEffect({
   className?: string;
   captureTarget?: HTMLElement | null;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
   const [sweepIndex, setSweepIndex] = useState(0);
-  const [rasterReady, setRasterReady] = useState(false);
   const [elementSize, setElementSize] = useState<{ width: number; height: number } | null>(null);
   useEffect(() => {
     if (!captureTarget) return;
@@ -170,7 +152,6 @@ function CanvasUiPageEffect({
     return () => observer.disconnect();
   }, [captureTarget]);
   const htmlInCanvas = useHtmlInCanvasSupport();
-  const useRasterFallback = Boolean(captureTarget) || !htmlInCanvas;
   const Effect =
     renderer === "webgpu" && effect === "liquid" ? LIQUID_WEBGPU : WEBGL_EFFECTS[effect];
   const effectProps = useMemo(() => {
@@ -178,37 +159,6 @@ function CanvasUiPageEffect({
     if (!captureTarget || !elementSize) return props;
     return fitCanvasUiEffectProps(effect, props, elementSize.width, elementSize.height);
   }, [captureTarget, effect, elementSize, settings]);
-  const compatStyle = {
-    "--canvas-ui-compat-opacity": String(
-      Math.min(
-        0.92,
-        Math.max(
-          0.18,
-          optionNumber(
-            effectProps.opacity ??
-              effectProps.intensity ??
-              effectProps.strength ??
-              effectProps.glow,
-            0.7,
-          ),
-        ),
-      ),
-    ),
-    "--canvas-ui-compat-color": optionColor(
-      effectProps.color ?? effectProps.tint ?? effectProps.edgeColor,
-    ),
-    "--canvas-ui-compat-size": `${Math.max(
-      8,
-      optionNumber(effectProps.tileSize ?? effectProps.cell ?? effectProps.size, 56),
-    )}px`,
-    "--canvas-ui-compat-speed": `${Math.max(
-      0.45,
-      3 / Math.max(0.15, optionNumber(effectProps.speed ?? effectProps.waveSpeed, 1)),
-    )}s`,
-    "--canvas-ui-pointer-x": "50%",
-    "--canvas-ui-pointer-y": "50%",
-  } as CSSProperties;
-
   useEffect(() => {
     if (effect !== "ascii-sweep") return;
     const duration = Number(effectProps.duration ?? 1.6);
@@ -219,53 +169,33 @@ function CanvasUiPageEffect({
     return () => window.clearInterval(timer);
   }, [effect, effectProps.duration]);
 
-  const updatePointer = (clientX: number, clientY: number) => {
-    const host = hostRef.current;
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    host.style.setProperty("--canvas-ui-pointer-x", `${clientX - rect.left}px`);
-    host.style.setProperty("--canvas-ui-pointer-y", `${clientY - rect.top}px`);
-  };
-
-  const content = useRasterFallback ? (
-    <CanvasUiRasterFallback
-      effect={effect}
-      renderer={renderer}
-      options={effectProps}
-      className={className}
-      sweepIndex={sweepIndex}
-      captureTarget={captureTarget}
-      onReady={setRasterReady}
-    >
-      {children}
-    </CanvasUiRasterFallback>
+  // The official wrappers own their live HTML-in-Canvas subtree and fall
+  // back themselves. Never emulate the API with periodic DOM screenshots.
+  if (captureTarget && !htmlInCanvas) return null;
+  const effectContent = captureTarget ? (
+    <CanvasUiNativeElementContent target={captureTarget} effect={effect} />
   ) : (
-    <Suspense fallback={<div className={className}>{children}</div>}>
-      <Effect
-        {...effectProps}
-        className={className}
-        alternate={effect === "ascii-sweep" ? children : undefined}
-        index={effect === "ascii-sweep" ? sweepIndex : undefined}
-        under={effect === "peel" ? <div className="canvas-ui-peel-under" /> : undefined}
-        targets={effect === "glass" ? "[data-glass-target], .canvas-ui-element-clone" : undefined}
-      >
-        {children}
-      </Effect>
-    </Suspense>
+    <div className="canvas-ui-page-content">{children}</div>
   );
 
   return (
     <div
-      ref={hostRef}
       className="canvas-ui-effect-viewport"
       data-canvas-ui-effect={effect}
-      data-canvas-ui-capture={useRasterFallback ? (rasterReady ? "raster" : "compat") : "native"}
-      style={compatStyle}
-      onPointerMove={(event) => updatePointer(event.clientX, event.clientY)}
+      data-canvas-ui-capture={htmlInCanvas ? "native" : "unsupported"}
     >
-      {content}
-      {useRasterFallback && !rasterReady && <CompatibilityLayer effect={effect} />}
+      <Suspense fallback={captureTarget ? null : <div className={className}>{children}</div>}>
+        <Effect
+          {...effectProps}
+          className={className}
+          alternate={effect === "ascii-sweep" ? effectContent : undefined}
+          index={effect === "ascii-sweep" ? sweepIndex : undefined}
+          under={effect === "peel" ? <div className="canvas-ui-peel-under" /> : undefined}
+          targets={effect === "glass" ? "[data-glass-target], .canvas-ui-element-clone" : undefined}
+        >
+          {effectContent}
+        </Effect>
+      </Suspense>
     </div>
   );
 }
