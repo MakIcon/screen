@@ -18,13 +18,6 @@ describe("appearance profile", () => {
     expect(profile.shape.radius).toBe(0);
     expect(profile.opacity.panels).toBe(1);
     expect(profile.navigation.legacyTabs).toEqual([]);
-    expect(profile.canvasUi).toEqual({
-      enabled: false,
-      effect: "liquid",
-      renderer: "webgl",
-      assetUrl: "",
-      settings: {},
-    });
     expect(profile.motion.tabByTarget.instances).toBeTruthy();
     expect(profile.elementOverrides).toEqual([]);
     expect(profile.customized).toBe(false);
@@ -430,86 +423,38 @@ describe("appearance profile", () => {
     expect(rule).toContain("fractalNoise");
   });
 
-  it("keeps a safe Canvas UI selection and rejects unsafe object URLs", () => {
-    const valid = normalizeAppearanceProfile({
-      canvasUi: {
-        enabled: true,
-        effect: "ascii-object",
-        renderer: "webgpu",
-        assetUrl: "https://assets.example.com/duck.glb",
-      },
-    });
-    const invalid = normalizeAppearanceProfile({
-      canvasUi: {
-        enabled: true,
-        effect: "unknown-shader",
-        renderer: "cpu",
-        assetUrl: "javascript:alert(1)",
-      },
-    });
-
-    expect(valid.canvasUi).toEqual({
-      enabled: true,
-      effect: "ascii-object",
-      renderer: "webgl",
-      assetUrl: "https://assets.example.com/duck.glb",
-      settings: {},
-    });
-    expect(invalid.canvasUi).toEqual({
-      enabled: true,
-      effect: "liquid",
-      renderer: "webgl",
-      assetUrl: "",
-      settings: {},
-    });
-  });
-
-  it("keeps tuned Canvas UI settings per effect and scopes them to picked elements", () => {
+  it("drops retired Canvas UI settings while preserving other appearance choices", () => {
+    const retiredEffect = { enabled: true, effect: "grid", settings: { grid: { tilt: 1 } } };
     const profile = normalizeAppearanceProfile({
-      canvasUi: {
-        enabled: true,
-        effect: "displacement",
-        renderer: "webgpu",
-        settings: {
-          displacement: { strength: 9, threshold: -10, shift: 2.25, unknown: 42 },
-          bubble: { size: 72, follow: 0.35 },
-        },
-      },
+      ...createDefaultAppearance("dark", true),
+      canvasUi: retiredEffect,
       elementOverrides: [
         {
-          id: "element-canvas-card",
-          label: "DIV · LAUNCHER SETTINGS",
+          id: "element-effect-only",
           path: [{ tag: "div", index: 0 }],
           style: {},
-          canvasUi: {
-            enabled: true,
-            effect: "bubble",
-            renderer: "webgl",
-            assetUrl: "",
-            settings: { bubble: { size: 999, follow: 0.2 } },
-          },
+          canvasUi: retiredEffect,
+        },
+        {
+          id: "element-styled-button",
+          path: [{ tag: "button", index: 0 }],
+          style: { radius: 12 },
+          textTarget: { path: [0], original: "Before" },
+          text: "My button",
+          canvasUi: retiredEffect,
         },
       ],
     });
 
-    expect(profile.canvasUi).toMatchObject({
-      effect: "displacement",
-      renderer: "webgl",
-      settings: {
-        displacement: { strength: 1, threshold: 0, shift: 2.25 },
-        bubble: { size: 72, follow: 0.35 },
-      },
-    });
-    expect(profile.canvasUi.settings.displacement).not.toHaveProperty("unknown");
+    expect(profile).not.toHaveProperty("canvasUi");
+    expect(profile.baseTheme).toBe("dark");
+    expect(profile.elementOverrides).toHaveLength(1);
     expect(profile.elementOverrides[0]).toMatchObject({
-      id: "element-canvas-card",
-      style: {},
-      canvasUi: {
-        enabled: true,
-        effect: "bubble",
-        settings: { bubble: { size: 180, follow: 0.2 } },
-      },
+      id: "element-styled-button",
+      text: "My button",
+      style: { radius: 12 },
     });
+    expect(profile.elementOverrides[0]).not.toHaveProperty("canvasUi");
   });
 
   it("controls an element background and its content opacity independently", () => {

@@ -20,10 +20,8 @@ import type {
   AppearanceElementStyle,
   AppearanceCustomFont,
   AppearanceProfile,
-  CanvasUiEffectConfig,
   Theme,
 } from "./types";
-import { CANVAS_UI_EFFECT_IDS, normalizeCanvasUiEffectSettings } from "./canvasUiCatalog";
 import { buildElementGradientImage } from "./elementGradient";
 import { GRADIENT_PRESETS, gradientPresetStyle } from "./gradientPresets";
 
@@ -244,49 +242,6 @@ function normalizeWindowGradient(value: unknown, fallbackColor: string): Appeara
       0,
       1,
     ),
-  };
-}
-
-function pickCanvasAssetUrl(value: unknown) {
-  if (typeof value !== "string" || value.length > MAX_EMBEDDED_IMAGE_LENGTH) return "";
-  const normalized = value.trim();
-  if (/^https?:\/\/[^\s]+$/i.test(normalized)) return normalized.slice(0, 2_048);
-  return SAFE_IMAGE_DATA_URL.test(normalized) ? normalized : "";
-}
-
-function createDefaultCanvasUiConfig(): CanvasUiEffectConfig {
-  return {
-    enabled: false,
-    effect: "liquid",
-    renderer: "webgl",
-    assetUrl: "",
-    settings: {},
-  };
-}
-
-function normalizeCanvasUiConfig(
-  value: unknown,
-  fallback: CanvasUiEffectConfig = createDefaultCanvasUiConfig(),
-): CanvasUiEffectConfig {
-  const record = isRecord(value) ? value : {};
-  const effect = pickEnum(record.effect, CANVAS_UI_EFFECT_IDS, fallback.effect);
-  const rawSettings = isRecord(record.settings) ? record.settings : {};
-  const settings = Object.fromEntries(
-    CANVAS_UI_EFFECT_IDS.flatMap((effectId) => {
-      const normalized = normalizeCanvasUiEffectSettings(effectId, rawSettings[effectId]);
-      return Object.keys(normalized).length > 0 ? [[effectId, normalized]] : [];
-    }),
-  ) as CanvasUiEffectConfig["settings"];
-
-  return {
-    enabled: typeof record.enabled === "boolean" ? record.enabled : fallback.enabled,
-    effect,
-    renderer:
-      effect === "liquid"
-        ? pickEnum(record.renderer, ["webgl", "webgpu"] as const, fallback.renderer)
-        : "webgl",
-    assetUrl: pickCanvasAssetUrl(record.assetUrl),
-    settings,
   };
 }
 
@@ -1223,7 +1178,6 @@ function normalizeElementOverrides(
                 selectedStyle: undefined,
                 text: undefined,
                 componentSettings: undefined,
-                canvasUi: undefined,
               },
             ],
             false,
@@ -1235,9 +1189,6 @@ function normalizeElementOverrides(
     const focusStyle = normalizeStateStyle("focusStyle");
     const disabledStyle = normalizeStateStyle("disabledStyle");
     const selectedStyle = normalizeStateStyle("selectedStyle");
-    const canvasUi = isRecord(candidate.canvasUi)
-      ? normalizeCanvasUiConfig(candidate.canvasUi)
-      : undefined;
     const hoverTransitionMs =
       includeHoverState &&
       typeof candidate.hoverTransitionMs === "number" &&
@@ -1276,8 +1227,7 @@ function normalizeElementOverrides(
       !disabledStyle &&
       !selectedStyle &&
       !hasTextOverride &&
-      !componentSettings &&
-      !canvasUi
+      !componentSettings
     ) {
       return [];
     }
@@ -1298,7 +1248,6 @@ function normalizeElementOverrides(
           ? { text: (candidate.text as string).slice(0, MAX_ELEMENT_TEXT_LENGTH) }
           : {}),
         ...(componentSettings ? { componentSettings } : {}),
-        ...(canvasUi ? { canvasUi } : {}),
         ...(hoverStyle ? { hoverStyle } : {}),
         ...(pressedStyle ? { pressedStyle } : {}),
         ...(focusStyle ? { focusStyle } : {}),
@@ -1353,7 +1302,6 @@ export function createDefaultAppearance(
     navigation: {
       legacyTabs: [],
     },
-    canvasUi: createDefaultCanvasUiConfig(),
     elementOverrides: [],
     motion: {
       enabled: true,
@@ -1381,7 +1329,6 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
   const customFontValues = customFonts.map(customFontStack);
   const opacity = isRecord(record.opacity) ? record.opacity : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
-  const canvasUi = isRecord(record.canvasUi) ? record.canvasUi : {};
   const legacyNavigationTabs = Array.isArray(navigation.legacyTabs) ? navigation.legacyTabs : [];
   const motion = isRecord(record.motion) ? record.motion : {};
   const tabByTarget = isRecord(motion.tabByTarget) ? motion.tabByTarget : {};
@@ -1447,7 +1394,6 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
     navigation: {
       legacyTabs: TAB_ORDER.filter((tab) => legacyNavigationTabs.includes(tab)),
     },
-    canvasUi: normalizeCanvasUiConfig(canvasUi, fallback.canvasUi),
     elementOverrides: normalizeElementOverrides(record.elementOverrides, true, customFontValues),
     motion: {
       enabled: typeof motion.enabled === "boolean" ? motion.enabled : fallback.motion.enabled,

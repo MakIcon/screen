@@ -346,60 +346,6 @@ export type AppearanceElementOverride = AppearanceElementTarget & {
   /** Legacy hover-only transition fields retained for stored v2 profiles. */
   hoverTransitionMs?: number;
   hoverEasing?: AppearanceElementHoverEasing;
-  /** Optional Canvas UI effect scoped to this exact picked launcher element. */
-  canvasUi?: CanvasUiEffectConfig;
-};
-
-export type CanvasUiEffectId =
-  | "ascii-object"
-  | "ascii-sweep"
-  | "asciify"
-  | "bend"
-  | "blaze"
-  | "bubble"
-  | "canvas"
-  | "cloth"
-  | "clouds"
-  | "decrypt-reveal"
-  | "displacement"
-  | "dithered-object"
-  | "droplets"
-  | "flame-wrap"
-  | "force-field"
-  | "frost"
-  | "glass"
-  | "glass-object"
-  | "glitch"
-  | "glyph-rain"
-  | "grid"
-  | "hex-float"
-  | "ink-object"
-  | "laser"
-  | "liquid"
-  | "liquid-object"
-  | "magnify"
-  | "particle-object"
-  | "particle-reveal"
-  | "particle-scroll"
-  | "peel"
-  | "retro-dither"
-  | "ripple"
-  | "shatter"
-  | "vhs";
-
-export type CanvasUiRenderer = "webgl" | "webgpu";
-
-export type CanvasUiSettingValue = number | boolean | string;
-
-export type CanvasUiEffectSettings = Record<string, CanvasUiSettingValue>;
-
-export type CanvasUiEffectConfig = {
-  enabled: boolean;
-  effect: CanvasUiEffectId;
-  renderer: CanvasUiRenderer;
-  assetUrl: string;
-  /** Settings are retained per component so switching effects never loses tuning. */
-  settings: Partial<Record<CanvasUiEffectId, CanvasUiEffectSettings>>;
 };
 
 export type AppearanceProfile = {
@@ -439,7 +385,6 @@ export type AppearanceProfile = {
     /** Sidebar entries that use the original text-only launcher design. */
     legacyTabs: TabKey[];
   };
-  canvasUi: CanvasUiEffectConfig;
   elementOverrides: AppearanceElementOverride[];
   motion: {
     enabled: boolean;

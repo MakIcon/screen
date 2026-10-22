@@ -49,13 +49,7 @@ import {
   readStoredAppearance,
   writeStoredAppearance,
 } from "./profile";
-import type {
-  AppearanceBackgroundKind,
-  AppearanceProfile,
-  CanvasUiEffectConfig,
-  CanvasUiEffectId,
-  Theme,
-} from "./types";
+import type { AppearanceBackgroundKind, AppearanceProfile, Theme } from "./types";
 import type {
   AppearanceElementComponentOverride,
   AppearanceElementHoverEasing,
@@ -85,7 +79,6 @@ import {
   mergeElementStateStyle,
   setElementStateStyle,
 } from "./elementState";
-import { CANVAS_UI_EFFECTS, getCanvasUiEffect } from "./canvasUiCatalog";
 import "./AppearanceStudio.css";
 
 type StudioCategory =
@@ -112,7 +105,7 @@ const CATEGORIES: { id: StudioCategory; index: string; label: string; note: stri
   { id: "type", index: "05", label: "TYPOGRAPHY", note: "Interface and display fonts" },
   { id: "opacity", index: "06", label: "OPACITY", note: "Window, panels and controls" },
   { id: "motion", index: "07", label: "MOTION", note: "Transitions and effects" },
-  { id: "canvas-ui", index: "08", label: "CANVAS UI", note: "35 GPU canvas components" },
+  { id: "canvas-ui", index: "08", label: "CANVAS UI", note: "" },
 ];
 
 const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
@@ -123,17 +116,10 @@ const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
   type: "fonts text typography",
   opacity: "transparency window panels controls",
   motion: "animation transitions effects",
-  "canvas-ui": "gpu canvas components effects",
 };
 
 function elementStyleBadges(override: AppearanceElementOverride) {
   const badges: { label: string; value: string; color?: string }[] = [];
-  if (override.canvasUi?.enabled) {
-    badges.push({
-      label: "CANVAS UI",
-      value: appearanceText(getCanvasUiEffect(override.canvasUi.effect).name),
-    });
-  }
   if (override.text !== undefined) {
     badges.push({
       label: "LABEL",
@@ -463,13 +449,6 @@ export function AppearanceStudioApp() {
       }),
     [draft.elementOverrides, elementInteractionState, selectedTargets],
   );
-  const activeCanvasUi: CanvasUiEffectConfig = selectedTarget
-    ? (selectedOverride?.canvasUi ?? {
-        ...draft.canvasUi,
-        enabled: false,
-        settings: {},
-      })
-    : draft.canvasUi;
 
   const patchDraft = useCallback((updater: (current: AppearanceProfile) => AppearanceProfile) => {
     const transaction = historyTransactionRef.current;
@@ -523,8 +502,7 @@ export function AppearanceStudioApp() {
           Object.keys(next.style).length > 0 ||
           hasElementStateStyles(next) ||
           hasTextOverride ||
-          existing?.componentSettings ||
-          existing?.canvasUi
+          existing?.componentSettings
         ) {
           nextOverrides.push(next);
         }
@@ -582,8 +560,7 @@ export function AppearanceStudioApp() {
           text === undefined &&
           Object.keys(next.style).length === 0 &&
           !hasElementStateStyles(next) &&
-          !next.componentSettings &&
-          !next.canvasUi
+          !next.componentSettings
         ) {
           return {
             ...current,
@@ -625,35 +602,6 @@ export function AppearanceStudioApp() {
           next,
         ],
       };
-    });
-  };
-
-  const patchCanvasUi = (updater: (config: CanvasUiEffectConfig) => CanvasUiEffectConfig) => {
-    if (selectedTargets.length === 0) {
-      patchDraft((current) => ({ ...current, canvasUi: updater(current.canvasUi) }));
-      return;
-    }
-    elementPreviewOnlyRef.current = true;
-    patchDraft((current) => {
-      const selectedIds = new Set(selectedTargets.map((target) => target.id));
-      const nextOverrides = current.elementOverrides.filter(
-        (override) => !selectedIds.has(override.id),
-      );
-      for (const target of selectedTargets) {
-        const existing = current.elementOverrides.find((override) => override.id === target.id);
-        const base = existing?.canvasUi ?? {
-          ...current.canvasUi,
-          enabled: false,
-          settings: {},
-        };
-        nextOverrides.push({
-          ...existing,
-          ...target,
-          style: existing?.style ?? {},
-          canvasUi: updater(base),
-        });
-      }
-      return { ...current, elementOverrides: nextOverrides };
     });
   };
 
@@ -709,8 +657,7 @@ export function AppearanceStudioApp() {
         return Object.keys(next.style).length > 0 ||
           hasElementStateStyles(next) ||
           hasTextOverride ||
-          next.componentSettings ||
-          next.canvasUi
+          next.componentSettings
           ? [next]
           : [];
       }),
@@ -870,275 +817,8 @@ export function AppearanceStudioApp() {
 
   const renderEditor = () => {
     switch (category) {
-      case "canvas-ui": {
-        const activeEffect = getCanvasUiEffect(activeCanvasUi.effect);
-        const categories = ["surface", "motion", "atmosphere", "retro", "object"] as const;
-        const chooseEffect = (effect: CanvasUiEffectId) =>
-          patchCanvasUi((current) => ({
-            ...current,
-            enabled: true,
-            effect,
-            renderer:
-              current.renderer === "webgpu" && effect !== "liquid" ? "webgl" : current.renderer,
-          }));
-        const activeSettings = activeCanvasUi.settings[activeCanvasUi.effect] ?? {};
-        const setEffectSetting = (key: string, value: number | boolean | string) =>
-          patchCanvasUi((current) => ({
-            ...current,
-            settings: {
-              ...current.settings,
-              [activeCanvasUi.effect]: {
-                ...current.settings[activeCanvasUi.effect],
-                [key]: value,
-              },
-            },
-          }));
-
-        return (
-          <>
-            <Section
-              title={copy("CANVAS UI ENGINE")}
-              note={copy(
-                "Every effect is scoped to the current target. Picked elements get their own renderer and settings; WHOLE LAUNCHER remains a separate global layer.",
-              )}
-            >
-              <div className="canvas-ui-target-chip">
-                <span>{selectedTarget ? copy("ELEMENT TARGET") : copy("GLOBAL TARGET")}</span>
-                <strong>
-                  {selectedTargets.length > 1
-                    ? copy("{count} picked elements", { count: selectedTargets.length })
-                    : selectedTarget?.label || copy("WHOLE LAUNCHER")}
-                </strong>
-              </div>
-              <div className="studio-segmented">
-                <button
-                  type="button"
-                  className={activeCanvasUi.enabled ? "active" : ""}
-                  onClick={() =>
-                    patchCanvasUi((current) => ({
-                      ...current,
-                      enabled: true,
-                    }))
-                  }
-                >
-                  {copy("ENABLED")}
-                </button>
-                <button
-                  type="button"
-                  className={!activeCanvasUi.enabled ? "active" : ""}
-                  onClick={() =>
-                    patchCanvasUi((current) => ({
-                      ...current,
-                      enabled: false,
-                    }))
-                  }
-                >
-                  {copy("DISABLED")}
-                </button>
-              </div>
-              <div className="studio-segmented">
-                <button
-                  type="button"
-                  className={activeCanvasUi.renderer === "webgl" ? "active" : ""}
-                  onClick={() =>
-                    patchCanvasUi((current) => ({
-                      ...current,
-                      renderer: "webgl",
-                    }))
-                  }
-                >
-                  {copy("WEBGL · COMPATIBLE")}
-                </button>
-                <button
-                  type="button"
-                  disabled={activeCanvasUi.effect !== "liquid"}
-                  className={activeCanvasUi.renderer === "webgpu" ? "active" : ""}
-                  onClick={() =>
-                    patchCanvasUi((current) => ({
-                      ...current,
-                      renderer: "webgpu",
-                    }))
-                  }
-                >
-                  {copy("WEBGPU · LIQUID")}
-                </button>
-              </div>
-              <div className="canvas-ui-active-effect">
-                <span>{copy("ACTIVE COMPONENT")}</span>
-                <strong>{copy(activeEffect.name)}</strong>
-                <p>{copy(activeEffect.description)}</p>
-                <small>{copy(activeEffect.interaction)}</small>
-              </div>
-            </Section>
-
-            <Section
-              title={copy("{effect} controls", { effect: copy(activeEffect.name) })}
-              note={copy(
-                "The ranges and defaults come from the component API. Changes update the current target live and are retained when you switch components.",
-              )}
-            >
-              <div className="canvas-ui-controls-heading">
-                <span>
-                  {activeEffect.controls.length} {copy("PARAMETERS")}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    patchCanvasUi((current) => ({
-                      ...current,
-                      settings: { ...current.settings, [activeEffect.id]: {} },
-                    }))
-                  }
-                >
-                  {copy("RESET EFFECT")}
-                </button>
-              </div>
-              <div className="canvas-ui-control-grid">
-                {activeEffect.controls.map((control) => {
-                  const value = activeSettings[control.key] ?? control.defaultValue;
-                  if (control.kind === "range") {
-                    return (
-                      <div className="canvas-ui-control-card" key={control.key}>
-                        <span>{copy(control.group.toUpperCase())}</span>
-                        <RangeField
-                          label={copy(control.label)}
-                          value={Number(value)}
-                          min={control.min}
-                          max={control.max}
-                          step={control.step}
-                          suffix={control.suffix}
-                          defaultValue={control.defaultValue}
-                          onChange={(next) => setEffectSetting(control.key, next)}
-                        />
-                        {control.hint && <small>{copy(control.hint)}</small>}
-                      </div>
-                    );
-                  }
-                  if (control.kind === "color") {
-                    return (
-                      <div
-                        className="canvas-ui-control-card canvas-ui-control-card--color"
-                        key={control.key}
-                      >
-                        <span>{copy(control.group.toUpperCase())}</span>
-                        <ColorField
-                          label={copy(control.label)}
-                          value={String(value)}
-                          onChange={(next) => setEffectSetting(control.key, next)}
-                        />
-                      </div>
-                    );
-                  }
-                  if (control.kind === "select") {
-                    return (
-                      <div
-                        className="canvas-ui-control-card canvas-ui-control-card--select"
-                        key={control.key}
-                      >
-                        <span>{copy(control.group.toUpperCase())}</span>
-                        <SelectField
-                          label={copy(control.label)}
-                          value={String(value)}
-                          options={control.options}
-                          onChange={(next) => setEffectSetting(control.key, next)}
-                        />
-                      </div>
-                    );
-                  }
-                  return (
-                    <div
-                      className="canvas-ui-control-card canvas-ui-control-card--toggle"
-                      key={control.key}
-                    >
-                      <span>{copy(control.group.toUpperCase())}</span>
-                      <strong>{copy(control.label)}</strong>
-                      <div className="studio-segmented">
-                        <button
-                          type="button"
-                          className={value === true ? "active" : ""}
-                          onClick={() => setEffectSetting(control.key, true)}
-                        >
-                          {copy("ON")}
-                        </button>
-                        <button
-                          type="button"
-                          className={value === false ? "active" : ""}
-                          onClick={() => setEffectSetting(control.key, false)}
-                        >
-                          {copy("OFF")}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Section>
-
-            {categories.map((effectCategory) => {
-              const effects = CANVAS_UI_EFFECTS.filter(
-                (effect) => effect.category === effectCategory,
-              );
-              return (
-                <Section
-                  key={effectCategory}
-                  title={
-                    effectCategory === "object"
-                      ? copy("OBJECT COMPONENTS")
-                      : copy("{category} effects", { category: copy(effectCategory.toUpperCase()) })
-                  }
-                  note={
-                    effectCategory === "object"
-                      ? copy(
-                          "Object components overlay an image, SVG, GLB or glTF asset without replacing launcher controls.",
-                        )
-                      : undefined
-                  }
-                >
-                  <div className="canvas-ui-effect-grid">
-                    {effects.map((effect) => (
-                      <button
-                        type="button"
-                        key={effect.id}
-                        className={activeCanvasUi.effect === effect.id ? "active" : ""}
-                        onClick={() => chooseEffect(effect.id)}
-                      >
-                        <span>{effect.objectEffect ? copy("3D / ASSET") : copy("LIVE HTML")}</span>
-                        <strong>{copy(effect.name)}</strong>
-                        <small>{copy(effect.description)}</small>
-                      </button>
-                    ))}
-                  </div>
-                </Section>
-              );
-            })}
-
-            {activeEffect.objectEffect && (
-              <Section
-                title={copy("OBJECT SOURCE")}
-                note={copy(
-                  "Paste an HTTPS URL to an SVG, image, GLB or glTF file. With an empty value the launcher uses its bundled icon as a safe preview asset.",
-                )}
-              >
-                <label className="studio-text-field studio-text-field--single-line">
-                  <span>{copy("ASSET URL")}</span>
-                  <input
-                    value={activeCanvasUi.assetUrl}
-                    maxLength={2048}
-                    spellCheck={false}
-                    placeholder={copy("https://example.com/model.glb")}
-                    onChange={(event) =>
-                      patchCanvasUi((current) => ({
-                        ...current,
-                        assetUrl: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              </Section>
-            )}
-          </>
-        );
-      }
+      case "canvas-ui":
+        return null;
 
       case "element":
         return (
@@ -2000,18 +1680,7 @@ export function AppearanceStudioApp() {
               })
             : "Use Pick from launcher, then click the button, card or text you want to change.",
         }
-      : category === "canvas-ui" && selectedTarget
-        ? {
-            index: "08",
-            label: "CANVAS UI · ELEMENT",
-            note: copy("The selected effect is isolated to {target}.", {
-              target:
-                selectedTargets.length > 1
-                  ? copy("{count} picked elements", { count: selectedTargets.length })
-                  : selectedTarget.label,
-            }),
-          }
-        : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
+      : (CATEGORIES.find((item) => item.id === category) ?? CATEGORIES[0]);
 
   const messageIsError =
     typeof message === "object" ? "error" in message : message.includes("COULD NOT");
@@ -2144,7 +1813,7 @@ export function AppearanceStudioApp() {
               <span>{item.index}</span>
               <div>
                 <strong>{copy(item.label)}</strong>
-                <small>{copy(item.note)}</small>
+                {item.note && <small>{copy(item.note)}</small>}
               </div>
             </button>
           ))}
@@ -2192,88 +1861,93 @@ export function AppearanceStudioApp() {
           )}
         </nav>
 
-        <main className="appearance-studio-editor">
+        <main
+          className={`appearance-studio-editor${category === "canvas-ui" && !elementListOpen ? " appearance-studio-editor--reserved" : ""}`}
+        >
           <header className="appearance-editor-heading">
             <span>
               {copy("SECTION")} {activeEditorContext.index}
             </span>
             <strong>{copy(activeEditorContext.label)}</strong>
-            <p>{copy(activeEditorContext.note)}</p>
+            {activeEditorContext.note && <p>{copy(activeEditorContext.note)}</p>}
           </header>
 
-          <section className="appearance-target-bar">
-            <div className="appearance-target-current">
-              <span>{copy("CURRENT TARGET")}</span>
-              <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
-                {selectedTargets.length > 1
-                  ? copy("{count} elements selected", { count: selectedTargets.length })
-                  : selectedTarget?.label || copy("WHOLE LAUNCHER")}
-              </strong>
-              {selectedTarget && (
-                <button
-                  type="button"
-                  className="appearance-target-clear"
-                  onClick={clearSelectedStyle}
-                  disabled={!selectedOverride}
-                >
-                  {selectedTargets.length > 1 ? copy("RESET ELEMENTS") : copy("RESET ELEMENT")}
-                </button>
-              )}
-            </div>
-            <div className="appearance-target-choices">
-              <button
-                type="button"
-                className={!selectedTarget ? "active" : ""}
-                onClick={selectWholeLauncher}
-              >
-                <strong>{copy("GLOBAL STYLE")}</strong>
-                <small>{copy("Entire launcher")}</small>
-              </button>
-              <button
-                type="button"
-                className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
-                onClick={requestElementPick}
-              >
-                <strong>
-                  {pickingElement ? copy("CLICK IN LAUNCHER…") : copy("PICK ELEMENT")}
+          {(category !== "canvas-ui" || elementListOpen) && (
+            <section className="appearance-target-bar">
+              <div className="appearance-target-current">
+                <span>{copy("CURRENT TARGET")}</span>
+                <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
+                  {selectedTargets.length > 1
+                    ? copy("{count} elements selected", { count: selectedTargets.length })
+                    : selectedTarget?.label || copy("WHOLE LAUNCHER")}
                 </strong>
-                <small>
-                  {pickingElement ? copy("Hold Shift for several") : copy("Button, card or text")}
-                </small>
-              </button>
-            </div>
-            {selectedTarget && (
-              <section className="appearance-interaction-state">
-                <span>{copy("VISUAL STATE")}</span>
-                <div>
-                  {ELEMENT_INTERACTION_STATES.map((state) => (
-                    <button
-                      type="button"
-                      key={state.id}
-                      className={elementInteractionState === state.id ? "active" : ""}
-                      onClick={() => setElementInteractionState(state.id)}
-                    >
-                      {copy(state.label)}
-                    </button>
-                  ))}
-                </div>
-                <small>
-                  {copy(
-                    ELEMENT_INTERACTION_STATES.find((state) => state.id === elementInteractionState)
-                      ?.note ?? "",
-                  )}
-                </small>
+                {selectedTarget && (
+                  <button
+                    type="button"
+                    className="appearance-target-clear"
+                    onClick={clearSelectedStyle}
+                    disabled={!selectedOverride}
+                  >
+                    {selectedTargets.length > 1 ? copy("RESET ELEMENTS") : copy("RESET ELEMENT")}
+                  </button>
+                )}
+              </div>
+              <div className="appearance-target-choices">
                 <button
                   type="button"
-                  className="appearance-interaction-reset"
-                  disabled={!selectedInteractionCustomized}
-                  onClick={clearSelectedInteractionStyle}
+                  className={!selectedTarget ? "active" : ""}
+                  onClick={selectWholeLauncher}
                 >
-                  {copy("Reset {state}", { state: copy(elementInteractionState.toUpperCase()) })}
+                  <strong>{copy("GLOBAL STYLE")}</strong>
+                  <small>{copy("Entire launcher")}</small>
                 </button>
-              </section>
-            )}
-          </section>
+                <button
+                  type="button"
+                  className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
+                  onClick={requestElementPick}
+                >
+                  <strong>
+                    {pickingElement ? copy("CLICK IN LAUNCHER…") : copy("PICK ELEMENT")}
+                  </strong>
+                  <small>
+                    {pickingElement ? copy("Hold Shift for several") : copy("Button, card or text")}
+                  </small>
+                </button>
+              </div>
+              {selectedTarget && (
+                <section className="appearance-interaction-state">
+                  <span>{copy("VISUAL STATE")}</span>
+                  <div>
+                    {ELEMENT_INTERACTION_STATES.map((state) => (
+                      <button
+                        type="button"
+                        key={state.id}
+                        className={elementInteractionState === state.id ? "active" : ""}
+                        onClick={() => setElementInteractionState(state.id)}
+                      >
+                        {copy(state.label)}
+                      </button>
+                    ))}
+                  </div>
+                  <small>
+                    {copy(
+                      ELEMENT_INTERACTION_STATES.find(
+                        (state) => state.id === elementInteractionState,
+                      )?.note ?? "",
+                    )}
+                  </small>
+                  <button
+                    type="button"
+                    className="appearance-interaction-reset"
+                    disabled={!selectedInteractionCustomized}
+                    onClick={clearSelectedInteractionStyle}
+                  >
+                    {copy("Reset {state}", { state: copy(elementInteractionState.toUpperCase()) })}
+                  </button>
+                </section>
+              )}
+            </section>
+          )}
 
           {elementListOpen ? (
             <CustomScrollArea className="appearance-element-list-scroll">

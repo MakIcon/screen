@@ -18,9 +18,6 @@ export default tseslint.config(
       "extensions/mineflayer-bot/pathfinder.cjs",
       "extensions/mineflayer-bot/mineflayer-fabric.cjs",
       "extensions/mineflayer-bot/vendor/**",
-      // Source-copied third-party registry components are checked by TypeScript
-      // and kept byte-for-byte close to upstream for easier future refreshes.
-      "src/components/canvasui",
     ],
   },
   js.configs.recommended,

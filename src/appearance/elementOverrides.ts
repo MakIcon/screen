@@ -388,19 +388,12 @@ export function createElementTarget(
   const path: AppearanceElementPathSegment[] = [];
   let current: HTMLElement | null = element;
   while (current && current !== root) {
-    // Canvas UI can wrap/remount the launcher when its global effect changes.
-    // Keep saved element paths independent of those rendering-only wrappers.
-    const launcherRoot = current.classList.contains("ui-container");
-    const parent: HTMLElement | null = launcherRoot ? root : current.parentElement;
+    const parent: HTMLElement | null = current.parentElement;
     if (!parent) return null;
     const tag = current.tagName.toLowerCase();
-    const siblings = Array.from(parent.children)
-      .map((candidate) =>
-        launcherRoot && candidate.matches(".canvas-ui-effect-viewport, .canvas-ui-composite")
-          ? (candidate.querySelector(".ui-container") ?? candidate)
-          : candidate,
-      )
-      .filter((candidate) => candidate.tagName.toLowerCase() === tag);
+    const siblings = Array.from(parent.children).filter(
+      (candidate) => candidate.tagName.toLowerCase() === tag,
+    );
     const marker = elementMarker(current);
     path.unshift({
       tag,
@@ -450,7 +443,7 @@ export function resolveElementTarget(
   };
   const direct = follow(root, target.path);
   if (direct) return direct;
-  // Also resolve profiles saved with an older Canvas UI wrapper structure.
+  // Resolve saved paths after transient launcher containers change.
   const anchor = target.path.findIndex((segment) => segment.marker === "class:ui-container");
   if (anchor >= 0) {
     const launchers = root.querySelectorAll<HTMLElement>(".ui-container");

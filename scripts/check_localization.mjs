@@ -231,23 +231,6 @@ export function findUnlocalizedMetadata(code, knownLabels, fileName = "metadata.
       ts.isStringLiteral(node.initializer)
     )
       check(node.initializer);
-    if (
-      fileName.endsWith("canvasUiCatalog.ts") &&
-      ts.isCallExpression(node) &&
-      ["r", "t", "s", "c"].includes(node.expression.getText(source))
-    ) {
-      if (node.arguments[1] && ts.isStringLiteral(node.arguments[1])) check(node.arguments[1]);
-      if (node.arguments[8] && ts.isStringLiteral(node.arguments[8])) check(node.arguments[8]);
-      if (
-        node.expression.getText(source) === "s" &&
-        node.arguments[3] &&
-        ts.isArrayLiteralExpression(node.arguments[3])
-      ) {
-        for (const option of node.arguments[3].elements)
-          if (ts.isStringLiteral(option))
-            check(option, option.text.replace(/-/g, " ").toUpperCase());
-      }
-    }
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -257,7 +240,7 @@ export function findUnlocalizedMetadata(code, knownLabels, fileName = "metadata.
 function sourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) return entry.name === "canvasui" ? [] : sourceFiles(file);
+    if (entry.isDirectory()) return sourceFiles(file);
     return /\.(?:ts|tsx)$/.test(file) && !/\.test\./.test(file) ? [file] : [];
   });
 }

@@ -159,8 +159,6 @@ import {
 } from "./appearance/elementOverrides";
 import type { AppearanceElementTarget } from "./appearance/types";
 import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
-import { CanvasUiEffectHost } from "./appearance/CanvasUiEffectHost";
-import { CanvasUiElementEffects } from "./appearance/CanvasUiElementEffects";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -589,7 +587,7 @@ export default function App() {
     });
   }, []);
 
-  const liveElementOverrides = useMainAppearanceRuntime({
+  useMainAppearanceRuntime({
     rootRef: galleryRootRef,
     appearance,
     activeTab,
@@ -2701,16 +2699,6 @@ export default function App() {
       "--drawing-brush-color": drawingCursor.color,
     } as CSSProperties;
   }
-  const canvasMainUI = (
-    <CanvasUiEffectHost
-      config={{
-        ...appearance.canvasUi,
-        enabled: appearance.customized && appearance.canvasUi.enabled,
-      }}
-    >
-      {mainUI}
-    </CanvasUiEffectHost>
-  );
 
   return (
     <RuntimeMonitorScope controller={runtimeMonitor}>
@@ -2785,7 +2773,7 @@ export default function App() {
             );
           })()}
         {!renderedCloseEffect ? (
-          canvasMainUI
+          mainUI
         ) : renderedCloseEffect === "tear" ? (
           <>
             <div
@@ -2825,14 +2813,6 @@ export default function App() {
           </div>
         ) : (
           mainUI
-        )}
-
-        {appearance.customized && (
-          <CanvasUiElementEffects
-            rootRef={galleryRootRef}
-            overrides={liveElementOverrides}
-            activeTab={activeTab}
-          />
         )}
 
         {buildCardSettingsOpen && (

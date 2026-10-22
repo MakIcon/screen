@@ -1,4 +1,3 @@
-mod canvas_ui;
 pub mod commands;
 mod downloads;
 mod file_transaction;
@@ -14,9 +13,6 @@ pub mod window_fx;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(windows)]
-    canvas_ui::configure_webview();
-
     tauri::Builder::default()
         .manage(plugins::blue_map::BlueMapState::default())
         .manage(plugins::discord_rpc::DiscordRpcState::default())

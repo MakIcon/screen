@@ -16,8 +16,5 @@
     "ui": "src/components/ui",
     "lib": "src",
     "hooks": "src/hooks"
-  },
-  "registries": {
-    "@canvas-ui": "https://canvasui.dev/r/{name}.json"
   }
 }

@@ -19,7 +19,7 @@ test("checks Russian literals as well as English and ignores code examples", () 
   assert.deepEqual(findUnlocalizedUi("<code>%build_name%</code>"), []);
 });
 
-test("requires dictionary coverage for editor options and GPU control labels", () => {
+test("requires dictionary coverage for editor option labels", () => {
   const labels = new Set(["BACKGROUND"]);
   assert.equal(
     findUnlocalizedMetadata('const a = [{ id: "new", label: "NEW EFFECT" }]', labels).length,
@@ -28,13 +28,5 @@ test("requires dictionary coverage for editor options and GPU control labels", (
   assert.equal(
     findUnlocalizedMetadata('const a = [{ id: "background", label: "BACKGROUND" }]', labels).length,
     0,
-  );
-  assert.equal(
-    findUnlocalizedMetadata(
-      'r("newParam", "NEW PARAMETER", 1, 0, 2, 1)',
-      labels,
-      "canvasUiCatalog.ts",
-    ).length,
-    1,
   );
 });
