@@ -90,7 +90,6 @@ export type DragState = {
 };
 
 export type SleepingDragState = { wokeFromShake: boolean };
-export type ChangedToggle = { label: string; wasEnabled: boolean };
 export type ChaosDebris = {
   source: HTMLElement;
   clone: HTMLElement;
@@ -98,7 +97,8 @@ export type ChaosDebris = {
 };
 export type ChaosSnapshot = {
   originalTabIndex: number;
-  toggles: ChangedToggle[];
+  /** Undoes for the purely visual mischief; rage never changes real settings. */
+  restores: Array<() => void>;
 };
 
 export interface LauncherMascotProps {

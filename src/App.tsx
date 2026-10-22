@@ -128,6 +128,8 @@ import {
   MASCOT_FAKE_CONTENT_DELETE_EVENT,
   MASCOT_FAKE_DELETE_EVENT,
   MASCOT_FAKE_RESTORE_EVENT,
+  MASCOT_RAM_PRANK_EVENT,
+  type MascotRamPrankDetail,
 } from "./components/mascot/events";
 import { DEFAULT_MASCOT_SETTINGS } from "./components/mascot/mascotConfig";
 import {
@@ -608,6 +610,17 @@ export default function App() {
   );
 
   const optimizedJavaArgsEnabled = launcherSettings?.optimizedJavaArgs ?? true;
+  const savedRamGb = launcherSettings?.defaultRamGb;
+
+  useEffect(() => {
+    const playWithRam = (event: Event) => {
+      const { ramGb } = (event as CustomEvent<MascotRamPrankDetail>).detail;
+      const value = ramGb ?? savedRamGb;
+      if (value !== undefined) setSettingsRamDraft(clampRamToSystem(value, systemRamGb));
+    };
+    window.addEventListener(MASCOT_RAM_PRANK_EVENT, playWithRam);
+    return () => window.removeEventListener(MASCOT_RAM_PRANK_EVENT, playWithRam);
+  }, [savedRamGb, systemRamGb]);
 
   useEffect(() => {
     const requestFakeDelete = (event: Event) => {

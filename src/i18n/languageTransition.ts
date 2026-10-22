@@ -1,8 +1,9 @@
 import { LOCALE_CHANGING_EVENT, LOCALE_STORAGE_KEY } from "./store";
 
 const CONTROL = "button, a, select, summary, [role='tab'], [role='switch'], [role='menuitem']";
+// Decorative layers that repeat visible text can opt back in with `data-language-flip`.
 const EXCLUDED =
-  "script, style, svg, canvas, textarea, [contenteditable], [hidden], [aria-hidden='true']";
+  "script, style, svg, canvas, textarea, [contenteditable], [hidden], [aria-hidden='true']:not([data-language-flip])";
 
 /** A diagonal wave: nearby rows move together, from the upper left to the lower right. */
 export function languageWaveDelay(

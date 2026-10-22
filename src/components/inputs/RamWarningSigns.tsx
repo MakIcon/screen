@@ -1,36 +1,119 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "../../i18n/locale";
+import { RAM_SIGN_PUSH_EVENT, type RamSignPushDetail } from "./ramSignEvents";
+import {
+  advanceRope,
+  createRope,
+  nudgeRope,
+  pushRope,
+  resizeRope,
+  signPose,
+  type Point,
+  type Rope,
+} from "./ramSignRope";
 
-type Point = { x: number; y: number };
+type SignId = "stop" | "system" | "maximum";
 type Sign = {
-  id: "stop" | "system" | "maximum";
+  id: SignId;
   x: number;
   y: number;
   start: Point;
   target: Point;
+  /** Sideways bulge as a share of the arrow length; the sign picks the side. */
+  bow: number;
+  /** Radius of an optional curl halfway along the arrow. */
+  curl?: number;
+  /** Cord length once knocked loose; differs per sign so neighbours hang at different heights. */
+  cord: number;
 };
 type Layout = {
   signs: Sign[];
   theme: CSSProperties;
 };
 
-const SIGN_WIDTH = 232;
+const SIGN_WIDTH = 260;
 const MARGIN = 12;
+const CURL_FROM = 0.3;
+const CURL_TO = 0.58;
 
-function arrowPath(start: Point, target: Point) {
+const round = (n: number) => Math.round(n * 10) / 10;
+
+/** A single smooth arc from the sign to the target, optionally with a cursive loop. */
+function arrowCurve({ start, target, bow, curl = 0 }: Sign) {
   const dx = target.x - start.x;
   const dy = target.y - start.y;
-  const control1 = { x: start.x + dx * 0.3 - dy * 0.25, y: start.y + dy * 0.2 };
-  const control2 = { x: start.x + dx * 0.65, y: start.y + dy * 0.85 - dx * 0.3 };
-  const angle = Math.atan2(target.y - control2.y, target.x - control2.x);
-  const wing = (side: number) => ({
-    x: target.x - 16 * Math.cos(angle) + side * 9 * Math.sin(angle),
-    y: target.y - 16 * Math.sin(angle) - side * 9 * Math.cos(angle),
-  });
-  const a = wing(1);
-  const b = wing(-1);
-  return `M${start.x} ${start.y}C${control1.x} ${control1.y} ${control2.x} ${control2.y} ${target.x} ${target.y}M${a.x} ${a.y}L${target.x} ${target.y} ${b.x} ${b.y}`;
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length;
+  const uy = dy / length;
+  const at = (s: number): Point => {
+    let along = length * s;
+    // Cubic profile: gentle at the sign, tighter towards the target.
+    let side = bow * length * 1.5 * s * (1 - s * s);
+    if (curl && s > CURL_FROM && s < CURL_TO) {
+      // A prolate trochoid eased in and out, so the loop joins the arc without kinks.
+      const w = (s - CURL_FROM) / (CURL_TO - CURL_FROM);
+      const phase = Math.PI * (1 + 2 * w * w * (3 - 2 * w));
+      along -= curl * Math.sin(phase);
+      side -= Math.sign(bow || 1) * curl * (1 + Math.cos(phase));
+    }
+    return { x: start.x + ux * along - uy * side, y: start.y + uy * along + ux * side };
+  };
+  const steps = curl ? 96 : 48;
+  return Array.from({ length: steps + 1 }, (_, i) => at(i / steps));
+}
+
+/** Open chevron at `tip`, facing away from `from`. */
+function headPath(tip: Point, from: Point) {
+  const angle = Math.atan2(tip.y - from.y, tip.x - from.x);
+  const wing = (side: number) =>
+    `${round(tip.x - 14 * Math.cos(angle + side * 0.5))} ${round(tip.y - 14 * Math.sin(angle + side * 0.5))}`;
+  return `M${wing(1)}L${round(tip.x)} ${round(tip.y)}L${wing(-1)}`;
+}
+
+function arrowPaths(sign: Sign) {
+  const points = arrowCurve(sign);
+  return {
+    line: `M${points.map((p) => `${round(p.x)} ${round(p.y)}`).join("L")}`,
+    head: headPath(sign.target, points[points.length - 4]),
+  };
+}
+
+/** Quadratic segments through the midpoints, so the cord bends smoothly between particles. */
+function cordPath(points: Point[]) {
+  let d = `M${round(points[0].x)} ${round(points[0].y)}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const p = points[i];
+    const next = points[i + 1];
+    d += `Q${round(p.x)} ${round(p.y)} ${round((p.x + next.x) / 2)} ${round((p.y + next.y) / 2)}`;
+  }
+  const last = points[points.length - 1];
+  return `${d}L${round(last.x)} ${round(last.y)}`;
+}
+
+function drawRope(rope: Rope, sign: HTMLElement | undefined, arrow: SVGGElement | undefined) {
+  if (sign) {
+    const pose = signPose(rope);
+    sign.style.left = `${pose.left}px`;
+    sign.style.top = `${pose.top}px`;
+    sign.style.transformOrigin = `${pose.origin.x}px ${pose.origin.y}px`;
+    sign.style.transform = `rotate(${pose.angle}rad)`;
+  }
+  if (arrow) {
+    const line = cordPath(rope.points);
+    const head = headPath(rope.points[0], rope.points[1]);
+    arrow
+      .querySelectorAll("path")
+      .forEach((path, i) => path.setAttribute("d", i < 2 ? line : head));
+  }
 }
 
 /** The artwork lives outside the settings scroll viewport so neighbouring cards cannot clip it. */
@@ -46,6 +129,143 @@ export function RamWarningSigns({
   const tr = useTranslation();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<Layout | null>(null);
+  // Signs knocked loose hang from their arrows; the simulation writes to the DOM directly.
+  const [loose, setLoose] = useState<ReadonlySet<SignId>>(() => new Set());
+  const ropes = useRef(new Map<SignId, Rope>());
+  const tips = useRef(new Map<SignId, Point>());
+  const signElements = useRef(new Map<SignId, HTMLDivElement>());
+  const arrowElements = useRef(new Map<SignId, SVGGElement>());
+  const grip = useRef<{ id: SignId; offset: Point } | null>(null);
+  const frame = useRef(0);
+  const resizes = useRef<ResizeObserver | null>(null);
+
+  const wake = useCallback(() => {
+    if (frame.current) return;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - last) / 1000;
+      last = now;
+      let swinging = false;
+      for (const [id, rope] of ropes.current) {
+        const tip = tips.current.get(id);
+        if (!tip) continue;
+        if (advanceRope(rope, tip, elapsed)) swinging = true;
+        drawRope(rope, signElements.current.get(id), arrowElements.current.get(id));
+      }
+      frame.current = swinging ? requestAnimationFrame(tick) : 0;
+    };
+    frame.current = requestAnimationFrame(tick);
+  }, []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(frame.current);
+      frame.current = 0;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    // A language switch changes a sign's size; a hanging sign must stay hooked at its middle.
+    const observer = new ResizeObserver((entries) => {
+      for (const { target } of entries) {
+        const element = target as HTMLElement;
+        const rope = ropes.current.get(element.dataset.sign as SignId);
+        if (rope) resizeRope(rope, element.offsetWidth, element.offsetHeight);
+      }
+      wake();
+    });
+    resizes.current = observer;
+    signElements.current.forEach((element) => observer.observe(element));
+    return () => {
+      observer.disconnect();
+      resizes.current = null;
+    };
+  }, [wake]);
+
+  useLayoutEffect(() => {
+    if (!layout) return;
+    const shown = new Set(layout.signs.map((sign) => sign.id));
+    for (const id of ropes.current.keys()) if (!shown.has(id)) ropes.current.delete(id);
+    if ([...loose].some((id) => !shown.has(id))) {
+      setLoose(new Set([...loose].filter((id) => shown.has(id))));
+    }
+    for (const sign of layout.signs) {
+      tips.current.set(sign.id, sign.target);
+      const rope = ropes.current.get(sign.id);
+      if (!rope) continue;
+      nudgeRope(rope);
+      drawRope(rope, signElements.current.get(sign.id), arrowElements.current.get(sign.id));
+    }
+    if (ropes.current.size) wake();
+  }, [layout, loose, wake]);
+
+  /** Swaps a pinned sign for a hanging one; a sign that already hangs keeps its rope. */
+  const loosen = useCallback((sign: Sign, element: HTMLElement) => {
+    const existing = ropes.current.get(sign.id);
+    if (existing) return existing;
+    const style = getComputedStyle(element);
+    const [originX, originY] = style.transformOrigin.split(" ").map(parseFloat);
+    const rope = createRope(
+      arrowCurve(sign),
+      {
+        left: sign.x,
+        top: sign.y,
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+        origin: { x: originX, y: originY },
+        angle: ((parseFloat(style.getPropertyValue("--ram-sign-angle")) || 0) * Math.PI) / 180,
+      },
+      // Short enough for the hanging sign to stay on screen below the tip.
+      Math.max(
+        48,
+        Math.min(sign.cord, window.innerHeight - sign.target.y - element.offsetHeight - 24),
+      ),
+    );
+    ropes.current.set(sign.id, rope);
+    setLoose((current) => new Set(current).add(sign.id));
+    return rope;
+  }, []);
+
+  useEffect(() => {
+    if (!layout) return;
+    const push = (event: Event) => {
+      const element = (event.target as Element | null)?.closest<HTMLElement>(".ram-warning-sign");
+      const sign = layout.signs.find(({ id }) => id === element?.dataset.sign);
+      if (!element || !sign) return;
+      const { x, y } = (event as CustomEvent<RamSignPushDetail>).detail;
+      pushRope(loosen(sign, element), x, y);
+      wake();
+    };
+    document.addEventListener(RAM_SIGN_PUSH_EVENT, push);
+    return () => document.removeEventListener(RAM_SIGN_PUSH_EVENT, push);
+  }, [layout, loosen, wake]);
+
+  const grab = (sign: Sign, event: PointerEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    element.setPointerCapture(event.pointerId);
+    const rope = loosen(sign, element);
+    grip.current = {
+      id: sign.id,
+      offset: { x: event.clientX - rope.centre.x, y: event.clientY - rope.centre.y },
+    };
+    rope.pull = { x: rope.centre.x, y: rope.centre.y };
+    wake();
+  };
+
+  const drag = (sign: Sign, event: PointerEvent<HTMLDivElement>) => {
+    const rope = ropes.current.get(sign.id);
+    if (!rope || grip.current?.id !== sign.id) return;
+    const { offset } = grip.current;
+    rope.pull = { x: event.clientX - offset.x, y: event.clientY - offset.y };
+    wake();
+  };
+
+  const drop = (sign: Sign) => {
+    const rope = ropes.current.get(sign.id);
+    if (rope) rope.pull = null;
+    if (grip.current?.id === sign.id) grip.current = null;
+    wake();
+  };
 
   useLayoutEffect(() => {
     const anchor = anchorRef.current;
@@ -85,6 +305,8 @@ export function RamWarningSigns({
           ...stop,
           start: { x: stop.x + 24, y: stop.y + 26 },
           target: { x: valueBounds.right + 8, y: valueBounds.top + valueBounds.height * 0.55 },
+          bow: -0.3,
+          cord: 64,
         },
       ];
       if (level >= 2) {
@@ -93,6 +315,9 @@ export function RamWarningSigns({
           ...system,
           start: { x: system.x + 22, y: system.y + 20 },
           target: { x: thumbBounds.left + thumbBounds.width / 2, y: thumbBounds.top - 8 },
+          bow: -0.28,
+          curl: 17,
+          cord: 120,
         });
       }
       if (level >= 3) {
@@ -101,6 +326,8 @@ export function RamWarningSigns({
           ...maximum,
           start: { x: maximum.x + 22, y: maximum.y + 30 },
           target: { x: valueBounds.left - 8, y: valueBounds.top + valueBounds.height * 0.55 },
+          bow: 0.32,
+          cord: 150,
         });
       }
       const style = getComputedStyle(anchor);
@@ -109,6 +336,7 @@ export function RamWarningSigns({
         theme: {
           "--danger": style.getPropertyValue("--danger"),
           "--bg": style.getPropertyValue("--bg"),
+          "--ram-ink": style.getPropertyValue("--ink"),
           fontFamily: style.fontFamily,
         } as CSSProperties,
       });
@@ -147,29 +375,86 @@ export function RamWarningSigns({
       </div>
       {layout &&
         createPortal(
-          <div className="ram-warning-overlay" style={layout.theme} aria-hidden="true">
+          <div
+            className="ram-warning-overlay"
+            style={layout.theme}
+            aria-hidden="true"
+            data-language-flip
+          >
             <svg className="ram-warning-arrows" fill="none">
-              {layout.signs.map((sign) => (
-                <path
-                  className="ram-warning-arrow"
-                  key={sign.id}
-                  d={arrowPath(sign.start, sign.target)}
-                />
-              ))}
+              {layout.signs.map((sign, index) => {
+                const isLoose = loose.has(sign.id);
+                const { line, head } = isLoose
+                  ? { line: undefined, head: undefined }
+                  : arrowPaths(sign);
+                return (
+                  <g
+                    key={sign.id}
+                    ref={(element) => {
+                      if (element) arrowElements.current.set(sign.id, element);
+                      else arrowElements.current.delete(sign.id);
+                    }}
+                    className={`ram-warning-arrow${isLoose ? " ram-warning-arrow--loose" : ""}`}
+                    style={{ "--ram-sign-delay": `${index * 110}ms` } as CSSProperties}
+                  >
+                    <path
+                      className="ram-warning-arrow-line ram-warning-arrow-halo"
+                      pathLength={1}
+                      d={line}
+                    />
+                    <path className="ram-warning-arrow-line" pathLength={1} d={line} />
+                    <path
+                      className="ram-warning-arrow-head ram-warning-arrow-halo"
+                      pathLength={1}
+                      d={head}
+                    />
+                    <path className="ram-warning-arrow-head" pathLength={1} d={head} />
+                  </g>
+                );
+              })}
             </svg>
-            {layout.signs.map((sign) => (
+            {layout.signs.map((sign, index) => (
               <div
                 key={sign.id}
-                className={`ram-warning-sign ram-warning-sign--${sign.id}`}
-                style={{ left: sign.x, top: sign.y }}
+                ref={(element) => {
+                  const previous = signElements.current.get(sign.id);
+                  if (previous) resizes.current?.unobserve(previous);
+                  if (element) {
+                    signElements.current.set(sign.id, element);
+                    resizes.current?.observe(element);
+                  } else signElements.current.delete(sign.id);
+                }}
+                data-sign={sign.id}
+                className={`ram-warning-sign ram-warning-sign--${sign.id}${loose.has(sign.id) ? " ram-warning-sign--loose" : ""}`}
+                style={
+                  {
+                    ...(loose.has(sign.id) ? {} : { left: sign.x, top: sign.y }),
+                    "--ram-sign-delay": `${index * 110}ms`,
+                  } as CSSProperties
+                }
+                onPointerDown={(event) => grab(sign, event)}
+                onPointerMove={(event) => drag(sign, event)}
+                onPointerUp={() => drop(sign)}
+                onPointerCancel={() => drop(sign)}
               >
                 {sign.id === "stop" ? (
                   <>
+                    <i className="ram-warning-badge">
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d="M12 6.5v7"
+                          stroke="currentColor"
+                          strokeWidth="3.4"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="12" cy="18" r="2" fill="currentColor" />
+                      </svg>
+                    </i>
                     <strong>{tr("ram.warningSignTitle")}</strong>
                     <span>{tr("ram.warningSignRisk")}</span>
                   </>
                 ) : sign.id === "system" ? (
-                  tr("ram.warningSignAction")
+                  <strong>{tr("ram.warningSignAction")}</strong>
                 ) : (
                   <>
                     <strong>{tr("ram.warningSignMaximum")}</strong>

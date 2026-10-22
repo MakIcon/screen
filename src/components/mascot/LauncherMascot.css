@@ -341,6 +341,16 @@
 
 /* RAM slider teasing is deliberately visual-only; every other chaos action
    continues to use the real control and is covered by the undo snapshot. */
+.mascot-fake-poke {
+  animation: mascot-fake-poke 300ms cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+@keyframes mascot-fake-poke {
+  35% {
+    transform: scale(0.94) rotate(-1.5deg);
+  }
+}
+
 .mascot-fake-slider-preview .es-thumb-inner {
   transform: scale(1.22);
   box-shadow:

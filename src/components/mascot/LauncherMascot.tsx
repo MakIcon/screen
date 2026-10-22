@@ -10,7 +10,10 @@ import {
   MASCOT_FAKE_CONTENT_DELETE_EVENT,
   MASCOT_FAKE_DELETE_EVENT,
   MASCOT_FAKE_RESTORE_EVENT,
+  MASCOT_RAM_PRANK_EVENT,
+  type MascotRamPrankDetail,
 } from "./events";
+import { RAM_SIGN_PUSH_EVENT, type RamSignPushDetail } from "../inputs/ramSignEvents";
 import {
   addMascotRage,
   BOWL_EMPTY_LIFETIME_MS,
@@ -45,6 +48,8 @@ import { MascotView } from "./MascotView";
 import {
   clamp,
   distance,
+  fakeFlipToggle,
+  fakePoke,
   getScrollableAncestor,
   getToggleLabel,
   hasDrawnEdge,
@@ -78,6 +83,12 @@ import type {
   SleepingDragState,
 } from "./mascotTypes";
 import "./LauncherMascot.css";
+
+function pushRamSign(sign: HTMLElement, x: number, y: number) {
+  sign.dispatchEvent(
+    new CustomEvent<RamSignPushDetail>(RAM_SIGN_PUSH_EVENT, { bubbles: true, detail: { x, y } }),
+  );
+}
 
 type BowlDropParticle = BowlDrop & {
   vx: number;
@@ -501,12 +512,16 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
 
   // Parabolic leap from the current position to `target`. Horizontal travel is
   // eased while the height follows a sine arc, so the mascot springs up and over
-  // rather than sliding. Resolves false if interrupted (e.g. grabbed).
+  // rather than sliding. A function target is re-read every frame, so the mascot
+  // can land on something that moves. Resolves false if interrupted (e.g. grabbed).
   const leapTo = useCallback(
-    (target: MascotPosition, options?: { height?: number; phase?: MascotPhase }) => {
+    (
+      target: MascotPosition | (() => MascotPosition | null),
+      options?: { height?: number; phase?: MascotPhase },
+    ) => {
       cancelMotion();
       const start = positionRef.current;
-      const dest = clampPosition(target);
+      let dest = clampPosition(typeof target === "function" ? (target() ?? start) : target);
       const span = distance(start, dest);
       const duration = clamp(300 + span * 1.15, 340, 820);
       const apexY = Math.min(start.y, dest.y);
@@ -518,6 +533,7 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
         motionFinishRef.current = resolve;
         const step = (now: number) => {
           const t = clamp((now - startTime) / duration, 0, 1);
+          if (typeof target === "function") dest = clampPosition(target() ?? dest);
           const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
           const x = start.x + (dest.x - start.x) * ease;
           const y = start.y + (dest.y - start.y) * ease - Math.sin(Math.PI * t) * height;
@@ -1196,6 +1212,297 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
     setPhase,
   ]);
 
+  // Where the mascot stands on (or, hanging, dangles under) a RAM warning sign, in
+  // the layer's coordinates. Follows the sign's tilt while it swings on its arrow.
+  const ramSignAnchor = useCallback(
+    (sign: HTMLElement, hanging: boolean): MascotPosition | null => {
+      const root = getRoot();
+      if (!root || !sign.isConnected) return null;
+      const rootRect = root.getBoundingClientRect();
+      const rect = sign.getBoundingClientRect();
+      const transform = window.getComputedStyle(sign).transform;
+      const matrix = new DOMMatrixReadOnly(transform === "none" ? undefined : transform);
+      const angle = Math.atan2(matrix.b, matrix.a);
+      const reach = (sign.offsetHeight / 2) * (hanging ? 1 : -1);
+      const x = rect.left + rect.width / 2 - Math.sin(angle) * reach - rootRect.left;
+      const y = rect.top + rect.height / 2 + Math.cos(angle) * reach - rootRect.top;
+      return {
+        x: x - MASCOT_SIZE / 2,
+        y: hanging ? y - 8 : y - MASCOT_SIZE + 6,
+      };
+    },
+    [getRoot],
+  );
+
+  // Rides a RAM sign for `duration`, pumping it like a swing in the direction it
+  // already moves. Resolves false if interrupted or the sign disappears.
+  const rideRamSign = useCallback(
+    (sign: HTMLElement, hanging: boolean, duration: number) => {
+      cancelMotion();
+      setPhase(hanging ? "climbing" : "playing");
+      return new Promise<boolean>((resolve) => {
+        const startTime = performance.now();
+        let lastPump = startTime;
+        let previous: { x: number; time: number } | null = null;
+        motionFinishRef.current = resolve;
+        const finish = (completed: boolean) => {
+          motionFrameRef.current = null;
+          motionFinishRef.current = null;
+          resolve(completed);
+        };
+        const step = (now: number) => {
+          const anchor = ramSignAnchor(sign, hanging);
+          if (!anchor) {
+            finish(false);
+            return;
+          }
+          setPosition(clampPosition(anchor));
+          const velocity = previous
+            ? ((anchor.x - previous.x) / Math.max(1, now - previous.time)) * 1000
+            : 0;
+          previous = { x: anchor.x, time: now };
+          if (now - lastPump > 380) {
+            lastPump = now;
+            const direction =
+              Math.abs(velocity) > 25 ? Math.sign(velocity) : Math.random() < 0.5 ? -1 : 1;
+            pushRamSign(sign, direction * (hanging ? 200 : 260), hanging ? 40 : 90);
+          }
+          if (now - startTime >= duration) {
+            finish(true);
+            return;
+          }
+          motionFrameRef.current = window.requestAnimationFrame(step);
+        };
+        motionFrameRef.current = window.requestAnimationFrame(step);
+      });
+    },
+    [cancelMotion, clampPosition, ramSignAnchor, setPhase, setPosition],
+  );
+
+  // Where the mascot stands while it holds the RAM slider's thumb.
+  const ramThumbAnchor = useCallback(
+    (thumb: HTMLElement): MascotPosition | null => {
+      const root = getRoot();
+      if (!root || !thumb.isConnected) return null;
+      const rootRect = root.getBoundingClientRect();
+      const rect = thumb.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2 - rootRect.left - MASCOT_SIZE / 2,
+        y: rect.top - rootRect.top - MASCOT_SIZE + 12,
+      };
+    },
+    [getRoot],
+  );
+
+  // Hauls the RAM thumb to `to`, walking along with it, so the value glides
+  // instead of jumping. Resolves false if interrupted.
+  const dragRamThumb = useCallback(
+    (thumb: HTMLElement, to: number, setValue: (value: number) => void, alive: () => boolean) => {
+      const from = Number(thumb.getAttribute("aria-valuenow"));
+      if (!Number.isFinite(from)) return Promise.resolve(false);
+      cancelMotion();
+      setPhase("running");
+      const duration = clamp(280 + Math.abs(to - from) * 24, 320, 1_200);
+      return new Promise<boolean>((resolve) => {
+        const startTime = performance.now();
+        let last = from;
+        motionFinishRef.current = resolve;
+        const finish = (completed: boolean) => {
+          motionFrameRef.current = null;
+          motionFinishRef.current = null;
+          resolve(completed);
+        };
+        const step = (now: number) => {
+          if (!alive()) {
+            finish(false);
+            return;
+          }
+          const t = clamp((now - startTime) / duration, 0, 1);
+          const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+          const value = Math.round(from + (to - from) * eased);
+          if (value !== last) {
+            last = value;
+            setValue(value);
+          }
+          const anchor = ramThumbAnchor(thumb);
+          if (anchor) setPosition(clampPosition(anchor));
+          if (t >= 1) {
+            finish(true);
+            return;
+          }
+          motionFrameRef.current = window.requestAnimationFrame(step);
+        };
+        motionFrameRef.current = window.requestAnimationFrame(step);
+      });
+    },
+    [cancelMotion, clampPosition, ramThumbAnchor, setPhase, setPosition],
+  );
+
+  // On the settings tab: grabs the RAM thumb and hauls it to the maximum (or
+  // around at random), hops across the warning signs that pop up, knocks them
+  // loose and rides them, then drags the RAM back. Only the on-screen draft
+  // changes; the saved setting is never touched.
+  const prankRam = useCallback(async () => {
+    if (
+      !movementEnabled ||
+      !interactionsEnabled ||
+      phaseRef.current !== "idle" ||
+      activityBusyRef.current
+    )
+      return false;
+    const root = getRoot();
+    const stage = getActiveStage();
+    if (!root || !stage) return false;
+    const block = stage.querySelector<HTMLElement>(".settings-memory-block");
+    const thumb = block?.querySelector<HTMLElement>("[role='slider']");
+    if (!block || !thumb || !isVisible(thumb, root.getBoundingClientRect())) return false;
+    const min = Number(thumb.getAttribute("aria-valuemin"));
+    const max = Number(thumb.getAttribute("aria-valuemax"));
+    const original = Number(thumb.getAttribute("aria-valuenow"));
+    if (![min, max, original].every(Number.isFinite) || max <= min) return false;
+
+    activityBusyRef.current = true;
+    const activityToken = activityTokenRef.current;
+    const tabIndex = activeIndexRef.current;
+    // Once the user reaches for the slider, the value is theirs and must stay.
+    let userTookOver = false;
+    const takeOver = () => {
+      userTookOver = true;
+    };
+    block.addEventListener("pointerdown", takeOver, true);
+    block.addEventListener("keydown", takeOver, true);
+    const alive = () =>
+      !userTookOver &&
+      tabIndex === activeIndexRef.current &&
+      activityToken === activityTokenRef.current &&
+      !chaosActiveRef.current &&
+      !dragRef.current;
+    let pranked = false;
+    const setRam = (ramGb: number | null) => {
+      pranked = ramGb !== null && ramGb !== original;
+      window.dispatchEvent(
+        new CustomEvent<MascotRamPrankDetail>(MASCOT_RAM_PRANK_EVENT, { detail: { ramGb } }),
+      );
+    };
+    const reachThumb = async () => {
+      const anchor = ramThumbAnchor(thumb);
+      if (!anchor) return false;
+      const arrived = isNearElement(thumb, 70)
+        ? await animatePath([anchor], RUN_SPEED, "running")
+        : await leapTo(() => ramThumbAnchor(thumb));
+      return arrived && alive();
+    };
+    try {
+      setEmotion("excited");
+      const arrived = await animatePath(buildContourPath(thumb), RUN_SPEED, "running");
+      if (!arrived || !alive() || !(await reachThumb())) return false;
+      setPhase("playing");
+      await wait(320);
+
+      if (Math.random() < 0.6) {
+        // All of it, please.
+        if (!(await dragRamThumb(thumb, max, setRam, alive))) return false;
+      } else {
+        setEmotion("cool");
+        const span = max - min;
+        const stops = [
+          min + Math.round(Math.random() * span),
+          min + Math.round(Math.random() * span),
+          // Usually ends high, so the warnings have something to complain about.
+          min + Math.round((0.55 + Math.random() * 0.45) * span),
+        ];
+        for (const stop of stops) {
+          if (!(await dragRamThumb(thumb, stop, setRam, alive))) return false;
+          setPhase("playing");
+          await wait(180 + Math.random() * 160);
+        }
+      }
+      setPhase("trick");
+      setEmotion("cool");
+      // Let the warning signs pop in and the new value sink in.
+      await wait(1_100);
+      if (!alive()) return false;
+
+      const signs = shuffled(
+        Array.from(document.querySelectorAll<HTMLElement>(".ram-warning-sign")),
+      );
+      if (signs.length > 0) {
+        setModalForeground(true);
+        for (const [index, sign] of signs.entries()) {
+          if (!alive() || !sign.isConnected) break;
+          const moods: MascotEmotion[] = ["happy", "cool", "love"];
+          setEmotion(index === 0 ? "excited" : (randomItem(moods) ?? "happy"));
+          if (!(await leapTo(() => ramSignAnchor(sign, false)))) return false;
+          // The landing knocks the sign off its pin.
+          pushRamSign(sign, (Math.random() - 0.5) * 320, 520);
+          if (!(await rideRamSign(sign, false, 1_800 + Math.random() * 900))) return false;
+          if (index === signs.length - 1 && Math.random() < 0.7) {
+            // Slip over the edge and swing from underneath.
+            setEmotion("love");
+            const slid = await leapTo(() => ramSignAnchor(sign, true), {
+              height: 28,
+              phase: "climbing",
+            });
+            if (!slid || !(await rideRamSign(sign, true, 2_400))) return false;
+          }
+        }
+        setModalForeground(false);
+        const here = positionRef.current;
+        const landed = await leapTo({
+          x: here.x + (Math.random() < 0.5 ? -90 : 90),
+          y: here.y + 130,
+        });
+        if (!landed || !alive()) return false;
+      } else {
+        // Nothing fell over: admire the mess for a moment instead.
+        setPhase("playing");
+        await wait(1_600);
+        if (!alive()) return false;
+      }
+
+      // Tidy up: drag the memory back where it was.
+      setEmotion("shy");
+      if (!(await reachThumb())) return false;
+      setPhase("playing");
+      await wait(240);
+      if (!(await dragRamThumb(thumb, original, setRam, alive))) return false;
+      setRam(null);
+      return true;
+    } finally {
+      block.removeEventListener("pointerdown", takeOver, true);
+      block.removeEventListener("keydown", takeOver, true);
+      // Interrupted mid-prank: put the saved value back at once, unless the
+      // user has taken the slider over.
+      if (pranked && !userTookOver) setRam(null);
+      setModalForeground(false);
+      activityBusyRef.current = false;
+      const finishingPhase = phaseRef.current as MascotPhase;
+      if (
+        !chaosActiveRef.current &&
+        finishingPhase !== "dragging" &&
+        finishingPhase !== "thrown" &&
+        finishingPhase !== "sleeping"
+      ) {
+        setEmotion("happy");
+        setPhase("idle");
+      }
+    }
+  }, [
+    animatePath,
+    buildContourPath,
+    dragRamThumb,
+    getActiveStage,
+    getRoot,
+    interactionsEnabled,
+    isNearElement,
+    leapTo,
+    movementEnabled,
+    ramSignAnchor,
+    ramThumbAnchor,
+    rideRamSign,
+    setPhase,
+  ]);
+
   // Takes the stolen element in its paws and stuffs it in its mouth: the mouth
   // sprite opens (frames 0→3) with the button composited half-in, then closes
   // (3→0) as it "swallows" — after which the element pops back to its place.
@@ -1381,7 +1688,8 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
     // controls; that mischief is rage-only.
     if (Math.random() < 0.68) {
       const actions = [microLife];
-      if (interactionsEnabled) actions.push(jumpOnRandomButton, teaseSlider, typeNonsense);
+      if (interactionsEnabled)
+        actions.push(jumpOnRandomButton, teaseSlider, typeNonsense, prankRam);
       if (scrollListsEnabled) actions.push(scrollActiveList);
       for (const action of shuffled(actions)) {
         if (await action()) return;
@@ -1395,6 +1703,7 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
     jumpOnRandomButton,
     microLife,
     movementEnabled,
+    prankRam,
     roam,
     scrollActiveList,
     scrollListsEnabled,
@@ -1715,7 +2024,6 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
               ".main-stage .instance-card",
               ".main-stage .inline-dropdown-trigger",
               ".main-stage .settings-toggle-row .toggle-switch:not([data-mascot-off-switch])",
-              ".main-stage .theme-switch",
               ".main-stage [role='slider']",
             ].join(", "),
           ),
@@ -1728,8 +2036,12 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
           element,
           token,
           () => {
+            // Only the dropdown really opens; everything else is for show.
             if (element.matches("[role='slider']")) nudgeSlider(element);
-            else element.click();
+            else if (element.matches(".toggle-switch"))
+              chaosSnapshotRef.current?.restores.push(fakeFlipToggle(element));
+            else if (element.matches(".inline-dropdown-trigger")) element.click();
+            else fakePoke(element);
           },
           180,
         );
@@ -1754,35 +2066,13 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
         return token === chaosTokenRef.current;
       };
 
-      const settingsTab = tabs.find((tab) => tab.textContent?.trim() === "SETTINGS");
-      if (settingsTab && token === chaosTokenRef.current) {
-        await pressOrFallback(settingsTab, () => settingsTab.click(), 360);
-        const advancedToggle = Array.from(
-          root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
-        ).find((toggle) => getToggleLabel(toggle) === "ADVANCED SETTINGS");
-        if (advancedToggle && !advancedToggle.classList.contains("enabled")) {
-          await pressOrFallback(
-            advancedToggle,
-            () => {
-              chaosSnapshotRef.current?.toggles.push({
-                label: "ADVANCED SETTINGS",
-                wasEnabled: false,
-              });
-              advancedToggle.click();
-            },
-            360,
-          );
-        }
-      }
-
       if (!(await pressOrFallback(buildsTab, () => buildsTab.click(), 420))) return false;
-      const rootRect = root.getBoundingClientRect();
-      const cards = Array.from(
-        root.querySelectorAll<HTMLButtonElement>(".instance-card[data-instance-id]"),
-      ).filter((card) => isVisible(card, rootRect));
-      const card = randomItem(cards);
-      if (!card) return true;
-      if (!(await pressOrFallback(card, () => card.click(), 300))) return false;
+      // Work on the build that is already selected, so the selection never changes.
+      const card = root.querySelector<HTMLButtonElement>(
+        ".instance-card.selected[data-instance-id]",
+      );
+      if (!card || !isVisible(card, root.getBoundingClientRect())) return true;
+      if (!(await pressOrFallback(card, () => fakePoke(card), 300))) return false;
 
       const gear = root.querySelector<HTMLButtonElement>(".settings-icon-action");
       if (!gear || !(await pressOrFallback(gear, () => gear.click(), 520))) return false;
@@ -1844,17 +2134,17 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
             popup.querySelectorAll<HTMLButtonElement>(".bme-toggle.enabled:not(:disabled)"),
           ),
         );
-        if (enabledMod) {
-          await pressOrFallback(enabledMod, () => enabledMod.click(), 520);
-        }
+        // Mod switches save to disk at once, so this one only looks flipped.
+        if (enabledMod) await pressOrFallback(enabledMod, () => fakeFlipToggle(enabledMod), 520);
       }
 
       const buildTab = Array.from(popup.querySelectorAll<HTMLButtonElement>(".bcs-tab")).find(
         (button) => button.textContent?.trim() === "BUILD",
       );
       if (buildTab) await pressOrFallback(buildTab, () => buildTab.click(), 280);
-      const save = popup.querySelector<HTMLButtonElement>(".bce-hdr-btn--save");
-      if (save) await pressOrFallback(save, () => save.click(), 720);
+      // Slam the dialog shut instead of saving: every edit above was only a draft.
+      const close = popup.querySelector<HTMLButtonElement>(".bce-hdr-close");
+      if (close) await pressOrFallback(close, () => close.click(), 520);
       return token === chaosTokenRef.current;
     },
     [getRoot, getSceneRoot, ragePressButton],
@@ -1868,14 +2158,11 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
       if (!root || !scene || !buildsTab || token !== chaosTokenRef.current) return true;
       if (!(await ragePressButton(buildsTab, token, () => buildsTab.click(), 360))) return false;
 
-      const rootRect = root.getBoundingClientRect();
-      const card = randomItem(
-        Array.from(
-          root.querySelectorAll<HTMLButtonElement>(".instance-card[data-instance-id]"),
-        ).filter((candidate) => isVisible(candidate, rootRect)),
+      const card = root.querySelector<HTMLButtonElement>(
+        ".instance-card.selected[data-instance-id]",
       );
-      if (!card) return true;
-      if (!(await ragePressButton(card, token, () => card.click(), 260))) return false;
+      if (!card || !isVisible(card, root.getBoundingClientRect())) return true;
+      if (!(await ragePressButton(card, token, () => fakePoke(card), 260))) return false;
       const trash = root.querySelector<HTMLButtonElement>(".trash-action[data-mascot-instance-id]");
       if (!trash) return true;
       const instanceId = trash.dataset.mascotInstanceId;
@@ -1961,7 +2248,7 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
     setUndoAvailable(false);
     setThrowProgress(0);
     ragePointsRef.current = 0;
-    chaosSnapshotRef.current = { originalTabIndex: activeIndexRef.current, toggles: [] };
+    chaosSnapshotRef.current = { originalTabIndex: activeIndexRef.current, restores: [] };
     setEmotion("angry");
     setPhase("chaos");
 
@@ -2000,37 +2287,12 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
       const selectedToggles = shuffled(toggles).slice(0, Math.min(4, toggles.length));
 
       for (const toggle of selectedToggles) {
-        const label = getToggleLabel(toggle);
-        const wasEnabled = toggle.classList.contains("enabled");
         await attempt(() =>
           ragePressButton(
             toggle,
             token,
-            () => {
-              chaosSnapshotRef.current?.toggles.push({ label, wasEnabled });
-              toggle.click();
-            },
+            () => chaosSnapshotRef.current?.restores.push(fakeFlipToggle(toggle)),
             300,
-          ),
-        );
-      }
-
-      const advancedToggle = Array.from(
-        root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
-      ).find((toggle) => getToggleLabel(toggle) === "ADVANCED SETTINGS");
-      if (advancedToggle && !advancedToggle.classList.contains("enabled")) {
-        await attempt(() =>
-          ragePressButton(
-            advancedToggle,
-            token,
-            () => {
-              chaosSnapshotRef.current?.toggles.push({
-                label: "ADVANCED SETTINGS",
-                wasEnabled: false,
-              });
-              advancedToggle.click();
-            },
-            360,
           ),
         );
       }
@@ -2725,13 +2987,7 @@ export function LauncherMascot({ activeIndex, enabled, settings }: LauncherMasco
     tabs[tabs.length - 1]?.click();
     await wait(350);
 
-    const currentToggles = Array.from(
-      root.querySelectorAll<HTMLButtonElement>(".toggle-switch:not([data-mascot-off-switch])"),
-    );
-    snapshot.toggles.forEach(({ label, wasEnabled }) => {
-      const toggle = currentToggles.find((candidate) => getToggleLabel(candidate) === label);
-      if (toggle && toggle.classList.contains("enabled") !== wasEnabled) toggle.click();
-    });
+    snapshot.restores.forEach((restore) => restore());
     await wait(180);
     tabs[snapshot.originalTabIndex]?.click();
     window.dispatchEvent(new Event(MASCOT_FAKE_RESTORE_EVENT));

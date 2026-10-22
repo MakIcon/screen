@@ -184,64 +184,16 @@ function restoreFakeSlider(snapshot: FakeSliderSnapshot) {
   snapshot.slider.classList.remove(FAKE_SLIDER_CLASS);
 }
 
-function isRamSlider(slider: HTMLElement) {
-  return Boolean(slider.closest(".settings-memory-block, .brs-slider"));
-}
-
-function fireSliderKey(slider: HTMLElement, key: string) {
-  slider.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-  slider.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
-}
-
-function getSliderSpan(slider: HTMLElement) {
-  const min = Number(slider.getAttribute("aria-valuemin"));
-  const max = Number(slider.getAttribute("aria-valuemax"));
-  return Number.isFinite(min) && Number.isFinite(max) && max > min
-    ? Math.min(64, Math.round(max - min))
-    : 20;
-}
-
+/** Wiggles a slider's thumb, fill and readout for a moment without touching its value. */
 export function nudgeSlider(slider: HTMLElement) {
-  if (!isRamSlider(slider)) {
-    slider.focus({ preventScroll: true });
-    const span = getSliderSpan(slider);
-    const bursts = 3 + Math.floor(Math.random() * 4);
-    for (let burst = 0; burst < bursts; burst += 1) {
-      const key = burst % 2 === 0 ? "ArrowRight" : "ArrowLeft";
-      const steps = 3 + Math.floor(Math.random() * 6);
-      for (let step = 0; step < steps; step += 1) fireSliderKey(slider, key);
-    }
-    for (let step = 0; step < span; step += 1) fireSliderKey(slider, "ArrowLeft");
-    const target = Math.floor(Math.random() * (span + 1));
-    for (let step = 0; step < target; step += 1) fireSliderKey(slider, "ArrowRight");
-    return;
-  }
-
   const snapshot = captureFakeSlider(slider);
   slider.classList.add(FAKE_SLIDER_CLASS);
   applyFakeSlider(snapshot, 8 + Math.random() * 84);
   window.setTimeout(() => restoreFakeSlider(snapshot), 440);
 }
 
+/** Plays with a slider in bursts; only the picture moves, the value stays put. */
 export async function playSlider(slider: HTMLElement, isAlive: () => boolean) {
-  if (!isRamSlider(slider)) {
-    slider.focus({ preventScroll: true });
-    const span = getSliderSpan(slider);
-    const bursts = 4 + Math.floor(Math.random() * 4);
-    for (let burst = 0; burst < bursts; burst += 1) {
-      if (!isAlive()) return;
-      const key = burst % 2 === 0 ? "ArrowRight" : "ArrowLeft";
-      const steps = 4 + Math.floor(Math.random() * Math.max(4, Math.ceil(span * 0.6)));
-      for (let step = 0; step < steps; step += 1) fireSliderKey(slider, key);
-      await wait(80 + Math.random() * 70);
-    }
-    if (!isAlive()) return;
-    for (let step = 0; step < span; step += 1) fireSliderKey(slider, "ArrowLeft");
-    const target = Math.floor(Math.random() * (span + 1));
-    for (let step = 0; step < target; step += 1) fireSliderKey(slider, "ArrowRight");
-    return;
-  }
-
   const snapshot = captureFakeSlider(slider);
   slider.classList.add(FAKE_SLIDER_CLASS);
   try {
@@ -255,6 +207,32 @@ export async function playSlider(slider: HTMLElement, isAlive: () => boolean) {
   } finally {
     restoreFakeSlider(snapshot);
   }
+}
+
+const FAKE_TOGGLE_CLASS = "mascot-fake-toggle";
+
+/**
+ * Shows a switch flipped without changing the setting behind it. Returns the undo;
+ * it does nothing once React has re-rendered the switch with its real state.
+ */
+export function fakeFlipToggle(toggle: HTMLElement) {
+  toggle.classList.toggle("enabled");
+  toggle.classList.add(FAKE_TOGGLE_CLASS);
+  return () => {
+    if (!toggle.classList.contains(FAKE_TOGGLE_CLASS)) return;
+    toggle.classList.toggle("enabled");
+    toggle.classList.remove(FAKE_TOGGLE_CLASS);
+  };
+}
+
+const FAKE_POKE_CLASS = "mascot-fake-poke";
+
+/** A press that only looks like one: the element squashes, nothing is clicked. */
+export function fakePoke(element: HTMLElement) {
+  element.classList.remove(FAKE_POKE_CLASS);
+  void element.offsetWidth;
+  element.classList.add(FAKE_POKE_CLASS);
+  window.setTimeout(() => element.classList.remove(FAKE_POKE_CLASS), 320);
 }
 
 function copyComputedTree(source: HTMLElement, clone: HTMLElement) {
