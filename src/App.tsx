@@ -28,7 +28,7 @@ import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
 import { useLocalStorageBoolean } from "./hooks/useLocalStorage";
 import { useAccounts } from "./hooks/useAccounts";
 import { logger } from "./utils/logger";
-import { clampRamToSystem } from "./utils/ram";
+import { BYTES_PER_GIB, clampRamToSystem } from "./utils/ram";
 import {
   environmentVariablesToEntries,
   environmentVariablesToRecord,
@@ -87,6 +87,7 @@ import type {
   MinecraftExitPayload,
   MinecraftManifest,
   TabKey,
+  SystemMemoryInfo,
   UpdateInstancePayload,
 } from "./types";
 import { ToastStack } from "./components/notifications/ToastStack";
@@ -218,7 +219,8 @@ export default function App() {
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showPreReleases, setShowPreReleases] = useState(false);
 
-  const [systemRamGb, setSystemRamGb] = useState(8);
+  const [systemRamGb, setSystemRamGb] = useState(1);
+  const [usableRamGb, setUsableRamGb] = useState<number | null>(null);
   const [launcherSettings, setLauncherSettings] = useState<LauncherSettings | null>(null);
   const [createRamGb, setCreateRamGb] = useState(4);
   const [settingsRamDraft, setSettingsRamDraft] = useState(4);
@@ -1315,9 +1317,14 @@ export default function App() {
       setLauncherSettings(settingsResponse);
       applyDefaultRam();
     });
-    void load<number>("get_system_memory_gb", (systemRamResponse) => {
-      startupMemory = systemRamResponse;
-      setSystemRamGb(systemRamResponse);
+    void load<SystemMemoryInfo>("get_system_memory_info", (memory) => {
+      startupMemory = (memory.installedBytes ?? memory.totalBytes) / BYTES_PER_GIB;
+      setSystemRamGb(startupMemory);
+      setUsableRamGb(memory.totalBytes / BYTES_PER_GIB);
+      if (!startupSettings) {
+        setSettingsRamDraft(memory.recommendedMinecraftRamGb);
+        setCreateRamGb(memory.recommendedMinecraftRamGb);
+      }
       applyDefaultRam();
     });
     void load<InstanceItem[]>("list_instances", (instanceResponse) => {
@@ -2350,6 +2357,7 @@ export default function App() {
           <SettingsTab
             commandTarget={settingsCommandTarget}
             systemRamGb={systemRamGb}
+            usableRamGb={usableRamGb}
             settingsRamDraft={settingsRamDraft}
             resolve={resolve}
             setSettingsRamDraft={setSettingsRamDraft}
@@ -2819,6 +2827,7 @@ export default function App() {
             isCreateMode={!buildSettingsTargetId}
             instanceId={buildSettingsTargetId ?? null}
             systemRamGb={systemRamGb}
+            usableRamGb={usableRamGb}
             optimizedJavaArgs={optimizedJavaArgsEnabled}
             buildName={buildSettingsTargetInstance?.name || createPreviewName}
             buildVersion={buildSettingsTargetInstance?.version || createPreviewVersion}

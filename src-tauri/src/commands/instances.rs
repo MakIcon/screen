@@ -50,6 +50,8 @@ pub async fn delete_instance(
     instance_id: String,
 ) -> Result<(), crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("delete", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let Some(index) = items.iter().position(|i| i.id == instance_id) else {
             return Err("Instance not found".into());
@@ -96,6 +98,8 @@ pub async fn restore_instance(
     instance_id: String,
 ) -> Result<InstanceItem, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("restore", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let index = items
             .iter()
@@ -129,6 +133,8 @@ pub async fn purge_deleted_instance(
     instance_id: String,
 ) -> Result<(), crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("purge", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let index = items
             .iter()
@@ -190,6 +196,7 @@ pub async fn create_instance(
     payload: CreateInstancePayload,
 ) -> Result<InstanceItem, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("create", None)?;
         let environment_variables = normalize_environment_variables(payload.environment_variables)?;
         let mut items = edit_instances().await?;
         let clean_name = sanitize_name(&payload.name);
@@ -242,7 +249,7 @@ pub async fn create_instance(
         let raw = serde_json::to_string_pretty(&item)
             .map_err(|e| format!("serialize instance meta error: {e}"))?;
 
-        fs::write(meta_path, raw)
+        crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
             .await
             .map_err(|e| format!("write instance meta error: {e}"))?;
 
@@ -260,6 +267,8 @@ pub async fn update_instance(
     payload: UpdateInstancePayload,
 ) -> Result<InstanceItem, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("edit", Some(&payload.id))?;
+        let _instance_guard = crate::operations::lock_instance(&payload.id).await;
         let environment_variables = normalize_environment_variables(payload.environment_variables)?;
         let mut items = edit_instances().await?;
         let clean_name = sanitize_name(&payload.name);
@@ -339,7 +348,7 @@ pub async fn update_instance(
         let raw = serde_json::to_string_pretty(&updated_item)
             .map_err(|e| format!("serialize instance meta error: {e}"))?;
 
-        fs::write(meta_path, raw)
+        crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
             .await
             .map_err(|e| format!("write instance meta error: {e}"))?;
 
@@ -354,101 +363,113 @@ pub async fn get_instance_export_data(
     instance_id: String,
 ) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("export", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
         let instance = items
             .into_iter()
             .find(|i| i.id == instance_id)
             .ok_or_else(|| "Instance not found".to_string())?;
 
-        let game_dir = PathBuf::from(&instance.game_dir);
-
-        let read_export_items = |directory: PathBuf, state_file: &'static str| async move {
-            let state_path = directory.join(state_file);
-            let state: HashMap<String, InstalledModEntry> = if state_path.exists() {
-                let raw = fs::read_to_string(&state_path).await.unwrap_or_default();
-                serde_json::from_str(&raw).unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-
-            let mut tracked_filenames = std::collections::HashSet::new();
-            let mut result = Vec::new();
-            for (filename, entry) in &state {
-                if !directory.join(filename).is_file()
-                    && !directory.join(format!("{filename}.disabled")).is_file()
-                {
-                    continue;
-                }
-                tracked_filenames.insert(filename.to_lowercase());
-                result.push(ExportedItem {
-                    project_id: Some(entry.project_id.clone()),
-                    title: entry.title.clone(),
-                    source: "modrinth".to_string(),
-                    icon_url: entry.icon_url.clone(),
-                });
-            }
-
-            if let Ok(mut entries) = fs::read_dir(&directory).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    let Ok(file_type) = entry.file_type().await else {
-                        continue;
-                    };
-                    if !file_type.is_file() {
-                        continue;
-                    }
-                    let filename = entry.file_name().to_string_lossy().to_string();
-                    let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
-                    if filename == state_file
-                        || tracked_filenames.contains(&base_filename.to_lowercase())
-                    {
-                        continue;
-                    }
-                    result.push(ExportedItem {
-                        project_id: None,
-                        title: filename,
-                        source: "local".to_string(),
-                        icon_url: None,
-                    });
-                }
-            }
-
-            result.sort_by_key(|item| item.title.to_lowercase());
-            result
-        };
-
-        let mods = read_export_items(game_dir.join("mods"), ".screenlauncher-modrinth.json").await;
-
-        let shaders = read_export_items(
-            game_dir.join("shaderpacks"),
-            ".screenlauncher-modrinth-shaderpacks.json",
-        )
-        .await;
-
-        let resource_packs = read_export_items(
-            game_dir.join("resourcepacks"),
-            ".screenlauncher-modrinth-resourcepacks.json",
-        )
-        .await;
-        Ok(InstanceExportData {
-            schema_version: 2,
-            name: instance.name,
-            version: instance.version,
-            loader: instance.loader,
-            loader_version: instance.loader_version,
-            ram: instance.ram,
-            java_args: instance.java_args,
-            java_path: instance.java_path,
-            environment_variables: instance.environment_variables,
-            window_width: instance.window_width,
-            window_height: instance.window_height,
-            fullscreen: instance.fullscreen,
-            mods,
-            shaders,
-            resource_packs,
-        })
+        instance_export_data_locked(instance).await
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
+}
+
+/// The caller holds the build lock for the complete export.
+pub(crate) async fn instance_export_data_locked(
+    instance: InstanceItem,
+) -> Result<InstanceExportData, String> {
+    let game_dir = PathBuf::from(&instance.game_dir);
+
+    let read_export_items = |directory: PathBuf, state_file: &'static str| async move {
+        if let Err(error) = crate::file_transaction::FileTransaction::recover(&directory) {
+            return Err(error);
+        }
+        let state_path = directory.join(state_file);
+        let state: HashMap<String, InstalledModEntry> = if state_path.exists() {
+            let raw = fs::read_to_string(&state_path).await.unwrap_or_default();
+            serde_json::from_str(&raw).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
+        let mut tracked_filenames = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for (filename, entry) in &state {
+            if !directory.join(filename).is_file()
+                && !directory.join(format!("{filename}.disabled")).is_file()
+            {
+                continue;
+            }
+            tracked_filenames.insert(filename.to_lowercase());
+            result.push(ExportedItem {
+                project_id: Some(entry.project_id.clone()),
+                title: entry.title.clone(),
+                source: "modrinth".to_string(),
+                icon_url: entry.icon_url.clone(),
+            });
+        }
+
+        if let Ok(mut entries) = fs::read_dir(&directory).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let Ok(file_type) = entry.file_type().await else {
+                    continue;
+                };
+                if !file_type.is_file() {
+                    continue;
+                }
+                let filename = entry.file_name().to_string_lossy().to_string();
+                let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
+                if filename == state_file
+                    || tracked_filenames.contains(&base_filename.to_lowercase())
+                {
+                    continue;
+                }
+                result.push(ExportedItem {
+                    project_id: None,
+                    title: filename,
+                    source: "local".to_string(),
+                    icon_url: None,
+                });
+            }
+        }
+
+        result.sort_by_key(|item| item.title.to_lowercase());
+        Ok::<_, String>(result)
+    };
+
+    let mods = read_export_items(game_dir.join("mods"), ".screenlauncher-modrinth.json").await?;
+
+    let shaders = read_export_items(
+        game_dir.join("shaderpacks"),
+        ".screenlauncher-modrinth-shaderpacks.json",
+    )
+    .await?;
+
+    let resource_packs = read_export_items(
+        game_dir.join("resourcepacks"),
+        ".screenlauncher-modrinth-resourcepacks.json",
+    )
+    .await?;
+    Ok(InstanceExportData {
+        schema_version: 2,
+        name: instance.name,
+        version: instance.version,
+        loader: instance.loader,
+        loader_version: instance.loader_version,
+        ram: instance.ram,
+        java_args: instance.java_args,
+        java_path: instance.java_path,
+        environment_variables: instance.environment_variables,
+        window_width: instance.window_width,
+        window_height: instance.window_height,
+        fullscreen: instance.fullscreen,
+        mods,
+        shaders,
+        resource_packs,
+    })
 }
 
 async fn install_import_content(
@@ -498,10 +519,13 @@ async fn install_import_content(
             continue;
         }
         let target_dir = game_dir.join(directory);
+        crate::file_transaction::FileTransaction::recover(&target_dir)?;
         let state_path = target_dir.join(state_file);
         let mut state: HashMap<String, InstalledModEntry> = match fs::read(&state_path).await {
-            Ok(raw) => serde_json::from_slice(&raw).unwrap_or_default(),
-            Err(_) => HashMap::new(),
+            Ok(raw) => serde_json::from_slice(&raw)
+                .map_err(|e| format!("parse content state error: {e}"))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+            Err(e) => return Err(format!("read content state error: {e}")),
         };
         for exported in entries {
             if let Some(context) = context {
@@ -532,6 +556,7 @@ async fn install_import_content(
                     item,
                     project_id,
                     &target_dir,
+                    &state_path,
                     loaders,
                     &mut state,
                     None,
@@ -541,10 +566,7 @@ async fn install_import_content(
                 } else {
                     installation.await?;
                 }
-                let raw = serde_json::to_vec_pretty(&state).map_err(|error| error.to_string())?;
-                fs::write(&state_path, raw)
-                    .await
-                    .map_err(|error| format!("save installed content state error: {error}"))
+                Ok(())
             }
             .await;
             if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
@@ -574,6 +596,7 @@ pub async fn retry_import_content(
     resource_packs: Vec<ExportedItem>,
 ) -> Result<Vec<ImportContentResult>, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("import", Some(&instance_id))?;
         let context = ImportContext::start(app, operation_id).await?;
         let result =
             retry_import_content_inner(instance_id, mods, shaders, resource_packs, &context).await;
@@ -591,6 +614,7 @@ async fn retry_import_content_inner(
     resource_packs: Vec<ExportedItem>,
     context: &ImportContext,
 ) -> Result<Vec<ImportContentResult>, String> {
+    let _instance_guard = crate::operations::lock_instance(&instance_id).await;
     let item = read_instances()
         .await?
         .into_iter()
@@ -606,6 +630,7 @@ pub async fn import_instance(
     payload: ImportInstancePayload,
 ) -> Result<ImportInstanceResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("import", None)?;
         let context = ImportContext::start(app, operation_id).await?;
         let result = import_instance_inner(payload, &context).await;
         context.finish().await;
@@ -620,7 +645,7 @@ async fn import_instance_inner(
     context: &ImportContext,
 ) -> Result<ImportInstanceResult, String> {
     context.check()?;
-    let item = create_imported_instance(payload.clone()).await?;
+    let (item, instance_guard) = create_imported_instance(payload.clone()).await?;
     let result = install_import_content(
         &item,
         &payload.mods,
@@ -629,6 +654,7 @@ async fn import_instance_inner(
         Some(context),
     )
     .await;
+    drop(instance_guard);
     if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
         discard_imported_instance(&item).await?;
     }
@@ -653,8 +679,10 @@ pub(crate) async fn discard_imported_instance(item: &InstanceItem) -> Result<(),
 
 pub(crate) async fn create_imported_instance(
     payload: ImportInstancePayload,
-) -> Result<InstanceItem, String> {
+) -> Result<(InstanceItem, tokio::sync::OwnedMutexGuard<()>), String> {
     let environment_variables = normalize_environment_variables(payload.environment_variables)?;
+    let id = format!("inst-{}", uuid::Uuid::new_v4());
+    let instance_guard = crate::operations::lock_instance(&id).await;
     let mut items = edit_instances().await?;
     let clean_name = sanitize_name(&payload.name);
 
@@ -672,7 +700,6 @@ pub(crate) async fn create_imported_instance(
     let (loader_kind, loader_version) =
         normalized_loader_and_version(&payload.loader, payload.loader_version.clone())?;
 
-    let id = format!("inst-{}", uuid::Uuid::new_v4());
     let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
     let game_dir = instance_dir.join("minecraft");
 
@@ -706,14 +733,14 @@ pub(crate) async fn create_imported_instance(
     let raw = serde_json::to_string_pretty(&item)
         .map_err(|e| format!("serialize instance meta error: {e}"))?;
 
-    fs::write(meta_path, raw)
+    crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
         .await
         .map_err(|e| format!("write instance meta error: {e}"))?;
 
     items.push(item.clone());
     items.commit().await?;
 
-    Ok(item)
+    Ok((item, instance_guard))
 }
 
 #[cfg(test)]

@@ -1,14 +1,11 @@
 use crate::{
     minecraft::{mirrors, normalized_ram},
     models::{LauncherPluginsSettings, LauncherSettings, MascotSettings},
-    paths::{read_settings, write_settings},
+    paths::{edit_settings, read_settings},
 };
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tokio::sync::Mutex;
-
-static SETTINGS_LOCK: Mutex<()> = Mutex::const_new(());
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,11 +55,7 @@ pub struct ProxyTestResult {
 #[tauri::command]
 pub async fn get_launcher_settings(
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        read_settings().await
-    }
-    .await;
+    let result: Result<_, String> = async { read_settings().await }.await;
     result.map_err(crate::commands::errors::CommandError::from)
 }
 
@@ -71,11 +64,11 @@ pub async fn set_default_ram_gb(
     ram: u32,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.default_ram_gb = normalized_ram(ram);
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -86,11 +79,11 @@ pub async fn set_optimized_java_args(
     enabled: bool,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.optimized_java_args = enabled;
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -101,11 +94,11 @@ pub async fn set_auto_download_java(
     enabled: bool,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.auto_download_java = enabled;
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -116,11 +109,11 @@ pub async fn set_mascot_enabled(
     enabled: bool,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.mascot_enabled = enabled;
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -131,11 +124,11 @@ pub async fn set_mascot_settings(
     mascot: MascotSettings,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.mascot = mascot.normalize();
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -148,8 +141,8 @@ pub async fn set_launcher_plugins(
     plugin_ids: Option<Vec<LauncherPluginId>>,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         merge_plugins(&mut settings.plugins, plugins, plugin_ids);
         // The proxy plugin feeds the shared network client. Validate the URL now so
         // a bad value surfaces in the UI instead of failing later mid-download.
@@ -160,9 +153,9 @@ pub async fn set_launcher_plugins(
             }
         }
 
-        write_settings(&settings).await?;
+        settings.commit().await?;
         let _ = app.emit("launcher-plugins-changed", &settings.plugins);
-        Ok(settings)
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)
@@ -220,13 +213,13 @@ pub async fn set_network_settings(
     mirror: String,
 ) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let _guard = SETTINGS_LOCK.lock().await;
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("settings", None)?;
+        let mut settings = edit_settings().await?;
         settings.network.mirror = crate::minecraft::mirrors::MirrorMode::parse(&mirror)
             .as_str()
             .to_string();
-        write_settings(&settings).await?;
-        Ok(settings)
+        settings.commit().await?;
+        Ok((*settings).clone())
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)

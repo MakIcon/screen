@@ -1530,6 +1530,13 @@ export const en: EnglishMessages = {
     "Supported: {http}, {https}, and {socks}. If a username and password are required, include them in the proxy address.",
 
   // settings
+  "ram.exceedsUsableMemory":
+    "Selected memory exceeds the {usable} GB usable by the system. This may cause freezes and system instability.",
+  "ram.warningSignTitle": "Whoa, too much RAM!",
+  "ram.warningSignRisk": "Your system could freeze",
+  "ram.warningSignAction": "Leave memory for the system",
+  "ram.warningSignMaximum": "All your RAM for the game!",
+  "ram.warningSignReduce": "Reduce the memory allocation",
   "settings.launcherSettings": "LAUNCHER SETTINGS",
   "settings.appearance": "APPEARANCE",
   "settings.customDesignActiveEdit":

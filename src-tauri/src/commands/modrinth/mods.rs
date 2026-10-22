@@ -13,8 +13,8 @@ use tokio::{
 use crate::{minecraft::LoaderKind, models::ActionResult};
 
 use super::file_content::{
-    content_dir, ensure_content_dir, find_instance, merge_state, read_state, validate_filename,
-    write_state, FileContentConfig,
+    content_dir, ensure_content_dir, find_instance, metadata_path, read_state,
+    uninstall_file_content, validate_filename, FileContentConfig,
 };
 use super::{
     build_client, choose_primary_file, fetch_modrinth_search, http_json, install_project_to_dir,
@@ -95,6 +95,8 @@ pub async fn get_modrinth_mod_dependencies(
     project_id: String,
 ) -> Result<ModrinthModDependencies, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = find_instance(&instance_id).await?;
         let loader = instance_loader(&instance.loader)?;
         let client = build_client()?;
@@ -168,6 +170,8 @@ pub async fn search_modrinth_mods(
     limit: usize,
 ) -> Result<ModrinthSearchResponse, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let client = build_client()?;
         let instance = find_instance(&instance_id).await?;
         let loader = instance_loader(&instance.loader)?;
@@ -204,6 +208,8 @@ pub async fn install_modrinth_project(
     project_id: String,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let client = build_client()?;
         let instance = find_instance(&instance_id).await?;
         let loader = instance_loader(&instance.loader)?;
@@ -232,6 +238,7 @@ pub async fn install_modrinth_project(
             &instance,
             &project_id,
             &target_dir,
+            &metadata_path(&instance, MODS),
             &[loader],
             &mut install_batch,
             Some(&context),
@@ -245,7 +252,6 @@ pub async fn install_modrinth_project(
             }
             return Err(error);
         }
-        merge_state(&instance, MODS, &install_batch).await?;
         context.emit("", 0, 0, "completed");
 
         Ok(ActionResult {
@@ -304,31 +310,8 @@ pub async fn uninstall_modrinth_mod(
     instance_id: String,
     filename: String,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        validate_filename(&filename)?;
-        let instance = find_instance(&instance_id).await?;
-
-        let file_path = content_dir(&instance, MODS).join(&filename);
-        if file_path.exists() {
-            fs::remove_file(&file_path)
-                .await
-                .map_err(|e| format!("remove file error: {e}"))?;
-        }
-
-        // The metadata is keyed by the original filename, so drop any `.disabled`
-        // suffix before removing the entry for a currently-disabled mod.
-        let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
-        let mut state = read_state(&instance, MODS).await.unwrap_or_default();
-        state.remove(base_filename);
-        write_state(&instance, MODS, &state).await?;
-
-        Ok(ActionResult {
-            ok: true,
-            message: "Deleted".into(),
-            pid: None,
-        })
-    }
-    .await;
+    let result: Result<_, String> =
+        async { uninstall_file_content(MODS, instance_id, filename).await }.await;
     result.map_err(crate::commands::errors::CommandError::from)
 }
 
@@ -343,9 +326,12 @@ pub async fn set_mod_enabled(
     enabled: bool,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         validate_filename(&filename)?;
         let instance = find_instance(&instance_id).await?;
 
+        let _state = read_state(&instance, MODS).await?;
         let mods_dir = content_dir(&instance, MODS);
         let current_path = mods_dir.join(&filename);
         if !current_path.exists() {
@@ -400,9 +386,11 @@ pub async fn list_installed_mods(
     instance_id: String,
 ) -> Result<Vec<InstalledModView>, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = find_instance(&instance_id).await?;
         let mods_dir = ensure_content_dir(&instance, MODS).await?;
-        let state = read_state(&instance, MODS).await.unwrap_or_default();
+        let state = read_state(&instance, MODS).await?;
         let mut entries = fs::read_dir(&mods_dir)
             .await
             .map_err(|e| format!("read mods dir error: {e}"))?;

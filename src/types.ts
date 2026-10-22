@@ -1,3 +1,11 @@
+export type SystemMemoryInfo = {
+  installedBytes: number;
+  totalBytes: number;
+  availableBytes: number;
+  maxMinecraftRamGb: number;
+  recommendedMinecraftRamGb: number;
+};
+
 export type TabKey = "overview" | "instances" | "mods" | "resourcepacks" | "shaders" | "settings";
 
 export type LoaderType = "Vanilla" | "Fabric" | "Quilt" | "Forge" | "NeoForge";

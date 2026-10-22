@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { createSpeedMeter, describeUpdateError } from "./updateProgress";
+import { installWhenIdle } from "./updateSafety";
 
 /** How long the "update now" button counts down before starting by itself. */
 export const AUTO_UPDATE_DELAY_MS = 7000;
@@ -49,7 +51,7 @@ export type UpdateCheckResult =
 type Options = {
   /** Start checking once the launcher has finished opening. */
   ready: boolean;
-  /** Hold back an automatic prompt while something important runs (a game). */
+  /** Hold back an automatic prompt while a game is running. Backend tasks are checked separately. */
   deferAutomatic: boolean;
   proxy: string | null;
 };
@@ -78,6 +80,32 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
   const dismissedVersionRef = useRef<string | null>(null);
   const startedAutoCheckRef = useRef(false);
   const proxyRef = useRef(proxy);
+  const [operationsBusy, setOperationsBusy] = useState(true);
+  const deferredRef = useRef(true);
+  deferredRef.current = deferAutomatic || operationsBusy;
+  const downloadedUpdateRef = useRef<Update | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const operations = await invoke<unknown[]>("get_active_operations");
+        if (!disposed) setOperationsBusy(operations.length > 0);
+      } catch {
+        // An unavailable registry cannot confirm that closing the launcher is safe.
+        if (!disposed) setOperationsBusy(true);
+      } finally {
+        if (!disposed) timer = window.setTimeout(() => void refresh(), 1000);
+      }
+    };
+    void refresh();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [ready]);
 
   useEffect(() => {
     proxyRef.current = proxy;
@@ -121,6 +149,10 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
   const startUpdate = useCallback(async () => {
     const update = updateRef.current;
     if (!update || busyRef.current) return;
+    if (deferredRef.current) {
+      setState({ stage: "available", info: toInfo(update), autoStart: true });
+      return;
+    }
     busyRef.current = true;
 
     const info = toInfo(update);
@@ -137,16 +169,18 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
     setState({ stage: "downloading", info, downloaded: 0, total: null, bytesPerSecond: null });
 
     try {
-      await update.download((event) => {
-        if (event.event === "Started") {
-          total = event.data.contentLength ?? null;
-        } else if (event.event === "Progress") {
-          downloaded += event.data.chunkLength;
-          meter.push(performance.now(), downloaded);
-        }
-        // Chunks arrive hundreds of times per second; repaint at a steady pace.
-        flushTimer ??= window.setTimeout(flush, PROGRESS_FLUSH_MS);
-      });
+      if (downloadedUpdateRef.current !== update)
+        await update.download((event) => {
+          if (event.event === "Started") {
+            total = event.data.contentLength ?? null;
+          } else if (event.event === "Progress") {
+            downloaded += event.data.chunkLength;
+            meter.push(performance.now(), downloaded);
+          }
+          // Chunks arrive hundreds of times per second; repaint at a steady pace.
+          flushTimer ??= window.setTimeout(flush, PROGRESS_FLUSH_MS);
+        });
+      downloadedUpdateRef.current = update;
       if (flushTimer !== null) window.clearTimeout(flushTimer);
 
       setState({
@@ -160,10 +194,20 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
       setState({ stage: "installing", info });
       await wait(INSTALL_SETTLE_MS);
 
-      // On Windows this runs the installer silently and exits; the installer
-      // starts the new launcher by itself. Other platforms return here.
-      await update.install();
-      await relaunch();
+      // Reserve the backend only at the last safe point. The check and the
+      // reservation are atomic with task registration in every launcher window.
+      const installed = await installWhenIdle(
+        () => deferredRef.current,
+        async () => {
+          // Windows exits into its installer. Other platforms relaunch here.
+          await update.install();
+          await relaunch();
+        },
+      );
+      if (!installed) {
+        setOperationsBusy(true);
+        setState({ stage: "available", info, autoStart: true });
+      }
     } catch (error) {
       if (flushTimer !== null) window.clearTimeout(flushTimer);
       setState({ stage: "error", info, message: describeUpdateError(error) });
@@ -194,7 +238,7 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
     return () => window.clearInterval(interval);
   }, [checkForUpdates, ready]);
 
-  const held = state.stage === "available" && state.autoStart && deferAutomatic;
+  const held = state.stage === "available" && state.autoStart && (deferAutomatic || operationsBusy);
   const overlayState: VisibleUpdateState | null =
     state.stage === "idle" || state.stage === "checking" || held ? null : state;
   const visible = overlayState !== null;

@@ -41,6 +41,19 @@ describe("normalizeWindowDimension", () => {
 });
 
 describe("normalizeRuntimeSettingsDraft", () => {
+  it("preserves a full-capacity 64 GB selection when saving runtime settings", () => {
+    const draft: BuildRuntimeSettingsDraft = {
+      ram: 64,
+      javaArgs: "",
+      javaPath: "",
+      environmentVariables: [],
+      windowWidth: DEFAULT_WINDOW_WIDTH,
+      windowHeight: DEFAULT_WINDOW_HEIGHT,
+      fullscreen: false,
+    };
+    expect(normalizeRuntimeSettingsDraft(draft, 64).ram).toBe(64);
+  });
+
   it("clamps RAM, trims paths and normalizes newlines", () => {
     const draft: BuildRuntimeSettingsDraft = {
       ram: 64,

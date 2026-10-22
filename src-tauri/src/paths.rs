@@ -6,7 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use sysinfo::System;
 use tokio::{
     fs,
     sync::{Mutex, OwnedMutexGuard},
@@ -71,24 +70,7 @@ pub fn playtime_log_path(instance_id: &str) -> Result<PathBuf, String> {
         .join(format!("{instance_id}.json")))
 }
 
-pub fn detect_system_memory_gb() -> u32 {
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-    let total_bytes = sys.total_memory();
-    let total_gb = (total_bytes as f64 / 1024_f64 / 1024_f64 / 1024_f64) as u32;
-
-    // Округляем до стандартного размера планки: 2, 4, 8, 16, 32, 64...
-    let standard = [2u32, 4, 8, 16, 32, 64, 128];
-    standard
-        .iter()
-        .find(|&&s| s >= total_gb)
-        .copied()
-        .unwrap_or(total_gb)
-}
-
-pub fn clamp_ram_to_system(ram: u32) -> u32 {
-    ram.clamp(1, detect_system_memory_gb())
-}
+pub use crate::memory::{clamp_ram_to_system, detect_system_memory, detect_system_memory_gb};
 
 pub async fn ensure_layout() -> Result<(), String> {
     let root = launcher_root()?;
@@ -119,35 +101,73 @@ pub async fn ensure_layout() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn read_settings() -> Result<LauncherSettings, String> {
-    ensure_layout().await?;
-    let path = settings_path()?;
+pub struct SettingsStore {
+    settings: LauncherSettings,
+    path: PathBuf,
+    _guard: OwnedMutexGuard<()>,
+}
 
-    if !path.exists() {
-        let settings = LauncherSettings {
-            default_ram_gb: 4_u32.min(detect_system_memory_gb()),
-            ..LauncherSettings::default()
-        };
-
-        let raw = serde_json::to_string_pretty(&settings)
-            .map_err(|e| format!("serialize settings error: {e}"))?;
-
-        fs::write(&path, raw)
-            .await
-            .map_err(|e| format!("write settings error: {e}"))?;
-
-        sync_network_config(&settings);
-        return Ok(settings);
+impl Deref for SettingsStore {
+    type Target = LauncherSettings;
+    fn deref(&self) -> &Self::Target {
+        &self.settings
     }
+}
+impl DerefMut for SettingsStore {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.settings
+    }
+}
+impl SettingsStore {
+    pub async fn commit(&self) -> Result<(), String> {
+        let raw = serde_json::to_vec_pretty(&self.settings)
+            .map_err(|e| format!("serialize settings error: {e}"))?;
+        atomic_write_path(&self.path, &raw).await?;
+        sync_network_config(&self.settings);
+        Ok(())
+    }
+}
 
-    let raw = fs::read_to_string(&path)
-        .await
-        .map_err(|e| format!("read settings error: {e}"))?;
+impl SettingsStore {
+    async fn open(path: PathBuf, lock: Arc<Mutex<()>>) -> Result<Self, String> {
+        let guard = lock.lock_owned().await;
+        let settings = match fs::read(&path).await {
+            Ok(raw) => {
+                serde_json::from_slice(&raw).map_err(|e| format!("parse settings error: {e}"))?
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let settings = LauncherSettings {
+                    default_ram_gb: detect_system_memory().recommended_minecraft_ram_gb,
+                    ..Default::default()
+                };
+                let raw = serde_json::to_vec_pretty(&settings)
+                    .map_err(|e| format!("serialize settings error: {e}"))?;
+                atomic_write_path(&path, &raw).await?;
+                settings
+            }
+            Err(e) => return Err(format!("read settings error: {e}")),
+        };
+        sync_network_config(&settings);
+        Ok(SettingsStore {
+            settings,
+            path,
+            _guard: guard,
+        })
+    }
+}
 
-    let settings: LauncherSettings =
-        serde_json::from_str(&raw).map_err(|e| format!("parse settings error: {e}"))?;
-    sync_network_config(&settings);
-    Ok(settings)
+pub async fn edit_settings() -> Result<SettingsStore, String> {
+    static LOCK: OnceLock<Arc<Mutex<()>>> = OnceLock::new();
+    ensure_layout().await?;
+    SettingsStore::open(
+        settings_path()?,
+        LOCK.get_or_init(|| Arc::new(Mutex::new(()))).clone(),
+    )
+    .await
+}
+
+pub async fn read_settings() -> Result<LauncherSettings, String> {
+    Ok(edit_settings().await?.settings.clone())
 }
 
 /// Push the persisted network preferences into the process-wide mirror config so
@@ -160,18 +180,6 @@ fn sync_network_config(settings: &LauncherSettings) {
         ""
     };
     crate::minecraft::mirrors::apply_from(&settings.network.mirror, proxy_url, &proxy.bypass);
-}
-
-pub async fn write_settings(settings: &LauncherSettings) -> Result<(), String> {
-    ensure_layout().await?;
-    let raw = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("serialize settings error: {e}"))?;
-
-    fs::write(settings_path()?, raw)
-        .await
-        .map_err(|e| format!("write settings error: {e}"))?;
-    sync_network_config(settings);
-    Ok(())
 }
 
 pub async fn read_instances() -> Result<Vec<InstanceItem>, String> {
@@ -234,15 +242,28 @@ pub async fn edit_instances() -> Result<InstanceIndex, String> {
 }
 
 pub(crate) async fn atomic_write_path(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
-    let temp = path.with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4()));
-    fs::write(&temp, bytes)
-        .await
-        .map_err(|e| format!("write temporary index error: {e}"))?;
-    let result = fs::rename(&temp, path)
-        .await
-        .map_err(|e| format!("replace instances index error: {e}"));
+    // JSON documents are small. Keep write + sync + replace in one synchronous
+    // critical section so cancellation cannot release their lock mid-write.
+    atomic_write_path_sync(path, bytes)
+}
+
+pub(crate) fn atomic_write_path_sync(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let temp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|e| format!("create temporary JSON error: {e}"))?;
+        file.write_all(bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| format!("write temporary JSON error: {e}"))?;
+        drop(file);
+        std::fs::rename(&temp, path).map_err(|e| format!("replace JSON error: {e}"))
+    })();
     if result.is_err() {
-        let _ = fs::remove_file(&temp).await;
+        let _ = std::fs::remove_file(&temp);
     }
     result
 }
@@ -322,6 +343,41 @@ mod name_tests {
         tokio::fs::write(&path, b"old").await.unwrap();
         atomic_write_path(&path, b"new").await.unwrap();
         assert_eq!(tokio::fs::read(&path).await.unwrap(), b"new");
+        tokio::fs::remove_file(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn settings_and_extension_edits_share_one_read_modify_write_lock() {
+        use super::{Arc, Mutex, SettingsStore};
+        let path =
+            std::env::temp_dir().join(format!("screen-settings-{}.json", uuid::Uuid::new_v4()));
+        tokio::fs::write(
+            &path,
+            serde_json::to_vec(&crate::models::LauncherSettings::default()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let lock = Arc::new(Mutex::new(()));
+        let mut first = SettingsStore::open(path.clone(), lock.clone())
+            .await
+            .unwrap();
+        let second = tokio::spawn({
+            let path = path.clone();
+            let lock = lock.clone();
+            async move {
+                let mut settings = SettingsStore::open(path, lock).await.unwrap();
+                settings.plugins.blue_map.cli_jar_path = "extension.jar".into();
+                settings.commit().await.unwrap();
+            }
+        });
+        first.default_ram_gb = 7;
+        first.commit().await.unwrap();
+        drop(first);
+        second.await.unwrap();
+        let result = SettingsStore::open(path.clone(), lock).await.unwrap();
+        assert_eq!(result.default_ram_gb, 7);
+        assert_eq!(result.plugins.blue_map.cli_jar_path, "extension.jar");
+        drop(result);
         tokio::fs::remove_file(path).await.unwrap();
     }
 

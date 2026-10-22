@@ -742,6 +742,7 @@ pub async fn spawn_minecraft_and_persist(
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
+    let game_operation = crate::operations::begin("game", Some(&instance.id))?;
     let mut child = command.spawn().map_err(|e| format!("launch error: {e}"))?;
     let pid = child.id();
     let started_at = Instant::now();
@@ -750,6 +751,7 @@ pub async fn spawn_minecraft_and_persist(
     let watcher_log_path = log_path.clone();
 
     thread::spawn(move || {
+        let _game_operation = game_operation;
         let status_result = child.wait();
         let runtime_secs = started_at.elapsed().as_secs();
 
@@ -835,6 +837,13 @@ pub async fn spawn_minecraft_and_persist(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jvm_heap_preserves_the_full_installed_memory_selection() {
+        let installed_max = crate::memory::detect_system_memory().max_minecraft_ram_gb;
+        let args = runtime_jvm_args("java", installed_max, None, false);
+        assert!(args.contains(&format!("-Xmx{installed_max}G")));
+    }
 
     #[tokio::test]
     #[ignore = "Requires a local Java runtime; run explicitly with --ignored"]

@@ -15,10 +15,9 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 use crate::{
     commands::{
         import_progress::ImportContext,
-        instances::{create_imported_instance, delete_instance, get_instance_export_data},
+        instances::{create_imported_instance, delete_instance, instance_export_data_locked},
         modrinth::{
-            build_client, download_file, http_json, InstalledModEntry, ModrinthVersion,
-            MODRINTH_API_BASE,
+            build_client, http_json, InstalledModEntry, ModrinthVersion, MODRINTH_API_BASE,
         },
     },
     minecraft::LoaderKind,
@@ -564,12 +563,17 @@ pub async fn export_instance_mrpack(
     options: MrpackExportOptions,
 ) -> Result<String, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("export", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = read_instances()
             .await?
             .into_iter()
             .find(|value| value.id == instance_id)
             .ok_or_else(|| "Instance not found".to_string())?;
         let game_dir = PathBuf::from(&instance.game_dir);
+        for category in ["mods", "shaderpacks", "resourcepacks"] {
+            crate::file_transaction::FileTransaction::recover(&game_dir.join(category))?;
+        }
 
         let mut files = Vec::new();
         if options.include_mods {
@@ -629,7 +633,7 @@ pub async fn export_instance_mrpack(
             dependencies,
         };
 
-        let mut screen_meta = get_instance_export_data(instance.id.clone()).await?;
+        let mut screen_meta = instance_export_data_locked(instance.clone()).await?;
         screen_meta.name = if options.include_name {
             screen_meta.name
         } else {
@@ -673,6 +677,8 @@ pub async fn export_instance_mrpack(
         let output_for_result = output.clone();
 
         tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let _operation = _operation;
+            let _instance_guard = _instance_guard;
             if let Some(parent) = output.parent() {
                 std_fs::create_dir_all(parent)
                     .map_err(|e| format!("create mrpack output directory error: {e}"))?;
@@ -721,16 +727,6 @@ pub async fn export_instance_mrpack(
     result.map_err(crate::commands::errors::CommandError::from)
 }
 
-async fn verify_download(path: &Path, hashes: &HashMap<String, String>) -> Result<(), String> {
-    let bytes = fs::read(path)
-        .await
-        .map_err(|e| format!("read downloaded mrpack file error: {e}"))?;
-    if bytes_match_hashes(&bytes, hashes) {
-        return Ok(());
-    }
-    let _ = fs::remove_file(path).await;
-    Err(format!("hash mismatch for {}", path.display()))
-}
 fn modrinth_ids(downloads: &[String]) -> Option<(String, String)> {
     for download in downloads {
         let Ok(url) = url::Url::parse(download) else {
@@ -836,7 +832,7 @@ fn extract_override_layer(
 async fn write_import_state(
     game_dir: &Path,
     state: HashMap<String, HashMap<String, InstalledModEntry>>,
-) {
+) -> Result<(), String> {
     let mappings = [
         ("mods", ".screenlauncher-modrinth.json"),
         ("shaderpacks", ".screenlauncher-modrinth-shaderpacks.json"),
@@ -852,10 +848,11 @@ async fn write_import_state(
         if entries.is_empty() {
             continue;
         }
-        if let Ok(raw) = serde_json::to_string_pretty(entries) {
-            let _ = fs::write(game_dir.join(directory).join(filename), raw).await;
-        }
+        let raw = serde_json::to_vec_pretty(entries)
+            .map_err(|e| format!("serialize imported content state error: {e}"))?;
+        crate::paths::atomic_write_path(&game_dir.join(directory).join(filename), &raw).await?;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -866,6 +863,7 @@ pub async fn import_mrpack(
     options: MrpackImportOptions,
 ) -> Result<InstanceItem, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("import", None)?;
         let context = ImportContext::start(app, operation_id).await?;
         let result = import_mrpack_inner(path, options, &context).await;
         context.finish().await;
@@ -898,7 +896,7 @@ async fn import_mrpack_inner(
         .cloned()
         .ok_or_else(|| "mrpack does not declare a Minecraft version".to_string())?;
 
-    let item = create_imported_instance(ImportInstancePayload {
+    let (item, instance_guard) = create_imported_instance(ImportInstancePayload {
         name: options.name.clone(),
         version: minecraft_version,
         loader,
@@ -948,6 +946,7 @@ async fn import_mrpack_inner(
 
     let game_dir = PathBuf::from(&item.game_dir);
     let result = async {
+        let instance_guard = std::sync::Arc::new(instance_guard);
         let client = build_client()?;
         let mut import_state: HashMap<String, HashMap<String, InstalledModEntry>> = HashMap::new();
         for file in &bundle.index.files {
@@ -967,18 +966,30 @@ async fn import_mrpack_inner(
             context.emit("downloading", processed, total, &file.path);
             let mut last_error = None;
             let mut downloaded = false;
+            let integrity = crate::downloads::Integrity {
+                sha1: file.hashes.get("sha1").map(String::as_str),
+                sha512: file.hashes.get("sha512").map(String::as_str),
+                size: file.file_size,
+            };
+            if integrity.sha1.is_none() && integrity.sha512.is_none() {
+                return Err(format!("Missing mrpack hash metadata: {}", file.path));
+            }
             for url in &file.downloads {
-                match context.run(download_file(&client, url, &destination)).await {
+                let download = crate::downloads::stream_to_path(
+                    &client,
+                    url,
+                    &destination,
+                    integrity,
+                    |_, _| async { context.check() },
+                );
+                match context.run(download).await {
                     Err(error) if error == crate::commands::import_progress::IMPORT_CANCELLED => {
                         return Err(error)
                     }
-                    Ok(()) => match verify_download(&destination, &file.hashes).await {
-                        Ok(()) => {
-                            downloaded = true;
-                            break;
-                        }
-                        Err(error) => last_error = Some(error),
-                    },
+                    Ok(()) => {
+                        downloaded = true;
+                        break;
+                    }
                     Err(error) => last_error = Some(error),
                 }
             }
@@ -1027,7 +1038,11 @@ async fn import_mrpack_inner(
         let game_for_extract = game_dir.clone();
         let options_for_extract = options.clone();
         let context_for_extract = context.clone();
+        let extraction_guard = instance_guard.clone();
+        let extraction_operation = crate::operations::begin("import-extract", Some(&item.id))?;
         processed = tokio::task::spawn_blocking(move || {
+            let _guard = extraction_guard;
+            let _operation = extraction_operation;
             let mut extracted = processed;
             extract_override_layer_with_progress(
                 &archive_for_extract,
@@ -1053,7 +1068,7 @@ async fn import_mrpack_inner(
         .map_err(|e| format!("mrpack extraction task failed: {e}"))??;
 
         context.check()?;
-        write_import_state(&game_dir, import_state).await;
+        write_import_state(&game_dir, import_state).await?;
         Ok::<(), String>(())
     }
     .await

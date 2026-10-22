@@ -8,6 +8,7 @@ import {
   LANGUAGE_CHOICES,
   localizeChoices,
 } from "../components/settings/settingsChoices";
+import { RamAllocationWarning } from "../components/inputs/RamAllocationWarning";
 import { ElementSlider } from "../components/inputs/ElementSlider";
 import { ElementToggle } from "../components/inputs/ElementToggle";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
@@ -18,7 +19,12 @@ import {
   PLUGIN_DEFINITIONS,
   normalizeLauncherPluginsSettings,
 } from "../components/plugins/pluginRegistry";
-import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../utils/ram";
+import {
+  clampRamToSystem,
+  exceedsUsableRam,
+  getMinecraftRamMax,
+  getRamSliderTicks,
+} from "../utils/ram";
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 import { useLocale, useTranslation, saveLocale, type Locale } from "../i18n/locale";
 import type { Theme } from "../appearance/types";
@@ -32,6 +38,7 @@ import type {
 interface SettingsTabProps {
   commandTarget?: SettingsCommandTarget | null;
   systemRamGb: number;
+  usableRamGb: number | null;
   settingsRamDraft: number;
   resolve: (template: string) => string;
   setSettingsRamDraft: (v: number) => void;
@@ -75,6 +82,7 @@ interface SettingsTabProps {
 export function SettingsTab({
   commandTarget,
   systemRamGb,
+  usableRamGb,
   settingsRamDraft,
   resolve,
   setSettingsRamDraft,
@@ -115,6 +123,7 @@ export function SettingsTab({
   const tr = useTranslation();
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
+  const ramOverUsable = exceedsUsableRam(settingsRamDraft, usableRamGb);
   const [pluginsModalOpen, setPluginsModalOpen] = useState(false);
   const [mascotSettingsOpen, setMascotSettingsOpen] = useState(false);
   const [mascotNameDraft, setMascotNameDraft] = useState(mascotSettings.name);
@@ -196,15 +205,26 @@ export function SettingsTab({
             <div className="settings-main-content">
               <span className="panel-label">{tr("settings.launcherSettings")}</span>
 
-              <div className="settings-memory-block" data-guide-target="settings-ram">
+              <div
+                className={`settings-memory-block${ramOverUsable ? " ram-allocation--danger" : ""}`}
+                data-guide-target="settings-ram"
+              >
                 <div className="memory-readout">
-                  <span
-                    className="memory-number"
-                    {...createPlaceholderAppearanceAttributes("%launcher_ram_value%", resolve)}
-                  >
-                    {resolve("%launcher_ram_value%")}
-                  </span>
-                  <span className="memory-unit">GB</span>
+                  <div className="memory-value">
+                    <span
+                      className="memory-number"
+                      {...createPlaceholderAppearanceAttributes("%launcher_ram_value%", resolve)}
+                    >
+                      {resolve("%launcher_ram_value%")}
+                    </span>
+                    <span className="memory-unit">GB</span>
+                  </div>
+                  <RamAllocationWarning
+                    ramGb={settingsRamDraft}
+                    usableRamGb={usableRamGb}
+                    maxRamGb={minecraftRamMax}
+                    variant="signs"
+                  />
                 </div>
 
                 <div className="settings-element-slider">

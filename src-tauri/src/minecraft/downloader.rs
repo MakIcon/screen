@@ -9,11 +9,7 @@ use std::{
 use reqwest::Client;
 use sha1::{Digest, Sha1};
 use tauri::AppHandle;
-use tokio::{
-    fs,
-    io::{AsyncReadExt, AsyncWriteExt},
-    task::JoinSet,
-};
+use tokio::{fs, io::AsyncReadExt, task::JoinSet};
 
 use crate::{minecraft::mirrors, paths::DOWNLOAD_CONCURRENCY, progress::ProgressReporter};
 
@@ -121,20 +117,6 @@ async fn cached_file_valid(
     }
     Ok(valid)
 }
-/// Removes uncommitted files on errors and cancellation.
-struct TemporaryDownload {
-    path: PathBuf,
-    file: Option<fs::File>,
-    committed: bool,
-}
-impl Drop for TemporaryDownload {
-    fn drop(&mut self) {
-        drop(self.file.take());
-        if !self.committed {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
 async fn fetch_to_path(
     client: &Client,
     url: &str,
@@ -142,84 +124,19 @@ async fn fetch_to_path(
     expected_sha1: Option<&str>,
     expected_size: Option<u64>,
 ) -> Result<(), String> {
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("download request error: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "download http error {} for {url}",
-            response.status()
-        ));
-    }
-    let content_length = response.content_length();
-    let temp_path = path.with_extension(format!("{}.part", uuid::Uuid::new_v4()));
-    let mut temp = TemporaryDownload {
-        path: temp_path,
-        file: None,
-        committed: false,
-    };
-    temp.file = Some(fs::File::from_std(
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp.path)
-            .map_err(|e| format!("create download file error: {e}"))?,
-    ));
-    let mut hasher = Sha1::new();
-    let mut received = 0u64;
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| format!("read download bytes error: {e}"))?
-    {
-        received += chunk.len() as u64;
-        if expected_size.is_some_and(|size| received > size) {
-            return Err(format!("download size exceeds metadata for {url}"));
-        }
-        hasher.update(&chunk);
-        temp.file
-            .as_mut()
-            .ok_or("download file is closed")?
-            .write_all(&chunk)
-            .await
-            .map_err(|e| format!("write download error: {e}"))?;
-    }
-    if expected_size
-        .or(content_length)
-        .is_some_and(|size| received != size)
-        || (received == 0 && expected_size != Some(0))
-    {
-        return Err(format!("download size mismatch for {url}"));
-    }
-    if let Some(expected) = expected_sha1 {
-        if !format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected) {
-            return Err(format!("download SHA-1 mismatch for {url}"));
-        }
-    }
-    temp.file
-        .as_mut()
-        .ok_or("download file is closed")?
-        .flush()
-        .await
-        .map_err(|e| format!("flush download error: {e}"))?;
-    let verified_metadata = if expected_sha1.is_some() {
-        temp.file
-            .as_ref()
-            .ok_or("download file is closed")?
-            .metadata()
-            .await
-            .ok()
-    } else {
-        None
-    };
-    drop(temp.file.take());
-    fs::rename(&temp.path, path)
-        .await
-        .map_err(|e| format!("commit download error: {e}"))?;
-    temp.committed = true;
-    if let (Some(expected), Some(metadata)) = (expected_sha1, verified_metadata) {
+    crate::downloads::stream_to_path(
+        client,
+        url,
+        path,
+        crate::downloads::Integrity {
+            sha1: expected_sha1,
+            size: expected_size,
+            ..Default::default()
+        },
+        |_, _| async { Ok(()) },
+    )
+    .await?;
+    if let (Some(expected), Ok(metadata)) = (expected_sha1, fs::metadata(path).await) {
         if let Ok(mut cache) = verified_files().lock() {
             cache.insert(
                 path.to_owned(),

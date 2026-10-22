@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tokio::fs;
+use std::fs;
 use zip::ZipArchive;
 
 use crate::{models::ActionResult, paths::read_instances};
@@ -39,7 +39,7 @@ fn classify_zip(path: &Path) -> Result<&'static str, String> {
 
 /// Target sub-folder for a dropped file, or `None` if the extension is not a
 /// content file we know how to route.
-async fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
+fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
     let ext = path
         .extension()
         .and_then(|value| value.to_str())
@@ -47,13 +47,7 @@ async fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
         .to_ascii_lowercase();
     match ext.as_str() {
         "jar" => Ok(Some("mods")),
-        "zip" => {
-            let owned = path.to_path_buf();
-            let kind = tokio::task::spawn_blocking(move || classify_zip(&owned))
-                .await
-                .map_err(|e| format!("zip classify task failed: {e}"))??;
-            Ok(Some(kind))
-        }
+        "zip" => Ok(Some(classify_zip(path)?)),
         _ => Ok(None),
     }
 }
@@ -64,52 +58,73 @@ pub async fn install_dropped_content(
     paths: Vec<String>,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("content", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = read_instances()
             .await?
             .into_iter()
             .find(|item| item.id == instance_id)
             .ok_or_else(|| "Instance not found".to_string())?;
-        let game_dir = PathBuf::from(&instance.game_dir);
+        tokio::task::spawn_blocking(move || {
+            let _operation = _operation;
+            let _instance_guard = _instance_guard;
+            let game_dir = PathBuf::from(&instance.game_dir);
 
-        let mut installed = 0_usize;
-        let mut skipped = 0_usize;
-        for raw in &paths {
-            let source = PathBuf::from(raw);
-            let Some(filename) = source
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-            else {
-                skipped += 1;
-                continue;
+            let mut transactions = std::collections::HashMap::new();
+            let mut installed = 0_usize;
+            let mut skipped = 0_usize;
+            for raw in &paths {
+                let source = PathBuf::from(raw);
+                let Some(filename) = source
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                else {
+                    skipped += 1;
+                    continue;
+                };
+                let Some(subdir) = target_subdir(&source)? else {
+                    skipped += 1;
+                    continue;
+                };
+
+                let dest_dir = game_dir.join(subdir);
+                fs::create_dir_all(&dest_dir)
+                    .map_err(|e| format!("create {subdir} dir error: {e}"))?;
+                if !transactions.contains_key(subdir) {
+                    transactions.insert(
+                        subdir,
+                        crate::file_transaction::FileTransaction::new(&dest_dir)?,
+                    );
+                }
+                let transaction = transactions
+                    .get_mut(subdir)
+                    .ok_or("Missing content transaction")?;
+                let staged = transaction.staged(&filename);
+                fs::copy(&source, &staged).map_err(|e| format!("copy {filename} error: {e}"))?;
+                transaction.replace(&staged, &filename)?;
+                installed += 1;
+            }
+
+            for (_, transaction) in transactions {
+                transaction.commit()?;
+            }
+
+            let message = if installed == 0 {
+                "No installable files in drop".to_string()
+            } else if skipped == 0 {
+                format!("Added {installed} file(s) to {}", instance.name)
+            } else {
+                format!("Added {installed}, skipped {skipped}")
             };
-            let Some(subdir) = target_subdir(&source).await? else {
-                skipped += 1;
-                continue;
-            };
 
-            let dest_dir = game_dir.join(subdir);
-            fs::create_dir_all(&dest_dir)
-                .await
-                .map_err(|e| format!("create {subdir} dir error: {e}"))?;
-            fs::copy(&source, dest_dir.join(&filename))
-                .await
-                .map_err(|e| format!("copy {filename} error: {e}"))?;
-            installed += 1;
-        }
-
-        let message = if installed == 0 {
-            "No installable files in drop".to_string()
-        } else if skipped == 0 {
-            format!("Added {installed} file(s) to {}", instance.name)
-        } else {
-            format!("Added {installed}, skipped {skipped}")
-        };
-
-        Ok(ActionResult {
-            ok: installed > 0,
-            message,
-            pid: None,
+            Ok(ActionResult {
+                ok: installed > 0,
+                message,
+                pid: None,
+            })
         })
+        .await
+        .map_err(|e| format!("content installation task error: {e}"))?
     }
     .await;
     result.map_err(crate::commands::errors::CommandError::from)

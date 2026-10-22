@@ -37,9 +37,15 @@ pub async fn get_loader_versions(
 }
 
 #[tauri::command]
-pub async fn get_system_memory_gb() -> Result<u32, crate::commands::errors::CommandError> {
+pub async fn get_system_memory_gb() -> Result<f64, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async { Ok(detect_system_memory_gb()) }.await;
     result.map_err(crate::commands::errors::CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_system_memory_info(
+) -> Result<crate::memory::SystemMemoryInfo, crate::commands::errors::CommandError> {
+    Ok(crate::memory::detect_system_memory())
 }
 
 #[tauri::command]

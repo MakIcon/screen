@@ -43,16 +43,24 @@ pub(super) fn content_dir(instance: &InstanceItem, config: FileContentConfig) ->
     PathBuf::from(&instance.game_dir).join(config.directory)
 }
 
-fn metadata_path(instance: &InstanceItem, config: FileContentConfig) -> PathBuf {
+pub(super) fn metadata_path(instance: &InstanceItem, config: FileContentConfig) -> PathBuf {
     content_dir(instance, config).join(config.state_file)
 }
 
 pub(super) async fn find_instance(instance_id: &str) -> Result<InstanceItem, String> {
-    read_instances()
+    let instance = read_instances()
         .await?
         .into_iter()
-        .find(|instance| instance.id == instance_id)
-        .ok_or_else(|| "Instance not found".to_string())
+        .find(|instance| {
+            instance.id == instance_id && !crate::commands::instances::is_trashed(instance)
+        })
+        .ok_or_else(|| "Instance not found".to_string())?;
+    for category in ["mods", "shaderpacks", "resourcepacks"] {
+        crate::file_transaction::FileTransaction::recover(
+            &PathBuf::from(&instance.game_dir).join(category),
+        )?;
+    }
+    Ok(instance)
 }
 
 pub(super) async fn ensure_content_dir(
@@ -70,6 +78,7 @@ pub(super) async fn read_state(
     instance: &InstanceItem,
     config: FileContentConfig,
 ) -> Result<HashMap<String, InstalledModEntry>, String> {
+    crate::file_transaction::FileTransaction::recover(&content_dir(instance, config))?;
     let path = metadata_path(instance, config);
     if !fs::try_exists(&path)
         .await
@@ -83,51 +92,6 @@ pub(super) async fn read_state(
         .map_err(|error| format!("read {} state error: {error}", config.label))?;
     serde_json::from_str(&raw)
         .map_err(|error| format!("parse {} state error: {error}", config.label))
-}
-
-pub(super) async fn write_state(
-    instance: &InstanceItem,
-    config: FileContentConfig,
-    state: &HashMap<String, InstalledModEntry>,
-) -> Result<(), String> {
-    let raw = serde_json::to_string_pretty(state)
-        .map_err(|error| format!("serialize {} state error: {error}", config.label))?;
-    fs::write(metadata_path(instance, config), raw)
-        .await
-        .map_err(|error| format!("write {} state error: {error}", config.label))
-}
-
-pub(super) async fn merge_state(
-    instance: &InstanceItem,
-    config: FileContentConfig,
-    additions: &HashMap<String, InstalledModEntry>,
-) -> Result<(), String> {
-    let mut state = read_state(instance, config).await?;
-    let directory = content_dir(instance, config);
-
-    for (filename, entry) in additions {
-        let stale_filenames = state
-            .iter()
-            .filter(|(existing_filename, existing_entry)| {
-                existing_entry.project_id == entry.project_id && *existing_filename != filename
-            })
-            .map(|(existing_filename, _)| existing_filename.clone())
-            .collect::<Vec<_>>();
-
-        for stale_filename in stale_filenames {
-            let stale_path = directory.join(&stale_filename);
-            if fs::try_exists(&stale_path).await.unwrap_or(false) {
-                fs::remove_file(&stale_path)
-                    .await
-                    .map_err(|error| format!("remove old {} file error: {error}", config.label))?;
-            }
-            state.remove(&stale_filename);
-        }
-
-        state.insert(filename.clone(), entry.clone());
-    }
-
-    write_state(instance, config, &state).await
 }
 
 pub(super) fn validate_filename(filename: &str) -> Result<(), String> {
@@ -164,6 +128,8 @@ pub(super) async fn search_file_content(
     .await?;
 
     if let Some(instance_id) = instance_id {
+        let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
+        let _guard = crate::operations::lock_instance(&instance_id).await;
         let instance = find_instance(&instance_id).await?;
         let installed_project_ids = read_state(&instance, config)
             .await?
@@ -184,6 +150,8 @@ pub(super) async fn install_file_content(
     instance_id: String,
     project_id: String,
 ) -> Result<ActionResult, String> {
+    let _operation = crate::operations::begin("content", Some(&instance_id))?;
+    let _guard = crate::operations::lock_instance(&instance_id).await;
     let client = build_client()?;
     let instance = find_instance(&instance_id).await?;
     let target_dir = ensure_content_dir(&instance, config).await?;
@@ -194,12 +162,12 @@ pub(super) async fn install_file_content(
         &instance,
         &project_id,
         &target_dir,
+        &metadata_path(&instance, config),
         &[],
         &mut install_batch,
         None,
     )
     .await?;
-    merge_state(&instance, config, &install_batch).await?;
 
     Ok(ActionResult {
         ok: true,
@@ -214,22 +182,27 @@ pub(super) async fn uninstall_file_content(
     filename: String,
 ) -> Result<ActionResult, String> {
     validate_filename(&filename)?;
+    let _operation = crate::operations::begin("content", Some(&instance_id))?;
+    let _guard = crate::operations::lock_instance(&instance_id).await;
     let instance = find_instance(&instance_id).await?;
-    let file_path = content_dir(&instance, config).join(&filename);
-
-    if fs::try_exists(&file_path)
-        .await
-        .map_err(|error| format!("check {} file error: {error}", config.label))?
-    {
-        fs::remove_file(&file_path)
-            .await
-            .map_err(|error| format!("remove {} file error: {error}", config.label))?;
-    }
-
+    let directory = ensure_content_dir(&instance, config).await?;
     let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
     let mut state = read_state(&instance, config).await?;
     state.remove(base_filename);
-    write_state(&instance, config, &state).await?;
+    let raw = serde_json::to_vec_pretty(&state)
+        .map_err(|e| format!("serialize content state error: {e}"))?;
+    let mut transaction = crate::file_transaction::FileTransaction::new(&directory)?;
+    let result = (|| {
+        transaction.remove(&filename)?;
+        transaction.write(config.state_file, &raw)
+    })();
+    if let Err(error) = result {
+        return match transaction.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; {rollback}")),
+        };
+    }
+    transaction.commit()?;
 
     Ok(ActionResult {
         ok: true,
@@ -242,6 +215,8 @@ pub(super) async fn list_file_content(
     config: FileContentConfig,
     instance_id: String,
 ) -> Result<Vec<InstalledModView>, String> {
+    let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
+    let _guard = crate::operations::lock_instance(&instance_id).await;
     let instance = find_instance(&instance_id).await?;
     let directory = ensure_content_dir(&instance, config).await?;
     let state = read_state(&instance, config).await?;

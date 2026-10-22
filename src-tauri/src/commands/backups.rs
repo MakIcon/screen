@@ -610,11 +610,15 @@ pub async fn get_world_backup_state(
     instance_id: String,
 ) -> Result<WorldBackupState, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         let game_dir = active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             backup_state_sync(&instance_id, &game_dir, &root)
         })
         .await
@@ -630,11 +634,15 @@ pub async fn set_world_backup_selection(
     world_names: Vec<String>,
 ) -> Result<(), crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         let game_dir = active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             save_selection_sync(&game_dir, &root, &world_names)
         })
         .await
@@ -651,11 +659,15 @@ pub async fn create_world_backup(
     name: Option<String>,
 ) -> Result<WorldBackupInfo, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         let game_dir = active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             create_backup_sync(
                 &instance_id,
                 &game_dir,
@@ -677,11 +689,15 @@ pub async fn list_world_backups(
     instance_id: String,
 ) -> Result<Vec<WorldBackupInfo>, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             list_backups_sync(&instance_id, &root)
         })
         .await
@@ -697,11 +713,15 @@ pub async fn delete_world_backup(
     backup_id: String,
 ) -> Result<(), crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             delete_backup_sync(&instance_id, &backup_id, &root)
         })
         .await
@@ -718,11 +738,15 @@ pub async fn restore_world_backup(
     world_names: Option<Vec<String>>,
 ) -> Result<WorldRestoreResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let operation = crate::operations::begin("backup", Some(&instance_id))?;
+        let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
         let game_dir = active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
         tokio::task::spawn_blocking(move || {
             let _guard = guard;
+            let _operation = operation;
+            let _instance_guard = instance_guard;
             restore_backup_sync(
                 &instance_id,
                 &backup_id,

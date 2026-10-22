@@ -36,6 +36,13 @@ const context: PlaceholderContext = {
 };
 
 describe("appearance placeholders", () => {
+  it("shows measured system memory without rounding it up to a DIMM capacity", () => {
+    const measured = { ...context, systemRamGb: 23.875 };
+    expect(resolvePlaceholders("%system_ram% / %system_ram_value%", measured)).toBe(
+      "23.8 GB / 23.8",
+    );
+  });
+
   it("resolves player name and the legacy nickname alias", () => {
     expect(resolvePlaceholders("%player_name% / %nickname%", context)).toBe("Makar / Makar");
   });

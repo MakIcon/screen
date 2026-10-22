@@ -713,6 +713,7 @@ type Props = {
   isCreateMode: boolean;
   instanceId: string | null;
   systemRamGb: number;
+  usableRamGb: number | null;
   optimizedJavaArgs: boolean;
   buildName: string;
   buildVersion: string;
@@ -838,6 +839,7 @@ export function BuildCardSettingsPopup(props: Props) {
               instanceId={props.instanceId}
               minecraftVersion={props.buildVersion}
               systemRamGb={props.systemRamGb}
+              usableRamGb={props.usableRamGb}
               optimizedJavaArgs={props.optimizedJavaArgs}
               draft={props.runtimeDraft}
               resolvePreviewText={props.resolvePreviewText}

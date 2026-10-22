@@ -490,7 +490,10 @@ fn placeholder_pairs(
     player_name: &str,
 ) -> Vec<(&'static str, String)> {
     let total_playtime_secs = instances.iter().map(|item| item.playtime_secs).sum::<u64>();
-    let system_ram = format!("{} GB", detect_system_memory_gb());
+    let system_ram = format!(
+        "{} GB",
+        crate::memory::format_system_memory_gb(detect_system_memory_gb())
+    );
     let loader = to_friendly_value(&instance.loader);
     let raw_loader_version = instance.loader_version.clone().unwrap_or_default();
     let full_loader = if raw_loader_version.is_empty() {

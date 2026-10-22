@@ -355,36 +355,6 @@ pub(crate) async fn http_json<T: serde::de::DeserializeOwned>(
     })
 }
 
-pub(crate) async fn download_file(client: &Client, url: &str, path: &Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create parent dir error: {e}"))?;
-    }
-
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("download request error: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "download http error {} for {url}",
-            response.status()
-        ));
-    }
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("read download bytes error: {e}"))?;
-
-    fs::write(path, bytes)
-        .await
-        .map_err(|e| format!("write file error: {e}"))
-}
-
 pub(crate) fn choose_primary_file(version: &ModrinthVersion) -> Option<&ModrinthVersionFile> {
     version
         .files
@@ -761,64 +731,36 @@ pub async fn get_modrinth_project_authors(
     result.map_err(crate::commands::errors::CommandError::from)
 }
 
-async fn download_file_with_control(
+async fn download_version_file(
     client: &Client,
-    url: &str,
+    file: &ModrinthVersionFile,
     path: &Path,
-    expected_size: Option<u64>,
-    context: &ModDownloadContext,
+    context: Option<&ModDownloadContext>,
 ) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create parent dir error: {e}"))?;
+    let integrity = crate::downloads::Integrity {
+        sha1: file.hashes.get("sha1").map(String::as_str),
+        sha512: file.hashes.get("sha512").map(String::as_str),
+        size: file.size,
+    };
+    if integrity.size.is_none() || (integrity.sha1.is_none() && integrity.sha512.is_none()) {
+        return Err("Missing Modrinth file size or hash metadata".into());
     }
-
-    let filename = path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "mod file".to_string());
-    context
-        .wait_until_running(&filename, 0, expected_size.unwrap_or(0))
-        .await?;
-
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("download request error: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "download http error {} for {url}",
-            response.status()
-        ));
-    }
-
-    let total_bytes = response.content_length().or(expected_size).unwrap_or(0);
-    let mut received_bytes = 0_u64;
-    let mut bytes = Vec::new();
-    context.emit(&filename, 0, total_bytes, "downloading");
-
-    loop {
-        context
-            .wait_until_running(&filename, received_bytes, total_bytes)
-            .await?;
-        let chunk = response
-            .chunk()
-            .await
-            .map_err(|e| format!("read download bytes error: {e}"))?;
-        let Some(chunk) = chunk else { break };
-        received_bytes = received_bytes.saturating_add(chunk.len() as u64);
-        bytes.extend_from_slice(&chunk);
-        context.emit(&filename, received_bytes, total_bytes, "downloading");
-    }
-
-    context
-        .wait_until_running(&filename, received_bytes, total_bytes)
-        .await?;
-    fs::write(path, bytes)
-        .await
-        .map_err(|e| format!("write file error: {e}"))
+    crate::downloads::stream_to_path(
+        client,
+        &file.url,
+        path,
+        integrity,
+        |received, total| async move {
+            if let Some(context) = context {
+                context
+                    .wait_until_running(&file.filename, received, total)
+                    .await?;
+                context.emit(&file.filename, received, total, "downloading");
+            }
+            Ok(())
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1101,6 +1043,7 @@ pub(crate) async fn install_project_to_dir(
     instance: &InstanceItem,
     root_project_id: &str,
     target_dir: &Path,
+    state_path: &Path,
     loaders: &[&str],
     state: &mut HashMap<String, InstalledModEntry>,
     download_context: Option<&ModDownloadContext>,
@@ -1180,6 +1123,7 @@ pub(crate) async fn install_project_to_dir(
         &available_files,
         state,
         download_context,
+        Some(state_path),
     )
     .await
 }
@@ -1191,87 +1135,107 @@ async fn install_prepared_files(
     available_files: &HashSet<String>,
     state: &mut HashMap<String, InstalledModEntry>,
     download_context: Option<&ModDownloadContext>,
+    state_path: Option<&Path>,
 ) -> Result<(), String> {
-    // Validate stored filenames too, before committing any files.
+    let mut next_state = state.clone();
     for (file, entry, _) in &prepared {
         file_content::validate_filename(&file.filename)?;
-        for old in state
-            .values()
-            .filter(|old| old.project_id == entry.project_id)
+        for (filename, old) in state
+            .iter()
+            .filter(|(_, old)| old.project_id == entry.project_id)
         {
+            file_content::validate_filename(filename)?;
             file_content::validate_filename(&old.filename)?;
         }
+        next_state.retain(|_, old| old.project_id != entry.project_id);
+        next_state.insert(entry.filename.clone(), entry.clone());
     }
-    // Stage the whole batch so a failed/cancelled dependency download does not
-    // leave the root mod installed without the files it needs.
-    let staging = target_dir.join(format!(".screenlauncher-install-{}", uuid::Uuid::new_v4()));
-    fs::create_dir(&staging)
-        .await
-        .map_err(|e| format!("create staging dir error: {e}"))?;
-    let result = async {
+    let metadata = state_path
+        .map(|path| {
+            if path.parent() != Some(target_dir) {
+                return Err("Content metadata is outside target directory".to_string());
+            }
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("Invalid content metadata filename")?;
+            let bytes = serde_json::to_vec_pretty(&next_state)
+                .map_err(|e| format!("serialize content state error: {e}"))?;
+            Ok((name.to_owned(), bytes))
+        })
+        .transpose()?;
+    let mut transaction = crate::file_transaction::FileTransaction::new(target_dir)?;
+    for (file, _, reusable) in &prepared {
+        if !*reusable {
+            download_version_file(
+                client,
+                file,
+                &transaction.staged(&file.filename),
+                download_context,
+            )
+            .await?;
+        }
+    }
+    if let Some(context) = download_context {
+        context
+            .wait_until_running("Установка мода и зависимостей", 0, 0)
+            .await?;
+    }
+    // No await inside the commit: the journal owns all old files until the
+    // atomic metadata replacement succeeds. Drop also rolls back cancellation.
+    let result = (|| {
         for (file, _, reusable) in &prepared {
-            if *reusable {
-                continue;
-            }
-            let path = staging.join(&file.filename);
-            if let Some(context) = download_context {
-                download_file_with_control(client, &file.url, &path, file.size, context).await?;
-            } else {
-                download_file(client, &file.url, &path).await?;
-            }
-        }
-        if let Some(context) = download_context {
-            context
-                .wait_until_running("Установка мода и зависимостей", 0, 0)
-                .await?;
-        }
-        for (file, entry, reusable) in &prepared {
-            let destination = target_dir.join(&file.filename);
-            let disabled = target_dir.join(format!("{}.disabled", file.filename));
             if !*reusable {
-                fs::rename(staging.join(&file.filename), &destination)
-                    .await
-                    .map_err(|e| format!("install {} error: {e}", file.filename))?;
+                transaction.replace(&transaction.staged(&file.filename), &file.filename)?;
             } else if !available_files.contains(&file.filename) {
-                fs::rename(&disabled, &destination)
-                    .await
-                    .map_err(|e| format!("enable required mod {} error: {e}", file.filename))?;
+                // Move the disabled copy into staging first so it participates
+                // in exactly the same rollback journal as downloaded files.
+                let disabled = format!("{}.disabled", file.filename);
+                let staged = transaction.staged(&file.filename);
+                std::fs::copy(target_dir.join(&disabled), &staged)
+                    .map_err(|e| format!("stage disabled mod error: {e}"))?;
+                transaction.replace(&staged, &file.filename)?;
+                transaction.remove(&disabled)?;
             }
-            // Replacements must remove both enabled and disabled older versions.
-            for stale in state
+        }
+        let destinations = prepared
+            .iter()
+            .map(|(file, _, _)| file.filename.as_str())
+            .collect::<HashSet<_>>();
+        for (file, entry, _) in &prepared {
+            for old in state
                 .values()
                 .filter(|old| old.project_id == entry.project_id)
             {
-                file_content::validate_filename(&stale.filename)?;
-                for name in [
-                    stale.filename.clone(),
-                    format!("{}.disabled", stale.filename),
-                ] {
-                    if name == file.filename {
-                        continue;
-                    }
-                    match fs::remove_file(target_dir.join(&name)).await {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => return Err(format!("remove old mod {name} error: {error}")),
+                for name in [old.filename.clone(), format!("{}.disabled", old.filename)] {
+                    if !destinations.contains(name.as_str()) {
+                        transaction.remove(&name)?;
                     }
                 }
             }
+            // Also remove an untracked disabled copy of the new filename.
+            transaction.remove(&format!("{}.disabled", file.filename))?;
         }
-        for (_, entry, _) in prepared {
-            state.retain(|_, old| old.project_id != entry.project_id);
-            state.insert(entry.filename.clone(), entry);
+        if let Some((name, bytes)) = metadata {
+            transaction.write(&name, &bytes)?;
         }
         Ok(())
+    })();
+    if let Err(error) = result {
+        return match transaction.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; {rollback}")),
+        };
     }
-    .await;
-    let _ = fs::remove_dir_all(&staging).await;
-    result
+    transaction.commit()?;
+    *state = next_state;
+    Ok(())
 }
 
 #[cfg(test)]
 mod installation_tests {
     use super::*;
+    use sha1::Digest;
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -1315,6 +1279,11 @@ mod installation_tests {
             ModrinthVersionFile {
                 filename: entry.filename.clone(),
                 url: url.into(),
+                size: Some(7),
+                hashes: HashMap::from([(
+                    "sha1".into(),
+                    format!("{:x}", sha1::Sha1::digest(b"new jar")),
+                )]),
                 ..Default::default()
             },
             entry,
@@ -1374,6 +1343,7 @@ mod installation_tests {
             &HashSet::from(["api.jar.disabled".into(), "helper.jar".into()]),
             &mut state,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1406,6 +1376,7 @@ mod installation_tests {
             ],
             &HashSet::from(["old-api.jar.disabled".into()]),
             &mut state,
+            None,
             None,
         )
         .await;
@@ -1446,6 +1417,7 @@ mod installation_tests {
             ]),
             &mut state,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1479,6 +1451,7 @@ mod installation_tests {
             &HashSet::from(["api.jar".into(), "api.jar.disabled".into()]),
             &mut state,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1489,6 +1462,111 @@ mod installation_tests {
         );
         assert!(!directory.0.join("api.jar.disabled").exists());
         assert_eq!(state["api.jar"].version_id, "new");
+    }
+    #[tokio::test]
+    async fn failed_commit_restores_replaced_and_removed_files_and_metadata() {
+        for fail_metadata in [false, true] {
+            let directory = Directory::new();
+            for name in [
+                "api.jar",
+                "api.jar.disabled",
+                "old-api.jar",
+                "unrelated.jar",
+            ] {
+                std::fs::write(directory.0.join(name), b"old").unwrap();
+            }
+            let mut state = HashMap::from([
+                ("old-api.jar".into(), entry("api", "old", "old-api.jar")),
+                (
+                    "unrelated.jar".into(),
+                    entry("other", "v1", "unrelated.jar"),
+                ),
+            ]);
+            let before = serde_json::to_vec(&state).unwrap();
+            let metadata = directory.0.join("state.json");
+            if fail_metadata {
+                std::fs::create_dir(&metadata).unwrap();
+            } else {
+                std::fs::write(&metadata, &before).unwrap();
+                std::fs::create_dir(directory.0.join("blocked.jar")).unwrap();
+                std::fs::write(directory.0.join("blocked.jar.disabled"), b"disabled").unwrap();
+            }
+            let (url, server) = serve_file();
+            let mut batch = vec![prepared(entry("api", "new", "api.jar"), &url, false)];
+            if !fail_metadata {
+                batch.push(prepared(
+                    entry("blocked", "v1", "blocked.jar"),
+                    "invalid",
+                    true,
+                ));
+            }
+            let result = install_prepared_files(
+                &Client::builder().no_proxy().build().unwrap(),
+                &directory.0,
+                batch,
+                &HashSet::from(["blocked.jar.disabled".into()]),
+                &mut state,
+                None,
+                Some(&metadata),
+            )
+            .await;
+            server.join().unwrap();
+            assert!(result.is_err());
+            assert_eq!(serde_json::to_vec(&state).unwrap(), before);
+            for name in [
+                "api.jar",
+                "api.jar.disabled",
+                "old-api.jar",
+                "unrelated.jar",
+            ] {
+                assert_eq!(std::fs::read(directory.0.join(name)).unwrap(), b"old");
+            }
+            if !fail_metadata {
+                assert_eq!(std::fs::read(&metadata).unwrap(), before);
+                assert_eq!(
+                    std::fs::read(directory.0.join("blocked.jar.disabled")).unwrap(),
+                    b"disabled"
+                );
+            }
+            assert!(!std::fs::read_dir(&directory.0).unwrap().any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".screenlauncher-install-")));
+        }
+    }
+
+    #[tokio::test]
+    async fn commits_files_and_metadata_as_one_batch_without_losing_other_projects() {
+        let directory = Directory::new();
+        let mut state = HashMap::from([(
+            "unrelated.jar".into(),
+            entry("other", "v1", "unrelated.jar"),
+        )]);
+        let metadata = directory.0.join("state.json");
+        std::fs::write(&metadata, serde_json::to_vec(&state).unwrap()).unwrap();
+        let (url, server) = serve_file();
+        install_prepared_files(
+            &Client::builder().no_proxy().build().unwrap(),
+            &directory.0,
+            vec![prepared(entry("api", "new", "api.jar"), &url, false)],
+            &HashSet::new(),
+            &mut state,
+            None,
+            Some(&metadata),
+        )
+        .await
+        .unwrap();
+        server.join().unwrap();
+        let persisted: HashMap<String, InstalledModEntry> =
+            serde_json::from_slice(&std::fs::read(metadata).unwrap()).unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted["api.jar"].version_id, "new");
+        assert_eq!(persisted["unrelated.jar"].project_id, "other");
+        assert_eq!(
+            std::fs::read(directory.0.join("api.jar")).unwrap(),
+            b"new jar"
+        );
     }
 }
 

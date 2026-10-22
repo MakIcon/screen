@@ -107,18 +107,193 @@
 /* ── Memory readout & slider ── */
 
 .settings-memory-block {
+  container-type: inline-size;
   margin-bottom: 24px;
   position: relative;
   z-index: 1;
 }
 
+.ram-allocation-warning {
+  margin: 0;
+  min-width: 0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .memory-readout {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 24px;
+  min-height: var(--ram-signs-height, 104px);
   margin-bottom: 20px;
   position: relative;
   z-index: 1;
+}
+
+.memory-value {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.memory-readout .ram-allocation-warning {
+  flex: 1 1 0;
+}
+
+.ram-allocation--danger .memory-value,
+.ram-allocation--danger .memory-unit,
+.ram-allocation--danger .brs-section-head strong {
+  color: var(--danger);
+}
+
+.ram-allocation--danger .es-root {
+  --ink: var(--danger);
+  --line-strong: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.ram-warning-anchor {
+  height: var(--ram-signs-height, 104px);
+  pointer-events: none;
+}
+
+.ram-warning-signs-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ram-warning-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  isolation: isolate;
+  color: var(--danger);
+}
+
+.ram-warning-sign {
+  position: absolute;
+  z-index: 1;
+  width: 232px;
+  max-width: calc(100vw - 24px);
+  border: 2px solid var(--danger);
+  border-radius: 5px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  box-shadow: 3px 4px 0 color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.ram-warning-sign--stop {
+  --ram-sign-angle: -3deg;
+  --ram-sign-enter-x: 0px;
+  --ram-sign-enter-y: -70px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: color-mix(in srgb, var(--danger) 72%, #7a0b06);
+  color: #fff;
+  transform: rotate(var(--ram-sign-angle));
+}
+
+.ram-warning-sign strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ram-warning-sign span {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.ram-warning-sign--system {
+  --ram-sign-angle: 3deg;
+  --ram-sign-enter-x: 80px;
+  --ram-sign-enter-y: -8px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  color: var(--danger);
+  transform: rotate(var(--ram-sign-angle));
+}
+
+.ram-warning-sign--maximum {
+  --ram-sign-angle: -6deg;
+  --ram-sign-enter-x: -70px;
+  --ram-sign-enter-y: -35px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg);
+  border-width: 3px;
+  transform: rotate(var(--ram-sign-angle));
+}
+
+.ram-warning-arrows {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ram-warning-arrow {
+  stroke: currentColor;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(1px 2px 0 color-mix(in srgb, var(--danger) 16%, transparent));
+}
+
+@container (max-width: 350px) {
+  .memory-readout {
+    --ram-signs-height: 130px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ram-warning-sign {
+    animation: ram-warning-slide-out 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  }
+
+  .ram-warning-arrow {
+    animation: ram-warning-arrow-reveal 260ms ease-out 250ms both;
+  }
+}
+
+@keyframes ram-warning-slide-out {
+  from {
+    opacity: 0;
+    transform: translate(var(--ram-sign-enter-x), var(--ram-sign-enter-y))
+      rotate(var(--ram-sign-angle));
+    box-shadow: 0 0 0 color-mix(in srgb, var(--danger) 22%, transparent);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(var(--ram-sign-angle));
+    box-shadow: 3px 4px 0 color-mix(in srgb, var(--danger) 22%, transparent);
+  }
+}
+
+@keyframes ram-warning-arrow-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .memory-number {

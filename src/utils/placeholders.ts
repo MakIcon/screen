@@ -1,3 +1,4 @@
+import { formatSystemRamGb } from "./ram";
 import { formatLastPlayed, formatPlaytime } from "./playtime";
 import { intlLocale, isPlainMessageKey, translateFor, type Locale } from "../i18n/locale";
 
@@ -313,9 +314,9 @@ function resolvePlaceholderValue(key: string, ctx: PlaceholderContext): string |
     case "player_name":
       return ctx.playerName;
     case "system_ram":
-      return `${ctx.systemRamGb} GB`;
+      return `${formatSystemRamGb(ctx.systemRamGb)} GB`;
     case "system_ram_value":
-      return `${ctx.systemRamGb}`;
+      return formatSystemRamGb(ctx.systemRamGb);
     case "build_name":
       return ctx.buildName;
     case "build_version":

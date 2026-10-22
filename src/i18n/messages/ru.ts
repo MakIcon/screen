@@ -1576,6 +1576,13 @@ export const ru = {
     "Поддерживаются {http}, {https} и {socks}. Если нужны логин и пароль, укажите их в адресе прокси.",
 
   // settings
+  "ram.exceedsUsableMemory":
+    "Выбрано больше доступных системе {usable} ГБ. Это может вызвать зависания и нестабильную работу системы.",
+  "ram.warningSignTitle": "Стоп, перебор с RAM!",
+  "ram.warningSignRisk": "Возможны зависания системы",
+  "ram.warningSignAction": "Оставьте память системе",
+  "ram.warningSignMaximum": "Вся RAM отдана игре!",
+  "ram.warningSignReduce": "Уменьшите выделение памяти",
   "settings.launcherSettings": "НАСТРОЙКИ ЛАУНЧЕРА",
   "settings.appearance": "ОФОРМЛЕНИЕ",
   "settings.customDesignActiveEdit":

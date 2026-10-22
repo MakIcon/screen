@@ -16,8 +16,8 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
 use crate::{
-    models::{ActionResult, BlueMapPluginSettings, BlueMapStatus, InstanceItem, LauncherSettings},
-    paths::{launcher_root, read_instances, read_settings, write_settings},
+    models::{ActionResult, BlueMapPluginSettings, BlueMapStatus, InstanceItem},
+    paths::{edit_settings, launcher_root, read_instances, read_settings, SettingsStore},
 };
 
 #[cfg(windows)]
@@ -935,7 +935,7 @@ async fn resolve_cli_jar(
 }
 
 pub async fn install_server_package() -> Result<PathBuf, String> {
-    let mut settings = read_settings().await?;
+    let mut settings = edit_settings().await?;
     let plugin = settings.blue_map_plugin().clone();
     let java_bin = java_executable(&plugin.java_path);
     let java_major = detect_java_major(&java_bin);
@@ -952,13 +952,11 @@ pub async fn install_server_package() -> Result<PathBuf, String> {
         blue_map.working_dir = managed_dir.to_string_lossy().to_string();
     }
     blue_map.java_path = java_bin;
-    write_settings(&settings).await?;
+    settings.commit().await?;
     Ok(cli_jar)
 }
 
-async fn prepare_bluemap_settings(
-    settings: &mut LauncherSettings,
-) -> Result<PreparedBlueMap, String> {
+async fn prepare_bluemap_settings(settings: &mut SettingsStore) -> Result<PreparedBlueMap, String> {
     let plugin = settings.blue_map_plugin().clone();
     let normalized_map_url = normalize_map_url(&plugin.map_url)?;
     let port_selection = select_available_map_url(&normalized_map_url)?;
@@ -981,7 +979,7 @@ async fn prepare_bluemap_settings(
     blue_map.cli_jar_path = cli_jar.to_string_lossy().to_string();
     blue_map.working_dir = working_dir.to_string_lossy().to_string();
     blue_map.java_path = java_bin.clone();
-    write_settings(settings).await?;
+    settings.commit().await?;
 
     Ok(PreparedBlueMap {
         cli_jar,
@@ -1033,7 +1031,8 @@ pub async fn prepare_bluemap(
     state: State<'_, BlueMapState>,
 ) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("extension", None)?;
+        let mut settings = edit_settings().await?;
         let prepared = prepare_bluemap_settings(&mut settings).await?;
 
         let mut runtime = state
@@ -1083,7 +1082,8 @@ pub async fn start_bluemap(
     state: State<'_, BlueMapState>,
 ) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
-        let mut settings = read_settings().await?;
+        let _operation = crate::operations::begin("extension", None)?;
+        let mut settings = edit_settings().await?;
         let mut plugin = settings.blue_map_plugin().clone();
 
         if !plugin.enabled {

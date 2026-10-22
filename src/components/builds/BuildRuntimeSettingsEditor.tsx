@@ -8,11 +8,17 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
+import { RamAllocationWarning } from "../inputs/RamAllocationWarning";
 import { ElementSlider } from "../inputs/ElementSlider";
 import { CustomNumberInput } from "../inputs/CustomNumberInput";
 import { JavaArgsEditor, type JavaArgsTextEditRequest } from "../inputs/JavaArgsEditor";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
-import { clampRamToSystem, getMinecraftRamMax, getRamSliderTicks } from "../../utils/ram";
+import {
+  clampRamToSystem,
+  exceedsUsableRam,
+  getMinecraftRamMax,
+  getRamSliderTicks,
+} from "../../utils/ram";
 import { getDefaultJavaArgsText } from "../../utils/javaArgs";
 import {
   environmentVariablesToRecord,
@@ -66,6 +72,7 @@ type Props = {
   instanceId: string | null;
   minecraftVersion: string;
   systemRamGb: number;
+  usableRamGb: number | null;
   optimizedJavaArgs: boolean;
   draft: BuildRuntimeSettingsDraft;
   resolvePreviewText: (template: string) => string;
@@ -77,6 +84,7 @@ export function BuildRuntimeSettingsEditor({
   instanceId,
   minecraftVersion,
   systemRamGb,
+  usableRamGb,
   optimizedJavaArgs,
   draft,
   resolvePreviewText,
@@ -113,6 +121,7 @@ export function BuildRuntimeSettingsEditor({
   const textEditRequestId = useRef(0);
   const minecraftRamMax = getMinecraftRamMax(systemRamGb);
   const ramSliderTicks = getRamSliderTicks(systemRamGb);
+  const ramOverUsable = exceedsUsableRam(draft.ram, usableRamGb);
   const argsSearchMatches = useMemo(
     () => getTextSearchMatches(draft.javaArgs, argsSearchQuery),
     [argsSearchQuery, draft.javaArgs],
@@ -463,7 +472,7 @@ export function BuildRuntimeSettingsEditor({
               </section>
             )}
 
-            <section className="brs-section">
+            <section className={`brs-section${ramOverUsable ? " ram-allocation--danger" : ""}`}>
               <div className="brs-section-head">
                 <span>{tr("buildRuntimeSettings.memory")}</span>
                 <strong
@@ -488,6 +497,7 @@ export function BuildRuntimeSettingsEditor({
                   onChange={updateRam}
                 />
               </div>
+              <RamAllocationWarning ramGb={draft.ram} usableRamGb={usableRamGb} />
             </section>
 
             <section className="brs-section">

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use tokio::task;
 
-use crate::paths::{extensions_root, read_settings, write_settings};
+use crate::paths::{edit_settings, extensions_root};
 
 use super::{
     blue_map::{self, BlueMapState},
@@ -525,6 +525,7 @@ pub async fn install_optional_extension(
     extension_id: String,
 ) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("extension", None)?;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => install_mineflayer_package().await,
             BLUE_MAP_SERVER_ID => {
@@ -571,12 +572,12 @@ async fn uninstall_blue_map_package() -> Result<OptionalExtensionStatus, String>
         }
     }
 
-    let mut settings = read_settings().await?;
+    let mut settings = edit_settings().await?;
     let blue_map = settings.blue_map_plugin_mut();
     let configured_jar = PathBuf::from(blue_map.cli_jar_path.trim());
     if configured_jar.starts_with(&directory) {
         blue_map.cli_jar_path.clear();
-        write_settings(&settings).await?;
+        settings.commit().await?;
     }
 
     Ok(blue_map_status())
@@ -589,6 +590,7 @@ pub async fn uninstall_optional_extension(
     blue_map_state: State<'_, BlueMapState>,
 ) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("extension", None)?;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => {
                 mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;

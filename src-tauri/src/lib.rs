@@ -1,6 +1,10 @@
 pub mod commands;
+mod downloads;
+mod file_transaction;
+pub mod memory;
 pub mod minecraft;
 pub mod models;
+pub mod operations;
 pub mod paths;
 pub mod plugins;
 pub mod progress;
@@ -21,6 +25,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::errors::record_launcher_error,
+            operations::get_active_operations,
+            operations::prepare_launcher_update,
+            operations::finish_launcher_update,
             window_fx::start_gallery_unfold,
             window_fx::exit_launcher,
             commands::auth::start_microsoft_auth,
@@ -69,6 +76,7 @@ pub fn run() {
             commands::launcher::load_instance_screenshot,
             commands::launcher::open_instance_screenshots_folder,
             commands::system::get_system_memory_gb,
+            commands::system::get_system_memory_info,
             commands::system::test_java_settings,
             commands::system::scan_java_installations,
             commands::modrinth::get_modrinth_project_icons,

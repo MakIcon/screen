@@ -718,15 +718,109 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn build_auth_url() -> String {
+fn build_auth_url(state: &str) -> String {
     let query = encode_form(&[
         ("client_id", MS_CLIENT_ID),
         ("response_type", "code"),
         ("scope", MS_SCOPE),
         ("redirect_uri", MS_REDIRECT_URI),
         ("prompt", "select_account"),
+        ("state", state),
     ]);
     format!("{MS_AUTH_URL}?{query}")
+}
+
+fn is_microsoft_callback(url: &url::Url) -> bool {
+    // Compare parsed URL components, never a string prefix. Userinfo, alternate
+    // ports, suffixes, and paths resembling the redirect are not callbacks.
+    let expected = url::Url::parse(MS_REDIRECT_URI).expect("valid static Microsoft redirect URI");
+    url.scheme() == expected.scheme()
+        && url.host_str() == expected.host_str()
+        && url.port_or_known_default() == expected.port_or_known_default()
+        && url.path() == expected.path()
+        && url.username().is_empty()
+        && url.password().is_none()
+}
+
+fn microsoft_callback_code(url: &url::Url, expected_state: &str) -> Result<String, String> {
+    if !is_microsoft_callback(url) || url.fragment().is_some() {
+        return Err("Invalid Microsoft sign-in callback address".into());
+    }
+    let mut parameters = std::collections::HashMap::new();
+    for (key, value) in url.query_pairs() {
+        if matches!(key.as_ref(), "state" | "code" | "error")
+            && parameters
+                .insert(key.into_owned(), value.into_owned())
+                .is_some()
+        {
+            return Err("Duplicate Microsoft sign-in callback parameter".into());
+        }
+    }
+    // Check state for both successful and failed authorization responses. Never
+    // include the URL, state, or authorization code in the diagnostic message.
+    if expected_state.is_empty()
+        || parameters.get("state").map(String::as_str) != Some(expected_state)
+    {
+        return Err("Microsoft sign-in state mismatch; start sign-in again".into());
+    }
+    if parameters.contains_key("code") && parameters.contains_key("error") {
+        return Err("Invalid Microsoft sign-in response".into());
+    }
+    if let Some(error) = parameters.get("error") {
+        return Err(if error == "access_denied" {
+            "Sign-in cancelled".into()
+        } else {
+            "Microsoft rejected the sign-in request".into()
+        });
+    }
+    parameters
+        .remove("code")
+        .filter(|code| !code.trim().is_empty())
+        .ok_or_else(|| "No auth code in Microsoft sign-in callback".into())
+}
+
+/// A fresh unpredictable state and a single-use reply belong to one login
+/// window. A callback from an earlier window cannot complete a later attempt.
+struct MicrosoftAuthCallback {
+    state: String,
+    reply: Option<oneshot::Sender<Result<String, String>>>,
+}
+
+impl MicrosoftAuthCallback {
+    fn new(reply: oneshot::Sender<Result<String, String>>) -> Self {
+        Self {
+            state: format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            ),
+            reply: Some(reply),
+        }
+    }
+
+    fn on_navigation(&mut self, url: &url::Url) -> bool {
+        if !is_microsoft_callback(url) {
+            return true;
+        }
+        if let Some(reply) = self.reply.take() {
+            let _ = reply.send(microsoft_callback_code(url, &self.state));
+        }
+        false
+    }
+
+    fn cancel(&mut self) {
+        if let Some(reply) = self.reply.take() {
+            let _ = reply.send(Err("Sign-in cancelled".into()));
+        }
+    }
+}
+
+struct AuthWindowGuard(tauri::WebviewWindow);
+
+impl Drop for AuthWindowGuard {
+    fn drop(&mut self) {
+        let _ = self.0.close();
+    }
 }
 
 /// Full auth chain from Microsoft access token → saved MicrosoftAccount.
@@ -1147,16 +1241,17 @@ pub async fn start_microsoft_auth(
     app: AppHandle,
 ) -> Result<MicrosoftAccountSummary, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("authentication", None)?;
         // If the auth window is already open, focus it and return an error
         if let Some(existing) = app.get_webview_window("ms-login") {
             let _ = existing.set_focus();
             return Err("Auth window already open — complete sign-in in the open window".into());
         }
 
-        let auth_url = build_auth_url();
-
         let (tx, rx) = oneshot::channel::<Result<String, String>>();
-        let shared = Arc::new(Mutex::new(Some(tx)));
+        let callback = MicrosoftAuthCallback::new(tx);
+        let auth_url = build_auth_url(&callback.state);
+        let shared = Arc::new(Mutex::new(callback));
         let shared_close = shared.clone();
 
         let window = WebviewWindowBuilder::new(
@@ -1170,52 +1265,32 @@ pub async fn start_microsoft_auth(
         .resizable(false)
         .always_on_top(true)
         .on_navigation(move |url| {
-            if url.as_str().starts_with(MS_REDIRECT_URI) {
-                let code = url
-                    .query_pairs()
-                    .find(|(k, _)| k == "code")
-                    .map(|(_, v)| v.into_owned());
-                if let Ok(mut guard) = shared.lock() {
-                    if let Some(tx) = guard.take() {
-                        match code {
-                            Some(c) => {
-                                let _ = tx.send(Ok(c));
-                            }
-                            None => {
-                                let _ = tx.send(Err("No auth code in redirect URL".into()));
-                            }
-                        }
-                    }
-                }
-                return false; // block navigation to the desktop redirect page
-            }
-            true
+            shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .on_navigation(url)
         })
         .build()
         .map_err(|e| format!("Failed to open auth window: {e}"))?;
 
-        // Detect user closing window (cancel)
+        // Destroying the window consumes only this attempt's reply.
         window.on_window_event(move |event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
-                if let Ok(mut guard) = shared_close.lock() {
-                    if let Some(tx) = guard.take() {
-                        let _ = tx.send(Err("Sign-in cancelled".into()));
-                    }
-                }
+                shared_close
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .cancel();
             }
         });
-
         let _ = window.set_focus();
-
-        // Wait for code (blocks until user logs in or closes the window)
-        let code = rx
+        let window_guard = AuthWindowGuard(window);
+        let code = tokio::time::timeout(Duration::from_secs(10 * 60), rx)
             .await
+            .map_err(|_| "Microsoft sign-in timed out; start sign-in again".to_string())?
             .map_err(|_| "Auth window closed unexpectedly".to_string())??;
-
-        // Close the window
-        if let Some(win) = app.get_webview_window("ms-login") {
-            let _ = win.close();
-        }
+        // Use the original window handle so cleanup cannot close a new attempt
+        // that happens to reuse the ms-login label. Errors also close via Drop.
+        drop(window_guard);
 
         // Exchange code for MS tokens
         let client = crate::minecraft::mirrors::build_client()?;
@@ -1340,5 +1415,170 @@ mod tests {
         assert_eq!(tokio::fs::read(&path).await.unwrap(), b"new");
         assert!(!sidecar_path(&path, ".tmp").exists());
         tokio::fs::remove_dir_all(directory).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod oauth_callback_tests {
+    use super::*;
+
+    fn callback_url(query: &str) -> url::Url {
+        url::Url::parse(&format!("{MS_REDIRECT_URI}?{query}")).unwrap()
+    }
+
+    #[test]
+    fn each_attempt_has_its_own_unpredictable_state_in_the_authorization_url() {
+        let (first_tx, _) = oneshot::channel();
+        let (second_tx, _) = oneshot::channel();
+        let first = MicrosoftAuthCallback::new(first_tx);
+        let second = MicrosoftAuthCallback::new(second_tx);
+        assert_ne!(first.state, second.state);
+        assert_eq!(first.state.len(), 64);
+        assert!(first.state.bytes().all(|b| b.is_ascii_hexdigit()));
+        let url = url::Url::parse(&build_auth_url(&first.state)).unwrap();
+        let params = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            params.get("state").map(|v| v.as_ref()),
+            Some(first.state.as_str())
+        );
+        assert_eq!(
+            params.get("redirect_uri").map(|v| v.as_ref()),
+            Some(MS_REDIRECT_URI)
+        );
+        assert_eq!(
+            params.get("response_type").map(|v| v.as_ref()),
+            Some("code")
+        );
+        // Preserve the Live/Xbox flow while PKCE compatibility is assessed.
+        assert_eq!(params.get("scope").map(|v| v.as_ref()), Some(MS_SCOPE));
+        assert_eq!(
+            params.get("client_id").map(|v| v.as_ref()),
+            Some(MS_CLIENT_ID)
+        );
+    }
+
+    #[test]
+    fn accepts_only_the_exact_redirect_origin_and_path() {
+        assert!(is_microsoft_callback(&callback_url(
+            "state=expected&code=valid"
+        )));
+        for address in [
+            "http://login.live.com/oauth20_desktop.srf",
+            "https://login.live.com:444/oauth20_desktop.srf",
+            "https://login.live.com.evil.example/oauth20_desktop.srf",
+            "https://login.live.com@evil.example/oauth20_desktop.srf",
+            "https://user@login.live.com/oauth20_desktop.srf",
+            "https://user:password@login.live.com/oauth20_desktop.srf",
+            "https://login.live.com/oauth20_desktop.srf.evil",
+            "https://login.live.com/oauth20_desktop.srf/extra",
+            "https://login.live.com/oauth20_desktop.srf/",
+            "https://login.live.com/OAUTH20_desktop.srf",
+            "https://login.live.com/oauth20_desktop%2esrf",
+        ] {
+            let url = url::Url::parse(address).unwrap();
+            assert!(!is_microsoft_callback(&url), "{address}");
+            assert!(microsoft_callback_code(&url, "expected").is_err());
+        }
+    }
+
+    #[test]
+    fn requires_exactly_one_matching_state_and_an_unambiguous_nonempty_result() {
+        assert_eq!(
+            microsoft_callback_code(&callback_url("state=expected&code=valid"), "expected")
+                .unwrap(),
+            "valid"
+        );
+        for query in [
+            "code=secret-code",
+            "state=&code=secret-code",
+            "state=other&code=secret-code",
+            "state=expected&state=other&code=secret-code",
+            "state=expected&%73tate=expected&code=secret-code",
+            "state=expected&code=one&code=two",
+            "state=expected&code=one&error=access_denied",
+            "state=expected&error=access_denied&error=server_error",
+            "state=expected&code=",
+            "state=expected&code=+++",
+            "state=expected",
+            "state=expected&code=secret-code#extra",
+        ] {
+            let error = microsoft_callback_code(&callback_url(query), "expected").unwrap_err();
+            assert!(!error.contains("secret-code"));
+            assert!(!error.contains("expected"));
+        }
+        assert!(microsoft_callback_code(&callback_url("state=&code=valid"), "").is_err());
+    }
+
+    #[test]
+    fn validates_state_for_provider_errors_as_well_as_successful_responses() {
+        assert!(microsoft_callback_code(
+            &callback_url("state=other&error=access_denied"),
+            "expected"
+        )
+        .unwrap_err()
+        .contains("state mismatch"));
+        assert_eq!(
+            microsoft_callback_code(
+                &callback_url("state=expected&error=access_denied"),
+                "expected"
+            )
+            .unwrap_err(),
+            "Sign-in cancelled"
+        );
+        assert_eq!(
+            microsoft_callback_code(
+                &callback_url("state=expected&error=server_error&error_description=private"),
+                "expected"
+            )
+            .unwrap_err(),
+            "Microsoft rejected the sign-in request"
+        );
+    }
+
+    #[test]
+    fn unrelated_navigation_does_not_consume_the_reply_and_success_is_single_use() {
+        let (tx, mut rx) = oneshot::channel();
+        let mut callback = MicrosoftAuthCallback::new(tx);
+        let unrelated =
+            url::Url::parse("https://login.live.com/oauth20_desktop.srf.evil?code=untrusted")
+                .unwrap();
+        assert!(callback.on_navigation(&unrelated));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        let valid = callback_url(&format!("state={}&code=valid", callback.state));
+        assert!(!callback.on_navigation(&valid));
+        assert_eq!(rx.try_recv().unwrap().unwrap(), "valid");
+        assert!(!callback.on_navigation(&valid));
+        callback.cancel();
+        assert!(callback.reply.is_none());
+    }
+
+    #[test]
+    fn callbacks_from_an_old_attempt_and_cancelled_attempts_cannot_sign_in() {
+        let (old_tx, _) = oneshot::channel();
+        let previous = MicrosoftAuthCallback::new(old_tx);
+        let (tx, mut rx) = oneshot::channel();
+        let mut current = MicrosoftAuthCallback::new(tx);
+        assert!(!current.on_navigation(&callback_url(&format!(
+            "state={}&code=old-code",
+            previous.state
+        ))));
+        assert!(rx
+            .try_recv()
+            .unwrap()
+            .unwrap_err()
+            .contains("state mismatch"));
+        assert!(current.reply.is_none());
+        let (tx, mut rx) = oneshot::channel();
+        let mut cancelled = MicrosoftAuthCallback::new(tx);
+        cancelled.cancel();
+        let valid = callback_url(&format!("state={}&code=valid", cancelled.state));
+        assert!(!cancelled.on_navigation(&valid));
+        assert_eq!(rx.try_recv().unwrap().unwrap_err(), "Sign-in cancelled");
+        assert!(cancelled.reply.is_none());
     }
 }

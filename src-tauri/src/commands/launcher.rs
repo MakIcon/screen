@@ -132,6 +132,8 @@ pub async fn install_instance(
     instance_id: String,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("install", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
         let instance = items
             .iter()
@@ -139,6 +141,11 @@ pub async fn install_instance(
             .cloned()
             .ok_or_else(|| "Instance not found".to_string())?;
 
+        for category in ["mods", "shaderpacks", "resourcepacks"] {
+            crate::file_transaction::FileTransaction::recover(
+                &std::path::PathBuf::from(&instance.game_dir).join(category),
+            )?;
+        }
         update_instance_status(&instance.id, "UPDATING").await?;
         let result = async {
             install_instance_files(&app, &instance).await?;
@@ -173,6 +180,8 @@ pub async fn launch_instance(
     ms_account_id: Option<String>,
 ) -> Result<ActionResult, crate::commands::errors::CommandError> {
     let result: Result<_, String> = async {
+        let _operation = crate::operations::begin("launch", Some(&instance_id))?;
+        let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
         let instance = items
             .iter()
@@ -192,6 +201,11 @@ pub async fn launch_instance(
             None
         };
 
+        for category in ["mods", "shaderpacks", "resourcepacks"] {
+            crate::file_transaction::FileTransaction::recover(
+                &std::path::PathBuf::from(&instance.game_dir).join(category),
+            )?;
+        }
         update_instance_status(&instance.id, "UPDATING").await?;
         let launch_result = async {
             install_instance_files(&app, &instance).await?;
