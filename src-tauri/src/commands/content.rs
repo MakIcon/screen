@@ -5,6 +5,7 @@
 //! `.zip` is sniffed (a `shaders/` folder means a shaderpack, otherwise it is
 //! treated as a resource pack). Loader-agnostic, no network — just file routing.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -16,13 +17,20 @@ use zip::ZipArchive;
 use crate::{models::ActionResult, paths::read_instances};
 
 /// Inspect a zip to decide whether it is a shaderpack or a resource pack.
-fn classify_zip(path: &Path) -> Result<&'static str, String> {
-    let file = File::open(path).map_err(|e| format!("open zip error: {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|e| format!("invalid zip archive: {e}"))?;
+fn classify_zip(path: &Path) -> Result<&'static str, CommandError> {
+    let file = File::open(path).map_err(|e| {
+        let detail = format!("open zip error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|e| {
+        let detail = format!("invalid zip archive: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|e| format!("read zip entry error: {e}"))?;
+        let entry = archive.by_index(index).map_err(|e| {
+            let detail = format!("read zip entry error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if entry
             .name()
             .replace(char::from(92), "/")
@@ -39,7 +47,7 @@ fn classify_zip(path: &Path) -> Result<&'static str, String> {
 
 /// Target sub-folder for a dropped file, or `None` if the extension is not a
 /// content file we know how to route.
-fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
+fn target_subdir(path: &Path) -> Result<Option<&'static str>, CommandError> {
     let ext = path
         .extension()
         .and_then(|value| value.to_str())
@@ -56,15 +64,15 @@ fn target_subdir(path: &Path) -> Result<Option<&'static str>, String> {
 pub async fn install_dropped_content(
     instance_id: String,
     paths: Vec<String>,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = read_instances()
             .await?
             .into_iter()
             .find(|item| item.id == instance_id)
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
         tokio::task::spawn_blocking(move || {
             let _operation = _operation;
             let _instance_guard = _instance_guard;
@@ -88,19 +96,25 @@ pub async fn install_dropped_content(
                 };
 
                 let dest_dir = game_dir.join(subdir);
-                fs::create_dir_all(&dest_dir)
-                    .map_err(|e| format!("create {subdir} dir error: {e}"))?;
+                fs::create_dir_all(&dest_dir).map_err(|e| {
+                    let detail = format!("create {subdir} dir error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
                 if !transactions.contains_key(subdir) {
                     transactions.insert(
                         subdir,
                         crate::file_transaction::FileTransaction::new(&dest_dir)?,
                     );
                 }
-                let transaction = transactions
-                    .get_mut(subdir)
-                    .ok_or("Missing content transaction")?;
+                let transaction = transactions.get_mut(subdir).ok_or(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Missing content transaction",
+                ))?;
                 let staged = transaction.staged(&filename);
-                fs::copy(&source, &staged).map_err(|e| format!("copy {filename} error: {e}"))?;
+                fs::copy(&source, &staged).map_err(|e| {
+                    let detail = format!("copy {filename} error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
                 transaction.replace(&staged, &filename)?;
                 installed += 1;
             }
@@ -124,8 +138,11 @@ pub async fn install_dropped_content(
             })
         })
         .await
-        .map_err(|e| format!("content installation task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("content installation task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }

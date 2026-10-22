@@ -6,6 +6,7 @@
 //! "auto download Java" setting on; otherwise launching falls back to whatever is
 //! on `PATH`, exactly as before.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -27,7 +28,7 @@ fn adoptium_url(major: u32) -> String {
 
 /// A download client that follows the user's proxy but allows a long timeout —
 /// a JRE archive is ~45 MB and the shared 60s client can time out mid-download.
-fn download_client() -> Result<Client, String> {
+fn download_client() -> Result<Client, CommandError> {
     let config = mirrors::current_config();
     let mut builder = Client::builder()
         .user_agent("ScreenLauncher/0.1.0")
@@ -43,9 +44,10 @@ fn download_client() -> Result<Client, String> {
         builder = builder.proxy(proxy);
     }
 
-    builder
-        .build()
-        .map_err(|e| format!("java download client error: {e}"))
+    builder.build().map_err(|e| {
+        let detail = format!("java download client error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 /// Join `relative` (a zip entry name) onto `base`, rejecting any `..`/absolute
@@ -62,37 +64,56 @@ fn safe_join(base: &Path, relative: &str) -> Option<PathBuf> {
     Some(out)
 }
 
-fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<(), String> {
+fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<(), CommandError> {
     // Start from a clean directory so a half-finished prior attempt can't linger.
     if target_dir.exists() {
-        std::fs::remove_dir_all(target_dir).map_err(|e| format!("clear java dir error: {e}"))?;
+        std::fs::remove_dir_all(target_dir).map_err(|e| {
+            let detail = format!("clear java dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
-    std::fs::create_dir_all(target_dir).map_err(|e| format!("create java dir error: {e}"))?;
+    std::fs::create_dir_all(target_dir).map_err(|e| {
+        let detail = format!("create java dir error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     let reader = std::io::Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(reader).map_err(|e| format!("open java archive error: {e}"))?;
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+        let detail = format!("open java archive error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|e| format!("read java archive entry error: {e}"))?;
+        let mut entry = archive.by_index(index).map_err(|e| {
+            let detail = format!("read java archive entry error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         let Some(out_path) = safe_join(target_dir, entry.name()) else {
             continue;
         };
 
         if entry.is_dir() {
-            std::fs::create_dir_all(&out_path)
-                .map_err(|e| format!("create java dir error: {e}"))?;
+            std::fs::create_dir_all(&out_path).map_err(|e| {
+                let detail = format!("create java dir error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             continue;
         }
 
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("create java dir error: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                let detail = format!("create java dir error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
-        let mut out =
-            std::fs::File::create(&out_path).map_err(|e| format!("write java file error: {e}"))?;
-        std::io::copy(&mut entry, &mut out).map_err(|e| format!("extract java file error: {e}"))?;
+        let mut out = std::fs::File::create(&out_path).map_err(|e| {
+            let detail = format!("write java file error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| {
+            let detail = format!("extract java file error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
 
     Ok(())
@@ -100,7 +121,7 @@ fn extract_zip(bytes: &[u8], target_dir: &Path) -> Result<(), String> {
 
 /// Download and unpack a managed Java `major` if it isn't already present.
 /// Returns the path to its `javaw.exe`.
-pub async fn ensure_managed_java(app: &AppHandle, major: u32) -> Result<String, String> {
+pub async fn ensure_managed_java(app: &AppHandle, major: u32) -> Result<String, CommandError> {
     if let Some(bin) = managed_java_bin(major) {
         return Ok(bin);
     }
@@ -110,32 +131,42 @@ pub async fn ensure_managed_java(app: &AppHandle, major: u32) -> Result<String, 
 
     let client = download_client()?;
     let url = adoptium_url(major);
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("java download error: {e}"))?;
+    let response = client.get(&url).send().await.map_err(|e| {
+        let detail = format!("java download error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     if !response.status().is_success() {
-        return Err(format!(
-            "java download failed (http {}) for {url}",
-            response.status()
+        return Err(CommandError::new(
+            ErrorCode::JavaFailed,
+            format!(
+                "java download failed (http {}) for {url}",
+                response.status()
+            ),
         ));
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("read java download error: {e}"))?;
+    let bytes = response.bytes().await.map_err(|e| {
+        let detail = format!("read java download error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     reporter.step(format!("Unpacking Java {major}"));
 
     let target_dir = java_runtimes_root()?.join(major.to_string());
     tokio::task::spawn_blocking(move || extract_zip(&bytes, &target_dir))
         .await
-        .map_err(|e| format!("java unpack task error: {e}"))??;
+        .map_err(|e| {
+            let detail = format!("java unpack task error: {e}");
+            CommandError::from(e).context(detail)
+        })??;
 
     reporter.step(format!("Java {major} ready"));
 
-    managed_java_bin(major).ok_or_else(|| format!("Java {major} unpacked but javaw.exe is missing"))
+    managed_java_bin(major).ok_or_else(|| {
+        CommandError::new(
+            ErrorCode::JavaMissing,
+            format!("Java {major} unpacked but javaw.exe is missing"),
+        )
+    })
 }
 
 /// Ensure a usable Java exists for this build before launch. No-op when the build
@@ -145,7 +176,7 @@ pub async fn ensure_java_for_instance(
     app: &AppHandle,
     instance: &InstanceItem,
     auto_download: bool,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let has_override = instance
         .java_path
         .as_deref()

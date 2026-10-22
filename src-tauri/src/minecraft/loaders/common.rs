@@ -1,5 +1,6 @@
 //! Shared helpers used by every loader backend.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{cmp::Ordering, collections::HashSet, path::PathBuf, process::Command};
 
 #[cfg(windows)]
@@ -22,14 +23,17 @@ pub(super) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// A loader version string may only contain characters that are safe to splice
 /// into a URL or a path segment.
-pub(super) fn validate_loader_version(version: &str) -> Result<&str, String> {
+pub(super) fn validate_loader_version(version: &str) -> Result<&str, CommandError> {
     let clean = version.trim();
     if clean.is_empty()
         || !clean
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_' | '+'))
     {
-        return Err("Invalid loader version".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Invalid loader version",
+        ));
     }
     Ok(clean)
 }
@@ -80,17 +84,22 @@ struct MavenVersions {
 pub(super) async fn fetch_maven_versions(
     client: &Client,
     metadata_url: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     let response = mirrors::get_with_fallback(client, metadata_url).await?;
     if !response.status().is_success() {
-        return Err(format!("maven metadata http error: {}", response.status()));
+        return Err(CommandError::new(
+            ErrorCode::Network,
+            format!("maven metadata http error: {}", response.status()),
+        ));
     }
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("maven metadata body error: {e}"))?;
-    let metadata: MavenMetadata =
-        from_xml_str(&body).map_err(|e| format!("maven metadata parse error: {e}"))?;
+    let body = response.text().await.map_err(|e| {
+        let detail = format!("maven metadata body error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let metadata: MavenMetadata = from_xml_str(&body).map_err(|e| {
+        let detail = format!("maven metadata parse error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     Ok(metadata.versioning.versions.items)
 }
 
@@ -118,29 +127,37 @@ pub(super) async fn download_verified_installer(
     client: &Client,
     jar_url: &str,
     cache_path: &PathBuf,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create installer cache error: {e}"))?;
+        fs::create_dir_all(parent).await.map_err(|e| {
+            let detail = format!("create installer cache error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
 
     let expected_sha1 = mirrors::get_with_fallback(client, &format!("{jar_url}.sha1"))
         .await?
         .error_for_status()
-        .map_err(|e| format!("installer checksum http error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("installer checksum http error: {e}");
+            CommandError::from(e).context(detail)
+        })?
         .text()
         .await
-        .map_err(|e| format!("installer checksum body error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("installer checksum body error: {e}");
+            CommandError::from(e).context(detail)
+        })?
         .split_whitespace()
         .next()
         .unwrap_or_default()
         .to_string();
 
     let valid_cached = if cache_path.exists() {
-        let bytes = fs::read(cache_path)
-            .await
-            .map_err(|e| format!("read cached installer error: {e}"))?;
+        let bytes = fs::read(cache_path).await.map_err(|e| {
+            let detail = format!("read cached installer error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         format!("{:x}", Sha1::digest(&bytes)).eq_ignore_ascii_case(&expected_sha1)
     } else {
         false
@@ -152,17 +169,27 @@ pub(super) async fn download_verified_installer(
     let bytes = mirrors::get_with_fallback(client, jar_url)
         .await?
         .error_for_status()
-        .map_err(|e| format!("installer http error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("installer http error: {e}");
+            CommandError::from(e).context(detail)
+        })?
         .bytes()
         .await
-        .map_err(|e| format!("installer body error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("installer body error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     let actual_sha1 = format!("{:x}", Sha1::digest(&bytes));
     if !expected_sha1.is_empty() && !actual_sha1.eq_ignore_ascii_case(&expected_sha1) {
-        return Err("installer checksum mismatch".to_string());
+        return Err(CommandError::new(
+            ErrorCode::ChecksumMismatch,
+            "installer checksum mismatch",
+        ));
     }
-    fs::write(cache_path, &bytes)
-        .await
-        .map_err(|e| format!("write installer error: {e}"))
+    fs::write(cache_path, &bytes).await.map_err(|e| {
+        let detail = format!("write installer error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 /// Run a Forge/NeoForge-style headless client installer (`--install-client <dir>`).
@@ -170,13 +197,16 @@ pub(super) async fn download_verified_installer(
 pub(super) async fn run_client_installer(
     installer: PathBuf,
     java_console: PathBuf,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let root = shared_root()?;
     let profiles = root.join("launcher_profiles.json");
     if !profiles.exists() {
         fs::write(&profiles, b"{\"profiles\":{}}")
             .await
-            .map_err(|e| format!("create launcher profile stub error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("create launcher profile stub error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
     }
 
     let output = tokio::task::spawn_blocking(move || {
@@ -191,8 +221,14 @@ pub(super) async fn run_client_installer(
         command.output()
     })
     .await
-    .map_err(|e| format!("installer task failed: {e}"))?
-    .map_err(|e| format!("start installer error: {e}"))?;
+    .map_err(|e| {
+        let detail = format!("installer task failed: {e}");
+        CommandError::from(e).context(detail)
+    })?
+    .map_err(|e| {
+        let detail = format!("start installer error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     if !output.status.success() {
         let details = format!(
@@ -208,14 +244,20 @@ pub(super) async fn run_client_installer(
             .chars()
             .rev()
             .collect::<String>();
-        return Err(format!("installer failed: {}", tail.trim()));
+        return Err(CommandError::new(
+            ErrorCode::Unknown,
+            format!("installer failed: {}", tail.trim()),
+        ));
     }
     Ok(())
 }
 
 /// Marker written next to a cached installer once its profile has been produced,
 /// so we don't re-run the installer on every launch.
-pub(super) fn installer_marker(loader: &str, loader_version: &str) -> Result<PathBuf, String> {
+pub(super) fn installer_marker(
+    loader: &str,
+    loader_version: &str,
+) -> Result<PathBuf, CommandError> {
     Ok(launcher_root()?
         .join("cache")
         .join("loaders")
@@ -224,15 +266,17 @@ pub(super) fn installer_marker(loader: &str, loader_version: &str) -> Result<Pat
         .join("installed.ok"))
 }
 
-pub(super) async fn write_marker(marker: &PathBuf) -> Result<(), String> {
+pub(super) async fn write_marker(marker: &PathBuf) -> Result<(), CommandError> {
     if let Some(parent) = marker.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create installer marker directory error: {e}"))?;
+        fs::create_dir_all(parent).await.map_err(|e| {
+            let detail = format!("create installer marker directory error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
-    fs::write(marker, b"ok")
-        .await
-        .map_err(|e| format!("write installer marker error: {e}"))
+    fs::write(marker, b"ok").await.map_err(|e| {
+        let detail = format!("write installer marker error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     future::Future,
@@ -35,7 +36,7 @@ pub(super) fn version_is_compatible(
 fn required_request(
     dependency: &ModrinthDependency,
     available_files: &HashSet<String>,
-) -> Result<Option<VersionRequest>, String> {
+) -> Result<Option<VersionRequest>, CommandError> {
     if let Some(id) = dependency.version_id.as_deref().filter(|id| !id.is_empty()) {
         return Ok(Some(VersionRequest::Exact(id.to_string())));
     }
@@ -46,11 +47,17 @@ fn required_request(
         if available_files.contains(filename) {
             return Ok(None);
         }
-        return Err(format!(
-            "Обязательная зависимость {filename} отсутствует и не содержит ссылки на Modrinth"
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "Обязательная зависимость {filename} отсутствует и не содержит ссылки на Modrinth"
+            ),
         ));
     }
-    Err("У обязательной зависимости отсутствует проект или версия Modrinth".to_string())
+    Err(CommandError::new(
+        ErrorCode::InvalidFile,
+        "У обязательной зависимости отсутствует проект или версия Modrinth",
+    ))
 }
 
 /// Resolve the entire required graph before downloading anything. Exact version
@@ -62,10 +69,10 @@ pub(super) async fn resolve_required_versions<F, Fut>(
     loaders: &[&str],
     available_files: &HashSet<String>,
     mut fetch: F,
-) -> Result<Vec<InstallPlanEntry>, String>
+) -> Result<Vec<InstallPlanEntry>, CommandError>
 where
     F: FnMut(VersionRequest) -> Fut,
-    Fut: Future<Output = Result<ModrinthVersion, String>>,
+    Fut: Future<Output = Result<ModrinthVersion, CommandError>>,
 {
     let root_project = root.project_id.clone();
     let root_version = root.id.clone();
@@ -78,28 +85,34 @@ where
     loop {
         if let Some((request, version)) = pending.pop_front() {
             if version.id.is_empty() || version.project_id.is_empty() {
-                return Err(
-                    "Modrinth вернул зависимость без идентификатора проекта или версии".into(),
-                );
+                return Err(CommandError::new(
+                    ErrorCode::InvalidFile,
+                    "Modrinth вернул зависимость без идентификатора проекта или версии",
+                ));
             }
             if !version_is_compatible(&version, game_version, loaders) {
-                return Err(format!(
+                return Err(CommandError::new(
+                    ErrorCode::IncompatibleVersion,
+                    format!(
                     "Версия {} мода {} несовместима с Minecraft {game_version} и загрузчиком {}",
                     version.version_number,
                     version.project_id,
                     loaders.join(", ")
+                ),
                 ));
             }
             if let Some(request) = request {
                 match &request {
                     VersionRequest::Exact(id) if *id != version.id => {
-                        return Err(format!(
-                            "Modrinth вернул другую версию вместо обязательной {id}"
+                        return Err(CommandError::new(
+                            ErrorCode::InvalidFile,
+                            format!("Modrinth вернул другую версию вместо обязательной {id}"),
                         ));
                     }
                     VersionRequest::Project(id) if *id != version.project_id => {
-                        return Err(format!(
-                            "Modrinth вернул другой проект вместо зависимости {id}"
+                        return Err(CommandError::new(
+                            ErrorCode::InvalidFile,
+                            format!("Modrinth вернул другой проект вместо зависимости {id}"),
                         ));
                     }
                     _ => {}
@@ -158,49 +171,64 @@ where
         if !visited.insert(project_id.clone()) {
             continue;
         }
-        let version = selected
-            .get(&project_id)
-            .ok_or_else(|| format!("Не удалось найти обязательную зависимость {project_id}"))?;
+        let version = selected.get(&project_id).ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Не удалось найти обязательную зависимость {project_id}"),
+            )
+        })?;
         if project_id == root_project && version.id != root_version {
-            return Err("Зависимости требуют другую версию устанавливаемого мода".into());
+            return Err(CommandError::new(
+                ErrorCode::IncompatibleVersion,
+                "Зависимости требуют другую версию устанавливаемого мода",
+            ));
         }
         let mut dependencies = Vec::new();
         for dependency in &version.dependencies {
             if dependency.dependency_type != "required" {
                 continue;
             }
-            let Some(request) = required_request(dependency, available_files)
-                .map_err(|error| format!("{}: {error}", version.name))?
+            let Some(request) = required_request(dependency, available_files).map_err(|error| {
+                let detail = format!("{}: {error}", version.name);
+                error.context(detail)
+            })?
             else {
                 continue;
             };
             let dependency_project = match &request {
                 VersionRequest::Project(id) => id,
                 VersionRequest::Exact(id) => {
-                    let pinned = resolved
-                        .get(&request)
-                        .ok_or_else(|| format!("Не удалось найти обязательную версию {id}"))?;
+                    let pinned = resolved.get(&request).ok_or_else(|| {
+                        CommandError::new(
+                            ErrorCode::InvalidInput,
+                            format!("Не удалось найти обязательную версию {id}"),
+                        )
+                    })?;
                     if dependency
                         .project_id
                         .as_deref()
                         .filter(|id| !id.is_empty())
                         .is_some_and(|id| id != pinned.project_id)
                     {
-                        return Err(format!(
-                            "Версия {id} принадлежит другому проекту зависимости"
+                        return Err(CommandError::new(
+                            ErrorCode::InvalidFile,
+                            format!("Версия {id} принадлежит другому проекту зависимости"),
                         ));
                     }
                     let chosen = selected.get(&pinned.project_id).ok_or_else(|| {
-                        format!(
-                            "Не удалось выбрать версию зависимости {}",
-                            pinned.project_id
+                        CommandError::new(
+                            ErrorCode::InvalidInput,
+                            format!(
+                                "Не удалось выбрать версию зависимости {}",
+                                pinned.project_id
+                            ),
                         )
                     })?;
                     if chosen.id != *id {
-                        return Err(format!(
+                        return Err(CommandError::new(ErrorCode::IncompatibleVersion, format!(
                             "Конфликт зависимостей: {} требует версию {id} мода {}, а другой мод требует {}",
                             version.name, pinned.project_id, chosen.id
-                        ));
+                        )));
                     }
                     &pinned.project_id
                 }
@@ -247,13 +275,16 @@ mod tests {
     async fn resolve(
         root: ModrinthVersion,
         fixtures: Vec<(VersionRequest, ModrinthVersion)>,
-    ) -> Result<Vec<InstallPlanEntry>, String> {
+    ) -> Result<Vec<InstallPlanEntry>, CommandError> {
         let mut fixtures: HashMap<_, _> = fixtures.into_iter().collect();
         resolve_required_versions(root, "1.21.1", &["fabric"], &HashSet::new(), |request| {
             // Removing fixtures also proves shared/cyclic dependencies are fetched once.
-            let result = fixtures
-                .remove(&request)
-                .ok_or_else(|| format!("Missing fixture {request:?}"));
+            let result = fixtures.remove(&request).ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    format!("Missing fixture {request:?}"),
+                )
+            });
             async move { result }
         })
         .await
@@ -430,7 +461,8 @@ mod tests {
         .await
         .err()
         .unwrap();
-        assert!(error.contains("Конфликт зависимостей"));
+        assert_eq!(error.code, ErrorCode::IncompatibleVersion);
+        assert!(error.detail.contains("Конфликт зависимостей"));
     }
 
     #[tokio::test]
@@ -447,6 +479,7 @@ mod tests {
             .await
             .err()
             .unwrap()
+            .detail
             .contains("external.jar"));
     }
 
@@ -466,6 +499,7 @@ mod tests {
                     .await
                     .err()
                     .unwrap()
+                    .detail
                     .contains("несовместима")
             );
         }

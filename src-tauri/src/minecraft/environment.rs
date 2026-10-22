@@ -1,20 +1,25 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::collections::{HashMap, HashSet};
 
 /// Instance overrides are passed to the child process; the launcher keeps its environment.
 pub fn normalize_environment_variables(
     values: HashMap<String, String>,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<HashMap<String, String>, CommandError> {
     let mut normalized = HashMap::new();
     let mut names = HashSet::new();
     for (name, value) in values {
         let name = name.trim();
         if name.is_empty() || name.contains(['=', '\0']) {
-            return Err(
-                "Имя переменной окружения не должно быть пустым или содержать = / NUL".into(),
-            );
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Имя переменной окружения не должно быть пустым или содержать = / NUL",
+            ));
         }
         if value.contains('\0') {
-            return Err(format!("Значение переменной {name} содержит NUL"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Значение переменной {name} содержит NUL"),
+            ));
         }
         // Windows environment names are case-insensitive. Reject ambiguous imports too.
         let key = if cfg!(windows) {
@@ -23,7 +28,10 @@ pub fn normalize_environment_variables(
             name.to_string()
         };
         if !names.insert(key) {
-            return Err(format!("Переменная окружения {name} указана несколько раз"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Переменная окружения {name} указана несколько раз"),
+            ));
         }
         normalized.insert(name.to_string(), value);
     }
@@ -56,10 +64,10 @@ mod tests {
             ("A\0", "value"),
             ("A", "v\0"),
         ] {
-            assert!(
+            let error =
                 normalize_environment_variables(HashMap::from([(name.into(), value.into())]))
-                    .is_err()
-            );
+                    .unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidInput);
         }
     }
 

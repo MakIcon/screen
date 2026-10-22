@@ -1,5 +1,4 @@
 const { PlayerState } = require('prismarine-physics');
-const { Vec3 } = require('vec3');
 const { toNotchianYaw, toNotchianPitch } = require('mineflayer/lib/conversions');
 const { waterDrop } = require('./pathfinder.cjs');
 const { carriedItems, queueInventoryTask } = require('./combat-inventory.cjs');

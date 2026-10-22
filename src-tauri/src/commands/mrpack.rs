@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self as std_fs, File},
@@ -106,11 +107,14 @@ struct MrpackBundle {
     override_paths: Vec<String>,
 }
 
-fn safe_relative_path(raw: &str) -> Result<PathBuf, String> {
+fn safe_relative_path(raw: &str) -> Result<PathBuf, CommandError> {
     let normalized = raw.replace('\\', "/");
     let path = Path::new(&normalized);
     if path.is_absolute() {
-        return Err(format!("absolute path is not allowed in mrpack: {raw}"));
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!("absolute path is not allowed in mrpack: {raw}"),
+        ));
     }
 
     let mut safe = PathBuf::new();
@@ -118,12 +122,20 @@ fn safe_relative_path(raw: &str) -> Result<PathBuf, String> {
         match component {
             Component::Normal(part) => safe.push(part),
             Component::CurDir => {}
-            _ => return Err(format!("unsafe path in mrpack: {raw}")),
+            _ => {
+                return Err(CommandError::new(
+                    ErrorCode::InvalidFile,
+                    format!("unsafe path in mrpack: {raw}"),
+                ))
+            }
         }
     }
 
     if safe.as_os_str().is_empty() {
-        return Err("empty path in mrpack".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "empty path in mrpack",
+        ));
     }
     Ok(safe)
 }
@@ -186,7 +198,7 @@ fn bytes_match_hashes(bytes: &[u8], hashes: &HashMap<String, String>) -> bool {
 
 fn loader_from_dependencies(
     dependencies: &BTreeMap<String, String>,
-) -> Result<(String, Option<String>), String> {
+) -> Result<(String, Option<String>), CommandError> {
     let declared = [
         ("fabric-loader", LoaderKind::Fabric),
         ("quilt-loader", LoaderKind::Quilt),
@@ -197,7 +209,10 @@ fn loader_from_dependencies(
     .filter_map(|(key, loader)| dependencies.get(key).map(|version| (loader, version)))
     .collect::<Vec<_>>();
     if declared.len() > 1 {
-        return Err("mrpack declares multiple mod loaders".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidFile,
+            "mrpack declares multiple mod loaders",
+        ));
     }
     Ok(declared
         .first()
@@ -213,14 +228,19 @@ fn loader_from_dependencies(
 fn loader_dependency(
     loader: &str,
     loader_version: Option<&str>,
-) -> Result<Option<(String, String)>, String> {
+) -> Result<Option<(String, String)>, CommandError> {
     let kind = LoaderKind::parse(loader)?;
     if !kind.requires_version() {
         return Ok(None);
     }
     let version = loader_version
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| format!("{} loader version is missing", kind.canonical_name()))?;
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("{} loader version is missing", kind.canonical_name()),
+            )
+        })?;
     let key = match kind {
         LoaderKind::Fabric => "fabric-loader",
         LoaderKind::Quilt => "quilt-loader",
@@ -231,55 +251,83 @@ fn loader_dependency(
     Ok(Some((key.to_string(), version.to_string())))
 }
 
-fn validate_index(index: &MrpackIndex) -> Result<(), String> {
+fn validate_index(index: &MrpackIndex) -> Result<(), CommandError> {
     if index.format_version != 1 {
-        return Err(format!(
-            "Unsupported mrpack format version: {}",
-            index.format_version
+        return Err(CommandError::new(
+            ErrorCode::Unsupported,
+            format!(
+                "Unsupported mrpack format version: {}",
+                index.format_version
+            ),
         ));
     }
     if !index.game.eq_ignore_ascii_case("minecraft") {
-        return Err(format!("Unsupported mrpack game: {}", index.game));
+        return Err(CommandError::new(
+            ErrorCode::Unsupported,
+            format!("Unsupported mrpack game: {}", index.game),
+        ));
     }
     if !index.dependencies.contains_key("minecraft") {
-        return Err("mrpack does not declare a Minecraft version".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidFile,
+            "mrpack does not declare a Minecraft version",
+        ));
     }
     loader_from_dependencies(&index.dependencies)?;
     for file in &index.files {
         safe_relative_path(&file.path)?;
         if file.downloads.is_empty() {
-            return Err(format!("mrpack file has no download URL: {}", file.path));
+            return Err(CommandError::new(
+                ErrorCode::InvalidFile,
+                format!("mrpack file has no download URL: {}", file.path),
+            ));
         }
         if !file.hashes.contains_key("sha1") && !file.hashes.contains_key("sha512") {
-            return Err(format!("mrpack file has no supported hash: {}", file.path));
+            return Err(CommandError::new(
+                ErrorCode::InvalidFile,
+                format!("mrpack file has no supported hash: {}", file.path),
+            ));
         }
     }
     Ok(())
 }
 
-fn read_bundle(path: &Path) -> Result<MrpackBundle, String> {
-    let file = File::open(path).map_err(|e| format!("open mrpack error: {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|e| format!("invalid mrpack archive: {e}"))?;
+fn read_bundle(path: &Path) -> Result<MrpackBundle, CommandError> {
+    let file = File::open(path).map_err(|e| {
+        let detail = format!("open mrpack error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|e| {
+        let detail = format!("invalid mrpack archive: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     let index = {
-        let mut entry = archive
-            .by_name(INDEX_FILE)
-            .map_err(|_| "mrpack is missing modrinth.index.json".to_string())?;
+        let mut entry = archive.by_name(INDEX_FILE).map_err(|_| {
+            CommandError::new(
+                ErrorCode::InvalidFile,
+                "mrpack is missing modrinth.index.json",
+            )
+        })?;
         let mut raw = String::new();
-        entry
-            .read_to_string(&mut raw)
-            .map_err(|e| format!("read mrpack index error: {e}"))?;
-        serde_json::from_str::<MrpackIndex>(&raw)
-            .map_err(|e| format!("parse mrpack index error: {e}"))?
+        entry.read_to_string(&mut raw).map_err(|e| {
+            let detail = format!("read mrpack index error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        serde_json::from_str::<MrpackIndex>(&raw).map_err(|e| {
+            let detail = format!("parse mrpack index error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     };
     validate_index(&index)?;
 
     let screen_meta = match archive.by_name(SCREEN_META_FILE) {
         Ok(mut entry) => {
             let mut raw = String::new();
-            entry
-                .read_to_string(&mut raw)
-                .map_err(|e| format!("read ScreenLauncher metadata error: {e}"))?;
+            entry.read_to_string(&mut raw).map_err(|e| {
+                let detail = format!("read ScreenLauncher metadata error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             serde_json::from_str::<InstanceExportData>(&raw).ok()
         }
         Err(_) => None,
@@ -287,9 +335,10 @@ fn read_bundle(path: &Path) -> Result<MrpackBundle, String> {
 
     let mut override_paths = Vec::new();
     for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|e| format!("read mrpack entry error: {e}"))?;
+        let entry = archive.by_index(index).map_err(|e| {
+            let detail = format!("read mrpack entry error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if entry.is_dir() {
             continue;
         }
@@ -320,14 +369,19 @@ fn item_from_path(path: &str) -> ExportedItem {
     }
 }
 
-fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
+fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, CommandError> {
     let (loader, loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
     let version = bundle
         .index
         .dependencies
         .get("minecraft")
         .cloned()
-        .ok_or_else(|| "mrpack does not declare a Minecraft version".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidFile,
+                "mrpack does not declare a Minecraft version",
+            )
+        })?;
 
     let mut mods = Vec::new();
     let mut shaders = Vec::new();
@@ -375,41 +429,49 @@ fn bundle_summary(bundle: MrpackBundle) -> Result<InstanceExportData, String> {
 }
 
 #[tauri::command]
-pub async fn read_slbuild_file(
-    path: String,
-) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        let raw = fs::read_to_string(&path)
-            .await
-            .map_err(|e| format!("read .slbuild error: {e}"))?;
-        let data: InstanceExportData =
-            serde_json::from_str(&raw).map_err(|e| format!("parse .slbuild error: {e}"))?;
+pub async fn read_slbuild_file(path: String) -> Result<InstanceExportData, CommandError> {
+    let result: Result<_, CommandError> = async {
+        let raw = fs::read_to_string(&path).await.map_err(|e| {
+            let detail = format!("read .slbuild error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        let data: InstanceExportData = serde_json::from_str(&raw).map_err(|e| {
+            let detail = format!("parse .slbuild error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if data.version.trim().is_empty() || data.loader.trim().is_empty() {
-            return Err("Invalid .slbuild: version or loader is missing".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidFile,
+                "Invalid .slbuild: version or loader is missing",
+            ));
         }
         if data.schema_version == 0 || data.schema_version > 2 {
-            return Err(format!(
-                "Unsupported .slbuild schema version: {}",
-                data.schema_version
+            return Err(CommandError::new(
+                ErrorCode::Unsupported,
+                format!(
+                    "Unsupported .slbuild schema version: {}",
+                    data.schema_version
+                ),
             ));
         }
         Ok(data)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn inspect_mrpack(
-    path: String,
-) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn inspect_mrpack(path: String) -> Result<InstanceExportData, CommandError> {
+    let result: Result<_, CommandError> = async {
         tokio::task::spawn_blocking(move || read_bundle(Path::new(&path)).and_then(bundle_summary))
             .await
-            .map_err(|e| format!("mrpack inspection task failed: {e}"))?
+            .map_err(|e| {
+                let detail = format!("mrpack inspection task failed: {e}");
+                CommandError::from(e).context(detail)
+            })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn read_state(path: &Path) -> HashMap<String, InstalledModEntry> {
@@ -520,14 +582,19 @@ fn add_overrides_to_zip(
     indexed: &HashSet<String>,
     export_options: &MrpackExportOptions,
     zip_options: SimpleFileOptions,
-) -> Result<(), String> {
-    for entry in
-        std_fs::read_dir(current).map_err(|e| format!("read build directory error: {e}"))?
-    {
-        let entry = entry.map_err(|e| format!("read build entry error: {e}"))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| format!("read build entry type error: {e}"))?;
+) -> Result<(), CommandError> {
+    for entry in std_fs::read_dir(current).map_err(|e| {
+        let detail = format!("read build directory error: {e}");
+        CommandError::from(e).context(detail)
+    })? {
+        let entry = entry.map_err(|e| {
+            let detail = format!("read build entry error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        let file_type = entry.file_type().map_err(|e| {
+            let detail = format!("read build entry type error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if file_type.is_symlink() {
             continue;
         }
@@ -540,18 +607,30 @@ fn add_overrides_to_zip(
             continue;
         }
 
-        let relative_path = path
-            .strip_prefix(game_dir)
-            .map_err(|e| format!("resolve build path error: {e}"))?;
+        let relative_path = path.strip_prefix(game_dir).map_err(|e| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("resolve build path error: {e}"),
+            )
+        })?;
         let relative = normalized_relative(relative_path);
         if should_skip_override(&relative, indexed, export_options) {
             continue;
         }
 
         zip.start_file(format!("{OVERRIDES_PREFIX}{relative}"), zip_options)
-            .map_err(|e| format!("start mrpack override error: {e}"))?;
-        let mut source = File::open(&path).map_err(|e| format!("open build file error: {e}"))?;
-        std::io::copy(&mut source, zip).map_err(|e| format!("write mrpack override error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("start mrpack override error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
+        let mut source = File::open(&path).map_err(|e| {
+            let detail = format!("open build file error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        std::io::copy(&mut source, zip).map_err(|e| {
+            let detail = format!("write mrpack override error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
     Ok(())
 }
@@ -561,15 +640,15 @@ pub async fn export_instance_mrpack(
     instance_id: String,
     output_path: String,
     options: MrpackExportOptions,
-) -> Result<String, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<String, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("export", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = read_instances()
             .await?
             .into_iter()
             .find(|value| value.id == instance_id)
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
         let game_dir = PathBuf::from(&instance.game_dir);
         for category in ["mods", "shaderpacks", "resourcepacks"] {
             crate::file_transaction::FileTransaction::recover(&game_dir.join(category))?;
@@ -668,39 +747,56 @@ pub async fn export_instance_mrpack(
             .iter()
             .map(|file| file.path.to_ascii_lowercase())
             .collect::<HashSet<_>>();
-        let index_raw = serde_json::to_vec_pretty(&index)
-            .map_err(|e| format!("serialize mrpack index error: {e}"))?;
-        let meta_raw = serde_json::to_vec_pretty(&screen_meta)
-            .map_err(|e| format!("serialize ScreenLauncher metadata error: {e}"))?;
+        let index_raw = serde_json::to_vec_pretty(&index).map_err(|e| {
+            let detail = format!("serialize mrpack index error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        let meta_raw = serde_json::to_vec_pretty(&screen_meta).map_err(|e| {
+            let detail = format!("serialize ScreenLauncher metadata error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         let game_dir_for_zip = game_dir.clone();
         let options_for_zip = options.clone();
         let output_for_result = output.clone();
 
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
+        tokio::task::spawn_blocking(move || -> Result<(), CommandError> {
             let _operation = _operation;
             let _instance_guard = _instance_guard;
             if let Some(parent) = output.parent() {
-                std_fs::create_dir_all(parent)
-                    .map_err(|e| format!("create mrpack output directory error: {e}"))?;
+                std_fs::create_dir_all(parent).map_err(|e| {
+                    let detail = format!("create mrpack output directory error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
             let temp_path = output.with_extension("mrpack.part");
             if temp_path.exists() {
                 let _ = std_fs::remove_file(&temp_path);
             }
-            let file = File::create(&temp_path).map_err(|e| format!("create mrpack error: {e}"))?;
+            let file = File::create(&temp_path).map_err(|e| {
+                let detail = format!("create mrpack error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             let mut zip = ZipWriter::new(file);
             let zip_options = SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Deflated)
                 .unix_permissions(0o644);
 
-            zip.start_file(INDEX_FILE, zip_options)
-                .map_err(|e| format!("write mrpack index entry error: {e}"))?;
-            zip.write_all(&index_raw)
-                .map_err(|e| format!("write mrpack index error: {e}"))?;
-            zip.start_file(SCREEN_META_FILE, zip_options)
-                .map_err(|e| format!("write ScreenLauncher metadata entry error: {e}"))?;
-            zip.write_all(&meta_raw)
-                .map_err(|e| format!("write ScreenLauncher metadata error: {e}"))?;
+            zip.start_file(INDEX_FILE, zip_options).map_err(|e| {
+                let detail = format!("write mrpack index entry error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
+            zip.write_all(&index_raw).map_err(|e| {
+                let detail = format!("write mrpack index error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
+            zip.start_file(SCREEN_META_FILE, zip_options).map_err(|e| {
+                let detail = format!("write ScreenLauncher metadata entry error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
+            zip.write_all(&meta_raw).map_err(|e| {
+                let detail = format!("write ScreenLauncher metadata error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             add_overrides_to_zip(
                 &mut zip,
                 &game_dir_for_zip,
@@ -709,22 +805,33 @@ pub async fn export_instance_mrpack(
                 &options_for_zip,
                 zip_options,
             )?;
-            zip.finish()
-                .map_err(|e| format!("finish mrpack error: {e}"))?;
+            zip.finish().map_err(|e| {
+                let detail = format!("finish mrpack error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
             if output.exists() {
-                std_fs::remove_file(&output).map_err(|e| format!("replace mrpack error: {e}"))?;
+                std_fs::remove_file(&output).map_err(|e| {
+                    let detail = format!("replace mrpack error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
-            std_fs::rename(&temp_path, &output).map_err(|e| format!("save mrpack error: {e}"))?;
+            std_fs::rename(&temp_path, &output).map_err(|e| {
+                let detail = format!("save mrpack error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             Ok(())
         })
         .await
-        .map_err(|e| format!("mrpack export task failed: {e}"))??;
+        .map_err(|e| {
+            let detail = format!("mrpack export task failed: {e}");
+            CommandError::from(e).context(detail)
+        })??;
 
         Ok(output_for_result.to_string_lossy().to_string())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 fn modrinth_ids(downloads: &[String]) -> Option<(String, String)> {
@@ -759,16 +866,23 @@ fn extract_override_layer_with_progress(
     context: Option<&ImportContext>,
     processed: &mut usize,
     total: usize,
-) -> Result<(), String> {
-    let file = File::open(archive_path).map_err(|e| format!("open mrpack error: {e}"))?;
-    let mut archive = ZipArchive::new(file).map_err(|e| format!("invalid mrpack archive: {e}"))?;
+) -> Result<(), CommandError> {
+    let file = File::open(archive_path).map_err(|e| {
+        let detail = format!("open mrpack error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|e| {
+        let detail = format!("invalid mrpack archive: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     for index in 0..archive.len() {
         if let Some(context) = context {
             context.check()?;
         }
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|e| format!("read mrpack override error: {e}"))?;
+        let mut entry = archive.by_index(index).map_err(|e| {
+            let detail = format!("read mrpack override error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         let name = entry.name().replace('\\', "/");
         let Some(relative) = name.strip_prefix(prefix) else {
             continue;
@@ -786,30 +900,38 @@ fn extract_override_layer_with_progress(
         let safe = safe_relative_path(relative)?;
         let destination = game_dir.join(safe);
         if entry.is_dir() {
-            std_fs::create_dir_all(&destination)
-                .map_err(|e| format!("create mrpack override directory error: {e}"))?;
+            std_fs::create_dir_all(&destination).map_err(|e| {
+                let detail = format!("create mrpack override directory error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             continue;
         }
         if let Some(parent) = destination.parent() {
-            std_fs::create_dir_all(parent)
-                .map_err(|e| format!("create mrpack override parent error: {e}"))?;
+            std_fs::create_dir_all(parent).map_err(|e| {
+                let detail = format!("create mrpack override parent error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
-        let mut output = File::create(&destination)
-            .map_err(|e| format!("create mrpack override file error: {e}"))?;
+        let mut output = File::create(&destination).map_err(|e| {
+            let detail = format!("create mrpack override file error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         let mut buffer = [0u8; 64 * 1024];
         loop {
             if let Some(context) = context {
                 context.check()?;
             }
-            let read = entry
-                .read(&mut buffer)
-                .map_err(|e| format!("read mrpack override error: {e}"))?;
+            let read = entry.read(&mut buffer).map_err(|e| {
+                let detail = format!("read mrpack override error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             if read == 0 {
                 break;
             }
-            output
-                .write_all(&buffer[..read])
-                .map_err(|e| format!("extract mrpack override error: {e}"))?;
+            output.write_all(&buffer[..read]).map_err(|e| {
+                let detail = format!("extract mrpack override error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
         *processed += 1;
         if let Some(context) = context {
@@ -825,14 +947,14 @@ fn extract_override_layer(
     game_dir: &Path,
     prefix: &str,
     options: &MrpackImportOptions,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     extract_override_layer_with_progress(archive_path, game_dir, prefix, options, None, &mut 0, 0)
 }
 
 async fn write_import_state(
     game_dir: &Path,
     state: HashMap<String, HashMap<String, InstalledModEntry>>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let mappings = [
         ("mods", ".screenlauncher-modrinth.json"),
         ("shaderpacks", ".screenlauncher-modrinth-shaderpacks.json"),
@@ -848,8 +970,10 @@ async fn write_import_state(
         if entries.is_empty() {
             continue;
         }
-        let raw = serde_json::to_vec_pretty(entries)
-            .map_err(|e| format!("serialize imported content state error: {e}"))?;
+        let raw = serde_json::to_vec_pretty(entries).map_err(|e| {
+            let detail = format!("serialize imported content state error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         crate::paths::atomic_write_path(&game_dir.join(directory).join(filename), &raw).await?;
     }
     Ok(())
@@ -861,8 +985,8 @@ pub async fn import_mrpack(
     operation_id: String,
     path: String,
     options: MrpackImportOptions,
-) -> Result<InstanceItem, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<InstanceItem, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("import", None)?;
         let context = ImportContext::start(app, operation_id).await?;
         let result = import_mrpack_inner(path, options, &context).await;
@@ -870,14 +994,14 @@ pub async fn import_mrpack(
         result
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn import_mrpack_inner(
     path: String,
     options: MrpackImportOptions,
     context: &ImportContext,
-) -> Result<InstanceItem, String> {
+) -> Result<InstanceItem, CommandError> {
     context.check()?;
     let archive_path = PathBuf::from(&path);
     let bundle = tokio::task::spawn_blocking({
@@ -885,7 +1009,10 @@ async fn import_mrpack_inner(
         move || read_bundle(&archive_path)
     })
     .await
-    .map_err(|e| format!("mrpack read task failed: {e}"))??;
+    .map_err(|e| {
+        let detail = format!("mrpack read task failed: {e}");
+        CommandError::from(e).context(detail)
+    })??;
     context.check()?;
 
     let (loader, loader_version) = loader_from_dependencies(&bundle.index.dependencies)?;
@@ -894,7 +1021,12 @@ async fn import_mrpack_inner(
         .dependencies
         .get("minecraft")
         .cloned()
-        .ok_or_else(|| "mrpack does not declare a Minecraft version".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidFile,
+                "mrpack does not declare a Minecraft version",
+            )
+        })?;
 
     let (item, instance_guard) = create_imported_instance(ImportInstancePayload {
         name: options.name.clone(),
@@ -972,7 +1104,10 @@ async fn import_mrpack_inner(
                 size: file.file_size,
             };
             if integrity.sha1.is_none() && integrity.sha512.is_none() {
-                return Err(format!("Missing mrpack hash metadata: {}", file.path));
+                return Err(CommandError::new(
+                    ErrorCode::InvalidFile,
+                    format!("Missing mrpack hash metadata: {}", file.path),
+                ));
             }
             for url in &file.downloads {
                 let download = crate::downloads::stream_to_path(
@@ -983,9 +1118,7 @@ async fn import_mrpack_inner(
                     |_, _| async { context.check() },
                 );
                 match context.run(download).await {
-                    Err(error) if error == crate::commands::import_progress::IMPORT_CANCELLED => {
-                        return Err(error)
-                    }
+                    Err(error) if error.code == ErrorCode::Cancelled => return Err(error),
                     Ok(()) => {
                         downloaded = true;
                         break;
@@ -994,7 +1127,12 @@ async fn import_mrpack_inner(
                 }
             }
             if !downloaded {
-                return Err(last_error.unwrap_or_else(|| format!("download failed: {}", file.path)));
+                return Err(last_error.unwrap_or_else(|| {
+                    CommandError::new(
+                        ErrorCode::DownloadFailed,
+                        format!("download failed: {}", file.path),
+                    )
+                }));
             }
             processed += 1;
             context.emit("downloading", processed, total, &file.path);
@@ -1062,29 +1200,34 @@ async fn import_mrpack_inner(
                 &mut extracted,
                 total,
             )?;
-            Ok::<usize, String>(extracted)
+            Ok::<usize, CommandError>(extracted)
         })
         .await
-        .map_err(|e| format!("mrpack extraction task failed: {e}"))??;
+        .map_err(|e| {
+            let detail = format!("mrpack extraction task failed: {e}");
+            CommandError::from(e).context(detail)
+        })??;
 
         context.check()?;
         write_import_state(&game_dir, import_state).await?;
-        Ok::<(), String>(())
+        Ok::<(), CommandError>(())
     }
     .await
     .and_then(|_| context.check());
 
     if let Err(error) = result {
         if let Err(cleanup_error) = delete_instance(item.id.clone()).await {
-            return Err(format!(
-                "{error}; failed to discard incomplete build: {cleanup_error}"
+            return Err(CommandError::new(
+                cleanup_error.code,
+                format!("{error}; failed to discard incomplete build: {cleanup_error}"),
             ));
         }
         if let Err(cleanup_error) =
             crate::commands::instances::purge_deleted_instance(item.id.clone()).await
         {
-            return Err(format!(
-                "{error}; failed to remove incomplete build from trash: {cleanup_error}"
+            return Err(CommandError::new(
+                cleanup_error.code,
+                format!("{error}; failed to remove incomplete build from trash: {cleanup_error}"),
             ));
         }
         return Err(error);

@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
@@ -52,7 +53,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub async fn download_libraries(
     app: &AppHandle,
     resolved: &VersionMeta,
-) -> Result<Vec<PathBuf>, String> {
+) -> Result<Vec<PathBuf>, CommandError> {
     let mut classpath_entries = Vec::new();
     let mut tasks = Vec::new();
 
@@ -139,7 +140,7 @@ fn is_memory_argument(arg: &str) -> bool {
     arg.starts_with("-Xmx") || arg.starts_with("-Xms")
 }
 
-fn should_append_client_jar(instance: &InstanceItem) -> Result<bool, String> {
+fn should_append_client_jar(instance: &InstanceItem) -> Result<bool, CommandError> {
     let loader = LoaderKind::parse(&instance.loader)?;
     Ok(!matches!(loader, LoaderKind::NeoForge))
 }
@@ -184,9 +185,12 @@ pub async fn test_java_settings(
     payload: JavaSettingsTestPayload,
     optimized_java_args_enabled: bool,
     game_dir: Option<&str>,
-) -> Result<JavaSettingsTestResult, String> {
+) -> Result<JavaSettingsTestResult, CommandError> {
     if payload.version.trim().is_empty() {
-        return Err("Выберите версию Minecraft перед проверкой Java".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Выберите версию Minecraft перед проверкой Java",
+        ));
     }
     let variables = super::normalize_environment_variables(payload.environment_variables)?;
     let java_bin = payload
@@ -224,8 +228,16 @@ pub async fn test_java_settings(
     command.creation_flags(CREATE_NO_WINDOW);
     let output = tokio::time::timeout(std::time::Duration::from_secs(20), command.output())
         .await
-        .map_err(|_| "Проверка Java не завершилась за 20 секунд; процесс остановлен".to_string())?
-        .map_err(|error| format!("Не удалось запустить Java: {error}"))?;
+        .map_err(|_| {
+            CommandError::new(
+                ErrorCode::JavaFailed,
+                "Проверка Java не завершилась за 20 секунд; процесс остановлен",
+            )
+        })?
+        .map_err(|error| {
+            let detail = format!("Не удалось запустить Java: {error}");
+            CommandError::java(error).context(detail)
+        })?;
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -271,8 +283,11 @@ fn launch_log_path(instance: &InstanceItem) -> PathBuf {
     launch_log_dir(instance).join(format!("screenlauncher-{}.log", crate::paths::now_string()))
 }
 
-fn read_text_tail(path: &PathBuf, limit: usize) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("read log error: {e}"))?;
+fn read_text_tail(path: &PathBuf, limit: usize) -> Result<String, CommandError> {
+    let bytes = fs::read(path).map_err(|e| {
+        let detail = format!("read log error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let start = bytes.len().saturating_sub(limit);
     let prefix = if start > 0 {
         format!("[... trimmed {} bytes ...]\n", start)
@@ -459,12 +474,15 @@ pub async fn build_launch_command(
     ms_account: Option<&MicrosoftAccount>,
     optimized_java_args_enabled: bool,
     extra_jvm_args: &[String],
-) -> Result<(String, Vec<String>), String> {
+) -> Result<(String, Vec<String>), CommandError> {
     let client = mirrors::build_client()?;
     let resolved_version_id = effective_version_id_for_instance(instance)?;
     let resolved = resolve_version_meta(&client, &resolved_version_id).await?;
     let game_dir = PathBuf::from(&instance.game_dir);
-    let instance_dir = game_dir.parent().ok_or("instance dir parent missing")?;
+    let instance_dir = game_dir.parent().ok_or(CommandError::new(
+        ErrorCode::InvalidInput,
+        "instance dir parent missing",
+    ))?;
     let natives_dir = instance_dir.join("natives");
     let logging_path = download_logging_config(app, &resolved).await?;
 
@@ -618,7 +636,10 @@ pub async fn build_launch_command(
     }
     args.extend(jvm_args);
 
-    let main_class = resolved.main_class.clone().ok_or("mainClass missing")?;
+    let main_class = resolved.main_class.clone().ok_or(CommandError::new(
+        ErrorCode::InvalidInput,
+        "mainClass missing",
+    ))?;
     args.push(main_class);
 
     let raw_game_args = if let Some(arguments) = &resolved.arguments {
@@ -695,11 +716,14 @@ pub async fn spawn_minecraft_and_persist(
     instance: &InstanceItem,
     java_bin: String,
     args: Vec<String>,
-) -> Result<u32, String> {
+) -> Result<u32, CommandError> {
     let environment_variables =
         super::normalize_environment_variables(instance.environment_variables.clone())?;
     let log_dir = launch_log_dir(instance);
-    fs::create_dir_all(&log_dir).map_err(|e| format!("create launch log dir error: {e}"))?;
+    fs::create_dir_all(&log_dir).map_err(|e| {
+        let detail = format!("create launch log dir error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     let log_path = launch_log_path(instance);
     let mut header_file = OpenOptions::new()
@@ -707,7 +731,10 @@ pub async fn spawn_minecraft_and_persist(
         .write(true)
         .truncate(true)
         .open(&log_path)
-        .map_err(|e| format!("create launch log error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("create launch log error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     let log_args = redact_sensitive_launch_args(&args);
 
     writeln!(header_file, "ScreenLauncher launch log")
@@ -716,19 +743,28 @@ pub async fn spawn_minecraft_and_persist(
         .and_then(|_| writeln!(header_file, "Java: {java_bin}"))
         .and_then(|_| writeln!(header_file, "Args: {}", log_args.join(" ")))
         .and_then(|_| writeln!(header_file, "\n== Process output =="))
-        .map_err(|e| format!("write launch log header error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("write launch log header error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     drop(header_file);
 
     let stdout_log = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)
-        .map_err(|e| format!("open stdout launch log error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("open stdout launch log error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     let stderr_log = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)
-        .map_err(|e| format!("open stderr launch log error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("open stderr launch log error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
     let mut command = Command::new(&java_bin);
     command
@@ -743,7 +779,10 @@ pub async fn spawn_minecraft_and_persist(
     command.creation_flags(CREATE_NO_WINDOW);
 
     let game_operation = crate::operations::begin("game", Some(&instance.id))?;
-    let mut child = command.spawn().map_err(|e| format!("launch error: {e}"))?;
+    let mut child = command.spawn().map_err(|e| {
+        let detail = format!("launch error: {e}");
+        CommandError::java(e).context(detail)
+    })?;
     let pid = child.id();
     let started_at = Instant::now();
     let started_system_at = SystemTime::now();

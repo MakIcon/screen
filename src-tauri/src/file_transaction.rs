@@ -1,5 +1,6 @@
 //! Small synchronous commit sections cannot be interrupted at an `.await`.
 //! Every displaced file stays in the transaction until metadata is committed.
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::HashSet,
     fs,
@@ -27,13 +28,17 @@ pub(crate) struct FileTransaction {
 }
 
 impl FileTransaction {
-    pub fn new(target: &Path) -> Result<Self, String> {
+    pub fn new(target: &Path) -> Result<Self, CommandError> {
         Self::recover(target)?;
         let directory = target.join(format!(".screenlauncher-install-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(directory.join("staged"))
-            .map_err(|e| format!("create staging directory error: {e}"))?;
-        fs::create_dir(directory.join("rollback"))
-            .map_err(|e| format!("create rollback directory error: {e}"))?;
+        fs::create_dir_all(directory.join("staged")).map_err(|e| {
+            let detail = format!("create staging directory error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        fs::create_dir(directory.join("rollback")).map_err(|e| {
+            let detail = format!("create rollback directory error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         Ok(Self {
             directory,
             target: target.to_owned(),
@@ -48,14 +53,19 @@ impl FileTransaction {
     }
 
     /// Called under the build lock before reading metadata or changing files.
-    pub fn recover(target: &Path) -> Result<(), String> {
+    pub fn recover(target: &Path) -> Result<(), CommandError> {
         let entries = match fs::read_dir(target) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(format!("read transaction directory error: {e}")),
+            Err(e) => {
+                return Err({
+                    let detail = format!("read transaction directory error: {e}");
+                    CommandError::from(e).context(detail)
+                })
+            }
         };
         for entry in entries {
-            let entry = entry.map_err(|e| e.to_string())?;
+            let entry = entry.map_err(CommandError::from)?;
             if !entry
                 .file_name()
                 .to_string_lossy()
@@ -64,16 +74,18 @@ impl FileTransaction {
                 continue;
             }
             let directory = entry.path();
-            let metadata = fs::symlink_metadata(&directory).map_err(|e| e.to_string())?;
+            let metadata = fs::symlink_metadata(&directory).map_err(CommandError::from)?;
             if !metadata.is_dir() || is_link(&metadata) {
                 continue;
             }
             let journal = match fs::read(directory.join("journal.json")) {
                 Ok(raw) => Some(serde_json::from_slice::<Journal>(&raw).map_err(|e| {
-                    format!("read recovery journal {} error: {e}", directory.display())
+                    let detail =
+                        format!("read recovery journal {} error: {e}", directory.display());
+                    CommandError::from(e).context(detail)
                 })?),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(CommandError::from(e)),
             };
             if let Some(journal) = journal {
                 if !journal.committed {
@@ -94,21 +106,26 @@ impl FileTransaction {
                     continue;
                 }
             }
-            fs::remove_dir_all(&directory)
-                .map_err(|e| format!("clean transaction directory error: {e}"))?;
+            fs::remove_dir_all(&directory).map_err(|e| {
+                let detail = format!("clean transaction directory error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
         Ok(())
     }
 
-    fn save_journal(&self, committed: bool) -> Result<(), String> {
+    fn save_journal(&self, committed: bool) -> Result<(), CommandError> {
         let raw = serde_json::to_vec(
             &serde_json::json!({ "changes": self.changes, "committed": committed }),
         )
-        .map_err(|e| format!("serialize rollback journal error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("serialize rollback journal error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         crate::paths::atomic_write_path_sync(&self.directory.join("journal.json"), &raw)
     }
 
-    fn preserve(&mut self, filename: &str, keep_original: bool) -> Result<PathBuf, String> {
+    fn preserve(&mut self, filename: &str, keep_original: bool) -> Result<PathBuf, CommandError> {
         validate_name(filename)?;
         let destination = self.target.join(filename);
         if self.recorded.contains(&destination) {
@@ -117,23 +134,36 @@ impl FileTransaction {
         let backup = match fs::symlink_metadata(&destination) {
             Ok(metadata) => {
                 if !metadata.is_file() || is_link(&metadata) {
-                    return Err(format!("Cannot replace non-file {}", destination.display()));
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        format!("Cannot replace non-file {}", destination.display()),
+                    ));
                 }
                 let name = self.changes.len().to_string();
                 if keep_original {
                     let backup = self.directory.join("rollback").join(&name);
-                    fs::copy(&destination, &backup)
-                        .map_err(|e| format!("back up {} error: {e}", destination.display()))?;
+                    fs::copy(&destination, &backup).map_err(|e| {
+                        let detail = format!("back up {} error: {e}", destination.display());
+                        CommandError::from(e).context(detail)
+                    })?;
                     fs::OpenOptions::new()
                         .write(true)
                         .open(&backup)
                         .and_then(|file| file.sync_all())
-                        .map_err(|e| format!("sync rollback copy error: {e}"))?;
+                        .map_err(|e| {
+                            let detail = format!("sync rollback copy error: {e}");
+                            CommandError::from(e).context(detail)
+                        })?;
                 }
                 Some(name)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(format!("inspect {} error: {e}", destination.display())),
+            Err(e) => {
+                return Err({
+                    let detail = format!("inspect {} error: {e}", destination.display());
+                    CommandError::from(e).context(detail)
+                })
+            }
         };
         self.changes.push(Change {
             filename: filename.to_owned(),
@@ -146,33 +176,43 @@ impl FileTransaction {
         self.recorded.insert(destination.clone());
         if !keep_original {
             if let Some(backup) = backup {
-                fs::rename(&destination, self.directory.join("rollback").join(backup))
-                    .map_err(|e| format!("back up {} error: {e}", destination.display()))?;
+                fs::rename(&destination, self.directory.join("rollback").join(backup)).map_err(
+                    |e| {
+                        let detail = format!("back up {} error: {e}", destination.display());
+                        CommandError::from(e).context(detail)
+                    },
+                )?;
             }
         }
         Ok(destination)
     }
 
-    pub fn remove(&mut self, filename: &str) -> Result<(), String> {
+    pub fn remove(&mut self, filename: &str) -> Result<(), CommandError> {
         self.preserve(filename, false).map(|_| ())
     }
 
-    pub fn replace(&mut self, source: &Path, filename: &str) -> Result<(), String> {
+    pub fn replace(&mut self, source: &Path, filename: &str) -> Result<(), CommandError> {
         let destination = self.preserve(filename, false)?;
-        fs::rename(source, &destination).map_err(|e| format!("install {filename} error: {e}"))
+        fs::rename(source, &destination).map_err(|e| {
+            let detail = format!("install {filename} error: {e}");
+            CommandError::from(e).context(detail)
+        })
     }
 
-    pub fn write(&mut self, filename: &str, bytes: &[u8]) -> Result<(), String> {
+    pub fn write(&mut self, filename: &str, bytes: &[u8]) -> Result<(), CommandError> {
         // JSON readers keep seeing the previous complete document until rename.
         let destination = self.preserve(filename, true)?;
         crate::paths::atomic_write_path_sync(&destination, bytes)
     }
 
-    pub fn commit(mut self) -> Result<(), String> {
+    pub fn commit(mut self) -> Result<(), CommandError> {
         if let Err(error) = self.save_journal(true) {
             return match self.rollback() {
                 Ok(()) => Err(error),
-                Err(rollback) => Err(format!("{error}; {rollback}")),
+                Err(rollback) => Err({
+                    let detail = format!("{error}; {rollback}");
+                    rollback.context(detail)
+                }),
             };
         }
         self.finished = true;
@@ -180,7 +220,7 @@ impl FileTransaction {
         Ok(())
     }
 
-    pub fn rollback(&mut self) -> Result<(), String> {
+    pub fn rollback(&mut self) -> Result<(), CommandError> {
         let mut errors = Vec::new();
         // Retain failed journal entries and backups for a later recovery attempt.
         for index in (0..self.changes.len()).rev() {
@@ -217,10 +257,13 @@ impl FileTransaction {
             let _ = fs::remove_dir_all(&self.directory);
             Ok(())
         } else {
-            Err(format!(
-                "rollback failed: {}; previous files retained at {}",
-                errors.join("; "),
-                self.directory.display()
+            Err(CommandError::new(
+                ErrorCode::Unknown,
+                format!(
+                    "rollback failed: {}; previous files retained at {}",
+                    errors.join("; "),
+                    self.directory.display()
+                ),
             ))
         }
     }
@@ -236,15 +279,33 @@ impl Drop for FileTransaction {
     }
 }
 
-fn validate_name(name: &str) -> Result<(), String> {
+fn validate_name(name: &str) -> Result<(), CommandError> {
     let mut parts = Path::new(name).components();
     if name.contains(['/', '\\', ':'])
         || !matches!(parts.next(), Some(std::path::Component::Normal(_)))
         || parts.next().is_some()
     {
-        return Err("Invalid transaction filename".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidFile,
+            "Invalid transaction filename",
+        ));
     }
     Ok(())
+}
+
+fn is_link(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -333,20 +394,5 @@ mod tests {
         transaction.rollback().unwrap();
         assert_eq!(fs::read(directory.0.join("mod.jar")).unwrap(), b"old");
         assert!(directory.0.join("blocked.jar").is_dir());
-    }
-}
-
-fn is_link(metadata: &fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & 0x400 != 0
-    }
-    #[cfg(not(windows))]
-    {
-        false
     }
 }

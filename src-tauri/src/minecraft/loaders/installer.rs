@@ -5,6 +5,7 @@
 //! differ in their Maven coordinates, how a Minecraft version maps to loader
 //! versions, and the profile id the installer produces.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 use reqwest::Client;
 use tokio::fs;
 
@@ -27,24 +28,29 @@ const FORGE_MAVEN_BASE_URL: &str = "https://maven.minecraftforge.net/net/minecra
 
 /// NeoForge versions for `1.20.2` look like `20.2.x`; modern calendar versions
 /// (`26.1`) look like `26.1.x`. We list everything and filter by this prefix.
-fn neoforge_version_prefix(game_version: &str) -> Result<String, String> {
-    let release = game_version
-        .trim()
-        .split('-')
-        .next()
-        .ok_or_else(|| "Invalid Minecraft version".to_string())?;
+fn neoforge_version_prefix(game_version: &str) -> Result<String, CommandError> {
+    let release =
+        game_version.trim().split('-').next().ok_or_else(|| {
+            CommandError::new(ErrorCode::InvalidInput, "Invalid Minecraft version")
+        })?;
     let parts = release
         .split('.')
         .map(|part| part.parse::<u32>())
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| format!("NeoForge does not support Minecraft version {game_version}"))?;
+        .map_err(|_| {
+            CommandError::new(
+                ErrorCode::IncompatibleVersion,
+                format!("NeoForge does not support Minecraft version {game_version}"),
+            )
+        })?;
     match parts.as_slice() {
         [1, minor] => Ok(format!("{minor}.0.")),
         [1, minor, patch] => Ok(format!("{minor}.{patch}.")),
         [year, release] if *year >= 26 => Ok(format!("{year}.{release}.0.")),
         [year, release, patch] if *year >= 26 => Ok(format!("{year}.{release}.{patch}.")),
-        _ => Err(format!(
-            "NeoForge does not support Minecraft version {game_version}"
+        _ => Err(CommandError::new(
+            ErrorCode::IncompatibleVersion,
+            format!("NeoForge does not support Minecraft version {game_version}"),
         )),
     }
 }
@@ -52,7 +58,7 @@ fn neoforge_version_prefix(game_version: &str) -> Result<String, String> {
 async fn fetch_neoforge_versions(
     client: &Client,
     game_version: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     let prefix = neoforge_version_prefix(game_version)?;
     let versions = fetch_maven_versions(
         client,
@@ -68,7 +74,10 @@ async fn fetch_neoforge_versions(
 
 /// Forge Maven lists versions as `<mc>-<forge>` (e.g. `1.21.1-52.0.63`). We keep
 /// only those for the requested Minecraft version and return the `<forge>` part.
-async fn fetch_forge_versions(client: &Client, game_version: &str) -> Result<Vec<String>, String> {
+async fn fetch_forge_versions(
+    client: &Client,
+    game_version: &str,
+) -> Result<Vec<String>, CommandError> {
     let prefix = format!("{game_version}-");
     let versions = fetch_maven_versions(
         client,
@@ -84,11 +93,14 @@ pub(super) async fn fetch_loader_versions(
     client: &Client,
     kind: LoaderKind,
     game_version: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     match kind {
         LoaderKind::NeoForge => fetch_neoforge_versions(client, game_version).await,
         LoaderKind::Forge => fetch_forge_versions(client, game_version).await,
-        _ => Err("loader is not installer-based".to_string()),
+        _ => Err(CommandError::new(
+            ErrorCode::Unsupported,
+            "loader is not installer-based",
+        )),
     }
 }
 
@@ -113,7 +125,7 @@ pub(super) async fn ensure_profile(
     kind: LoaderKind,
     instance: &InstanceItem,
     loader_version: &str,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     ensure_layout().await?;
     let id = super::synthetic_version_id(kind, &instance.version, loader_version);
     let json_path = versions_root()?.join(&id).join(format!("{id}.json"));
@@ -122,8 +134,9 @@ pub(super) async fn ensure_profile(
         return Ok(id);
     }
 
-    let jar_url = installer_url(kind, &instance.version, loader_version)
-        .ok_or_else(|| "loader is not installer-based".to_string())?;
+    let jar_url = installer_url(kind, &instance.version, loader_version).ok_or_else(|| {
+        CommandError::new(ErrorCode::Unsupported, "loader is not installer-based")
+    })?;
     let cache_path = launcher_root()?
         .join("cache")
         .join("loaders")
@@ -141,9 +154,12 @@ pub(super) async fn ensure_profile(
     run_client_installer(cache_path, java_console).await?;
 
     if !json_path.exists() {
-        return Err(format!(
-            "{} installer did not create profile {id}",
-            kind.canonical_name()
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "{} installer did not create profile {id}",
+                kind.canonical_name()
+            ),
         ));
     }
     write_marker(&marker).await?;

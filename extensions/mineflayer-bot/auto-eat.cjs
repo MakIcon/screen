@@ -65,7 +65,8 @@ class AutoEat extends EventEmitter {
           bot._client.off('entity_status', completed);
           bot.off('death', died); bot.off('end', died);
           this.cancel = null;
-          error ? reject(error) : resolve();
+          if (error) reject(error);
+          else resolve();
         };
         const completed = packet => {
           if (packet.entityId === bot.entity.id && packet.entityStatus === 9) finish();

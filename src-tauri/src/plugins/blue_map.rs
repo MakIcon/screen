@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     env, fs,
     io::{BufRead, BufReader},
@@ -117,11 +118,11 @@ fn snapshot_status(runtime: &BlueMapRuntime) -> BlueMapStatus {
     }
 }
 
-pub(crate) fn current_status(state: &BlueMapState) -> Result<BlueMapStatus, String> {
+pub(crate) fn current_status(state: &BlueMapState) -> Result<BlueMapStatus, CommandError> {
     let mut runtime = state
         .inner
         .lock()
-        .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+        .map_err(|_| CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned"))?;
     refresh_child_state(&mut runtime);
     Ok(snapshot_status(&runtime))
 }
@@ -219,7 +220,7 @@ fn process_output_details(
     }
 }
 
-fn normalize_map_url(raw: &str) -> Result<String, String> {
+fn normalize_map_url(raw: &str) -> Result<String, CommandError> {
     let trimmed = raw.trim();
     let candidate = if trimmed.is_empty() {
         DEFAULT_MAP_URL.to_string()
@@ -229,13 +230,21 @@ fn normalize_map_url(raw: &str) -> Result<String, String> {
         format!("http://{trimmed}")
     };
 
-    let parsed =
-        Url::parse(&candidate).map_err(|error| format!("BlueMap URL parse error: {error}"))?;
+    let parsed = Url::parse(&candidate).map_err(|error| {
+        let detail = format!("BlueMap URL parse error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
-        return Err("BlueMap URL must use http or https".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "BlueMap URL must use http or https",
+        ));
     }
     if parsed.host_str().is_none() {
-        return Err("BlueMap URL must include a host".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "BlueMap URL must include a host",
+        ));
     }
 
     Ok(parsed.to_string())
@@ -260,18 +269,23 @@ fn find_available_bluemap_port(start_port: u16) -> Option<u16> {
     (start_port..=end_port).find(|port| can_bind_bluemap_port(*port))
 }
 
-fn select_available_map_url(map_url: &str) -> Result<BlueMapPortSelection, String> {
-    let mut parsed =
-        Url::parse(map_url).map_err(|error| format!("BlueMap URL parse error: {error}"))?;
+fn select_available_map_url(map_url: &str) -> Result<BlueMapPortSelection, CommandError> {
+    let mut parsed = Url::parse(map_url).map_err(|error| {
+        let detail = format!("BlueMap URL parse error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     let requested_port = requested_bluemap_port(&parsed);
     let selected_port = find_available_bluemap_port(requested_port).ok_or_else(|| {
         let end_port = requested_port.saturating_add(BLUEMAP_PORT_SCAN_LIMIT);
-        format!("No free BlueMap webserver port found from {requested_port} to {end_port}")
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            format!("No free BlueMap webserver port found from {requested_port} to {end_port}"),
+        )
     })?;
 
-    parsed
-        .set_port(Some(selected_port))
-        .map_err(|_| "BlueMap URL port update failed".to_string())?;
+    parsed.set_port(Some(selected_port)).map_err(|_| {
+        CommandError::new(ErrorCode::InvalidInput, "BlueMap URL port update failed")
+    })?;
 
     Ok(BlueMapPortSelection {
         map_url: parsed.to_string(),
@@ -280,7 +294,7 @@ fn select_available_map_url(map_url: &str) -> Result<BlueMapPortSelection, Strin
     })
 }
 
-fn managed_bluemap_dir() -> Result<PathBuf, String> {
+fn managed_bluemap_dir() -> Result<PathBuf, CommandError> {
     super::optional_extensions::extension_dir(super::optional_extensions::BLUE_MAP_SERVER_ID)
 }
 
@@ -526,19 +540,20 @@ fn update_hocon_setting(raw: &str, key: &str, value: &str) -> String {
     text
 }
 
-async fn set_hocon_setting(path: &Path, key: &str, value: &str) -> Result<(), String> {
+async fn set_hocon_setting(path: &Path, key: &str, value: &str) -> Result<(), CommandError> {
     let raw = tokio::fs::read_to_string(path).await.unwrap_or_default();
     let next = update_hocon_setting(&raw, key, value);
-    tokio::fs::write(path, next)
-        .await
-        .map_err(|error| format!("write {} error: {error}", path.display()))
+    tokio::fs::write(path, next).await.map_err(|error| {
+        let detail = format!("write {} error: {error}", path.display());
+        CommandError::from(error).context(detail)
+    })
 }
 
 fn run_bluemap_once_for_config(
     java_bin: &str,
     cli_jar: &Path,
     working_dir: &Path,
-) -> Result<bool, String> {
+) -> Result<bool, CommandError> {
     if core_config_path(working_dir).exists() && maps_config_dir(working_dir).exists() {
         return Ok(false);
     }
@@ -554,9 +569,10 @@ fn run_bluemap_once_for_config(
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("generate BlueMap config error: {error}"))?;
+    let mut child = command.spawn().map_err(|error| {
+        let detail = format!("generate BlueMap config error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     let mut stdout = child.stdout.take().map(spawn_output_collector);
     let mut stderr = child.stderr.take().map(spawn_output_collector);
 
@@ -565,16 +581,24 @@ fn run_bluemap_once_for_config(
             Ok(Some(status)) => {
                 if !status.success() && !generated_config_exists(working_dir) {
                     let details = process_output_details(stdout.take(), stderr.take());
-                    return Err(if details.is_empty() {
-                        format!("BlueMap config generation failed: {status}")
-                    } else {
-                        format!("BlueMap config generation failed: {status}\n{details}")
-                    });
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        if details.is_empty() {
+                            format!("BlueMap config generation failed: {status}")
+                        } else {
+                            format!("BlueMap config generation failed: {status}\n{details}")
+                        },
+                    ));
                 }
                 return Ok(true);
             }
             Ok(None) => thread::sleep(Duration::from_millis(100)),
-            Err(error) => return Err(format!("BlueMap config generation status error: {error}")),
+            Err(error) => {
+                return Err({
+                    let detail = format!("BlueMap config generation status error: {error}");
+                    CommandError::from(error).context(detail)
+                })
+            }
         }
     }
 
@@ -585,9 +609,15 @@ fn run_bluemap_once_for_config(
     if generated_config_exists(working_dir) {
         Ok(true)
     } else if details.is_empty() {
-        Err("BlueMap config generation timed out".to_string())
+        Err(CommandError::new(
+            ErrorCode::Network,
+            "BlueMap config generation timed out",
+        ))
     } else {
-        Err(format!("BlueMap config generation timed out\n{details}"))
+        Err(CommandError::new(
+            ErrorCode::Network,
+            format!("BlueMap config generation timed out\n{details}"),
+        ))
     }
 }
 
@@ -626,7 +656,7 @@ fn candidate_worlds_from_instance(
     scan_saves_dir(candidates, game_dir.join("saves"));
 }
 
-async fn find_world_for_bluemap() -> Result<Option<PathBuf>, String> {
+async fn find_world_for_bluemap() -> Result<Option<PathBuf>, CommandError> {
     let mut candidates = Vec::new();
 
     for instance in read_instances().await.unwrap_or_default() {
@@ -667,17 +697,23 @@ fn map_config_text(world_path: &Path, dimension: &str, name: &str, sorting: i32)
     )
 }
 
-async fn write_map_configs(working_dir: &Path, world_path: &Path) -> Result<(), String> {
+async fn write_map_configs(working_dir: &Path, world_path: &Path) -> Result<(), CommandError> {
     let maps_dir = maps_config_dir(working_dir);
     tokio::fs::create_dir_all(&maps_dir)
         .await
-        .map_err(|error| format!("create BlueMap maps config dir error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("create BlueMap maps config dir error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     let name = world_display_name(world_path);
     let overworld = map_config_text(world_path, "minecraft:overworld", &name, 0);
     tokio::fs::write(maps_dir.join("screenlauncher_world.conf"), overworld)
         .await
-        .map_err(|error| format!("write BlueMap overworld config error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("write BlueMap overworld config error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     if world_path.join("DIM-1").exists() {
         let nether = map_config_text(
@@ -688,14 +724,20 @@ async fn write_map_configs(working_dir: &Path, world_path: &Path) -> Result<(), 
         );
         tokio::fs::write(maps_dir.join("screenlauncher_nether.conf"), nether)
             .await
-            .map_err(|error| format!("write BlueMap nether config error: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("write BlueMap nether config error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
     }
 
     if world_path.join("DIM1").exists() {
         let end = map_config_text(world_path, "minecraft:the_end", &format!("{name} End"), 20);
         tokio::fs::write(maps_dir.join("screenlauncher_end.conf"), end)
             .await
-            .map_err(|error| format!("write BlueMap end config error: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("write BlueMap end config error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
     }
 
     Ok(())
@@ -705,7 +747,7 @@ async fn configure_generated_files(
     working_dir: &Path,
     map_url: &str,
     world_path: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let core = core_config_path(working_dir);
     if core.exists() {
         set_hocon_setting(&core, "accept-download", "true").await?;
@@ -728,7 +770,7 @@ async fn configure_generated_files(
     Ok(())
 }
 
-fn resolve_working_dir(plugin: &BlueMapPluginSettings) -> Result<PathBuf, String> {
+fn resolve_working_dir(plugin: &BlueMapPluginSettings) -> Result<PathBuf, CommandError> {
     let work_raw = plugin.working_dir.trim();
     if work_raw.is_empty() {
         managed_bluemap_dir()
@@ -816,63 +858,79 @@ fn find_local_bluemap_cli_jar(
     )
 }
 
-async fn download_file(url: &str, target_path: &Path) -> Result<(), String> {
+async fn download_file(url: &str, target_path: &Path) -> Result<(), CommandError> {
     if let Some(parent) = target_path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| format!("create BlueMap download dir error: {error}"))?;
+        tokio::fs::create_dir_all(parent).await.map_err(|error| {
+            let detail = format!("create BlueMap download dir error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     }
 
     let client = reqwest::Client::builder()
         .user_agent("ScreenLauncher/0.1.0")
         .build()
-        .map_err(|error| format!("BlueMap http client error: {error}"))?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("BlueMap download request error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("BlueMap http client error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
+    let response = client.get(url).send().await.map_err(|error| {
+        let detail = format!("BlueMap download request error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
 
     if !response.status().is_success() {
-        return Err(format!("BlueMap download http error {}", response.status()));
+        return Err(CommandError::new(
+            ErrorCode::Network,
+            format!("BlueMap download http error {}", response.status()),
+        ));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| format!("read BlueMap download bytes error: {error}"))?;
-    tokio::fs::write(target_path, bytes)
-        .await
-        .map_err(|error| format!("write BlueMap CLI jar error: {error}"))
+    let bytes = response.bytes().await.map_err(|error| {
+        let detail = format!("read BlueMap download bytes error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
+    tokio::fs::write(target_path, bytes).await.map_err(|error| {
+        let detail = format!("write BlueMap CLI jar error: {error}");
+        CommandError::from(error).context(detail)
+    })
 }
 
-async fn download_latest_bluemap_cli(managed_dir: &Path) -> Result<PathBuf, String> {
+async fn download_latest_bluemap_cli(managed_dir: &Path) -> Result<PathBuf, CommandError> {
     tokio::fs::create_dir_all(managed_dir)
         .await
-        .map_err(|error| format!("create BlueMap managed dir error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("create BlueMap managed dir error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     let client = reqwest::Client::builder()
         .user_agent("ScreenLauncher/0.1.0")
         .build()
-        .map_err(|error| format!("BlueMap http client error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("BlueMap http client error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     let release = client
         .get(GITHUB_LATEST_RELEASE_URL)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|error| format!("BlueMap latest release request error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("BlueMap latest release request error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     if !release.status().is_success() {
-        return Err(format!(
-            "BlueMap latest release http error {}",
-            release.status()
+        return Err(CommandError::new(
+            ErrorCode::Network,
+            format!("BlueMap latest release http error {}", release.status()),
         ));
     }
 
-    let release = release
-        .json::<GithubRelease>()
-        .await
-        .map_err(|error| format!("BlueMap latest release parse error: {error}"))?;
+    let release = release.json::<GithubRelease>().await.map_err(|error| {
+        let detail = format!("BlueMap latest release parse error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     let asset = release
         .assets
         .into_iter()
@@ -880,7 +938,12 @@ async fn download_latest_bluemap_cli(managed_dir: &Path) -> Result<PathBuf, Stri
             let name = asset.name.to_ascii_lowercase();
             name.ends_with(".jar") && name.contains("bluemap") && name.contains("cli")
         })
-        .ok_or_else(|| "BlueMap latest release has no CLI jar asset".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                "BlueMap latest release has no CLI jar asset",
+            )
+        })?;
     let target_path = managed_dir.join(&asset.name);
 
     if !target_path.exists() {
@@ -894,22 +957,28 @@ async fn download_bluemap_cli_target(
     managed_dir: &Path,
     target: BlueMapDownloadTarget,
     java_major: Option<u32>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, CommandError> {
     if java_major
         .map(|major| major < target.min_java_major)
         .unwrap_or(false)
     {
-        return Err(format!(
-            "BlueMap {} requires Java {}+, but detected Java {}",
-            target.file_name,
-            target.min_java_major,
-            java_major.unwrap_or_default()
+        return Err(CommandError::new(
+            ErrorCode::IncompatibleVersion,
+            format!(
+                "BlueMap {} requires Java {}+, but detected Java {}",
+                target.file_name,
+                target.min_java_major,
+                java_major.unwrap_or_default()
+            ),
         ));
     }
 
     tokio::fs::create_dir_all(managed_dir)
         .await
-        .map_err(|error| format!("create BlueMap managed dir error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("create BlueMap managed dir error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     let target_path = managed_dir.join(target.file_name);
     if !target_path.exists() {
@@ -923,18 +992,18 @@ async fn resolve_cli_jar(
     plugin: &BlueMapPluginSettings,
     working_dir: &Path,
     java_major: Option<u32>,
-) -> Result<(PathBuf, bool), String> {
+) -> Result<(PathBuf, bool), CommandError> {
     if let Some(path) = find_local_bluemap_cli_jar(plugin, working_dir, java_major) {
         return Ok((path, false));
     }
 
-    Err(
-        "BlueMap Server package is not installed. Open Extensions and install it first."
-            .to_string(),
-    )
+    Err(CommandError::new(
+        ErrorCode::InvalidInput,
+        "BlueMap Server package is not installed. Open Extensions and install it first.",
+    ))
 }
 
-pub async fn install_server_package() -> Result<PathBuf, String> {
+pub async fn install_server_package() -> Result<PathBuf, CommandError> {
     let mut settings = edit_settings().await?;
     let plugin = settings.blue_map_plugin().clone();
     let java_bin = java_executable(&plugin.java_path);
@@ -956,7 +1025,9 @@ pub async fn install_server_package() -> Result<PathBuf, String> {
     Ok(cli_jar)
 }
 
-async fn prepare_bluemap_settings(settings: &mut SettingsStore) -> Result<PreparedBlueMap, String> {
+async fn prepare_bluemap_settings(
+    settings: &mut SettingsStore,
+) -> Result<PreparedBlueMap, CommandError> {
     let plugin = settings.blue_map_plugin().clone();
     let normalized_map_url = normalize_map_url(&plugin.map_url)?;
     let port_selection = select_available_map_url(&normalized_map_url)?;
@@ -965,7 +1036,10 @@ async fn prepare_bluemap_settings(settings: &mut SettingsStore) -> Result<Prepar
 
     tokio::fs::create_dir_all(&working_dir)
         .await
-        .map_err(|error| format!("create BlueMap working dir error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("create BlueMap working dir error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     let java_bin = java_executable(&plugin.java_path);
     let java_major = detect_java_major(&java_bin);
@@ -997,20 +1071,18 @@ async fn prepare_bluemap_settings(settings: &mut SettingsStore) -> Result<Prepar
 #[tauri::command]
 pub async fn get_bluemap_status(
     state: State<'_, BlueMapState>,
-) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { current_status(&state) }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+) -> Result<BlueMapStatus, CommandError> {
+    let result: Result<_, CommandError> = async { current_status(&state) }.await;
+    result
 }
 
 #[tauri::command]
-pub async fn stop_bluemap(
-    state: State<'_, BlueMapState>,
-) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn stop_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let mut runtime = state
             .inner
             .lock()
-            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+            .map_err(|_| CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned"))?;
 
         if let Some(mut child) = runtime.child.take() {
             let _ = child.kill();
@@ -1023,14 +1095,14 @@ pub async fn stop_bluemap(
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn prepare_bluemap(
     state: State<'_, BlueMapState>,
-) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<BlueMapStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("extension", None)?;
         let mut settings = edit_settings().await?;
         let prepared = prepare_bluemap_settings(&mut settings).await?;
@@ -1038,7 +1110,7 @@ pub async fn prepare_bluemap(
         let mut runtime = state
             .inner
             .lock()
-            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+            .map_err(|_| CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned"))?;
         refresh_child_state(&mut runtime);
         runtime.url = prepared.map_url;
         runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
@@ -1074,176 +1146,184 @@ pub async fn prepare_bluemap(
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn start_bluemap(
-    state: State<'_, BlueMapState>,
-) -> Result<BlueMapStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        let _operation = crate::operations::begin("extension", None)?;
-        let mut settings = edit_settings().await?;
-        let mut plugin = settings.blue_map_plugin().clone();
+pub async fn start_bluemap(state: State<'_, BlueMapState>) -> Result<BlueMapStatus, CommandError> {
+    let result: Result<_, CommandError> =
+        async {
+            let _operation = crate::operations::begin("extension", None)?;
+            let mut settings = edit_settings().await?;
+            let mut plugin = settings.blue_map_plugin().clone();
 
-        if !plugin.enabled {
-            return Err("BlueMap extension is disabled".to_string());
-        }
+            if !plugin.enabled {
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "BlueMap extension is disabled",
+                ));
+            }
 
-        if plugin.render_on_start && !plugin.update_on_start {
-            settings.blue_map_plugin_mut().update_on_start = true;
-            plugin.update_on_start = true;
-        }
+            if plugin.render_on_start && !plugin.update_on_start {
+                settings.blue_map_plugin_mut().update_on_start = true;
+                plugin.update_on_start = true;
+            }
 
-        {
-            let mut runtime = state
-                .inner
-                .lock()
-                .map_err(|_| "BlueMap state lock poisoned".to_string())?;
+            {
+                let mut runtime = state.inner.lock().map_err(|_| {
+                    CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned")
+                })?;
+                refresh_child_state(&mut runtime);
+                if runtime.child.is_some() {
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        "BlueMap is already running",
+                    ));
+                }
+            }
+
+            let prepared = prepare_bluemap_settings(&mut settings).await?;
+            let render_on_start = plugin.render_on_start;
+            let update_on_start = plugin.update_on_start;
+
+            let mut runtime = state.inner.lock().map_err(|_| {
+                CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned")
+            })?;
             refresh_child_state(&mut runtime);
             if runtime.child.is_some() {
-                return Err("BlueMap is already running".to_string());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "BlueMap is already running",
+                ));
             }
-        }
+            runtime.state = if render_on_start {
+                "rendering".to_string()
+            } else if update_on_start {
+                "updating".to_string()
+            } else {
+                "starting".to_string()
+            };
+            runtime.url = prepared.map_url.clone();
+            runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
+            runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
+            runtime.world_path = prepared
+                .world_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string());
+            runtime.last_error = None;
+            runtime.logs.clear();
+            if prepared.downloaded {
+                push_log(&mut runtime, "downloaded BlueMap CLI jar");
+            } else {
+                push_log(&mut runtime, "found local BlueMap CLI jar");
+            }
+            push_log(&mut runtime, format!("java: {}", prepared.java_bin));
+            if prepared.generated_config {
+                push_log(&mut runtime, "generated BlueMap config files");
+            }
+            if let Some((requested_port, selected_port)) = prepared.port_remapped {
+                push_log(
+                    &mut runtime,
+                    format!("port {requested_port} was busy; using {selected_port}"),
+                );
+            }
+            if let Some(world_path) = runtime.world_path.clone() {
+                push_log(&mut runtime, format!("world: {world_path}"));
+            } else {
+                push_log(&mut runtime, "no Minecraft world found for map config");
+            }
+            if render_on_start {
+                push_log(&mut runtime, "background render enabled");
+            }
+            if update_on_start {
+                push_log(&mut runtime, "live update enabled");
+            }
+            push_log(&mut runtime, "webserver will start immediately");
+            drop(runtime);
 
-        let prepared = prepare_bluemap_settings(&mut settings).await?;
-        let render_on_start = plugin.render_on_start;
-        let update_on_start = plugin.update_on_start;
+            let mut command = Command::new(&prepared.java_bin);
+            command.arg("-jar").arg(&prepared.cli_jar);
+            if render_on_start {
+                command.arg("-r");
+            }
+            if update_on_start {
+                command.arg("-u");
+            }
+            command
+                .arg("-w")
+                .current_dir(&prepared.working_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-        refresh_child_state(&mut runtime);
-        if runtime.child.is_some() {
-            return Err("BlueMap is already running".to_string());
-        }
-        runtime.state = if render_on_start {
-            "rendering".to_string()
-        } else if update_on_start {
-            "updating".to_string()
-        } else {
-            "starting".to_string()
-        };
-        runtime.url = prepared.map_url.clone();
-        runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
-        runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
-        runtime.world_path = prepared
-            .world_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string());
-        runtime.last_error = None;
-        runtime.logs.clear();
-        if prepared.downloaded {
-            push_log(&mut runtime, "downloaded BlueMap CLI jar");
-        } else {
-            push_log(&mut runtime, "found local BlueMap CLI jar");
-        }
-        push_log(&mut runtime, format!("java: {}", prepared.java_bin));
-        if prepared.generated_config {
-            push_log(&mut runtime, "generated BlueMap config files");
-        }
-        if let Some((requested_port, selected_port)) = prepared.port_remapped {
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW);
+
+            let mut child = command.spawn().map_err(|error| {
+                let detail = format!("start BlueMap CLI error: {error}. Install Java and retry.");
+                CommandError::from(error).context(detail)
+            })?;
+
+            if let Some(stdout) = child.stdout.take() {
+                spawn_log_reader(stdout, state.inner.clone(), "stdout");
+            }
+            if let Some(stderr) = child.stderr.take() {
+                spawn_log_reader(stderr, state.inner.clone(), "stderr");
+            }
+
+            let mut runtime = state.inner.lock().map_err(|_| {
+                CommandError::new(ErrorCode::Unknown, "BlueMap state lock poisoned")
+            })?;
+            runtime.child = Some(child);
+            runtime.pid = runtime.child.as_ref().map(|child| child.id());
+            runtime.state = if render_on_start {
+                "rendering".to_string()
+            } else if update_on_start {
+                "updating".to_string()
+            } else {
+                "starting".to_string()
+            };
+            runtime.url = prepared.map_url;
+            runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
+            runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
+            runtime.world_path = prepared
+                .world_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string());
+            runtime.last_error = None;
             push_log(
                 &mut runtime,
-                format!("port {requested_port} was busy; using {selected_port}"),
+                format!(
+                    "start requested from launcher: {}",
+                    [
+                        "-jar",
+                        "<bluemap>",
+                        if render_on_start { "-r" } else { "" },
+                        if update_on_start { "-u" } else { "" },
+                        "-w"
+                    ]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                ),
             );
-        }
-        if let Some(world_path) = runtime.world_path.clone() {
-            push_log(&mut runtime, format!("world: {world_path}"));
-        } else {
-            push_log(&mut runtime, "no Minecraft world found for map config");
-        }
-        if render_on_start {
-            push_log(&mut runtime, "background render enabled");
-        }
-        if update_on_start {
-            push_log(&mut runtime, "live update enabled");
-        }
-        push_log(&mut runtime, "webserver will start immediately");
-        drop(runtime);
 
-        let mut command = Command::new(&prepared.java_bin);
-        command.arg("-jar").arg(&prepared.cli_jar);
-        if render_on_start {
-            command.arg("-r");
+            Ok(snapshot_status(&runtime))
         }
-        if update_on_start {
-            command.arg("-u");
-        }
-        command
-            .arg("-w")
-            .current_dir(&prepared.working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NO_WINDOW);
-
-        let mut child = command.spawn().map_err(|error| {
-            format!("start BlueMap CLI error: {error}. Install Java and retry.")
-        })?;
-
-        if let Some(stdout) = child.stdout.take() {
-            spawn_log_reader(stdout, state.inner.clone(), "stdout");
-        }
-        if let Some(stderr) = child.stderr.take() {
-            spawn_log_reader(stderr, state.inner.clone(), "stderr");
-        }
-
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "BlueMap state lock poisoned".to_string())?;
-        runtime.child = Some(child);
-        runtime.pid = runtime.child.as_ref().map(|child| child.id());
-        runtime.state = if render_on_start {
-            "rendering".to_string()
-        } else if update_on_start {
-            "updating".to_string()
-        } else {
-            "starting".to_string()
-        };
-        runtime.url = prepared.map_url;
-        runtime.cli_jar_path = Some(prepared.cli_jar.to_string_lossy().to_string());
-        runtime.working_dir = Some(prepared.working_dir.to_string_lossy().to_string());
-        runtime.world_path = prepared
-            .world_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string());
-        runtime.last_error = None;
-        push_log(
-            &mut runtime,
-            format!(
-                "start requested from launcher: {}",
-                [
-                    "-jar",
-                    "<bluemap>",
-                    if render_on_start { "-r" } else { "" },
-                    if update_on_start { "-u" } else { "" },
-                    "-w"
-                ]
-                .into_iter()
-                .filter(|part| !part.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ")
-            ),
-        );
-
-        Ok(snapshot_status(&runtime))
-    }
-    .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+        .await;
+    result
 }
 
 #[tauri::command]
-pub async fn open_bluemap_browser() -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn open_bluemap_browser() -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
 
-        tauri_plugin_opener::open_url(&url, None::<&str>)
-            .map_err(|error| format!("open browser error: {error}"))?;
+        tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|error| {
+            let detail = format!("open browser error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
         Ok(ActionResult {
             ok: true,
@@ -1252,14 +1332,12 @@ pub async fn open_bluemap_browser() -> Result<ActionResult, crate::commands::err
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn open_bluemap_window(
-    app: AppHandle,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn open_bluemap_window(app: AppHandle) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let url = normalize_map_url(&settings.blue_map_plugin().map_url)?;
         if let Some(existing) = app.get_webview_window("bluemap-map") {
@@ -1271,8 +1349,10 @@ pub async fn open_bluemap_window(
             });
         }
 
-        let parsed =
-            Url::parse(&url).map_err(|error| format!("BlueMap URL parse error: {error}"))?;
+        let parsed = Url::parse(&url).map_err(|error| {
+            let detail = format!("BlueMap URL parse error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         let window = WebviewWindowBuilder::new(&app, "bluemap-map", WebviewUrl::External(parsed))
             .title("BlueMap")
             .inner_size(1180.0, 760.0)
@@ -1280,7 +1360,10 @@ pub async fn open_bluemap_window(
             .center()
             .resizable(true)
             .build()
-            .map_err(|error| format!("open BlueMap window error: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("open BlueMap window error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
 
         let _ = window.set_focus();
 
@@ -1291,5 +1374,5 @@ pub async fn open_bluemap_window(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }

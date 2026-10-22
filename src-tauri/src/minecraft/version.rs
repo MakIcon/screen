@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{collections::HashMap, path::PathBuf};
 
 use reqwest::Client;
@@ -18,20 +19,23 @@ use super::{
 async fn read_version_cache(
     path: &std::path::Path,
     version_id: &str,
-) -> Result<Option<VersionMeta>, String> {
+) -> Result<Option<VersionMeta>, CommandError> {
     match tokio::fs::read(path).await {
         Ok(raw) => Ok(serde_json::from_slice::<VersionMeta>(&raw)
             .ok()
             .filter(|meta| meta.id == version_id)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("read version json error: {error}")),
+        Err(error) => Err({
+            let detail = format!("read version json error: {error}");
+            CommandError::from(error).context(detail)
+        }),
     }
 }
 
 async fn load_or_fetch_version_json(
     client: &Client,
     version_id: &str,
-) -> Result<VersionMeta, String> {
+) -> Result<VersionMeta, CommandError> {
     ensure_layout().await?;
     let json_path = versions_root()?
         .join(version_id)
@@ -65,22 +69,36 @@ async fn load_or_fetch_version_json(
             .versions
             .into_iter()
             .find(|v| v.id == version_id)
-            .ok_or_else(|| format!("version not found in manifest: {version_id}"))?
+            .ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    format!("version not found in manifest: {version_id}"),
+                )
+            })?
     };
     if found.sha1.is_none() {
         match tokio::fs::remove_file(&json_path).await {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("remove invalid version cache error: {error}")),
+            Err(error) => {
+                return Err({
+                    let detail = format!("remove invalid version cache error: {error}");
+                    CommandError::from(error).context(detail)
+                })
+            }
         }
     }
     download_to_path(client, &found.url, &json_path, found.sha1.as_deref(), None).await?;
 
-    let raw = tokio::fs::read_to_string(&json_path)
-        .await
-        .map_err(|e| format!("read version json error: {e}"))?;
+    let raw = tokio::fs::read_to_string(&json_path).await.map_err(|e| {
+        let detail = format!("read version json error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
-    serde_json::from_str(&raw).map_err(|e| format!("parse version json error: {e}"))
+    serde_json::from_str(&raw).map_err(|e| {
+        let detail = format!("parse version json error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 fn merge_arguments(
@@ -160,7 +178,7 @@ fn merge_meta(parent: VersionMeta, child: VersionMeta) -> VersionMeta {
 pub async fn resolve_version_meta(
     client: &Client,
     version_id: &str,
-) -> Result<VersionMeta, String> {
+) -> Result<VersionMeta, CommandError> {
     let mut chain = Vec::new();
     let mut current = load_or_fetch_version_json(client, version_id).await?;
 
@@ -175,10 +193,9 @@ pub async fn resolve_version_meta(
     }
 
     chain.reverse();
-    let mut resolved = chain
-        .first()
-        .cloned()
-        .ok_or_else(|| "empty version resolution chain".to_string())?;
+    let mut resolved = chain.first().cloned().ok_or_else(|| {
+        CommandError::new(ErrorCode::InvalidInput, "empty version resolution chain")
+    })?;
 
     for item in chain.into_iter().skip(1) {
         resolved = merge_meta(resolved, item);
@@ -379,11 +396,10 @@ pub fn classifier_for_windows(library: &Library) -> Option<String> {
     Some(raw.replace("${arch}", current_arch_string()))
 }
 
-pub fn library_path_from_download(download: &DownloadInfo) -> Result<PathBuf, String> {
-    let rel = download
-        .path
-        .as_ref()
-        .ok_or_else(|| "library download path missing".to_string())?;
+pub fn library_path_from_download(download: &DownloadInfo) -> Result<PathBuf, CommandError> {
+    let rel = download.path.as_ref().ok_or_else(|| {
+        CommandError::new(ErrorCode::InvalidInput, "library download path missing")
+    })?;
     Ok(libraries_root()?.join(rel))
 }
 

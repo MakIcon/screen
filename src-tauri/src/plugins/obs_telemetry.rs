@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -137,11 +138,13 @@ fn snapshot_status(runtime: &ObsTelemetryRuntime) -> ObsTelemetryStatus {
     }
 }
 
-pub(crate) fn current_status(state: &ObsTelemetryState) -> Result<ObsTelemetryStatus, String> {
+pub(crate) fn current_status(
+    state: &ObsTelemetryState,
+) -> Result<ObsTelemetryStatus, CommandError> {
     let runtime = state
         .inner
         .lock()
-        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        .map_err(|_| CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned"))?;
     Ok(snapshot_status(&runtime))
 }
 
@@ -149,36 +152,48 @@ fn find_header_end(bytes: &[u8]) -> Option<usize> {
     bytes.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
-fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
+fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, CommandError> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|error| format!("set read timeout error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("set read timeout error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 4096];
     let header_end = loop {
         if bytes.len() > MAX_REQUEST_BYTES {
-            return Err("request too large".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "request too large",
+            ));
         }
         if let Some(header_end) = find_header_end(&bytes) {
             break header_end;
         }
 
-        let read = stream
-            .read(&mut chunk)
-            .map_err(|error| format!("read request error: {error}"))?;
+        let read = stream.read(&mut chunk).map_err(|error| {
+            let detail = format!("read request error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         if read == 0 {
-            return Err("connection closed before headers".to_string());
+            return Err(CommandError::new(
+                ErrorCode::Network,
+                "connection closed before headers",
+            ));
         }
         bytes.extend_from_slice(&chunk[..read]);
     };
 
-    let header_text = std::str::from_utf8(&bytes[..header_end])
-        .map_err(|error| format!("request header utf8 error: {error}"))?;
+    let header_text = std::str::from_utf8(&bytes[..header_end]).map_err(|error| {
+        let detail = format!("request header utf8 error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     let mut lines = header_text.split("\r\n");
     let request_line = lines
         .next()
-        .ok_or_else(|| "missing request line".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "missing request line"))?;
     let mut request_parts = request_line.split_whitespace();
     let method = request_parts.next().unwrap_or_default().to_string();
     let raw_path = request_parts.next().unwrap_or("/").to_string();
@@ -204,13 +219,20 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
 
     while bytes.len() < body_start + content_length {
         if bytes.len() > MAX_REQUEST_BYTES {
-            return Err("request too large".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "request too large",
+            ));
         }
-        let read = stream
-            .read(&mut chunk)
-            .map_err(|error| format!("read request body error: {error}"))?;
+        let read = stream.read(&mut chunk).map_err(|error| {
+            let detail = format!("read request body error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         if read == 0 {
-            return Err("connection closed before body".to_string());
+            return Err(CommandError::new(
+                ErrorCode::Network,
+                "connection closed before body",
+            ));
         }
         bytes.extend_from_slice(&chunk[..read]);
     }
@@ -271,30 +293,41 @@ fn is_safe_texture_part(value: &str) -> bool {
 fn minecraft_texture_from_jar(
     minecraft_version: &str,
     texture_parts: &[&str],
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, CommandError> {
     if !is_safe_texture_part(minecraft_version)
         || texture_parts.is_empty()
         || !matches!(texture_parts[0], "item" | "block" | "gui")
         || !texture_parts.iter().all(|part| is_safe_texture_part(part))
     {
-        return Err("invalid texture path".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "invalid texture path",
+        ));
     }
 
     let jar_path = versions_root()?
         .join(minecraft_version)
         .join(format!("{minecraft_version}.jar"));
-    let file = fs::File::open(&jar_path)
-        .map_err(|error| format!("open Minecraft jar {} error: {error}", jar_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|error| format!("read Minecraft jar {} error: {error}", jar_path.display()))?;
+    let file = fs::File::open(&jar_path).map_err(|error| {
+        let detail = format!("open Minecraft jar {} error: {error}", jar_path.display());
+        CommandError::from(error).context(detail)
+    })?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| {
+        let detail = format!("read Minecraft jar {} error: {error}", jar_path.display());
+        CommandError::from(error).context(detail)
+    })?;
     let texture_path = format!("assets/minecraft/textures/{}.png", texture_parts.join("/"));
-    let mut texture = archive
-        .by_name(&texture_path)
-        .map_err(|_| format!("texture not found: {texture_path}"))?;
+    let mut texture = archive.by_name(&texture_path).map_err(|_| {
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            format!("texture not found: {texture_path}"),
+        )
+    })?;
     let mut bytes = Vec::new();
-    texture
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("read texture error: {error}"))?;
+    texture.read_to_end(&mut bytes).map_err(|error| {
+        let detail = format!("read texture error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     Ok(bytes)
 }
 
@@ -381,25 +414,36 @@ fn collect_model_textures(
     }
 }
 
-fn minecraft_icon_from_jar(minecraft_version: &str, item_name: &str) -> Result<Vec<u8>, String> {
+fn minecraft_icon_from_jar(
+    minecraft_version: &str,
+    item_name: &str,
+) -> Result<Vec<u8>, CommandError> {
     if !is_safe_texture_part(minecraft_version) || !is_safe_texture_part(item_name) {
-        return Err("invalid icon path".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "invalid icon path",
+        ));
     }
 
     let jar_path = versions_root()?
         .join(minecraft_version)
         .join(format!("{minecraft_version}.jar"));
-    let file = fs::File::open(&jar_path)
-        .map_err(|error| format!("open Minecraft jar {} error: {error}", jar_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|error| format!("read Minecraft jar {} error: {error}", jar_path.display()))?;
+    let file = fs::File::open(&jar_path).map_err(|error| {
+        let detail = format!("open Minecraft jar {} error: {error}", jar_path.display());
+        CommandError::from(error).context(detail)
+    })?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| {
+        let detail = format!("read Minecraft jar {} error: {error}", jar_path.display());
+        CommandError::from(error).context(detail)
+    })?;
 
     let direct_item = format!("assets/minecraft/textures/item/{item_name}.png");
     if let Ok(mut texture) = archive.by_name(&direct_item) {
         let mut bytes = Vec::new();
-        texture
-            .read_to_end(&mut bytes)
-            .map_err(|error| format!("read item icon error: {error}"))?;
+        texture.read_to_end(&mut bytes).map_err(|error| {
+            let detail = format!("read item icon error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         return Ok(bytes);
     }
 
@@ -422,14 +466,18 @@ fn minecraft_icon_from_jar(minecraft_version: &str, item_name: &str) -> Result<V
         let texture_path = format!("assets/minecraft/textures/{texture_ref}.png");
         if let Ok(mut texture) = archive.by_name(&texture_path) {
             let mut bytes = Vec::new();
-            texture
-                .read_to_end(&mut bytes)
-                .map_err(|error| format!("read model icon error: {error}"))?;
+            texture.read_to_end(&mut bytes).map_err(|error| {
+                let detail = format!("read model icon error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
             return Ok(bytes);
         }
     }
 
-    Err(format!("icon texture not found for {item_name}"))
+    Err(CommandError::new(
+        ErrorCode::InvalidInput,
+        format!("icon texture not found for {item_name}"),
+    ))
 }
 
 fn handle_texture_request(stream: &mut TcpStream, path: &str) {
@@ -452,7 +500,12 @@ fn handle_texture_request(stream: &mut TcpStream, path: &str) {
             bytes,
             "public, max-age=31536000, immutable",
         ),
-        Err(error) => write_response(stream, "404 Not Found", "text/plain; charset=utf-8", error),
+        Err(error) => write_response(
+            stream,
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            error.detail,
+        ),
     }
 }
 
@@ -476,7 +529,12 @@ fn handle_icon_request(stream: &mut TcpStream, path: &str) {
             bytes,
             "public, max-age=31536000, immutable",
         ),
-        Err(error) => write_response(stream, "404 Not Found", "text/plain; charset=utf-8", error),
+        Err(error) => write_response(
+            stream,
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            error.detail,
+        ),
     }
 }
 
@@ -658,7 +716,7 @@ fn handle_http_client(mut stream: TcpStream, state: Arc<Mutex<ObsTelemetryRuntim
     }
 }
 
-fn bind_obs_listener(start_port: u16) -> Result<(TcpListener, u16), String> {
+fn bind_obs_listener(start_port: u16) -> Result<(TcpListener, u16), CommandError> {
     let start_port = if start_port == 0 {
         DEFAULT_OBS_TELEMETRY_PORT
     } else {
@@ -669,14 +727,16 @@ fn bind_obs_listener(start_port: u16) -> Result<(TcpListener, u16), String> {
     for port in start_port..=end_port {
         if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) {
             listener.set_nonblocking(true).map_err(|error| {
-                format!("set OBS telemetry listener nonblocking error: {error}")
+                let detail = format!("set OBS telemetry listener nonblocking error: {error}");
+                CommandError::from(error).context(detail)
             })?;
             return Ok((listener, port));
         }
     }
 
-    Err(format!(
-        "No free OBS telemetry port found from {start_port} to {end_port}"
+    Err(CommandError::new(
+        ErrorCode::InvalidInput,
+        format!("No free OBS telemetry port found from {start_port} to {end_port}"),
     ))
 }
 
@@ -717,12 +777,11 @@ fn spawn_obs_server(
 fn ensure_obs_telemetry_started(
     state: &ObsTelemetryState,
     plugin: &ObsTelemetryPluginSettings,
-) -> Result<(u16, String), String> {
+) -> Result<(u16, String), CommandError> {
     {
-        let runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        let runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+        })?;
         if runtime.server.is_some() {
             return Ok((runtime.port, runtime.token.clone()));
         }
@@ -732,10 +791,9 @@ fn ensure_obs_telemetry_started(
     let token = Uuid::new_v4().simple().to_string();
 
     {
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        let mut runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+        })?;
         runtime.port = selected_port;
         runtime.token = token.clone();
         runtime.state = "serving".to_string();
@@ -759,13 +817,13 @@ fn ensure_obs_telemetry_started(
     let mut runtime = state
         .inner
         .lock()
-        .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        .map_err(|_| CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned"))?;
     runtime.server = Some(server);
 
     Ok((selected_port, token))
 }
 
-fn telemetry_resource_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn telemetry_resource_dir(app: &AppHandle) -> Result<PathBuf, CommandError> {
     if cfg!(debug_assertions) {
         return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
@@ -775,7 +833,10 @@ fn telemetry_resource_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .resource_dir()
         .map(|path| path.join("resources").join("obs-telemetry"))
-        .map_err(|error| format!("resolve resource dir error: {error}"))
+        .map_err(|error| {
+            let detail = format!("resolve resource dir error: {error}");
+            CommandError::from(error).context(detail)
+        })
 }
 
 fn telemetry_jar_matches_version(file_name: &str, minecraft_version: &str) -> bool {
@@ -788,17 +849,23 @@ fn telemetry_jar_matches_version(file_name: &str, minecraft_version: &str) -> bo
             || lower.contains(&format!("_mc{version}.jar")))
 }
 
-fn find_telemetry_jar(app: &AppHandle, minecraft_version: &str) -> Result<PathBuf, String> {
+fn find_telemetry_jar(app: &AppHandle, minecraft_version: &str) -> Result<PathBuf, CommandError> {
     let resource_dir = telemetry_resource_dir(app)?;
     if !resource_dir.exists() {
-        return Err(format!(
-            "OBS telemetry resources not found: {}",
-            resource_dir.display()
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "OBS telemetry resources not found: {}",
+                resource_dir.display()
+            ),
         ));
     }
 
     let mut candidates = fs::read_dir(&resource_dir)
-        .map_err(|error| format!("read OBS telemetry resources error: {error}"))?
+        .map_err(|error| {
+            let detail = format!("read OBS telemetry resources error: {error}");
+            CommandError::from(error).context(detail)
+        })?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.is_file())
@@ -812,50 +879,60 @@ fn find_telemetry_jar(app: &AppHandle, minecraft_version: &str) -> Result<PathBu
 
     candidates.sort();
     candidates.into_iter().next().ok_or_else(|| {
-        format!(
+        CommandError::new(ErrorCode::InvalidInput, format!(
             "No OBS telemetry mod jar found for Minecraft {minecraft_version}. Build obs-telemetry-mod first."
-        )
+        ))
     })
 }
 
 async fn install_telemetry_mod(
     app: &AppHandle,
     instance: &InstanceItem,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, CommandError> {
     let source_jar = find_telemetry_jar(app, &instance.version)?;
     let mods_dir = PathBuf::from(&instance.game_dir).join("mods");
-    async_fs::create_dir_all(&mods_dir)
-        .await
-        .map_err(|error| format!("create mods dir error: {error}"))?;
+    async_fs::create_dir_all(&mods_dir).await.map_err(|error| {
+        let detail = format!("create mods dir error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
 
-    let mut entries = async_fs::read_dir(&mods_dir)
-        .await
-        .map_err(|error| format!("read mods dir error: {error}"))?;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|error| format!("read mods dir entry error: {error}"))?
-    {
+    let mut entries = async_fs::read_dir(&mods_dir).await.map_err(|error| {
+        let detail = format!("read mods dir error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
+    while let Some(entry) = entries.next_entry().await.map_err(|error| {
+        let detail = format!("read mods dir entry error: {error}");
+        CommandError::from(error).context(detail)
+    })? {
         let path = entry.path();
         let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
         let lower = file_name.to_ascii_lowercase();
         if lower.ends_with(".jar") && lower.contains("obs-telemetry") {
-            async_fs::remove_file(&path)
-                .await
-                .map_err(|error| format!("remove old OBS telemetry jar error: {error}"))?;
+            async_fs::remove_file(&path).await.map_err(|error| {
+                let detail = format!("remove old OBS telemetry jar error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
         }
     }
 
     let target_file_name = source_jar
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| "OBS telemetry jar file name missing".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                "OBS telemetry jar file name missing",
+            )
+        })?;
     let target_path = mods_dir.join(target_file_name);
     async_fs::copy(&source_jar, &target_path)
         .await
-        .map_err(|error| format!("copy OBS telemetry jar error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("copy OBS telemetry jar error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     Ok(target_path)
 }
@@ -865,13 +942,16 @@ pub async fn prepare_obs_telemetry_for_launch(
     state: &ObsTelemetryState,
     plugin: &ObsTelemetryPluginSettings,
     instance: &InstanceItem,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     if !plugin.enabled {
         return Ok(Vec::new());
     }
 
     if LoaderKind::parse(&instance.loader)? != LoaderKind::Fabric {
-        return Err("OBS Telemetry requires a Fabric instance".to_string());
+        return Err(CommandError::new(
+            ErrorCode::IncompatibleVersion,
+            "OBS Telemetry requires a Fabric instance",
+        ));
     }
 
     let (port, token) = ensure_obs_telemetry_started(state, plugin)?;
@@ -893,44 +973,45 @@ pub async fn prepare_obs_telemetry_for_launch(
 #[tauri::command]
 pub async fn get_obs_telemetry_status(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { current_status(&state) }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+) -> Result<ObsTelemetryStatus, CommandError> {
+    let result: Result<_, CommandError> = async { current_status(&state) }.await;
+    result
 }
 
 #[tauri::command]
 pub async fn start_obs_telemetry(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ObsTelemetryStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let plugin = settings.plugins.obs_telemetry;
 
         if !plugin.enabled {
-            return Err("OBS Telemetry extension is disabled".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "OBS Telemetry extension is disabled",
+            ));
         }
 
         ensure_obs_telemetry_started(&state, &plugin)?;
-        let runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        let runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+        })?;
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn stop_obs_telemetry(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ObsTelemetryStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ObsTelemetryStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let server = {
-            let mut runtime = state
-                .inner
-                .lock()
-                .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+            let mut runtime = state.inner.lock().map_err(|_| {
+                CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+            })?;
             runtime.server.take()
         };
 
@@ -941,34 +1022,34 @@ pub async fn stop_obs_telemetry(
             }
         }
 
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+        let mut runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+        })?;
         runtime.state = "stopped".to_string();
         runtime.token.clear();
         push_log(&mut runtime, "stop requested from launcher");
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn open_obs_telemetry_overlay(
     state: State<'_, ObsTelemetryState>,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let url = {
-            let runtime = state
-                .inner
-                .lock()
-                .map_err(|_| "OBS telemetry state lock poisoned".to_string())?;
+            let runtime = state.inner.lock().map_err(|_| {
+                CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
+            })?;
             overlay_url(runtime.port)
         };
 
-        tauri_plugin_opener::open_url(&url, None::<&str>)
-            .map_err(|error| format!("open OBS overlay error: {error}"))?;
+        tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|error| {
+            let detail = format!("open OBS overlay error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
         Ok(ActionResult {
             ok: true,
@@ -977,7 +1058,7 @@ pub async fn open_obs_telemetry_overlay(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 const OBS_OVERLAY_HTML_V2: &str = include_str!("obs_overlay.html");

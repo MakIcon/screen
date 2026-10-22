@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 #[cfg(windows)]
 use std::ptr::{null, null_mut};
 
@@ -12,8 +13,9 @@ use windows_sys::Win32::{
 /// Encrypt bytes for the current Windows user with DPAPI. The ciphertext can
 /// be stored on disk, but cannot be decrypted by another Windows account.
 #[cfg(windows)]
-pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
-    let input_length = u32::try_from(data.len()).map_err(|_| "Secret is too large".to_string())?;
+pub fn protect(data: &[u8]) -> Result<Vec<u8>, CommandError> {
+    let input_length = u32::try_from(data.len())
+        .map_err(|_| CommandError::new(ErrorCode::InvalidInput, "Secret is too large"))?;
     let input = CRYPT_INTEGER_BLOB {
         cbData: input_length,
         pbData: data.as_ptr().cast_mut(),
@@ -32,9 +34,12 @@ pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if succeeded == 0 {
-        return Err(format!(
-            "Windows DPAPI encryption failed: {}",
-            std::io::Error::last_os_error()
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!(
+                "Windows DPAPI encryption failed: {}",
+                std::io::Error::last_os_error()
+            ),
         ));
     }
 
@@ -48,8 +53,9 @@ pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
 
 /// Decrypt bytes previously encrypted by [`protect`] for the current user.
 #[cfg(windows)]
-pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
-    let input_length = u32::try_from(data.len()).map_err(|_| "Secret is too large".to_string())?;
+pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, CommandError> {
+    let input_length = u32::try_from(data.len())
+        .map_err(|_| CommandError::new(ErrorCode::InvalidInput, "Secret is too large"))?;
     let input = CRYPT_INTEGER_BLOB {
         cbData: input_length,
         pbData: data.as_ptr().cast_mut(),
@@ -68,9 +74,12 @@ pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if succeeded == 0 {
-        return Err(format!(
-            "Windows DPAPI decryption failed: {}",
-            std::io::Error::last_os_error()
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!(
+                "Windows DPAPI decryption failed: {}",
+                std::io::Error::last_os_error()
+            ),
         ));
     }
 
@@ -83,13 +92,19 @@ pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(windows))]
-pub fn protect(_data: &[u8]) -> Result<Vec<u8>, String> {
-    Err("Secure Microsoft account storage requires Windows DPAPI".to_string())
+pub fn protect(_data: &[u8]) -> Result<Vec<u8>, CommandError> {
+    Err(CommandError::new(
+        ErrorCode::Unsupported,
+        "Secure Microsoft account storage requires Windows DPAPI",
+    ))
 }
 
 #[cfg(not(windows))]
-pub fn unprotect(_data: &[u8]) -> Result<Vec<u8>, String> {
-    Err("Secure Microsoft account storage requires Windows DPAPI".to_string())
+pub fn unprotect(_data: &[u8]) -> Result<Vec<u8>, CommandError> {
+    Err(CommandError::new(
+        ErrorCode::Unsupported,
+        "Secure Microsoft account storage requires Windows DPAPI",
+    ))
 }
 
 #[cfg(all(test, windows))]

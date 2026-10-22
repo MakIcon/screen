@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::path::PathBuf;
 
 use tauri::{AppHandle, Emitter};
@@ -18,12 +19,12 @@ async fn download_client_jar(
     app: &AppHandle,
     minecraft_version_id: &str,
     resolved: &crate::models::VersionMeta,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, CommandError> {
     let download = resolved
         .downloads
         .as_ref()
         .and_then(|d| d.client.as_ref())
-        .ok_or_else(|| "client download missing".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "client download missing"))?;
 
     let path = crate::paths::versions_root()?
         .join(minecraft_version_id)
@@ -46,7 +47,7 @@ async fn download_client_jar(
 pub async fn install_instance_files(
     app: &AppHandle,
     instance: &InstanceItem,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     ensure_layout().await?;
     let client = mirrors::build_client()?;
 
@@ -67,13 +68,14 @@ pub async fn install_instance_files(
     let game_dir = PathBuf::from(&instance.game_dir);
     let instance_dir = game_dir
         .parent()
-        .ok_or_else(|| "instance dir parent missing".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "instance dir parent missing"))?;
     let natives_dir = instance_dir.join("natives");
 
     if !game_dir.exists() {
-        tokio::fs::create_dir_all(&game_dir)
-            .await
-            .map_err(|e| format!("create game dir error: {e}"))?;
+        tokio::fs::create_dir_all(&game_dir).await.map_err(|e| {
+            let detail = format!("create game dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
 
     download_client_jar(app, &instance.version, &resolved).await?;
@@ -97,7 +99,7 @@ pub async fn install_instance_files(
     Ok(())
 }
 
-pub async fn update_instance_status(id: &str, status: &str) -> Result<(), String> {
+pub async fn update_instance_status(id: &str, status: &str) -> Result<(), CommandError> {
     let mut items = edit_instances().await?;
     for item in items.iter_mut() {
         if item.id == id {

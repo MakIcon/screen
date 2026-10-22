@@ -1,5 +1,6 @@
 //! Streaming downloads shared by Minecraft and Modrinth. Destinations become
 //! visible only after the complete response passes its integrity checks.
+use crate::commands::errors::{CommandError, ErrorCode};
 use reqwest::Client;
 use sha1::{Digest, Sha1};
 use sha2::Sha512;
@@ -34,10 +35,10 @@ pub(crate) async fn stream_to_path<F, Fut>(
     path: &Path,
     integrity: Integrity<'_>,
     mut control: F,
-) -> Result<(), String>
+) -> Result<(), CommandError>
 where
     F: FnMut(u64, u64) -> Fut,
-    Fut: Future<Output = Result<(), String>>,
+    Fut: Future<Output = Result<(), CommandError>>,
 {
     for (name, hash, length) in [
         ("SHA-1", integrity.sha1, 40),
@@ -46,31 +47,37 @@ where
         if hash.is_some_and(|hash| {
             hash.len() != length || !hash.bytes().all(|b| b.is_ascii_hexdigit())
         }) {
-            return Err(format!("Invalid download {name} metadata"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Invalid download {name} metadata"),
+            ));
         }
     }
     control(0, integrity.size.unwrap_or(0)).await?;
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("download request error: {e}"))?;
+    let mut response = client.get(url).send().await.map_err(|e| {
+        let detail = format!("download request error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     if !response.status().is_success() {
-        return Err(format!(
-            "download http error {} for {url}",
-            response.status()
+        return Err(CommandError::new(
+            ErrorCode::DownloadFailed,
+            format!("download http error {} for {url}", response.status()),
         ));
     }
     let content_length = response.content_length();
     if let (Some(expected), Some(actual)) = (integrity.size, content_length) {
         if actual != expected {
-            return Err(format!("download size mismatch for {url}"));
+            return Err(CommandError::new(
+                ErrorCode::ChecksumMismatch,
+                format!("download size mismatch for {url}"),
+            ));
         }
     }
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create download directory error: {e}"))?;
+        fs::create_dir_all(parent).await.map_err(|e| {
+            let detail = format!("create download directory error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
     let mut temp = TemporaryDownload {
         path: path.with_extension(format!("{}.part", uuid::Uuid::new_v4())),
@@ -81,7 +88,10 @@ where
             .write(true)
             .create_new(true)
             .open(&temp.path)
-            .map_err(|e| format!("create download file error: {e}"))?,
+            .map_err(|e| {
+                let detail = format!("create download file error: {e}");
+                CommandError::from(e).context(detail)
+            })?,
     ));
     let mut sha1 = Sha1::new();
     let mut sha512 = Sha512::new();
@@ -89,22 +99,28 @@ where
     let total = integrity.size.or(content_length).unwrap_or(0);
     loop {
         control(received, total).await?;
-        let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| format!("read download bytes error: {e}"))?
+        let Some(chunk) = response.chunk().await.map_err(|e| {
+            let detail = format!("read download bytes error: {e}");
+            CommandError::from(e).context(detail)
+        })?
         else {
             break;
         };
         received = received
             .checked_add(chunk.len() as u64)
-            .ok_or("download size overflow")?;
+            .ok_or(CommandError::new(
+                ErrorCode::Unknown,
+                "download size overflow",
+            ))?;
         if integrity
             .size
             .or(content_length)
             .is_some_and(|size| received > size)
         {
-            return Err(format!("download size exceeds metadata for {url}"));
+            return Err(CommandError::new(
+                ErrorCode::ChecksumMismatch,
+                format!("download size exceeds metadata for {url}"),
+            ));
         }
         if integrity.sha1.is_some() {
             sha1.update(&chunk);
@@ -114,10 +130,16 @@ where
         }
         temp.file
             .as_mut()
-            .ok_or("download file is closed")?
+            .ok_or(CommandError::new(
+                ErrorCode::Unknown,
+                "download file is closed",
+            ))?
             .write_all(&chunk)
             .await
-            .map_err(|e| format!("write download error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("write download error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
     }
     if integrity
         .size
@@ -125,7 +147,10 @@ where
         .is_some_and(|size| received != size)
         || (received == 0 && integrity.size != Some(0))
     {
-        return Err(format!("download size mismatch for {url}"));
+        return Err(CommandError::new(
+            ErrorCode::ChecksumMismatch,
+            format!("download size mismatch for {url}"),
+        ));
     }
     for (name, expected, actual) in [
         ("SHA-1", integrity.sha1, format!("{:x}", sha1.finalize())),
@@ -136,20 +161,31 @@ where
         ),
     ] {
         if expected.is_some_and(|expected| !actual.eq_ignore_ascii_case(expected)) {
-            return Err(format!("download {name} mismatch for {url}"));
+            return Err(CommandError::new(
+                ErrorCode::ChecksumMismatch,
+                format!("download {name} mismatch for {url}"),
+            ));
         }
     }
     control(received, total).await?;
-    let file = temp.file.as_mut().ok_or("download file is closed")?;
-    file.flush()
-        .await
-        .map_err(|e| format!("flush download error: {e}"))?;
-    file.sync_all()
-        .await
-        .map_err(|e| format!("sync download error: {e}"))?;
+    let file = temp.file.as_mut().ok_or(CommandError::new(
+        ErrorCode::Unknown,
+        "download file is closed",
+    ))?;
+    file.flush().await.map_err(|e| {
+        let detail = format!("flush download error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    file.sync_all().await.map_err(|e| {
+        let detail = format!("sync download error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     drop(temp.file.take());
     // Keep the rename synchronous: cancellation cannot interrupt activation.
-    std::fs::rename(&temp.path, path).map_err(|e| format!("commit download error: {e}"))
+    std::fs::rename(&temp.path, path).map_err(|e| {
+        let detail = format!("commit download error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 #[cfg(test)]
@@ -307,7 +343,7 @@ mod tests {
                 },
                 |received, _| async move {
                     if scenario == "cancel" && received > 0 {
-                        Err("cancelled".into())
+                        Err(CommandError::new(ErrorCode::Cancelled, "cancelled"))
                     } else {
                         Ok(())
                     }

@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -233,22 +234,25 @@ struct ExtensionManifest {
     entry: String,
 }
 
-pub fn extension_dir(id: &str) -> Result<PathBuf, String> {
+pub fn extension_dir(id: &str) -> Result<PathBuf, CommandError> {
     if !matches!(id, MINEFLAYER_BOT_ID | BLUE_MAP_SERVER_ID) {
-        return Err(format!("Unknown optional extension: {id}"));
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!("Unknown optional extension: {id}"),
+        ));
     }
     Ok(extensions_root()?.join(id))
 }
 
-pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
+pub fn mineflayer_runtime_dir() -> Result<PathBuf, CommandError> {
     let installed = extension_dir(MINEFLAYER_BOT_ID)?;
     if installed.join("extension.json").is_file() {
         if !installed.join("pathfinder.cjs").is_file() || !installed.join("knockback.cjs").is_file()
         {
-            return Err(
-                "Mineflayer Bot package needs an update. Open Extensions and install it again."
-                    .to_string(),
-            );
+            return Err(CommandError::new(
+                ErrorCode::IncompatibleVersion,
+                "Mineflayer Bot package needs an update. Open Extensions and install it again.",
+            ));
         }
         if !installed.join("combat.cjs").is_file()
             || !installed.join("combat-defaults.json").is_file()
@@ -259,20 +263,20 @@ pub fn mineflayer_runtime_dir() -> Result<PathBuf, String> {
             || !installed.join("armor-manager.cjs").is_file()
             || !installed.join("melee-shield.cjs").is_file()
         {
-            return Err(
-                "Mineflayer Bot package needs a PvP update. Open Extensions and install it again."
-                    .to_string(),
-            );
+            return Err(CommandError::new(
+                ErrorCode::IncompatibleVersion,
+                "Mineflayer Bot package needs a PvP update. Open Extensions and install it again.",
+            ));
         }
         return Ok(installed);
     }
-    Err(
-        "Mineflayer Bot package is not installed. Open Extensions and install it first."
-            .to_string(),
-    )
+    Err(CommandError::new(
+        ErrorCode::InvalidInput,
+        "Mineflayer Bot package is not installed. Open Extensions and install it first.",
+    ))
 }
 
-pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), String> {
+pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), CommandError> {
     // The worker requires these modules at startup. Updating only worker.cjs
     // leaves installed bots running old combat code after a launcher update.
     for &(name, contents) in MINEFLAYER_FILES {
@@ -281,14 +285,17 @@ pub(crate) fn sync_mineflayer_worker(runtime_dir: &Path) -> Result<(), String> {
             Ok(current) => Some(current),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
-                return Err(format!(
-                    "Read Mineflayer package file {name} error: {error}"
-                ))
+                return Err({
+                    let detail = format!("Read Mineflayer package file {name} error: {error}");
+                    CommandError::from(error).context(detail)
+                })
             }
         };
         if current.as_deref() != Some(contents) {
-            fs::write(&path, contents)
-                .map_err(|error| format!("Update Mineflayer package file {name} error: {error}"))?;
+            fs::write(&path, contents).map_err(|error| {
+                let detail = format!("Update Mineflayer package file {name} error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
         }
     }
     Ok(())
@@ -401,16 +408,19 @@ fn npm_error_detail(stdout: &[u8], stderr: &[u8]) -> String {
     lines.join(" | ")
 }
 
-async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), String> {
+async fn write_mineflayer_scaffold(staging: &Path) -> Result<(), CommandError> {
     for &(name, contents) in MINEFLAYER_FILES {
         tokio::fs::write(staging.join(name), contents)
             .await
-            .map_err(|error| format!("Write Mineflayer package file {name} error: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("Write Mineflayer package file {name} error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
     }
     Ok(())
 }
 
-async fn install_mineflayer_dependencies(staging: &Path) -> Result<(), String> {
+async fn install_mineflayer_dependencies(staging: &Path) -> Result<(), CommandError> {
     let working_directory = staging.to_path_buf();
     let output = task::spawn_blocking(move || {
         let mut command = Command::new(npm_executable());
@@ -432,28 +442,31 @@ async fn install_mineflayer_dependencies(staging: &Path) -> Result<(), String> {
         command.output()
     })
     .await
-    .map_err(|error| format!("Mineflayer dependency installation task error: {error}"))?
+    .map_err(|error| { let detail = format!("Mineflayer dependency installation task error: {error}"); CommandError::from(error).context(detail) })?
     .map_err(|error| {
-        format!(
+        { let detail = format!(
             "Cannot start npm to install Mineflayer. Install Node.js with npm and restart the launcher: {error}"
-        )
+        ); CommandError::from(error).context(detail) }
     })?;
 
     if !output.status.success() {
         let detail = npm_error_detail(&output.stdout, &output.stderr);
-        return Err(if detail.is_empty() {
-            format!(
-                "Mineflayer dependency installation failed with status {}",
-                output.status
-            )
-        } else {
-            format!("Mineflayer dependency installation failed: {detail}")
-        });
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            if detail.is_empty() {
+                format!(
+                    "Mineflayer dependency installation failed with status {}",
+                    output.status
+                )
+            } else {
+                format!("Mineflayer dependency installation failed: {detail}")
+            },
+        ));
     }
     Ok(())
 }
 
-pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result<(), String> {
+pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result<(), CommandError> {
     // Existing installations are synchronized on startup. A new worker also
     // needs its newly introduced dependencies before Node loads it.
     for (name, version) in [
@@ -481,41 +494,55 @@ pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result
     Ok(())
 }
 
-async fn install_mineflayer_package() -> Result<OptionalExtensionStatus, String> {
+async fn install_mineflayer_package() -> Result<OptionalExtensionStatus, CommandError> {
     let target = extension_dir(MINEFLAYER_BOT_ID)?;
     let root = extensions_root()?;
     let staging = root.join(".mineflayer-bot-installing");
-    tokio::fs::create_dir_all(&root)
-        .await
-        .map_err(|error| format!("Create extensions directory error: {error}"))?;
+    tokio::fs::create_dir_all(&root).await.map_err(|error| {
+        let detail = format!("Create extensions directory error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     if staging.exists() {
-        tokio::fs::remove_dir_all(&staging)
-            .await
-            .map_err(|error| format!("Clean Mineflayer staging directory error: {error}"))?;
+        tokio::fs::remove_dir_all(&staging).await.map_err(|error| {
+            let detail = format!("Clean Mineflayer staging directory error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     }
-    tokio::fs::create_dir_all(&staging)
-        .await
-        .map_err(|error| format!("Create Mineflayer staging directory error: {error}"))?;
+    tokio::fs::create_dir_all(&staging).await.map_err(|error| {
+        let detail = format!("Create Mineflayer staging directory error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
 
     write_mineflayer_scaffold(&staging).await?;
     install_mineflayer_dependencies(&staging).await?;
 
-    let manifest = read_manifest(&staging)
-        .ok_or_else(|| "Mineflayer package has no valid extension.json".to_string())?;
+    let manifest = read_manifest(&staging).ok_or_else(|| {
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            "Mineflayer package has no valid extension.json",
+        )
+    })?;
     if manifest.id != MINEFLAYER_BOT_ID
         || !staging.join(&manifest.entry).is_file()
         || !staging.join("node_modules").is_dir()
     {
-        return Err("Mineflayer package is incomplete".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidFile,
+            "Mineflayer package is incomplete",
+        ));
     }
     if target.exists() {
-        tokio::fs::remove_dir_all(&target)
-            .await
-            .map_err(|error| format!("Replace Mineflayer package error: {error}"))?;
+        tokio::fs::remove_dir_all(&target).await.map_err(|error| {
+            let detail = format!("Replace Mineflayer package error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     }
     tokio::fs::rename(&staging, &target)
         .await
-        .map_err(|error| format!("Activate Mineflayer package error: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("Activate Mineflayer package error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
     Ok(mineflayer_status())
 }
@@ -523,8 +550,8 @@ async fn install_mineflayer_package() -> Result<OptionalExtensionStatus, String>
 #[tauri::command]
 pub async fn install_optional_extension(
     extension_id: String,
-) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<OptionalExtensionStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("extension", None)?;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => install_mineflayer_package().await,
@@ -532,28 +559,34 @@ pub async fn install_optional_extension(
                 super::blue_map::install_server_package().await?;
                 Ok(blue_map_status())
             }
-            _ => Err(format!("Unknown optional extension: {extension_id}")),
+            _ => Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Unknown optional extension: {extension_id}"),
+            )),
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
-async fn uninstall_mineflayer_package() -> Result<OptionalExtensionStatus, String> {
+async fn uninstall_mineflayer_package() -> Result<OptionalExtensionStatus, CommandError> {
     let target = extension_dir(MINEFLAYER_BOT_ID)?;
     if target.exists() {
-        tokio::fs::remove_dir_all(&target)
-            .await
-            .map_err(|error| format!("Remove Mineflayer package error: {error}"))?;
+        tokio::fs::remove_dir_all(&target).await.map_err(|error| {
+            let detail = format!("Remove Mineflayer package error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     }
     Ok(mineflayer_status())
 }
 
-async fn uninstall_blue_map_package() -> Result<OptionalExtensionStatus, String> {
+async fn uninstall_blue_map_package() -> Result<OptionalExtensionStatus, CommandError> {
     let directory = extension_dir(BLUE_MAP_SERVER_ID)?;
     if directory.is_dir() {
-        let entries = fs::read_dir(&directory)
-            .map_err(|error| format!("Read BlueMap package directory error: {error}"))?;
+        let entries = fs::read_dir(&directory).map_err(|error| {
+            let detail = format!("Read BlueMap package directory error: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         for entry in entries.flatten() {
             let path = entry.path();
             let is_cli_jar = path
@@ -565,9 +598,10 @@ async fn uninstall_blue_map_package() -> Result<OptionalExtensionStatus, String>
                 })
                 .unwrap_or(false);
             if is_cli_jar {
-                tokio::fs::remove_file(&path)
-                    .await
-                    .map_err(|error| format!("Remove BlueMap package error: {error}"))?;
+                tokio::fs::remove_file(&path).await.map_err(|error| {
+                    let detail = format!("Remove BlueMap package error: {error}");
+                    CommandError::from(error).context(detail)
+                })?;
             }
         }
     }
@@ -588,8 +622,8 @@ pub async fn uninstall_optional_extension(
     extension_id: String,
     mineflayer_state: State<'_, MineflayerBotState>,
     blue_map_state: State<'_, BlueMapState>,
-) -> Result<OptionalExtensionStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<OptionalExtensionStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("extension", None)?;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => {
@@ -600,11 +634,14 @@ pub async fn uninstall_optional_extension(
                 blue_map::stop_bluemap(blue_map_state).await?;
                 uninstall_blue_map_package().await
             }
-            _ => Err(format!("Unknown optional extension: {extension_id}")),
+            _ => Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Unknown optional extension: {extension_id}"),
+            )),
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]

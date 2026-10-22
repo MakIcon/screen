@@ -102,7 +102,8 @@ class AutoBuff {
           bot.off("entityEffect", affected); bot.off("health", healed);
           bot.off("death", died); bot.off("end", died);
           this.cancel = null;
-          error ? reject(error) : resolve();
+          if (error) reject(error);
+          else resolve();
         };
         const consumed = (packet) => {
           if (!data.splash && packet.entityId === bot.entity.id && packet.entityStatus === 9) finish();

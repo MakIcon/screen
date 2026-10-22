@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -158,21 +159,29 @@ impl XblAuthError {
         )
     }
 
-    fn into_message(self) -> String {
-        match self {
-            Self::Request(err) => format!("XBL request: {err}"),
-            Self::Http { status, body } => {
-                if status == StatusCode::UNAUTHORIZED {
-                    format!(
+    fn into_message(self) -> CommandError {
+        let code = if matches!(&self, Self::Request(_)) {
+            ErrorCode::Network
+        } else {
+            ErrorCode::Authentication
+        };
+        CommandError::new(
+            code,
+            match self {
+                Self::Request(err) => format!("XBL request: {err}"),
+                Self::Http { status, body } => {
+                    if status == StatusCode::UNAUTHORIZED {
+                        format!(
                         "XBL error {status}: Microsoft token was rejected by Xbox Live. Try signing in again, and make sure the account has an Xbox profile. Details: {body}"
                     )
-                } else {
-                    format!("XBL error {status}: {body}")
+                    } else {
+                        format!("XBL error {status}: {body}")
+                    }
                 }
-            }
-            Self::Parse(err) => format!("XBL parse: {err}"),
-            Self::MissingUserHash => "XBL: no user hash".to_string(),
-        }
+                Self::Parse(err) => format!("XBL parse: {err}"),
+                Self::MissingUserHash => "XBL: no user hash".to_string(),
+            },
+        )
     }
 }
 
@@ -224,19 +233,27 @@ struct AccountSecrets {
     refresh_token: String,
 }
 
-async fn read_account_file(path: &Path) -> Result<Option<Vec<StoredMicrosoftAccount>>, String> {
+async fn read_account_file(
+    path: &Path,
+) -> Result<Option<Vec<StoredMicrosoftAccount>>, CommandError> {
     let raw = match tokio::fs::read_to_string(path).await {
         Ok(raw) => raw,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("read {}: {error}", path.display())),
+        Err(error) => {
+            return Err({
+                let detail = format!("read {}: {error}", path.display());
+                CommandError::from(error).context(detail)
+            })
+        }
     };
 
-    serde_json::from_str(&raw)
-        .map(Some)
-        .map_err(|error| format!("parse {}: {error}", path.display()))
+    serde_json::from_str(&raw).map(Some).map_err(|error| {
+        let detail = format!("parse {}: {error}", path.display());
+        CommandError::from(error).context(detail)
+    })
 }
 
-async fn read_account_metadata_unlocked() -> Result<Vec<StoredMicrosoftAccount>, String> {
+async fn read_account_metadata_unlocked() -> Result<Vec<StoredMicrosoftAccount>, CommandError> {
     let path = accounts_path()?;
     let primary_error = match read_account_file(&path).await {
         Ok(Some(accounts)) => return Ok(accounts),
@@ -258,26 +275,43 @@ async fn read_account_metadata_unlocked() -> Result<Vec<StoredMicrosoftAccount>,
         let recovery_details = if recovery_errors.is_empty() {
             String::new()
         } else {
-            format!("; recovery failed: {}", recovery_errors.join("; "))
+            format!(
+                "; recovery failed: {}",
+                recovery_errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
         };
-        return Err(format!("{primary_error}{recovery_details}"));
+        return Err(CommandError::new(
+            primary_error.code,
+            format!("{primary_error}{recovery_details}"),
+        ));
     }
 
     Ok(Vec::new())
 }
 
-fn account_secret_path(account_id: &str) -> Result<PathBuf, String> {
-    uuid::Uuid::parse_str(account_id)
-        .map_err(|_| "Invalid Microsoft account ID in secure storage".to_string())?;
+fn account_secret_path(account_id: &str) -> Result<PathBuf, CommandError> {
+    uuid::Uuid::parse_str(account_id).map_err(|_| {
+        CommandError::new(
+            ErrorCode::Authentication,
+            "Invalid Microsoft account ID in secure storage",
+        )
+    })?;
     Ok(account_secrets_root()?.join(format!("{account_id}.bin")))
 }
 
-fn decrypt_account_secrets(encrypted: &[u8]) -> Result<AccountSecrets, String> {
+fn decrypt_account_secrets(encrypted: &[u8]) -> Result<AccountSecrets, CommandError> {
     let plaintext = secure_storage::unprotect(encrypted)?;
-    serde_json::from_slice(&plaintext).map_err(|error| format!("parse account secret: {error}"))
+    serde_json::from_slice(&plaintext).map_err(|error| {
+        let detail = format!("parse account secret: {error}");
+        CommandError::from(error).context(detail)
+    })
 }
 
-async fn read_account_secret(account_id: &str) -> Result<Option<AccountSecrets>, String> {
+async fn read_account_secret(account_id: &str) -> Result<Option<AccountSecrets>, CommandError> {
     let path = account_secret_path(account_id)?;
     let mut errors = Vec::new();
 
@@ -299,38 +333,48 @@ async fn read_account_secret(account_id: &str) -> Result<Option<AccountSecrets>,
     if errors.is_empty() {
         Ok(None)
     } else {
-        Err(format!(
-            "Unable to unlock Microsoft account: {}",
-            errors.join("; ")
+        Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("Unable to unlock Microsoft account: {}", errors.join("; ")),
         ))
     }
 }
 
-async fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
+async fn atomic_write(path: &Path, data: &[u8]) -> Result<(), CommandError> {
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| format!("create account directory: {error}"))?;
+        tokio::fs::create_dir_all(parent).await.map_err(|error| {
+            let detail = format!("create account directory: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     }
 
     let temporary_path = sidecar_path(path, ".tmp");
     let result = async {
         tokio::fs::write(&temporary_path, data)
             .await
-            .map_err(|error| format!("write {}: {error}", temporary_path.display()))?;
+            .map_err(|error| {
+                let detail = format!("write {}: {error}", temporary_path.display());
+                CommandError::from(error).context(detail)
+            })?;
         let temporary_file = tokio::fs::OpenOptions::new()
             .write(true)
             .open(&temporary_path)
             .await
-            .map_err(|error| format!("open {}: {error}", temporary_path.display()))?;
-        temporary_file
-            .sync_all()
-            .await
-            .map_err(|error| format!("sync {}: {error}", temporary_path.display()))?;
+            .map_err(|error| {
+                let detail = format!("open {}: {error}", temporary_path.display());
+                CommandError::from(error).context(detail)
+            })?;
+        temporary_file.sync_all().await.map_err(|error| {
+            let detail = format!("sync {}: {error}", temporary_path.display());
+            CommandError::from(error).context(detail)
+        })?;
         drop(temporary_file);
         tokio::fs::rename(&temporary_path, path)
             .await
-            .map_err(|error| format!("replace {}: {error}", path.display()))
+            .map_err(|error| {
+                let detail = format!("replace {}: {error}", path.display());
+                CommandError::from(error).context(detail)
+            })
     }
     .await;
 
@@ -340,13 +384,16 @@ async fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
     result
 }
 
-async fn write_account_secret(account: &MicrosoftAccount) -> Result<(), String> {
+async fn write_account_secret(account: &MicrosoftAccount) -> Result<(), CommandError> {
     let path = account_secret_path(&account.id)?;
     let plaintext = serde_json::to_vec(&AccountSecrets {
         access_token: account.access_token.clone(),
         refresh_token: account.refresh_token.clone(),
     })
-    .map_err(|error| format!("serialize account secret: {error}"))?;
+    .map_err(|error| {
+        let detail = format!("serialize account secret: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     let encrypted = secure_storage::protect(&plaintext)?;
 
     // Keep the previous valid encrypted token as a recovery copy.
@@ -359,19 +406,23 @@ async fn write_account_secret(account: &MicrosoftAccount) -> Result<(), String> 
     atomic_write(&path, &encrypted).await
 }
 
-async fn cleanup_removed_account_secrets(active_ids: &[String]) -> Result<(), String> {
+async fn cleanup_removed_account_secrets(active_ids: &[String]) -> Result<(), CommandError> {
     let root = account_secrets_root()?;
     let mut entries = match tokio::fs::read_dir(&root).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("read account secrets directory: {error}")),
+        Err(error) => {
+            return Err({
+                let detail = format!("read account secrets directory: {error}");
+                CommandError::from(error).context(detail)
+            })
+        }
     };
 
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|error| format!("read account secret entry: {error}"))?
-    {
+    while let Some(entry) = entries.next_entry().await.map_err(|error| {
+        let detail = format!("read account secret entry: {error}");
+        CommandError::from(error).context(detail)
+    })? {
         let file_name = entry.file_name().to_string_lossy().into_owned();
         let Some((account_id, _)) = file_name.split_once(".bin") else {
             continue;
@@ -379,26 +430,33 @@ async fn cleanup_removed_account_secrets(active_ids: &[String]) -> Result<(), St
         if !active_ids.iter().any(|id| id == account_id) {
             tokio::fs::remove_file(entry.path())
                 .await
-                .map_err(|error| format!("remove stale account secret: {error}"))?;
+                .map_err(|error| {
+                    let detail = format!("remove stale account secret: {error}");
+                    CommandError::from(error).context(detail)
+                })?;
         }
     }
     Ok(())
 }
 
-async fn write_accounts_unlocked(accounts: &[MicrosoftAccount]) -> Result<(), String> {
+async fn write_accounts_unlocked(accounts: &[MicrosoftAccount]) -> Result<(), CommandError> {
     let path = accounts_path()?;
     for account in accounts {
         write_account_secret(account).await?;
     }
 
     let metadata: Vec<_> = accounts.iter().map(StoredMicrosoftAccount::from).collect();
-    let raw =
-        serde_json::to_vec_pretty(&metadata).map_err(|e| format!("serialize accounts: {e}"))?;
+    let raw = serde_json::to_vec_pretty(&metadata).map_err(|e| {
+        let detail = format!("serialize accounts: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     // Never let a malformed primary file overwrite a usable recovery copy.
     if let Ok(Some(previous_accounts)) = read_account_file(&path).await {
-        let backup = serde_json::to_vec_pretty(&previous_accounts)
-            .map_err(|error| format!("serialize accounts backup: {error}"))?;
+        let backup = serde_json::to_vec_pretty(&previous_accounts).map_err(|error| {
+            let detail = format!("serialize accounts backup: {error}");
+            CommandError::from(error).context(detail)
+        })?;
         atomic_write(&sidecar_path(&path, ".bak"), &backup).await?;
     }
 
@@ -410,7 +468,7 @@ async fn write_accounts_unlocked(accounts: &[MicrosoftAccount]) -> Result<(), St
     cleanup_removed_account_secrets(&active_ids).await
 }
 
-async fn read_accounts_unlocked() -> Result<Vec<MicrosoftAccount>, String> {
+async fn read_accounts_unlocked() -> Result<Vec<MicrosoftAccount>, CommandError> {
     let stored_accounts = read_account_metadata_unlocked().await?;
     let mut accounts = Vec::with_capacity(stored_accounts.len());
     let mut needs_migration = false;
@@ -426,9 +484,12 @@ async fn read_accounts_unlocked() -> Result<Vec<MicrosoftAccount>, String> {
             Ok(None) => {
                 needs_migration = true;
                 legacy_secrets.ok_or_else(|| {
-                    format!(
-                        "Secure tokens are missing for Microsoft account {}. Sign in again.",
-                        stored.username
+                    CommandError::new(
+                        ErrorCode::Authentication,
+                        format!(
+                            "Secure tokens are missing for Microsoft account {}. Sign in again.",
+                            stored.username
+                        ),
                     )
                 })?
             }
@@ -458,12 +519,12 @@ async fn read_accounts_unlocked() -> Result<Vec<MicrosoftAccount>, String> {
     Ok(accounts)
 }
 
-pub async fn read_accounts() -> Result<Vec<MicrosoftAccount>, String> {
+pub async fn read_accounts() -> Result<Vec<MicrosoftAccount>, CommandError> {
     let _guard = accounts_lock().lock().await;
     read_accounts_unlocked().await
 }
 
-pub async fn write_accounts(accounts: &[MicrosoftAccount]) -> Result<(), String> {
+pub async fn write_accounts(accounts: &[MicrosoftAccount]) -> Result<(), CommandError> {
     let _guard = accounts_lock().lock().await;
     write_accounts_unlocked(accounts).await
 }
@@ -474,7 +535,7 @@ async fn post_form(
     client: &Client,
     url: &str,
     pairs: &[(&str, &str)],
-) -> Result<reqwest::Response, String> {
+) -> Result<reqwest::Response, CommandError> {
     let body = encode_form(pairs);
     client
         .post(url)
@@ -482,10 +543,13 @@ async fn post_form(
         .body(body)
         .send()
         .await
-        .map_err(|e| format!("POST {url}: {e}"))
+        .map_err(|e| {
+            let detail = format!("POST {url}: {e}");
+            CommandError::from(e).context(detail)
+        })
 }
 
-async fn exchange_code(client: &Client, code: &str) -> Result<MsTokenResponse, String> {
+async fn exchange_code(client: &Client, code: &str) -> Result<MsTokenResponse, CommandError> {
     let resp = post_form(
         client,
         MS_TOKEN_URL,
@@ -501,14 +565,21 @@ async fn exchange_code(client: &Client, code: &str) -> Result<MsTokenResponse, S
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("MS token error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("MS token error {status}: {body}"),
+        ));
     }
-    resp.json::<MsTokenResponse>()
-        .await
-        .map_err(|e| format!("MS token parse: {e}"))
+    resp.json::<MsTokenResponse>().await.map_err(|e| {
+        let detail = format!("MS token parse: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
-async fn refresh_ms_token(client: &Client, refresh_token: &str) -> Result<MsTokenResponse, String> {
+async fn refresh_ms_token(
+    client: &Client,
+    refresh_token: &str,
+) -> Result<MsTokenResponse, CommandError> {
     let resp = post_form(
         client,
         MS_TOKEN_URL,
@@ -523,11 +594,15 @@ async fn refresh_ms_token(client: &Client, refresh_token: &str) -> Result<MsToke
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("MS refresh error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("MS refresh error {status}: {body}"),
+        ));
     }
-    resp.json::<MsTokenResponse>()
-        .await
-        .map_err(|e| format!("MS refresh parse: {e}"))
+    resp.json::<MsTokenResponse>().await.map_err(|e| {
+        let detail = format!("MS refresh parse: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 async fn request_xbl_token(
@@ -577,7 +652,10 @@ fn with_rps_preamble(ms_access_token: &str, preamble: &str) -> String {
     }
 }
 
-async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String, String), String> {
+async fn get_xbl_token(
+    client: &Client,
+    ms_access_token: &str,
+) -> Result<(String, String), CommandError> {
     // The MBI_SSL Live token is an RPS ticket and Xbox Live expects the t= preamble.
     // Keep d= as a fallback for Azure OAuth tokens used by other Minecraft auth flows.
     let rps_tickets = [
@@ -598,10 +676,15 @@ async fn get_xbl_token(client: &Client, ms_access_token: &str) -> Result<(String
 
     Err(last_error
         .map(XblAuthError::into_message)
-        .unwrap_or_else(|| "XBL error: token exchange failed".to_string()))
+        .unwrap_or_else(|| {
+            CommandError::new(
+                ErrorCode::Authentication,
+                "XBL error: token exchange failed",
+            )
+        }))
 }
 
-async fn get_xsts_token(client: &Client, xbl_token: &str) -> Result<String, String> {
+async fn get_xsts_token(client: &Client, xbl_token: &str) -> Result<String, CommandError> {
     let req = XstsRequest {
         properties: XstsProperties {
             sandbox_id: "RETAIL".into(),
@@ -616,26 +699,38 @@ async fn get_xsts_token(client: &Client, xbl_token: &str) -> Result<String, Stri
         .json(&req)
         .send()
         .await
-        .map_err(|e| format!("XSTS request: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("XSTS request: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         // Give a helpful message for common XSTS errors
         if body.contains("2148916238") {
-            return Err("Microsoft account is not available in your region".into());
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Microsoft account is not available in your region",
+            ));
         }
         if body.contains("2148916233") {
-            return Err("This Microsoft account doesn't have an Xbox account. Please create one at xbox.com".into());
+            return Err(CommandError::new(ErrorCode::Authentication, "This Microsoft account doesn't have an Xbox account. Please create one at xbox.com"));
         }
         if body.contains("2148916235") {
-            return Err("Child accounts are not supported".into());
+            return Err(CommandError::new(
+                ErrorCode::Unsupported,
+                "Child accounts are not supported",
+            ));
         }
-        return Err(format!("XSTS error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("XSTS error {status}: {body}"),
+        ));
     }
-    let data = resp
-        .json::<XstsResponse>()
-        .await
-        .map_err(|e| format!("XSTS parse: {e}"))?;
+    let data = resp.json::<XstsResponse>().await.map_err(|e| {
+        let detail = format!("XSTS parse: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     Ok(data.token)
 }
 
@@ -643,7 +738,7 @@ async fn get_minecraft_token(
     client: &Client,
     uhs: &str,
     xsts_token: &str,
-) -> Result<(String, u64), String> {
+) -> Result<(String, u64), CommandError> {
     let req = McLoginRequest {
         identity_token: format!("XBL3.0 x={uhs};{xsts_token}"),
     };
@@ -652,23 +747,29 @@ async fn get_minecraft_token(
         .json(&req)
         .send()
         .await
-        .map_err(|e| format!("MC auth request: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("MC auth request: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("MC auth error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("MC auth error {status}: {body}"),
+        ));
     }
-    let data = resp
-        .json::<McLoginResponse>()
-        .await
-        .map_err(|e| format!("MC auth parse: {e}"))?;
+    let data = resp.json::<McLoginResponse>().await.map_err(|e| {
+        let detail = format!("MC auth parse: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     Ok((data.access_token, data.expires_in.unwrap_or(86400)))
 }
 
 async fn get_minecraft_profile_from_token(
     client: &Client,
     mc_token: &str,
-) -> Result<McProfileResponse, String> {
+) -> Result<McProfileResponse, CommandError> {
     let mut retry_index = 0;
     loop {
         let resp = client
@@ -676,13 +777,16 @@ async fn get_minecraft_profile_from_token(
             .header("Authorization", format!("Bearer {mc_token}"))
             .send()
             .await
-            .map_err(|e| format!("MC profile request: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("MC profile request: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         let status = resp.status();
         if status.is_success() {
-            return resp
-                .json::<McProfileResponse>()
-                .await
-                .map_err(|e| format!("MC profile parse: {e}"));
+            return resp.json::<McProfileResponse>().await.map_err(|e| {
+                let detail = format!("MC profile parse: {e}");
+                CommandError::from(e).context(detail)
+            });
         }
 
         let body = resp.text().await.unwrap_or_default();
@@ -692,7 +796,10 @@ async fn get_minecraft_profile_from_token(
             sleep(Duration::from_millis(delay)).await;
             continue;
         }
-        return Err(format!("MC profile error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("MC profile error {status}: {body}"),
+        ));
     }
 }
 
@@ -742,9 +849,12 @@ fn is_microsoft_callback(url: &url::Url) -> bool {
         && url.password().is_none()
 }
 
-fn microsoft_callback_code(url: &url::Url, expected_state: &str) -> Result<String, String> {
+fn microsoft_callback_code(url: &url::Url, expected_state: &str) -> Result<String, CommandError> {
     if !is_microsoft_callback(url) || url.fragment().is_some() {
-        return Err("Invalid Microsoft sign-in callback address".into());
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            "Invalid Microsoft sign-in callback address",
+        ));
     }
     let mut parameters = std::collections::HashMap::new();
     for (key, value) in url.query_pairs() {
@@ -753,7 +863,10 @@ fn microsoft_callback_code(url: &url::Url, expected_state: &str) -> Result<Strin
                 .insert(key.into_owned(), value.into_owned())
                 .is_some()
         {
-            return Err("Duplicate Microsoft sign-in callback parameter".into());
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Duplicate Microsoft sign-in callback parameter",
+            ));
         }
     }
     // Check state for both successful and failed authorization responses. Never
@@ -761,33 +874,51 @@ fn microsoft_callback_code(url: &url::Url, expected_state: &str) -> Result<Strin
     if expected_state.is_empty()
         || parameters.get("state").map(String::as_str) != Some(expected_state)
     {
-        return Err("Microsoft sign-in state mismatch; start sign-in again".into());
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            "Microsoft sign-in state mismatch; start sign-in again",
+        ));
     }
     if parameters.contains_key("code") && parameters.contains_key("error") {
-        return Err("Invalid Microsoft sign-in response".into());
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            "Invalid Microsoft sign-in response",
+        ));
     }
     if let Some(error) = parameters.get("error") {
-        return Err(if error == "access_denied" {
-            "Sign-in cancelled".into()
-        } else {
-            "Microsoft rejected the sign-in request".into()
-        });
+        return Err(CommandError::new(
+            if error == "access_denied" {
+                ErrorCode::Cancelled
+            } else {
+                ErrorCode::Authentication
+            },
+            if error == "access_denied" {
+                "Sign-in cancelled"
+            } else {
+                "Microsoft rejected the sign-in request"
+            },
+        ));
     }
     parameters
         .remove("code")
         .filter(|code| !code.trim().is_empty())
-        .ok_or_else(|| "No auth code in Microsoft sign-in callback".into())
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::Authentication,
+                "No auth code in Microsoft sign-in callback",
+            )
+        })
 }
 
 /// A fresh unpredictable state and a single-use reply belong to one login
 /// window. A callback from an earlier window cannot complete a later attempt.
 struct MicrosoftAuthCallback {
     state: String,
-    reply: Option<oneshot::Sender<Result<String, String>>>,
+    reply: Option<oneshot::Sender<Result<String, CommandError>>>,
 }
 
 impl MicrosoftAuthCallback {
-    fn new(reply: oneshot::Sender<Result<String, String>>) -> Self {
+    fn new(reply: oneshot::Sender<Result<String, CommandError>>) -> Self {
         Self {
             state: format!(
                 "{}{}",
@@ -810,7 +941,10 @@ impl MicrosoftAuthCallback {
 
     fn cancel(&mut self) {
         if let Some(reply) = self.reply.take() {
-            let _ = reply.send(Err("Sign-in cancelled".into()));
+            let _ = reply.send(Err(CommandError::new(
+                ErrorCode::Cancelled,
+                "Sign-in cancelled",
+            )));
         }
     }
 }
@@ -828,7 +962,7 @@ async fn do_auth_chain(
     ms_access_token: &str,
     refresh_token: String,
     ms_expires_in: u64,
-) -> Result<MicrosoftAccount, String> {
+) -> Result<MicrosoftAccount, CommandError> {
     let client = crate::minecraft::mirrors::build_client()?;
     let (xbl_token, uhs) = get_xbl_token(&client, ms_access_token).await?;
     let xsts_token = get_xsts_token(&client, &xbl_token).await?;
@@ -858,7 +992,7 @@ fn account_token_is_fresh(account: &MicrosoftAccount) -> bool {
 async fn refresh_account(
     account: &MicrosoftAccount,
     force: bool,
-) -> Result<MicrosoftAccount, String> {
+) -> Result<MicrosoftAccount, CommandError> {
     // Keep the read/refresh/write sequence serialized. This prevents two
     // simultaneous launches from racing and saving an older rotated token.
     let _guard = accounts_lock().lock().await;
@@ -866,7 +1000,9 @@ async fn refresh_account(
     let idx = accounts
         .iter()
         .position(|stored| stored.id == account.id)
-        .ok_or_else(|| "Microsoft account was removed".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(ErrorCode::Authentication, "Microsoft account was removed")
+        })?;
     let current = accounts[idx].clone();
 
     // Another request may already have refreshed the account while this one
@@ -876,9 +1012,10 @@ async fn refresh_account(
         return Ok(current);
     }
     if current.refresh_token.trim().is_empty() {
-        return Err(
-            "Microsoft account has no refresh token. Sign in again once to repair it.".to_string(),
-        );
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            "Microsoft account has no refresh token. Sign in again once to repair it.",
+        ));
     }
 
     let client = crate::minecraft::mirrors::build_client()?;
@@ -891,9 +1028,10 @@ async fn refresh_account(
 
     let mut updated = do_auth_chain(&ms.access_token, new_refresh, ms_expires).await?;
     if !updated.uuid.eq_ignore_ascii_case(&current.uuid) {
-        return Err(
-            "Microsoft refresh returned a different Minecraft account; sign in again".to_string(),
-        );
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            "Microsoft refresh returned a different Minecraft account; sign in again",
+        ));
     }
     updated.id = current.id;
     updated.uuid = current.uuid;
@@ -907,26 +1045,30 @@ async fn refresh_account(
 /// If the stored account's Minecraft token is close to expiry, refresh and save.
 pub async fn refresh_account_if_expired(
     account: &MicrosoftAccount,
-) -> Result<MicrosoftAccount, String> {
+) -> Result<MicrosoftAccount, CommandError> {
     refresh_account(account, false).await
 }
 
-async fn refreshed_account_by_id(account_id: &str) -> Result<MicrosoftAccount, String> {
+async fn refreshed_account_by_id(account_id: &str) -> Result<MicrosoftAccount, CommandError> {
     let accounts = read_accounts().await?;
     let account = accounts
         .into_iter()
         .find(|account| account.id == account_id)
-        .ok_or_else(|| "Microsoft account not found".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(ErrorCode::Authentication, "Microsoft account not found")
+        })?;
 
     refresh_account_if_expired(&account).await
 }
 
-async fn force_refreshed_account_by_id(account_id: &str) -> Result<MicrosoftAccount, String> {
+async fn force_refreshed_account_by_id(account_id: &str) -> Result<MicrosoftAccount, CommandError> {
     let accounts = read_accounts().await?;
     let account = accounts
         .into_iter()
         .find(|account| account.id == account_id)
-        .ok_or_else(|| "Microsoft account not found".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(ErrorCode::Authentication, "Microsoft account not found")
+        })?;
 
     refresh_account(&account, true).await
 }
@@ -949,8 +1091,13 @@ impl MinecraftProfileError {
         )
     }
 
-    fn into_message(self) -> String {
-        self.message
+    fn into_message(self) -> CommandError {
+        let code = if self.status.is_none() {
+            ErrorCode::Network
+        } else {
+            ErrorCode::Authentication
+        };
+        CommandError::new(code, self.message)
     }
 }
 
@@ -1013,12 +1160,15 @@ async fn profile_from_mutation_response(
     account: &MicrosoftAccount,
     resp: Response,
     context: &str,
-) -> Result<MinecraftProfile, String> {
+) -> Result<MinecraftProfile, CommandError> {
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        return Err(format!("{context} error {status}: {body}"));
+        return Err(CommandError::new(
+            ErrorCode::Authentication,
+            format!("{context} error {status}: {body}"),
+        ));
     }
 
     if body.trim().is_empty() {
@@ -1027,34 +1177,51 @@ async fn profile_from_mutation_response(
             .map_err(MinecraftProfileError::into_message);
     }
 
-    serde_json::from_str::<MinecraftProfile>(&body)
-        .map_err(|e| format!("{context} parse: {e}; body: {body}"))
+    serde_json::from_str::<MinecraftProfile>(&body).map_err(|e| {
+        let detail = format!("{context} parse: {e}; body: {body}");
+        CommandError::from(e).context(detail)
+    })
 }
 
-fn normalize_skin_variant(variant: &str) -> Result<&'static str, String> {
+fn normalize_skin_variant(variant: &str) -> Result<&'static str, CommandError> {
     match variant.trim().to_ascii_uppercase().as_str() {
         "CLASSIC" | "DEFAULT" => Ok("classic"),
         "SLIM" => Ok("slim"),
-        _ => Err("Skin variant must be CLASSIC or SLIM".to_string()),
+        _ => Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Skin variant must be CLASSIC or SLIM",
+        )),
     }
 }
 
-fn ensure_png_skin_file(file_name: &str, data: &[u8]) -> Result<(), String> {
+fn ensure_png_skin_file(file_name: &str, data: &[u8]) -> Result<(), CommandError> {
     if data.is_empty() {
-        return Err("Skin file is empty".to_string());
+        return Err(CommandError::new(
+            ErrorCode::SkinFormat,
+            "Skin file is empty",
+        ));
     }
 
     if data.len() > 2 * 1024 * 1024 {
-        return Err("Skin file is too large".to_string());
+        return Err(CommandError::new(
+            ErrorCode::SkinSize,
+            "Skin file is too large",
+        ));
     }
 
     if !file_name.to_ascii_lowercase().ends_with(".png") {
-        return Err("Skin file must be a PNG".to_string());
+        return Err(CommandError::new(
+            ErrorCode::SkinFormat,
+            "Skin file must be a PNG",
+        ));
     }
 
     const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
     if data.len() < PNG_SIGNATURE.len() || &data[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
-        return Err("Skin file is not a valid PNG".to_string());
+        return Err(CommandError::new(
+            ErrorCode::SkinFormat,
+            "Skin file is not a valid PNG",
+        ));
     }
 
     Ok(())
@@ -1065,7 +1232,7 @@ fn ensure_png_skin_file(file_name: &str, data: &[u8]) -> Result<(), String> {
 fn upsert_account(
     accounts: &mut Vec<MicrosoftAccount>,
     mut account: MicrosoftAccount,
-) -> Result<MicrosoftAccount, String> {
+) -> Result<MicrosoftAccount, CommandError> {
     if let Some(index) = accounts
         .iter()
         .position(|stored| stored.uuid.eq_ignore_ascii_case(&account.uuid))
@@ -1076,12 +1243,18 @@ fn upsert_account(
             account.refresh_token = stored.refresh_token.clone();
         }
         if account.refresh_token.trim().is_empty() {
-            return Err("Microsoft did not provide a refresh token. Sign in again.".to_string());
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Microsoft did not provide a refresh token. Sign in again.",
+            ));
         }
         accounts[index] = account.clone();
     } else {
         if account.refresh_token.trim().is_empty() {
-            return Err("Microsoft did not provide a refresh token. Sign in again.".to_string());
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Microsoft did not provide a refresh token. Sign in again.",
+            ));
         }
         accounts.push(account.clone());
     }
@@ -1090,9 +1263,8 @@ fn upsert_account(
 }
 
 #[tauri::command]
-pub async fn list_microsoft_accounts(
-) -> Result<Vec<MicrosoftAccountSummary>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn list_microsoft_accounts() -> Result<Vec<MicrosoftAccountSummary>, CommandError> {
+    let result: Result<_, CommandError> = async {
         Ok(read_accounts()
             .await?
             .iter()
@@ -1100,28 +1272,24 @@ pub async fn list_microsoft_accounts(
             .collect())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn remove_microsoft_account(
-    id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn remove_microsoft_account(id: String) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let _guard = accounts_lock().lock().await;
         let mut accounts = read_accounts_unlocked().await?;
         accounts.retain(|a| a.id != id);
         write_accounts_unlocked(&accounts).await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn get_minecraft_profile(
-    account_id: String,
-) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn get_minecraft_profile(account_id: String) -> Result<MinecraftProfile, CommandError> {
+    let result: Result<_, CommandError> = async {
         let mut account = refreshed_account_by_id(&account_id).await?;
         let client = crate::minecraft::mirrors::build_client()?;
         match fetch_minecraft_profile_with_retry(&client, &account).await {
@@ -1136,7 +1304,7 @@ pub async fn get_minecraft_profile(
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -1145,8 +1313,8 @@ pub async fn upload_minecraft_skin(
     variant: String,
     file_name: String,
     data: Vec<u8>,
-) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<MinecraftProfile, CommandError> {
+    let result: Result<_, CommandError> = async {
         ensure_png_skin_file(&file_name, &data)?;
 
         let account = refreshed_account_by_id(&account_id).await?;
@@ -1155,7 +1323,10 @@ pub async fn upload_minecraft_skin(
         let part = multipart::Part::bytes(data)
             .file_name(file_name)
             .mime_str("image/png")
-            .map_err(|e| format!("Skin mime error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("Skin mime error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         let form = multipart::Form::new()
             .text("variant", normalized_variant.to_string())
             .part("file", part);
@@ -1166,19 +1337,20 @@ pub async fn upload_minecraft_skin(
             .multipart(form)
             .send()
             .await
-            .map_err(|e| format!("Upload skin request: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("Upload skin request: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         profile_from_mutation_response(&client, &account, resp, "Upload skin").await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn reset_minecraft_skin(
-    account_id: String,
-) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn reset_minecraft_skin(account_id: String) -> Result<MinecraftProfile, CommandError> {
+    let result: Result<_, CommandError> = async {
         let account = refreshed_account_by_id(&account_id).await?;
         let client = crate::minecraft::mirrors::build_client()?;
         let resp = client
@@ -1186,20 +1358,23 @@ pub async fn reset_minecraft_skin(
             .bearer_auth(&account.access_token)
             .send()
             .await
-            .map_err(|e| format!("Reset skin request: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("Reset skin request: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         profile_from_mutation_response(&client, &account, resp, "Reset skin").await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn set_minecraft_cape(
     account_id: String,
     cape_id: String,
-) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<MinecraftProfile, CommandError> {
+    let result: Result<_, CommandError> = async {
         let account = refreshed_account_by_id(&account_id).await?;
         let client = crate::minecraft::mirrors::build_client()?;
         let resp = client
@@ -1208,19 +1383,20 @@ pub async fn set_minecraft_cape(
             .json(&CapeSelectionRequest { cape_id })
             .send()
             .await
-            .map_err(|e| format!("Set cape request: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("Set cape request: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         profile_from_mutation_response(&client, &account, resp, "Set cape").await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn hide_minecraft_cape(
-    account_id: String,
-) -> Result<MinecraftProfile, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn hide_minecraft_cape(account_id: String) -> Result<MinecraftProfile, CommandError> {
+    let result: Result<_, CommandError> = async {
         let account = refreshed_account_by_id(&account_id).await?;
         let client = crate::minecraft::mirrors::build_client()?;
         let resp = client
@@ -1228,27 +1404,31 @@ pub async fn hide_minecraft_cape(
             .bearer_auth(&account.access_token)
             .send()
             .await
-            .map_err(|e| format!("Hide cape request: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("Hide cape request: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         profile_from_mutation_response(&client, &account, resp, "Hide cape").await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn start_microsoft_auth(
-    app: AppHandle,
-) -> Result<MicrosoftAccountSummary, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn start_microsoft_auth(app: AppHandle) -> Result<MicrosoftAccountSummary, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("authentication", None)?;
         // If the auth window is already open, focus it and return an error
         if let Some(existing) = app.get_webview_window("ms-login") {
             let _ = existing.set_focus();
-            return Err("Auth window already open — complete sign-in in the open window".into());
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Auth window already open — complete sign-in in the open window",
+            ));
         }
 
-        let (tx, rx) = oneshot::channel::<Result<String, String>>();
+        let (tx, rx) = oneshot::channel::<Result<String, CommandError>>();
         let callback = MicrosoftAuthCallback::new(tx);
         let auth_url = build_auth_url(&callback.state);
         let shared = Arc::new(Mutex::new(callback));
@@ -1257,7 +1437,10 @@ pub async fn start_microsoft_auth(
         let window = WebviewWindowBuilder::new(
             &app,
             "ms-login",
-            WebviewUrl::External(auth_url.parse().map_err(|e| format!("URL parse: {e}"))?),
+            WebviewUrl::External(auth_url.parse().map_err(|e| {
+                let detail = format!("URL parse: {e}");
+                CommandError::from(e).context(detail)
+            })?),
         )
         .title("Sign in with Microsoft")
         .inner_size(480.0, 680.0)
@@ -1271,7 +1454,10 @@ pub async fn start_microsoft_auth(
                 .on_navigation(url)
         })
         .build()
-        .map_err(|e| format!("Failed to open auth window: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("Failed to open auth window: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         // Destroying the window consumes only this attempt's reply.
         window.on_window_event(move |event| {
@@ -1286,8 +1472,15 @@ pub async fn start_microsoft_auth(
         let window_guard = AuthWindowGuard(window);
         let code = tokio::time::timeout(Duration::from_secs(10 * 60), rx)
             .await
-            .map_err(|_| "Microsoft sign-in timed out; start sign-in again".to_string())?
-            .map_err(|_| "Auth window closed unexpectedly".to_string())??;
+            .map_err(|_| {
+                CommandError::new(
+                    ErrorCode::Network,
+                    "Microsoft sign-in timed out; start sign-in again",
+                )
+            })?
+            .map_err(|_| {
+                CommandError::new(ErrorCode::Authentication, "Auth window closed unexpectedly")
+            })??;
         // Use the original window handle so cleanup cannot close a new attempt
         // that happens to reuse the ms-login label. Errors also close via Drop.
         drop(window_guard);
@@ -1310,7 +1503,7 @@ pub async fn start_microsoft_auth(
         Ok(MicrosoftAccountSummary::from(&account))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]
@@ -1349,7 +1542,9 @@ mod tests {
     #[test]
     fn new_account_requires_a_refresh_token() {
         let mut accounts = Vec::new();
-        let error = upsert_account(&mut accounts, account("new-id", "new-uuid", "")).unwrap_err();
+        let error = upsert_account(&mut accounts, account("new-id", "new-uuid", ""))
+            .unwrap_err()
+            .detail;
 
         assert!(error.contains("refresh token"));
         assert!(accounts.is_empty());
@@ -1360,7 +1555,9 @@ mod tests {
         let original = account("stable-id", "same-uuid", "");
         let mut accounts = vec![original.clone()];
 
-        let error = upsert_account(&mut accounts, account("new-id", "same-uuid", "")).unwrap_err();
+        let error = upsert_account(&mut accounts, account("new-id", "same-uuid", ""))
+            .unwrap_err()
+            .detail;
 
         assert!(error.contains("refresh token"));
         assert_eq!(accounts[0].id, original.id);
@@ -1504,7 +1701,9 @@ mod oauth_callback_tests {
             "state=expected",
             "state=expected&code=secret-code#extra",
         ] {
-            let error = microsoft_callback_code(&callback_url(query), "expected").unwrap_err();
+            let error = microsoft_callback_code(&callback_url(query), "expected")
+                .unwrap_err()
+                .detail;
             assert!(!error.contains("secret-code"));
             assert!(!error.contains("expected"));
         }
@@ -1518,13 +1717,15 @@ mod oauth_callback_tests {
             "expected"
         )
         .unwrap_err()
+        .detail
         .contains("state mismatch"));
         assert_eq!(
             microsoft_callback_code(
                 &callback_url("state=expected&error=access_denied"),
                 "expected"
             )
-            .unwrap_err(),
+            .unwrap_err()
+            .detail,
             "Sign-in cancelled"
         );
         assert_eq!(
@@ -1532,7 +1733,8 @@ mod oauth_callback_tests {
                 &callback_url("state=expected&error=server_error&error_description=private"),
                 "expected"
             )
-            .unwrap_err(),
+            .unwrap_err()
+            .detail,
             "Microsoft rejected the sign-in request"
         );
     }
@@ -1558,6 +1760,21 @@ mod oauth_callback_tests {
     }
 
     #[test]
+    fn oauth_error_parameters_assign_codes_without_parsing_display_text() {
+        for (reason, expected) in [
+            ("access_denied", ErrorCode::Cancelled),
+            ("server_error", ErrorCode::Authentication),
+        ] {
+            let error = microsoft_callback_code(
+                &callback_url(&format!("state=expected&error={reason}")),
+                "expected",
+            )
+            .unwrap_err();
+            assert_eq!(error.code, expected);
+        }
+    }
+
+    #[test]
     fn callbacks_from_an_old_attempt_and_cancelled_attempts_cannot_sign_in() {
         let (old_tx, _) = oneshot::channel();
         let previous = MicrosoftAuthCallback::new(old_tx);
@@ -1571,6 +1788,7 @@ mod oauth_callback_tests {
             .try_recv()
             .unwrap()
             .unwrap_err()
+            .detail
             .contains("state mismatch"));
         assert!(current.reply.is_none());
         let (tx, mut rx) = oneshot::channel();
@@ -1578,7 +1796,10 @@ mod oauth_callback_tests {
         cancelled.cancel();
         let valid = callback_url(&format!("state={}&code=valid", cancelled.state));
         assert!(!cancelled.on_navigation(&valid));
-        assert_eq!(rx.try_recv().unwrap().unwrap_err(), "Sign-in cancelled");
+        assert_eq!(
+            rx.try_recv().unwrap().unwrap_err().detail,
+            "Sign-in cancelled"
+        );
         assert!(cancelled.reply.is_none());
     }
 }

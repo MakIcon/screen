@@ -8,6 +8,7 @@
 //! BMCLAPI does *not* mirror QuiltMC. For Quilt behind a regional block the only
 //! way through is the proxy, which `build_client` applies to every request.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     sync::{OnceLock, RwLock},
     time::Duration,
@@ -90,9 +91,9 @@ pub fn normalize_proxy_bypass(value: &str) -> String {
         .join(",")
 }
 
-pub fn configured_proxy(proxy_url: &str, bypass: &str) -> Result<reqwest::Proxy, String> {
+pub fn configured_proxy(proxy_url: &str, bypass: &str) -> Result<reqwest::Proxy, CommandError> {
     let mut proxy = reqwest::Proxy::all(proxy_url.trim())
-        .map_err(|_| "Invalid proxy URL or protocol".to_string())?;
+        .map_err(|_| CommandError::new(ErrorCode::InvalidInput, "Invalid proxy URL or protocol"))?;
     let bypass = normalize_proxy_bypass(bypass);
     if !bypass.is_empty() {
         proxy = proxy.no_proxy(reqwest::NoProxy::from_string(&bypass));
@@ -157,22 +158,27 @@ pub fn candidates(url: &str) -> Vec<String> {
 /// GET a URL, trying each mirror candidate in order. Returns the first
 /// successful (2xx) response; if none succeed, returns the last HTTP response
 /// (so the caller can report the status) or the last transport error.
-pub async fn get_with_fallback(client: &Client, url: &str) -> Result<reqwest::Response, String> {
+pub async fn get_with_fallback(
+    client: &Client,
+    url: &str,
+) -> Result<reqwest::Response, CommandError> {
     let urls = candidates(url);
     let mut last_response: Option<reqwest::Response> = None;
-    let mut last_error: Option<String> = None;
+    let mut last_error: Option<CommandError> = None;
 
     for candidate in &urls {
         match client.get(candidate).send().await {
             Ok(response) if response.status().is_success() => return Ok(response),
             Ok(response) => last_response = Some(response),
-            Err(error) => last_error = Some(error.to_string()),
+            Err(error) => last_error = Some(CommandError::from(error)),
         }
     }
 
-    last_response
-        .map(Ok)
-        .unwrap_or_else(|| Err(last_error.unwrap_or_else(|| format!("request failed for {url}"))))
+    last_response.map(Ok).unwrap_or_else(|| {
+        Err(last_error.unwrap_or_else(|| {
+            CommandError::new(ErrorCode::Network, format!("request failed for {url}"))
+        }))
+    })
 }
 
 /// Cached HTTP client paired with the proxy string it was built for.
@@ -187,7 +193,7 @@ fn client_cache() -> &'static RwLock<Option<CachedClient>> {
 /// connection pool) is cached and reused for as long as the proxy is unchanged,
 /// so the dozens of small Modrinth requests share keep-alive connections instead
 /// of paying a fresh TLS handshake each time. A new proxy rebuilds it.
-pub fn build_client() -> Result<Client, String> {
+pub fn build_client() -> Result<Client, CommandError> {
     let config = current_config();
     let proxy = config
         .proxy
@@ -213,9 +219,10 @@ pub fn build_client() -> Result<Client, String> {
         builder = builder.proxy(configured_proxy(proxy_url, &proxy_bypass)?);
     }
 
-    let client = builder
-        .build()
-        .map_err(|error| format!("http client error: {error}"))?;
+    let client = builder.build().map_err(|error| {
+        let detail = format!("http client error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
 
     if let Ok(mut guard) = client_cache().write() {
         *guard = Some((proxy, proxy_bypass, client.clone()));
@@ -281,7 +288,9 @@ mod tests {
 
     #[test]
     fn invalid_proxy_error_does_not_echo_credentials() {
-        let error = configured_proxy("://user:very-secret@example.com", "").unwrap_err();
+        let error = configured_proxy("://user:very-secret@example.com", "")
+            .unwrap_err()
+            .detail;
 
         assert_eq!(error, "Invalid proxy URL or protocol");
         assert!(!error.contains("very-secret"));

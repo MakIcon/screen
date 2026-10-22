@@ -1,4 +1,5 @@
 //! Cross-window task lifetime and the exclusive launcher-update reservation.
+use crate::commands::errors::{CommandError, ErrorCode};
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -38,10 +39,13 @@ impl Drop for OperationGuard {
     }
 }
 
-pub fn begin(kind: &str, instance_id: Option<&str>) -> Result<OperationGuard, String> {
+pub fn begin(kind: &str, instance_id: Option<&str>) -> Result<OperationGuard, CommandError> {
     let mut registry = registry().lock().unwrap_or_else(|e| e.into_inner());
     if registry.update.is_some() {
-        return Err("Launcher update is being installed; try again after restarting".into());
+        return Err(CommandError::new(
+            ErrorCode::Unknown,
+            "Launcher update is being installed; try again after restarting",
+        ));
     }
     let id = uuid::Uuid::new_v4().to_string();
     registry.active.insert(

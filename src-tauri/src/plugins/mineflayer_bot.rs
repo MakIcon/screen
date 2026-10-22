@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Write},
@@ -47,7 +48,7 @@ struct MineflayerBotRuntime {
     server: Option<String>,
     last_error: Option<String>,
     logs: Vec<String>,
-    pending_chat: HashMap<String, oneshot::Sender<Result<(), String>>>,
+    pending_chat: HashMap<String, oneshot::Sender<Result<(), CommandError>>>,
     inventory_url: Option<String>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
@@ -173,36 +174,56 @@ struct WorkerEvent {
     catalog: Option<serde_json::Value>,
 }
 
-fn write_worker_message(writer: &mut impl Write, payload: &impl Serialize) -> Result<(), String> {
-    let mut line = serde_json::to_vec(payload)
-        .map_err(|error| format!("serialize bot message error: {error}"))?;
+fn write_worker_message(
+    writer: &mut impl Write,
+    payload: &impl Serialize,
+) -> Result<(), CommandError> {
+    let mut line = serde_json::to_vec(payload).map_err(|error| {
+        let detail = format!("serialize bot message error: {error}");
+        CommandError::from(error).context(detail)
+    })?;
     line.push(b'\n');
     writer
         .write_all(&line)
         .and_then(|_| writer.flush())
-        .map_err(|error| format!("write bot message error: {error}"))
+        .map_err(|error| {
+            let detail = format!("write bot message error: {error}");
+            CommandError::from(error).context(detail)
+        })
 }
 
-fn validate_chat_message(message: &str) -> Result<&str, String> {
+fn validate_chat_message(message: &str) -> Result<&str, CommandError> {
     let message = message.trim();
     if message.is_empty() {
-        return Err("Введите сообщение".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Введите сообщение",
+        ));
     }
     if message.encode_utf16().count() > 240 {
-        return Err("Сообщение должно быть не длиннее 240 символов".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Сообщение должно быть не длиннее 240 символов",
+        ));
     }
     if message
         .chars()
         .any(|character| character.is_control() || character == '§')
     {
-        return Err("Сообщение содержит недопустимые символы".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Сообщение содержит недопустимые символы",
+        ));
     }
     Ok(message)
 }
 
 fn fail_pending_chat(runtime: &mut MineflayerBotRuntime) {
     for (_, reply) in runtime.pending_chat.drain() {
-        let _ = reply.send(Err("Бот отключился до подтверждения отправки".to_string()));
+        let _ = reply.send(Err(CommandError::new(
+            ErrorCode::Network,
+            "Бот отключился до подтверждения отправки",
+        )));
     }
 }
 
@@ -236,11 +257,13 @@ fn publish_status(runtime: &mut MineflayerBotRuntime) {
     }
 }
 
-pub(crate) fn current_status(state: &MineflayerBotState) -> Result<MineflayerBotStatus, String> {
+pub(crate) fn current_status(
+    state: &MineflayerBotState,
+) -> Result<MineflayerBotStatus, CommandError> {
     let mut runtime = state
         .inner
         .lock()
-        .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        .map_err(|_| CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned"))?;
     refresh_child_state(&mut runtime);
     Ok(snapshot_status(&runtime))
 }
@@ -280,7 +303,9 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         "chat_result" => {
             if let Some(request_id) = event.request_id {
                 if let Some(reply) = runtime.pending_chat.remove(&request_id) {
-                    let result = event.error.map_or(Ok(()), Err);
+                    let result = event.error.map_or(Ok(()), |detail| {
+                        Err(CommandError::new(ErrorCode::Unknown, detail))
+                    });
                     let _ = reply.send(result);
                 }
             }
@@ -429,12 +454,14 @@ fn parse_extra_owners(raw: &str) -> Vec<String> {
     owners
 }
 
-async fn microsoft_account_by_id(id: &str) -> Result<MicrosoftAccount, String> {
+async fn microsoft_account_by_id(id: &str) -> Result<MicrosoftAccount, CommandError> {
     let accounts = read_accounts().await?;
     let account = accounts
         .into_iter()
         .find(|account| account.id == id)
-        .ok_or_else(|| "Microsoft account not found".to_string())?;
+        .ok_or_else(|| {
+            CommandError::new(ErrorCode::Authentication, "Microsoft account not found")
+        })?;
 
     refresh_account_if_expired(&account).await
 }
@@ -443,11 +470,16 @@ async fn resolve_owner_name(
     launcher_nickname: &str,
     launcher_account_type: &str,
     launcher_ms_account_id: Option<&str>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     if launcher_account_type.eq_ignore_ascii_case("MICROSOFT") {
         let account_id = launcher_ms_account_id
             .filter(|id| !id.trim().is_empty())
-            .ok_or_else(|| "Select a Microsoft account for the launcher owner first".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::Authentication,
+                    "Select a Microsoft account for the launcher owner first",
+                )
+            })?;
         let account = microsoft_account_by_id(account_id).await?;
         return Ok(account.username);
     }
@@ -459,7 +491,7 @@ async fn resolve_bot_account(
     plugin: &MineflayerBotPluginSettings,
     launcher_account_type: &str,
     launcher_ms_account_id: Option<&str>,
-) -> Result<WorkerAccountConfig, String> {
+) -> Result<WorkerAccountConfig, CommandError> {
     if plugin
         .bot_account_mode
         .trim()
@@ -469,17 +501,22 @@ async fn resolve_bot_account(
             .bot_microsoft_account_id
             .as_deref()
             .filter(|id| !id.trim().is_empty())
-            .ok_or_else(|| "Select a Microsoft account for the bot".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::Authentication,
+                    "Select a Microsoft account for the bot",
+                )
+            })?;
 
         if launcher_account_type.eq_ignore_ascii_case("MICROSOFT")
             && launcher_ms_account_id
                 .map(|id| id == bot_account_id)
                 .unwrap_or(false)
         {
-            return Err(
-                "Bot account must be different from the active player Microsoft account"
-                    .to_string(),
-            );
+            return Err(CommandError::new(
+                ErrorCode::Authentication,
+                "Bot account must be different from the active player Microsoft account",
+            ));
         }
 
         let account = microsoft_account_by_id(bot_account_id).await?;
@@ -499,7 +536,7 @@ async fn resolve_bot_account(
     })
 }
 
-fn worker_path() -> Result<(PathBuf, PathBuf), String> {
+fn worker_path() -> Result<(PathBuf, PathBuf), CommandError> {
     let runtime_dir = super::optional_extensions::mineflayer_runtime_dir()?;
     Ok((runtime_dir.join("worker.cjs"), runtime_dir))
 }
@@ -515,25 +552,24 @@ fn node_executable() -> &'static str {
 #[tauri::command]
 pub async fn get_mineflayer_bot_status(
     state: State<'_, MineflayerBotState>,
-) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { current_status(&state) }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+) -> Result<MineflayerBotStatus, CommandError> {
+    let result: Result<_, CommandError> = async { current_status(&state) }.await;
+    result
 }
 
 // Keep the full registry/textures out of the frequently polled status snapshot.
 #[tauri::command]
 pub async fn get_minecraft_catalog(
     state: State<'_, MineflayerBotState>,
-) -> Result<Option<serde_json::Value>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        let runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+) -> Result<Option<serde_json::Value>, CommandError> {
+    let result: Result<_, CommandError> = async {
+        let runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned")
+        })?;
         Ok(runtime.catalog.clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -541,12 +577,12 @@ pub async fn send_mineflayer_bot_chat(
     state: State<'_, MineflayerBotState>,
     message: String,
     command: Option<bool>,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let message = validate_chat_message(&message)?;
         send_worker_request(state, serde_json::json!({ "type": if command.unwrap_or(false) { "command" } else { "chat" }, "message": message })).await
     }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -555,20 +591,23 @@ pub async fn control_mineflayer_bot_workflow(
     action: String,
     steps: Option<serde_json::Value>,
     name: Option<String>,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         validate_workflow_request(&action, steps.as_ref())?;
         send_worker_request(state, serde_json::json!({ "type": "workflow", "action": action, "steps": steps, "name": name })).await
     }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 fn validate_workflow_request(
     action: &str,
     steps: Option<&serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     if !["start", "pause", "resume", "stop"].contains(&action) {
-        return Err("Неизвестное действие сценария".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Неизвестное действие сценария",
+        ));
     }
     if action == "start"
         && !steps
@@ -576,7 +615,10 @@ fn validate_workflow_request(
             .map(|items| !items.is_empty() && items.len() <= WORKFLOW_STEP_LIMIT)
             .unwrap_or(false)
     {
-        return Err("Добавьте от 1 до 100 шагов".to_string());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Добавьте от 1 до 100 шагов",
+        ));
     }
     Ok(())
 }
@@ -585,8 +627,8 @@ fn validate_workflow_request(
 pub async fn configure_mineflayer_bot_storage(
     state: State<'_, MineflayerBotState>,
     groups: Vec<crate::models::MineflayerStorageGroup>,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         if groups.len() > 32
             || groups.iter().any(|group| {
                 group.chests.len() > 32
@@ -594,9 +636,10 @@ pub async fn configure_mineflayer_bot_storage(
                     || group.name.chars().count() > 64
             })
         {
-            return Err(
-                "Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой".to_string(),
-            );
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой",
+            ));
         }
         send_worker_request(
             state,
@@ -605,42 +648,55 @@ pub async fn configure_mineflayer_bot_storage(
         .await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn send_worker_request(
     state: State<'_, MineflayerBotState>,
     mut payload: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let request_id = uuid::Uuid::new_v4().to_string();
     payload["requestId"] = serde_json::json!(request_id);
     let (reply, response) = oneshot::channel();
     {
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        let mut runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned")
+        })?;
         refresh_child_state(&mut runtime);
         if runtime.state != "connected" || runtime.child.is_none() {
-            return Err("Бот не подключён к серверу".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Бот не подключён к серверу",
+            ));
         }
         let stdin = runtime
             .child
             .as_mut()
             .and_then(|child| child.stdin.as_mut())
-            .ok_or_else(|| "Канал отправки сообщений боту недоступен".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::Network,
+                    "Канал отправки сообщений боту недоступен",
+                )
+            })?;
         write_worker_message(stdin, &payload)?;
         runtime.pending_chat.insert(request_id.clone(), reply);
     }
 
     match tokio::time::timeout(Duration::from_secs(5), response).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("Бот отключился до подтверждения отправки".to_string()),
+        Ok(Err(_)) => Err(CommandError::new(
+            ErrorCode::Network,
+            "Бот отключился до подтверждения отправки",
+        )),
         Err(_) => {
             if let Ok(mut runtime) = state.inner.lock() {
                 runtime.pending_chat.remove(&request_id);
             }
-            Err("Бот не подтвердил отправку сообщения. Проверьте журнал событий".to_string())
+            Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Бот не подтвердил отправку сообщения. Проверьте журнал событий",
+            ))
         }
     }
 }
@@ -648,12 +704,11 @@ async fn send_worker_request(
 #[tauri::command]
 pub async fn stop_mineflayer_bot(
     state: State<'_, MineflayerBotState>,
-) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+) -> Result<MineflayerBotStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
+        let mut runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned")
+        })?;
 
         runtime.generation += 1;
         if let Some(mut child) = runtime.child.take() {
@@ -674,7 +729,7 @@ pub async fn stop_mineflayer_bot(
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -684,22 +739,31 @@ pub async fn start_mineflayer_bot(
     launcher_nickname: String,
     launcher_account_type: String,
     launcher_ms_account_id: Option<String>,
-) -> Result<MineflayerBotStatus, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<MineflayerBotStatus, CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let plugin = settings.plugins.mineflayer_bot;
 
         if !plugin.enabled {
-            return Err("Mineflayer Bot extension is disabled".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Mineflayer Bot extension is disabled",
+            ));
         }
 
         let host = plugin.host.trim().to_string();
         if host.is_empty() {
-            return Err("Set a server host for the bot".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Set a server host for the bot",
+            ));
         }
 
         if plugin.port == 0 {
-            return Err("Server port must be between 1 and 65535".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Server port must be between 1 and 65535",
+            ));
         }
 
         let command_prefix = clean_player_name(&plugin.command_prefix, "!");
@@ -791,29 +855,36 @@ pub async fn start_mineflayer_bot(
 
         let (worker, runtime_dir) = worker_path()?;
         if !worker.exists() {
-            return Err(format!("Mineflayer worker not found: {}", worker.display()));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Mineflayer worker not found: {}", worker.display()),
+            ));
         }
 
         {
-            let mut runtime = state
-                .inner
-                .lock()
-                .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+            let mut runtime = state.inner.lock().map_err(|_| {
+                CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned")
+            })?;
             refresh_child_state(&mut runtime);
             if runtime.child.is_some() {
-                return Err("Mineflayer bot is already running".to_string());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Mineflayer bot is already running",
+                ));
             }
         }
         super::optional_extensions::sync_mineflayer_worker(&runtime_dir)?;
         super::optional_extensions::ensure_mineflayer_dependencies(&runtime_dir).await?;
 
-        let mut runtime = state
-            .inner
-            .lock()
-            .map_err(|_| "Mineflayer bot state lock poisoned".to_string())?;
+        let mut runtime = state.inner.lock().map_err(|_| {
+            CommandError::new(ErrorCode::Unknown, "Mineflayer bot state lock poisoned")
+        })?;
         refresh_child_state(&mut runtime);
         if runtime.child.is_some() {
-            return Err("Mineflayer bot is already running".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Mineflayer bot is already running",
+            ));
         }
 
         let mut command = Command::new(node_executable());
@@ -831,17 +902,21 @@ pub async fn start_mineflayer_bot(
         command.creation_flags(CREATE_NO_WINDOW);
 
         let mut child = command.spawn().map_err(|error| {
-            format!("start node worker error: {error}. Install Node.js 22+ and retry.")
+            let detail =
+                format!("start node worker error: {error}. Install Node.js 22+ and retry.");
+            CommandError::from(error).context(detail)
         })?;
 
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "failed to open bot worker stdin".to_string())?;
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            CommandError::new(ErrorCode::Unknown, "failed to open bot worker stdin")
+        })?;
         if let Err(error) = write_worker_message(stdin, &config) {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("write bot config error: {error}"));
+            return Err(CommandError::new(
+                error.code,
+                format!("write bot config error: {error}"),
+            ));
         }
 
         runtime.app = Some(app);
@@ -873,7 +948,7 @@ pub async fn start_mineflayer_bot(
         Ok(snapshot_status(&runtime))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]
@@ -883,6 +958,7 @@ mod tests {
         write_worker_message, MineflayerBotRuntime, WorkerBehaviorConfig, WorkerEvent,
         WorkerMovementConfig,
     };
+    use crate::commands::errors::{CommandError, ErrorCode};
     use tokio::sync::oneshot;
 
     #[test]
@@ -1109,7 +1185,7 @@ mod tests {
         update_from_worker_event(&mut runtime, result);
         assert_eq!(
             second_rx.try_recv().unwrap(),
-            Err("connection closed".to_string())
+            Err(CommandError::new(ErrorCode::Unknown, "connection closed"))
         );
         assert!(first_rx.try_recv().is_err());
         assert_eq!(runtime.state, "connected");

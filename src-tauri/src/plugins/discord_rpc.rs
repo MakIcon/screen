@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     sync::{Arc, Condvar, Mutex},
     thread,
@@ -616,6 +617,7 @@ fn launcher_placeholder_instance(instances: &[InstanceItem]) -> InstanceItem {
 }
 
 /// Resolve every template into the final, owned `PresenceSnapshot`.
+#[allow(clippy::too_many_arguments)]
 fn build_snapshot(
     plugin: &DiscordRpcPluginSettings,
     mode: DiscordRpcDisplayMode,
@@ -759,8 +761,8 @@ pub async fn start_discord_rpc_for_launcher(
     state: State<'_, DiscordRpcState>,
     account_type: String,
     player_name: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let plugin = settings.plugins.discord_rpc;
         let application_id = plugin.application_id.trim().to_string();
@@ -803,7 +805,7 @@ pub async fn start_discord_rpc_for_launcher(
         Ok(())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -812,8 +814,8 @@ pub async fn start_discord_rpc_for_instance(
     instance_id: String,
     account_type: String,
     player_name: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let plugin = settings.plugins.discord_rpc;
         let application_id = plugin.application_id.trim().to_string();
@@ -836,7 +838,7 @@ pub async fn start_discord_rpc_for_instance(
             .iter()
             .find(|item| item.id == instance_id)
             .cloned()
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         let mode = parse_display_mode(&plugin.display_mode);
 
@@ -870,19 +872,16 @@ pub async fn start_discord_rpc_for_instance(
         Ok(())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub fn stop_discord_rpc_for_instance(
     state: State<'_, DiscordRpcState>,
     instance_id: Option<String>,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = (|| {
-        state.clear_target(instance_id.as_deref());
-        Ok(())
-    })();
-    result.map_err(crate::commands::errors::CommandError::from)
+) -> Result<(), CommandError> {
+    state.clear_target(instance_id.as_deref());
+    Ok(())
 }
 
 #[cfg(test)]

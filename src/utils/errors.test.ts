@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getErrorCode, isCancelledError, toErrorDetails, toErrorMessage } from "./errors";
+import {
+  LauncherError,
+  getErrorCode,
+  isCancelledError,
+  toErrorDetails,
+  toErrorMessage,
+} from "./errors";
 
 describe("error diagnostics", () => {
   it("unwraps Error instances to their message", () => {
@@ -37,17 +43,32 @@ describe("localized errors", () => {
 
   it("recognizes cancellation independently of the display language", () => {
     for (const error of [
-      "IMPORT_CANCELLED",
-      "MOD_DOWNLOAD_CANCELLED",
+      new LauncherError("cancelled", "Импорт остановлен"),
+      new DOMException("Операция остановлена", "AbortError"),
       { code: "cancelled", detail: "stopped" },
     ])
       expect(isCancelledError(error)).toBe(true);
     expect(isCancelledError("Instance not found")).toBe(false);
   });
 
-  it("supports legacy backend errors and localized validation messages", () => {
-    expect(getErrorCode("error sending request: timed out")).toBe("network");
-    expect(toErrorMessage("Build name is empty", "ru")).toBe("Введите название сборки.");
+  it("does not infer categories from diagnostic wording", () => {
+    for (const detail of [
+      "download cancelled",
+      "Instance not found",
+      "Ошибка сети",
+      "network timeout",
+    ]) {
+      expect(getErrorCode(detail)).toBe("unknown");
+      expect(getErrorCode({ code: "future_code", detail })).toBe("unknown");
+      expect(getErrorCode({ code: "invalid_input", detail })).toBe("invalid_input");
+      expect(getErrorCode(new LauncherError("network", detail))).toBe("network");
+    }
+  });
+
+  it("translates typed UI validation and preserves localized legacy validation", () => {
+    const error = new LauncherError("name_required", "Любая диагностическая формулировка");
+    expect(toErrorMessage(error, "ru")).toBe("Введите название сборки.");
+    expect(toErrorDetails(error)).toBe(error.detail);
     expect(toErrorMessage("Выберите версию Minecraft", "ru")).toBe("Выберите версию Minecraft");
   });
 });

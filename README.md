@@ -139,10 +139,22 @@ Useful checks:
 pnpm check             # TypeScript and Rust
 pnpm test              # Rust tests
 pnpm test:web          # Frontend tests
-pnpm test:pathfinder   # Pathfinder tests
-pnpm test:worker       # Mineflayer worker tests
-pnpm lint              # Lint frontend code
+pnpm build:pathfinder  # Build the navigator used by worker integration tests
+pnpm test:pathfinder   # Full pathfinder simulations (can take 15+ minutes)
+pnpm test:worker       # Mineflayer worker tests, including simulations
+pnpm lint              # Lint maintained frontend, scripts and worker sources
 ```
+
+ESLint excludes local `*.local/` snapshots, historical `reports/`, build outputs,
+bundled extension code and vendored libraries. CI runs the frontend checks on
+Linux, Rust formatting/Clippy/tests on Linux and Windows (including DPAPI tests),
+and the full worker and pathfinder suites as separate jobs using Node.js 22.
+
+IPC failures carry `{ code, detail }`. Rust operations return `CommandError` and
+assign an `ErrorCode` at the failure site; I/O errors use `std::io::ErrorKind`.
+Preserve the code when adding diagnostic context. In the UI, use `LauncherError`
+for local failures. Display text is translated from the code; diagnostic text is
+never parsed to choose a category. Unrecognized external codes become `unknown`.
 
 **Project structure**
 

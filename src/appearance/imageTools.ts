@@ -1,3 +1,5 @@
+import { LauncherError } from "../utils/errors";
+
 const MAX_BACKGROUND_WIDTH = 1920;
 const MAX_BACKGROUND_HEIGHT = 1080;
 
@@ -5,14 +7,15 @@ function loadImage(url: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("The selected image could not be decoded."));
+    image.onerror = () =>
+      reject(new LauncherError("image_decode", "The selected image could not be decoded."));
     image.src = url;
   });
 }
 
 export async function prepareBackgroundImage(file: File) {
   if (!file.type.startsWith("image/")) {
-    throw new Error("Choose a PNG, JPEG or WebP image.");
+    throw new LauncherError("image_format", "Choose a PNG, JPEG or WebP image.");
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -29,7 +32,8 @@ export async function prepareBackgroundImage(file: File) {
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Image processing is unavailable in this webview.");
+    if (!context)
+      throw new LauncherError("image_decode", "Image processing is unavailable in this webview.");
 
     context.drawImage(image, 0, 0, width, height);
     return {

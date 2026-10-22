@@ -33,7 +33,7 @@ import {
   environmentVariablesToEntries,
   environmentVariablesToRecord,
 } from "./utils/environmentVariables";
-import { toErrorDetails, toErrorMessage } from "./utils/errors";
+import { LauncherError, toErrorDetails, toErrorMessage } from "./utils/errors";
 import { loadStartupValue } from "./utils/launcherStartup";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -766,7 +766,7 @@ export default function App() {
       if (buildSettingsTargetId) {
         const target = instances.find((instance) => instance.id === buildSettingsTargetId);
         if (!target) {
-          throw new Error("Instance not found");
+          throw new LauncherError("build_not_found", "Instance not found");
         }
 
         const updated = await invoke<InstanceItem>("update_instance", {

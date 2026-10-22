@@ -9,6 +9,7 @@
 //! [`LoaderKind`] is the single source of truth; the dispatchers below route to
 //! the right backend so the rest of the app never has to branch on the loader.
 
+use crate::commands::errors::{CommandError, ErrorCode};
 mod common;
 mod installer;
 mod profile;
@@ -27,14 +28,17 @@ pub enum LoaderKind {
 }
 
 impl LoaderKind {
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, CommandError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "vanilla" => Ok(Self::Vanilla),
             "fabric" => Ok(Self::Fabric),
             "quilt" => Ok(Self::Quilt),
             "forge" => Ok(Self::Forge),
             "neoforge" => Ok(Self::NeoForge),
-            _ => Err(format!("Unsupported loader: {}", value.trim())),
+            _ => Err(CommandError::new(
+                ErrorCode::Unsupported,
+                format!("Unsupported loader: {}", value.trim()),
+            )),
         }
     }
 
@@ -80,14 +84,17 @@ impl LoaderKind {
 pub fn normalized_loader_and_version(
     loader: &str,
     loader_version: Option<String>,
-) -> Result<(LoaderKind, Option<String>), String> {
+) -> Result<(LoaderKind, Option<String>), CommandError> {
     let kind = LoaderKind::parse(loader)?;
     if !kind.requires_version() {
         return Ok((kind, None));
     }
-    let version = loader_version
-        .as_deref()
-        .ok_or_else(|| format!("{} loader version is required", kind.canonical_name()))?;
+    let version = loader_version.as_deref().ok_or_else(|| {
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            format!("{} loader version is required", kind.canonical_name()),
+        )
+    })?;
     Ok((
         kind,
         Some(common::validate_loader_version(version)?.to_string()),
@@ -105,15 +112,18 @@ pub fn synthetic_version_id(kind: LoaderKind, game_version: &str, loader_version
     }
 }
 
-pub fn effective_version_id_for_instance(instance: &InstanceItem) -> Result<String, String> {
+pub fn effective_version_id_for_instance(instance: &InstanceItem) -> Result<String, CommandError> {
     let kind = LoaderKind::parse(&instance.loader)?;
     if !kind.requires_version() {
         return Ok(instance.version.clone());
     }
     let loader_version = instance.loader_version.as_deref().ok_or_else(|| {
-        format!(
-            "{} loader version missing for instance",
-            kind.canonical_name()
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "{} loader version missing for instance",
+                kind.canonical_name()
+            ),
         )
     })?;
     Ok(synthetic_version_id(
@@ -127,7 +137,7 @@ pub async fn fetch_loader_versions(
     client: &Client,
     loader: &str,
     game_version: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     let kind = LoaderKind::parse(loader)?;
     match kind {
         LoaderKind::Vanilla => Ok(Vec::new()),
@@ -143,17 +153,18 @@ pub async fn fetch_loader_versions(
 pub async fn ensure_loader_profile(
     client: &Client,
     instance: &InstanceItem,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     let kind = LoaderKind::parse(&instance.loader)?;
     if kind == LoaderKind::Vanilla {
         return Ok(instance.version.clone());
     }
-    let loader_version = common::validate_loader_version(
-        instance
-            .loader_version
-            .as_deref()
-            .ok_or_else(|| format!("{} loader version missing", kind.canonical_name()))?,
-    )?;
+    let loader_version =
+        common::validate_loader_version(instance.loader_version.as_deref().ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("{} loader version missing", kind.canonical_name()),
+            )
+        })?)?;
     if kind.is_installer_based() {
         installer::ensure_profile(client, kind, instance, loader_version).await
     } else {

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../../i18n/locale";
 import { invoke } from "@tauri-apps/api/core";
 import type { MinecraftCape, MinecraftProfile, MinecraftSkin, MicrosoftAccount } from "../../types";
-import { toErrorMessage } from "../../utils/errors";
+import { LauncherError, toErrorMessage } from "../../utils/errors";
 import type { PreviewMotion, SkinVariant } from "./MinecraftSkinPreview";
 
 // skinview3d pulls in Three.js (~half a megabyte), and the 3D preview only
@@ -198,10 +198,10 @@ export function MicrosoftAccountsModal({
 
     try {
       if (!file.name.toLowerCase().endsWith(".png")) {
-        throw new Error("Skin file must be a PNG");
+        throw new LauncherError("skin_format", "Skin file must be a PNG");
       }
       if (file.size > 2 * 1024 * 1024) {
-        throw new Error("Skin file is too large");
+        throw new LauncherError("skin_size", "Skin file is too large");
       }
 
       const [arrayBuffer, dataUrl] = await Promise.all([

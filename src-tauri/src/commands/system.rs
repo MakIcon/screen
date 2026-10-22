@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use crate::{
     minecraft::{fetch_loader_versions, fetch_manifest_network, mirrors, JavaInstallation},
     models::{JavaSettingsTestPayload, JavaSettingsTestResult, MinecraftManifest},
@@ -5,66 +6,66 @@ use crate::{
 };
 
 #[tauri::command]
-pub async fn get_minecraft_manifest(
-) -> Result<MinecraftManifest, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn get_minecraft_manifest() -> Result<MinecraftManifest, CommandError> {
+    let result: Result<_, CommandError> = async {
         read_settings().await?;
         let client = mirrors::build_client()?;
         fetch_manifest_network(&client).await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn get_cached_minecraft_manifest(
-) -> Result<Option<MinecraftManifest>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { crate::minecraft::read_cached_manifest().await }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+pub async fn get_cached_minecraft_manifest() -> Result<Option<MinecraftManifest>, CommandError> {
+    let result: Result<_, CommandError> =
+        async { crate::minecraft::read_cached_manifest().await }.await;
+    result
 }
 
 #[tauri::command]
 pub async fn get_loader_versions(
     loader: String,
     mc_version: String,
-) -> Result<Vec<String>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Vec<String>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let client = mirrors::build_client()?;
         fetch_loader_versions(&client, &loader, &mc_version).await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn get_system_memory_gb() -> Result<f64, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { Ok(detect_system_memory_gb()) }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+pub async fn get_system_memory_gb() -> Result<f64, CommandError> {
+    let result: Result<_, CommandError> = async { Ok(detect_system_memory_gb()) }.await;
+    result
 }
 
 #[tauri::command]
-pub async fn get_system_memory_info(
-) -> Result<crate::memory::SystemMemoryInfo, crate::commands::errors::CommandError> {
+pub async fn get_system_memory_info() -> Result<crate::memory::SystemMemoryInfo, CommandError> {
     Ok(crate::memory::detect_system_memory())
 }
 
 #[tauri::command]
-pub async fn scan_java_installations(
-) -> Result<Vec<JavaInstallation>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn scan_java_installations() -> Result<Vec<JavaInstallation>, CommandError> {
+    let result: Result<_, CommandError> = async {
         tokio::task::spawn_blocking(crate::minecraft::scan_java_installations)
             .await
-            .map_err(|e| format!("java scan task error: {e}"))
+            .map_err(|e| {
+                let detail = format!("java scan task error: {e}");
+                CommandError::from(e).context(detail)
+            })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn test_java_settings(
     payload: JavaSettingsTestPayload,
-) -> Result<JavaSettingsTestResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<JavaSettingsTestResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let settings = read_settings().await?;
         let game_dir = if let Some(id) = &payload.instance_id {
             Some(
@@ -72,7 +73,9 @@ pub async fn test_java_settings(
                     .await?
                     .into_iter()
                     .find(|instance| &instance.id == id)
-                    .ok_or_else(|| "Instance not found".to_string())?
+                    .ok_or_else(|| {
+                        CommandError::new(ErrorCode::BuildNotFound, "Instance not found")
+                    })?
                     .game_dir,
             )
         } else {
@@ -86,5 +89,5 @@ pub async fn test_java_settings(
         .await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }

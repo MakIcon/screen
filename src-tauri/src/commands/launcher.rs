@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -106,23 +107,26 @@ fn is_pid_alive(pid: u32) -> bool {
     system.process(pid).is_some()
 }
 
-async fn instance_game_dir(instance_id: &str) -> Result<PathBuf, String> {
+async fn instance_game_dir(instance_id: &str) -> Result<PathBuf, CommandError> {
     let items = read_instances().await?;
     let instance = items
         .iter()
         .find(|i| i.id == instance_id)
         .cloned()
-        .ok_or_else(|| "Instance not found".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
     Ok(PathBuf::from(instance.game_dir))
 }
 
-fn ensure_plain_file_name(file_name: &str) -> Result<(), String> {
+fn ensure_plain_file_name(file_name: &str) -> Result<(), CommandError> {
     let path = Path::new(file_name);
     if path.file_name().and_then(|name| name.to_str()) == Some(file_name) {
         Ok(())
     } else {
-        Err("Invalid screenshot name".to_string())
+        Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Invalid screenshot name",
+        ))
     }
 }
 
@@ -130,8 +134,8 @@ fn ensure_plain_file_name(file_name: &str) -> Result<(), String> {
 pub async fn install_instance(
     app: AppHandle,
     instance_id: String,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("install", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
@@ -139,7 +143,7 @@ pub async fn install_instance(
             .iter()
             .find(|i| i.id == instance_id)
             .cloned()
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         for category in ["mods", "shaderpacks", "resourcepacks"] {
             crate::file_transaction::FileTransaction::recover(
@@ -164,11 +168,13 @@ pub async fn install_instance(
             })
         } else {
             update_instance_status(&instance.id, "EMPTY").await?;
-            Err(result.err().unwrap_or_else(|| "Install failed".to_string()))
+            Err(result
+                .err()
+                .unwrap_or_else(|| CommandError::new(ErrorCode::DownloadFailed, "Install failed")))
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -178,8 +184,8 @@ pub async fn launch_instance(
     instance_id: String,
     nickname: String,
     ms_account_id: Option<String>,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("launch", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
@@ -187,7 +193,7 @@ pub async fn launch_instance(
             .iter()
             .find(|i| i.id == instance_id)
             .cloned()
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         // Resolve Microsoft account (refresh token if needed)
         let ms_account = if let Some(acc_id) = ms_account_id {
@@ -195,7 +201,12 @@ pub async fn launch_instance(
             let account = accounts
                 .into_iter()
                 .find(|account| account.id == acc_id)
-                .ok_or_else(|| "Selected Microsoft account no longer exists".to_string())?;
+                .ok_or_else(|| {
+                    CommandError::new(
+                        ErrorCode::Authentication,
+                        "Selected Microsoft account no longer exists",
+                    )
+                })?;
             Some(refresh_account_if_expired(&account).await?)
         } else {
             None
@@ -246,9 +257,11 @@ pub async fn launch_instance(
                 if let Err(status_error) =
                     update_instance_status(&instance.id, previous_status).await
                 {
-                    return Err(format!(
-                        "{error}; could not reset build status: {status_error}"
-                    ));
+                    return Err({
+                        let detail =
+                            format!("{error}; could not reset build status: {status_error}");
+                        error.context(detail)
+                    });
                 }
                 return Err(error);
             }
@@ -261,36 +274,37 @@ pub async fn launch_instance(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn read_instance_launch_log(
     instance_id: String,
-) -> Result<LaunchLogSnapshot, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<LaunchLogSnapshot, CommandError> {
+    let result: Result<_, CommandError> = async {
         let items = read_instances().await?;
         let instance = items
             .iter()
             .find(|i| i.id == instance_id)
             .cloned()
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         Ok(read_latest_launch_log(&instance))
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn stop_instance(
-    pid: u32,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn stop_instance(pid: u32) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let graceful = background_command("taskkill")
             .args(["/T", "/PID", &pid.to_string()])
             .output()
-            .map_err(|e| format!("taskkill error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("taskkill error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         if graceful.status.success() {
             let started = Instant::now();
@@ -304,14 +318,20 @@ pub async fn stop_instance(
             let output = background_command("taskkill")
                 .args(["/T", "/F", "/PID", &pid.to_string()])
                 .output()
-                .map_err(|e| format!("forced taskkill error: {e}"))?;
+                .map_err(|e| {
+                    let detail = format!("forced taskkill error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             if !output.status.success() && is_pid_alive(pid) {
                 let details = task_output_text(&output);
-                return Err(if details.is_empty() {
-                    "Minecraft did not respond to a normal close or a forced stop".to_string()
-                } else {
-                    format!("Minecraft stop failed: {details}")
-                });
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    if details.is_empty() {
+                        "Minecraft did not respond to a normal close or a forced stop".to_string()
+                    } else {
+                        format!("Minecraft stop failed: {details}")
+                    },
+                ));
             }
         }
 
@@ -326,7 +346,7 @@ pub async fn stop_instance(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -335,11 +355,8 @@ pub fn is_process_alive(pid: u32) -> bool {
 }
 
 #[tauri::command]
-pub async fn record_playtime(
-    instance_id: String,
-    elapsed_secs: u64,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn record_playtime(instance_id: String, elapsed_secs: u64) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let mut items = edit_instances().await?;
         if let Some(index) = items.iter().position(|i| i.id == instance_id) {
             items[index].playtime_secs = items[index].playtime_secs.saturating_add(elapsed_secs);
@@ -351,15 +368,15 @@ pub async fn record_playtime(
         Ok(())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
-async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result<(), String> {
+async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result<(), CommandError> {
     let path = crate::paths::playtime_log_path(instance_id)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
     }
 
     let mut log: PlaytimeLog = match fs::read(&path).await {
@@ -373,16 +390,16 @@ async fn append_playtime_session(instance_id: &str, elapsed_secs: u64) -> Result
         secs: elapsed_secs,
     });
 
-    let json = serde_json::to_vec_pretty(&log).map_err(|e| e.to_string())?;
-    fs::write(&path, json).await.map_err(|e| e.to_string())?;
+    let json = serde_json::to_vec_pretty(&log).map_err(CommandError::from)?;
+    fs::write(&path, json).await.map_err(CommandError::from)?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_playtime_sessions(
     instance_id: String,
-) -> Result<Vec<PlaytimeSession>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Vec<PlaytimeSession>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let path = crate::paths::playtime_log_path(&instance_id)?;
         match fs::read(&path).await {
             Ok(bytes) => {
@@ -393,30 +410,31 @@ pub async fn get_playtime_sessions(
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn open_instance_folder(
-    instance_id: String,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn open_instance_folder(instance_id: String) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let items = read_instances().await?;
         let instance = items
             .iter()
             .find(|i| i.id == instance_id)
             .cloned()
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         let instance_dir = PathBuf::from(&instance.game_dir)
             .parent()
-            .ok_or_else(|| "instance folder missing".to_string())?
+            .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "instance folder missing"))?
             .to_path_buf();
 
         Command::new("explorer")
             .arg(instance_dir)
             .spawn()
-            .map_err(|e| format!("open folder error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("open folder error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         Ok(ActionResult {
             ok: true,
@@ -425,39 +443,39 @@ pub async fn open_instance_folder(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn list_instance_screenshots(
     instance_id: String,
-) -> Result<Vec<ScreenshotItem>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Vec<ScreenshotItem>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let screenshots_dir = instance_game_dir(&instance_id).await?.join("screenshots");
 
         if !screenshots_dir.exists() {
             return Ok(Vec::new());
         }
 
-        let mut read_dir = fs::read_dir(&screenshots_dir)
-            .await
-            .map_err(|e| format!("read screenshots dir error: {e}"))?;
+        let mut read_dir = fs::read_dir(&screenshots_dir).await.map_err(|e| {
+            let detail = format!("read screenshots dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         let mut screenshots = Vec::new();
 
-        while let Some(entry) = read_dir
-            .next_entry()
-            .await
-            .map_err(|e| format!("read screenshot entry error: {e}"))?
-        {
+        while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
+            let detail = format!("read screenshot entry error: {e}");
+            CommandError::from(e).context(detail)
+        })? {
             let path = entry.path();
             let Some(mime) = screenshot_mime_for_path(&path) else {
                 continue;
             };
 
-            let metadata = entry
-                .metadata()
-                .await
-                .map_err(|e| format!("read screenshot metadata error: {e}"))?;
+            let metadata = entry.metadata().await.map_err(|e| {
+                let detail = format!("read screenshot metadata error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
             if !metadata.is_file() {
                 continue;
@@ -491,30 +509,36 @@ pub async fn list_instance_screenshots(
         Ok(screenshots)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn load_instance_screenshot(
     instance_id: String,
     file_name: String,
-) -> Result<ScreenshotImage, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ScreenshotImage, CommandError> {
+    let result: Result<_, CommandError> = async {
         ensure_plain_file_name(&file_name)?;
 
         let screenshots_dir = instance_game_dir(&instance_id).await?.join("screenshots");
         let path = screenshots_dir.join(&file_name);
         let mime = screenshot_mime_for_path(&path)
-            .ok_or_else(|| "Unsupported screenshot format".to_string())?
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::Unsupported, "Unsupported screenshot format")
+            })?
             .to_string();
 
         if !path.exists() {
-            return Err("Screenshot not found".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Screenshot not found",
+            ));
         }
 
-        let bytes = fs::read(&path)
-            .await
-            .map_err(|e| format!("read screenshot error: {e}"))?;
+        let bytes = fs::read(&path).await.map_err(|e| {
+            let detail = format!("read screenshot error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         Ok(ScreenshotImage {
             file_name,
@@ -523,23 +547,27 @@ pub async fn load_instance_screenshot(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn open_instance_screenshots_folder(
     instance_id: String,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let screenshots_dir = instance_game_dir(&instance_id).await?.join("screenshots");
-        fs::create_dir_all(&screenshots_dir)
-            .await
-            .map_err(|e| format!("create screenshots folder error: {e}"))?;
+        fs::create_dir_all(&screenshots_dir).await.map_err(|e| {
+            let detail = format!("create screenshots folder error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         Command::new("explorer")
             .arg(screenshots_dir)
             .spawn()
-            .map_err(|e| format!("open screenshots folder error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("open screenshots folder error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
 
         Ok(ActionResult {
             ok: true,
@@ -548,7 +576,7 @@ pub async fn open_instance_screenshots_folder(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]

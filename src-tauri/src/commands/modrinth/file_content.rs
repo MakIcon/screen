@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     path::{Component, Path, PathBuf},
@@ -47,14 +48,14 @@ pub(super) fn metadata_path(instance: &InstanceItem, config: FileContentConfig) 
     content_dir(instance, config).join(config.state_file)
 }
 
-pub(super) async fn find_instance(instance_id: &str) -> Result<InstanceItem, String> {
+pub(super) async fn find_instance(instance_id: &str) -> Result<InstanceItem, CommandError> {
     let instance = read_instances()
         .await?
         .into_iter()
         .find(|instance| {
             instance.id == instance_id && !crate::commands::instances::is_trashed(instance)
         })
-        .ok_or_else(|| "Instance not found".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
     for category in ["mods", "shaderpacks", "resourcepacks"] {
         crate::file_transaction::FileTransaction::recover(
             &PathBuf::from(&instance.game_dir).join(category),
@@ -66,35 +67,39 @@ pub(super) async fn find_instance(instance_id: &str) -> Result<InstanceItem, Str
 pub(super) async fn ensure_content_dir(
     instance: &InstanceItem,
     config: FileContentConfig,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, CommandError> {
     let directory = content_dir(instance, config);
-    fs::create_dir_all(&directory)
-        .await
-        .map_err(|error| format!("create {} directory error: {error}", config.directory))?;
+    fs::create_dir_all(&directory).await.map_err(|error| {
+        let detail = format!("create {} directory error: {error}", config.directory);
+        CommandError::from(error).context(detail)
+    })?;
     Ok(directory)
 }
 
 pub(super) async fn read_state(
     instance: &InstanceItem,
     config: FileContentConfig,
-) -> Result<HashMap<String, InstalledModEntry>, String> {
+) -> Result<HashMap<String, InstalledModEntry>, CommandError> {
     crate::file_transaction::FileTransaction::recover(&content_dir(instance, config))?;
     let path = metadata_path(instance, config);
-    if !fs::try_exists(&path)
-        .await
-        .map_err(|error| format!("check {} state error: {error}", config.label))?
-    {
+    if !fs::try_exists(&path).await.map_err(|error| {
+        let detail = format!("check {} state error: {error}", config.label);
+        CommandError::from(error).context(detail)
+    })? {
         return Ok(HashMap::new());
     }
 
-    let raw = fs::read_to_string(&path)
-        .await
-        .map_err(|error| format!("read {} state error: {error}", config.label))?;
-    serde_json::from_str(&raw)
-        .map_err(|error| format!("parse {} state error: {error}", config.label))
+    let raw = fs::read_to_string(&path).await.map_err(|error| {
+        let detail = format!("read {} state error: {error}", config.label);
+        CommandError::from(error).context(detail)
+    })?;
+    serde_json::from_str(&raw).map_err(|error| {
+        let detail = format!("parse {} state error: {error}", config.label);
+        CommandError::from(error).context(detail)
+    })
 }
 
-pub(super) fn validate_filename(filename: &str) -> Result<(), String> {
+pub(super) fn validate_filename(filename: &str) -> Result<(), CommandError> {
     let mut components = Path::new(filename).components();
     let is_plain_filename = !filename.bytes().any(|byte| byte == b'/' || byte == 92)
         && matches!(components.next(), Some(Component::Normal(_)))
@@ -103,7 +108,10 @@ pub(super) fn validate_filename(filename: &str) -> Result<(), String> {
     if is_plain_filename {
         Ok(())
     } else {
-        Err("Content filename must not contain a directory path".to_string())
+        Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Content filename must not contain a directory path",
+        ))
     }
 }
 
@@ -114,7 +122,7 @@ pub(super) async fn search_file_content(
     game_version: String,
     offset: usize,
     limit: usize,
-) -> Result<ModrinthSearchResponse, String> {
+) -> Result<ModrinthSearchResponse, CommandError> {
     let client = build_client()?;
     let mut response = fetch_modrinth_search(
         &client,
@@ -149,7 +157,7 @@ pub(super) async fn install_file_content(
     config: FileContentConfig,
     instance_id: String,
     project_id: String,
-) -> Result<ActionResult, String> {
+) -> Result<ActionResult, CommandError> {
     let _operation = crate::operations::begin("content", Some(&instance_id))?;
     let _guard = crate::operations::lock_instance(&instance_id).await;
     let client = build_client()?;
@@ -180,7 +188,7 @@ pub(super) async fn uninstall_file_content(
     config: FileContentConfig,
     instance_id: String,
     filename: String,
-) -> Result<ActionResult, String> {
+) -> Result<ActionResult, CommandError> {
     validate_filename(&filename)?;
     let _operation = crate::operations::begin("content", Some(&instance_id))?;
     let _guard = crate::operations::lock_instance(&instance_id).await;
@@ -189,8 +197,10 @@ pub(super) async fn uninstall_file_content(
     let base_filename = filename.strip_suffix(".disabled").unwrap_or(&filename);
     let mut state = read_state(&instance, config).await?;
     state.remove(base_filename);
-    let raw = serde_json::to_vec_pretty(&state)
-        .map_err(|e| format!("serialize content state error: {e}"))?;
+    let raw = serde_json::to_vec_pretty(&state).map_err(|e| {
+        let detail = format!("serialize content state error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let mut transaction = crate::file_transaction::FileTransaction::new(&directory)?;
     let result = (|| {
         transaction.remove(&filename)?;
@@ -199,7 +209,10 @@ pub(super) async fn uninstall_file_content(
     if let Err(error) = result {
         return match transaction.rollback() {
             Ok(()) => Err(error),
-            Err(rollback) => Err(format!("{error}; {rollback}")),
+            Err(rollback) => Err({
+                let detail = format!("{error}; {rollback}");
+                rollback.context(detail)
+            }),
         };
     }
     transaction.commit()?;
@@ -214,22 +227,22 @@ pub(super) async fn uninstall_file_content(
 pub(super) async fn list_file_content(
     config: FileContentConfig,
     instance_id: String,
-) -> Result<Vec<InstalledModView>, String> {
+) -> Result<Vec<InstalledModView>, CommandError> {
     let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
     let _guard = crate::operations::lock_instance(&instance_id).await;
     let instance = find_instance(&instance_id).await?;
     let directory = ensure_content_dir(&instance, config).await?;
     let state = read_state(&instance, config).await?;
-    let mut directory_entries = fs::read_dir(&directory)
-        .await
-        .map_err(|error| format!("read {} directory error: {error}", config.directory))?;
+    let mut directory_entries = fs::read_dir(&directory).await.map_err(|error| {
+        let detail = format!("read {} directory error: {error}", config.directory);
+        CommandError::from(error).context(detail)
+    })?;
     let mut installed = Vec::new();
 
-    while let Some(entry) = directory_entries
-        .next_entry()
-        .await
-        .map_err(|error| format!("{} directory iteration error: {error}", config.label))?
-    {
+    while let Some(entry) = directory_entries.next_entry().await.map_err(|error| {
+        let detail = format!("{} directory iteration error: {error}", config.label);
+        CommandError::from(error).context(detail)
+    })? {
         let path = entry.path();
         if !path.is_file() {
             continue;

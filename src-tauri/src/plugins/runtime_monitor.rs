@@ -1,3 +1,4 @@
+use crate::commands::errors::CommandError;
 use serde::Serialize;
 use tauri::State;
 
@@ -43,8 +44,8 @@ pub async fn get_runtime_monitor_activity(
     pids: Vec<u32>,
     blue_map_state: State<'_, BlueMapState>,
     obs_telemetry_state: State<'_, ObsTelemetryState>,
-) -> Result<RuntimeMonitorActivity, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<RuntimeMonitorActivity, CommandError> {
+    let result: Result<_, CommandError> = async {
         Ok(RuntimeMonitorActivity {
             blue_map: blue_map::current_status(&blue_map_state)?,
             obs_telemetry: obs_telemetry::current_status(&obs_telemetry_state)?,
@@ -52,7 +53,7 @@ pub async fn get_runtime_monitor_activity(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 fn process_statuses(pids: Vec<u32>) -> Vec<RuntimeProcessStatus> {
@@ -70,8 +71,8 @@ pub async fn get_runtime_monitor_snapshot(
     mineflayer_state: State<'_, MineflayerBotState>,
     blue_map_state: State<'_, BlueMapState>,
     obs_telemetry_state: State<'_, ObsTelemetryState>,
-) -> Result<RuntimeMonitorSnapshot, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<RuntimeMonitorSnapshot, CommandError> {
+    let result: Result<_, CommandError> = async {
         let mineflayer_bot = mineflayer_bot::current_status(&mineflayer_state)?;
         let blue_map = blue_map::current_status(&blue_map_state)?;
         let obs_telemetry = obs_telemetry::current_status(&obs_telemetry_state)?;
@@ -86,5 +87,5 @@ pub async fn get_runtime_monitor_snapshot(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }

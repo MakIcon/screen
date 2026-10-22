@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -104,7 +105,7 @@ impl ModDownloadContext {
         filename: &str,
         received_bytes: u64,
         total_bytes: u64,
-    ) -> Result<(), String> {
+    ) -> Result<(), CommandError> {
         let mut control = self.control.clone();
         let mut pause_announced = false;
         loop {
@@ -123,13 +124,16 @@ impl ModDownloadContext {
                 }
                 ModDownloadControlState::Cancelled => {
                     self.emit(filename, received_bytes, total_bytes, "cancelled");
-                    return Err(MOD_DOWNLOAD_CANCELLED.to_string());
+                    return Err(CommandError::new(
+                        ErrorCode::Cancelled,
+                        MOD_DOWNLOAD_CANCELLED,
+                    ));
                 }
             }
             control
                 .changed()
                 .await
-                .map_err(|_| MOD_DOWNLOAD_CANCELLED.to_string())?;
+                .map_err(|_| CommandError::new(ErrorCode::Cancelled, MOD_DOWNLOAD_CANCELLED))?;
         }
     }
 }
@@ -317,28 +321,34 @@ pub(crate) struct ModrinthVersionFile {
     pub(crate) size: Option<u64>,
 }
 
-pub(crate) fn build_client() -> Result<Client, String> {
+pub(crate) fn build_client() -> Result<Client, CommandError> {
     // Shared client so Modrinth traffic honours the user's proxy too.
     crate::minecraft::mirrors::build_client()
 }
 
-pub(crate) async fn http_text(client: &Client, url: &str) -> Result<String, String> {
+pub(crate) async fn http_text(client: &Client, url: &str) -> Result<String, CommandError> {
     let response = client
         .get(url)
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| format!("request error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("request error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("read response body error: {e}"))?;
+    let body = response.text().await.map_err(|e| {
+        let detail = format!("read response body error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     if !status.is_success() {
         let snippet = body.chars().take(240).collect::<String>();
-        return Err(format!("http error {status} for {url}: {snippet}"));
+        return Err(CommandError::new(
+            ErrorCode::Network,
+            format!("http error {status} for {url}: {snippet}"),
+        ));
     }
 
     Ok(body.trim_start_matches('\u{feff}').to_string())
@@ -347,11 +357,14 @@ pub(crate) async fn http_text(client: &Client, url: &str) -> Result<String, Stri
 pub(crate) async fn http_json<T: serde::de::DeserializeOwned>(
     client: &Client,
     url: &str,
-) -> Result<T, String> {
+) -> Result<T, CommandError> {
     let body = http_text(client, url).await?;
     serde_json::from_str::<T>(&body).map_err(|e| {
         let snippet = body.chars().take(240).collect::<String>();
-        format!("json parse error: {e}; body: {snippet}")
+        {
+            let detail = format!("json parse error: {e}; body: {snippet}");
+            CommandError::from(e).context(detail)
+        }
     })
 }
 
@@ -440,7 +453,7 @@ pub(crate) async fn fetch_modrinth_search(
     loaders: &[&str],
     offset: usize,
     limit: usize,
-) -> Result<ModrinthSearchResponse, String> {
+) -> Result<ModrinthSearchResponse, CommandError> {
     let mut facets: Vec<Vec<String>> = vec![vec![format!("project_type:{project_type}")]];
 
     if !loaders.is_empty() {
@@ -454,10 +467,12 @@ pub(crate) async fn fetch_modrinth_search(
 
     facets.push(vec![format!("versions:{game_version}")]);
 
-    let facets = serde_json::to_string(&facets).map_err(|e| e.to_string())?;
+    let facets = serde_json::to_string(&facets).map_err(CommandError::from)?;
 
-    let mut url = reqwest::Url::parse(&format!("{MODRINTH_API_BASE}/search"))
-        .map_err(|e| format!("url parse error: {e}"))?;
+    let mut url = reqwest::Url::parse(&format!("{MODRINTH_API_BASE}/search")).map_err(|e| {
+        let detail = format!("url parse error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     url.query_pairs_mut()
         .append_pair("query", query.trim())
         .append_pair("facets", &facets)
@@ -468,7 +483,10 @@ pub(crate) async fn fetch_modrinth_search(
     let body = http_text(client, url.as_str()).await?;
     let json: Value = serde_json::from_str(&body).map_err(|e| {
         let snippet = body.chars().take(240).collect::<String>();
-        format!("json parse error: {e}; body: {snippet}")
+        {
+            let detail = format!("json parse error: {e}; body: {snippet}");
+            CommandError::from(e).context(detail)
+        }
     })?;
 
     let total_hits = json.get("total_hits").and_then(Value::as_u64).unwrap_or(0) as usize;
@@ -497,7 +515,7 @@ pub(crate) async fn fetch_modrinth_search(
 async fn fetch_project_icon_url(
     client: &Client,
     project_id: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, CommandError> {
     let project_meta: Value =
         http_json(client, &format!("{MODRINTH_API_BASE}/project/{project_id}")).await?;
     Ok(project_meta
@@ -509,8 +527,8 @@ async fn fetch_project_icon_url(
 #[tauri::command]
 pub async fn get_modrinth_project_icons(
     project_ids: Vec<String>,
-) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<HashMap<String, Option<String>>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let client = build_client()?;
         let unique_ids = project_ids
             .into_iter()
@@ -536,15 +554,17 @@ pub async fn get_modrinth_project_icons(
 
         let mut result = HashMap::new();
         while let Some(joined) = tasks.join_next().await {
-            let (project_id, icon_url) =
-                joined.map_err(|error| format!("project icon task join error: {error}"))?;
+            let (project_id, icon_url) = joined.map_err(|error| {
+                let detail = format!("project icon task join error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
             result.insert(project_id, icon_url);
         }
 
         Ok(result)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -638,8 +658,8 @@ async fn find_content_icon(client: &Client, request: &ContentIconRequest) -> Opt
 #[tauri::command]
 pub async fn resolve_modrinth_content_icons(
     requests: Vec<ContentIconRequest>,
-) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<HashMap<String, Option<String>>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let client = build_client()?;
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
             MAX_CONCURRENT_METADATA_REQUESTS,
@@ -656,17 +676,22 @@ pub async fn resolve_modrinth_content_icons(
         }
         let mut result = HashMap::new();
         while let Some(joined) = tasks.join_next().await {
-            let (key, icon) =
-                joined.map_err(|error| format!("content icon task error: {error}"))?;
+            let (key, icon) = joined.map_err(|error| {
+                let detail = format!("content icon task error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
             result.insert(key, icon);
         }
         Ok(result)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
-async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Option<String>, String> {
+async fn fetch_project_author(
+    client: &Client,
+    project_id: &str,
+) -> Result<Option<String>, CommandError> {
     let members: Value = http_json(
         client,
         &format!("{MODRINTH_API_BASE}/project/{project_id}/members"),
@@ -693,8 +718,8 @@ async fn fetch_project_author(client: &Client, project_id: &str) -> Result<Optio
 #[tauri::command]
 pub async fn get_modrinth_project_authors(
     project_ids: Vec<String>,
-) -> Result<HashMap<String, Option<String>>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<HashMap<String, Option<String>>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let client = build_client()?;
         let unique_ids = project_ids
             .into_iter()
@@ -720,15 +745,17 @@ pub async fn get_modrinth_project_authors(
 
         let mut result = HashMap::new();
         while let Some(joined) = tasks.join_next().await {
-            let (project_id, author) =
-                joined.map_err(|error| format!("project author task join error: {error}"))?;
+            let (project_id, author) = joined.map_err(|error| {
+                let detail = format!("project author task join error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
             result.insert(project_id, author);
         }
 
         Ok(result)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn download_version_file(
@@ -736,14 +763,17 @@ async fn download_version_file(
     file: &ModrinthVersionFile,
     path: &Path,
     context: Option<&ModDownloadContext>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let integrity = crate::downloads::Integrity {
         sha1: file.hashes.get("sha1").map(String::as_str),
         sha512: file.hashes.get("sha512").map(String::as_str),
         size: file.size,
     };
     if integrity.size.is_none() || (integrity.sha1.is_none() && integrity.sha512.is_none()) {
-        return Err("Missing Modrinth file size or hash metadata".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Missing Modrinth file size or hash metadata",
+        ));
     }
     crate::downloads::stream_to_path(
         client,
@@ -766,11 +796,14 @@ async fn download_version_file(
 #[tauri::command]
 pub async fn get_modrinth_project_details(
     project_id: String,
-) -> Result<ModrinthProjectDetails, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ModrinthProjectDetails, CommandError> {
+    let result: Result<_, CommandError> = async {
         let project_id = project_id.trim();
         if project_id.is_empty() {
-            return Err("Project id is empty".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Project id is empty",
+            ));
         }
 
         let client = build_client()?;
@@ -870,7 +903,7 @@ pub async fn get_modrinth_project_details(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 pub(crate) async fn resolve_project_version(
@@ -878,17 +911,21 @@ pub(crate) async fn resolve_project_version(
     project_id: &str,
     game_version: &str,
     loaders: &[&str],
-) -> Result<ModrinthVersion, String> {
-    let game_versions = serde_json::to_string(&vec![game_version]).map_err(|e| e.to_string())?;
+) -> Result<ModrinthVersion, CommandError> {
+    let game_versions = serde_json::to_string(&vec![game_version]).map_err(CommandError::from)?;
     let loaders_json = if loaders.is_empty() {
         None
     } else {
-        Some(serde_json::to_string(&loaders).map_err(|e| e.to_string())?)
+        Some(serde_json::to_string(&loaders).map_err(CommandError::from)?)
     };
 
-    let mut featured_url =
-        reqwest::Url::parse(&format!("{MODRINTH_API_BASE}/project/{project_id}/version"))
-            .map_err(|e| format!("url parse error: {e}"))?;
+    let mut featured_url = reqwest::Url::parse(&format!(
+        "{MODRINTH_API_BASE}/project/{project_id}/version"
+    ))
+    .map_err(|e| {
+        let detail = format!("url parse error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     {
         let mut qp = featured_url.query_pairs_mut();
         if let Some(loaders_json) = &loaders_json {
@@ -899,9 +936,13 @@ pub(crate) async fn resolve_project_version(
             .append_pair("include_changelog", "false");
     }
 
-    let mut listed_url =
-        reqwest::Url::parse(&format!("{MODRINTH_API_BASE}/project/{project_id}/version"))
-            .map_err(|e| format!("url parse error: {e}"))?;
+    let mut listed_url = reqwest::Url::parse(&format!(
+        "{MODRINTH_API_BASE}/project/{project_id}/version"
+    ))
+    .map_err(|e| {
+        let detail = format!("url parse error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     {
         let mut qp = listed_url.query_pairs_mut();
         if let Some(loaders_json) = &loaders_json {
@@ -920,14 +961,14 @@ pub(crate) async fn resolve_project_version(
         .await
         .unwrap_or_default();
     featured.into_iter().next().ok_or_else(|| {
-        if loaders.is_empty() {
+        CommandError::new(ErrorCode::IncompatibleVersion, if loaders.is_empty() {
             format!("No version found for project {project_id} and Minecraft {game_version}")
         } else {
             format!(
                 "No compatible version found for project {project_id}, Minecraft {game_version}, loaders {:?}",
                 loaders
             )
-        }
+        })
     })
 }
 
@@ -939,15 +980,15 @@ async fn resolve_project_install_plan(
     loaders: &[&str],
     state: &HashMap<String, InstalledModEntry>,
     download_context: Option<&ModDownloadContext>,
-) -> Result<(Vec<dependencies::InstallPlanEntry>, HashSet<String>), String> {
+) -> Result<(Vec<dependencies::InstallPlanEntry>, HashSet<String>), CommandError> {
     let mut available_files = HashSet::new();
     match fs::read_dir(target_dir).await {
         Ok(mut directory) => {
-            while let Some(entry) = directory.next_entry().await.map_err(|e| e.to_string())? {
+            while let Some(entry) = directory.next_entry().await.map_err(CommandError::from)? {
                 if entry
                     .file_type()
                     .await
-                    .map_err(|e| e.to_string())?
+                    .map_err(CommandError::from)?
                     .is_file()
                 {
                     available_files.insert(entry.file_name().to_string_lossy().to_string());
@@ -955,7 +996,12 @@ async fn resolve_project_install_plan(
             }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("read content folder error: {error}")),
+        Err(error) => {
+            return Err({
+                let detail = format!("read content folder error: {error}");
+                CommandError::from(error).context(detail)
+            })
+        }
     }
     let installed = state
         .values()
@@ -992,7 +1038,10 @@ async fn resolve_project_install_plan(
                         http_json(client, &format!("{MODRINTH_API_BASE}/version/{id}"))
                             .await
                             .map_err(|error| {
-                                format!("Не удалось загрузить обязательную версию {id}: {error}")
+                                let detail = format!(
+                                    "Не удалось загрузить обязательную версию {id}: {error}"
+                                );
+                                error.context(detail)
                             })
                     }
                     dependencies::VersionRequest::Project(id) => {
@@ -1013,7 +1062,9 @@ async fn resolve_project_install_plan(
                         resolve_project_version(client, &id, &instance.version, loaders)
                             .await
                             .map_err(|error| {
-                                format!("Не удалось подобрать обязательный мод {id}: {error}")
+                                let detail =
+                                    format!("Не удалось подобрать обязательный мод {id}: {error}");
+                                error.context(detail)
                             })
                     }
                 }
@@ -1038,6 +1089,7 @@ fn reusable_installed_entry<'a>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn install_project_to_dir(
     client: &Client,
     instance: &InstanceItem,
@@ -1047,10 +1099,11 @@ pub(crate) async fn install_project_to_dir(
     loaders: &[&str],
     state: &mut HashMap<String, InstalledModEntry>,
     download_context: Option<&ModDownloadContext>,
-) -> Result<(), String> {
-    fs::create_dir_all(target_dir)
-        .await
-        .map_err(|e| format!("create target dir error: {e}"))?;
+) -> Result<(), CommandError> {
+    fs::create_dir_all(target_dir).await.map_err(|e| {
+        let detail = format!("create target dir error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let (plan, available_files) = resolve_project_install_plan(
         client,
         instance,
@@ -1068,13 +1121,21 @@ pub(crate) async fn install_project_to_dir(
     for item in plan.into_iter().rev() {
         let version = item.version;
         let file = choose_primary_file(&version)
-            .ok_or_else(|| format!("No files for project {}", version.project_id))?
+            .ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    format!("No files for project {}", version.project_id),
+                )
+            })?
             .clone();
         file_content::validate_filename(&file.filename)?;
         if !filenames.insert(file.filename.clone()) {
-            return Err(format!(
-                "Разные обязательные моды используют одинаковое имя файла {}",
-                file.filename
+            return Err(CommandError::new(
+                ErrorCode::IncompatibleVersion,
+                format!(
+                    "Разные обязательные моды используют одинаковое имя файла {}",
+                    file.filename
+                ),
             ));
         }
         let existing = reusable_installed_entry(&version, &file, state, &available_files);
@@ -1136,7 +1197,7 @@ async fn install_prepared_files(
     state: &mut HashMap<String, InstalledModEntry>,
     download_context: Option<&ModDownloadContext>,
     state_path: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let mut next_state = state.clone();
     for (file, entry, _) in &prepared {
         file_content::validate_filename(&file.filename)?;
@@ -1153,14 +1214,22 @@ async fn install_prepared_files(
     let metadata = state_path
         .map(|path| {
             if path.parent() != Some(target_dir) {
-                return Err("Content metadata is outside target directory".to_string());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Content metadata is outside target directory",
+                ));
             }
             let name = path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .ok_or("Invalid content metadata filename")?;
-            let bytes = serde_json::to_vec_pretty(&next_state)
-                .map_err(|e| format!("serialize content state error: {e}"))?;
+                .ok_or(CommandError::new(
+                    ErrorCode::InvalidFile,
+                    "Invalid content metadata filename",
+                ))?;
+            let bytes = serde_json::to_vec_pretty(&next_state).map_err(|e| {
+                let detail = format!("serialize content state error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             Ok((name.to_owned(), bytes))
         })
         .transpose()?;
@@ -1192,8 +1261,10 @@ async fn install_prepared_files(
                 // in exactly the same rollback journal as downloaded files.
                 let disabled = format!("{}.disabled", file.filename);
                 let staged = transaction.staged(&file.filename);
-                std::fs::copy(target_dir.join(&disabled), &staged)
-                    .map_err(|e| format!("stage disabled mod error: {e}"))?;
+                std::fs::copy(target_dir.join(&disabled), &staged).map_err(|e| {
+                    let detail = format!("stage disabled mod error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
                 transaction.replace(&staged, &file.filename)?;
                 transaction.remove(&disabled)?;
             }
@@ -1224,7 +1295,10 @@ async fn install_prepared_files(
     if let Err(error) = result {
         return match transaction.rollback() {
             Ok(()) => Err(error),
-            Err(rollback) => Err(format!("{error}; {rollback}")),
+            Err(rollback) => Err({
+                let detail = format!("{error}; {rollback}");
+                rollback.context(detail)
+            }),
         };
     }
     transaction.commit()?;

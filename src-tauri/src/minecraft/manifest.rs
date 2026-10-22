@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use reqwest::Client;
 
 use crate::{
@@ -6,35 +7,46 @@ use crate::{
     paths::{atomic_write_path, launcher_root, MANIFEST_URL},
 };
 
-async fn read_manifest_cache(path: &std::path::Path) -> Result<Option<MinecraftManifest>, String> {
+async fn read_manifest_cache(
+    path: &std::path::Path,
+) -> Result<Option<MinecraftManifest>, CommandError> {
     match tokio::fs::read(path).await {
         Ok(raw) => Ok(serde_json::from_slice(&raw).ok()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("read manifest cache error: {error}")),
+        Err(error) => Err({
+            let detail = format!("read manifest cache error: {error}");
+            CommandError::from(error).context(detail)
+        }),
     }
 }
 
-pub async fn read_cached_manifest() -> Result<Option<MinecraftManifest>, String> {
+pub async fn read_cached_manifest() -> Result<Option<MinecraftManifest>, CommandError> {
     read_manifest_cache(&launcher_root()?.join("version_manifest_v2.json")).await
 }
 
-pub async fn fetch_manifest_network(client: &Client) -> Result<MinecraftManifest, String> {
+pub async fn fetch_manifest_network(client: &Client) -> Result<MinecraftManifest, CommandError> {
     let response = mirrors::get_with_fallback(client, MANIFEST_URL).await?;
 
     if !response.status().is_success() {
-        return Err(format!("manifest http error: {}", response.status()));
+        return Err(CommandError::new(
+            ErrorCode::Network,
+            format!("manifest http error: {}", response.status()),
+        ));
     }
 
-    let manifest = response
-        .json::<MinecraftManifest>()
-        .await
-        .map_err(|e| format!("manifest parse error: {e}"))?;
+    let manifest = response.json::<MinecraftManifest>().await.map_err(|e| {
+        let detail = format!("manifest parse error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let root = launcher_root()?;
-    tokio::fs::create_dir_all(&root)
-        .await
-        .map_err(|e| format!("create manifest cache directory error: {e}"))?;
-    let raw = serde_json::to_vec(&manifest)
-        .map_err(|e| format!("serialize manifest cache error: {e}"))?;
+    tokio::fs::create_dir_all(&root).await.map_err(|e| {
+        let detail = format!("create manifest cache directory error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let raw = serde_json::to_vec(&manifest).map_err(|e| {
+        let detail = format!("serialize manifest cache error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     // A cache-write failure should not discard a usable network response.
     if let Err(error) = atomic_write_path(&root.join("version_manifest_v2.json"), &raw).await {
         eprintln!("{error}");

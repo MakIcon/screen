@@ -1,5 +1,6 @@
 import type { EnvironmentVariable } from "../types";
 import { translateFor, type Locale } from "../i18n/locale";
+import { LauncherError } from "./errors";
 
 export function environmentVariablesToEntries(variables: Record<string, string> = {}) {
   return Object.entries(variables).map(([name, value]) => ({ name, value }));
@@ -27,7 +28,7 @@ export function getEnvironmentVariablesError(
 
 export function environmentVariablesToRecord(entries: EnvironmentVariable[]) {
   const error = getEnvironmentVariablesError(entries);
-  if (error) throw new Error(error);
+  if (error) throw new LauncherError("invalid_input", error);
   return Object.fromEntries(
     entries
       .filter(({ name, value }) => name.trim() || value)

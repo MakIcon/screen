@@ -6,12 +6,18 @@ import globals from "globals";
 export default tseslint.config(
   {
     ignores: [
-      "dist",
-      "dist-extensions",
-      "src-tauri",
-      "node_modules",
+      "**/*.local/**",
+      "**/dist/**",
+      "dist-extensions/**",
+      "dist-release/**",
+      "src-tauri/**",
+      "**/node_modules/**",
+      // Historical reproductions and captured sources, not maintained runtime code.
+      "reports/**",
       "extensions/mineflayer-bot/pathfinding",
       "extensions/mineflayer-bot/pathfinder.cjs",
+      "extensions/mineflayer-bot/mineflayer-fabric.cjs",
+      "extensions/mineflayer-bot/vendor/**",
       // Source-copied third-party registry components are checked by TypeScript
       // and kept byte-for-byte close to upstream for easier future refreshes.
       "src/components/canvasui",

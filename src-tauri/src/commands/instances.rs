@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::path::PathBuf;
 
 use tokio::fs;
@@ -46,29 +47,33 @@ pub(crate) fn is_trashed(instance: &InstanceItem) -> bool {
 }
 
 #[tauri::command]
-pub async fn delete_instance(
-    instance_id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn delete_instance(instance_id: String) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("delete", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let Some(index) = items.iter().position(|i| i.id == instance_id) else {
-            return Err("Instance not found".into());
+            return Err(CommandError::new(
+                ErrorCode::BuildNotFound,
+                "Instance not found",
+            ));
         };
         if is_trashed(&items[index]) {
-            return Err("Build is already in the trash".into());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Build is already in the trash",
+            ));
         }
         items[index].status = format!("{TRASH_PREFIX}{}", items[index].status);
         items.commit().await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn list_instances() -> Result<Vec<InstanceItem>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn list_instances() -> Result<Vec<InstanceItem>, CommandError> {
+    let result: Result<_, CommandError> = async {
         Ok(read_instances()
             .await?
             .into_iter()
@@ -76,13 +81,12 @@ pub async fn list_instances() -> Result<Vec<InstanceItem>, crate::commands::erro
             .collect())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn list_deleted_instances(
-) -> Result<Vec<InstanceItem>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn list_deleted_instances() -> Result<Vec<InstanceItem>, CommandError> {
+    let result: Result<_, CommandError> = async {
         Ok(read_instances()
             .await?
             .into_iter()
@@ -90,29 +94,35 @@ pub async fn list_deleted_instances(
             .collect())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn restore_instance(
-    instance_id: String,
-) -> Result<InstanceItem, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn restore_instance(instance_id: String) -> Result<InstanceItem, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("restore", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let index = items
             .iter()
             .position(|item| item.id == instance_id && is_trashed(item))
-            .ok_or_else(|| "Build is not in the trash".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::InvalidInput, "Build is not in the trash")
+            })?;
         if items
             .iter()
             .any(|item| !is_trashed(item) && item.name.eq_ignore_ascii_case(&items[index].name))
         {
-            return Err("An active build already has this name".into());
+            return Err(CommandError::new(
+                ErrorCode::NameExists,
+                "An active build already has this name",
+            ));
         }
         if !PathBuf::from(&items[index].game_dir).exists() {
-            return Err("Build files are missing; cannot restore".into());
+            return Err(CommandError::new(
+                ErrorCode::FileNotFound,
+                "Build files are missing; cannot restore",
+            ));
         }
         items[index].status = items[index]
             .status
@@ -125,34 +135,41 @@ pub async fn restore_instance(
         Ok(restored)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn purge_deleted_instance(
-    instance_id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn purge_deleted_instance(instance_id: String) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("purge", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let mut items = edit_instances().await?;
         let index = items
             .iter()
             .position(|item| item.id == instance_id && is_trashed(item))
-            .ok_or_else(|| "Build is not in the trash".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::InvalidInput, "Build is not in the trash")
+            })?;
         let instance_dir = PathBuf::from(&items[index].game_dir)
             .parent()
-            .ok_or_else(|| "Instance directory is missing".to_string())?
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::FileNotFound, "Instance directory is missing")
+            })?
             .to_path_buf();
         if instance_dir.exists() {
-            let root = fs::canonicalize(instances_root()?)
-                .await
-                .map_err(|e| format!("resolve instances root error: {e}"))?;
-            let target = fs::canonicalize(&instance_dir)
-                .await
-                .map_err(|e| format!("resolve instance directory error: {e}"))?;
+            let root = fs::canonicalize(instances_root()?).await.map_err(|e| {
+                let detail = format!("resolve instances root error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
+            let target = fs::canonicalize(&instance_dir).await.map_err(|e| {
+                let detail = format!("resolve instance directory error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             if target == root || !target.starts_with(&root) {
-                return Err("Build directory is outside the instances folder".into());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Build directory is outside the instances folder",
+                ));
             }
             for other in items
                 .iter()
@@ -166,50 +183,59 @@ pub async fn purge_deleted_instance(
                     continue;
                 };
                 if other_dir.exists()
-                    && fs::canonicalize(&other_dir)
-                        .await
-                        .map_err(|e| format!("resolve another build directory error: {e}"))?
-                        == target
+                    && fs::canonicalize(&other_dir).await.map_err(|e| {
+                        let detail = format!("resolve another build directory error: {e}");
+                        CommandError::from(e).context(detail)
+                    })? == target
                 {
-                    return Err("Another build uses the same directory".into());
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        "Another build uses the same directory",
+                    ));
                 }
             }
-            fs::remove_dir_all(&instance_dir)
-                .await
-                .map_err(|e| format!("delete instance dir error: {e}"))?;
+            fs::remove_dir_all(&instance_dir).await.map_err(|e| {
+                let detail = format!("delete instance dir error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
         let backups_dir = launcher_root()?.join("world-backups").join(&instance_id);
         if backups_dir.exists() {
-            fs::remove_dir_all(&backups_dir)
-                .await
-                .map_err(|e| format!("delete world backups error: {e}"))?;
+            fs::remove_dir_all(&backups_dir).await.map_err(|e| {
+                let detail = format!("delete world backups error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
         }
         items.remove(index);
         items.commit().await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn create_instance(
-    payload: CreateInstancePayload,
-) -> Result<InstanceItem, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn create_instance(payload: CreateInstancePayload) -> Result<InstanceItem, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("create", None)?;
         let environment_variables = normalize_environment_variables(payload.environment_variables)?;
         let mut items = edit_instances().await?;
         let clean_name = sanitize_name(&payload.name);
 
         if clean_name.is_empty() {
-            return Err("Build name is empty".into());
+            return Err(CommandError::new(
+                ErrorCode::NameRequired,
+                "Build name is empty",
+            ));
         }
 
         if items
             .iter()
             .any(|i| !is_trashed(i) && i.name.eq_ignore_ascii_case(&clean_name))
         {
-            return Err("Build with this name already exists".into());
+            return Err(CommandError::new(
+                ErrorCode::NameExists,
+                "Build with this name already exists",
+            ));
         }
 
         let (loader_kind, loader_version) =
@@ -219,9 +245,10 @@ pub async fn create_instance(
         let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
         let game_dir = instance_dir.join("minecraft");
 
-        fs::create_dir_all(&game_dir)
-            .await
-            .map_err(|e| format!("create instance dir error: {e}"))?;
+        fs::create_dir_all(&game_dir).await.map_err(|e| {
+            let detail = format!("create instance dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         let item = InstanceItem {
             id: id.clone(),
@@ -246,12 +273,17 @@ pub async fn create_instance(
         };
 
         let meta_path = instance_dir.join("instance.json");
-        let raw = serde_json::to_string_pretty(&item)
-            .map_err(|e| format!("serialize instance meta error: {e}"))?;
+        let raw = serde_json::to_string_pretty(&item).map_err(|e| {
+            let detail = format!("serialize instance meta error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
             .await
-            .map_err(|e| format!("write instance meta error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("write instance meta error: {e}");
+                e.context(detail)
+            })?;
 
         items.push(item.clone());
         items.commit().await?;
@@ -259,14 +291,12 @@ pub async fn create_instance(
         Ok(item)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn update_instance(
-    payload: UpdateInstancePayload,
-) -> Result<InstanceItem, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn update_instance(payload: UpdateInstancePayload) -> Result<InstanceItem, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("edit", Some(&payload.id))?;
         let _instance_guard = crate::operations::lock_instance(&payload.id).await;
         let environment_variables = normalize_environment_variables(payload.environment_variables)?;
@@ -274,18 +304,27 @@ pub async fn update_instance(
         let clean_name = sanitize_name(&payload.name);
 
         if clean_name.is_empty() {
-            return Err("Build name is empty".into());
+            return Err(CommandError::new(
+                ErrorCode::NameRequired,
+                "Build name is empty",
+            ));
         }
         if items.iter().any(|item| {
             !is_trashed(item)
                 && item.id != payload.id
                 && item.name.eq_ignore_ascii_case(&clean_name)
         }) {
-            return Err("Build with this name already exists".into());
+            return Err(CommandError::new(
+                ErrorCode::NameExists,
+                "Build with this name already exists",
+            ));
         }
 
         let Some(index) = items.iter().position(|i| i.id == payload.id) else {
-            return Err("Instance not found".into());
+            return Err(CommandError::new(
+                ErrorCode::BuildNotFound,
+                "Instance not found",
+            ));
         };
 
         let (loader_kind, loader_version) =
@@ -294,7 +333,7 @@ pub async fn update_instance(
         let old_item = items[index].clone();
         let old_instance_dir = PathBuf::from(&old_item.game_dir)
             .parent()
-            .ok_or_else(|| "instance dir missing".to_string())?
+            .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "instance dir missing"))?
             .to_path_buf();
 
         let desired_dir_name = make_instance_dir_name(&payload.version, &clean_name);
@@ -313,7 +352,10 @@ pub async fn update_instance(
         if old_instance_dir != final_instance_dir {
             fs::rename(&old_instance_dir, &final_instance_dir)
                 .await
-                .map_err(|e| format!("rename instance dir error: {e}"))?;
+                .map_err(|e| {
+                    let detail = format!("rename instance dir error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
         }
 
         let updated_item = InstanceItem {
@@ -345,48 +387,51 @@ pub async fn update_instance(
         items.commit().await?;
 
         let meta_path = final_instance_dir.join("instance.json");
-        let raw = serde_json::to_string_pretty(&updated_item)
-            .map_err(|e| format!("serialize instance meta error: {e}"))?;
+        let raw = serde_json::to_string_pretty(&updated_item).map_err(|e| {
+            let detail = format!("serialize instance meta error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
             .await
-            .map_err(|e| format!("write instance meta error: {e}"))?;
+            .map_err(|e| {
+                let detail = format!("write instance meta error: {e}");
+                e.context(detail)
+            })?;
 
         Ok(updated_item)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn get_instance_export_data(
     instance_id: String,
-) -> Result<InstanceExportData, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<InstanceExportData, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("export", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let items = read_instances().await?;
         let instance = items
             .into_iter()
             .find(|i| i.id == instance_id)
-            .ok_or_else(|| "Instance not found".to_string())?;
+            .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Instance not found"))?;
 
         instance_export_data_locked(instance).await
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 /// The caller holds the build lock for the complete export.
 pub(crate) async fn instance_export_data_locked(
     instance: InstanceItem,
-) -> Result<InstanceExportData, String> {
+) -> Result<InstanceExportData, CommandError> {
     let game_dir = PathBuf::from(&instance.game_dir);
 
     let read_export_items = |directory: PathBuf, state_file: &'static str| async move {
-        if let Err(error) = crate::file_transaction::FileTransaction::recover(&directory) {
-            return Err(error);
-        }
+        crate::file_transaction::FileTransaction::recover(&directory)?;
         let state_path = directory.join(state_file);
         let state: HashMap<String, InstalledModEntry> = if state_path.exists() {
             let raw = fs::read_to_string(&state_path).await.unwrap_or_default();
@@ -437,7 +482,7 @@ pub(crate) async fn instance_export_data_locked(
         }
 
         result.sort_by_key(|item| item.title.to_lowercase());
-        Ok::<_, String>(result)
+        Ok::<_, CommandError>(result)
     };
 
     let mods = read_export_items(game_dir.join("mods"), ".screenlauncher-modrinth.json").await?;
@@ -478,7 +523,7 @@ async fn install_import_content(
     shaders: &[ExportedItem],
     resource_packs: &[ExportedItem],
     context: Option<&ImportContext>,
-) -> Result<Vec<ImportContentResult>, String> {
+) -> Result<Vec<ImportContentResult>, CommandError> {
     let client = build_client();
     let game_dir = PathBuf::from(&item.game_dir);
     let loader = item.loader.to_lowercase();
@@ -522,10 +567,17 @@ async fn install_import_content(
         crate::file_transaction::FileTransaction::recover(&target_dir)?;
         let state_path = target_dir.join(state_file);
         let mut state: HashMap<String, InstalledModEntry> = match fs::read(&state_path).await {
-            Ok(raw) => serde_json::from_slice(&raw)
-                .map_err(|e| format!("parse content state error: {e}"))?,
+            Ok(raw) => serde_json::from_slice(&raw).map_err(|e| {
+                let detail = format!("parse content state error: {e}");
+                CommandError::from(e).context(detail)
+            })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
-            Err(e) => return Err(format!("read content state error: {e}")),
+            Err(e) => {
+                return Err({
+                    let detail = format!("read content state error: {e}");
+                    CommandError::from(e).context(detail)
+                })
+            }
         };
         for exported in entries {
             if let Some(context) = context {
@@ -534,23 +586,29 @@ async fn install_import_content(
             }
             let result = async {
                 if exported.source != "modrinth" {
-                    return Err(
-                        "Local files are not embedded in .slbuild; copy this file manually"
-                            .to_string(),
-                    );
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        "Local files are not embedded in .slbuild; copy this file manually",
+                    ));
                 }
                 let project_id = exported
                     .project_id
                     .as_deref()
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "Missing Modrinth project id".to_string())?;
+                    .ok_or_else(|| {
+                        CommandError::new(ErrorCode::InvalidInput, "Missing Modrinth project id")
+                    })?;
                 if category == "mods" && loaders.is_empty() {
-                    return Err("Vanilla builds cannot install mods".to_string());
+                    return Err(CommandError::new(
+                        ErrorCode::InvalidInput,
+                        "Vanilla builds cannot install mods",
+                    ));
                 }
                 let client = client.as_ref().map_err(|error| error.clone())?;
-                fs::create_dir_all(&target_dir)
-                    .await
-                    .map_err(|error| format!("create content folder error: {error}"))?;
+                fs::create_dir_all(&target_dir).await.map_err(|error| {
+                    let detail = format!("create content folder error: {error}");
+                    CommandError::from(error).context(detail)
+                })?;
                 let installation = install_project_to_dir(
                     client,
                     item,
@@ -569,14 +627,17 @@ async fn install_import_content(
                 Ok(())
             }
             .await;
-            if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
-                return Err(IMPORT_CANCELLED.to_string());
+            if matches!(&result, Err(error) if error.code == ErrorCode::Cancelled) {
+                return Err(CommandError::new(ErrorCode::Cancelled, IMPORT_CANCELLED));
             }
             results.push(ImportContentResult {
                 category: category.to_string(),
                 item: exported.clone(),
                 success: result.is_ok(),
-                message: result.err().unwrap_or_else(|| "Installed".to_string()),
+                message: result
+                    .err()
+                    .map(|error| error.detail)
+                    .unwrap_or_else(|| "Installed".to_string()),
             });
             if let Some(context) = context {
                 context.emit("installing", results.len(), total, &exported.title);
@@ -594,8 +655,8 @@ pub async fn retry_import_content(
     mods: Vec<ExportedItem>,
     shaders: Vec<ExportedItem>,
     resource_packs: Vec<ExportedItem>,
-) -> Result<Vec<ImportContentResult>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Vec<ImportContentResult>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("import", Some(&instance_id))?;
         let context = ImportContext::start(app, operation_id).await?;
         let result =
@@ -604,7 +665,7 @@ pub async fn retry_import_content(
         result
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn retry_import_content_inner(
@@ -613,13 +674,13 @@ async fn retry_import_content_inner(
     shaders: Vec<ExportedItem>,
     resource_packs: Vec<ExportedItem>,
     context: &ImportContext,
-) -> Result<Vec<ImportContentResult>, String> {
+) -> Result<Vec<ImportContentResult>, CommandError> {
     let _instance_guard = crate::operations::lock_instance(&instance_id).await;
     let item = read_instances()
         .await?
         .into_iter()
         .find(|item| item.id == instance_id && !is_trashed(item))
-        .ok_or_else(|| "Build not found".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::BuildNotFound, "Build not found"))?;
     install_import_content(&item, &mods, &shaders, &resource_packs, Some(context)).await
 }
 
@@ -628,8 +689,8 @@ pub async fn import_instance(
     app: AppHandle,
     operation_id: String,
     payload: ImportInstancePayload,
-) -> Result<ImportInstanceResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ImportInstanceResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("import", None)?;
         let context = ImportContext::start(app, operation_id).await?;
         let result = import_instance_inner(payload, &context).await;
@@ -637,13 +698,13 @@ pub async fn import_instance(
         result
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 async fn import_instance_inner(
     payload: ImportInstancePayload,
     context: &ImportContext,
-) -> Result<ImportInstanceResult, String> {
+) -> Result<ImportInstanceResult, CommandError> {
     context.check()?;
     let (item, instance_guard) = create_imported_instance(payload.clone()).await?;
     let result = install_import_content(
@@ -655,7 +716,7 @@ async fn import_instance_inner(
     )
     .await;
     drop(instance_guard);
-    if matches!(&result, Err(error) if error == IMPORT_CANCELLED) {
+    if matches!(&result, Err(error) if error.code == ErrorCode::Cancelled) {
         discard_imported_instance(&item).await?;
     }
     let items = result?;
@@ -670,16 +731,14 @@ async fn import_instance_inner(
     })
 }
 
-pub(crate) async fn discard_imported_instance(item: &InstanceItem) -> Result<(), String> {
+pub(crate) async fn discard_imported_instance(item: &InstanceItem) -> Result<(), CommandError> {
     delete_instance(item.id.clone()).await?;
-    purge_deleted_instance(item.id.clone())
-        .await
-        .map_err(String::from)
+    purge_deleted_instance(item.id.clone()).await
 }
 
 pub(crate) async fn create_imported_instance(
     payload: ImportInstancePayload,
-) -> Result<(InstanceItem, tokio::sync::OwnedMutexGuard<()>), String> {
+) -> Result<(InstanceItem, tokio::sync::OwnedMutexGuard<()>), CommandError> {
     let environment_variables = normalize_environment_variables(payload.environment_variables)?;
     let id = format!("inst-{}", uuid::Uuid::new_v4());
     let instance_guard = crate::operations::lock_instance(&id).await;
@@ -687,14 +746,20 @@ pub(crate) async fn create_imported_instance(
     let clean_name = sanitize_name(&payload.name);
 
     if clean_name.is_empty() {
-        return Err("Build name is empty".into());
+        return Err(CommandError::new(
+            ErrorCode::NameRequired,
+            "Build name is empty",
+        ));
     }
 
     if items
         .iter()
         .any(|i| !is_trashed(i) && i.name.eq_ignore_ascii_case(&clean_name))
     {
-        return Err("Build with this name already exists".into());
+        return Err(CommandError::new(
+            ErrorCode::NameExists,
+            "Build with this name already exists",
+        ));
     }
 
     let (loader_kind, loader_version) =
@@ -703,9 +768,10 @@ pub(crate) async fn create_imported_instance(
     let instance_dir = unique_instance_dir(&payload.version, &clean_name)?;
     let game_dir = instance_dir.join("minecraft");
 
-    fs::create_dir_all(&game_dir)
-        .await
-        .map_err(|e| format!("create instance dir error: {e}"))?;
+    fs::create_dir_all(&game_dir).await.map_err(|e| {
+        let detail = format!("create instance dir error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     let item = InstanceItem {
         id: id.clone(),
@@ -730,12 +796,17 @@ pub(crate) async fn create_imported_instance(
     };
 
     let meta_path = instance_dir.join("instance.json");
-    let raw = serde_json::to_string_pretty(&item)
-        .map_err(|e| format!("serialize instance meta error: {e}"))?;
+    let raw = serde_json::to_string_pretty(&item).map_err(|e| {
+        let detail = format!("serialize instance meta error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
 
     crate::paths::atomic_write_path(&meta_path, raw.as_bytes())
         .await
-        .map_err(|e| format!("write instance meta error: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("write instance meta error: {e}");
+            e.context(detail)
+        })?;
 
     items.push(item.clone());
     items.commit().await?;

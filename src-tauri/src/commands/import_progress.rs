@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -41,13 +42,19 @@ pub struct ImportContext {
 }
 
 impl ImportContext {
-    pub async fn start(app: AppHandle, operation_id: String) -> Result<Self, String> {
+    pub async fn start(app: AppHandle, operation_id: String) -> Result<Self, CommandError> {
         if operation_id.trim().is_empty() {
-            return Err("Import operation id is empty".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Import operation id is empty",
+            ));
         }
         let mut active = active_imports().lock().await;
         if active.active.contains_key(&operation_id) {
-            return Err("Import operation is already active".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Import operation is already active",
+            ));
         }
         let initially_cancelled = active.pending_cancel.remove(&operation_id);
         let (sender, cancel) = watch::channel(initially_cancelled);
@@ -70,9 +77,9 @@ impl ImportContext {
             .remove(&self.operation_id);
     }
 
-    pub fn check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<(), CommandError> {
         if *self.cancel.borrow() {
-            Err(IMPORT_CANCELLED.to_string())
+            Err(CommandError::new(ErrorCode::Cancelled, IMPORT_CANCELLED))
         } else {
             Ok(())
         }
@@ -105,29 +112,30 @@ impl ImportContext {
 
     pub async fn run<T>(
         &self,
-        future: impl Future<Output = Result<T, String>>,
-    ) -> Result<T, String> {
+        future: impl Future<Output = Result<T, CommandError>>,
+    ) -> Result<T, CommandError> {
         self.check()?;
         tokio::select! {
             result = future => result,
-            _ = self.cancelled() => Err(IMPORT_CANCELLED.to_string()),
+            _ = self.cancelled() => Err(CommandError::new(ErrorCode::Cancelled, IMPORT_CANCELLED)),
         }
     }
 }
 
 #[tauri::command]
-pub async fn cancel_import(
-    operation_id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn cancel_import(operation_id: String) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         if operation_id.trim().is_empty() {
-            return Err("Import operation id is empty".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Import operation id is empty",
+            ));
         }
         let mut registry = active_imports().lock().await;
         if let Some(sender) = registry.active.get(&operation_id) {
-            return sender
-                .send(true)
-                .map_err(|_| "Import is no longer active".to_string());
+            return sender.send(true).map_err(|_| {
+                CommandError::new(ErrorCode::InvalidInput, "Import is no longer active")
+            });
         }
         // The user can click Cancel before the import command has registered.
         if registry.pending_cancel.len() >= 128 {
@@ -137,5 +145,5 @@ pub async fn cancel_import(
         Ok(())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }

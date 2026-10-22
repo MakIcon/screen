@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     fs::File,
     io,
@@ -22,12 +23,17 @@ use super::{
     },
 };
 
-fn clear_directory(path: &Path) -> Result<(), String> {
+fn clear_directory(path: &Path) -> Result<(), CommandError> {
     if path.exists() {
-        std::fs::remove_dir_all(path)
-            .map_err(|e| format!("clear natives directory {} error: {e}", path.display()))?;
+        std::fs::remove_dir_all(path).map_err(|e| {
+            let detail = format!("clear natives directory {} error: {e}", path.display());
+            CommandError::from(e).context(detail)
+        })?;
     }
-    std::fs::create_dir_all(path).map_err(|e| format!("create dir error: {e}"))
+    std::fs::create_dir_all(path).map_err(|e| {
+        let detail = format!("create dir error: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
 fn should_skip_native_entry(name: &str, excludes: &[String]) -> bool {
@@ -41,7 +47,7 @@ pub async fn extract_natives(
     app: &AppHandle,
     resolved: &VersionMeta,
     natives_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let mut tasks = Vec::new();
     let mut native_archives: Vec<(PathBuf, Vec<String>)> = Vec::new();
 
@@ -93,24 +99,33 @@ pub async fn extract_natives(
         })
     })
     .await
-    .map_err(|e| format!("natives extraction task error: {e}"))?
+    .map_err(|e| {
+        let detail = format!("natives extraction task error: {e}");
+        CommandError::from(e).context(detail)
+    })?
 }
 
 fn extract_native_archives(
     natives_dir: &Path,
     native_archives: &[(PathBuf, Vec<String>)],
     mut on_archive: impl FnMut(&Path),
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     clear_directory(natives_dir)?;
     for (archive_path, excludes) in native_archives {
-        let file =
-            File::open(archive_path).map_err(|e| format!("open natives archive error: {e}"))?;
-        let mut zip = ZipArchive::new(file).map_err(|e| format!("zip open error: {e}"))?;
+        let file = File::open(archive_path).map_err(|e| {
+            let detail = format!("open natives archive error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        let mut zip = ZipArchive::new(file).map_err(|e| {
+            let detail = format!("zip open error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         for i in 0..zip.len() {
-            let mut entry = zip
-                .by_index(i)
-                .map_err(|e| format!("zip entry error: {e}"))?;
+            let mut entry = zip.by_index(i).map_err(|e| {
+                let detail = format!("zip entry error: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             let enclosed = match entry.enclosed_name() {
                 Some(p) => p.to_owned(),
                 None => continue,
@@ -122,19 +137,27 @@ fn extract_native_archives(
             let out_path = natives_dir.join(&enclosed);
             if entry.is_dir() {
                 std::fs::create_dir_all(&out_path).map_err(|e| {
-                    format!("create natives directory {} error: {e}", out_path.display())
+                    let detail =
+                        format!("create natives directory {} error: {e}", out_path.display());
+                    CommandError::from(e).context(detail)
                 })?;
                 continue;
             }
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| {
-                    format!("create natives directory {} error: {e}", parent.display())
+                    let detail =
+                        format!("create natives directory {} error: {e}", parent.display());
+                    CommandError::from(e).context(detail)
                 })?;
             }
-            let mut out_file = File::create(&out_path)
-                .map_err(|e| format!("create native {} error: {e}", out_path.display()))?;
-            io::copy(&mut entry, &mut out_file)
-                .map_err(|e| format!("extract native {} error: {e}", out_path.display()))?;
+            let mut out_file = File::create(&out_path).map_err(|e| {
+                let detail = format!("create native {} error: {e}", out_path.display());
+                CommandError::from(e).context(detail)
+            })?;
+            io::copy(&mut entry, &mut out_file).map_err(|e| {
+                let detail = format!("extract native {} error: {e}", out_path.display());
+                CommandError::from(e).context(detail)
+            })?;
         }
         on_archive(archive_path);
     }
@@ -144,11 +167,11 @@ fn extract_native_archives(
 pub async fn download_asset_index(
     app: &AppHandle,
     resolved: &VersionMeta,
-) -> Result<(AssetIndexInfo, AssetIndexJson), String> {
+) -> Result<(AssetIndexInfo, AssetIndexJson), CommandError> {
     let index = resolved
         .asset_index
         .clone()
-        .ok_or_else(|| "asset index missing".to_string())?;
+        .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "asset index missing"))?;
     let path = assets_root()?
         .join("indexes")
         .join(format!("{}.json", index.id));
@@ -160,11 +183,14 @@ pub async fn download_asset_index(
         index.size,
     )];
     download_many(app, "asset-index", tasks).await?;
-    let raw = fs::read_to_string(&path)
-        .await
-        .map_err(|e| format!("read asset index error: {e}"))?;
-    let json: AssetIndexJson =
-        serde_json::from_str(&raw).map_err(|e| format!("parse asset index error: {e}"))?;
+    let raw = fs::read_to_string(&path).await.map_err(|e| {
+        let detail = format!("read asset index error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let json: AssetIndexJson = serde_json::from_str(&raw).map_err(|e| {
+        let detail = format!("parse asset index error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     Ok((index, json))
 }
 
@@ -173,7 +199,7 @@ pub async fn download_assets(
     asset_index_id: &str,
     asset_index: &AssetIndexJson,
     game_dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let assets = assets_root()?;
     let virtual_root = assets.join("virtual").join(asset_index_id);
     let resources_root = game_dir.join("resources");
@@ -183,7 +209,10 @@ pub async fn download_assets(
 
     for (logical_path, object) in &asset_index.objects {
         if object.hash.len() != 40 || !object.hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(format!("Invalid SHA-1 for asset {logical_path}"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Invalid SHA-1 for asset {logical_path}"),
+            ));
         }
         let prefix = &object.hash[0..2];
         let object_path = assets.join("objects").join(prefix).join(&object.hash);
@@ -223,28 +252,32 @@ pub async fn download_assets(
         if make_virtual {
             let out = virtual_root.join(logical_path);
             if let Some(parent) = out.parent() {
-                fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("create virtual asset dir error: {e}"))?;
+                fs::create_dir_all(parent).await.map_err(|e| {
+                    let detail = format!("create virtual asset dir error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
             if !out.exists() {
-                fs::copy(&object_path, &out)
-                    .await
-                    .map_err(|e| format!("copy virtual asset error: {e}"))?;
+                fs::copy(&object_path, &out).await.map_err(|e| {
+                    let detail = format!("copy virtual asset error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
         }
 
         if map_to_resources {
             let out = resources_root.join(logical_path);
             if let Some(parent) = out.parent() {
-                fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("create resources dir error: {e}"))?;
+                fs::create_dir_all(parent).await.map_err(|e| {
+                    let detail = format!("create resources dir error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
             if !out.exists() {
-                fs::copy(&object_path, &out)
-                    .await
-                    .map_err(|e| format!("copy resources asset error: {e}"))?;
+                fs::copy(&object_path, &out).await.map_err(|e| {
+                    let detail = format!("copy resources asset error: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
         }
 
@@ -256,7 +289,7 @@ pub async fn download_assets(
 pub async fn download_logging_config(
     app: &AppHandle,
     resolved: &VersionMeta,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<Option<PathBuf>, CommandError> {
     let Some(logging) = resolved.logging.as_ref() else {
         return Ok(None);
     };
@@ -356,7 +389,9 @@ mod tests {
             .unwrap();
         bytes[position] ^= 1;
         std::fs::write(&archive, bytes).unwrap();
-        let error = extract_native_archives(&out, &[(archive, vec![])], |_| {}).unwrap_err();
+        let error = extract_native_archives(&out, &[(archive, vec![])], |_| {})
+            .unwrap_err()
+            .detail;
         assert!(error.contains("extract native"), "{error}");
     }
 }

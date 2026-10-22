@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use crate::{
     commands::instances::is_trashed,
     paths::{launcher_root, now_string, read_instances},
@@ -70,7 +71,7 @@ struct BackupPreferences {
     excluded_worlds: Vec<String>,
 }
 
-fn backup_root(instance_id: &str) -> Result<PathBuf, String> {
+fn backup_root(instance_id: &str) -> Result<PathBuf, CommandError> {
     Ok(launcher_root()?.join("world-backups").join(instance_id))
 }
 
@@ -90,13 +91,18 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     }
 }
 
-fn real_directory(path: &Path) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|e| format!("Не удалось прочитать папку {}: {e}", path.display()))?;
+fn real_directory(path: &Path) -> Result<(), CommandError> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| {
+        let detail = format!("Не удалось прочитать папку {}: {e}", path.display());
+        CommandError::from(e).context(detail)
+    })?;
     if !metadata.is_dir() || is_link(&metadata) {
-        return Err(format!(
-            "Папка {} должна быть обычной папкой, без ссылок",
-            path.display()
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            format!(
+                "Папка {} должна быть обычной папкой, без ссылок",
+                path.display()
+            ),
         ));
     }
     Ok(())
@@ -110,9 +116,15 @@ fn valid_world_name(name: &str) -> bool {
         && components.next().is_none()
 }
 
-fn read_world_preview_sync(saves: &Path, world_name: &str) -> Result<Option<Vec<u8>>, String> {
+fn read_world_preview_sync(
+    saves: &Path,
+    world_name: &str,
+) -> Result<Option<Vec<u8>>, CommandError> {
     if !valid_world_name(world_name) {
-        return Err("Недопустимое имя мира".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Недопустимое имя мира",
+        ));
     }
     real_directory(saves)?;
     let world = saves.join(world_name);
@@ -121,7 +133,12 @@ fn read_world_preview_sync(saves: &Path, world_name: &str) -> Result<Option<Vec<
     let metadata = match fs::symlink_metadata(&icon) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("Не удалось прочитать превью мира: {error}")),
+        Err(error) => {
+            return Err({
+                let detail = format!("Не удалось прочитать превью мира: {error}");
+                CommandError::from(error).context(detail)
+            })
+        }
     };
     const MAX_PREVIEW_BYTES: u64 = 1024 * 1024;
     if !metadata.is_file() || is_link(&metadata) || metadata.len() > MAX_PREVIEW_BYTES {
@@ -130,7 +147,10 @@ fn read_world_preview_sync(saves: &Path, world_name: &str) -> Result<Option<Vec<
     let mut bytes = Vec::new();
     fs::File::open(icon)
         .and_then(|file| file.take(MAX_PREVIEW_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|error| format!("Не удалось прочитать превью мира: {error}"))?;
+        .map_err(|error| {
+            let detail = format!("Не удалось прочитать превью мира: {error}");
+            CommandError::from(error).context(detail)
+        })?;
     // Minecraft writes a PNG screenshot here. Ignore missing/broken thumbnails
     // without preventing the user from backing up the world itself.
     if bytes.len() < 24
@@ -148,18 +168,22 @@ fn read_world_preview_sync(saves: &Path, world_name: &str) -> Result<Option<Vec<
     Ok(Some(bytes))
 }
 
-fn tree_size(source: &Path) -> Result<u64, String> {
+fn tree_size(source: &Path) -> Result<u64, CommandError> {
     real_directory(source)?;
     let mut size = 0_u64;
     let mut pending = vec![source.to_path_buf()];
     while let Some(directory) = pending.pop() {
-        for entry in
-            fs::read_dir(directory).map_err(|e| format!("Не удалось прочитать мир: {e}"))?
-        {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(directory).map_err(|e| {
+            let detail = format!("Не удалось прочитать мир: {e}");
+            CommandError::from(e).context(detail)
+        })? {
+            let entry = entry.map_err(CommandError::from)?;
+            let metadata = fs::symlink_metadata(entry.path()).map_err(CommandError::from)?;
             if is_link(&metadata) {
-                return Err("Мир содержит символическую ссылку или junction".into());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Мир содержит символическую ссылку или junction",
+                ));
             }
             if metadata.is_dir() {
                 pending.push(entry.path());
@@ -171,46 +195,60 @@ fn tree_size(source: &Path) -> Result<u64, String> {
     Ok(size)
 }
 
-fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
+fn copy_tree(source: &Path, destination: &Path) -> Result<(), CommandError> {
     real_directory(source)?;
-    fs::create_dir_all(destination).map_err(|e| format!("Не удалось создать папку копии: {e}"))?;
+    fs::create_dir_all(destination).map_err(|e| {
+        let detail = format!("Не удалось создать папку копии: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let mut pending = vec![(source.to_path_buf(), destination.to_path_buf())];
     while let Some((from, to)) = pending.pop() {
-        for entry in fs::read_dir(&from).map_err(|e| format!("Не удалось прочитать мир: {e}"))?
-        {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+        for entry in fs::read_dir(&from).map_err(|e| {
+            let detail = format!("Не удалось прочитать мир: {e}");
+            CommandError::from(e).context(detail)
+        })? {
+            let entry = entry.map_err(CommandError::from)?;
+            let metadata = fs::symlink_metadata(entry.path()).map_err(CommandError::from)?;
             let target = to.join(entry.file_name());
             if is_link(&metadata) {
-                return Err("Мир содержит символическую ссылку или junction".into());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Мир содержит символическую ссылку или junction",
+                ));
             }
             if metadata.is_dir() {
-                fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+                fs::create_dir_all(&target).map_err(CommandError::from)?;
                 pending.push((entry.path(), target));
             } else if metadata.is_file() {
-                fs::copy(entry.path(), target)
-                    .map_err(|e| format!("Не удалось скопировать мир: {e}"))?;
+                fs::copy(entry.path(), target).map_err(|e| {
+                    let detail = format!("Не удалось скопировать мир: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
             }
         }
     }
     Ok(())
 }
 
-fn world_folders(saves: &Path) -> Result<Vec<String>, String> {
+fn world_folders(saves: &Path) -> Result<Vec<String>, CommandError> {
     if !saves.exists() {
         return Ok(Vec::new());
     }
     real_directory(saves)?;
     let mut folders = Vec::new();
-    for entry in fs::read_dir(saves).map_err(|e| format!("Не удалось прочитать saves: {e}"))?
-    {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let metadata = fs::symlink_metadata(entry.path()).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(saves).map_err(|e| {
+        let detail = format!("Не удалось прочитать saves: {e}");
+        CommandError::from(e).context(detail)
+    })? {
+        let entry = entry.map_err(CommandError::from)?;
+        let metadata = fs::symlink_metadata(entry.path()).map_err(CommandError::from)?;
         if metadata.is_dir() && !is_link(&metadata) {
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "Неподдерживаемые символы в имени папки мира".to_string())?;
+            let name = entry.file_name().into_string().map_err(|_| {
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Неподдерживаемые символы в имени папки мира",
+                )
+            })?;
             if valid_world_name(&name) {
                 folders.push(name);
             }
@@ -220,7 +258,7 @@ fn world_folders(saves: &Path) -> Result<Vec<String>, String> {
     Ok(folders)
 }
 
-fn list_worlds_sync(saves: &Path) -> Result<Vec<BackupWorldInfo>, String> {
+fn list_worlds_sync(saves: &Path) -> Result<Vec<BackupWorldInfo>, CommandError> {
     world_folders(saves)?
         .into_iter()
         .map(|folder_name| {
@@ -244,24 +282,33 @@ fn list_worlds_sync(saves: &Path) -> Result<Vec<BackupWorldInfo>, String> {
 fn selected_names(
     available: &[String],
     requested: Option<&[String]>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     let selected = requested.unwrap_or(available);
     if selected.is_empty() {
-        return Err("Выбери хотя бы один мир".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Выбери хотя бы один мир",
+        ));
     }
     let mut seen = HashSet::new();
     for name in selected {
         if !valid_world_name(name) || !available.contains(name) {
-            return Err(format!("Мир «{name}» не найден. Обнови список миров"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Мир «{name}» не найден. Обнови список миров"),
+            ));
         }
         if !seen.insert(name) {
-            return Err("Мир выбран несколько раз".into());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Мир выбран несколько раз",
+            ));
         }
     }
     Ok(selected.to_vec())
 }
 
-fn ensure_world_unlocked(world: &Path) -> Result<(), String> {
+fn ensure_world_unlocked(world: &Path) -> Result<(), CommandError> {
     let lock = world.join("session.lock");
     if !lock.exists() {
         return Ok(());
@@ -275,9 +322,12 @@ fn ensure_world_unlocked(world: &Path) -> Result<(), String> {
             .share_mode(0)
             .open(&lock)
             .map_err(|_| {
-                format!(
-                    "Мир {} занят игрой. Закрой Minecraft и повтори",
-                    world.display()
+                CommandError::new(
+                    ErrorCode::BuildRunning,
+                    format!(
+                        "Мир {} занят игрой. Закрой Minecraft и повтори",
+                        world.display()
+                    ),
                 )
             })?;
     }
@@ -291,13 +341,16 @@ fn create_backup_sync(
     requested: Option<&[String]>,
     name: &str,
     kind: BackupKind,
-) -> Result<WorldBackupInfo, String> {
+) -> Result<WorldBackupInfo, CommandError> {
     let saves = game_dir.join("saves");
     let selected = selected_names(&world_folders(&saves)?, requested)?;
     for world in &selected {
         ensure_world_unlocked(&saves.join(world))?;
     }
-    fs::create_dir_all(root).map_err(|e| format!("Не удалось создать папку бекапов: {e}"))?;
+    fs::create_dir_all(root).map_err(|e| {
+        let detail = format!("Не удалось создать папку бекапов: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     real_directory(root)?;
     let id = Uuid::new_v4().to_string();
     let pending = root.join(format!(".pending-{id}"));
@@ -319,11 +372,16 @@ fn create_backup_sync(
         };
         fs::write(
             pending.join("backup.json"),
-            serde_json::to_vec_pretty(&info).map_err(|e| e.to_string())?,
+            serde_json::to_vec_pretty(&info).map_err(CommandError::from)?,
         )
-        .map_err(|e| format!("Не удалось записать описание копии: {e}"))?;
-        fs::rename(&pending, &final_path)
-            .map_err(|e| format!("Не удалось завершить бекап: {e}"))?;
+        .map_err(|e| {
+            let detail = format!("Не удалось записать описание копии: {e}");
+            CommandError::from(e).context(detail)
+        })?;
+        fs::rename(&pending, &final_path).map_err(|e| {
+            let detail = format!("Не удалось завершить бекап: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         Ok(info)
     })();
     if result.is_err() {
@@ -336,22 +394,33 @@ fn read_backup(
     instance_id: &str,
     backup_id: &str,
     root: &Path,
-) -> Result<(PathBuf, WorldBackupInfo), String> {
-    Uuid::parse_str(backup_id).map_err(|_| "Invalid backup id".to_string())?;
+) -> Result<(PathBuf, WorldBackupInfo), CommandError> {
+    Uuid::parse_str(backup_id)
+        .map_err(|_| CommandError::new(ErrorCode::InvalidInput, "Invalid backup id"))?;
     real_directory(root)?;
-    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    let root = root.canonicalize().map_err(CommandError::from)?;
     let backup = root.join(backup_id);
     real_directory(&backup)?;
-    if backup.canonicalize().map_err(|e| e.to_string())?.parent() != Some(root.as_path()) {
-        return Err("Backup path is outside this build's backups folder".into());
+    if backup.canonicalize().map_err(CommandError::from)?.parent() != Some(root.as_path()) {
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Backup path is outside this build's backups folder",
+        ));
     }
-    let mut info: WorldBackupInfo = serde_json::from_slice(
-        &fs::read(backup.join("backup.json"))
-            .map_err(|e| format!("Не удалось прочитать копию: {e}"))?,
-    )
-    .map_err(|e| format!("Не удалось прочитать описание копии: {e}"))?;
+    let mut info: WorldBackupInfo =
+        serde_json::from_slice(&fs::read(backup.join("backup.json")).map_err(|e| {
+            let detail = format!("Не удалось прочитать копию: {e}");
+            CommandError::from(e).context(detail)
+        })?)
+        .map_err(|e| {
+            let detail = format!("Не удалось прочитать описание копии: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     if info.id != backup_id || info.instance_id != instance_id {
-        return Err("Backup does not belong to this build".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Backup does not belong to this build",
+        ));
     }
     // Legacy backups only recorded worldCount. Keep them usable without rewriting them.
     if info.worlds.is_empty() {
@@ -362,15 +431,17 @@ fn read_backup(
     Ok((backup, info))
 }
 
-fn list_backups_sync(instance_id: &str, root: &Path) -> Result<Vec<WorldBackupInfo>, String> {
+fn list_backups_sync(instance_id: &str, root: &Path) -> Result<Vec<WorldBackupInfo>, CommandError> {
     if !root.exists() {
         return Ok(Vec::new());
     }
     real_directory(root)?;
     let mut backups = Vec::new();
-    for entry in fs::read_dir(root).map_err(|e| format!("Не удалось прочитать бекапы: {e}"))?
-    {
-        let entry = entry.map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(root).map_err(|e| {
+        let detail = format!("Не удалось прочитать бекапы: {e}");
+        CommandError::from(e).context(detail)
+    })? {
+        let entry = entry.map_err(CommandError::from)?;
         let id = entry.file_name().to_string_lossy().to_string();
         if Uuid::parse_str(&id).is_ok() {
             if let Ok((_, info)) = read_backup(instance_id, &id, root) {
@@ -389,23 +460,35 @@ fn list_backups_sync(instance_id: &str, root: &Path) -> Result<Vec<WorldBackupIn
     Ok(backups)
 }
 
-fn delete_backup_sync(instance_id: &str, backup_id: &str, root: &Path) -> Result<(), String> {
+fn delete_backup_sync(instance_id: &str, backup_id: &str, root: &Path) -> Result<(), CommandError> {
     let (backup, _) = read_backup(instance_id, backup_id, root)?;
-    fs::remove_dir_all(backup).map_err(|e| format!("Не удалось удалить бекап: {e}"))
+    fs::remove_dir_all(backup).map_err(|e| {
+        let detail = format!("Не удалось удалить бекап: {e}");
+        CommandError::from(e).context(detail)
+    })
 }
 
-fn read_preferences(root: &Path) -> Result<BackupPreferences, String> {
+fn read_preferences(root: &Path) -> Result<BackupPreferences, CommandError> {
     match fs::read(root.join("selection.json")) {
-        Ok(raw) => serde_json::from_slice(&raw)
-            .map_err(|e| format!("Не удалось прочитать выбор миров: {e}")),
+        Ok(raw) => serde_json::from_slice(&raw).map_err(|e| {
+            let detail = format!("Не удалось прочитать выбор миров: {e}");
+            CommandError::from(e).context(detail)
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             Ok(BackupPreferences::default())
         }
-        Err(error) => Err(format!("Не удалось прочитать выбор миров: {error}")),
+        Err(error) => Err({
+            let detail = format!("Не удалось прочитать выбор миров: {error}");
+            CommandError::from(error).context(detail)
+        }),
     }
 }
 
-fn save_selection_sync(game_dir: &Path, root: &Path, selected: &[String]) -> Result<(), String> {
+fn save_selection_sync(
+    game_dir: &Path,
+    root: &Path,
+    selected: &[String],
+) -> Result<(), CommandError> {
     let available = world_folders(&game_dir.join("saves"))?;
     if !selected.is_empty() {
         selected_names(&available, Some(selected))?;
@@ -419,28 +502,31 @@ fn save_selection_sync(game_dir: &Path, root: &Path, selected: &[String]) -> Res
             .into_iter()
             .filter(|name| !selected.contains(name)),
     );
-    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(root).map_err(CommandError::from)?;
     real_directory(root)?;
     let pending = root.join(format!(".selection-{}.json", Uuid::new_v4()));
     let result = (|| {
         fs::write(
             &pending,
-            serde_json::to_vec_pretty(&preferences).map_err(|e| e.to_string())?,
+            serde_json::to_vec_pretty(&preferences).map_err(CommandError::from)?,
         )
-        .map_err(|e| e.to_string())?;
-        fs::rename(&pending, root.join("selection.json")).map_err(|e| e.to_string())
+        .map_err(CommandError::from)?;
+        fs::rename(&pending, root.join("selection.json")).map_err(CommandError::from)
     })();
     if result.is_err() {
         let _ = fs::remove_file(&pending);
     }
-    result.map_err(|e| format!("Не удалось сохранить выбор миров: {e}"))
+    result.map_err(|e| {
+        let detail = format!("Не удалось сохранить выбор миров: {e}");
+        e.context(detail)
+    })
 }
 
 fn backup_state_sync(
     instance_id: &str,
     game_dir: &Path,
     root: &Path,
-) -> Result<WorldBackupState, String> {
+) -> Result<WorldBackupState, CommandError> {
     let worlds = list_worlds_sync(&game_dir.join("saves"))?;
     let excluded = read_preferences(root)?.excluded_worlds;
     let selected_worlds = worlds
@@ -461,7 +547,7 @@ fn restore_backup_sync(
     game_dir: &Path,
     root: &Path,
     requested: Option<&[String]>,
-) -> Result<WorldRestoreResult, String> {
+) -> Result<WorldRestoreResult, CommandError> {
     let (backup, metadata) = read_backup(instance_id, backup_id, root)?;
     let source = backup.join("saves");
     real_directory(&source)?;
@@ -490,7 +576,7 @@ fn restore_backup_sync(
     let previous = staged.join("previous");
     // Stage and validate every selected world before touching live data.
     let prepare = (|| {
-        fs::create_dir_all(&previous).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&previous).map_err(CommandError::from)?;
         for name in &selected {
             copy_tree(&source.join(name), &incoming.join(name))?;
             let expected = metadata
@@ -499,8 +585,9 @@ fn restore_backup_sync(
                 .find(|world| &world.folder_name == name)
                 .unwrap();
             if tree_size(&incoming.join(name))? != expected.size_bytes {
-                return Err(format!(
-                    "Копия мира «{name}» повреждена: размер файлов не совпадает"
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    format!("Копия мира «{name}» повреждена: размер файлов не совпадает"),
                 ));
             }
         }
@@ -528,18 +615,22 @@ fn restore_backup_sync(
     let mut moved = Vec::new();
     let mut installed = Vec::new();
     let commit = (|| {
-        fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&saves).map_err(CommandError::from)?;
         for name in &selected {
             if overwritten.contains(name) {
-                fs::rename(saves.join(name), previous.join(name))
-                    .map_err(|e| format!("Не удалось заменить мир «{name}»: {e}"))?;
+                fs::rename(saves.join(name), previous.join(name)).map_err(|e| {
+                    let detail = format!("Не удалось заменить мир «{name}»: {e}");
+                    CommandError::from(e).context(detail)
+                })?;
                 moved.push(name.clone());
             }
-            fs::rename(incoming.join(name), saves.join(name))
-                .map_err(|e| format!("Не удалось восстановить мир «{name}»: {e}"))?;
+            fs::rename(incoming.join(name), saves.join(name)).map_err(|e| {
+                let detail = format!("Не удалось восстановить мир «{name}»: {e}");
+                CommandError::from(e).context(detail)
+            })?;
             installed.push(name.clone());
         }
-        Ok::<(), String>(())
+        Ok::<(), CommandError>(())
     })();
     if let Err(error) = commit {
         let mut rollback_errors = Vec::new();
@@ -555,10 +646,13 @@ fn restore_backup_sync(
         }
         if !rollback_errors.is_empty() {
             // Preserve originals if Windows won't release a file during rollback.
-            return Err(format!(
+            return Err(CommandError::new(
+                error.code,
+                format!(
                 "{error}. Ошибка отката: {}. Исходные данные сохранены в {} и страховочной копии",
                 rollback_errors.join("; "),
                 staged.display()
+            ),
             ));
         }
         let _ = fs::remove_dir_all(&staged);
@@ -571,13 +665,13 @@ fn restore_backup_sync(
     })
 }
 
-async fn active_game_dir(instance_id: &str) -> Result<PathBuf, String> {
+async fn active_game_dir(instance_id: &str) -> Result<PathBuf, CommandError> {
     read_instances()
         .await?
         .into_iter()
         .find(|item| item.id == instance_id && !is_trashed(item))
         .map(|item| PathBuf::from(item.game_dir))
-        .ok_or_else(|| "Сборка не найдена".into())
+        .ok_or_else(|| CommandError::new(ErrorCode::InvalidInput, "Сборка не найдена"))
 }
 
 #[tauri::command]
@@ -585,8 +679,8 @@ pub async fn load_world_preview(
     instance_id: String,
     world_name: String,
     backup_id: Option<String>,
-) -> Result<Option<Vec<u8>>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Option<Vec<u8>>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let guard = BACKUP_OPERATIONS.lock().await;
         let game_dir = active_game_dir(&instance_id).await?;
         let root = backup_root(&instance_id)?;
@@ -599,17 +693,18 @@ pub async fn load_world_preview(
             read_world_preview_sync(&saves, &world_name)
         })
         .await
-        .map_err(|error| format!("world preview task error: {error}"))?
+        .map_err(|error| {
+            let detail = format!("world preview task error: {error}");
+            CommandError::from(error).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn get_world_backup_state(
-    instance_id: String,
-) -> Result<WorldBackupState, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn get_world_backup_state(instance_id: String) -> Result<WorldBackupState, CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -622,18 +717,21 @@ pub async fn get_world_backup_state(
             backup_state_sync(&instance_id, &game_dir, &root)
         })
         .await
-        .map_err(|e| format!("backup list task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("backup list task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn set_world_backup_selection(
     instance_id: String,
     world_names: Vec<String>,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -646,10 +744,13 @@ pub async fn set_world_backup_selection(
             save_selection_sync(&game_dir, &root, &world_names)
         })
         .await
-        .map_err(|e| format!("backup selection task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("backup selection task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -657,8 +758,8 @@ pub async fn create_world_backup(
     instance_id: String,
     world_names: Option<Vec<String>>,
     name: Option<String>,
-) -> Result<WorldBackupInfo, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<WorldBackupInfo, CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -678,17 +779,18 @@ pub async fn create_world_backup(
             )
         })
         .await
-        .map_err(|e| format!("backup task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("backup task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn list_world_backups(
-    instance_id: String,
-) -> Result<Vec<WorldBackupInfo>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn list_world_backups(instance_id: String) -> Result<Vec<WorldBackupInfo>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -701,18 +803,21 @@ pub async fn list_world_backups(
             list_backups_sync(&instance_id, &root)
         })
         .await
-        .map_err(|e| format!("backup list task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("backup list task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn delete_world_backup(
     instance_id: String,
     backup_id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -725,10 +830,13 @@ pub async fn delete_world_backup(
             delete_backup_sync(&instance_id, &backup_id, &root)
         })
         .await
-        .map_err(|e| format!("backup deletion task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("backup deletion task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -736,8 +844,8 @@ pub async fn restore_world_backup(
     instance_id: String,
     backup_id: String,
     world_names: Option<Vec<String>>,
-) -> Result<WorldRestoreResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<WorldRestoreResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let operation = crate::operations::begin("backup", Some(&instance_id))?;
         let instance_guard = crate::operations::lock_instance(&instance_id).await;
         let guard = BACKUP_OPERATIONS.lock().await;
@@ -756,10 +864,13 @@ pub async fn restore_world_backup(
             )
         })
         .await
-        .map_err(|e| format!("restore task error: {e}"))?
+        .map_err(|e| {
+            let detail = format!("restore task error: {e}");
+            CommandError::from(e).context(detail)
+        })?
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]
@@ -1018,14 +1129,18 @@ mod tests {
         let other = f.backup(None);
         for invalid in ["", "..", "../game", "..\\game", "C:\\", "/"] {
             assert_eq!(
-                delete_backup_sync("inst-test", invalid, &f.backups).unwrap_err(),
+                delete_backup_sync("inst-test", invalid, &f.backups)
+                    .unwrap_err()
+                    .detail,
                 "Invalid backup id"
             );
             assert!(restore_backup_sync("inst-test", invalid, &f.game, &f.backups, None).is_err());
         }
         assert!(delete_backup_sync("inst-test", &Uuid::new_v4().to_string(), &f.backups).is_err());
         assert_eq!(
-            delete_backup_sync("another-build", &selected.id, &f.backups).unwrap_err(),
+            delete_backup_sync("another-build", &selected.id, &f.backups)
+                .unwrap_err()
+                .detail,
             "Backup does not belong to this build"
         );
         delete_backup_sync("inst-test", &selected.id, &f.backups).unwrap();

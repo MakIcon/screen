@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     sync::OnceLock,
@@ -20,7 +21,7 @@ use super::{
     build_client, choose_primary_file, fetch_modrinth_search, http_json, install_project_to_dir,
     resolve_project_install_plan, reusable_installed_entry, InstalledModEntry, InstalledModView,
     ModDownloadContext, ModDownloadControlState, ModrinthSearchResponse, ModrinthVersion,
-    ModrinthVersionFile, MODRINTH_API_BASE, MOD_DOWNLOAD_CANCELLED, SEARCH_PAGE_SIZE_MAX,
+    ModrinthVersionFile, MODRINTH_API_BASE, SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODS_STATE_FILE: &str = ".screenlauncher-modrinth.json";
@@ -40,10 +41,13 @@ fn download_key(instance_id: &str, project_id: &str) -> String {
 // surface because installs are loader-aware and resolve dependencies.
 const MODS: FileContentConfig = FileContentConfig::new("mods", MODS_STATE_FILE, "mod", "Mod");
 
-fn instance_loader(loader: &str) -> Result<&'static str, String> {
-    LoaderKind::parse(loader)?
-        .modrinth_id()
-        .ok_or_else(|| "Vanilla builds do not support mods".to_string())
+fn instance_loader(loader: &str) -> Result<&'static str, CommandError> {
+    LoaderKind::parse(loader)?.modrinth_id().ok_or_else(|| {
+        CommandError::new(
+            ErrorCode::InvalidInput,
+            "Vanilla builds do not support mods",
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -93,8 +97,8 @@ pub struct ModrinthModDependencies {
 pub async fn get_modrinth_mod_dependencies(
     instance_id: String,
     project_id: String,
-) -> Result<ModrinthModDependencies, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ModrinthModDependencies, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = find_instance(&instance_id).await?;
@@ -111,14 +115,21 @@ pub async fn get_modrinth_mod_dependencies(
             None,
         )
         .await?;
-        let root = plan.first().ok_or("Не удалось подобрать версию мода")?;
+        let root = plan.first().ok_or(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Не удалось подобрать версию мода",
+        ))?;
         let version_number = root.version.version_number.clone();
         let direct_dependencies = root.dependencies.clone();
         let mut dependencies = Vec::new();
         for item in plan.into_iter().skip(1) {
             let version = item.version;
-            let file = choose_primary_file(&version)
-                .ok_or_else(|| format!("У зависимости {} нет файлов", version.project_id))?;
+            let file = choose_primary_file(&version).ok_or_else(|| {
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    format!("У зависимости {} нет файлов", version.project_id),
+                )
+            })?;
             validate_filename(&file.filename)?;
             let status =
                 ModrinthDependencyStatus::for_file(&version, file, &state, &available_files);
@@ -159,7 +170,7 @@ pub async fn get_modrinth_mod_dependencies(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -168,8 +179,8 @@ pub async fn search_modrinth_mods(
     query: String,
     offset: usize,
     limit: usize,
-) -> Result<ModrinthSearchResponse, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ModrinthSearchResponse, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let client = build_client()?;
@@ -198,7 +209,7 @@ pub async fn search_modrinth_mods(
         Ok(response)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -206,8 +217,8 @@ pub async fn install_modrinth_project(
     app: AppHandle,
     instance_id: String,
     project_id: String,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let client = build_client()?;
@@ -222,7 +233,10 @@ pub async fn install_modrinth_project(
         {
             let mut active = active_mod_downloads().lock().await;
             if active.contains_key(&key) {
-                return Err("This mod download is already running".to_string());
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "This mod download is already running",
+                ));
             }
             active.insert(key.clone(), control_sender);
         }
@@ -247,7 +261,7 @@ pub async fn install_modrinth_project(
         active_mod_downloads().lock().await.remove(&key);
 
         if let Err(error) = install_result {
-            if error == MOD_DOWNLOAD_CANCELLED {
+            if error.code == ErrorCode::Cancelled {
                 context.emit("", 0, 0, "cancelled");
             }
             return Err(error);
@@ -261,7 +275,7 @@ pub async fn install_modrinth_project(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -269,50 +283,58 @@ pub async fn set_modrinth_download_paused(
     instance_id: String,
     project_id: String,
     paused: bool,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let active = active_mod_downloads().lock().await;
         let control = active
             .get(&download_key(&instance_id, &project_id))
-            .ok_or_else(|| "Mod download is no longer active".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+            })?;
         control
             .send(if paused {
                 ModDownloadControlState::Paused
             } else {
                 ModDownloadControlState::Downloading
             })
-            .map_err(|_| "Mod download is no longer active".to_string())
+            .map_err(|_| {
+                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+            })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn cancel_modrinth_download(
     instance_id: String,
     project_id: String,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = async {
         let active = active_mod_downloads().lock().await;
         let control = active
             .get(&download_key(&instance_id, &project_id))
-            .ok_or_else(|| "Mod download is no longer active".to_string())?;
+            .ok_or_else(|| {
+                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+            })?;
         control
             .send(ModDownloadControlState::Cancelled)
-            .map_err(|_| "Mod download is no longer active".to_string())
+            .map_err(|_| {
+                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+            })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn uninstall_modrinth_mod(
     instance_id: String,
     filename: String,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> =
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> =
         async { uninstall_file_content(MODS, instance_id, filename).await }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 /// Enable or disable a mod by renaming its file, the way Prism/MultiMC do it:
@@ -324,8 +346,8 @@ pub async fn set_mod_enabled(
     instance_id: String,
     filename: String,
     enabled: bool,
-) -> Result<ActionResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<ActionResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         validate_filename(&filename)?;
@@ -335,7 +357,10 @@ pub async fn set_mod_enabled(
         let mods_dir = content_dir(&instance, MODS);
         let current_path = mods_dir.join(&filename);
         if !current_path.exists() {
-            return Err(format!("Mod file not found: {filename}"));
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Mod file not found: {filename}"),
+            ));
         }
 
         let currently_enabled = !filename.ends_with(".disabled");
@@ -358,14 +383,16 @@ pub async fn set_mod_enabled(
         };
         let target_path = mods_dir.join(&target_filename);
         if target_path.exists() {
-            return Err(format!(
-                "Cannot toggle mod, target already exists: {target_filename}"
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                format!("Cannot toggle mod, target already exists: {target_filename}"),
             ));
         }
 
-        fs::rename(&current_path, &target_path)
-            .await
-            .map_err(|e| format!("toggle mod error: {e}"))?;
+        fs::rename(&current_path, &target_path).await.map_err(|e| {
+            let detail = format!("toggle mod error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         Ok(ActionResult {
             ok: true,
@@ -378,29 +405,29 @@ pub async fn set_mod_enabled(
         })
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
 pub async fn list_installed_mods(
     instance_id: String,
-) -> Result<Vec<InstalledModView>, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<Vec<InstalledModView>, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("content-read", Some(&instance_id))?;
         let _instance_guard = crate::operations::lock_instance(&instance_id).await;
         let instance = find_instance(&instance_id).await?;
         let mods_dir = ensure_content_dir(&instance, MODS).await?;
         let state = read_state(&instance, MODS).await?;
-        let mut entries = fs::read_dir(&mods_dir)
-            .await
-            .map_err(|e| format!("read mods dir error: {e}"))?;
+        let mut entries = fs::read_dir(&mods_dir).await.map_err(|e| {
+            let detail = format!("read mods dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
 
         let mut out = Vec::new();
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| format!("mods dir iteration error: {e}"))?
-        {
+        while let Some(entry) = entries.next_entry().await.map_err(|e| {
+            let detail = format!("mods dir iteration error: {e}");
+            CommandError::from(e).context(detail)
+        })? {
             let path = entry.path();
             if !path.is_file() {
                 continue;
@@ -450,7 +477,7 @@ pub async fn list_installed_mods(
         Ok(out)
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]

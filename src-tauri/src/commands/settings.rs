@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use crate::{
     minecraft::{mirrors, normalized_ram},
     models::{LauncherPluginsSettings, LauncherSettings, MascotSettings},
@@ -53,17 +54,14 @@ pub struct ProxyTestResult {
 }
 
 #[tauri::command]
-pub async fn get_launcher_settings(
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async { read_settings().await }.await;
-    result.map_err(crate::commands::errors::CommandError::from)
+pub async fn get_launcher_settings() -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async { read_settings().await }.await;
+    result
 }
 
 #[tauri::command]
-pub async fn set_default_ram_gb(
-    ram: u32,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_default_ram_gb(ram: u32) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.default_ram_gb = normalized_ram(ram);
@@ -71,14 +69,12 @@ pub async fn set_default_ram_gb(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn set_optimized_java_args(
-    enabled: bool,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_optimized_java_args(enabled: bool) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.optimized_java_args = enabled;
@@ -86,14 +82,12 @@ pub async fn set_optimized_java_args(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn set_auto_download_java(
-    enabled: bool,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_auto_download_java(enabled: bool) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.auto_download_java = enabled;
@@ -101,14 +95,12 @@ pub async fn set_auto_download_java(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn set_mascot_enabled(
-    enabled: bool,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_mascot_enabled(enabled: bool) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.mascot_enabled = enabled;
@@ -116,14 +108,12 @@ pub async fn set_mascot_enabled(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn set_mascot_settings(
-    mascot: MascotSettings,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_mascot_settings(mascot: MascotSettings) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.mascot = mascot.normalize();
@@ -131,7 +121,7 @@ pub async fn set_mascot_settings(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
@@ -139,8 +129,8 @@ pub async fn set_launcher_plugins(
     app: tauri::AppHandle,
     plugins: LauncherPluginsSettings,
     plugin_ids: Option<Vec<LauncherPluginId>>,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         merge_plugins(&mut settings.plugins, plugins, plugin_ids);
@@ -158,16 +148,17 @@ pub async fn set_launcher_plugins(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn test_proxy_connection(
-    proxy_url: String,
-) -> Result<ProxyTestResult, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn test_proxy_connection(proxy_url: String) -> Result<ProxyTestResult, CommandError> {
+    let result: Result<_, CommandError> = async {
         if proxy_url.trim().is_empty() {
-            return Err("Enter a proxy URL first".to_string());
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Enter a proxy URL first",
+            ));
         }
 
         // Disable environment/system proxies so this check can only succeed through
@@ -179,7 +170,10 @@ pub async fn test_proxy_connection(
             .user_agent("ScreenLauncher/0.1.0 proxy-test")
             .timeout(Duration::from_secs(15))
             .build()
-            .map_err(|error| format!("Proxy test client error: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("Proxy test client error: {error}");
+                CommandError::from(error).context(detail)
+            })?;
         let started = Instant::now();
 
         match client.get(PROXY_TEST_URL).send().await {
@@ -205,14 +199,12 @@ pub async fn test_proxy_connection(
         }
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]
-pub async fn set_network_settings(
-    mirror: String,
-) -> Result<LauncherSettings, crate::commands::errors::CommandError> {
-    let result: Result<_, String> = async {
+pub async fn set_network_settings(mirror: String) -> Result<LauncherSettings, CommandError> {
+    let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
         settings.network.mirror = crate::minecraft::mirrors::MirrorMode::parse(&mirror)
@@ -222,7 +214,7 @@ pub async fn set_network_settings(
         Ok((*settings).clone())
     }
     .await;
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[cfg(test)]

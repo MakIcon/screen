@@ -639,7 +639,9 @@ pub struct MineflayerStorageGroup {
     pub chests: Vec<MineflayerStoragePosition>,
 }
 
-fn storage_group_enabled() -> bool { true }
+fn storage_group_enabled() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MineflayerStoragePosition {
@@ -1556,7 +1558,10 @@ mod loader_schema_tests {
             let parsed: MineflayerBotPluginSettings =
                 serde_json::from_value(serde_json::json!({ "antiKnockback": enabled })).unwrap();
             assert_eq!(parsed.anti_knockback, enabled);
-            assert_eq!(serde_json::to_value(parsed).unwrap()["antiKnockback"], enabled);
+            assert_eq!(
+                serde_json::to_value(parsed).unwrap()["antiKnockback"],
+                enabled
+            );
         }
     }
 
@@ -1577,10 +1582,14 @@ mod loader_schema_tests {
         for enabled in [true, false] {
             let parsed: MineflayerBotPluginSettings = serde_json::from_value(
                 serde_json::json!({ "allowLowCeilingJumps": enabled, "allowParkour": false }),
-            ).unwrap();
+            )
+            .unwrap();
             assert_eq!(parsed.allow_low_ceiling_jumps, enabled);
             assert!(!parsed.allow_parkour);
-            assert_eq!(serde_json::to_value(parsed).unwrap()["allowLowCeilingJumps"], enabled);
+            assert_eq!(
+                serde_json::to_value(parsed).unwrap()["allowLowCeilingJumps"],
+                enabled
+            );
         }
     }
 
@@ -1589,7 +1598,8 @@ mod loader_schema_tests {
         let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
         let defaults: serde_json::Value = serde_json::from_str(include_str!(
             "../../extensions/mineflayer-bot/survival-defaults.json"
-        )).unwrap();
+        ))
+        .unwrap();
         assert_eq!(serde_json::to_value(legacy.survival).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "survival": { "autoEat": false, "emergencyMlg": false,
@@ -1613,14 +1623,16 @@ mod loader_schema_tests {
         let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
         let defaults: serde_json::Value = serde_json::from_str(include_str!(
             "../../extensions/mineflayer-bot/gathering-defaults.json"
-        )).unwrap();
+        ))
+        .unwrap();
         assert_eq!(serde_json::to_value(legacy.gathering).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12,
                 "defendMobs": false, "defendPlayers": true, "defendArrows": false,
                 "storageGroups": [{ "id": "wood", "name": "Древесина", "filters": ["#wood"],
                     "chests": [{ "x": -12, "y": 64, "z": 3 }, { "x": 4, "y": 65, "z": 5 }] }] }
-        })).unwrap();
+        }))
+        .unwrap();
         let saved = serde_json::to_value(parsed).unwrap();
         assert_eq!(saved["gathering"]["placeTorches"], true);
         assert_eq!(saved["gathering"]["tunnelWidth"], 3);
@@ -1630,9 +1642,21 @@ mod loader_schema_tests {
         assert_eq!(saved["gathering"]["defendPlayers"], true);
         assert_eq!(saved["gathering"]["defendArrows"], false);
         assert_eq!(saved["gathering"]["storageGroups"][0]["enabled"], true);
-        assert_eq!(saved["gathering"]["storageGroups"][0]["filters"][0], "#wood");
-        assert_eq!(saved["gathering"]["storageGroups"][0]["chests"][0]["x"], -12);
-        assert_eq!(saved["gathering"]["storageGroups"][0]["chests"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            saved["gathering"]["storageGroups"][0]["filters"][0],
+            "#wood"
+        );
+        assert_eq!(
+            saved["gathering"]["storageGroups"][0]["chests"][0]["x"],
+            -12
+        );
+        assert_eq!(
+            saved["gathering"]["storageGroups"][0]["chests"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]

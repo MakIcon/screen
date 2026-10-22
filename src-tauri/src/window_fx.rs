@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{thread, time::Duration};
 
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, WebviewWindow};
@@ -7,16 +8,17 @@ use crate::models::PhasePayload;
 const UNFOLD_READY_DELAY: Duration = Duration::from_millis(1200);
 
 #[tauri::command]
-pub fn start_gallery_unfold(
-    window: WebviewWindow,
-) -> Result<(), crate::commands::errors::CommandError> {
-    let result: Result<_, String> = (|| {
+pub fn start_gallery_unfold(window: WebviewWindow) -> Result<(), CommandError> {
+    let result: Result<_, CommandError> = (|| {
         let scale = window.scale_factor().unwrap_or(1.0);
         let monitor = window
             .primary_monitor()
             .ok()
             .flatten()
-            .ok_or("Monitor not found")?;
+            .ok_or(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Monitor not found",
+            ))?;
         let screen = monitor.size().to_logical::<f64>(scale);
 
         let final_w = (screen.width * 0.7).clamp(900.0, 1280.0);
@@ -30,19 +32,29 @@ pub fn start_gallery_unfold(
         // frame, which makes the right edge visibly trail behind the window.
         window
             .set_size(LogicalSize::new(final_w, final_h))
-            .map_err(|error| format!("Failed to size window: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("Failed to size window: {error}");
+                CommandError::from(error).context(detail)
+            })?;
         window
             .set_position(LogicalPosition::new(
                 center_x - final_w / 2.0,
                 center_y - final_h / 2.0,
             ))
-            .map_err(|error| format!("Failed to position window: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("Failed to position window: {error}");
+                CommandError::from(error).context(detail)
+            })?;
         window
             .emit("window-phase", PhasePayload { phase: "unfolding" })
-            .map_err(|error| format!("Failed to start window animation: {error}"))?;
-        window
-            .show()
-            .map_err(|error| format!("Failed to show window: {error}"))?;
+            .map_err(|error| {
+                let detail = format!("Failed to start window animation: {error}");
+                CommandError::from(error).context(detail)
+            })?;
+        window.show().map_err(|error| {
+            let detail = format!("Failed to show window: {error}");
+            CommandError::from(error).context(detail)
+        })?;
 
         thread::spawn(move || {
             thread::sleep(UNFOLD_READY_DELAY);
@@ -51,7 +63,7 @@ pub fn start_gallery_unfold(
 
         Ok(())
     })();
-    result.map_err(crate::commands::errors::CommandError::from)
+    result
 }
 
 #[tauri::command]

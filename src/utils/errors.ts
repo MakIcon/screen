@@ -29,6 +29,18 @@ const ERROR_MESSAGES = {
 } as const satisfies Record<string, PlainMessageKey>;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
+
+/** Errors created in the UI use the same stable codes as IPC errors. */
+export class LauncherError extends Error {
+  constructor(
+    readonly code: ErrorCode,
+    readonly detail: string,
+  ) {
+    super(detail);
+    this.name = "LauncherError";
+  }
+}
+
 const loggedErrors = new Set<string>();
 
 /** Original diagnostics for logs, never translated or discarded. */
@@ -51,30 +63,10 @@ export function getErrorCode(error: unknown): ErrorCode {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
     if (Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, error.code))
       return error.code as ErrorCode;
+    return "unknown";
   }
-  // Compatibility for old backend versions and errors raised by browser APIs.
-  const text = toErrorDetails(error).toLowerCase();
-  if (/cancelled|canceled|aborterror/.test(text)) return "cancelled";
-  if (/instance not found|build not found/.test(text)) return "build_not_found";
-  if (/name is empty/.test(text)) return "name_required";
-  if (/name already exists/.test(text)) return "name_exists";
-  if (/stop the|is running/.test(text)) return "build_running";
-  if (/no compatible|not compatible/.test(text)) return "incompatible_version";
-  if (/skin.*png/.test(text)) return "skin_format";
-  if (/skin.*too large/.test(text)) return "skin_size";
-  if (/choose a png, jpeg or webp/.test(text)) return "image_format";
-  if (/image.*decoded|image processing/.test(text)) return "image_decode";
-  if (/java.*(?:not found|missing)/.test(text)) return "java_missing";
-  if (/java.*(?:failed|error)/.test(text)) return "java_failed";
-  if (/account|oauth|authentication/.test(text)) return "authentication";
-  if (/permission denied|access is denied/.test(text)) return "permission_denied";
-  if (/checksum|hash mismatch|sha-1 mismatch/.test(text)) return "checksum_mismatch";
-  if (/timeout|timed out|connect|network|dns|error sending request/.test(text)) return "network";
-  if (/download/.test(text)) return "download_failed";
-  if (/no such file|file not found|cannot find the file/.test(text)) return "file_not_found";
-  if (/unsupported|not supported/.test(text)) return "unsupported";
-  if (/invalid|unsafe|does not declare/.test(text))
-    return /archive|mrpack|slbuild|file/.test(text) ? "invalid_file" : "invalid_input";
+  // Browser cancellation has a structured name, independent of its message.
+  if (error instanceof Error && error.name === "AbortError") return "cancelled";
   return "unknown";
 }
 

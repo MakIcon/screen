@@ -1,3 +1,4 @@
+use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::HashMap,
     future::Future,
@@ -51,11 +52,16 @@ async fn cached_file_valid(
     path: &Path,
     sha1: Option<&str>,
     size: Option<u64>,
-) -> Result<bool, String> {
+) -> Result<bool, CommandError> {
     let metadata = match fs::metadata(path).await {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(format!("read cached file metadata error: {error}")),
+        Err(error) => {
+            return Err({
+                let detail = format!("read cached file metadata error: {error}");
+                CommandError::from(error).context(detail)
+            })
+        }
     };
     if !metadata.is_file() || size.is_some_and(|size| metadata.len() != size) {
         return Ok(false);
@@ -74,20 +80,21 @@ async fn cached_file_valid(
             return Ok(true);
         }
     }
-    let mut file = fs::File::open(path)
-        .await
-        .map_err(|e| format!("open cached file error: {e}"))?;
-    let opened_metadata = file
-        .metadata()
-        .await
-        .map_err(|e| format!("read cached file metadata error: {e}"))?;
+    let mut file = fs::File::open(path).await.map_err(|e| {
+        let detail = format!("open cached file error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
+    let opened_metadata = file.metadata().await.map_err(|e| {
+        let detail = format!("read cached file metadata error: {e}");
+        CommandError::from(e).context(detail)
+    })?;
     let mut hasher = Sha1::new();
     let mut buffer = vec![0; 64 * 1024];
     loop {
-        let count = file
-            .read(&mut buffer)
-            .await
-            .map_err(|e| format!("read cached file error: {e}"))?;
+        let count = file.read(&mut buffer).await.map_err(|e| {
+            let detail = format!("read cached file error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if count == 0 {
             break;
         }
@@ -95,10 +102,10 @@ async fn cached_file_valid(
     }
     let valid = format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected);
     if valid {
-        let after_read = file
-            .metadata()
-            .await
-            .map_err(|e| format!("read cached file metadata error: {e}"))?;
+        let after_read = file.metadata().await.map_err(|e| {
+            let detail = format!("read cached file metadata error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
         if opened_metadata.len() != after_read.len()
             || opened_metadata.modified().ok() != after_read.modified().ok()
         {
@@ -123,7 +130,7 @@ async fn fetch_to_path(
     path: &Path,
     expected_sha1: Option<&str>,
     expected_size: Option<u64>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     crate::downloads::stream_to_path(
         client,
         url,
@@ -156,19 +163,23 @@ pub(super) async fn download_to_path(
     path: &Path,
     sha1: Option<&str>,
     size: Option<u64>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     if sha1
         .is_some_and(|hash| hash.len() != 40 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
     {
-        return Err("Invalid download SHA-1 metadata".into());
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Invalid download SHA-1 metadata",
+        ));
     }
     if cached_file_valid(path, sha1, size).await? {
         return Ok(());
     }
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("create parent dir error: {e}"))?;
+        fs::create_dir_all(parent).await.map_err(|e| {
+            let detail = format!("create parent dir error: {e}");
+            CommandError::from(e).context(detail)
+        })?;
     }
     let mut last_error = None;
     for candidate in mirrors::candidates(url) {
@@ -177,18 +188,23 @@ pub(super) async fn download_to_path(
             Err(error) => last_error = Some(error),
         }
     }
-    Err(last_error.unwrap_or_else(|| format!("download failed for {url}")))
+    Err(last_error.unwrap_or_else(|| {
+        CommandError::new(
+            ErrorCode::DownloadFailed,
+            format!("download failed for {url}"),
+        )
+    }))
 }
 /// Only `concurrency` tasks exist at a time; failures abort and join all siblings.
 async fn run_bounded<T, F, Fut>(
     tasks: impl IntoIterator<Item = T>,
     concurrency: usize,
     worker: F,
-) -> Result<(), String>
+) -> Result<(), CommandError>
 where
     T: Send + 'static,
     F: Fn(T) -> Fut,
-    Fut: Future<Output = Result<(), String>> + Send + 'static,
+    Fut: Future<Output = Result<(), CommandError>> + Send + 'static,
 {
     let mut remaining = tasks.into_iter();
     let mut running = JoinSet::new();
@@ -199,7 +215,10 @@ where
         let error = match result {
             Ok(Ok(())) => None,
             Ok(Err(error)) => Some(error),
-            Err(error) => Some(format!("join download task error: {error}")),
+            Err(error) => Some({
+                let detail = format!("join download task error: {error}");
+                CommandError::from(error).context(detail)
+            }),
         };
         if let Some(error) = error {
             running.abort_all();
@@ -216,14 +235,14 @@ pub(super) async fn download_many(
     app: &AppHandle,
     phase: &str,
     tasks: Vec<DownloadTask>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let mut unique = HashMap::<PathBuf, DownloadTask>::new();
     for task in tasks {
         if let Some(previous) = unique.get(&task.path) {
             if previous.sha1 != task.sha1 || previous.size != task.size {
-                return Err(format!(
-                    "Conflicting download metadata for {}",
-                    task.path.display()
+                return Err(CommandError::new(
+                    ErrorCode::Unknown,
+                    format!("Conflicting download metadata for {}", task.path.display()),
                 ));
             }
         } else {
@@ -361,7 +380,8 @@ mod tests {
         .await
         .unwrap_err();
         server.join().unwrap();
-        assert!(error.contains("SHA-1"));
+        assert_eq!(error.code, ErrorCode::ChecksumMismatch);
+        assert!(error.detail.contains("SHA-1"));
         assert_eq!(fs::read(&path).await.unwrap(), b"previous");
         assert!(fixture.only_target());
         let (url, server) = serve(b"half", 100);
@@ -384,6 +404,7 @@ mod tests {
             download_to_path(&Fixture::client(), &url, &path, None, Some(3))
                 .await
                 .unwrap_err()
+                .detail
                 .contains("size")
         );
         server.join().unwrap();
@@ -452,7 +473,7 @@ mod tests {
                         started.fetch_add(1, Ordering::SeqCst);
                         barrier.wait().await;
                         if task == 0 {
-                            Err("failed".into())
+                            Err(CommandError::new(ErrorCode::Unknown, "failed"))
                         } else {
                             std::future::pending().await
                         }
@@ -462,7 +483,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(result.unwrap_err(), "failed");
+        assert_eq!(result.unwrap_err().detail, "failed");
         assert_eq!(started.load(Ordering::SeqCst), 3);
         assert_eq!(active.load(Ordering::SeqCst), 0);
     }
