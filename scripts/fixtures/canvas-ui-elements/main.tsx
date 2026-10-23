@@ -5,7 +5,7 @@ import { CanvasUiElementEffects } from "/src/appearance/CanvasUiElementEffects";
 import { CanvasUiLauncher } from "/src/appearance/CanvasUiLauncher";
 import { useMainAppearanceRuntime } from "/src/appearance/useMainAppearanceRuntime";
 import { createDefaultAppearance, applyAppearanceToElement } from "/src/appearance/profile";
-import { createDefaultCanvasUi } from "/src/appearance/canvasUi";
+import { CANVAS_UI_EFFECTS, createDefaultCanvasUi } from "/src/appearance/canvasUi";
 import { createElementTarget } from "/src/appearance/elementOverrides";
 import { CustomScrollArea } from "/src/components/layout/CustomScrollArea";
 import "/src/App.css";
@@ -68,7 +68,17 @@ function App() {
       ...defaults,
       canvasUi: { ...createDefaultCanvasUi(), enabled: global, effect: "liquid" },
       elementOverrides: [
-        { ...picked, style: {}, canvasUi: { ...createDefaultCanvasUi(), enabled: true, effect } },
+        {
+          ...picked,
+          style: {},
+          canvasUi: {
+            ...createDefaultCanvasUi(),
+            enabled: true,
+            effect,
+            // Disable the initial scramble so tests isolate actual pointer input.
+            settings: { displacement: { scramble: 0, threshold: 0, grain: 0 } },
+          },
+        },
       ],
     });
   }, [target, effect, global]);
@@ -89,7 +99,7 @@ function App() {
           ))}
         </select>
         <select aria-label="Effect" value={effect} onChange={(e) => setEffect(e.target.value)}>
-          {["glass", "bubble", "clouds", "liquid", "ripple"].map((x) => (
+          {CANVAS_UI_EFFECTS.map(({ id: x }) => (
             <option key={x}>{x}</option>
           ))}
         </select>

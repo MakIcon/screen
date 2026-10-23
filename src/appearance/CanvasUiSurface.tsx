@@ -226,6 +226,9 @@ export function CanvasUiSurface({
   useEffect(() => {
     if (!captureElement) return;
     const forward = (event: Event) => {
+      // Capture movement even when a child control stops propagation. Leaving a
+      // child is not leaving the selected element, so do not reset its effect.
+      if (event.type === "pointerleave" && event.target !== captureElement) return;
       if (
         effect.object &&
         event.target instanceof Element &&
@@ -234,37 +237,44 @@ export function CanvasUiSurface({
         )
       )
         return;
-      if (event instanceof PointerEvent)
-        contentElement.dispatchEvent(
-          new PointerEvent(event.type, {
-            bubbles: false,
-            composed: false,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            pointerId: event.pointerId,
-            pointerType: event.pointerType,
-            isPrimary: event.isPrimary,
-            button: event.button,
-            buttons: event.buttons,
-            pressure: event.pressure,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            altKey: event.altKey,
-            metaKey: event.metaKey,
-          }),
-        );
-      else if (event instanceof WheelEvent)
-        contentElement.dispatchEvent(
-          new WheelEvent(event.type, {
-            bubbles: false,
-            composed: false,
-            clientX: event.clientX,
-            clientY: event.clientY,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaMode: event.deltaMode,
-          }),
-        );
+      // Engines listen either on content or on the output's parent. Element
+      // capture lives in a separate shadow tree, so both need the original
+      // viewport coordinates. Keep synthetic events local to avoid recursion
+      // through the real target and duplicate input in window-level engines.
+      for (const target of [contentElement, outputRef.current?.parentElement]) {
+        if (!target) continue;
+        if (event instanceof PointerEvent)
+          target.dispatchEvent(
+            new PointerEvent(event.type, {
+              bubbles: false,
+              composed: false,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              pointerId: event.pointerId,
+              pointerType: event.pointerType,
+              isPrimary: event.isPrimary,
+              button: event.button,
+              buttons: event.buttons,
+              pressure: event.pressure,
+              ctrlKey: event.ctrlKey,
+              shiftKey: event.shiftKey,
+              altKey: event.altKey,
+              metaKey: event.metaKey,
+            }),
+          );
+        else if (event instanceof WheelEvent)
+          target.dispatchEvent(
+            new WheelEvent(event.type, {
+              bubbles: false,
+              composed: false,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+              deltaMode: event.deltaMode,
+            }),
+          );
+      }
     };
     const events = [
       "pointerdown",
@@ -274,8 +284,10 @@ export function CanvasUiSurface({
       "pointerleave",
       "wheel",
     ];
-    events.forEach((type) => captureElement.addEventListener(type, forward, { passive: true }));
-    return () => events.forEach((type) => captureElement.removeEventListener(type, forward));
+    events.forEach((type) =>
+      captureElement.addEventListener(type, forward, { passive: true, capture: true }),
+    );
+    return () => events.forEach((type) => captureElement.removeEventListener(type, forward, true));
   }, [captureElement, contentElement, effect.object]);
 
   useLayoutEffect(() => {
@@ -427,7 +439,14 @@ export function CanvasUiSurface({
                 }),
               );
           };
-          const events = ["pointerdown", "pointermove", "pointerup", "pointercancel", "wheel"];
+          const events = [
+            "pointerdown",
+            "pointermove",
+            "pointerup",
+            "pointercancel",
+            "pointerleave",
+            "wheel",
+          ];
           events.forEach((type) => content.addEventListener(type, forward, { passive: true }));
           stopForwarding = () =>
             events.forEach((type) => content.removeEventListener(type, forward));

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { testCanvasUiPointer } from "./test_canvas_ui_pointer.mjs";
 
 const entry = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(entry ? pathToFileURL(path.resolve(entry)).href : "playwright");
@@ -22,6 +23,7 @@ page.on("pageerror", (error) => errors.push(error.message));
 const origin = process.env.CANVAS_UI_TEST_URL || "http://127.0.0.1:1420";
 try {
   await page.goto(`${origin}/scripts/fixtures/canvas-ui-elements/index.html`);
+  await testCanvasUiPointer(page);
   for (const target of ["profile", "current", "main", "sidebar", "modcard"]) {
     await page.getByLabel("Target", { exact: true }).selectOption(target);
     await page.waitForFunction(
