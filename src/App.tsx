@@ -160,6 +160,7 @@ import {
 import type { AppearanceElementTarget } from "./appearance/types";
 import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
 import { CanvasUiLauncher } from "./appearance/CanvasUiLauncher";
+import { CanvasUiElementEffects } from "./appearance/CanvasUiElementEffects";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -588,7 +589,7 @@ export default function App() {
     });
   }, []);
 
-  useMainAppearanceRuntime({
+  const liveCanvasUiElements = useMainAppearanceRuntime({
     rootRef: galleryRootRef,
     appearance,
     activeTab,
@@ -3012,6 +3013,11 @@ export default function App() {
             getItemIconUrl={getExportedItemIconUrl}
           />
         </div>
+        <CanvasUiElementEffects
+          rootRef={galleryRootRef}
+          overrides={liveCanvasUiElements}
+          activeTab={activeTab}
+        />
       </CanvasUiLauncher>
     </RuntimeMonitorScope>
   );

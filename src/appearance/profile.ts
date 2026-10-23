@@ -1165,6 +1165,10 @@ function normalizeElementOverrides(
       : undefined;
     const component = normalizeComponentTarget(candidate.component);
     const componentSettings = normalizeComponentOverride(candidate.componentSettings, component);
+    const canvasUi =
+      includeHoverState && isRecord(candidate.canvasUi)
+        ? normalizeCanvasUi(candidate.canvasUi)
+        : undefined;
     const normalizeStateStyle = (key: string) =>
       includeHoverState && isRecord(candidate[key])
         ? normalizeElementOverrides(
@@ -1228,7 +1232,8 @@ function normalizeElementOverrides(
       !disabledStyle &&
       !selectedStyle &&
       !hasTextOverride &&
-      !componentSettings
+      !componentSettings &&
+      !canvasUi
     ) {
       return [];
     }
@@ -1249,6 +1254,7 @@ function normalizeElementOverrides(
           ? { text: (candidate.text as string).slice(0, MAX_ELEMENT_TEXT_LENGTH) }
           : {}),
         ...(componentSettings ? { componentSettings } : {}),
+        ...(canvasUi ? { canvasUi } : {}),
         ...(hoverStyle ? { hoverStyle } : {}),
         ...(pressedStyle ? { pressedStyle } : {}),
         ...(focusStyle ? { focusStyle } : {}),

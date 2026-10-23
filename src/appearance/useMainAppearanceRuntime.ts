@@ -260,4 +260,5 @@ export function useMainAppearanceRuntime({
     onRevealTarget,
     rootRef,
   ]);
+  return appearanceRef.current.customized ? liveElementOverrides : [];
 }

@@ -330,6 +330,8 @@ export type AppearanceElementStyle = {
 };
 
 export type AppearanceElementOverride = AppearanceElementTarget & {
+  /** Canvas effect confined to this element, independent of the launcher effect. */
+  canvasUi?: CanvasUiSettings;
   /** An empty string is a valid override and intentionally hides the original text. */
   text?: string;
   componentSettings?: AppearanceElementComponentOverride;

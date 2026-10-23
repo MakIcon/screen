@@ -17,9 +17,15 @@ export function CanvasUiLauncher({
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    const restart = () => setReplay((current) => current + 1);
-    window.addEventListener(CANVAS_UI_REPLAY_EVENT, restart);
-    void listen(CANVAS_UI_REPLAY_EVENT, restart)
+    const restart = (payload?: { targetIds?: string[] } | null) => {
+      if (!payload?.targetIds) setReplay((current) => current + 1);
+    };
+    const local = (event: Event) =>
+      restart((event as CustomEvent<{ targetIds?: string[] }>).detail);
+    window.addEventListener(CANVAS_UI_REPLAY_EVENT, local);
+    void listen<{ targetIds?: string[] } | null>(CANVAS_UI_REPLAY_EVENT, (event) =>
+      restart(event.payload),
+    )
       .then((dispose) => {
         if (cancelled) dispose();
         else unlisten = dispose;
@@ -28,7 +34,7 @@ export function CanvasUiLauncher({
     return () => {
       cancelled = true;
       unlisten?.();
-      window.removeEventListener(CANVAS_UI_REPLAY_EVENT, restart);
+      window.removeEventListener(CANVAS_UI_REPLAY_EVENT, local);
     };
   }, []);
   return (

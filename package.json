@@ -20,6 +20,7 @@
     "check": "pnpm typecheck && cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:web": "pnpm lint:i18n && vitest run src",
+    "test:canvas-ui": "node scripts/test_canvas_ui_elements.mjs",
     "test:worker": "pnpm --filter @screenlauncher/mineflayer-bot test",
     "test:release": "node --test scripts/launcher_release_github.test.mjs",
     "release": "node scripts/release_launcher.mjs",

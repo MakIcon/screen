@@ -8,3 +8,9 @@ After a registry update, regenerate the catalog with `node scripts/generate_canv
 
 - `Frost.tsx`: separate generated GLSL preprocessor definitions with newlines.
 - `HexFloat.tsx`: preserve native clicks on controls when a tile maps into empty content.
+
+Element capture regression: start Vite, then run `pnpm test:canvas-ui` with Playwright available.
+If Playwright is installed separately, set `PLAYWRIGHT_MODULE` to its absolute JavaScript entry point.
+The fixture covers large transparent panels, the sidebar, nested custom scroll areas, retained DOM
+while moving an effect, live text/input changes, and global/local composition. It uses synthetic
+launcher data and does not change the saved launcher profile.

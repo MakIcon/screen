@@ -423,17 +423,17 @@ describe("appearance profile", () => {
     expect(rule).toContain("fractalNoise");
   });
 
-  it("restores global Canvas UI settings while dropping retired per-element effects", () => {
-    const retiredEffect = { enabled: true, effect: "grid", settings: { grid: { tilt: 1 } } };
+  it("restores global and per-element Canvas UI settings together", () => {
+    const elementEffect = { enabled: true, effect: "grid", settings: { grid: { tilt: 1 } } };
     const profile = normalizeAppearanceProfile({
       ...createDefaultAppearance("dark", true),
-      canvasUi: retiredEffect,
+      canvasUi: elementEffect,
       elementOverrides: [
         {
           id: "element-effect-only",
           path: [{ tag: "div", index: 0 }],
           style: {},
-          canvasUi: retiredEffect,
+          canvasUi: elementEffect,
         },
         {
           id: "element-styled-button",
@@ -441,20 +441,24 @@ describe("appearance profile", () => {
           style: { radius: 12 },
           textTarget: { path: [0], original: "Before" },
           text: "My button",
-          canvasUi: retiredEffect,
+          canvasUi: elementEffect,
         },
       ],
     });
 
     expect(profile.canvasUi).toMatchObject({ enabled: true, effect: "grid" });
     expect(profile.baseTheme).toBe("dark");
-    expect(profile.elementOverrides).toHaveLength(1);
+    expect(profile.elementOverrides).toHaveLength(2);
     expect(profile.elementOverrides[0]).toMatchObject({
+      id: "element-effect-only",
+      canvasUi: { enabled: true, effect: "grid" },
+    });
+    expect(profile.elementOverrides[1]).toMatchObject({
       id: "element-styled-button",
       text: "My button",
       style: { radius: 12 },
     });
-    expect(profile.elementOverrides[0]).not.toHaveProperty("canvasUi");
+    expect(profile.elementOverrides[1].canvasUi).toMatchObject(elementEffect);
   });
 
   it("controls an element background and its content opacity independently", () => {

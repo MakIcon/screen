@@ -26,7 +26,8 @@ export function refreshElementSizingTarget(
     Object.keys(style).length === 0 &&
     !existing.hoverStyle &&
     !hasTextOverride &&
-    !existing.componentSettings
+    !existing.componentSettings &&
+    !existing.canvasUi
   ) {
     return {
       ...profile,

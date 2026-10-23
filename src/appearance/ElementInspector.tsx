@@ -462,6 +462,7 @@ type ElementInspectorProps = {
   stateEasing: AppearanceElementHoverEasing;
   profile: AppearanceProfile;
   onPick: () => void;
+  onCanvasUi: () => void;
   onStyleChange: (style: Partial<AppearanceElementOverride["style"]>) => void;
   onTextChange: (text: string | undefined) => void;
   onComponentChange: (settings: AppearanceElementComponentOverride) => void;
@@ -480,6 +481,7 @@ export function ElementInspector({
   stateEasing,
   profile,
   onPick,
+  onCanvasUi,
   onStyleChange,
   onTextChange,
   onComponentChange,
@@ -656,6 +658,11 @@ export function ElementInspector({
 
   return (
     <div className="appearance-element-inspector">
+      <div className="canvas-ui-actions">
+        <button type="button" onClick={onCanvasUi}>
+          {copy("CANVAS UI")} →
+        </button>
+      </div>
       <div className="appearance-element-summary">
         <span>
           {target.tab ? TAB_TITLE[target.tab] : copy("ALL TABS")} ·{" "}

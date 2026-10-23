@@ -26,6 +26,7 @@ import {
 } from "./animations";
 import { DrawingCanvas } from "./DrawingCanvas";
 import { CanvasUiPanel } from "./CanvasUiPanel";
+import { createDefaultCanvasUi, type CanvasUiSettings } from "./canvasUi";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import { ElementTextColorPicker } from "./ElementTextColorPicker";
 import { ElementInspector } from "./ElementInspector";
@@ -200,6 +201,9 @@ function elementStyleBadges(override: AppearanceElementOverride) {
   }
   if (override.style.scale !== undefined) {
     badges.push({ label: "SCALE", value: `${Math.round(override.style.scale * 100)}%` });
+  }
+  if (override.canvasUi) {
+    badges.push({ label: "CANVAS UI", value: override.canvasUi.effect });
   }
   if (override.componentSettings) {
     badges.push({
@@ -376,7 +380,7 @@ export function AppearanceStudioApp() {
       });
       if (!additive) setElementInteractionState("normal");
       setPickingElement(continuing);
-      setCategory("element");
+      setCategory((current) => (current === "canvas-ui" ? current : "element"));
       setElementListOpen(false);
       setMessage(
         continuing
@@ -505,7 +509,8 @@ export function AppearanceStudioApp() {
           Object.keys(next.style).length > 0 ||
           hasElementStateStyles(next) ||
           hasTextOverride ||
-          existing?.componentSettings
+          existing?.componentSettings ||
+          existing?.canvasUi
         ) {
           nextOverrides.push(next);
         }
@@ -514,6 +519,39 @@ export function AppearanceStudioApp() {
         ...current,
         elementOverrides: nextOverrides,
       };
+    });
+  };
+
+  const patchCanvasUi = (settings: CanvasUiSettings | undefined) => {
+    if (!selectedTargets.length) {
+      patchDraft((current) => ({ ...current, canvasUi: settings ?? createDefaultCanvasUi() }));
+      return;
+    }
+    elementPreviewOnlyRef.current = true;
+    patchDraft((current) => {
+      const selectedIds = new Set(selectedTargets.map((target) => target.id));
+      const nextOverrides = current.elementOverrides.filter(
+        (override) => !selectedIds.has(override.id),
+      );
+      for (const target of selectedTargets) {
+        const existing = current.elementOverrides.find((override) => override.id === target.id);
+        const next: AppearanceElementOverride = {
+          ...existing,
+          ...target,
+          style: existing?.style ?? {},
+        };
+        if (settings) next.canvasUi = structuredClone(settings);
+        else delete next.canvasUi;
+        if (
+          next.canvasUi ||
+          Object.keys(next.style).length ||
+          hasElementStateStyles(next) ||
+          next.text !== undefined ||
+          next.componentSettings
+        )
+          nextOverrides.push(next);
+      }
+      return { ...current, elementOverrides: nextOverrides };
     });
   };
 
@@ -563,7 +601,8 @@ export function AppearanceStudioApp() {
           text === undefined &&
           Object.keys(next.style).length === 0 &&
           !hasElementStateStyles(next) &&
-          !next.componentSettings
+          !next.componentSettings &&
+          !next.canvasUi
         ) {
           return {
             ...current,
@@ -610,7 +649,7 @@ export function AppearanceStudioApp() {
 
   const requestElementPick = () => {
     setElementListOpen(false);
-    setCategory("element");
+    if (category !== "canvas-ui") setCategory("element");
     setPickingElement(true);
     setMessage("CLICK AN ELEMENT IN THE MAIN LAUNCHER");
     void emit(APPEARANCE_ELEMENT_PICK_REQUEST_EVENT).catch(() => {
@@ -660,7 +699,8 @@ export function AppearanceStudioApp() {
         return Object.keys(next.style).length > 0 ||
           hasElementStateStyles(next) ||
           hasTextOverride ||
-          next.componentSettings
+          next.componentSettings ||
+          next.canvasUi
           ? [next]
           : [];
       }),
@@ -823,8 +863,18 @@ export function AppearanceStudioApp() {
       case "canvas-ui":
         return (
           <CanvasUiPanel
-            settings={draft.canvasUi}
-            onChange={(canvasUi) => patchDraft((current) => ({ ...current, canvasUi }))}
+            key={selectedTargets.map((target) => target.id).join(",") || "launcher"}
+            settings={
+              selectedTarget
+                ? (selectedOverride?.canvasUi ?? createDefaultCanvasUi())
+                : draft.canvasUi
+            }
+            elementScope={Boolean(selectedTarget)}
+            onChange={patchCanvasUi}
+            onReset={selectedTarget ? () => patchCanvasUi(undefined) : undefined}
+            replayTargetIds={
+              selectedTarget ? selectedTargets.map((target) => target.id) : undefined
+            }
           />
         );
 
@@ -845,6 +895,7 @@ export function AppearanceStudioApp() {
             onTextChange={patchSelectedText}
             onComponentChange={patchSelectedComponent}
             onStateTransitionChange={patchSelectedStateTransition}
+            onCanvasUi={() => setCategory("canvas-ui")}
           />
         );
 
@@ -1869,9 +1920,7 @@ export function AppearanceStudioApp() {
           )}
         </nav>
 
-        <main
-          className={`appearance-studio-editor${category === "canvas-ui" && !elementListOpen ? " appearance-studio-editor--reserved" : ""}`}
-        >
+        <main className="appearance-studio-editor">
           <header className="appearance-editor-heading">
             <span>
               {copy("SECTION")} {activeEditorContext.index}
@@ -1880,82 +1929,79 @@ export function AppearanceStudioApp() {
             {activeEditorContext.note && <p>{copy(activeEditorContext.note)}</p>}
           </header>
 
-          {(category !== "canvas-ui" || elementListOpen) && (
-            <section className="appearance-target-bar">
-              <div className="appearance-target-current">
-                <span>{copy("CURRENT TARGET")}</span>
-                <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
-                  {selectedTargets.length > 1
-                    ? copy("{count} elements selected", { count: selectedTargets.length })
-                    : selectedTarget?.label || copy("WHOLE LAUNCHER")}
-                </strong>
-                {selectedTarget && (
-                  <button
-                    type="button"
-                    className="appearance-target-clear"
-                    onClick={clearSelectedStyle}
-                    disabled={!selectedOverride}
-                  >
-                    {selectedTargets.length > 1 ? copy("RESET ELEMENTS") : copy("RESET ELEMENT")}
-                  </button>
-                )}
-              </div>
-              <div className="appearance-target-choices">
-                <button
-                  type="button"
-                  className={!selectedTarget ? "active" : ""}
-                  onClick={selectWholeLauncher}
-                >
-                  <strong>{copy("GLOBAL STYLE")}</strong>
-                  <small>{copy("Entire launcher")}</small>
-                </button>
-                <button
-                  type="button"
-                  className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
-                  onClick={requestElementPick}
-                >
-                  <strong>
-                    {pickingElement ? copy("CLICK IN LAUNCHER…") : copy("PICK ELEMENT")}
-                  </strong>
-                  <small>
-                    {pickingElement ? copy("Hold Shift for several") : copy("Button, card or text")}
-                  </small>
-                </button>
-              </div>
+          <section className="appearance-target-bar">
+            <div className="appearance-target-current">
+              <span>{copy("CURRENT TARGET")}</span>
+              <strong data-tooltip={selectedTargets.map((target) => target.label).join(", ")}>
+                {selectedTargets.length > 1
+                  ? copy("{count} elements selected", { count: selectedTargets.length })
+                  : selectedTarget?.label || copy("WHOLE LAUNCHER")}
+              </strong>
               {selectedTarget && (
-                <section className="appearance-interaction-state">
-                  <span>{copy("VISUAL STATE")}</span>
-                  <div>
-                    {ELEMENT_INTERACTION_STATES.map((state) => (
-                      <button
-                        type="button"
-                        key={state.id}
-                        className={elementInteractionState === state.id ? "active" : ""}
-                        onClick={() => setElementInteractionState(state.id)}
-                      >
-                        {copy(state.label)}
-                      </button>
-                    ))}
-                  </div>
-                  <small>
-                    {copy(
-                      ELEMENT_INTERACTION_STATES.find(
-                        (state) => state.id === elementInteractionState,
-                      )?.note ?? "",
-                    )}
-                  </small>
-                  <button
-                    type="button"
-                    className="appearance-interaction-reset"
-                    disabled={!selectedInteractionCustomized}
-                    onClick={clearSelectedInteractionStyle}
-                  >
-                    {copy("Reset {state}", { state: copy(elementInteractionState.toUpperCase()) })}
-                  </button>
-                </section>
+                <button
+                  type="button"
+                  className="appearance-target-clear"
+                  onClick={clearSelectedStyle}
+                  disabled={!selectedOverride}
+                >
+                  {selectedTargets.length > 1 ? copy("RESET ELEMENTS") : copy("RESET ELEMENT")}
+                </button>
               )}
-            </section>
-          )}
+            </div>
+            <div className="appearance-target-choices">
+              <button
+                type="button"
+                className={!selectedTarget ? "active" : ""}
+                onClick={selectWholeLauncher}
+              >
+                <strong>{copy("GLOBAL STYLE")}</strong>
+                <small>{copy("Entire launcher")}</small>
+              </button>
+              <button
+                type="button"
+                className={`appearance-target-pick${selectedTarget ? " active" : ""}`}
+                onClick={requestElementPick}
+              >
+                <strong>
+                  {pickingElement ? copy("CLICK IN LAUNCHER…") : copy("PICK ELEMENT")}
+                </strong>
+                <small>
+                  {pickingElement ? copy("Hold Shift for several") : copy("Button, card or text")}
+                </small>
+              </button>
+            </div>
+            {selectedTarget && category !== "canvas-ui" && (
+              <section className="appearance-interaction-state">
+                <span>{copy("VISUAL STATE")}</span>
+                <div>
+                  {ELEMENT_INTERACTION_STATES.map((state) => (
+                    <button
+                      type="button"
+                      key={state.id}
+                      className={elementInteractionState === state.id ? "active" : ""}
+                      onClick={() => setElementInteractionState(state.id)}
+                    >
+                      {copy(state.label)}
+                    </button>
+                  ))}
+                </div>
+                <small>
+                  {copy(
+                    ELEMENT_INTERACTION_STATES.find((state) => state.id === elementInteractionState)
+                      ?.note ?? "",
+                  )}
+                </small>
+                <button
+                  type="button"
+                  className="appearance-interaction-reset"
+                  disabled={!selectedInteractionCustomized}
+                  onClick={clearSelectedInteractionStyle}
+                >
+                  {copy("Reset {state}", { state: copy(elementInteractionState.toUpperCase()) })}
+                </button>
+              </section>
+            )}
+          </section>
 
           {elementListOpen ? (
             <CustomScrollArea className="appearance-element-list-scroll">

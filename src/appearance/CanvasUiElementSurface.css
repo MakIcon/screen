@@ -1,0 +1,10 @@
+:host,
+* {
+  pointer-events: none !important;
+}
+.canvas-ui-html-host {
+  visibility: hidden;
+}
+.canvas-ui-alternate {
+  background: transparent;
+}

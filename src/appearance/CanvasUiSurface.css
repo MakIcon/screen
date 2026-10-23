@@ -5,6 +5,9 @@
   min-height: 0;
   isolation: isolate;
 }
+.canvas-ui-surface[data-canvas-ui-composite] canvas-ui-element {
+  visibility: hidden !important;
+}
 .canvas-ui-live-content {
   position: relative;
   width: 100%;

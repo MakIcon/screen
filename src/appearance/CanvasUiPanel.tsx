@@ -5,14 +5,12 @@ import {
   CANVAS_UI_REPLAY_EVENT,
   canvasUiEffect,
   canvasUiOptions,
-  canvasUiColorChannelMax,
   createDefaultCanvasUi,
   isCanvasUiAsset,
   type CanvasUiField,
   type CanvasUiSettings,
   type CanvasUiValue,
 } from "./canvasUi";
-import { CanvasUiSurface, type CanvasUiStatus } from "./CanvasUiSurface";
 import { useCanvasUiText } from "./canvasUiLocalization";
 import { ColorField, RangeField, Section, SelectField } from "./StudioFields";
 import "./CanvasUiPanel.css";
@@ -154,26 +152,6 @@ function CanvasUiFieldEditor({
               )
             }
           />
-        )}
-        {rgb && !automatic && (
-          <details className="canvas-ui-rgb-channels">
-            <summary>RGB</summary>
-            {(["R", "G", "B"] as const).map((channel, index) => (
-              <RangeField
-                key={channel}
-                label={channel}
-                value={Array.isArray(value) ? value[index] : 1}
-                min={0}
-                max={canvasUiColorChannelMax(field)}
-                step={0.01}
-                onChange={(next) => {
-                  const channels = Array.isArray(value) ? [...value] : [1, 1, 1];
-                  channels[index] = next;
-                  onChange(channels);
-                }}
-              />
-            ))}
-          </details>
         )}
       </div>
     );
@@ -344,57 +322,25 @@ function GlyphField({
   );
 }
 
-function PreviewContent() {
-  const copy = useCanvasUiText();
-  const [clicks, setClicks] = useState(0);
-  return (
-    <div className="canvas-ui-preview-content">
-      <header>
-        <strong>ScreenLauncher</strong>
-        <span>{copy("CANVAS UI")}</span>
-      </header>
-      <main>
-        <small>{copy("Interactive preview")}</small>
-        <h2>Minecraft</h2>
-        <p>{copy("Try the controls under the effect.")}</p>
-        <div className="canvas-ui-preview-blocks">
-          <i />
-          <i />
-          <i />
-          <i />
-        </div>
-        <input aria-label={copy("Interactive preview")} placeholder={copy("Type here…")} />
-        <button type="button" onClick={() => setClicks((current) => current + 1)}>
-          {copy("Click to test")} · {clicks}
-        </button>
-        <div className="canvas-ui-preview-scroll">
-          {Array.from({ length: 4 }, (_, i) => (
-            <p key={i}>
-              {copy("Scroll to test the effect")} {i + 1}
-            </p>
-          ))}
-        </div>
-      </main>
-    </div>
-  );
-}
-
 export function CanvasUiPanel({
   settings,
   onChange,
+  elementScope = false,
+  onReset,
+  replayTargetIds,
 }: {
   settings: CanvasUiSettings;
   onChange: (settings: CanvasUiSettings) => void;
+  elementScope?: boolean;
+  onReset?: () => void;
+  replayTargetIds?: string[];
 }) {
   const copy = useCanvasUiText();
   const [search, setSearch] = useState("");
   const [parameterSearch, setParameterSearch] = useState("");
   const [group, setGroup] = useState(GROUPS[0]);
-  const [replay, setReplay] = useState(0);
-  const [status, setStatus] = useState<CanvasUiStatus>("loading");
   const effect = canvasUiEffect(settings.effect);
   const options = useMemo(() => canvasUiOptions(settings), [settings]);
-  const previewSettings = useMemo(() => ({ ...settings, enabled: true }), [settings]);
   const filtered = CANVAS_UI_EFFECTS.filter(
     (item) =>
       (group === GROUPS[0] || groupFor(item.id) === group) &&
@@ -415,24 +361,17 @@ export function CanvasUiPanel({
         [effect.id]: { ...settings.settings[effect.id], [key]: value },
       },
     });
-  const statusText = copy(
-    status === "ready"
-      ? "WebGL active"
-      : status === "fallback"
-        ? "Compatibility mode: HTML distortion requires HTML-in-canvas support."
-        : status === "unavailable"
-          ? "GPU effect unavailable in this browser."
-          : status === "off"
-            ? "Effect disabled"
-            : "Loading effect…",
-  );
   return (
     <div className="canvas-ui-panel">
       <label className="studio-master-toggle">
         <div>
           <strong>{copy("ENABLE CANVAS UI")}</strong>
           <span>
-            {copy("Apply the selected effect to the launcher. Preview stays interactive.")}
+            {copy(
+              elementScope
+                ? "Apply the selected effect inside the picked elements."
+                : "Apply the selected effect to the launcher.",
+            )}
           </span>
         </div>
         <input
@@ -443,7 +382,9 @@ export function CanvasUiPanel({
       </label>
       <p className="canvas-ui-note">
         {copy(
-          "Effects apply to the whole launcher. Other appearance sections still edit picked elements.",
+          elementScope
+            ? "Each picked element keeps its own effect and settings. Click an effect to apply it inside the selection."
+            : "Choose Pick Element above to create an effect inside a button, card or text. Global Style edits the whole launcher.",
         )}
       </p>
       <Section
@@ -486,22 +427,14 @@ export function CanvasUiPanel({
         </div>
         {!filtered.length && <p className="canvas-ui-note">{copy("No matching effects")}</p>}
       </Section>
-      <Section title={copy("LIVE PREVIEW")}>
-        <div className="canvas-ui-preview">
-          <CanvasUiSurface settings={previewSettings} replay={replay} onStatus={setStatus}>
-            <PreviewContent />
-          </CanvasUiSurface>
-        </div>
-        <p className={`canvas-ui-status canvas-ui-status--${status}`} role="status">
-          {statusText}
-        </p>
+      <Section title={`${effect.name} · ${copy("EFFECT SETTINGS")}`}>
         <div className="canvas-ui-actions">
           <button
             type="button"
             onClick={() => {
-              setReplay((current) => current + 1);
-              window.dispatchEvent(new Event(CANVAS_UI_REPLAY_EVENT));
-              void emit(CANVAS_UI_REPLAY_EVENT).catch(() => {});
+              const payload = replayTargetIds ? { targetIds: replayTargetIds } : null;
+              window.dispatchEvent(new CustomEvent(CANVAS_UI_REPLAY_EVENT, { detail: payload }));
+              void emit(CANVAS_UI_REPLAY_EVENT, payload).catch(() => {});
             }}
           >
             {copy("Replay effect")}
@@ -526,8 +459,6 @@ export function CanvasUiPanel({
           defaultValue={1}
           onChange={(opacity) => onChange({ ...settings, opacity })}
         />
-      </Section>
-      <Section title={`${effect.name} · ${copy("EFFECT SETTINGS")}`}>
         <input
           className="canvas-ui-search"
           type="search"
@@ -557,9 +488,9 @@ export function CanvasUiPanel({
       <button
         className="canvas-ui-reset"
         type="button"
-        onClick={() => onChange(createDefaultCanvasUi())}
+        onClick={() => (onReset ? onReset() : onChange(createDefaultCanvasUi()))}
       >
-        {copy("Reset all effects")}
+        {copy(elementScope ? "Remove element effect" : "Reset all effects")}
       </button>
     </div>
   );

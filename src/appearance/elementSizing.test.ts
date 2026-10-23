@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultAppearance } from "./profile";
 import { refreshElementSizingTarget } from "./elementSizing";
 import type { AppearanceElementOverride, AppearanceElementTarget } from "./types";
+import { createDefaultCanvasUi } from "./canvasUi";
 
 const target: AppearanceElementTarget = {
   id: "element-toggle",
@@ -24,6 +25,14 @@ function profileWith(override: AppearanceElementOverride) {
 }
 
 describe("element sizing target refresh", () => {
+  it("keeps an effect-only element when it is picked again", () => {
+    const canvasUi = { ...createDefaultCanvasUi(), enabled: true, effect: "ripple" };
+    const profile = refreshElementSizingTarget(
+      profileWith({ ...target, style: {}, canvasUi }),
+      target,
+    );
+    expect(profile.elementOverrides[0].canvasUi).toEqual(canvasUi);
+  });
   it("removes a legacy zero override whose AUTO/fixed meaning was unknown", () => {
     const profile = refreshElementSizingTarget(
       profileWith({ ...target, defaults: undefined, style: { width: 0, height: 0 } }),

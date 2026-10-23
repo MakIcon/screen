@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createPortal } from "react-dom";
 import { canvasUiEffect, canvasUiOptions, type CanvasUiSettings } from "./canvasUi";
 import { canvasUiLoaders } from "./canvasUiLoaders";
+import { observeCanvasUiElement } from "./canvasUiElementCapture";
 import "./CanvasUiSurface.css";
+import surfaceCss from "./CanvasUiSurface.css?inline";
 
 const CANVAS_UI_NAME = "CANVAS UI";
 
@@ -40,9 +42,11 @@ export function CanvasUiSurface({
   replay = 0,
   onStatus,
   className = "",
+  captureElement,
 }: {
   settings: CanvasUiSettings;
-  children: ReactNode;
+  children?: ReactNode;
+  captureElement?: HTMLElement;
   replay?: number;
   onStatus?: (status: CanvasUiStatus) => void;
   className?: string;
@@ -52,6 +56,25 @@ export function CanvasUiSurface({
     const element = document.createElement("div");
     element.className = "canvas-ui-live-content";
     return element;
+  });
+  const [isolatedCapture] = useState(() => {
+    if (!captureElement) return null;
+    const host = document.createElement("canvas-ui-capture");
+    host.setAttribute("aria-hidden", "true");
+    host.inert = true;
+    Object.assign(host.style, {
+      display: "block",
+      position: "fixed",
+      left: "0",
+      top: "0",
+      // Chromium drops paint records for offscreen or fully transparent sources.
+      // This subpixel alpha keeps capture alive without a visible helper layer.
+      opacity: "0.001",
+      zIndex: "-1",
+      pointerEvents: "none",
+      overflow: "hidden",
+    });
+    return { host, shadow: host.attachShadow({ mode: "open" }) };
   });
   const contentRef = useRef(contentElement);
   const htmlHostRef = useRef<HTMLDivElement>(null);
@@ -68,6 +91,174 @@ export function CanvasUiSurface({
   optionsRef.current = options;
   const active = settings.enabled && settings.opacity > 0;
   const native = captureSupported && active && !effect.object;
+
+  useLayoutEffect(() => {
+    if (!native || captureElement) return;
+    const source = sourceRef.current as PaintCanvas;
+    const context = source?.getContext("2d") as PaintContext | null;
+    if (!context?.drawElementImage) return;
+    const draw = context.drawElementImage;
+    // Chromium misplaces nested WebGL paint records inside HTML-in-canvas.
+    // Capture ordinary HTML, then composite each element's finished GPU frame.
+    context.drawElementImage = function (element, x, y) {
+      const transform = draw.call(this, element, x, y);
+      const origin = contentElement.getBoundingClientRect();
+      const dpr = source.width / Math.max(contentElement.clientWidth, 1);
+      const depth = (host: HTMLElement) => {
+        let value = host.dataset.canvasUiReplaced ? 1 : 0;
+        for (let parent = host.parentElement; parent; parent = parent.parentElement) value++;
+        return value;
+      };
+      const hosts = Array.from(
+        contentElement.querySelectorAll<HTMLElement>("canvas-ui-element"),
+      ).sort((a, b) => depth(a) - depth(b));
+      for (const host of hosts) {
+        const output = host.shadowRoot?.querySelector<HTMLCanvasElement>(".canvas-ui-output");
+        if (!output?.width || !output.height) continue;
+        const rect = host.getBoundingClientRect();
+        const style = getComputedStyle(host);
+        this.save();
+        this.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.beginPath();
+        this.roundRect(
+          rect.x - origin.x,
+          rect.y - origin.y,
+          rect.width,
+          rect.height,
+          [
+            style.borderTopLeftRadius,
+            style.borderTopRightRadius,
+            style.borderBottomRightRadius,
+            style.borderBottomLeftRadius,
+          ].map((radius) => parseFloat(radius) || 0),
+        );
+        this.clip();
+        let opacity = Number(getComputedStyle(output).opacity);
+        for (
+          let parent = host.parentElement;
+          parent && parent !== contentElement;
+          parent = parent.parentElement
+        ) {
+          const parentStyle = getComputedStyle(parent);
+          opacity *= Number(parentStyle.opacity);
+          const clipX = parentStyle.overflowX !== "visible";
+          const clipY = parentStyle.overflowY !== "visible";
+          if (clipX || clipY) {
+            const bounds = parent.getBoundingClientRect();
+            this.beginPath();
+            this.rect(
+              clipX ? bounds.x - origin.x : 0,
+              clipY ? bounds.y - origin.y : 0,
+              clipX ? bounds.width : origin.width,
+              clipY ? bounds.height : origin.height,
+            );
+            this.clip();
+          }
+        }
+        this.globalAlpha = opacity;
+        try {
+          this.drawImage(output, rect.x - origin.x, rect.y - origin.y, rect.width, rect.height);
+        } catch {
+          /* A GPU frame can disappear while its element is being removed. */
+        }
+        this.restore();
+      }
+      return transform;
+    };
+    let frame = 0;
+    const paintElements = () => {
+      if (contentElement.querySelector("canvas-ui-element")) source.requestPaint?.();
+      frame = requestAnimationFrame(paintElements);
+    };
+    frame = requestAnimationFrame(paintElements);
+    return () => {
+      cancelAnimationFrame(frame);
+      context.drawElementImage = draw;
+    };
+  }, [native, captureElement, contentElement]);
+
+  useLayoutEffect(() => {
+    if (!captureElement || !isolatedCapture) return;
+    // HTML-in-canvas cannot safely nest capture canvases. Keep each source at
+    // document level; only the final WebGL output lives inside the real target.
+    const { host } = isolatedCapture;
+    const resize = () =>
+      Object.assign(host.style, {
+        width: `${captureElement.offsetWidth}px`,
+        height: `${captureElement.offsetHeight}px`,
+      });
+    document.body.appendChild(host);
+    const observer = new ResizeObserver(resize);
+    observer.observe(captureElement);
+    resize();
+    return () => {
+      observer.disconnect();
+      host.remove();
+    };
+  }, [captureElement, isolatedCapture]);
+
+  useLayoutEffect(() => {
+    if (!captureElement || !captureSupported || effect.object) return;
+    contentElement.inert = true;
+    return observeCanvasUiElement(captureElement, contentElement, () =>
+      (sourceRef.current as PaintCanvas | null)?.requestPaint?.(),
+    );
+  }, [captureElement, contentElement, captureSupported, effect.object]);
+
+  useEffect(() => {
+    if (!captureElement) return;
+    const forward = (event: Event) => {
+      if (
+        effect.object &&
+        event.target instanceof Element &&
+        event.target.closest(
+          "button, a, input, select, textarea, [role=button], [role=switch], [role=slider], [role=checkbox]",
+        )
+      )
+        return;
+      if (event instanceof PointerEvent)
+        contentElement.dispatchEvent(
+          new PointerEvent(event.type, {
+            bubbles: false,
+            composed: false,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            pointerId: event.pointerId,
+            pointerType: event.pointerType,
+            isPrimary: event.isPrimary,
+            button: event.button,
+            buttons: event.buttons,
+            pressure: event.pressure,
+            ctrlKey: event.ctrlKey,
+            shiftKey: event.shiftKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey,
+          }),
+        );
+      else if (event instanceof WheelEvent)
+        contentElement.dispatchEvent(
+          new WheelEvent(event.type, {
+            bubbles: false,
+            composed: false,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            deltaMode: event.deltaMode,
+          }),
+        );
+    };
+    const events = [
+      "pointerdown",
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "pointerleave",
+      "wheel",
+    ];
+    events.forEach((type) => captureElement.addEventListener(type, forward, { passive: true }));
+    return () => events.forEach((type) => captureElement.removeEventListener(type, forward));
+  }, [captureElement, contentElement, effect.object]);
 
   useLayoutEffect(() => {
     const host = native ? sourceRef.current : htmlHostRef.current;
@@ -167,6 +358,17 @@ export function CanvasUiSurface({
               }
             : {}),
         };
+        if (captureElement) {
+          const getContext = output.getContext.bind(output) as (
+            id: string,
+            attributes?: unknown,
+          ) => RenderingContext | null;
+          output.getContext = ((id: string, attributes?: WebGLContextAttributes) =>
+            getContext(
+              id,
+              id.startsWith("webgl") ? { ...attributes, preserveDrawingBuffer: true } : attributes,
+            )) as typeof output.getContext;
+        }
         instance = factory(elements, engineOptions);
         instanceRef.current = instance;
         statusRef.current?.(
@@ -250,7 +452,7 @@ export function CanvasUiSurface({
       source.onpaint = idlePaint;
       source.requestPaint?.();
     };
-  }, [active, effect.id, effect.component, effect.object, native, replay]);
+  }, [active, effect.id, effect.component, effect.object, native, replay, captureElement]);
 
   useEffect(() => {
     instanceRef.current?.setOptions({
@@ -264,14 +466,8 @@ export function CanvasUiSurface({
       <span>{CANVAS_UI_NAME}</span>
     </div>
   );
-  return (
-    <div
-      className={`canvas-ui-surface ${className}`}
-      data-canvas-ui-effect={active ? effect.id : "none"}
-      data-canvas-ui-transition={
-        active && ["peel", "ascii-sweep"].includes(effect.id) ? "true" : undefined
-      }
-    >
+  const capture = (
+    <>
       <canvas
         ref={alternateSourceRef}
         className="canvas-ui-alternate-source"
@@ -286,7 +482,27 @@ export function CanvasUiSurface({
         {...(native ? { layoutsubtree: "" } : {})}
       />
       <div ref={htmlHostRef} className="canvas-ui-html-host" hidden={native} />
-      {createPortal(children, contentElement)}
+    </>
+  );
+  return (
+    <div
+      className={`canvas-ui-surface ${className}`}
+      data-canvas-ui-effect={active ? effect.id : "none"}
+      data-canvas-ui-composite={native && !captureElement ? "true" : undefined}
+      data-canvas-ui-transition={
+        active && ["peel", "ascii-sweep"].includes(effect.id) ? "true" : undefined
+      }
+    >
+      {isolatedCapture
+        ? createPortal(
+            <>
+              <style>{surfaceCss}</style>
+              {capture}
+            </>,
+            isolatedCapture.shadow,
+          )
+        : capture}
+      {!captureElement && createPortal(children, contentElement)}
       {active && (
         <canvas
           key={`${effect.id}-${replay}`}

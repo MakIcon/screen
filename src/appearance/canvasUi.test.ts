@@ -9,6 +9,85 @@ import { createDefaultAppearance, normalizeAppearanceProfile } from "./profile";
 import { appearanceHistoryReducer, createAppearanceHistory } from "./history";
 
 describe("Canvas UI appearance profiles", () => {
+  it("preserves independent element-only effects, including disabled settings, on save and reload", () => {
+    const elementEffect = { ...createDefaultCanvasUi(), enabled: true, effect: "ripple" };
+    const profile = normalizeAppearanceProfile(
+      JSON.parse(
+        JSON.stringify({
+          ...createDefaultAppearance("dark", true),
+          elementOverrides: [
+            {
+              id: "element-card",
+              path: [{ tag: "section", index: 0 }],
+              style: {},
+              canvasUi: elementEffect,
+            },
+            {
+              id: "element-button",
+              path: [{ tag: "button", index: 0 }],
+              style: {},
+              canvasUi: {
+                ...elementEffect,
+                enabled: false,
+                effect: "liquid",
+                settings: { liquid: { force: 2.5 } },
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    expect(profile.canvasUi.enabled).toBe(false);
+    expect(profile.elementOverrides).toHaveLength(2);
+    expect(profile.elementOverrides[0].canvasUi).toEqual(elementEffect);
+    expect(profile.elementOverrides[1].canvasUi?.settings.liquid.force).toBe(2.5);
+    expect(profile.elementOverrides[1].canvasUi?.enabled).toBe(false);
+  });
+
+  it("validates imported element effects and undoes their removal without changing global effects", () => {
+    const initial = normalizeAppearanceProfile({
+      ...createDefaultAppearance("dark", true),
+      canvasUi: { ...createDefaultCanvasUi(), enabled: true, effect: "glass" },
+      elementOverrides: [
+        {
+          id: "element-card",
+          path: [{ tag: "section", index: 0 }],
+          style: { radius: 12 },
+          canvasUi: {
+            enabled: true,
+            effect: "liquid",
+            opacity: 9,
+            settings: {
+              liquid: { force: 2.5, unknown: true },
+              "glass-object": { src: "javascript:alert(1)" },
+            },
+          },
+        },
+      ],
+    });
+    expect(initial.elementOverrides[0].canvasUi).toMatchObject({
+      opacity: 1,
+      settings: { liquid: { force: 2.5 } },
+    });
+    expect(initial.elementOverrides[0].canvasUi?.settings).not.toHaveProperty("glass-object");
+    const removed = appearanceHistoryReducer(createAppearanceHistory(initial), {
+      type: "apply",
+      update: (profile) => ({
+        ...profile,
+        elementOverrides: profile.elementOverrides.map(
+          ({ canvasUi: _effect, ...override }) => override,
+        ),
+      }),
+    });
+    expect(removed.present.elementOverrides[0].style.radius).toBe(12);
+    expect(removed.present.elementOverrides[0].canvasUi).toBeUndefined();
+    const undone = appearanceHistoryReducer(removed, { type: "undo" });
+    expect(undone.present.elementOverrides[0].canvasUi?.effect).toBe("liquid");
+    expect(appearanceHistoryReducer(undone, { type: "redo" }).present.canvasUi).toEqual(
+      initial.canvasUi,
+    );
+  });
+
   it("keeps existing profiles disabled until an effect is enabled", () => {
     expect(normalizeAppearanceProfile({ version: 2, customized: true }).canvasUi).toEqual(
       createDefaultCanvasUi(),
