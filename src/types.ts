@@ -281,6 +281,14 @@ export type ProxyPluginSettings = {
   enabled: boolean;
   url: string;
   bypass: string;
+  profiles: ProxyProfile[];
+};
+
+export type ProxyProfile = {
+  id: string;
+  name: string;
+  url: string;
+  bypass: string;
 };
 
 export type DiscordRpcPluginSettings = {

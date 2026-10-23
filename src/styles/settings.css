@@ -175,23 +175,32 @@
   z-index: 80;
   pointer-events: none;
   isolation: isolate;
-  color: var(--danger);
+  color: color-mix(in srgb, var(--danger) 80%, var(--ram-ink));
 }
 
-/* The sign itself is transparent: ::after is the face, ::before a hand-cut offset shadow. */
+/* Opaque launcher surfaces keep the warnings readable over cards and custom backgrounds. */
 .ram-warning-sign {
+  --ram-sign-tone: color-mix(in srgb, var(--danger) 80%, var(--ram-ink));
   position: absolute;
   z-index: 1;
-  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 11px;
   width: max-content;
   max-width: min(260px, calc(100vw - 24px));
-  padding: 10px 16px 11px;
+  padding: 13px 15px 13px 12px;
+  border: 1px solid color-mix(in srgb, var(--ram-sign-tone) 55%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--ram-sign-tone) 7%, var(--bg-elevated));
+  box-shadow:
+    0 0 0 1px var(--bg),
+    var(--surface-shadow-strong);
+  color: var(--ram-ink);
   font-size: 11px;
   /* 700 like the launcher's other caps titles: on Windows 800+ falls through to Arial Black,
      which turns small tilted text into blocky mush. */
   font-weight: 700;
   line-height: 1.35;
-  letter-spacing: 1.4px;
+  letter-spacing: 1px;
   text-transform: uppercase;
   transform: rotate(var(--ram-sign-angle));
   transform-origin: var(--ram-sign-origin, 50% 100%);
@@ -205,61 +214,52 @@
   cursor: grabbing;
 }
 
-.ram-warning-sign::before,
-.ram-warning-sign::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.ram-warning-sign::before {
-  z-index: -2;
-  border-radius: var(--ram-shadow-radius, 9px);
-  background: var(--ram-ink);
-  /* Slightly different radii plus a hair of tilt make the shadow look hand-cut at the corners. */
-  transform: translate(5px, 6px) rotate(var(--ram-shadow-tilt, 0.6deg));
-}
-
-.ram-warning-sign::after {
-  z-index: -1;
-  border: 2px solid var(--ram-ink);
-  border-radius: 8px;
-  background: var(--ram-sign-face, var(--bg));
+.ram-warning-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
 .ram-warning-sign strong {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 1.5;
 }
 
 .ram-warning-sign span {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
+  color: var(--ram-text);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
   text-transform: none;
 }
 
 .ram-warning-badge {
-  position: absolute;
-  top: -15px;
-  left: -15px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  background: var(--ram-sign-tone);
+  color: var(--bg);
+}
+
+.ram-warning-badge:not(.ram-warning-badge--memory)::before {
+  content: "";
+  display: block;
   width: 28px;
   height: 28px;
-  box-sizing: border-box;
-  border: 2px solid var(--ram-ink);
-  border-radius: 50%;
-  background: var(--bg);
-  color: var(--danger);
-  box-shadow: 2px 3px 0 var(--ram-ink);
-  /* Cancels the sign's tilt so the mark stands upright. */
-  transform: rotate(calc(-1 * var(--ram-sign-angle)));
+  background: currentColor;
+  -webkit-mask: url("../assets/warning.svg") center / contain no-repeat;
+  mask: url("../assets/warning.svg") center / contain no-repeat;
 }
 
 .ram-warning-badge svg {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 20px;
+  height: 20px;
 }
 
 .ram-warning-sign--stop {
@@ -267,28 +267,14 @@
   --ram-sign-origin: 20% 100%;
   --ram-sign-enter-x: 0px;
   --ram-sign-enter-y: -26px;
-  --ram-sign-face: var(--danger);
-  --ram-shadow-radius: 11px 6px 13px 7px;
-  --ram-shadow-tilt: 0.9deg;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-left: 20px;
-  color: #fff;
-}
-
-.ram-warning-sign--stop span {
-  opacity: 0.88;
 }
 
 .ram-warning-sign--system {
+  --ram-sign-tone: color-mix(in srgb, var(--accent) 80%, var(--ram-ink));
   --ram-sign-angle: 3deg;
   --ram-sign-origin: 10% 90%;
   --ram-sign-enter-x: 30px;
   --ram-sign-enter-y: -6px;
-  --ram-shadow-radius: 6px 12px 7px 13px;
-  --ram-shadow-tilt: -0.8deg;
-  color: var(--danger);
 }
 
 .ram-warning-sign--maximum {
@@ -296,21 +282,6 @@
   --ram-sign-origin: 30% 100%;
   --ram-sign-enter-x: -30px;
   --ram-sign-enter-y: -16px;
-  --ram-sign-face:
-    repeating-linear-gradient(-45deg, var(--danger) 0 6px, var(--ram-ink) 6px 12px) top / 100% 7px
-      no-repeat,
-    var(--bg);
-  --ram-shadow-radius: 9px 13px 6px 11px;
-  --ram-shadow-tilt: 0.7deg;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-top: 17px;
-  color: var(--danger);
-}
-
-.ram-warning-sign--maximum span {
-  color: color-mix(in srgb, var(--ram-ink) 72%, transparent);
 }
 
 .ram-warning-arrows {
@@ -324,14 +295,14 @@
 
 .ram-warning-arrow path {
   stroke: currentColor;
-  stroke-width: 3.5;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .ram-warning-arrow .ram-warning-arrow-halo {
-  stroke: var(--bg);
-  stroke-width: 9;
+  stroke: var(--bg-elevated);
+  stroke-width: 6;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -397,7 +368,7 @@
     transform: scale(0) rotate(-60deg);
   }
   to {
-    transform: scale(1) rotate(calc(-1 * var(--ram-sign-angle)));
+    transform: scale(1);
   }
 }
 

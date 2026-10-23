@@ -1558,6 +1558,79 @@ export const ru = {
   "pluginCard.availableToInstall": "Доступно для установки",
 
   // proxy
+  "proxy.footerHint": "Настройте подключение и нажмите «Применить»",
+  "proxy.httpStatus": "HTTP {status}",
+  "proxy.connection": "Подключение",
+  "proxy.connectionDescription": "Настройте прокси для загрузок и сетевых запросов лаунчера",
+  "proxy.launcherTraffic": "Маршрут запросов лаунчера",
+  "proxy.needsAddress": "Укажите адрес для подключения",
+  "proxy.disabledRoute": "Включите Proxy кнопкой вверху, когда закончите настройку",
+  "proxy.viaProxy": "Через прокси",
+  "proxy.direct": "Напрямую",
+  "proxy.inputMode": "Способ ввода прокси",
+  "proxy.byFields": "По полям",
+  "proxy.byUrl": "Строкой",
+  "proxy.ipv6Support": "IPv4 · IPv6 · домены",
+  "proxy.protocol": "Протокол",
+  "proxy.host": "Сервер / IP-адрес",
+  "proxy.port": "Порт",
+  "proxy.username": "Логин",
+  "proxy.password": "Пароль",
+  "proxy.optional": "Необязательно",
+  "proxy.remoteDns": "DNS через прокси: имена сайтов определяются на стороне прокси-сервера.",
+  "proxy.localDns": "Локальный DNS: имена сайтов определяются на вашем компьютере.",
+  "proxy.httpTunnel": "HTTP- и HTTPS-запросы лаунчера проходят через этот сервер.",
+  "proxy.socks4Hint":
+    "SOCKS4/4a работают без авторизации. Для прокси с логином и паролем выберите SOCKS5/5h.",
+  "proxy.authHint":
+    "Без авторизации оставьте оба поля пустыми. Спецсимволы в пароле обрабатываются автоматически.",
+  "proxy.importHint":
+    "Вставьте URL, логин:пароль@сервер:порт или сервер:порт:логин:пароль. Без схемы используется протокол из формы.",
+  "proxy.supportedProtocols": "Поддерживаются HTTP, HTTPS, SOCKS4, SOCKS4a, SOCKS5 и SOCKS5h.",
+  "proxy.emptyAddress": "Укажите адрес прокси-сервера.",
+  "proxy.invalidAddress":
+    "Проверьте формат адреса. URL прокси не должен содержать путь, параметры или фрагмент.",
+  "proxy.unsupportedProtocol": "Выберите HTTP, HTTPS, SOCKS4/4a или SOCKS5/5h.",
+  "proxy.invalidHost": "Введите домен, IPv4 или IPv6 без протокола, порта и пути.",
+  "proxy.invalidPort": "Порт должен быть числом от 1 до 65535.",
+  "proxy.invalidCredentials":
+    "Проверьте логин и пароль: нужен логин, без управляющих символов; логин HTTP не может содержать двоеточие.",
+  "proxy.socks4Auth":
+    "Авторизация SOCKS4/4a не поддерживается. Очистите логин и пароль или выберите SOCKS5/5h.",
+  "proxy.socks5Auth": "Для авторизации SOCKS5 нужны и логин, и пароль, каждый не длиннее 255 байт.",
+  "proxy.apply": "Применить",
+  "proxy.applied": "Настройки подключения применены.",
+  "proxy.pendingChanges": "Есть изменения. Нажмите «Применить», чтобы использовать их в лаунчере.",
+  "proxy.testHint": "Проверка использует введённый адрес и не меняет текущее подключение.",
+  "proxy.resetDraft": "Отменить изменения подключения",
+  "proxy.testSuccessHint": "Сервер Mojang доступен через этот прокси. Можно применять настройки.",
+  "proxy.testTimeout":
+    "Прокси не ответил за 15 секунд. Проверьте адрес, порт и доступность сервера.",
+  "proxy.testAuth": "Прокси отклонил авторизацию. Проверьте логин и пароль.",
+  "proxy.testHttp":
+    "Прокси вернул ошибку HTTP. Проверьте доступ к серверам Mojang и ограничения провайдера.",
+  "proxy.testFailedHint":
+    "Не удалось открыть сервер Mojang через прокси. Проверьте протокол, адрес, порт и авторизацию.",
+  "proxy.localComputer": "Локальный компьютер",
+  "proxy.privateNetworks": "Частные сети",
+  "proxy.bypassAllHint":
+    "Символ * отправляет все запросы напрямую. Прокси не будет использоваться.",
+  "proxy.profiles": "Сохранённые подключения",
+  "proxy.profilesDescription":
+    "Сохраняйте серверы вместе с исключениями и переключайтесь в один клик",
+  "proxy.profileName": "Название подключения",
+  "proxy.profileNamePlaceholder": "Например, домашний сервер",
+  "proxy.saveProfile": "Сохранить профиль",
+  "proxy.saveProfileHint":
+    "Сохраняются данные из формы. Повторное имя обновит существующий профиль.",
+  "proxy.noProfiles": "Добавьте первый профиль, чтобы быстро возвращаться к этому подключению.",
+  "proxy.profileSaved": "Профиль сохранён.",
+  "proxy.profileApplied": "Профиль применён. Переключатель Proxy управляет его использованием.",
+  "proxy.profileDeleted": "Профиль удалён. Текущие настройки подключения сохранены.",
+  "proxy.selectedProfile": "Выбрано",
+  "proxy.useProfile": "Применить",
+  "proxy.useNamedProfile": "Применить профиль «{name}»",
+  "proxy.deleteNamedProfile": "Удалить профиль «{name}»",
   "proxy.connectThroughAProxy": "ПОДКЛЮЧЕНИЕ ЧЕРЕЗ ПРОКСИ",
   "proxy.addressCredentialsAndConnection": "Адрес, учётные данные и проверка соединения",
   "proxy.proxyAddress": "АДРЕС ПРОКСИ",
@@ -1567,7 +1640,7 @@ export const ru = {
   "proxy.testConnection": "Проверить соединение",
   "proxy.connectionEstablished": "Соединение установлено",
   "proxy.connectionFailed": "Ошибка подключения",
-  "proxy.directConnection": "ПРЯМОЕ СОЕДИНЕНИЕ",
+  "proxy.directConnection": "Исключения для прокси",
   "proxy.domainsAndNetworksTo": "Домены и сети, которые нужно открывать без прокси",
   "proxy.proxyExceptions": "ИСКЛЮЧЕНИЯ ДЛЯ ПРОКСИ",
   "proxy.separateAddressesWithCommas":
@@ -2072,7 +2145,8 @@ export const ru = {
 
   // plugins.proxy
   "plugins.proxy.tag": "Сеть и загрузки",
-  "plugins.proxy.description": "Загружает файлы лаунчера через HTTP, HTTPS или SOCKS5-прокси.",
+  "plugins.proxy.description":
+    "Прокси для запросов лаунчера: HTTP(S), SOCKS4/4a и SOCKS5/5h. Профили, авторизация и исключения для локальной сети.",
 
   // pluginStatus
   "pluginStatus.on": "Включено",

@@ -206,6 +206,7 @@ export const DEFAULT_PROXY_SETTINGS: ProxyPluginSettings = {
   enabled: false,
   url: "",
   bypass: "",
+  profiles: [],
 };
 
 function normalizeText(value: unknown, fallback: string) {
@@ -367,9 +368,20 @@ export function normalizeObsTelemetrySettings(value: unknown): ObsTelemetryPlugi
 
 export function normalizeProxySettings(value: unknown): ProxyPluginSettings {
   const draft = value && typeof value === "object" ? (value as Partial<ProxyPluginSettings>) : {};
+  const ids = new Set<string>();
+  const profiles = (Array.isArray(draft.profiles) ? draft.profiles : []).flatMap((profile) => {
+    if (!profile || typeof profile !== "object") return [];
+    const { id, name, url, bypass } = profile;
+    if (typeof id !== "string" || !id.trim() || ids.has(id)) return [];
+    if (typeof name !== "string" || !name.trim() || typeof url !== "string" || !url.trim())
+      return [];
+    ids.add(id);
+    return [{ id, name: name.trim().slice(0, 64), url, bypass: normalizeText(bypass, "") }];
+  });
   return {
     enabled: normalizeBoolean(draft.enabled, DEFAULT_PROXY_SETTINGS.enabled),
     url: normalizeText(draft.url, DEFAULT_PROXY_SETTINGS.url),
     bypass: normalizeText(draft.bypass, DEFAULT_PROXY_SETTINGS.bypass),
+    profiles,
   };
 }

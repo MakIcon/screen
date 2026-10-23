@@ -335,8 +335,12 @@ export function RamWarningSigns({
         signs,
         theme: {
           "--danger": style.getPropertyValue("--danger"),
+          "--accent": style.getPropertyValue("--accent"),
           "--bg": style.getPropertyValue("--bg"),
+          "--bg-elevated": style.getPropertyValue("--bg-elevated"),
           "--ram-ink": style.getPropertyValue("--ink"),
+          "--ram-text": style.getPropertyValue("--text-soft"),
+          "--surface-shadow-strong": style.getPropertyValue("--surface-shadow-strong"),
           fontFamily: style.fontFamily,
         } as CSSProperties,
       });
@@ -437,30 +441,38 @@ export function RamWarningSigns({
                 onPointerUp={() => drop(sign)}
                 onPointerCancel={() => drop(sign)}
               >
-                {sign.id === "stop" ? (
-                  <>
-                    <i className="ram-warning-badge">
-                      <svg viewBox="0 0 24 24">
-                        <path
-                          d="M12 6.5v7"
-                          stroke="currentColor"
-                          strokeWidth="3.4"
-                          strokeLinecap="round"
-                        />
-                        <circle cx="12" cy="18" r="2" fill="currentColor" />
-                      </svg>
-                    </i>
-                    <strong>{tr("ram.warningSignTitle")}</strong>
-                    <span>{tr("ram.warningSignRisk")}</span>
-                  </>
-                ) : sign.id === "system" ? (
-                  <strong>{tr("ram.warningSignAction")}</strong>
-                ) : (
-                  <>
-                    <strong>{tr("ram.warningSignMaximum")}</strong>
-                    <span>{tr("ram.warningSignReduce")}</span>
-                  </>
-                )}
+                <i
+                  className={`ram-warning-badge${sign.id === "system" ? " ram-warning-badge--memory" : ""}`}
+                >
+                  {sign.id === "system" && (
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="4" y="7" width="16" height="10" rx="1" />
+                      <path d="M8 10v4m4-4v4m4-4v4M7 4v3m5-3v3m5-3v3M7 17v3m5-3v3m5-3v3M1 10h3m-3 4h3m16-4h3m-3 4h3" />
+                    </svg>
+                  )}
+                </i>
+                <div className="ram-warning-copy">
+                  {sign.id === "stop" ? (
+                    <>
+                      <strong>{tr("ram.warningSignTitle")}</strong>
+                      <span>{tr("ram.warningSignRisk")}</span>
+                    </>
+                  ) : sign.id === "system" ? (
+                    <strong>{tr("ram.warningSignAction")}</strong>
+                  ) : (
+                    <>
+                      <strong>{tr("ram.warningSignMaximum")}</strong>
+                      <span>{tr("ram.warningSignReduce")}</span>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>,

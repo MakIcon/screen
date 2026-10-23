@@ -51,6 +51,16 @@ pub struct ProxyTestResult {
     pub status: Option<u16>,
     pub latency_ms: u128,
     pub message: String,
+    pub failure: Option<ProxyTestFailure>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProxyTestFailure {
+    Timeout,
+    Authentication,
+    Http,
+    Connection,
 }
 
 #[tauri::command]
@@ -188,14 +198,31 @@ pub async fn test_proxy_connection(proxy_url: String) -> Result<ProxyTestResult,
                     } else {
                         format!("Proxy returned HTTP {status}")
                     },
+                    failure: if status.is_success() {
+                        None
+                    } else if status.as_u16() == 407 {
+                        Some(ProxyTestFailure::Authentication)
+                    } else {
+                        Some(ProxyTestFailure::Http)
+                    },
                 })
             }
-            Err(error) => Ok(ProxyTestResult {
-                ok: false,
-                status: error.status().map(|status| status.as_u16()),
-                latency_ms: started.elapsed().as_millis(),
-                message: format!("Connection failed: {}", error.without_url()),
-            }),
+            Err(error) => {
+                let failure = if error.is_timeout() {
+                    ProxyTestFailure::Timeout
+                } else if error.status().is_some_and(|status| status.as_u16() == 407) {
+                    ProxyTestFailure::Authentication
+                } else {
+                    ProxyTestFailure::Connection
+                };
+                Ok(ProxyTestResult {
+                    ok: false,
+                    status: error.status().map(|status| status.as_u16()),
+                    latency_ms: started.elapsed().as_millis(),
+                    message: format!("Connection failed: {}", error.without_url()),
+                    failure: Some(failure),
+                })
+            }
         }
     }
     .await;

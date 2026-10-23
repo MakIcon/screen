@@ -468,7 +468,13 @@ export function LauncherPluginsModal({
         </section>
       </div>
       <div className="plugins-footer">
-        <span>{tr("launcherPlugins.settingsAreSavedAutomatically")}</span>
+        <span>
+          {tr(
+            selectedPluginId === "proxy"
+              ? "proxy.footerHint"
+              : "launcherPlugins.settingsAreSavedAutomatically",
+          )}
+        </span>
         <button type="button" onClick={onClose}>
           {standalone ? tr("common.close2") : tr("launcherPlugins.done")}
         </button>

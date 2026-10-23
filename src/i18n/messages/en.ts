@@ -1512,6 +1512,78 @@ export const en: EnglishMessages = {
   "pluginCard.availableToInstall": "Available to install",
 
   // proxy
+  "proxy.footerHint": "Configure the connection, then select Apply",
+  "proxy.httpStatus": "HTTP {status}",
+  "proxy.connection": "Connection",
+  "proxy.connectionDescription": "Set up a proxy for launcher downloads and network requests",
+  "proxy.launcherTraffic": "Launcher request route",
+  "proxy.needsAddress": "Enter a proxy address to get started",
+  "proxy.disabledRoute": "Enable Proxy with the button above when setup is complete",
+  "proxy.viaProxy": "Via proxy",
+  "proxy.direct": "Direct",
+  "proxy.inputMode": "Proxy input mode",
+  "proxy.byFields": "Fields",
+  "proxy.byUrl": "URL",
+  "proxy.ipv6Support": "IPv4 · IPv6 · domains",
+  "proxy.protocol": "Protocol",
+  "proxy.host": "Server / IP address",
+  "proxy.port": "Port",
+  "proxy.username": "Username",
+  "proxy.password": "Password",
+  "proxy.optional": "Optional",
+  "proxy.remoteDns": "Remote DNS: website names are resolved by the proxy server.",
+  "proxy.localDns": "Local DNS: website names are resolved on your computer.",
+  "proxy.httpTunnel": "Launcher HTTP and HTTPS requests go through this server.",
+  "proxy.socks4Hint":
+    "SOCKS4/4a work without authentication. Choose SOCKS5/5h for a proxy that requires a username and password.",
+  "proxy.authHint":
+    "Leave both fields empty for no authentication. Password special characters are handled automatically.",
+  "proxy.importHint":
+    "Paste a URL, user:password@host:port or host:port:user:password. Without a scheme, the protocol from the form is used.",
+  "proxy.supportedProtocols": "Supports HTTP, HTTPS, SOCKS4, SOCKS4a, SOCKS5 and SOCKS5h.",
+  "proxy.emptyAddress": "Enter the proxy server address.",
+  "proxy.invalidAddress":
+    "Check the address format. A proxy URL must not contain a path, query or fragment.",
+  "proxy.unsupportedProtocol": "Choose HTTP, HTTPS, SOCKS4/4a or SOCKS5/5h.",
+  "proxy.invalidHost": "Enter a domain, IPv4 or IPv6 address without a scheme, port or path.",
+  "proxy.invalidPort": "The port must be a number between 1 and 65535.",
+  "proxy.invalidCredentials":
+    "Check the credentials: a username is required, control characters are not allowed, and HTTP usernames cannot contain a colon.",
+  "proxy.socks4Auth":
+    "SOCKS4/4a authentication is unsupported. Clear the credentials or choose SOCKS5/5h.",
+  "proxy.socks5Auth":
+    "SOCKS5 authentication requires both a username and password, each at most 255 bytes.",
+  "proxy.apply": "Apply",
+  "proxy.applied": "Connection settings applied.",
+  "proxy.pendingChanges": "You have changes. Select Apply to use them in the launcher.",
+  "proxy.testHint": "Testing uses the entered address without changing the current connection.",
+  "proxy.resetDraft": "Discard connection changes",
+  "proxy.testSuccessHint":
+    "The Mojang server is reachable through this proxy. You can apply these settings.",
+  "proxy.testTimeout":
+    "The proxy did not respond within 15 seconds. Check the address, port and server availability.",
+  "proxy.testAuth": "The proxy rejected authentication. Check the username and password.",
+  "proxy.testHttp":
+    "The proxy returned an HTTP error. Check access to Mojang servers and provider restrictions.",
+  "proxy.testFailedHint":
+    "Could not reach the Mojang server through this proxy. Check the protocol, address, port and credentials.",
+  "proxy.localComputer": "Local computer",
+  "proxy.privateNetworks": "Private networks",
+  "proxy.bypassAllHint": "The * entry routes all requests directly. The proxy will not be used.",
+  "proxy.profiles": "Saved connections",
+  "proxy.profilesDescription": "Save servers with their exceptions and switch with one click",
+  "proxy.profileName": "Connection name",
+  "proxy.profileNamePlaceholder": "For example, home server",
+  "proxy.saveProfile": "Save profile",
+  "proxy.saveProfileHint": "Saves the current form. Reusing a name updates the existing profile.",
+  "proxy.noProfiles": "Save your first profile to quickly return to this connection.",
+  "proxy.profileSaved": "Profile saved.",
+  "proxy.profileApplied": "Profile applied. The Proxy switch controls whether it is used.",
+  "proxy.profileDeleted": "Profile deleted. Current connection settings are kept.",
+  "proxy.selectedProfile": "Selected",
+  "proxy.useProfile": "Apply",
+  "proxy.useNamedProfile": "Apply profile “{name}”",
+  "proxy.deleteNamedProfile": "Delete profile “{name}”",
   "proxy.connectThroughAProxy": "CONNECT THROUGH A PROXY",
   "proxy.addressCredentialsAndConnection": "Address, credentials, and connection test",
   "proxy.proxyAddress": "PROXY ADDRESS",
@@ -1521,7 +1593,7 @@ export const en: EnglishMessages = {
   "proxy.testConnection": "Test connection",
   "proxy.connectionEstablished": "Connection established",
   "proxy.connectionFailed": "Connection failed",
-  "proxy.directConnection": "DIRECT CONNECTION",
+  "proxy.directConnection": "Proxy exceptions",
   "proxy.domainsAndNetworksTo": "Domains and networks to open without the proxy",
   "proxy.proxyExceptions": "PROXY EXCEPTIONS",
   "proxy.separateAddressesWithCommas":
@@ -2022,7 +2094,8 @@ export const en: EnglishMessages = {
 
   // plugins.proxy
   "plugins.proxy.tag": "Network and downloads",
-  "plugins.proxy.description": "Downloads launcher files through an HTTP, HTTPS, or SOCKS5 proxy.",
+  "plugins.proxy.description":
+    "Proxy launcher requests through HTTP(S), SOCKS4/4a or SOCKS5/5h. Saved profiles, authentication and local network exceptions.",
 
   // pluginStatus
   "pluginStatus.on": "Enabled",

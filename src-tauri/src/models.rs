@@ -892,6 +892,18 @@ pub struct ProxyPluginSettings {
     /// connect directly instead of using the proxy.
     #[serde(default)]
     pub bypass: String,
+    #[serde(default)]
+    pub profiles: Vec<ProxyProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyProfile {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub bypass: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
