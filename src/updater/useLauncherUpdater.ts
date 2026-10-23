@@ -5,6 +5,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { createSpeedMeter, describeUpdateError } from "./updateProgress";
 import { installWhenIdle } from "./updateSafety";
+import { launcherReleaseUrl } from "./releaseUrl";
 
 /** How long the "update now" button counts down before starting by itself. */
 export const AUTO_UPDATE_DELAY_MS = 7000;
@@ -22,6 +23,7 @@ export type LauncherUpdateInfo = {
   version: string;
   date: string | null;
   notes: string | null;
+  releaseUrl: string;
 };
 
 export type LauncherUpdateState =
@@ -51,7 +53,7 @@ export type UpdateCheckResult =
 type Options = {
   /** Start checking once the launcher has finished opening. */
   ready: boolean;
-  /** Hold back an automatic prompt while a game is running. Backend tasks are checked separately. */
+  /** Hold back installation while a game is running. Backend tasks are checked separately. */
   deferAutomatic: boolean;
   proxy: string | null;
 };
@@ -70,14 +72,15 @@ const toInfo = (update: Update): LauncherUpdateInfo => ({
   version: update.version,
   date: update.date ?? null,
   notes: update.body?.trim() || null,
+  releaseUrl: launcherReleaseUrl(update.version, update.rawJson),
 });
 
 export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
   const [state, setState] = useState<LauncherUpdateState>({ stage: "idle" });
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<LauncherUpdateInfo | null>(null);
   const updateRef = useRef<Update | null>(null);
   const busyRef = useRef(false);
-  const dismissedVersionRef = useRef<string | null>(null);
   const startedAutoCheckRef = useRef(false);
   const proxyRef = useRef(proxy);
   const [operationsBusy, setOperationsBusy] = useState(true);
@@ -128,13 +131,22 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
           timeout: CHECK_TIMEOUT_MS,
           ...(proxyRef.current ? { proxy: proxyRef.current } : {}),
         });
-        if (!update || (!manual && update.version === dismissedVersionRef.current)) {
-          if (update) void update.close().catch(() => {});
+        setAvailableUpdate(update ? toInfo(update) : null);
+        if (!update) {
+          swapUpdate(updateRef, null);
           setState({ stage: "idle" });
           return { status: "up-to-date" };
         }
+        if (!manual) {
+          // Background checks only publish the release notice. Keep installation
+          // behind an explicit action rather than interrupting the launcher.
+          swapUpdate(updateRef, null);
+          void update.close().catch(() => {});
+          setState({ stage: "idle" });
+          return { status: "available" };
+        }
         swapUpdate(updateRef, update);
-        setState({ stage: "available", info: toInfo(update), autoStart: !manual });
+        setState({ stage: "available", info: toInfo(update), autoStart: false });
         return { status: "available" };
       } catch (error) {
         setState({ stage: "idle" });
@@ -218,8 +230,6 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
 
   const dismiss = useCallback(() => {
     if (busyRef.current) return;
-    const update = updateRef.current;
-    if (update) dismissedVersionRef.current = update.version;
     swapUpdate(updateRef, null);
     setState({ stage: "idle" });
   }, []);
@@ -253,6 +263,7 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
     state,
     overlayState,
     currentVersion,
+    availableUpdate,
     checking: state.stage === "checking",
     checkForUpdates,
     startUpdate,

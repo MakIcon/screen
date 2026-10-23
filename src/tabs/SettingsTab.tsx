@@ -28,6 +28,8 @@ import {
 import { createPlaceholderAppearanceAttributes } from "../utils/placeholders";
 import { useLocale, useTranslation, saveLocale, type Locale } from "../i18n/locale";
 import type { Theme } from "../appearance/types";
+import { LauncherUpdateNotice } from "../updater/LauncherUpdateNotice";
+import type { LauncherUpdateInfo } from "../updater/useLauncherUpdater";
 import type {
   LauncherPluginsSettings,
   MascotSettings,
@@ -75,8 +77,9 @@ interface SettingsTabProps {
   appearanceCustomized: boolean;
   onCustomizeAppearance: () => void;
   launcherVersion: string | null;
-  updateChecking: boolean;
-  onCheckUpdates: () => void;
+  availableUpdate: LauncherUpdateInfo | null;
+  onOpenUpdateRelease: () => void;
+  onUpdateLauncher: () => void;
 }
 
 export function SettingsTab({
@@ -116,8 +119,9 @@ export function SettingsTab({
   appearanceCustomized,
   onCustomizeAppearance,
   launcherVersion,
-  updateChecking,
-  onCheckUpdates,
+  availableUpdate,
+  onOpenUpdateRelease,
+  onUpdateLauncher,
 }: SettingsTabProps) {
   const locale = useLocale();
   const tr = useTranslation();
@@ -317,23 +321,12 @@ export function SettingsTab({
             </div>
           </CustomScrollArea>
 
-          <div className="settings-update-row" data-guide-target="settings-updates">
-            <div className="settings-update-copy">
-              <span className="settings-update-title">{tr("settings.launcherUpdates")}</span>
-              <span className="settings-update-note">
-                {launcherVersion ? `${tr("settings.version")} ${launcherVersion}. ` : ""}
-                {tr("settings.newVersionsAreChecked")}
-              </span>
-            </div>
-            <button
-              className="settings-update-check"
-              type="button"
-              onClick={onCheckUpdates}
-              disabled={updateChecking}
-            >
-              {updateChecking ? tr("settings.checking") : tr("settings.checkNow")}
-            </button>
-          </div>
+          <LauncherUpdateNotice
+            currentVersion={launcherVersion}
+            update={availableUpdate}
+            onOpenRelease={onOpenUpdateRelease}
+            onUpdate={onUpdateLauncher}
+          />
         </div>
 
         <div

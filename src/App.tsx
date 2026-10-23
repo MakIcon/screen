@@ -12,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { publishBotWindowContext } from "./components/plugins/mineflayerBot/botWindowContext";
 import {
   savePluginSettings,
@@ -23,6 +24,7 @@ import { useLocale, useTranslation } from "./i18n/locale";
 import { useWindowPhase } from "./hooks/useWindowPhase";
 import { AUTO_UPDATE_DELAY_MS, useLauncherUpdater } from "./updater/useLauncherUpdater";
 import { LauncherUpdateOverlay } from "./updater/LauncherUpdateOverlay";
+import { useLauncherUpdatePreview } from "./updater/useLauncherUpdatePreview";
 import { useRunningInstances } from "./hooks/useRunningInstances";
 import { useBuildCardAppearances } from "./hooks/useBuildCardAppearances";
 import { useLocalStorageBoolean } from "./hooks/useLocalStorage";
@@ -850,6 +852,14 @@ export default function App() {
     proxy: updaterProxy?.enabled && updaterProxy.url.trim() ? updaterProxy.url.trim() : null,
   });
 
+  // TEMP_UPDATE_PREVIEW: Ctrl+L toggles a fake release without touching the updater.
+  const updatePreview = useLauncherUpdatePreview(
+    launcherUpdater.currentVersion,
+    phase === "ready" && launcherUpdater.overlayState === null,
+  );
+  const availableLauncherUpdate = updatePreview.info ?? launcherUpdater.availableUpdate;
+  const launcherUpdateOverlay = launcherUpdater.overlayState ?? updatePreview.overlayState;
+
   const checkLauncherUpdates = async () => {
     const result = await launcherUpdater.checkForUpdates({ manual: true });
     if (result.status === "up-to-date") {
@@ -860,6 +870,15 @@ export default function App() {
       );
     } else if (result.status === "error") {
       pushToast("error", result.message, { title: tr("toast.updateCheckFailed") });
+    }
+  };
+
+  const openUpdateRelease = async () => {
+    if (!availableLauncherUpdate) return;
+    try {
+      await openUrl(availableLauncherUpdate.releaseUrl);
+    } catch (error) {
+      pushToast("error", toErrorMessage(error));
     }
   };
 
@@ -2404,8 +2423,12 @@ export default function App() {
             appearanceCustomized={appearance.customized}
             onCustomizeAppearance={handleCustomizeAppearance}
             launcherVersion={launcherUpdater.currentVersion}
-            updateChecking={launcherUpdater.checking}
-            onCheckUpdates={() => void checkLauncherUpdates()}
+            availableUpdate={availableLauncherUpdate}
+            onOpenUpdateRelease={() => void openUpdateRelease()}
+            onUpdateLauncher={() => {
+              if (updatePreview.info) updatePreview.open();
+              else void checkLauncherUpdates();
+            }}
           />
         );
       default:
@@ -2601,6 +2624,8 @@ export default function App() {
                 <button
                   key={tab}
                   className={`${activeTab === tab ? "active" : ""}${
+                    tab === "settings" && availableLauncherUpdate ? " has-update" : ""
+                  }${
                     appearance.customized && appearance.navigation.legacyTabs.includes(tab)
                       ? " legacy"
                       : ""
@@ -2609,9 +2634,23 @@ export default function App() {
                   type="button"
                   aria-current={activeTab === tab ? "page" : undefined}
                   data-tab-key={tab}
+                  aria-label={
+                    tab === "settings" && availableLauncherUpdate
+                      ? `${tabTitle(tab)}. ${tr("settings.newUpdateAvailable")}: ${availableLauncherUpdate.version}`
+                      : undefined
+                  }
                 >
                   <span>{TAB_INDEX[tab].replace(".", "")}</span>
                   <strong>{tabTitle(tab)}</strong>
+                  {tab === "settings" && availableLauncherUpdate && (
+                    <small
+                      className="sidebar-update-badge"
+                      data-tooltip={`${tr("settings.newUpdateAvailable")}: ${availableLauncherUpdate.version}`}
+                      aria-hidden="true"
+                    >
+                      !
+                    </small>
+                  )}
                 </button>
               ))}
             </nav>
@@ -2723,12 +2762,17 @@ export default function App() {
             </div>
           )}
           <ToastStack toasts={toasts} onDismiss={dismissToast} />
-          {launcherUpdater.overlayState && (
+          {launcherUpdateOverlay && (
             <LauncherUpdateOverlay
-              state={launcherUpdater.overlayState}
+              state={launcherUpdateOverlay}
               autoStartDelayMs={AUTO_UPDATE_DELAY_MS}
-              onUpdate={() => void launcherUpdater.startUpdate()}
-              onLater={launcherUpdater.dismiss}
+              onUpdate={() => {
+                if (launcherUpdater.overlayState) void launcherUpdater.startUpdate();
+                else updatePreview.startUpdate();
+              }}
+              onLater={
+                launcherUpdater.overlayState ? launcherUpdater.dismiss : updatePreview.dismiss
+              }
               onDragStart={() => void win.startDragging()}
             />
           )}

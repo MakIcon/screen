@@ -948,30 +948,57 @@
   color: var(--text-alt);
 }
 
-.settings-update-check {
+.settings-update-release {
+  flex-wrap: nowrap;
+  border-top-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
+.settings-update-release .settings-update-copy {
+  flex: 1 1 auto;
+}
+
+.settings-update-release .settings-update-title {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.settings-update-release-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.settings-update-release-link:hover {
+  text-decoration: underline;
+}
+
+.settings-update-action {
   flex: 0 0 auto;
+  max-width: 58%;
   padding: 8px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ink);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.07em;
+  line-height: 1.5;
+  text-align: center;
+  text-transform: uppercase;
   cursor: pointer;
-  transition:
-    color 0.15s,
-    border-color 0.15s,
-    background 0.15s;
+  overflow-wrap: anywhere;
+  transition: opacity 0.15s;
 }
 
-.settings-update-check:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--bg-hover-strong);
+.settings-update-action:hover {
+  opacity: 0.85;
 }
 
-.settings-update-check:disabled {
-  color: var(--muted);
-  cursor: progress;
+.settings-update-action:focus-visible,
+.settings-update-release-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
