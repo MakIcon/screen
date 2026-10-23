@@ -239,6 +239,7 @@ export function BuildConstellation({
     for (const [key, url] of Object.entries({ ...storedIcons, ...iconUrls })) {
       if (!url || imagesRef.current.has(key)) continue;
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.referrerPolicy = "no-referrer";
       img.src = url;
       img.onload = () => imagesRef.current.set(key, img);
@@ -288,6 +289,7 @@ export function BuildConstellation({
       for (const e of pool) {
         if (e.iconUrl && !imagesRef.current.has(e.projectId)) {
           const img = new Image();
+          img.crossOrigin = "anonymous";
           img.referrerPolicy = "no-referrer";
           img.src = e.iconUrl;
           img.onload = () => imagesRef.current.set(e.projectId, img);

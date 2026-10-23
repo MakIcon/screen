@@ -8,6 +8,8 @@ import { createDefaultAppearance, applyAppearanceToElement } from "/src/appearan
 import { CANVAS_UI_EFFECTS, createDefaultCanvasUi } from "/src/appearance/canvasUi";
 import { createElementTarget } from "/src/appearance/elementOverrides";
 import { CustomScrollArea } from "/src/components/layout/CustomScrollArea";
+import { ModrinthProjectIcon } from "/src/components/modrinth/ModrinthProjectIcon";
+import { ExportedItemIcon } from "/src/components/transfer/ExportedItemIcon";
 import "/src/App.css";
 mockIPC(() => null, { shouldMockEvents: true });
 window.qa = { styles: 0, clones: 0, longTasks: [], frames: [], paint: 0 };
@@ -34,12 +36,17 @@ requestAnimationFrame(tick);
 const defaults = createDefaultAppearance("light", true);
 applyAppearanceToElement(document.documentElement, defaults);
 const items = Array.from({ length: 24 }, (_, i) => i);
-function Card({ i }) {
+const globalEffect = new URLSearchParams(window.location.search).get("globalEffect") || "liquid";
+function Card({ i, iconUrl }) {
   return (
     <article className="mod-card" id={i === 0 ? "modcard" : undefined}>
       <div className="mod-card-head">
         <div className="mod-title-row">
-          <div style={{ width: 40, height: 40, background: i % 2 ? "#5eac55" : "#d9c8a8" }} />
+          {i === 0 ? (
+            <ModrinthProjectIcon iconUrl={iconUrl} title="Fabric API" />
+          ) : (
+            <div style={{ width: 40, height: 40, background: i % 2 ? "#5eac55" : "#d9c8a8" }} />
+          )}
           <h3>
             {i % 2 ? "Sodium" : "Fabric API"} {i}
           </h3>
@@ -58,15 +65,24 @@ function App() {
   const [target, setTarget] = useState("current"),
     [effect, setEffect] = useState("glass"),
     [global, setGlobal] = useState(false),
+    [iconUrl, setIconUrl] = useState(null),
     [appearance, setAppearance] = useState(defaults);
   const noop = useCallback(() => {}, []);
+  useLayoutEffect(() => {
+    window.qa.setIconUrl = setIconUrl;
+  }, []);
   useLayoutEffect(() => {
     const element = document.getElementById(target);
     if (!element) return;
     const picked = createElementTarget(rootRef.current, element, "mods");
     setAppearance({
       ...defaults,
-      canvasUi: { ...createDefaultCanvasUi(), enabled: global, effect: "liquid" },
+      canvasUi: {
+        ...createDefaultCanvasUi(),
+        enabled: global,
+        effect: globalEffect,
+        settings: { displacement: { scramble: 0, threshold: 0, grain: 0 } },
+      },
       elementOverrides: [
         {
           ...picked,
@@ -157,7 +173,7 @@ function App() {
                       <span className="panel-label">DISCOVER / INSTALL</span>
                       <CustomScrollArea style={{ flex: 1 }}>
                         {items.map((i) => (
-                          <Card key={i} i={i} />
+                          <Card key={i} i={i} iconUrl={iconUrl} />
                         ))}
                       </CustomScrollArea>
                     </section>
@@ -187,7 +203,11 @@ function App() {
                         {items.slice(0, 21).map((i) => (
                           <article className="mod-card" key={i}>
                             <div className="mod-title-row">
-                              <div style={{ width: 32, height: 32, background: "#96ad6b" }} />
+                              {i === 0 ? (
+                                <ExportedItemIcon src={iconUrl} title="Mod.jar" source="modrinth" />
+                              ) : (
+                                <div style={{ width: 32, height: 32, background: "#96ad6b" }} />
+                              )}
                               <strong>Entity Texture Features {i}</strong>
                               <span className="mod-category">MODRINTH</span>
                             </div>

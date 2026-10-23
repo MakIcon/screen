@@ -17,3 +17,8 @@ launcher data and does not change the saved launcher profile.
 
 The regression also checks that idle global/local composition performs no repeated scene capture,
 standalone effects use disposable GPU buffers, and offscreen mirrors defer their updates until visible.
+It checks late-loading remote icons and URL changes in local and global Displacement GPU output.
+Remote images must load with `crossOrigin="anonymous"` (and a CORS-enabled server); HTML-in-canvas
+silently omits ordinary cross-origin images, even when the DOM image loaded successfully. Set
+`crossOrigin` before `src` for images also drawn into 2D canvases to keep those canvases readable.
+Set `CANVAS_UI_BROWSER_PATH` to an installed Chromium executable if Playwright cannot find Edge.

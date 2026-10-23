@@ -15,7 +15,12 @@ export function ModrinthProjectIcon({ iconUrl, title, className = "" }: Modrinth
   return (
     <div className={`modrinth-project-icon ${className}`.trim()} aria-hidden="true">
       {hasImage ? (
-        <img src={iconUrl ?? undefined} alt="" onError={() => setImageFailed(true)} />
+        <img
+          crossOrigin="anonymous"
+          src={iconUrl ?? undefined}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
       ) : (
         <span>{title.trim().charAt(0).toUpperCase() || "M"}</span>
       )}

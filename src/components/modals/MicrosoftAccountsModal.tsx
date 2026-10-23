@@ -347,6 +347,7 @@ export function MicrosoftAccountsModal({
                     <div className="ms-account-avatar">
                       <img
                         key={avatarVersions[acc.uuid] ?? 0}
+                        crossOrigin="anonymous"
                         src={`https://mc-heads.net/avatar/${acc.uuid}/32?cb=${avatarVersions[acc.uuid] ?? 0}`}
                         alt={acc.username}
                         width={32}

@@ -29,7 +29,13 @@ const TABS: StatsTab[] = ["timeline", "heatmap", "constellation"];
 
 function EventIcon({ event }: { event: TLEvent }) {
   return event.iconUrl ? (
-    <img src={event.iconUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+    <img
+      crossOrigin="anonymous"
+      src={event.iconUrl}
+      alt=""
+      loading="lazy"
+      referrerPolicy="no-referrer"
+    />
   ) : event.kind === "launched" ? (
     <StatsIcon name="play" />
   ) : (

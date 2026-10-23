@@ -5,11 +5,14 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { testCanvasUiPointer } from "./test_canvas_ui_pointer.mjs";
+import { testCanvasUiImages } from "./test_canvas_ui_images.mjs";
 
 const entry = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(entry ? pathToFileURL(path.resolve(entry)).href : "playwright");
 const browser = await chromium.launch({
-  channel: "msedge",
+  ...(process.env.CANVAS_UI_BROWSER_PATH
+    ? { executablePath: process.env.CANVAS_UI_BROWSER_PATH }
+    : { channel: "msedge" }),
   headless: true,
   args: ["--enable-blink-features=CanvasDrawElement"],
 });
@@ -222,6 +225,7 @@ try {
       .textContent.startsWith("Hidden update 19"),
   );
   console.log("PASS disposable GPU buffers and deferred offscreen updates resume correctly");
+  await testCanvasUiImages(page, origin);
   assert.deepEqual(errors, []);
   console.log("PASS scrolling, typing, text/list patches and global/local composition");
 } finally {

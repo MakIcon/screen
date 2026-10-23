@@ -93,6 +93,7 @@ export function ExportedItemIcon({
     return (
       <img
         className="eximp-list-preview-icon"
+        crossOrigin="anonymous"
         src={src}
         alt=""
         loading="lazy"

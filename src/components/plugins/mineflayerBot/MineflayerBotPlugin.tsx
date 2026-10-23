@@ -494,6 +494,7 @@ function MineflayerBotSettingsEditor({
                         onClick={() => update({ botMicrosoftAccountId: account.id })}
                       >
                         <img
+                          crossOrigin="anonymous"
                           src={`https://mc-heads.net/avatar/${account.uuid}/24`}
                           alt=""
                           width={24}

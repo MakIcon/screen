@@ -20,6 +20,7 @@ function ModIcon({ src, title }: { src?: string | null; title: string }) {
     return (
       <img
         className="bme-icon"
+        crossOrigin="anonymous"
         src={src}
         alt=""
         loading="lazy"

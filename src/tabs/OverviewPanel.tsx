@@ -105,6 +105,7 @@ export function OverviewPanel({
                   <button className="mockup-ms-row" onClick={onOpenMsModal}>
                     <div className="mockup-ms-avatar">
                       <img
+                        crossOrigin="anonymous"
                         src={`https://mc-heads.net/avatar/${activeMs.uuid}/24`}
                         alt={activeMs.username}
                         width={24}
