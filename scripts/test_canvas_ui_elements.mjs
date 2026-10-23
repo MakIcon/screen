@@ -126,7 +126,36 @@ try {
     () => !document.querySelector("canvas-ui-capture").shadowRoot.textContent.includes("NEW BADGE"),
   );
   await page.getByLabel("Global", { exact: true }).check();
-  await page.waitForTimeout(250);
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("canvas-ui-element")
+        .shadowRoot.querySelector(".canvas-ui-output")
+        .getContext("webgl2")
+        .getContextAttributes().preserveDrawingBuffer,
+  );
+  await page.mouse.move(10, 10);
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => {
+    window.qa.compositeCaptures = 0;
+    const context = document
+      .querySelector(".canvas-ui-surface > .canvas-ui-source")
+      .getContext("2d");
+    const draw = context.drawElementImage;
+    context.drawElementImage = function (...args) {
+      window.qa.compositeCaptures++;
+      return draw.apply(this, args);
+    };
+  });
+  await page.waitForTimeout(300);
+  assert.equal(
+    await page.evaluate(() => window.qa.compositeCaptures),
+    0,
+    "idle composition must not recapture the scene",
+  );
+  await page.mouse.move(1000, 650);
+  await page.waitForFunction(() => window.qa.compositeCaptures > 0);
+  console.log("PASS zero idle captures and composition wakes for a real GPU frame");
   for (const effect of ["bubble", "clouds", "liquid", "ripple", "glass"]) {
     await page.getByLabel("Effect", { exact: true }).selectOption(effect);
     await page.waitForTimeout(200);
@@ -137,6 +166,60 @@ try {
       effect,
     );
   }
+  await page.getByLabel("Global", { exact: true }).uncheck();
+  await page.waitForFunction(
+    () =>
+      !document
+        .querySelector("canvas-ui-element")
+        .shadowRoot.querySelector(".canvas-ui-output")
+        .getContext("webgl2")
+        .getContextAttributes().preserveDrawingBuffer,
+  );
+  assert.equal(
+    await page.locator("#main").getByPlaceholder("Search compatible mods…").inputValue(),
+    "Updated content",
+  );
+  await page.evaluate(() => {
+    document.querySelector("#main .csa-content").scrollTop = 0;
+  });
+  await page.getByLabel("Target", { exact: true }).selectOption("modcard");
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    document.querySelector("#main .csa-content").scrollTop = 900;
+  });
+  await page.waitForTimeout(200);
+  await page.evaluate(async () => {
+    window.qa.styles = 0;
+    const title = document.querySelector("#modcard h3").firstChild;
+    for (let index = 0; index < 20; index++) {
+      title.data = `Hidden update ${index}`;
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    }
+  });
+  assert.ok(
+    await page.evaluate(() => window.qa.styles <= 4),
+    "offscreen updates must not rescan the captured subtree",
+  );
+  assert.ok(
+    await page.evaluate(
+      () =>
+        !document
+          .querySelector("canvas-ui-capture")
+          .shadowRoot.querySelector("h3")
+          .textContent.startsWith("Hidden update"),
+    ),
+    "defer painting offscreen content until it is visible",
+  );
+  await page.evaluate(() => {
+    document.querySelector("#main .csa-content").scrollTop = 0;
+  });
+  await page.waitForFunction(() =>
+    document
+      .querySelector("canvas-ui-capture")
+      .shadowRoot.querySelector("h3")
+      .textContent.startsWith("Hidden update 19"),
+  );
+  console.log("PASS disposable GPU buffers and deferred offscreen updates resume correctly");
   assert.deepEqual(errors, []);
   console.log("PASS scrolling, typing, text/list patches and global/local composition");
 } finally {

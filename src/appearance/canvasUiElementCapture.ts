@@ -22,6 +22,7 @@ export function observeCanvasUiElement(
   let nextKey = 0;
   let frame = 0;
   let disposed = false;
+  let inView = true;
   let backdropDirty = true;
   let resized = true;
   let changed = false;
@@ -238,7 +239,7 @@ export function observeCanvasUiElement(
   };
   const update = () => {
     frame = 0;
-    if (disposed || !element.isConnected) return;
+    if (disposed || !element.isConnected || !inView || document.hidden) return;
     for (const node of structures) if (relevant(node)) reconcile(node);
     if (structures.size)
       for (const [original] of mirrors)
@@ -296,11 +297,21 @@ export function observeCanvasUiElement(
     }
   };
   const schedule = () => {
-    if (!frame && !disposed) frame = requestAnimationFrame(update);
+    if (!frame && !disposed && inView && !document.hidden) frame = requestAnimationFrame(update);
   };
   const mirror = create(element)!;
   content.replaceChildren(backdrop, pseudoStyle, mirror);
   update();
+  const visibility = new IntersectionObserver((entries) => {
+    inView = entries[entries.length - 1]?.isIntersecting ?? true;
+    if (inView) schedule();
+    else {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    }
+  });
+  visibility.observe(element);
+  document.addEventListener("visibilitychange", schedule);
   const stylePath = (node: Node) => {
     for (
       let current = node instanceof Element ? node : node.parentElement;
@@ -417,6 +428,8 @@ export function observeCanvasUiElement(
     mutations.disconnect();
     resize.disconnect();
     ancestors.disconnect();
+    visibility.disconnect();
+    document.removeEventListener("visibilitychange", schedule);
     events.forEach((type) => element.removeEventListener(type, onState, true));
     element.removeEventListener("scroll", onScroll, true);
     window.removeEventListener("scroll", onAncestorScroll, true);

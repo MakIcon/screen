@@ -14,3 +14,6 @@ If Playwright is installed separately, set `PLAYWRIGHT_MODULE` to its absolute J
 The fixture covers large transparent panels, the sidebar, nested custom scroll areas, retained DOM
 while moving an effect, live text/input changes, and global/local composition. It uses synthetic
 launcher data and does not change the saved launcher profile.
+
+The regression also checks that idle global/local composition performs no repeated scene capture,
+standalone effects use disposable GPU buffers, and offscreen mirrors defer their updates until visible.

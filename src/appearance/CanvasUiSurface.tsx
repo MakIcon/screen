@@ -1,8 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { canvasUiEffect, canvasUiOptions, type CanvasUiSettings } from "./canvasUi";
 import { canvasUiLoaders } from "./canvasUiLoaders";
 import { observeCanvasUiElement } from "./canvasUiElementCapture";
+import { CanvasUiCompositeContext } from "./CanvasUiCompositeContext";
+import { CANVAS_UI_FRAME_EVENT, observeCanvasUiOutputFrames } from "./canvasUiOutputFrames";
 import "./CanvasUiSurface.css";
 import surfaceCss from "./CanvasUiSurface.css?inline";
 
@@ -52,6 +62,8 @@ export function CanvasUiSurface({
   className?: string;
 }) {
   const [captureSupported] = useState(supportsCanvasUiCapture);
+  const parentComposite = useContext(CanvasUiCompositeContext);
+  const compositeOutput = Boolean(captureElement && parentComposite);
   const [contentElement] = useState(() => {
     const element = document.createElement("div");
     element.className = "canvas-ui-live-content";
@@ -167,12 +179,18 @@ export function CanvasUiSurface({
     };
     let frame = 0;
     const paintElements = () => {
-      if (contentElement.querySelector("canvas-ui-element")) source.requestPaint?.();
-      frame = requestAnimationFrame(paintElements);
+      if (frame || document.hidden) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        source.requestPaint?.();
+      });
     };
-    frame = requestAnimationFrame(paintElements);
+    contentElement.addEventListener(CANVAS_UI_FRAME_EVENT, paintElements);
+    document.addEventListener("visibilitychange", paintElements);
     return () => {
       cancelAnimationFrame(frame);
+      contentElement.removeEventListener(CANVAS_UI_FRAME_EVENT, paintElements);
+      document.removeEventListener("visibilitychange", paintElements);
       context.drawElementImage = draw;
     };
   }, [native, captureElement, contentElement]);
@@ -314,6 +332,7 @@ export function CanvasUiSurface({
     let instance: EffectInstance | null = null;
     const timers: number[] = [];
     let stopForwarding: (() => void) | undefined;
+    let stopFrameTracking: (() => void) | undefined;
     const source = sourceRef.current as PaintCanvas;
     const content = contentRef.current;
     const alternate = alternateRef.current;
@@ -358,17 +377,12 @@ export function CanvasUiSurface({
               }
             : {}),
         };
-        if (captureElement) {
-          const getContext = output.getContext.bind(output) as (
-            id: string,
-            attributes?: unknown,
-          ) => RenderingContext | null;
-          output.getContext = ((id: string, attributes?: WebGLContextAttributes) =>
-            getContext(
-              id,
-              id.startsWith("webgl") ? { ...attributes, preserveDrawingBuffer: true } : attributes,
-            )) as typeof output.getContext;
-        }
+        if (compositeOutput)
+          stopFrameTracking = observeCanvasUiOutputFrames(output, () => {
+            output.dispatchEvent(
+              new Event(CANVAS_UI_FRAME_EVENT, { bubbles: true, composed: true }),
+            );
+          });
         instance = factory(elements, engineOptions);
         instanceRef.current = instance;
         statusRef.current?.(
@@ -438,6 +452,7 @@ export function CanvasUiSurface({
       cancelled = true;
       timers.forEach(window.clearTimeout);
       stopForwarding?.();
+      stopFrameTracking?.();
       instance?.destroy();
       instanceRef.current = null;
       // Ascii Sweep temporarily controls stacking, focus and backgrounds.
@@ -452,7 +467,16 @@ export function CanvasUiSurface({
       source.onpaint = idlePaint;
       source.requestPaint?.();
     };
-  }, [active, effect.id, effect.component, effect.object, native, replay, captureElement]);
+  }, [
+    active,
+    effect.id,
+    effect.component,
+    effect.object,
+    native,
+    replay,
+    captureElement,
+    compositeOutput,
+  ]);
 
   useEffect(() => {
     instanceRef.current?.setOptions({
@@ -502,10 +526,16 @@ export function CanvasUiSurface({
             isolatedCapture.shadow,
           )
         : capture}
-      {!captureElement && createPortal(children, contentElement)}
+      {!captureElement &&
+        createPortal(
+          <CanvasUiCompositeContext.Provider value={native}>
+            {children}
+          </CanvasUiCompositeContext.Provider>,
+          contentElement,
+        )}
       {active && (
         <canvas
-          key={`${effect.id}-${replay}`}
+          key={`${effect.id}-${replay}-${compositeOutput}`}
           ref={outputRef}
           className="canvas-ui-output"
           style={{ opacity: settings.opacity }}
