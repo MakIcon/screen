@@ -25,6 +25,7 @@ import {
   type UiMotionStyle,
 } from "./animations";
 import { DrawingCanvas } from "./DrawingCanvas";
+import { CanvasUiPanel } from "./CanvasUiPanel";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import { ElementTextColorPicker } from "./ElementTextColorPicker";
 import { ElementInspector } from "./ElementInspector";
@@ -116,6 +117,8 @@ const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
   type: "fonts text typography",
   opacity: "transparency window panels controls",
   motion: "animation transitions effects",
+  "canvas-ui":
+    "canvas webgl effects liquid glass glitch particles shaders эффекты жидкость стекло частицы",
 };
 
 function elementStyleBadges(override: AppearanceElementOverride) {
@@ -818,7 +821,12 @@ export function AppearanceStudioApp() {
   const renderEditor = () => {
     switch (category) {
       case "canvas-ui":
-        return null;
+        return (
+          <CanvasUiPanel
+            settings={draft.canvasUi}
+            onChange={(canvasUi) => patchDraft((current) => ({ ...current, canvasUi }))}
+          />
+        );
 
       case "element":
         return (

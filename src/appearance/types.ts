@@ -1,4 +1,5 @@
 import type { TabKey } from "../types";
+import type { CanvasUiSettings } from "./canvasUi";
 import type {
   CloseAnimationId,
   OpenAnimationId,
@@ -386,6 +387,7 @@ export type AppearanceProfile = {
     legacyTabs: TabKey[];
   };
   elementOverrides: AppearanceElementOverride[];
+  canvasUi: CanvasUiSettings;
   motion: {
     enabled: boolean;
     uiStyle: UiMotionStyle;

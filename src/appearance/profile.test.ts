@@ -423,7 +423,7 @@ describe("appearance profile", () => {
     expect(rule).toContain("fractalNoise");
   });
 
-  it("drops retired Canvas UI settings while preserving other appearance choices", () => {
+  it("restores global Canvas UI settings while dropping retired per-element effects", () => {
     const retiredEffect = { enabled: true, effect: "grid", settings: { grid: { tilt: 1 } } };
     const profile = normalizeAppearanceProfile({
       ...createDefaultAppearance("dark", true),
@@ -446,7 +446,7 @@ describe("appearance profile", () => {
       ],
     });
 
-    expect(profile).not.toHaveProperty("canvasUi");
+    expect(profile.canvasUi).toMatchObject({ enabled: true, effect: "grid" });
     expect(profile.baseTheme).toBe("dark");
     expect(profile.elementOverrides).toHaveLength(1);
     expect(profile.elementOverrides[0]).toMatchObject({

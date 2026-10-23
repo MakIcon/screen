@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { createDefaultCanvasUi, normalizeCanvasUi } from "./canvasUi";
 import { TAB_ORDER } from "../constants/tabs";
 import type { TabKey } from "../types";
 import {
@@ -1303,6 +1304,7 @@ export function createDefaultAppearance(
       legacyTabs: [],
     },
     elementOverrides: [],
+    canvasUi: createDefaultCanvasUi(),
     motion: {
       enabled: true,
       uiStyle: "smooth",
@@ -1395,6 +1397,7 @@ export function normalizeAppearanceProfile(value: unknown): AppearanceProfile {
       legacyTabs: TAB_ORDER.filter((tab) => legacyNavigationTabs.includes(tab)),
     },
     elementOverrides: normalizeElementOverrides(record.elementOverrides, true, customFontValues),
+    canvasUi: normalizeCanvasUi(record.canvasUi),
     motion: {
       enabled: typeof motion.enabled === "boolean" ? motion.enabled : fallback.motion.enabled,
       uiStyle: pickEnum<UiMotionStyle>(motion.uiStyle, uiMotionIds, fallback.motion.uiStyle),

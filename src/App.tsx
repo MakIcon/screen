@@ -159,6 +159,7 @@ import {
 } from "./appearance/elementOverrides";
 import type { AppearanceElementTarget } from "./appearance/types";
 import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
+import { CanvasUiLauncher } from "./appearance/CanvasUiLauncher";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -2702,314 +2703,316 @@ export default function App() {
 
   return (
     <RuntimeMonitorScope controller={runtimeMonitor}>
-      <div
-        ref={galleryRootRef}
-        className={`gallery-root ${phase} ${
-          renderedCloseEffect ? CLOSE_EFFECT_CLASS[renderedCloseEffect] : ""
-        }`}
-        {...createPlaceholderValueAttributes(resolve)}
-      >
-        {drawingCursor && drawingCursorStyle && (
-          <div
-            className={`appearance-drawing-cursor${drawingCursor.eraser ? " eraser" : ""}`}
-            style={drawingCursorStyle}
-            aria-hidden="true"
-          >
-            <span className="appearance-drawing-brush-dot" />
-            {!drawingCursor.eraser && <span className="appearance-drawing-pencil-icon" />}
-          </div>
-        )}
-        <ToastStack toasts={toasts} onDismiss={dismissToast} />
-        {launcherUpdater.overlayState && (
-          <LauncherUpdateOverlay
-            state={launcherUpdater.overlayState}
-            autoStartDelayMs={AUTO_UPDATE_DELAY_MS}
-            onUpdate={() => void launcherUpdater.startUpdate()}
-            onLater={launcherUpdater.dismiss}
-            onDragStart={() => void win.startDragging()}
-          />
-        )}
-        {dragKind === "build" && (
-          <div className="global-drop-overlay">
-            <div className="global-drop-overlay-inner">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <strong>{tr("app.dropToImportBuild")}</strong>
-              <span>.mrpack / .slbuild</span>
+      <CanvasUiLauncher appearance={appearance}>
+        <div
+          ref={galleryRootRef}
+          className={`gallery-root ${phase} ${
+            renderedCloseEffect ? CLOSE_EFFECT_CLASS[renderedCloseEffect] : ""
+          }`}
+          {...createPlaceholderValueAttributes(resolve)}
+        >
+          {drawingCursor && drawingCursorStyle && (
+            <div
+              className={`appearance-drawing-cursor${drawingCursor.eraser ? " eraser" : ""}`}
+              style={drawingCursorStyle}
+              aria-hidden="true"
+            >
+              <span className="appearance-drawing-brush-dot" />
+              {!drawingCursor.eraser && <span className="appearance-drawing-pencil-icon" />}
             </div>
-          </div>
-        )}
-        {dragKind === "content" &&
-          !dragOverInstanceId &&
-          (() => {
-            const fallbackName = instances.find((i) => i.id === selectedInstanceId)?.name;
-            return (
-              <div className="global-drop-overlay">
-                <div className="global-drop-overlay-inner">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <strong>
-                    {fallbackName
-                      ? tr("app.dropIntoBuild", { value: fallbackName.toUpperCase() })
-                      : tr("app.chooseABuild")}
-                  </strong>
-                  <span>{fallbackName ? ".jar / .zip" : tr("app.selectABuildFirst")}</span>
-                </div>
+          )}
+          <ToastStack toasts={toasts} onDismiss={dismissToast} />
+          {launcherUpdater.overlayState && (
+            <LauncherUpdateOverlay
+              state={launcherUpdater.overlayState}
+              autoStartDelayMs={AUTO_UPDATE_DELAY_MS}
+              onUpdate={() => void launcherUpdater.startUpdate()}
+              onLater={launcherUpdater.dismiss}
+              onDragStart={() => void win.startDragging()}
+            />
+          )}
+          {dragKind === "build" && (
+            <div className="global-drop-overlay">
+              <div className="global-drop-overlay-inner">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <strong>{tr("app.dropToImportBuild")}</strong>
+                <span>.mrpack / .slbuild</span>
               </div>
-            );
-          })()}
-        {!renderedCloseEffect ? (
-          mainUI
-        ) : renderedCloseEffect === "tear" ? (
-          <>
-            <div
-              className="tear-half left-half"
-              style={{ clipPath: `polygon(0% 0%, ${tearPath}, 0% 100%)` }}
-            >
-              <div className="fixed-content">{mainUI}</div>
             </div>
-            <div
-              className="tear-half right-half"
-              style={{ clipPath: `polygon(100% 0%, ${tearPath}, 100% 100%)` }}
-            >
-              <div className="fixed-content">{mainUI}</div>
-            </div>
-          </>
-        ) : renderedCloseEffect === "shred" ? (
-          <div className="shred-stack" aria-hidden="true">
-            {shredPaths.map((strip, index) => (
+          )}
+          {dragKind === "content" &&
+            !dragOverInstanceId &&
+            (() => {
+              const fallbackName = instances.find((i) => i.id === selectedInstanceId)?.name;
+              return (
+                <div className="global-drop-overlay">
+                  <div className="global-drop-overlay-inner">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 16V5M12 16l-4-4M12 16l4-4M5 19h14"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <strong>
+                      {fallbackName
+                        ? tr("app.dropIntoBuild", { value: fallbackName.toUpperCase() })
+                        : tr("app.chooseABuild")}
+                    </strong>
+                    <span>{fallbackName ? ".jar / .zip" : tr("app.selectABuildFirst")}</span>
+                  </div>
+                </div>
+              );
+            })()}
+          {!renderedCloseEffect ? (
+            mainUI
+          ) : renderedCloseEffect === "tear" ? (
+            <>
               <div
-                key={index}
-                className="shred-strip"
-                style={
-                  {
-                    clipPath: strip.clipPath,
-                    animationDelay: `${strip.delay}ms`,
-                    "--shred-x": strip.x,
-                    "--shred-y": strip.y,
-                    "--shred-rotate": strip.rotate,
-                    "--shred-kick-x": strip.kickX,
-                    "--shred-kick-y": strip.kickY,
-                  } as CSSProperties
-                }
+                className="tear-half left-half"
+                style={{ clipPath: `polygon(0% 0%, ${tearPath}, 0% 100%)` }}
               >
                 <div className="fixed-content">{mainUI}</div>
               </div>
-            ))}
-          </div>
-        ) : (
-          mainUI
-        )}
-
-        {buildCardSettingsOpen && (
-          <BuildCardSettingsPopup
-            isCreateMode={!buildSettingsTargetId}
-            instanceId={buildSettingsTargetId ?? null}
-            systemRamGb={systemRamGb}
-            usableRamGb={usableRamGb}
-            optimizedJavaArgs={optimizedJavaArgsEnabled}
-            buildName={buildSettingsTargetInstance?.name || createPreviewName}
-            buildVersion={buildSettingsTargetInstance?.version || createPreviewVersion}
-            buildLoader={buildSettingsTargetInstance?.loader || createPreviewLoader}
-            buildRamGb={buildRuntimeSettingsDraft.ram}
-            lastPlayedLabel={
-              buildSettingsTargetInstance
-                ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0", locale)
-                : tr("app.neverPlayed")
-            }
-            badgePreviewText={buildCardPreviewBadgeText}
-            resolvePreviewText={(template) =>
-              resolveForTarget(template, buildCardPreviewTarget, { buildState: "RUNNING" })
-            }
-            previewCardSize={buildCardPreviewSize}
-            draft={buildCardSettingsDraft}
-            onDraftChange={setBuildCardSettingsDraft}
-            runtimeDraft={buildRuntimeSettingsDraft}
-            onRuntimeDraftChange={setBuildRuntimeSettingsDraft}
-            onUploadImage={handleBuildCardImagePicked}
-            onOpenLogs={
-              buildSettingsTargetId
-                ? () => {
-                    void openBuildLogs(buildSettingsTargetId);
+              <div
+                className="tear-half right-half"
+                style={{ clipPath: `polygon(100% 0%, ${tearPath}, 100% 100%)` }}
+              >
+                <div className="fixed-content">{mainUI}</div>
+              </div>
+            </>
+          ) : renderedCloseEffect === "shred" ? (
+            <div className="shred-stack" aria-hidden="true">
+              {shredPaths.map((strip, index) => (
+                <div
+                  key={index}
+                  className="shred-strip"
+                  style={
+                    {
+                      clipPath: strip.clipPath,
+                      animationDelay: `${strip.delay}ms`,
+                      "--shred-x": strip.x,
+                      "--shred-y": strip.y,
+                      "--shred-rotate": strip.rotate,
+                      "--shred-kick-x": strip.kickX,
+                      "--shred-kick-y": strip.kickY,
+                    } as CSSProperties
                   }
-                : undefined
-            }
-            onResetAll={clearBuildCardSettings}
-            onResetRuntime={resetBuildRuntimeSettings}
-            onClose={closeBuildCardSettings}
-            onSave={saveBuildCardSettings}
-          />
-        )}
+                >
+                  <div className="fixed-content">{mainUI}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            mainUI
+          )}
 
-        {statsInstanceId &&
-          (() => {
-            const si = instances.find((i) => i.id === statsInstanceId);
-            return si ? (
-              <Suspense fallback={null}>
-                <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
-              </Suspense>
-            ) : null;
-          })()}
+          {buildCardSettingsOpen && (
+            <BuildCardSettingsPopup
+              isCreateMode={!buildSettingsTargetId}
+              instanceId={buildSettingsTargetId ?? null}
+              systemRamGb={systemRamGb}
+              usableRamGb={usableRamGb}
+              optimizedJavaArgs={optimizedJavaArgsEnabled}
+              buildName={buildSettingsTargetInstance?.name || createPreviewName}
+              buildVersion={buildSettingsTargetInstance?.version || createPreviewVersion}
+              buildLoader={buildSettingsTargetInstance?.loader || createPreviewLoader}
+              buildRamGb={buildRuntimeSettingsDraft.ram}
+              lastPlayedLabel={
+                buildSettingsTargetInstance
+                  ? formatLastPlayed(buildSettingsTargetInstance.lastPlayed ?? "0", locale)
+                  : tr("app.neverPlayed")
+              }
+              badgePreviewText={buildCardPreviewBadgeText}
+              resolvePreviewText={(template) =>
+                resolveForTarget(template, buildCardPreviewTarget, { buildState: "RUNNING" })
+              }
+              previewCardSize={buildCardPreviewSize}
+              draft={buildCardSettingsDraft}
+              onDraftChange={setBuildCardSettingsDraft}
+              runtimeDraft={buildRuntimeSettingsDraft}
+              onRuntimeDraftChange={setBuildRuntimeSettingsDraft}
+              onUploadImage={handleBuildCardImagePicked}
+              onOpenLogs={
+                buildSettingsTargetId
+                  ? () => {
+                      void openBuildLogs(buildSettingsTargetId);
+                    }
+                  : undefined
+              }
+              onResetAll={clearBuildCardSettings}
+              onResetRuntime={resetBuildRuntimeSettings}
+              onClose={closeBuildCardSettings}
+              onSave={saveBuildCardSettings}
+            />
+          )}
 
-        {screenshotsInstanceId &&
-          (() => {
-            const si = instances.find((i) => i.id === screenshotsInstanceId);
-            return si ? (
-              <Suspense fallback={null}>
-                <BuildScreenshotsModal
-                  instance={si}
-                  onClose={() => setScreenshotsInstanceId(null)}
+          {statsInstanceId &&
+            (() => {
+              const si = instances.find((i) => i.id === statsInstanceId);
+              return si ? (
+                <Suspense fallback={null}>
+                  <BuildStatsModal instance={si} onClose={() => setStatsInstanceId(null)} />
+                </Suspense>
+              ) : null;
+            })()}
+
+          {screenshotsInstanceId &&
+            (() => {
+              const si = instances.find((i) => i.id === screenshotsInstanceId);
+              return si ? (
+                <Suspense fallback={null}>
+                  <BuildScreenshotsModal
+                    instance={si}
+                    onClose={() => setScreenshotsInstanceId(null)}
+                  />
+                </Suspense>
+              ) : null;
+            })()}
+
+          {confirmPendingId && (
+            <div
+              className="confirm-overlay"
+              onClick={() => {
+                setConfirmPendingId(null);
+                setConfirmPendingName("");
+              }}
+            >
+              <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+                <span className="confirm-label">{tr("app.deleteBuild")}</span>
+                <p className="confirm-title">{confirmPendingName}</p>
+                <p className="confirm-body">{tr("app.theBuildWillBe")}</p>
+                <div className="confirm-actions">
+                  <button
+                    className="primary-action kill-action confirm-btn-delete"
+                    type="button"
+                    onClick={handleDeleteConfirmed}
+                  >
+                    {tr("app.moveToTrash")}
+                  </button>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() => {
+                      setConfirmPendingId(null);
+                      setConfirmPendingName("");
+                    }}
+                  >
+                    {tr("common.cancel")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {trashOpen && (
+            <DeletedBuildsModal
+              items={deletedInstances}
+              working={trashWorking}
+              error={trashError}
+              onClose={() => setTrashOpen(false)}
+              onRestore={(id) => void restoreDeleted(id)}
+              onPurge={(id) => void purgeDeleted(id)}
+            />
+          )}
+          {backupsInstanceId &&
+            (() => {
+              const instance = instances.find((item) => item.id === backupsInstanceId);
+              return instance ? (
+                <WorldBackupsModal
+                  key={instance.id}
+                  instance={instance}
+                  running={isRunning(instance.id)}
+                  onClose={() => setBackupsInstanceId(null)}
+                  pushToast={pushToast}
                 />
-              </Suspense>
-            ) : null;
-          })()}
+              ) : null;
+            })()}
 
-        {confirmPendingId && (
-          <div
-            className="confirm-overlay"
-            onClick={() => {
-              setConfirmPendingId(null);
-              setConfirmPendingName("");
-            }}
-          >
-            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-              <span className="confirm-label">{tr("app.deleteBuild")}</span>
-              <p className="confirm-title">{confirmPendingName}</p>
-              <p className="confirm-body">{tr("app.theBuildWillBe")}</p>
-              <div className="confirm-actions">
-                <button
-                  className="primary-action kill-action confirm-btn-delete"
-                  type="button"
-                  onClick={handleDeleteConfirmed}
-                >
-                  {tr("app.moveToTrash")}
-                </button>
-                <button
-                  className="ghost-action"
-                  type="button"
-                  onClick={() => {
-                    setConfirmPendingId(null);
-                    setConfirmPendingName("");
-                  }}
-                >
-                  {tr("common.cancel")}
-                </button>
+          {/* ── Export modal ── */}
+          {mascotConfirmPendingId && (
+            <div
+              className="confirm-overlay"
+              onClick={() => {
+                setMascotConfirmPendingId(null);
+                setMascotConfirmPendingName("");
+              }}
+            >
+              <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
+                <span className="confirm-label">{tr("app.deleteBuild")}</span>
+                <p className="confirm-title">{mascotConfirmPendingName}</p>
+                <p className="confirm-body">{tr("app.allBuildFilesWill")}</p>
+                <div className="confirm-actions">
+                  <button
+                    className="primary-action kill-action confirm-btn-delete"
+                    type="button"
+                    data-mascot-fake-delete
+                    onClick={handleMascotDeleteConfirmed}
+                  >
+                    {tr("common.deleteCaps")}
+                  </button>
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() => {
+                      setMascotConfirmPendingId(null);
+                      setMascotConfirmPendingName("");
+                    }}
+                  >
+                    {tr("common.cancel")}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {trashOpen && (
-          <DeletedBuildsModal
-            items={deletedInstances}
-            working={trashWorking}
-            error={trashError}
-            onClose={() => setTrashOpen(false)}
-            onRestore={(id) => void restoreDeleted(id)}
-            onPurge={(id) => void purgeDeleted(id)}
+          <InstanceTransferModals
+            instances={instances}
+            exportInstanceId={exportInstanceId}
+            setExportInstanceId={setExportInstanceId}
+            exportData={exportData}
+            exportOptions={exportOptions}
+            setExportOptions={setExportOptions}
+            exportWorking={exportWorking}
+            exportError={exportError}
+            onExportSlbuild={handleExportDownload}
+            onExportMrpack={() => void handleExportMrpack()}
+            importModalOpen={importModalOpen}
+            setImportModalOpen={setImportModalOpen}
+            importData={importData}
+            setImportData={setImportData}
+            importOptions={importOptions}
+            setImportOptions={setImportOptions}
+            importCustomName={importCustomName}
+            setImportCustomName={setImportCustomName}
+            importWorking={importWorking}
+            importError={importError}
+            importResult={importResult}
+            importProgress={importProgress}
+            importCancelRequested={importCancelRequested}
+            setImportError={setImportError}
+            setImportSourcePath={setImportSourcePath}
+            importSourceFormat={importSourceFormat}
+            onImportConfirm={() => void handleImportConfirm()}
+            onImportCancel={() => void handleImportCancel()}
+            altHoverRef={altHoverRef}
+            altSourceHoveredRef={altSourceHoveredRef}
+            listPreview={listPreview}
+            setListPreview={setListPreview}
+            getItemIconUrl={getExportedItemIconUrl}
           />
-        )}
-        {backupsInstanceId &&
-          (() => {
-            const instance = instances.find((item) => item.id === backupsInstanceId);
-            return instance ? (
-              <WorldBackupsModal
-                key={instance.id}
-                instance={instance}
-                running={isRunning(instance.id)}
-                onClose={() => setBackupsInstanceId(null)}
-                pushToast={pushToast}
-              />
-            ) : null;
-          })()}
-
-        {/* ── Export modal ── */}
-        {mascotConfirmPendingId && (
-          <div
-            className="confirm-overlay"
-            onClick={() => {
-              setMascotConfirmPendingId(null);
-              setMascotConfirmPendingName("");
-            }}
-          >
-            <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
-              <span className="confirm-label">{tr("app.deleteBuild")}</span>
-              <p className="confirm-title">{mascotConfirmPendingName}</p>
-              <p className="confirm-body">{tr("app.allBuildFilesWill")}</p>
-              <div className="confirm-actions">
-                <button
-                  className="primary-action kill-action confirm-btn-delete"
-                  type="button"
-                  data-mascot-fake-delete
-                  onClick={handleMascotDeleteConfirmed}
-                >
-                  {tr("common.deleteCaps")}
-                </button>
-                <button
-                  className="ghost-action"
-                  type="button"
-                  onClick={() => {
-                    setMascotConfirmPendingId(null);
-                    setMascotConfirmPendingName("");
-                  }}
-                >
-                  {tr("common.cancel")}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <InstanceTransferModals
-          instances={instances}
-          exportInstanceId={exportInstanceId}
-          setExportInstanceId={setExportInstanceId}
-          exportData={exportData}
-          exportOptions={exportOptions}
-          setExportOptions={setExportOptions}
-          exportWorking={exportWorking}
-          exportError={exportError}
-          onExportSlbuild={handleExportDownload}
-          onExportMrpack={() => void handleExportMrpack()}
-          importModalOpen={importModalOpen}
-          setImportModalOpen={setImportModalOpen}
-          importData={importData}
-          setImportData={setImportData}
-          importOptions={importOptions}
-          setImportOptions={setImportOptions}
-          importCustomName={importCustomName}
-          setImportCustomName={setImportCustomName}
-          importWorking={importWorking}
-          importError={importError}
-          importResult={importResult}
-          importProgress={importProgress}
-          importCancelRequested={importCancelRequested}
-          setImportError={setImportError}
-          setImportSourcePath={setImportSourcePath}
-          importSourceFormat={importSourceFormat}
-          onImportConfirm={() => void handleImportConfirm()}
-          onImportCancel={() => void handleImportCancel()}
-          altHoverRef={altHoverRef}
-          altSourceHoveredRef={altSourceHoveredRef}
-          listPreview={listPreview}
-          setListPreview={setListPreview}
-          getItemIconUrl={getExportedItemIconUrl}
-        />
-      </div>
+        </div>
+      </CanvasUiLauncher>
     </RuntimeMonitorScope>
   );
 }

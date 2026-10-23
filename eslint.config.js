@@ -23,6 +23,14 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Registry sources keep upstream's optional-capture and asset-loader code.
+    files: ["src/components/canvasui/*.tsx"],
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-useless-assignment": "off",
+    },
+  },
+  {
     files: ["extensions/**/*.{js,mjs,cjs}", "scripts/**/*.{js,mjs,cjs}"],
     languageOptions: {
       globals: { ...globals.node },

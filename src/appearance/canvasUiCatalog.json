@@ -1,0 +1,6685 @@
+[
+  {
+    "id": "asciify",
+    "name": "Asciify",
+    "component": "Asciify",
+    "object": false,
+    "fields": [
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Radius of the ascii lens around the cursor, relative to the screen height.",
+        "min": 0.1,
+        "max": 0.8,
+        "step": 0.01
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 1,
+        "help": "Edge feather of the lens as a fraction of the radius (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 2,
+        "help": "Size of one glyph pixel in CSS pixels. Characters are 5x5 glyph pixels.",
+        "min": 1,
+        "max": 6,
+        "step": 0.5
+      },
+      {
+        "key": "spacing",
+        "label": "Spacing",
+        "kind": "number",
+        "default": 1,
+        "help": "Empty glyph pixels around each character (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 1
+      },
+      {
+        "key": "charset",
+        "label": "Charset",
+        "kind": "select",
+        "default": "ascii",
+        "help": "Built-in character ramp: real ascii glyphs, shade blocks, or binary digits.",
+        "choices": [
+          "ascii",
+          "blocks",
+          "binary"
+        ]
+      },
+      {
+        "key": "glyphs",
+        "label": "Glyphs",
+        "kind": "glyphs",
+        "default": [],
+        "help": "Custom ramp of packed 5x5 bitmaps (dark to bright), overrides charset."
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "rgb-auto",
+        "default": [
+          0,
+          0,
+          0
+        ],
+        "help": "Paper color behind the glyphs as [r, g, b] in 0-1 range, or \"auto\" to match the page background."
+      },
+      {
+        "key": "backgroundOpacity",
+        "label": "Bg opacity",
+        "kind": "number",
+        "default": 0,
+        "help": "Opacity of the background behind the glyphs (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 1,
+        "help": "Contrast applied to character density before picking a glyph.",
+        "min": 0.5,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 0,
+        "help": "Density offset applied before picking a glyph (-1 to 1).",
+        "min": -0.5,
+        "max": 0.5,
+        "step": 0.05
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "number",
+        "default": 0,
+        "help": "Invert character density inside the effect (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 1,
+        "help": "Coverage of asciified cells inside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "baseStrength",
+        "label": "Base strength",
+        "kind": "number",
+        "default": 0,
+        "help": "Ascii coverage across the whole screen, outside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "followSpeed",
+        "label": "Follow speed",
+        "kind": "number",
+        "default": 3,
+        "help": "How quickly the lens follows the cursor. Higher is snappier.",
+        "min": 1,
+        "max": 20,
+        "step": 0.5
+      },
+      {
+        "key": "glow",
+        "label": "Text glow",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Soft phosphor glow around the text dots (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "aberration",
+        "label": "Color fringe",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Soft chromatic aberration toward the lens edge (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "ascii-object",
+    "name": "ASCII Object",
+    "component": "AsciiObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "ascii",
+        "label": "ASCII",
+        "kind": "boolean",
+        "default": true,
+        "help": "Render the object as ASCII characters. Turn off to see the raw render."
+      },
+      {
+        "key": "cellSize",
+        "label": "Cell size",
+        "kind": "number",
+        "default": 10,
+        "help": "Height of one character cell in CSS pixels.",
+        "min": 4,
+        "max": 28,
+        "step": 1
+      },
+      {
+        "key": "cellAspect",
+        "label": "Cell aspect",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Width of a character cell relative to its height (0.35 to 1.25).",
+        "min": 0.35,
+        "max": 1.25,
+        "step": 0.05
+      },
+      {
+        "key": "charset",
+        "label": "Charset",
+        "kind": "string",
+        "default": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+        "help": "Characters the renderer may choose from. Shapes are matched, not just brightness, and a space is always available for empty cells."
+      },
+      {
+        "key": "colored",
+        "label": "Scene colors",
+        "kind": "boolean",
+        "default": true,
+        "help": "Tint each character with the scene color underneath it. Turn off for a single-color look."
+      },
+      {
+        "key": "color",
+        "label": "Character color",
+        "kind": "color",
+        "default": "#ffffff",
+        "help": "Character color used when colored is off."
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Tone contrast of the character selection. 1 keeps the original tones, higher values deepen shadows.",
+        "min": 0.5,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "edgeContrast",
+        "label": "Edge snap",
+        "kind": "number",
+        "default": 3,
+        "help": "How strongly characters snap to edges and contours of the object. 1 turns the effect off.",
+        "min": 1,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "exposure",
+        "label": "Exposure",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness multiplier applied before characters are chosen.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "boolean",
+        "default": false,
+        "help": "Invert the object tones so dark areas get the dense characters."
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Background color behind the characters. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "color",
+        "default": "#066aff",
+        "help": "Accent color of the ring light in the studio environment."
+      },
+      {
+        "key": "environmentIntensity",
+        "label": "Environment",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness of the studio environment lighting.",
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "roughness",
+        "label": "Roughness",
+        "kind": "number",
+        "default": -1,
+        "help": "Roughness override applied to every material (0 to 1). Negative keeps the asset's own values.",
+        "min": -1,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the object in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Vertical offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 2,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the object turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 65,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4.2,
+        "help": "Camera distance from the center of the object.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "ascii-sweep",
+    "name": "ASCII Sweep",
+    "component": "AsciiSweep",
+    "object": false,
+    "fields": [
+      {
+        "key": "angle",
+        "label": "Angle",
+        "kind": "number",
+        "default": 0,
+        "help": "Sweep direction in degrees. 0 sweeps left to right, 90 sweeps bottom to top.",
+        "min": -180,
+        "max": 180,
+        "step": 5
+      },
+      {
+        "key": "duration",
+        "label": "Duration",
+        "kind": "number",
+        "default": 2,
+        "help": "Seconds the sweep takes from one panel to the other.",
+        "min": 0.2,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "band",
+        "label": "Band width",
+        "kind": "number",
+        "default": 0.28,
+        "help": "Width of the ascii band as a fraction of the travel (0 to 1).",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 0.45,
+        "help": "Feather of the band edges as a fraction of the band (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "turbulence",
+        "label": "Turbulence",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How ragged the sweep edge is. Higher tears the boundary apart row by row.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "trail",
+        "label": "Trail",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Length of the glowing trail left behind the band, as a fraction of the band.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "progress",
+        "label": "Progress",
+        "kind": "number",
+        "default": -1,
+        "help": "Drives the sweep manually from 0 to 1. Set to -1 to let the component animate itself.",
+        "min": -2,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 2,
+        "help": "Size of one glyph pixel in CSS pixels. Characters are 5x5 glyph pixels.",
+        "min": 1,
+        "max": 6,
+        "step": 0.5
+      },
+      {
+        "key": "spacing",
+        "label": "Spacing",
+        "kind": "number",
+        "default": 1,
+        "help": "Empty glyph pixels around each character (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 1
+      },
+      {
+        "key": "charset",
+        "label": "Charset",
+        "kind": "select",
+        "default": "ascii",
+        "help": "Built-in character ramp: real ascii glyphs, shade blocks, or binary digits.",
+        "choices": [
+          "ascii",
+          "blocks",
+          "binary"
+        ]
+      },
+      {
+        "key": "glyphs",
+        "label": "Glyphs",
+        "kind": "glyphs",
+        "default": [],
+        "help": "Custom ramp of packed 5x5 bitmaps (dark to bright), overrides charset."
+      },
+      {
+        "key": "color",
+        "label": "Ink color",
+        "kind": "color",
+        "default": "#4ade80",
+        "help": "Color of the sweeping characters, as any CSS color."
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "number",
+        "default": 0.75,
+        "help": "How strongly the ink color replaces the content color (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "glow",
+        "label": "Glow",
+        "kind": "number",
+        "default": 2,
+        "help": "Soft phosphor glow around the characters (0 to 1).",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "aberration",
+        "label": "Color fringe",
+        "kind": "number",
+        "default": 5,
+        "help": "Chromatic aberration across the band, in CSS pixels.",
+        "min": 0,
+        "max": 20,
+        "step": 0.5
+      },
+      {
+        "key": "flicker",
+        "label": "Flicker",
+        "kind": "number",
+        "default": 0.35,
+        "help": "How much characters flicker on and off as the band passes (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "density",
+        "label": "Density",
+        "kind": "number",
+        "default": 0.9,
+        "help": "Share of cells inside the band that light up (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "displace",
+        "label": "Row tear",
+        "kind": "number",
+        "default": 14,
+        "help": "Horizontal tearing of content rows inside the band, in CSS pixels.",
+        "min": 0,
+        "max": 80,
+        "step": 1
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 1.2,
+        "help": "Contrast applied to character density before picking a glyph.",
+        "min": 0.2,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 0,
+        "help": "Density offset applied before picking a glyph (-1 to 1).",
+        "min": -0.5,
+        "max": 0.5,
+        "step": 0.05
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "number",
+        "default": 0,
+        "help": "Invert character density inside the band (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "threshold",
+        "label": "Threshold",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Contrast against the background above which a pixel counts as content and grows characters.",
+        "min": 0.01,
+        "max": 0.6,
+        "step": 0.01
+      },
+      {
+        "key": "fade",
+        "label": "Fade",
+        "kind": "number",
+        "default": 0.75,
+        "help": "How far the content dims underneath the band (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "blend",
+        "label": "Blend",
+        "kind": "select",
+        "default": "auto",
+        "help": "How characters composite over the content. \"auto\" adds on dark pages and paints over on light ones.",
+        "choices": [
+          "auto",
+          "add",
+          "over"
+        ]
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "auto",
+        "help": "Color of the page behind the content, as any CSS color, or \"auto\" to read it from the DOM."
+      }
+    ]
+  },
+  {
+    "id": "bend",
+    "name": "Bend",
+    "component": "Bend",
+    "object": false,
+    "fields": [
+      {
+        "key": "zone",
+        "label": "Zone",
+        "kind": "number",
+        "default": 240,
+        "help": "Height of the folded region at each edge in CSS pixels.",
+        "min": 60,
+        "max": 480,
+        "step": 10
+      },
+      {
+        "key": "angle",
+        "label": "Angle",
+        "kind": "number",
+        "default": 80,
+        "help": "Maximum fold angle in degrees, reached away from the scroll ends. 90 is a cube edge.",
+        "min": 10,
+        "max": 160,
+        "step": 5
+      },
+      {
+        "key": "rounding",
+        "label": "Rounding",
+        "kind": "number",
+        "default": 150,
+        "help": "Radius in CSS pixels of the circular arc that rounds each fold crease. 0 keeps a sharp cube edge. Clamped to the zone height.",
+        "min": 0,
+        "max": 480,
+        "step": 10
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 700,
+        "help": "Perspective focal length in CSS pixels. Smaller values pinch the folded edges harder.",
+        "min": 200,
+        "max": 2400,
+        "step": 50
+      },
+      {
+        "key": "direction",
+        "label": "Bend direction",
+        "kind": "select",
+        "default": "in",
+        "help": "\"out\" folds the edges away from the viewer like the outside of a cube, \"in\" tilts them toward the viewer.",
+        "choices": [
+          "out",
+          "in"
+        ]
+      },
+      {
+        "key": "ease",
+        "label": "Ease",
+        "kind": "number",
+        "default": 240,
+        "help": "Scroll distance in CSS pixels over which an edge flattens near its scroll end.",
+        "min": 40,
+        "max": 800,
+        "step": 20
+      },
+      {
+        "key": "smoothing",
+        "label": "Smoothing",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Seconds the bend takes to settle after a scroll. 0 snaps instantly.",
+        "min": 0,
+        "max": 0.5,
+        "step": 0.01
+      },
+      {
+        "key": "top",
+        "label": "Top",
+        "kind": "boolean",
+        "default": true,
+        "help": "Bend the top edge."
+      },
+      {
+        "key": "bottom",
+        "label": "Bottom",
+        "kind": "boolean",
+        "default": true,
+        "help": "Bend the bottom edge."
+      },
+      {
+        "key": "tumble",
+        "label": "Tumble",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Overscroll tip strength (0 to 1). Rubber-banding past a scroll end tips the whole face over that edge. 0 disables.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "tilt",
+        "label": "Tilt",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Pointer tilt strength (0 to 1). The face leans subtly toward the cursor. 0 disables.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "interactionRotation",
+        "label": "Interaction Rotation",
+        "kind": "select",
+        "default": 0,
+        "help": "CSS rotation applied to the Bend host, used to keep pointer mapping aligned.",
+        "choices": [
+          0,
+          90,
+          -90
+        ]
+      }
+    ]
+  },
+  {
+    "id": "blaze",
+    "name": "Blaze",
+    "component": "Blaze",
+    "object": false,
+    "fields": [
+      {
+        "key": "height",
+        "label": "Height",
+        "kind": "number",
+        "default": 0.97,
+        "help": "Height of the blaze zone as a fraction of the screen (0 to 1).",
+        "min": 0.1,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "distortion",
+        "label": "Distortion",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Strength of the heat distortion bending the content.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "distortionScale",
+        "label": "Heat scale",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Scale of the heat distortion noise. Higher means finer ripples.",
+        "min": 0.3,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 1,
+        "help": "Animation speed multiplier for the whole effect.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "sparks",
+        "label": "Sparks",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Brightness of the rising sparks. 0 disables them.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "sparkDensity",
+        "label": "Spark density",
+        "kind": "number",
+        "default": 1.5,
+        "help": "How tightly packed the sparks are. Higher also makes them smaller.",
+        "min": 0.3,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "sparkSize",
+        "label": "Spark size",
+        "kind": "number",
+        "default": 1,
+        "help": "Size of the individual sparks.",
+        "min": 0.5,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "layers",
+        "label": "Layers",
+        "kind": "number",
+        "default": 4,
+        "help": "Number of spark layers stacked for depth (1 to 10).",
+        "min": 1,
+        "max": 10,
+        "step": 1
+      },
+      {
+        "key": "smoke",
+        "label": "Smoke",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Intensity of the smoke. 0 disables it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "glow",
+        "label": "Glow",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Warm ambient glow near the bottom edge.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "sparkColor",
+        "label": "Spark Color",
+        "kind": "rgb",
+        "default": [
+          1,
+          0.4,
+          0.05
+        ],
+        "help": "Spark color as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "smokeColor",
+        "label": "Smoke",
+        "kind": "rgb",
+        "default": [
+          1,
+          0.43,
+          0.1
+        ],
+        "help": "Smoke and glow color as [r, g, b] in 0-1 range."
+      }
+    ]
+  },
+  {
+    "id": "bubble",
+    "name": "Bubble",
+    "component": "Bubble",
+    "object": false,
+    "fields": [
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 30,
+        "min": 12,
+        "max": 140,
+        "step": 2
+      },
+      {
+        "key": "trail",
+        "label": "Trail",
+        "kind": "number",
+        "default": 24,
+        "min": 1,
+        "max": 24,
+        "step": 1
+      },
+      {
+        "key": "follow",
+        "label": "Follow",
+        "kind": "number",
+        "default": 0.5,
+        "min": 0.02,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "blend",
+        "label": "Blend",
+        "kind": "number",
+        "default": 14,
+        "min": 1,
+        "max": 24,
+        "step": 0.5
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 2,
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 80,
+        "min": -120,
+        "max": 120,
+        "step": 2
+      },
+      {
+        "key": "dispersion",
+        "label": "Dispersion",
+        "kind": "number",
+        "default": 1,
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "frost",
+        "label": "Frost",
+        "kind": "number",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "shine",
+        "label": "Shine",
+        "kind": "number",
+        "default": 0.25,
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "rim",
+        "label": "Rim",
+        "kind": "number",
+        "default": 0.5,
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "iridescence",
+        "label": "Iridescence",
+        "kind": "number",
+        "default": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "intensity",
+        "label": "Intensity",
+        "kind": "number",
+        "default": 0.9,
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "rgb",
+        "default": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "key": "tintStrength",
+        "label": "Tint strength",
+        "kind": "number",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "colorA",
+        "label": "Sheen A",
+        "kind": "rgb",
+        "default": [
+          0.2902,
+          0.4549,
+          0.7216
+        ]
+      },
+      {
+        "key": "colorB",
+        "label": "Sheen B",
+        "kind": "rgb",
+        "default": [
+          0.4118,
+          0.4118,
+          0.4157
+        ]
+      },
+      {
+        "key": "fallbackOpacity",
+        "label": "Fallback Opacity",
+        "kind": "number",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    ]
+  },
+  {
+    "id": "canvas",
+    "name": "Canvas",
+    "component": "Canvas",
+    "object": false,
+    "fields": [
+      {
+        "key": "threadSize",
+        "label": "Thread size",
+        "kind": "number",
+        "default": 2,
+        "help": "Height of one woven thread in CSS pixels.",
+        "min": 2,
+        "max": 12,
+        "step": 1
+      },
+      {
+        "key": "threadWidth",
+        "label": "Thread width",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Width of the dark seams between threads (0 to 1).",
+        "min": 0,
+        "max": 0.4,
+        "step": 0.01
+      },
+      {
+        "key": "texture",
+        "label": "Texture",
+        "kind": "number",
+        "default": 1,
+        "help": "How strongly the woven texture shades the paint (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "rgb",
+        "default": [
+          0.84,
+          0.81,
+          0.75
+        ],
+        "help": "Canvas paper color as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "tintStrength",
+        "label": "Tint strength",
+        "kind": "number",
+        "default": 0,
+        "help": "How much the paper color warms the painting (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Amount of photographic grain worked into the paint (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "halftone",
+        "label": "Halftone",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Amount of dotted halftone screen applied to the painting (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "dotSize",
+        "label": "Dot size",
+        "kind": "number",
+        "default": 6,
+        "help": "Size of the halftone screen dots in CSS pixels.",
+        "min": 2,
+        "max": 10,
+        "step": 0.5
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 1,
+        "help": "Overall mix between the raw page (0) and the painting (1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "relief",
+        "label": "Relief",
+        "kind": "number",
+        "default": 0.45,
+        "help": "How far wet paint stands off the weave, lit in 3D (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "gloss",
+        "label": "Gloss",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Sheen on fresh paint. Wet strokes catch the light, dry ones go matte (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "bristle",
+        "label": "Bristle",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Definition of the bristle grooves combed through each stroke (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "dry",
+        "label": "Dry",
+        "kind": "number",
+        "default": 2.5,
+        "help": "Seconds a stroke takes to level back into the canvas.",
+        "min": 0.3,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "radius",
+        "label": "Brush radius",
+        "kind": "number",
+        "default": 0.08,
+        "help": "Radius of the brush, relative to the screen height.",
+        "min": 0.02,
+        "max": 0.25,
+        "step": 0.01
+      },
+      {
+        "key": "intro",
+        "label": "Intro",
+        "kind": "number",
+        "default": 1.6,
+        "help": "Duration of the intro fade-in of the painting effect in seconds. 0 skips it.",
+        "min": 0,
+        "max": 6.4,
+        "step": 0.01
+      },
+      {
+        "key": "followSpeed",
+        "label": "Follow speed",
+        "kind": "number",
+        "default": 3,
+        "help": "How quickly the brush follows the cursor. Higher is snappier.",
+        "min": 1,
+        "max": 20,
+        "step": 0.5
+      }
+    ]
+  },
+  {
+    "id": "cloth",
+    "name": "Cloth",
+    "component": "Cloth",
+    "object": false,
+    "fields": [
+      {
+        "key": "pin",
+        "label": "Pinned edge",
+        "kind": "select",
+        "default": "top",
+        "help": "Edge the cloth hangs from. The opposite side swings free.",
+        "choices": [
+          "top",
+          "bottom",
+          "left",
+          "right"
+        ]
+      },
+      {
+        "key": "wind",
+        "label": "Wind",
+        "kind": "number",
+        "default": 3,
+        "help": "Wind force driving the fabric (0 lets the waves die down).",
+        "min": 0,
+        "max": 5,
+        "step": 0.05
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Playback speed of the cloth motion.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "amplitude",
+        "label": "Fold height",
+        "kind": "number",
+        "default": 30,
+        "help": "Height of the fabric folds in CSS pixels.",
+        "min": 0,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "key": "drape",
+        "label": "Billow",
+        "kind": "number",
+        "default": 40,
+        "help": "How many CSS pixels the cloth billows toward the viewer on a gust.",
+        "min": 0,
+        "max": 50,
+        "step": 1
+      },
+      {
+        "key": "brush",
+        "label": "Brush",
+        "kind": "number",
+        "default": 2.05,
+        "help": "Strength of the waves the cursor brushes across the fabric (0 disables).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "brushSize",
+        "label": "Brush size",
+        "kind": "number",
+        "default": 150,
+        "help": "Radius of the cursor's influence in CSS pixels.",
+        "min": 30,
+        "max": 260,
+        "step": 5
+      },
+      {
+        "key": "damping",
+        "label": "Settle",
+        "kind": "number",
+        "default": 1,
+        "help": "How quickly waves settle (higher calms the fabric faster).",
+        "min": 0.2,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "light",
+        "label": "Lighting",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Strength of the directional lighting on the folds (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "sheen",
+        "label": "Sheen",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Strength of the soft sheen on fold crests (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "shadow",
+        "label": "Shadow",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Opacity of the contact shadow under the fabric (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "cornerRadius",
+        "label": "Corners",
+        "kind": "number",
+        "default": 20,
+        "help": "Corner radius of the fabric in CSS pixels.",
+        "min": 0,
+        "max": 160,
+        "step": 2
+      },
+      {
+        "key": "backing",
+        "label": "Backing",
+        "kind": "rgb-auto",
+        "default": "auto",
+        "help": "Fabric color behind transparent content as RGB in the 0 to 1 range, or \"auto\" to sample the page background."
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 1200,
+        "help": "Perspective focal length in CSS pixels. Lower exaggerates the 3D depth.",
+        "min": 400,
+        "max": 4000,
+        "step": 50
+      }
+    ]
+  },
+  {
+    "id": "clouds",
+    "name": "Clouds",
+    "component": "Clouds",
+    "object": false,
+    "fields": [
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 1,
+        "min": 0.3,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.6,
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "cover",
+        "label": "Cover",
+        "kind": "number",
+        "default": 0.1,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "density",
+        "label": "Density",
+        "kind": "number",
+        "default": 2.5,
+        "min": 0,
+        "max": 16,
+        "step": 0.5
+      },
+      {
+        "key": "shading",
+        "label": "Shading",
+        "kind": "number",
+        "default": 0.1,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "color",
+        "label": "Color",
+        "kind": "rgb-auto",
+        "default": "auto"
+      },
+      {
+        "key": "opacity",
+        "label": "Opacity",
+        "kind": "number",
+        "default": 0.64,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "shadow",
+        "label": "Shadow",
+        "kind": "number",
+        "default": 0.06,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "shadowOffsetX",
+        "label": "Shadow X",
+        "kind": "number",
+        "default": 200,
+        "min": -300,
+        "max": 300,
+        "step": 10
+      },
+      {
+        "key": "shadowOffsetY",
+        "label": "Shadow Y",
+        "kind": "number",
+        "default": -10,
+        "min": -300,
+        "max": 300,
+        "step": 10
+      },
+      {
+        "key": "shadowSoftness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "wind",
+        "label": "Wind",
+        "kind": "number",
+        "default": 0.6,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "windRadius",
+        "label": "Wind radius",
+        "kind": "number",
+        "default": 350,
+        "min": 40,
+        "max": 400,
+        "step": 10
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 0,
+        "min": 0,
+        "max": 80,
+        "step": 1
+      },
+      {
+        "key": "fogBlur",
+        "label": "Fog blur",
+        "kind": "number",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "quality",
+        "label": "Quality",
+        "kind": "number",
+        "default": 1,
+        "min": 0.2,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "decrypt-reveal",
+    "name": "Decrypt Reveal",
+    "component": "DecryptReveal",
+    "object": false,
+    "fields": [
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 400,
+        "help": "Decrypt radius around the cursor in CSS pixels.",
+        "min": 60,
+        "max": 600,
+        "step": 10
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Feather of the decrypt edge as a fraction of the radius (0 to 1).",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "cell",
+        "label": "Cell size",
+        "kind": "number",
+        "default": 10,
+        "help": "Glyph cell height in CSS pixels (4 to 40).",
+        "min": 6,
+        "max": 32,
+        "step": 1
+      },
+      {
+        "key": "aspect",
+        "label": "Cell aspect",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Width of a glyph cell relative to its height (0.35 to 1.25).",
+        "min": 0.35,
+        "max": 1.25,
+        "step": 0.05
+      },
+      {
+        "key": "charset",
+        "label": "Charset",
+        "kind": "string",
+        "default": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+        "help": "Characters the cipher is written in. Order does not matter, shapes are matched automatically."
+      },
+      {
+        "key": "colored",
+        "label": "Colored",
+        "kind": "number",
+        "default": 1,
+        "help": "How much glyphs keep the color of the UI beneath them, 0 is monochrome (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "color",
+        "label": "Cipher color",
+        "kind": "color",
+        "default": "#4ade80",
+        "help": "Cipher color as any CSS color. Used for monochrome glyphs and the decrypt edge tint."
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness of the cipher glyphs (0.2 to 3).",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "legibility",
+        "label": "Legibility",
+        "kind": "number",
+        "default": 1,
+        "help": "Minimum contrast the cipher keeps against the background, so subtle UI stays readable while encrypted (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 1,
+        "help": "Contrast of the glyph shape matching. Higher picks bolder characters (0.3 to 3).",
+        "min": 0.3,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "exposure",
+        "label": "Exposure",
+        "kind": "number",
+        "default": 1,
+        "help": "Exposure applied to the UI before it is matched to glyphs (0.2 to 3).",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "scramble",
+        "label": "Scramble",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Fraction of idle cipher cells that keep mutating (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "scrambleSpeed",
+        "label": "Scramble speed",
+        "kind": "number",
+        "default": 6,
+        "help": "Cipher mutations per second (0 to 30).",
+        "min": 0,
+        "max": 30,
+        "step": 0.5
+      },
+      {
+        "key": "edgeWidth",
+        "label": "Edge width",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Width of the decrypting flicker band as a fraction of the radius (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "edgeFlicker",
+        "label": "Edge flicker",
+        "kind": "number",
+        "default": 1,
+        "help": "How violently characters flicker while they decrypt (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "edgeGlow",
+        "label": "Edge glow",
+        "kind": "number",
+        "default": 2,
+        "help": "Brightness surge of glyphs on the decrypt wavefront (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "edgeTint",
+        "label": "Edge tint",
+        "kind": "number",
+        "default": 0.75,
+        "help": "How strongly the wavefront tints toward the cipher color (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "aberration",
+        "label": "Aberration",
+        "kind": "number",
+        "default": 10,
+        "help": "Chromatic aberration of the revealed UI at the decrypt edge in CSS pixels.",
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      },
+      {
+        "key": "passthrough",
+        "label": "Passthrough",
+        "kind": "number",
+        "default": 0.15,
+        "help": "How much of the real UI shows through the cipher (0 to 1). 0 keeps the page fully encrypted.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "threshold",
+        "label": "Threshold",
+        "kind": "number",
+        "default": 0.025,
+        "help": "Contrast against the background above which a cell counts as UI and earns a glyph.",
+        "min": 0.005,
+        "max": 0.3,
+        "step": 0.005
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "#000000",
+        "help": "Color of the backdrop behind the content, as any CSS color. Used to tell UI pixels apart from empty space."
+      },
+      {
+        "key": "smoothing",
+        "label": "Smoothing",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Seconds the decrypt circle takes to catch up with the cursor. Higher feels more damped.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "displacement",
+    "name": "Displacement",
+    "component": "Displacement",
+    "object": false,
+    "fields": [
+      {
+        "key": "grid",
+        "label": "Grid cells",
+        "kind": "number",
+        "default": 50,
+        "help": "Cells across the width of the wrapped area (4 to 100).",
+        "min": 4,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "key": "cellAspect",
+        "label": "Cell aspect",
+        "kind": "number",
+        "default": 1,
+        "help": "Width to height ratio of each cell (0.25 to 4). 1 is a perfect square.",
+        "min": 0.25,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Radius of the cursor influence as a fraction of the grid (0.02 to 1).",
+        "min": 0.02,
+        "max": 0.6,
+        "step": 0.01
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 0.1,
+        "help": "How hard cursor movement pushes cells around (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "threshold",
+        "label": "Speed threshold",
+        "kind": "number",
+        "default": 1000,
+        "help": "Minimum cursor speed in CSS pixels per second before cells react. 0 reacts to any movement.",
+        "min": 0,
+        "max": 3000,
+        "step": 50
+      },
+      {
+        "key": "relaxation",
+        "label": "Relaxation",
+        "kind": "number",
+        "default": 0.9,
+        "help": "How slowly cells return to rest, per frame (0.5 to 0.99).",
+        "min": 0.5,
+        "max": 0.99,
+        "step": 0.005
+      },
+      {
+        "key": "shift",
+        "label": "Shift",
+        "kind": "number",
+        "default": 1,
+        "help": "Multiplier on how far displaced cells shift the content (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "aberration",
+        "label": "Color fringe",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Chromatic aberration inside each displaced cell (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Film grain over displaced cells (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "grainSize",
+        "label": "Grain size",
+        "kind": "number",
+        "default": 1,
+        "help": "Grain speck size multiplier (0.5 to 4).",
+        "min": 0.5,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "grainSpeed",
+        "label": "Grain speed",
+        "kind": "number",
+        "default": 1,
+        "help": "Grain animation speed (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "scramble",
+        "label": "Scramble",
+        "kind": "number",
+        "default": 1,
+        "help": "Random cell scramble on load that relaxes into place (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "dithered-object",
+    "name": "Dithered Object",
+    "component": "DitheredObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "method",
+        "label": "Pattern",
+        "kind": "select",
+        "default": "bayer",
+        "help": "Dither pattern: an ordered Bayer grid, clustered halftone dots, or Floyd-Steinberg error diffusion.",
+        "choices": [
+          "bayer",
+          "halftone",
+          "floyd"
+        ]
+      },
+      {
+        "key": "gridSize",
+        "label": "Grid size",
+        "kind": "number",
+        "default": 4,
+        "help": "Size of the dither cells in CSS pixels.",
+        "min": 1,
+        "max": 20,
+        "step": 1
+      },
+      {
+        "key": "pixelSizeRatio",
+        "label": "Pixelation",
+        "kind": "number",
+        "default": 1,
+        "help": "Extra pixelation applied on top of the grid size (1 to 10).",
+        "min": 1,
+        "max": 10,
+        "step": 1
+      },
+      {
+        "key": "grayscale",
+        "label": "Grayscale",
+        "kind": "boolean",
+        "default": true,
+        "help": "Collapse the scene to grayscale before dithering."
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "boolean",
+        "default": false,
+        "help": "Invert the final colors."
+      },
+      {
+        "key": "dither",
+        "label": "Dither",
+        "kind": "boolean",
+        "default": true,
+        "help": "Enable the dither pass. Turn off to see the raw render."
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Background color behind the object. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "color",
+        "default": "#066aff",
+        "help": "Accent color of the ring light in the studio environment."
+      },
+      {
+        "key": "environmentIntensity",
+        "label": "Environment",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Brightness of the studio environment lighting.",
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "roughness",
+        "label": "Roughness",
+        "kind": "number",
+        "default": -1,
+        "help": "Roughness override applied to every material (0 to 1). Negative keeps the asset's own values.",
+        "min": -1,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the object in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Vertical offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 2,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the object turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 65,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4.2,
+        "help": "Camera distance from the center of the object.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "droplets",
+    "name": "Droplets",
+    "component": "Droplets",
+    "object": false,
+    "fields": [
+      {
+        "key": "intensity",
+        "label": "Intensity",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How much rain falls, from a light drizzle to a downpour (0 to 1.25).",
+        "min": 0,
+        "max": 1.25,
+        "step": 0.05
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 1,
+        "help": "Animation speed multiplier.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Size of the droplet pattern. Higher means smaller drops.",
+        "min": 0.4,
+        "max": 2.5,
+        "step": 0.05
+      },
+      {
+        "key": "dropWidth",
+        "label": "Drop width",
+        "kind": "number",
+        "default": 1,
+        "help": "Width of the droplets and their trails.",
+        "min": 0.4,
+        "max": 1.5,
+        "step": 0.05
+      },
+      {
+        "key": "dropLength",
+        "label": "Drop length",
+        "kind": "number",
+        "default": 1,
+        "help": "How elongated the falling droplets are.",
+        "min": 0.4,
+        "max": 2.5,
+        "step": 0.05
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 0.2,
+        "help": "How strongly droplets refract the content behind them.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "blur",
+        "label": "Blur",
+        "kind": "number",
+        "default": 0,
+        "help": "Background blur outside the droplets, like a fogged up window.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "vignette",
+        "label": "Vignette",
+        "kind": "number",
+        "default": 0,
+        "help": "Darkens the edges of the canvas (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "fallSpeed",
+        "label": "Fall speed",
+        "kind": "number",
+        "default": 1,
+        "help": "How fast the running drops slide down.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "wiggle",
+        "label": "Wiggle",
+        "kind": "number",
+        "default": 1,
+        "help": "Horizontal wiggle of the running drops.",
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      {
+        "key": "staticDrops",
+        "label": "Static drops",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Multiplier for the small static droplets.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "interactive",
+        "label": "Interactive",
+        "kind": "boolean",
+        "default": true,
+        "help": "Wipe drops off the glass with the pointer."
+      },
+      {
+        "key": "interactionRadius",
+        "label": "Wipe radius",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Radius of the cursor wipe, relative to the screen height.",
+        "min": 0.02,
+        "max": 0.4,
+        "step": 0.01
+      },
+      {
+        "key": "interactionStrength",
+        "label": "Wipe strength",
+        "kind": "number",
+        "default": 0.6,
+        "help": "How strongly the cursor wipes drops off the glass (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "interactionDistortion",
+        "label": "Wipe distort",
+        "kind": "number",
+        "default": 3,
+        "help": "How much the wipe distorts the content behind it.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "rgb",
+        "default": [
+          1,
+          1,
+          1
+        ],
+        "help": "Tint color layered over the content as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "tintStrength",
+        "label": "Tint strength",
+        "kind": "number",
+        "default": 0,
+        "help": "Strength of the tint (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "flame-wrap",
+    "name": "Flame Wrap",
+    "component": "FlameWrap",
+    "object": false,
+    "fields": [
+      {
+        "key": "color",
+        "label": "Color",
+        "kind": "rgb",
+        "default": [
+          0.31,
+          0.54,
+          1
+        ],
+        "help": "Flame color as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "intensity",
+        "label": "Intensity",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Overall brightness of the fire (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "height",
+        "label": "Flame height",
+        "kind": "number",
+        "default": 170,
+        "help": "Reach of the flames above the top edge in CSS pixels.",
+        "min": 40,
+        "max": 200,
+        "step": 2
+      },
+      {
+        "key": "spread",
+        "label": "Glow spread",
+        "kind": "number",
+        "default": 8,
+        "help": "Reach of the glow on the sides and bottom in CSS pixels.",
+        "min": 8,
+        "max": 96,
+        "step": 1
+      },
+      {
+        "key": "radius",
+        "label": "Corner radius",
+        "kind": "number",
+        "default": 40,
+        "help": "Corner radius of the burning outline in CSS pixels. Match your content.",
+        "min": 0,
+        "max": 48,
+        "step": 1
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Animation speed multiplier for the whole effect.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "scale",
+        "label": "Detail",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Flame detail from 0 (broad licks) to 1 (fine licks).",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "turbulence",
+        "label": "Turbulence",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Amplitude of the turbulence waves shaping the flames (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "turbulenceScale",
+        "label": "Turbulence scale",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Frequency multiplier of the turbulence waves (0.2 to 3).",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "turbulenceReach",
+        "label": "Turbulence reach",
+        "kind": "number",
+        "default": 25,
+        "help": "How far from the edges the heat warps the content, in CSS pixels.",
+        "min": 4,
+        "max": 80,
+        "step": 1
+      },
+      {
+        "key": "sparks",
+        "label": "Sparks",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Brightness of the spark highlights (0 to 3). 0 disables them.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "sparkSize",
+        "label": "Spark size",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Size multiplier for individual sparks (0.2 to 3).",
+        "min": 0.2,
+        "max": 2.5,
+        "step": 0.05
+      },
+      {
+        "key": "sparkDensity",
+        "label": "Spark density",
+        "kind": "number",
+        "default": 1,
+        "help": "How many sparks fly at once (0.3 to 2.5).",
+        "min": 0.3,
+        "max": 2.5,
+        "step": 0.05
+      },
+      {
+        "key": "sparkSpeed",
+        "label": "Spark speed",
+        "kind": "number",
+        "default": 1,
+        "help": "How fast sparks rise and flicker (0.1 to 3).",
+        "min": 0.1,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "rim",
+        "label": "Molten rim",
+        "kind": "number",
+        "default": 2.5,
+        "help": "Strength of the molten glow hugging the edges (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "melt",
+        "label": "Edge melt",
+        "kind": "number",
+        "default": 4.5,
+        "help": "How far the flames eat into the content silhouette in CSS pixels.",
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      },
+      {
+        "key": "distortion",
+        "label": "Heat shimmer",
+        "kind": "number",
+        "default": 10,
+        "help": "Heat shimmer displacement of the content near the edges in CSS pixels.",
+        "min": 0,
+        "max": 16,
+        "step": 0.5
+      },
+      {
+        "key": "smoke",
+        "label": "Smoke",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Amount of smoke drifting off the flames (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "ember",
+        "label": "Ember glow",
+        "kind": "number",
+        "default": 2,
+        "help": "Brightness of the glowing ember line on the burnt edges (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "scorch",
+        "label": "Scorch",
+        "kind": "number",
+        "default": 0,
+        "help": "Darkness of the charred band on the content edges (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "force-field",
+    "name": "Force Field",
+    "component": "ForceField",
+    "object": false,
+    "fields": [
+      {
+        "key": "shape",
+        "label": "Shape",
+        "kind": "select",
+        "default": "hexagon",
+        "help": "Cell shape of the energy lattice.",
+        "choices": [
+          "hexagon",
+          "triangle",
+          "square"
+        ]
+      },
+      {
+        "key": "color",
+        "label": "Field color",
+        "kind": "rgb",
+        "default": [
+          0.15,
+          0.68,
+          1
+        ],
+        "help": "Field color as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "edgeColor",
+        "label": "Edge color",
+        "kind": "rgb",
+        "default": [
+          0.5,
+          0.8,
+          1
+        ],
+        "help": "Color of the dissolve edge glow as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "opacity",
+        "label": "Opacity",
+        "kind": "number",
+        "default": 0.9,
+        "help": "Overall field opacity (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "cellScale",
+        "label": "Cell scale",
+        "kind": "number",
+        "default": 16,
+        "help": "Cells across the shorter screen axis (4 to 80).",
+        "min": 6,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "key": "lineWidth",
+        "label": "Line width",
+        "kind": "number",
+        "default": 0.03,
+        "help": "Thickness of the lattice lines (0.005 to 0.2).",
+        "min": 0.01,
+        "max": 0.2,
+        "step": 0.005
+      },
+      {
+        "key": "gridOpacity",
+        "label": "Grid opacity",
+        "kind": "number",
+        "default": 0.15,
+        "help": "Brightness of the lattice grid (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "gridReveal",
+        "label": "Grid reveal",
+        "kind": "select",
+        "default": "click",
+        "help": "How the lattice is revealed: always visible, near the cursor, by click ripples, or both.",
+        "choices": [
+          "always",
+          "hover",
+          "click",
+          "both"
+        ]
+      },
+      {
+        "key": "gridRevealStrength",
+        "label": "Reveal strength",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Brightness of the revealed lattice in hover/click/both modes (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "gridRevealRadius",
+        "label": "Reveal radius",
+        "kind": "number",
+        "default": 250,
+        "help": "Radius of the hover reveal in CSS pixels (60 to 800).",
+        "min": 60,
+        "max": 800,
+        "step": 10
+      },
+      {
+        "key": "gridFade",
+        "label": "Reveal fade",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Fade smoothness of the reveal edge (0.02 to 1).",
+        "min": 0.02,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "flashSpeed",
+        "label": "Flash Speed",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Random per-cell flash speed (0 to 4).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "flashIntensity",
+        "label": "Cell flash",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Random per-cell flash brightness (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "flowScale",
+        "label": "Flow Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Scale of the drifting energy noise (0.5 to 12).",
+        "min": 0,
+        "max": 12,
+        "step": 1
+      },
+      {
+        "key": "flowSpeed",
+        "label": "Flow speed",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Drift speed of the energy noise (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "flowIntensity",
+        "label": "Energy flow",
+        "kind": "number",
+        "default": 0,
+        "help": "Brightness of the energy noise (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "edgeGlow",
+        "label": "Edge glow",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Glow creeping in from the screen edges, the fresnel analog (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "edgeFalloff",
+        "label": "Edge Falloff",
+        "kind": "number",
+        "default": 0.18,
+        "help": "How far the edge glow reaches into the screen (0.02 to 0.6).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "reveal",
+        "label": "Reveal",
+        "kind": "number",
+        "default": 1,
+        "help": "Reveal progress. 1 is fully materialized, 0 is gone (noise dissolve).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "dissolveScale",
+        "label": "Dissolve Scale",
+        "kind": "number",
+        "default": 3.5,
+        "help": "Scale of the dissolve noise (0.5 to 12).",
+        "min": 0,
+        "max": 14,
+        "step": 0.01
+      },
+      {
+        "key": "dissolveWidth",
+        "label": "Dissolve Width",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Width of the burning dissolve edge (0.005 to 0.2).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "dissolveGlow",
+        "label": "Dissolve Glow",
+        "kind": "number",
+        "default": 6,
+        "help": "Brightness of the dissolve edge (0 to 12).",
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      {
+        "key": "rippleSpeed",
+        "label": "Ripple speed",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Expansion speed of click ripples in screens per second (0.1 to 4).",
+        "min": 0.1,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "rippleWidth",
+        "label": "Ripple Width",
+        "kind": "number",
+        "default": 0.045,
+        "help": "Ring thickness of click ripples (0.01 to 0.4).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "rippleBlend",
+        "label": "Ripple blend",
+        "kind": "number",
+        "default": 1,
+        "help": "How softly ripple rings feather into the page, 0 is tight, 1 is airy (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "rippleDuration",
+        "label": "Ripple Duration",
+        "kind": "number",
+        "default": 1.6,
+        "help": "Lifetime of one ripple in seconds (0.3 to 5).",
+        "min": 0,
+        "max": 6.4,
+        "step": 0.01
+      },
+      {
+        "key": "rippleIntensity",
+        "label": "Ripple power",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Brightness of ripples and impact flashes (0 to 8).",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "rippleMaxRadius",
+        "label": "Ripple Max Radius",
+        "kind": "number",
+        "default": 0.85,
+        "help": "Max radius a ripple can reach, in screens (0.1 to 2).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "impactRadius",
+        "label": "Impact Radius",
+        "kind": "number",
+        "default": 0.16,
+        "help": "Radius of the cell flash burst around an impact (0 to 0.5).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 30,
+        "help": "How much ripples push the page outward and warp the lattice (0 to 60).",
+        "min": 0,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "key": "aberration",
+        "label": "Color fringe",
+        "kind": "number",
+        "default": 2.5,
+        "help": "Chromatic aberration inside refracted rings (0 to 8).",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "haze",
+        "label": "Heat haze",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Living heat-haze shimmer that warps the page beneath the field (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "pageReact",
+        "label": "Page react",
+        "kind": "number",
+        "default": 0,
+        "help": "Lattice reacts to the page: cells over bright content glow brighter (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "tint",
+        "label": "Page tint",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Tints the page toward the field color, like looking through the shield (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "hoverGlow",
+        "label": "Hover glow",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Glow following the cursor (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "hoverRadius",
+        "label": "Hover radius",
+        "kind": "number",
+        "default": 350,
+        "help": "Radius of the cursor glow in CSS pixels (40 to 600).",
+        "min": 40,
+        "max": 600,
+        "step": 10
+      },
+      {
+        "key": "hoverCharge",
+        "label": "Hover charge",
+        "kind": "number",
+        "default": 1.6,
+        "help": "Cells light up when the cursor crosses them (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "hideOnHover",
+        "label": "Hide on hover",
+        "kind": "boolean",
+        "default": false,
+        "help": "Fade the field out around the cursor instead of intensifying it."
+      },
+      {
+        "key": "dim",
+        "label": "Page dim",
+        "kind": "number",
+        "default": 0,
+        "help": "How much the page dims beneath the field (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "bloom",
+        "label": "Bloom",
+        "kind": "number",
+        "default": 1,
+        "help": "Bloom amount applied to bright field energy (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "bloomThreshold",
+        "label": "Bloom Threshold",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Bloom brightness cutoff (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Animated film grain over the field (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "clickRipples",
+        "label": "Click Ripples",
+        "kind": "boolean",
+        "default": true,
+        "help": "Spawn ripples on click (default true)."
+      }
+    ]
+  },
+  {
+    "id": "frost",
+    "name": "Frost",
+    "component": "Frost",
+    "object": false,
+    "fields": [
+      {
+        "key": "frost",
+        "label": "Frost",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Base frozen coverage added on top of the frost pattern (0-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 0.7,
+        "help": "Multiplier on the frost noise pattern. Higher freezes more of the pane.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 3,
+        "help": "Contrast of the frost noise pattern.",
+        "min": 0.5,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "crispness",
+        "label": "Crispness",
+        "kind": "number",
+        "default": 1,
+        "help": "Contrast of the final frost mask. Higher gives crisper frost edges.",
+        "min": 0.5,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "number",
+        "default": 0.3,
+        "help": "How much sparkling highlight grain mixes into the frost (0-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "highlightStrength",
+        "label": "Highlight Strength",
+        "kind": "number",
+        "default": 0.8,
+        "help": "How strongly highlights tint toward white (0-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "haze",
+        "label": "Haze",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Base blur haze mixed over the content, even outside thick frost (0-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "tintThin",
+        "label": "Tint thin",
+        "kind": "rgb",
+        "default": [
+          0.82,
+          0.86,
+          1.05
+        ],
+        "help": "Frost color where the layer is thin, as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "tintThick",
+        "label": "Tint thick",
+        "kind": "rgb",
+        "default": [
+          0.92,
+          0.96,
+          1.1
+        ],
+        "help": "Frost color where the layer is thick, as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "tintStrength",
+        "label": "Tint",
+        "kind": "number",
+        "default": 0.3,
+        "help": "How much the frost tint colors the frozen areas (0-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "saturation",
+        "label": "Saturation",
+        "kind": "number",
+        "default": 1.2,
+        "help": "Saturation multiplier applied to the frosted content.",
+        "min": 0,
+        "max": 5,
+        "step": 0.01
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 0.85,
+        "help": "Brightness multiplier applied to the frosted content.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 1,
+        "help": "How far the icy surface bends light. 0 disables refraction.",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "ior",
+        "label": "Ior",
+        "kind": "number",
+        "default": 1.31,
+        "help": "Index of refraction of the ice. Water ice is about 1.31.",
+        "min": 0,
+        "max": 5.24,
+        "step": 0.01
+      },
+      {
+        "key": "detail",
+        "label": "Detail",
+        "kind": "number",
+        "default": 2,
+        "help": "Strength of the fine surface detail in the refraction.",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "textureScale",
+        "label": "Texture scale",
+        "kind": "number",
+        "default": 2,
+        "help": "Scale of the icy relief pattern. Higher is larger features.",
+        "min": 0.3,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "fresnel",
+        "label": "Fresnel",
+        "kind": "number",
+        "default": 0.8,
+        "help": "Fresnel boost at grazing angles (0-2).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "meltRadius",
+        "label": "Melt radius",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Radius of the melt spot under the cursor (0-1, fraction of height).",
+        "min": 0.05,
+        "max": 0.5,
+        "step": 0.01
+      },
+      {
+        "key": "meltNoise",
+        "label": "Melt noise",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Irregularity of the melt edge. 0 is a clean circle.",
+        "min": 0,
+        "max": 0.5,
+        "step": 0.01
+      },
+      {
+        "key": "meltStrength",
+        "label": "Melt speed",
+        "kind": "number",
+        "default": 0.75,
+        "help": "How quickly hovering melts the frost (0-1).",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "refreeze",
+        "label": "Refreeze",
+        "kind": "number",
+        "default": 2,
+        "help": "How fast melted areas freeze back over. 0 never refreezes.",
+        "min": 0,
+        "max": 10,
+        "step": 0.5
+      },
+      {
+        "key": "edgeFade",
+        "label": "Edge Fade",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Keeps the edges of the pane frozen. 0 lets everything melt.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "meltEdges",
+        "label": "Melt edges",
+        "kind": "boolean",
+        "default": true,
+        "help": "Lets the frozen borders of the pane melt too."
+      },
+      {
+        "key": "introDuration",
+        "label": "Intro Duration",
+        "kind": "number",
+        "default": 2.5,
+        "help": "Seconds for the frost to grow in from the edges on load. 0 disables.",
+        "min": 0,
+        "max": 10,
+        "step": 0.01
+      },
+      {
+        "key": "opacity",
+        "label": "Opacity",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Overall opacity of the frost layer (0-1). Lower shows more content.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "shimmer",
+        "label": "Shimmer",
+        "kind": "number",
+        "default": 0,
+        "help": "Animated twinkle of the highlight grain (0-1). 0 is static.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "quality",
+        "label": "Quality",
+        "kind": "number",
+        "default": 1,
+        "help": "Resolution multiplier for the blur passes (0.25-1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    ]
+  },
+  {
+    "id": "glass",
+    "name": "Glass",
+    "component": "Glass",
+    "object": false,
+    "fields": [
+      {
+        "key": "shape",
+        "label": "Lens shape",
+        "kind": "select",
+        "default": "circle",
+        "help": "Lens shape.",
+        "choices": [
+          "circle",
+          "square",
+          "rectangle"
+        ]
+      },
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 120,
+        "help": "Lens size (radius, or half height for rectangles) in CSS pixels.",
+        "min": 40,
+        "max": 280,
+        "step": 4
+      },
+      {
+        "key": "aspect",
+        "label": "Aspect",
+        "kind": "number",
+        "default": 1.7,
+        "help": "Width to height ratio of the rectangle shape (1 to 3).",
+        "min": 1,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "corner",
+        "label": "Corner",
+        "kind": "number",
+        "default": 32,
+        "help": "Corner radius for square and rectangle shapes in CSS pixels.",
+        "min": 0,
+        "max": 120,
+        "step": 2
+      },
+      {
+        "key": "ior",
+        "label": "IOR",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Index of refraction of the glass (1 to 2). Higher bends light more.",
+        "min": 1.05,
+        "max": 2,
+        "step": 0.01
+      },
+      {
+        "key": "edge",
+        "label": "Edge",
+        "kind": "number",
+        "default": 0.7,
+        "help": "Fraction of the lens that stays optically flat before the rim (0 to 1).",
+        "min": 0,
+        "max": 0.95,
+        "step": 0.01
+      },
+      {
+        "key": "bevel",
+        "label": "Bevel",
+        "kind": "number",
+        "default": 4,
+        "help": "How sharply the rim curves away (1 to 10).",
+        "min": 1,
+        "max": 10,
+        "step": 0.25
+      },
+      {
+        "key": "depth",
+        "label": "Depth",
+        "kind": "number",
+        "default": 250,
+        "help": "Optical depth in CSS pixels: how far the glass floats above the page.",
+        "min": 20,
+        "max": 800,
+        "step": 10
+      },
+      {
+        "key": "aberration",
+        "label": "Aberration",
+        "kind": "number",
+        "default": 1,
+        "help": "Chromatic aberration strength at the rim (0 to 3). 0 disables it.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "blur",
+        "label": "Blur",
+        "kind": "number",
+        "default": 0,
+        "help": "Frosted blur of the glass face (0 = optically clear, up to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "reflection",
+        "label": "Reflection",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the fresnel reflection on the rim (0 to 2). 0 disables it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "shine",
+        "label": "Shine",
+        "kind": "number",
+        "default": 0.01,
+        "help": "Specular rim highlight (0 to 2). Keeps the lens visible even over plain\nbackgrounds where clear glass would otherwise be invisible. 0 disables it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "zoom",
+        "label": "Zoom",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Magnification while hovering a target element (1 to 3).",
+        "min": 1,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "targets",
+        "label": "Targets",
+        "kind": "string",
+        "default": "[data-glass-target]",
+        "help": "CSS selector for elements that trigger the crystal ball zoom."
+      },
+      {
+        "key": "follow",
+        "label": "Follow",
+        "kind": "number",
+        "default": 0.2,
+        "help": "How quickly the lens follows the cursor (0 to 1). 1 snaps to it.",
+        "min": 0.02,
+        "max": 1,
+        "step": 0.02
+      }
+    ]
+  },
+  {
+    "id": "glass-object",
+    "name": "Glass Object",
+    "component": "GlassObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "ior",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 1.75,
+        "help": "Index of refraction of the glass (1 to 2.33).",
+        "min": 1,
+        "max": 2.33,
+        "step": 0.01
+      },
+      {
+        "key": "thickness",
+        "label": "Thickness",
+        "kind": "number",
+        "default": 4,
+        "help": "Thickness of the glass volume in scene units. Drives how strongly light bends.",
+        "min": 0,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "roughness",
+        "label": "Frost",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Surface roughness (0 to 1). Higher values frost the glass.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "dispersion",
+        "label": "Dispersion",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Chromatic dispersion of the refraction (0 to 2). Splits light into rainbow fringes like real glass.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "clearcoat",
+        "label": "Clearcoat",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Clearcoat layer on top of the glass (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "color",
+        "default": "",
+        "help": "Tint color of the glass volume as any CSS color. Empty string keeps the glass clear."
+      },
+      {
+        "key": "tintDensity",
+        "label": "Tint density",
+        "kind": "number",
+        "default": 2,
+        "help": "How strongly the tint absorbs light through the volume.",
+        "min": 0.05,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "depth",
+        "label": "Depth",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Extrusion depth of 2D assets (SVG or image) as a fraction of their longest side.",
+        "min": 0.04,
+        "max": 0.8,
+        "step": 0.01
+      },
+      {
+        "key": "bevel",
+        "label": "Bevel",
+        "kind": "number",
+        "default": 1,
+        "help": "Edge rounding of extruded 2D assets (0 to 1). Higher values melt the edges into a liquid lip.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "color",
+        "default": "#066aff",
+        "help": "Accent color of the ring light in the studio environment."
+      },
+      {
+        "key": "environmentIntensity",
+        "label": "Lighting",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness of the studio environment lighting.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Background color behind the glass. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "backgroundImage",
+        "label": "Background Image",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of an image shown as a backdrop behind the glass, cover-fit to the view. The glass samples and refracts it. Empty string disables the backdrop."
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the asset in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Vertical offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the asset turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 55,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4,
+        "help": "Camera distance from the center of the asset.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "glitch",
+    "name": "Glitch",
+    "component": "Glitch",
+    "object": false,
+    "fields": [
+      {
+        "key": "intensity",
+        "label": "Intensity",
+        "kind": "number",
+        "default": 1,
+        "help": "Overall strength of the glitch (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "interval",
+        "label": "Interval",
+        "kind": "number",
+        "default": 3,
+        "help": "Seconds between glitch bursts. 0 keeps the glitch running constantly.",
+        "min": 0,
+        "max": 8,
+        "step": 0.25
+      },
+      {
+        "key": "duration",
+        "label": "Duration",
+        "kind": "number",
+        "default": 0.4,
+        "help": "How long each burst lasts in seconds.",
+        "min": 0.1,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "slices",
+        "label": "Slices",
+        "kind": "number",
+        "default": 24,
+        "help": "Number of horizontal slices the tear snaps to. Lower is chunkier.",
+        "min": 4,
+        "max": 80,
+        "step": 1
+      },
+      {
+        "key": "shift",
+        "label": "Shift",
+        "kind": "number",
+        "default": 30,
+        "help": "How far the torn slices shift sideways, in CSS pixels.",
+        "min": 0,
+        "max": 120,
+        "step": 2
+      },
+      {
+        "key": "rgbShift",
+        "label": "RGB Shift",
+        "kind": "number",
+        "default": 4,
+        "help": "Chromatic RGB split during bursts, in CSS pixels.",
+        "min": 0,
+        "max": 20,
+        "step": 0.5
+      },
+      {
+        "key": "blocks",
+        "label": "Blocks",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Amount of corrupted block artifacts during bursts (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "noise",
+        "label": "Noise",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Analog noise and scanline flicker during bursts (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      }
+    ]
+  },
+  {
+    "id": "glyph-rain",
+    "name": "Glyph Rain",
+    "component": "GlyphRain",
+    "object": false,
+    "fields": [
+      {
+        "key": "charset",
+        "label": "Charset",
+        "kind": "string",
+        "default": "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789Z*+-<>¦=:.",
+        "help": "Characters used for the falling glyphs. Deduplicated into a glyph atlas."
+      },
+      {
+        "key": "cell",
+        "label": "Glyph size",
+        "kind": "number",
+        "default": 15,
+        "help": "Size of one glyph cell in CSS pixels (8 to 64).",
+        "min": 8,
+        "max": 48,
+        "step": 1
+      },
+      {
+        "key": "color",
+        "label": "Rain color",
+        "kind": "rgb",
+        "default": [
+          0.267,
+          0.455,
+          1
+        ],
+        "help": "Rain color as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "headColor",
+        "label": "Head color",
+        "kind": "rgb",
+        "default": [
+          0.169,
+          0.416,
+          1
+        ],
+        "help": "Color of the bright head glyph as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Fall speed in screen heights per second (0.05 to 3).",
+        "min": 0.05,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "speedVariance",
+        "label": "Speed variance",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Per-column speed variation (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "density",
+        "label": "Density",
+        "kind": "number",
+        "default": 0.15,
+        "help": "Fraction of drops that spawn each cycle (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "trail",
+        "label": "Trail",
+        "kind": "number",
+        "default": 0.65,
+        "help": "Length multiplier for the fading trails (0.2 to 3).",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "glow",
+        "label": "Glow",
+        "kind": "number",
+        "default": 1.75,
+        "help": "Brightness of the drop heads and the light they cast (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "mutate",
+        "label": "Mutation",
+        "kind": "number",
+        "default": 0,
+        "help": "How fast glyphs mutate into other characters (0 to 4).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "flicker",
+        "label": "Flicker",
+        "kind": "number",
+        "default": 0,
+        "help": "Random brightness flicker of the streaks (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "layers",
+        "label": "Layers",
+        "kind": "number",
+        "default": 2,
+        "help": "Parallax rain layers behind the front one (1 to 3).",
+        "min": 1,
+        "max": 3,
+        "step": 1
+      },
+      {
+        "key": "dim",
+        "label": "Page dim",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How much the unlit page dims (0 to 1). 0 keeps it fully readable.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "light",
+        "label": "Light",
+        "kind": "number",
+        "default": 2.8,
+        "help": "Strength of the light the drops shine onto the page (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "lightRadius",
+        "label": "Light radius",
+        "kind": "number",
+        "default": 240,
+        "help": "Radius of each drop's light pool in CSS pixels (20 to 600).",
+        "min": 20,
+        "max": 600,
+        "step": 10
+      },
+      {
+        "key": "lightHeight",
+        "label": "Light height",
+        "kind": "number",
+        "default": 172,
+        "help": "How high above the page the lights float, in CSS pixels. Higher is softer.",
+        "min": 4,
+        "max": 300,
+        "step": 2
+      },
+      {
+        "key": "relief",
+        "label": "Relief",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Embossed 3D shading of the page under the lights (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "stir",
+        "label": "Stir",
+        "kind": "number",
+        "default": 0.7,
+        "help": "How strongly the cursor stirs the rain as it passes (0 to 1). 0 disables it.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "stirRadius",
+        "label": "Stir radius",
+        "kind": "number",
+        "default": 260,
+        "help": "How far the stirring reaches to either side of the cursor, in CSS pixels.",
+        "min": 40,
+        "max": 900,
+        "step": 10
+      },
+      {
+        "key": "settle",
+        "label": "Settle",
+        "kind": "number",
+        "default": 0.9,
+        "help": "Seconds the stirred wake takes to settle back to its own rhythm.",
+        "min": 0.1,
+        "max": 4,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "grid",
+    "name": "Grid",
+    "component": "Grid",
+    "object": false,
+    "fields": [
+      {
+        "key": "tileSize",
+        "label": "Tile size",
+        "kind": "number",
+        "default": 150,
+        "help": "Size of each grid tile in CSS pixels.",
+        "min": 16,
+        "max": 160,
+        "step": 2
+      },
+      {
+        "key": "gap",
+        "label": "Gap",
+        "kind": "number",
+        "default": 0,
+        "help": "Gap between tiles in CSS pixels.",
+        "min": 0,
+        "max": 12,
+        "step": 0.5
+      },
+      {
+        "key": "cornerRadius",
+        "label": "Corner radius",
+        "kind": "number",
+        "default": 0,
+        "help": "Corner radius of each tile in CSS pixels.",
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      {
+        "key": "amplitude",
+        "label": "Amplitude",
+        "kind": "number",
+        "default": 2.5,
+        "help": "Overall strength of the wave displacement.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "waveSpeed",
+        "label": "Wave speed",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How fast the wavefront expands, in screen heights per second.",
+        "min": 0.1,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "frequency",
+        "label": "Frequency",
+        "kind": "number",
+        "default": 12,
+        "help": "Spatial oscillation of the wave. Higher means more ripples per wave.",
+        "min": 1,
+        "max": 40,
+        "step": 0.5
+      },
+      {
+        "key": "waveWidth",
+        "label": "Wave width",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Width of the wave ring as a fraction of the screen height.",
+        "min": 0.02,
+        "max": 0.5,
+        "step": 0.01
+      },
+      {
+        "key": "fadeTime",
+        "label": "Fade time",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Seconds for a wave to fade to roughly a third of its strength.",
+        "min": 0.2,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "maxLift",
+        "label": "Max lift",
+        "kind": "number",
+        "default": 1,
+        "help": "Maximum lift a tile can reach (0 to 1).",
+        "min": 0.1,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "jitter",
+        "label": "Jitter",
+        "kind": "number",
+        "default": 0,
+        "help": "Per-tile randomness in how tiles respond to the wave (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "liftHeight",
+        "label": "Lift height",
+        "kind": "number",
+        "default": 60,
+        "help": "How high a fully lifted cube rises, in CSS pixels.",
+        "min": 0,
+        "max": 160,
+        "step": 2
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 1200,
+        "help": "Camera distance in CSS pixels, like CSS perspective. Lower is more dramatic.",
+        "min": 300,
+        "max": 4000,
+        "step": 50
+      },
+      {
+        "key": "tilt",
+        "label": "Tilt",
+        "kind": "number",
+        "default": 1,
+        "help": "How much the camera vanishing point leans toward the cursor (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "shading",
+        "label": "Shading",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Strength of the lighting on cube tops and side walls.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "rgb",
+        "default": [
+          0,
+          0.33,
+          1
+        ],
+        "help": "Color lifted tiles blend toward as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "tintStrength",
+        "label": "Tint strength",
+        "kind": "number",
+        "default": 0.1,
+        "help": "How strongly lifted tiles take on the tint color (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "idleRipples",
+        "label": "Idle ripples",
+        "kind": "number",
+        "default": 0,
+        "help": "Seconds between ambient ripples when the cursor is idle. 0 disables.",
+        "min": 0,
+        "max": 6,
+        "step": 0.5
+      }
+    ]
+  },
+  {
+    "id": "hex-float",
+    "name": "Hex Float",
+    "component": "HexFloat",
+    "object": false,
+    "fields": [
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 160,
+        "help": "Width of each hex tile in CSS pixels.",
+        "min": 24,
+        "max": 160,
+        "step": 2
+      },
+      {
+        "key": "gap",
+        "label": "Gap",
+        "kind": "number",
+        "default": 0,
+        "help": "Seam between tiles in CSS pixels.",
+        "min": 0,
+        "max": 12,
+        "step": 0.5
+      },
+      {
+        "key": "bevel",
+        "label": "Bevel",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Width of the shiny beveled rim in CSS pixels.",
+        "min": 0,
+        "max": 20,
+        "step": 0.5
+      },
+      {
+        "key": "tilt",
+        "label": "Tilt",
+        "kind": "number",
+        "default": 24,
+        "help": "Backward lean of the page in degrees (-30 to 30). Positive tilts the top away.",
+        "min": -30,
+        "max": 30,
+        "step": 1
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Camera closeness (0 to 1). Higher exaggerates the perspective of the tilt.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "float",
+        "label": "Float",
+        "kind": "number",
+        "default": 0,
+        "help": "How far tiles bob up and down as they float (0 to 1). 0 keeps them still.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 1,
+        "help": "Speed of the floating motion. 1 is normal speed.",
+        "min": 0.1,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "shine",
+        "label": "Shine",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Intensity of the specular glints on rims and tile faces (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "lift",
+        "label": "Lift",
+        "kind": "number",
+        "default": 0.1,
+        "help": "How strongly tiles rise along the edges of the fluid reading window (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 1200,
+        "help": "Size of the fluid splats the cursor injects, in CSS pixels. Sets the reading window's scale.",
+        "min": 60,
+        "max": 1400,
+        "step": 20
+      },
+      {
+        "key": "flow",
+        "label": "Flow",
+        "kind": "number",
+        "default": 0,
+        "help": "How strongly cursor movement pushes the fluid around (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "swirl",
+        "label": "Swirl",
+        "kind": "number",
+        "default": 0,
+        "help": "Vorticity of the fluid (0 to 15). Higher makes the window's trail curl into eddies.",
+        "min": 0,
+        "max": 15,
+        "step": 0.5
+      },
+      {
+        "key": "trail",
+        "label": "Trail",
+        "kind": "number",
+        "default": 0,
+        "help": "How long the fluid trail lingers before healing (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "iridescence",
+        "label": "Iridescence",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the iridescent hue shift on highlights (0 to 2). 0 keeps highlights neutral.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "bloom",
+        "label": "Bloom",
+        "kind": "number",
+        "default": 0,
+        "help": "Bloom glow around bright highlights (0 to 1). 0 skips the pass entirely.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.8,
+        "help": "Animated film grain over the final image (0 to 1). 0 skips the pass entirely.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "gapColor",
+        "label": "Gap Color",
+        "kind": "rgb-auto",
+        "default": "auto",
+        "help": "Seam color as [r, g, b] in 0-1 range, or \"auto\" to derive a dark seam from the page background."
+      }
+    ]
+  },
+  {
+    "id": "ink-object",
+    "name": "Ink Object",
+    "component": "InkObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "ink",
+        "label": "Ink",
+        "kind": "boolean",
+        "default": true,
+        "help": "Enable the ink pass. Turn off to see the raw render."
+      },
+      {
+        "key": "inkColor",
+        "label": "Ink color",
+        "kind": "color",
+        "default": "#111111",
+        "help": "Color of the ink strokes."
+      },
+      {
+        "key": "lineSpacing",
+        "label": "Line spacing",
+        "kind": "number",
+        "default": 8,
+        "help": "Distance between stroke centers in CSS pixels.",
+        "min": 3,
+        "max": 32,
+        "step": 1
+      },
+      {
+        "key": "strokeWeight",
+        "label": "Stroke weight",
+        "kind": "number",
+        "default": 1,
+        "help": "Thickness of the strokes relative to the line spacing (0 to 1.5).",
+        "min": 0.1,
+        "max": 1.5,
+        "step": 0.05
+      },
+      {
+        "key": "angle",
+        "label": "Angle",
+        "kind": "number",
+        "default": 0,
+        "help": "Angle of the stroke lines in degrees.",
+        "min": -90,
+        "max": 90,
+        "step": 1
+      },
+      {
+        "key": "dashLength",
+        "label": "Dash length",
+        "kind": "number",
+        "default": 14,
+        "help": "Length scale of the dash breakup along each stroke, in CSS pixels.",
+        "min": 4,
+        "max": 140,
+        "step": 1
+      },
+      {
+        "key": "variation",
+        "label": "Dash breakup",
+        "kind": "number",
+        "default": 1,
+        "help": "How aggressively strokes break into dashes as the tone lightens (0 keeps solid lines).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "bleed",
+        "label": "Bleed",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Ragged ink bleed along the stroke edges (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.32,
+        "help": "Dry-brush speckle eaten out of the ink (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "wobble",
+        "label": "Wobble",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Hand-pressed waviness of the stroke lines (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "relief",
+        "label": "Relief",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How far the stroke lines ride the surface height read from the depth buffer, so they wrap a 3D form. Flat art is unaffected.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "depth",
+        "label": "Depth",
+        "kind": "number",
+        "default": 0.08,
+        "help": "Extrusion depth of 2D assets (SVG or image) as a fraction of their longest side.",
+        "min": 0.01,
+        "max": 0.8,
+        "step": 0.01
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 2.2,
+        "help": "Slope of the tone-to-ink ramp. Higher crushes midtones into solid black or bare paper.",
+        "min": 0.2,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "threshold",
+        "label": "Threshold",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Tone that lands at half ink coverage. Raise it to ink only the darkest areas.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Softness of the stroke edges (0 is a hard letterpress edge).",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "boolean",
+        "default": false,
+        "help": "Ink the light areas instead of the dark ones."
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Paper color behind the ink. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "color",
+        "default": "#066aff",
+        "help": "Accent color of the ring light in the studio environment."
+      },
+      {
+        "key": "environmentIntensity",
+        "label": "Environment",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Brightness of the studio environment lighting.",
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "roughness",
+        "label": "Roughness",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Roughness override applied to every material (0 to 1). Negative keeps the asset's own values.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the object in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Vertical offset of the object in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 0,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 0,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the object turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 65,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4.2,
+        "help": "Camera distance from the center of the object.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "laser",
+    "name": "Laser",
+    "component": "Laser",
+    "object": false,
+    "fields": [
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Animation speed of the beam wave, flicker, and sparkle. 1 is normal.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "offset",
+        "label": "Offset",
+        "kind": "number",
+        "default": 140,
+        "help": "Distance of the beam from the bottom edge in CSS pixels.",
+        "min": 0,
+        "max": 400,
+        "step": 4
+      },
+      {
+        "key": "color",
+        "label": "Color",
+        "kind": "rgb",
+        "default": [
+          0.05,
+          0.35,
+          1
+        ],
+        "help": "Laser glow color as RGB in the 0 to 1 range."
+      },
+      {
+        "key": "thickness",
+        "label": "Thickness",
+        "kind": "number",
+        "default": 6,
+        "help": "Thickness of the white-hot beam core in CSS pixels.",
+        "min": 0.5,
+        "max": 12,
+        "step": 0.5
+      },
+      {
+        "key": "core",
+        "label": "Core",
+        "kind": "number",
+        "default": 1,
+        "help": "Intensity of the white beam core (0 to 2). 0 removes it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 20,
+        "help": "Reach of the colored glow around the beam in CSS pixels.",
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      {
+        "key": "glow",
+        "label": "Glow",
+        "kind": "number",
+        "default": 2,
+        "help": "Brightness of the colored glow (0 to 3). 0 removes it.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "wave",
+        "label": "Wave",
+        "kind": "number",
+        "default": 10,
+        "help": "Amplitude of the slow beam waviness in CSS pixels.",
+        "min": 0,
+        "max": 24,
+        "step": 0.5
+      },
+      {
+        "key": "width",
+        "label": "Width",
+        "kind": "number",
+        "default": 0.55,
+        "help": "Beam length as a fraction of the content width (0 to 1).",
+        "min": 0.1,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "flicker",
+        "label": "Flicker",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Random intensity flicker of the beam (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "reveal",
+        "label": "Reveal",
+        "kind": "number",
+        "default": 400,
+        "help": "Height of the hot reveal band above the beam in CSS pixels.",
+        "min": 0,
+        "max": 480,
+        "step": 8
+      },
+      {
+        "key": "heat",
+        "label": "Heat",
+        "kind": "number",
+        "default": 1.5,
+        "help": "How strongly freshly revealed content glows (0 to 1.5).",
+        "min": 0,
+        "max": 1.5,
+        "step": 0.05
+      },
+      {
+        "key": "shimmer",
+        "label": "Shimmer",
+        "kind": "number",
+        "default": 12,
+        "help": "Heat shimmer displacement of freshly revealed content in CSS pixels.",
+        "min": 0,
+        "max": 12,
+        "step": 0.5
+      },
+      {
+        "key": "sparkle",
+        "label": "Sparkle",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Animated sparkle texture inside the reveal band (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "reactivity",
+        "label": "Reactivity",
+        "kind": "number",
+        "default": 1,
+        "help": "How much scrolling boosts the beam and the reveal glow (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "liquid",
+    "name": "Liquid",
+    "component": "Liquid",
+    "object": false,
+    "fields": [
+      {
+        "key": "simResolution",
+        "label": "Sim Resolution",
+        "kind": "number",
+        "default": 128,
+        "help": "Resolution of the simulation grid.",
+        "min": 16,
+        "max": 512,
+        "step": 16
+      },
+      {
+        "key": "dyeResolution",
+        "label": "Dye Resolution",
+        "kind": "number",
+        "default": 512,
+        "help": "Resolution of the fluid trail texture.",
+        "min": 16,
+        "max": 1024,
+        "step": 16
+      },
+      {
+        "key": "densityDissipation",
+        "label": "Trail fade",
+        "kind": "number",
+        "default": 0.96,
+        "help": "How much the trail persists each frame (closer to 1 lasts longer).",
+        "min": 0.85,
+        "max": 1,
+        "step": 0.005
+      },
+      {
+        "key": "velocityDissipation",
+        "label": "Motion fade",
+        "kind": "number",
+        "default": 1,
+        "help": "How much motion persists each frame (closer to 1 lasts longer).",
+        "min": 0.85,
+        "max": 1,
+        "step": 0.005
+      },
+      {
+        "key": "pressure",
+        "label": "Pressure",
+        "kind": "number",
+        "default": 0.8,
+        "help": "How much pressure carries over between frames.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "pressureIterations",
+        "label": "Swirl",
+        "kind": "number",
+        "default": 4,
+        "help": "Pressure solver iterations.",
+        "min": 1,
+        "max": 10,
+        "step": 1
+      },
+      {
+        "key": "curl",
+        "label": "Curl",
+        "kind": "number",
+        "default": 1.9,
+        "help": "Rotational force added back into the flow.",
+        "min": 0,
+        "max": 10,
+        "step": 0.1
+      },
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Radius of the pointer splat.",
+        "min": 0.05,
+        "max": 1.5,
+        "step": 0.05
+      },
+      {
+        "key": "force",
+        "label": "Force",
+        "kind": "number",
+        "default": 1.1,
+        "help": "Force multiplier applied on pointer movement.",
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "intensity",
+        "label": "Intensity",
+        "kind": "number",
+        "default": 2,
+        "help": "Strength of the color tint left by the flow.",
+        "min": 0,
+        "max": 10,
+        "step": 0.1
+      },
+      {
+        "key": "distortion",
+        "label": "Distortion",
+        "kind": "number",
+        "default": 0.4,
+        "help": "How strongly the flow warps the content.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "blend",
+        "label": "Blend",
+        "kind": "number",
+        "default": 5,
+        "help": "How much of the fluid color blends over the content.",
+        "min": 0,
+        "max": 20,
+        "step": 0.5
+      },
+      {
+        "key": "color",
+        "label": "Color",
+        "kind": "rgb",
+        "default": [
+          0.145,
+          0.239,
+          0.867
+        ],
+        "help": "Trail color as [r, g, b] in 0-1 range. Ignored when rainbow is on."
+      },
+      {
+        "key": "rainbow",
+        "label": "Rainbow",
+        "kind": "boolean",
+        "default": false,
+        "help": "Color the trail from the flow direction instead of a fixed color."
+      }
+    ]
+  },
+  {
+    "id": "liquid-object",
+    "name": "Liquid Object",
+    "component": "LiquidObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "distortion",
+        "label": "Distortion",
+        "kind": "number",
+        "default": 2,
+        "help": "How far the liquid drags the object as it flows.",
+        "min": 0,
+        "max": 3,
+        "step": 0.02
+      },
+      {
+        "key": "aberration",
+        "label": "Color fringe",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Strength of the chromatic lens fringe in a soft radius around the cursor.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 1,
+        "help": "Amount of animated film grain. Subtle across the frame, strongest inside the cursor lens.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "sheen",
+        "label": "Shine",
+        "kind": "number",
+        "default": 1.6,
+        "help": "Brightness of the light glinting off the moving liquid.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "cursorSize",
+        "label": "Cursor size",
+        "kind": "number",
+        "default": 1,
+        "help": "Size of the area the cursor disturbs.",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "cursorForce",
+        "label": "Cursor Force",
+        "kind": "number",
+        "default": 1,
+        "help": "How hard the cursor pushes the liquid.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "persistence",
+        "label": "Ripples",
+        "kind": "number",
+        "default": 0.6,
+        "help": "How long the ripples keep flowing after the cursor stops.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "swirl",
+        "label": "Swirl",
+        "kind": "number",
+        "default": 0.5,
+        "help": "How much the flow curls into swirls and eddies.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "iridescence",
+        "label": "Iridescence",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Strength of the rainbow shimmer that appears where the liquid flows.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "splash",
+        "label": "Splash",
+        "kind": "number",
+        "default": 1.2,
+        "help": "Strength of the liquid burst fired when the canvas is clicked or tapped (0 disables).",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "ambient",
+        "label": "Idle drift",
+        "kind": "number",
+        "default": 1,
+        "help": "Amount of slow idle drift that keeps the surface alive while the cursor is away.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "wobble",
+        "label": "Wobble",
+        "kind": "number",
+        "default": 0,
+        "help": "How much the object tilts and bounces like jelly in response to the cursor.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "gloss",
+        "label": "Gloss",
+        "kind": "number",
+        "default": 0.65,
+        "help": "Surface finish of extruded 2D assets, from matte to mirror. Models keep their own materials.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "metallic",
+        "label": "Metallic",
+        "kind": "number",
+        "default": 0.15,
+        "help": "How metallic the asset reads. 0 keeps the original material finish, 1 turns it to polished metal.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "tint",
+        "label": "Tint",
+        "kind": "color",
+        "default": "",
+        "help": "Tint multiplied over the asset colors. Empty string keeps the original colors."
+      },
+      {
+        "key": "depth",
+        "label": "Depth",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Extrusion depth of 2D assets (SVG or image) as a fraction of their longest side.",
+        "min": 0.02,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "bevel",
+        "label": "Bevel",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Edge rounding of extruded 2D assets (0 to 1). Higher values melt the edges into a liquid lip.",
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "highlight",
+        "label": "Highlight",
+        "kind": "color",
+        "default": "#ffffff",
+        "help": "Accent color of the ring light in the studio environment."
+      },
+      {
+        "key": "environmentIntensity",
+        "label": "Environment",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness of the studio environment lighting.",
+        "min": 0,
+        "max": 5,
+        "step": 0.1
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 1,
+        "help": "Brightness multiplier applied to the final image.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "saturation",
+        "label": "Saturation",
+        "kind": "number",
+        "default": 1.2,
+        "help": "Color saturation of the final image. 1 keeps the original colors, 0 is grayscale.",
+        "min": 0,
+        "max": 2,
+        "step": 0.02
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Background color behind the object. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the asset in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": -0.2,
+        "help": "Vertical offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the asset turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 60,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4,
+        "help": "Camera distance from the center of the asset.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "magnify",
+    "name": "Magnify",
+    "component": "Magnify",
+    "object": false,
+    "fields": [
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 140,
+        "help": "Lens radius in CSS pixels.",
+        "min": 60,
+        "max": 260,
+        "step": 4
+      },
+      {
+        "key": "zoom",
+        "label": "Zoom",
+        "kind": "number",
+        "default": 1.5,
+        "help": "Magnification inside the lens (1 to 4).",
+        "min": 1,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "scrollZoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the wheel or trackpad adjust the magnification while zoomModifier is held."
+      },
+      {
+        "key": "zoomModifier",
+        "label": "Hold",
+        "kind": "select",
+        "default": "shift",
+        "help": "Key held to zoom instead of scroll. \"none\" captures every wheel event over the content.",
+        "choices": [
+          "shift",
+          "alt",
+          "ctrl",
+          "meta",
+          "none"
+        ]
+      },
+      {
+        "key": "color",
+        "label": "Accent",
+        "kind": "rgb",
+        "default": [
+          0.8,
+          0.8,
+          0.8
+        ],
+        "help": "HUD accent color as RGB in the 0 to 1 range. Tints the reticle, readout, and ripple outline."
+      },
+      {
+        "key": "follow",
+        "label": "Follow",
+        "kind": "number",
+        "default": 0.25,
+        "help": "How quickly the lens follows the cursor (0 to 1). 1 snaps to it.",
+        "min": 0.02,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "hud",
+        "label": "HUD",
+        "kind": "number",
+        "default": 0.8,
+        "help": "Overall HUD intensity (0 to 1). 0 hides every reticle element.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "ring",
+        "label": "Ring",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the outer ring."
+      },
+      {
+        "key": "crosshair",
+        "label": "Crosshair",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the crosshair lines through the center."
+      },
+      {
+        "key": "ticks",
+        "label": "Ticks",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the tick marks around the ring."
+      },
+      {
+        "key": "brackets",
+        "label": "Brackets",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the corner brackets inside the lens."
+      },
+      {
+        "key": "dot",
+        "label": "Center dot",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the center dot."
+      },
+      {
+        "key": "grid",
+        "label": "Grid",
+        "kind": "boolean",
+        "default": false,
+        "help": "Show a faint measurement grid inside the lens."
+      },
+      {
+        "key": "readout",
+        "label": "Readout",
+        "kind": "boolean",
+        "default": true,
+        "help": "Show the data readout beside the lens."
+      },
+      {
+        "key": "aberration",
+        "label": "Aberration",
+        "kind": "number",
+        "default": 0.8,
+        "help": "Chromatic aberration split inside the lens (0 to 3). 0 disables it.",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "haze",
+        "label": "Haze",
+        "kind": "number",
+        "default": 0.2,
+        "help": "Dreamy insight haze inside the lens (0 to 1). Softens and lifts the magnified content.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "ripples",
+        "label": "Click ripples",
+        "kind": "boolean",
+        "default": true,
+        "help": "Emit a ripple across the page on click."
+      },
+      {
+        "key": "rippleSpeed",
+        "label": "Ripple speed",
+        "kind": "number",
+        "default": 900,
+        "help": "How fast the ripple wavefront travels, in CSS pixels per second.",
+        "min": 200,
+        "max": 2400,
+        "step": 50
+      },
+      {
+        "key": "rippleWidth",
+        "label": "Ripple width",
+        "kind": "number",
+        "default": 2,
+        "help": "Thickness of the colored ripple outline in CSS pixels.",
+        "min": 0.5,
+        "max": 24,
+        "step": 0.5
+      },
+      {
+        "key": "rippleBendWidth",
+        "label": "Bend width",
+        "kind": "number",
+        "default": 100,
+        "help": "Width of the band the ripple bends, in CSS pixels.",
+        "min": 10,
+        "max": 240,
+        "step": 5
+      },
+      {
+        "key": "rippleBend",
+        "label": "Ripple bend",
+        "kind": "number",
+        "default": 20,
+        "help": "How many CSS pixels the ripple bends the page.",
+        "min": 0,
+        "max": 120,
+        "step": 2
+      },
+      {
+        "key": "rippleGlow",
+        "label": "Ripple glow",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the colored ripple outline (0 to 2). 0 hides it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "rippleLife",
+        "label": "Ripple Life",
+        "kind": "number",
+        "default": 1.4,
+        "help": "Seconds a ripple lives before it fades out.",
+        "min": 0,
+        "max": 5.6,
+        "step": 0.01
+      }
+    ]
+  },
+  {
+    "id": "particle-object",
+    "name": "Particle Object",
+    "component": "ParticleObject",
+    "object": true,
+    "fields": [
+      {
+        "key": "src",
+        "label": "Src",
+        "kind": "asset",
+        "default": "",
+        "help": "URL of the asset to display: GLB/glTF, SVG, PNG, JPEG, WebP, or GIF. Object URLs from a file input work too. The format is sniffed from the bytes, not the extension."
+      },
+      {
+        "key": "count",
+        "label": "Particles",
+        "kind": "number",
+        "default": 14000,
+        "help": "Number of particles the asset is rebuilt from.",
+        "min": 1000,
+        "max": 60000,
+        "step": 1000
+      },
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 2.4,
+        "help": "Particle size in CSS pixels at the model's distance.",
+        "min": 0.5,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "sizeVariance",
+        "label": "Variance",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Random per-particle size variation (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "color",
+        "label": "Color",
+        "kind": "color",
+        "default": "",
+        "help": "Override color as any CSS color. Empty string keeps the asset's own colors."
+      },
+      {
+        "key": "radius",
+        "label": "Push radius",
+        "kind": "number",
+        "default": 110,
+        "help": "Radius of the cursor's push field in CSS pixels.",
+        "min": 20,
+        "max": 320,
+        "step": 5
+      },
+      {
+        "key": "strength",
+        "label": "Push strength",
+        "kind": "number",
+        "default": 1,
+        "help": "How hard the cursor pushes particles away.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "swirl",
+        "label": "Swirl",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Tangential curl of the push (0 to 2). Particles spiral around the cursor instead of only fleeing it.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "spring",
+        "label": "Spring",
+        "kind": "number",
+        "default": 1,
+        "help": "How quickly displaced particles spring back home.",
+        "min": 0.1,
+        "max": 4,
+        "step": 0.05
+      },
+      {
+        "key": "damping",
+        "label": "Damping",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Velocity damping (0 to 1). Lower values keep particles wobbling longer.",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "drift",
+        "label": "Drift",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Idle shimmer of the resting particles (0 disables).",
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "",
+        "help": "Background color behind the particles. Empty string keeps the canvas transparent."
+      },
+      {
+        "key": "scale",
+        "label": "Scale",
+        "kind": "number",
+        "default": 3,
+        "help": "Size of the longest side of the asset in scene units. The camera sits about 4 units away.",
+        "min": 0.5,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "xOffset",
+        "label": "X offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Horizontal offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "yOffset",
+        "label": "Y offset",
+        "kind": "number",
+        "default": 0,
+        "help": "Vertical offset of the asset in scene units.",
+        "min": -3,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "key": "floatIntensity",
+        "label": "Float",
+        "kind": "number",
+        "default": 2,
+        "help": "Strength of the floating bob animation (0 disables).",
+        "min": 0,
+        "max": 6,
+        "step": 0.1
+      },
+      {
+        "key": "rotationIntensity",
+        "label": "Rocking",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the idle rocking rotation (0 disables).",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the float and rocking animation.",
+        "min": 0,
+        "max": 8,
+        "step": 0.1
+      },
+      {
+        "key": "orbit",
+        "label": "Orbit",
+        "kind": "boolean",
+        "default": true,
+        "help": "Let the user orbit the camera by dragging."
+      },
+      {
+        "key": "zoom",
+        "label": "Scroll zoom",
+        "kind": "boolean",
+        "default": false,
+        "help": "Let the user zoom with the scroll wheel or pinch."
+      },
+      {
+        "key": "autoRotate",
+        "label": "Auto rotate",
+        "kind": "boolean",
+        "default": false,
+        "help": "Spin the camera around the asset turntable-style."
+      },
+      {
+        "key": "autoRotateSpeed",
+        "label": "Auto Rotate Speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Turntable speed when autoRotate is on.",
+        "min": 0,
+        "max": 8,
+        "step": 0.01
+      },
+      {
+        "key": "fov",
+        "label": "Field of view",
+        "kind": "number",
+        "default": 65,
+        "help": "Camera field of view in degrees.",
+        "min": 20,
+        "max": 100,
+        "step": 1
+      },
+      {
+        "key": "cameraDistance",
+        "label": "Camera distance",
+        "kind": "number",
+        "default": 4.2,
+        "help": "Camera distance from the center of the asset.",
+        "min": 2,
+        "max": 10,
+        "step": 0.1
+      }
+    ]
+  },
+  {
+    "id": "particle-reveal",
+    "name": "Particle Reveal",
+    "component": "ParticleReveal",
+    "object": false,
+    "fields": [
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 500,
+        "help": "Reveal radius around the cursor in CSS pixels.",
+        "min": 60,
+        "max": 600,
+        "step": 10
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Feather of the reveal edge as a fraction of the radius (0 to 1).",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 1,
+        "help": "Particle grain size in CSS pixels.",
+        "min": 0.5,
+        "max": 3,
+        "step": 0.25
+      },
+      {
+        "key": "scatter",
+        "label": "Scatter",
+        "kind": "number",
+        "default": 25,
+        "help": "How far grains wander from their home pixel in CSS pixels. Bright content spawns the farthest specks.",
+        "min": 0,
+        "max": 200,
+        "step": 5
+      },
+      {
+        "key": "drift",
+        "label": "Drift",
+        "kind": "number",
+        "default": 1,
+        "help": "Speed of the idle grain shimmer (0 freezes the dust).",
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      {
+        "key": "aberration",
+        "label": "Aberration",
+        "kind": "number",
+        "default": 40,
+        "help": "Chromatic aberration strength at the reveal edge in CSS pixels.",
+        "min": 0,
+        "max": 80,
+        "step": 2
+      },
+      {
+        "key": "bend",
+        "label": "Bend",
+        "kind": "number",
+        "default": 50,
+        "help": "How strongly unrevealed content smears around the reveal edge in CSS pixels.",
+        "min": 0,
+        "max": 240,
+        "step": 10
+      },
+      {
+        "key": "fade",
+        "label": "Fade",
+        "kind": "number",
+        "default": 0.85,
+        "help": "How strongly dust specks stand out from the background (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "threshold",
+        "label": "Threshold",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Contrast against the background above which a pixel counts as UI and dissolves into dust. Pixels close to the background color are left untouched.",
+        "min": 0,
+        "max": 0.3,
+        "step": 0.01
+      },
+      {
+        "key": "background",
+        "label": "Background",
+        "kind": "color",
+        "default": "#000000",
+        "help": "Color of the backdrop behind the content, as any CSS color. Used to tell UI pixels apart from empty space."
+      },
+      {
+        "key": "smoothing",
+        "label": "Smoothing",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Seconds the reveal takes to catch up with the cursor. Higher feels more damped.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "particle-scroll",
+    "name": "Particle Scroll",
+    "component": "ParticleScroll",
+    "object": false,
+    "fields": [
+      {
+        "key": "point",
+        "label": "Point",
+        "kind": "number",
+        "default": 0.68,
+        "help": "Viewport fraction of the formation line. Content assembles as it scrolls up past this line and dissolves back below it.",
+        "min": 0.2,
+        "max": 1,
+        "step": 0.01
+      },
+      {
+        "key": "band",
+        "label": "Band",
+        "kind": "number",
+        "default": 420,
+        "help": "Height in CSS pixels of the transition band where particles progressively reassemble.",
+        "min": 60,
+        "max": 800,
+        "step": 20
+      },
+      {
+        "key": "density",
+        "label": "Density",
+        "kind": "number",
+        "default": 2,
+        "help": "Grain spacing in CSS pixels. Smaller values mean finer, denser sand.",
+        "min": 1.5,
+        "max": 8,
+        "step": 0.25
+      },
+      {
+        "key": "size",
+        "label": "Size",
+        "kind": "number",
+        "default": 1.25,
+        "help": "Size of fully scattered dust grains in CSS pixels. Grains grow to cover their cell as they land.",
+        "min": 0.5,
+        "max": 4,
+        "step": 0.25
+      },
+      {
+        "key": "spread",
+        "label": "Spread",
+        "kind": "number",
+        "default": 220,
+        "help": "Maximum distance in CSS pixels particles scatter from their home position.",
+        "min": 0,
+        "max": 800,
+        "step": 20
+      },
+      {
+        "key": "gravity",
+        "label": "Gravity",
+        "kind": "number",
+        "default": 0.35,
+        "help": "Downward bias of the scattered cloud (-1 to 1), like sand settling. Negative values lift it.",
+        "min": -1,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "drift",
+        "label": "Drift",
+        "kind": "number",
+        "default": 0.7,
+        "help": "Idle float speed of scattered particles (0 to 1). 0 freezes the cloud.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "swirl",
+        "label": "Swirl",
+        "kind": "number",
+        "default": 60,
+        "help": "Sideways arc in CSS pixels particles take while flying home.",
+        "min": 0,
+        "max": 300,
+        "step": 10
+      },
+      {
+        "key": "stagger",
+        "label": "Stagger",
+        "kind": "number",
+        "default": 0.7,
+        "help": "Per-particle randomness of reassembly timing (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "fade",
+        "label": "Fade",
+        "kind": "number",
+        "default": 0.85,
+        "help": "Opacity of fully scattered particles (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "settle",
+        "label": "Settle",
+        "kind": "number",
+        "default": 1.2,
+        "help": "Seconds a row of dust takes to condense into the page once the reveal reaches it.",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "smoothing",
+        "label": "Smoothing",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Seconds the damped scroll takes to catch up with the real scroll. Higher feels more fluid.",
+        "min": 0,
+        "max": 1.5,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "peel",
+    "name": "Peel",
+    "component": "Peel",
+    "object": false,
+    "fields": [
+      {
+        "key": "side",
+        "label": "Peel side",
+        "kind": "select",
+        "default": "left",
+        "help": "Edge the content peels from.",
+        "choices": [
+          "left",
+          "right",
+          "top",
+          "bottom"
+        ]
+      },
+      {
+        "key": "mode",
+        "label": "Peel mode",
+        "kind": "select",
+        "default": "cursor",
+        "help": "How the peel is driven. \"cursor\" peels progressively as the pointer nears the edge, \"hover\" peels fully when the pointer enters the zone.",
+        "choices": [
+          "cursor",
+          "hover"
+        ]
+      },
+      {
+        "key": "reveal",
+        "label": "Reveal",
+        "kind": "number",
+        "default": 250,
+        "help": "How many CSS pixels of the under layer are exposed at full peel.",
+        "min": 80,
+        "max": 480,
+        "step": 10
+      },
+      {
+        "key": "zone",
+        "label": "Zone",
+        "kind": "number",
+        "default": 200,
+        "help": "Width of the strip along the chosen edge that drives the peel, in CSS pixels.",
+        "min": 40,
+        "max": 400,
+        "step": 10
+      },
+      {
+        "key": "curl",
+        "label": "Curl",
+        "kind": "number",
+        "default": 300,
+        "help": "Radius of the curl in CSS pixels. Smaller values fold sharper.",
+        "min": 40,
+        "max": 400,
+        "step": 10
+      },
+      {
+        "key": "bow",
+        "label": "Bow",
+        "kind": "number",
+        "default": 75,
+        "help": "Extra lift at the middle of the peeling edge in CSS pixels. Negative values bow the sheet inwards.",
+        "min": -150,
+        "max": 150,
+        "step": 5
+      },
+      {
+        "key": "shade",
+        "label": "Shade",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Strength of the curl shading on the lifted sheet (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "shine",
+        "label": "Shine",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the shine along the peeling edge that follows the cursor (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "shineDistance",
+        "label": "Shine distance",
+        "kind": "number",
+        "default": 1200,
+        "help": "Distance from the edge at which the shine starts to appear, in CSS pixels. 0 uses the full container span.",
+        "min": 0,
+        "max": 1200,
+        "step": 50
+      },
+      {
+        "key": "shineColor",
+        "label": "Shine color",
+        "kind": "rgb-auto",
+        "default": "auto",
+        "help": "Shine color as RGB in the 0 to 1 range, or \"auto\" to follow the page theme: light shine on dark backgrounds, dark shine on light ones. Re-resolves on theme changes."
+      },
+      {
+        "key": "bulge",
+        "label": "Bulge",
+        "kind": "number",
+        "default": 50,
+        "help": "How many CSS pixels the peeled edge bulges toward the cursor.",
+        "min": 0,
+        "max": 200,
+        "step": 10
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 2000,
+        "help": "Perspective focal length in CSS pixels. Lower values exaggerate the 3D depth.",
+        "min": 400,
+        "max": 3000,
+        "step": 50
+      },
+      {
+        "key": "smoothing",
+        "label": "Smoothing",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Seconds the peel takes to settle. Higher feels more damped.",
+        "min": 0.05,
+        "max": 1,
+        "step": 0.05
+      }
+    ]
+  },
+  {
+    "id": "retro-dither",
+    "name": "Retro Dither",
+    "component": "RetroDither",
+    "object": false,
+    "fields": [
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Radius of the dither lens around the cursor, relative to the screen height.",
+        "min": 0.1,
+        "max": 0.8,
+        "step": 0.01
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 1,
+        "help": "Edge feather of the lens as a fraction of the radius (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "pixelSize",
+        "label": "Pixel size",
+        "kind": "number",
+        "default": 2,
+        "help": "Size of the retro pixels in CSS pixels.",
+        "min": 1,
+        "max": 12,
+        "step": 1
+      },
+      {
+        "key": "levels",
+        "label": "Levels",
+        "kind": "number",
+        "default": 4,
+        "help": "Number of brightness levels the dither quantizes to.",
+        "min": 1,
+        "max": 8,
+        "step": 1
+      },
+      {
+        "key": "darkColor",
+        "label": "Dark Color",
+        "kind": "rgb",
+        "default": [
+          0,
+          0,
+          0
+        ],
+        "help": "Dark end of the palette as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "lightColor",
+        "label": "Light Color",
+        "kind": "rgb",
+        "default": [
+          1,
+          1,
+          1
+        ],
+        "help": "Light end of the palette as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "colorize",
+        "label": "Colorize",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Blend from the content's own colors (0) to the palette (1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "contrast",
+        "label": "Contrast",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Contrast applied to brightness before dithering.",
+        "min": 0.5,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "brightness",
+        "label": "Brightness",
+        "kind": "number",
+        "default": 0,
+        "help": "Brightness offset applied before dithering (-1 to 1).",
+        "min": -0.5,
+        "max": 0.5,
+        "step": 0.05
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 0.75,
+        "help": "Coverage of the dithered pixels inside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "baseStrength",
+        "label": "Base strength",
+        "kind": "number",
+        "default": 0,
+        "help": "Dither coverage across the whole screen, outside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "invert",
+        "label": "Invert",
+        "kind": "number",
+        "default": 0,
+        "help": "Invert brightness inside the effect (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "scanlines",
+        "label": "Scanlines",
+        "kind": "number",
+        "default": 0,
+        "help": "Intensity of the retro scanline overlay (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "pattern",
+        "label": "Pattern",
+        "kind": "select",
+        "default": "bayer",
+        "help": "Dither pattern used for intermediate levels.",
+        "choices": [
+          "bayer",
+          "halftone",
+          "hatch",
+          "dash"
+        ]
+      },
+      {
+        "key": "trail",
+        "label": "Trail",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Phosphor burn-in: the lens leaves a fading ghost along the cursor path (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "degauss",
+        "label": "Degauss",
+        "kind": "number",
+        "default": 0.8,
+        "help": "Strength of the degauss ripple triggered on click (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "followSpeed",
+        "label": "Follow speed",
+        "kind": "number",
+        "default": 3,
+        "help": "How quickly the lens follows the cursor. Higher is snappier.",
+        "min": 1,
+        "max": 20,
+        "step": 0.5
+      }
+    ]
+  },
+  {
+    "id": "ripple",
+    "name": "Ripple",
+    "component": "Ripple",
+    "object": false,
+    "fields": [
+      {
+        "key": "amplitude",
+        "label": "Amplitude",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Height of the waves (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.65,
+        "help": "How fast the rings travel outward. 1 is normal speed.",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "wavelength",
+        "label": "Wavelength",
+        "kind": "number",
+        "default": 80,
+        "help": "Distance between wave crests in CSS pixels.",
+        "min": 8,
+        "max": 80,
+        "step": 1
+      },
+      {
+        "key": "rings",
+        "label": "Rings",
+        "kind": "number",
+        "default": 2,
+        "help": "Number of crests in each wave train (1 to 8).",
+        "min": 1,
+        "max": 8,
+        "step": 1
+      },
+      {
+        "key": "decay",
+        "label": "Decay",
+        "kind": "number",
+        "default": 1,
+        "help": "How quickly the waves lose energy (higher dies faster).",
+        "min": 0.2,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 100,
+        "help": "How strongly the waves bend the page content, in CSS pixels.",
+        "min": 0,
+        "max": 160,
+        "step": 2
+      },
+      {
+        "key": "dispersion",
+        "label": "Dispersion",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Chromatic dispersion splitting colors along the wave slopes (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.02
+      },
+      {
+        "key": "shine",
+        "label": "Shine",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Intensity of the light glints on the wave crests (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "trigger",
+        "label": "Trigger",
+        "kind": "select",
+        "default": "click",
+        "help": "What spawns ripples. \"click\" on press, \"hover\" also leaves a wake while moving, \"none\" only ambient.",
+        "choices": [
+          "click",
+          "hover",
+          "none"
+        ]
+      },
+      {
+        "key": "interval",
+        "label": "Interval",
+        "kind": "number",
+        "default": 0,
+        "help": "Seconds between ambient ripples at random positions. 0 disables them.",
+        "min": 0,
+        "max": 5,
+        "step": 0.25
+      }
+    ]
+  },
+  {
+    "id": "shatter",
+    "name": "Shatter",
+    "component": "Shatter",
+    "object": false,
+    "fields": [
+      {
+        "key": "radius",
+        "label": "Radius",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Radius of the shatter lens around the cursor, relative to the screen height.",
+        "min": 0.1,
+        "max": 0.8,
+        "step": 0.01
+      },
+      {
+        "key": "softness",
+        "label": "Softness",
+        "kind": "number",
+        "default": 0.6,
+        "help": "Edge feather of the lens as a fraction of the radius (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "tileSize",
+        "label": "Tile size",
+        "kind": "number",
+        "default": 125,
+        "help": "Tile size in CSS pixels.",
+        "min": 40,
+        "max": 220,
+        "step": 5
+      },
+      {
+        "key": "shards",
+        "label": "Shards",
+        "kind": "number",
+        "default": 1,
+        "help": "Shape irregularity. 0 keeps a perfect square grid, 1 breaks the page into uneven glass shards.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "corner",
+        "label": "Corner",
+        "kind": "number",
+        "default": 0,
+        "help": "Corner rounding of fully lifted tiles in CSS pixels.",
+        "min": 0,
+        "max": 30,
+        "step": 1
+      },
+      {
+        "key": "lift",
+        "label": "Lift",
+        "kind": "number",
+        "default": 30,
+        "help": "How high tiles lift off the page in CSS pixels.",
+        "min": 0,
+        "max": 120,
+        "step": 2
+      },
+      {
+        "key": "tilt",
+        "label": "Tilt",
+        "kind": "number",
+        "default": 2,
+        "help": "How steeply tiles tip out of the page plane (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "scatter",
+        "label": "Scatter",
+        "kind": "number",
+        "default": 5,
+        "help": "How far tiles slide sideways while lifted, in CSS pixels.",
+        "min": 0,
+        "max": 30,
+        "step": 1
+      },
+      {
+        "key": "perspective",
+        "label": "Perspective",
+        "kind": "number",
+        "default": 1500,
+        "help": "Perspective distance in CSS pixels. Lower is more dramatic.",
+        "min": 300,
+        "max": 2000,
+        "step": 50
+      },
+      {
+        "key": "gapColor",
+        "label": "Gap Color",
+        "kind": "rgb",
+        "default": [
+          0,
+          0,
+          0
+        ],
+        "help": "Color of the void behind lifted tiles as [r, g, b] in 0-1 range."
+      },
+      {
+        "key": "shadow",
+        "label": "Shadow",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Opacity of the drop shadows under lifted tiles (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "shading",
+        "label": "Shading",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Strength of the per-tile lighting (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "refraction",
+        "label": "Refraction",
+        "kind": "number",
+        "default": 1.5,
+        "help": "How strongly lifted shards refract the content beneath them, like glass (0 to 2).",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "dispersion",
+        "label": "Dispersion",
+        "kind": "number",
+        "default": 0.3,
+        "help": "Chromatic fringing of the refraction (0 to 1). 0 keeps it color-true.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "floatSpeed",
+        "label": "Float speed",
+        "kind": "number",
+        "default": 2,
+        "help": "Speed of the floating tile motion. 0 freezes the tiles.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "strength",
+        "label": "Strength",
+        "kind": "number",
+        "default": 1,
+        "help": "How fully tiles lift inside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "baseStrength",
+        "label": "Base strength",
+        "kind": "number",
+        "default": 0,
+        "help": "Lift amount across the whole screen, outside the lens (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "followSpeed",
+        "label": "Follow speed",
+        "kind": "number",
+        "default": 3,
+        "help": "How quickly the lens follows the cursor. Higher is snappier.",
+        "min": 1,
+        "max": 20,
+        "step": 0.5
+      }
+    ]
+  },
+  {
+    "id": "vhs",
+    "name": "VHS",
+    "component": "VHS",
+    "object": false,
+    "fields": [
+      {
+        "key": "speed",
+        "label": "Speed",
+        "kind": "number",
+        "default": 0.5,
+        "help": "Playback speed of the tape artifacts. 1 is normal speed.",
+        "min": 0,
+        "max": 4,
+        "step": 0.1
+      },
+      {
+        "key": "wave",
+        "label": "Wave",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the slow horizontal tape wave (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "jitter",
+        "label": "Jitter",
+        "kind": "number",
+        "default": 0.25,
+        "help": "Strength of the fine per-line horizontal jitter (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "crease",
+        "label": "Crease",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Strength of the travelling tape crease band (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "switching",
+        "label": "Switching",
+        "kind": "number",
+        "default": 0.05,
+        "help": "Strength of the head-switching noise at the bottom (0 to 3).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "switchingHeight",
+        "label": "Switch height",
+        "kind": "number",
+        "default": 0.02,
+        "help": "Height of the head-switching band as a fraction of the screen.",
+        "min": 0,
+        "max": 0.2,
+        "step": 0.005
+      },
+      {
+        "key": "bloom",
+        "label": "Bloom",
+        "kind": "number",
+        "default": 0.4,
+        "help": "Strength of the horizontal glow bleed (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "aberration",
+        "label": "Aberration",
+        "kind": "number",
+        "default": 2,
+        "help": "RGB channel misalignment in CSS pixels.",
+        "min": 0,
+        "max": 12,
+        "step": 0.5
+      },
+      {
+        "key": "acBeat",
+        "label": "AC beat",
+        "kind": "number",
+        "default": 1,
+        "help": "Strength of the slow brightness beat rolling down the frame (0 to 1).",
+        "min": 0,
+        "max": 3,
+        "step": 0.05
+      },
+      {
+        "key": "grain",
+        "label": "Grain",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Amount of animated static grain (0 to 1).",
+        "min": 0,
+        "max": 0.5,
+        "step": 0.01
+      },
+      {
+        "key": "scanlines",
+        "label": "Scanlines",
+        "kind": "number",
+        "default": 0.1,
+        "help": "Intensity of the CRT scanline overlay (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "vignette",
+        "label": "Vignette",
+        "kind": "number",
+        "default": 0,
+        "help": "Darkening toward the frame corners (0 to 1).",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "barrel",
+        "label": "Barrel",
+        "kind": "number",
+        "default": 0,
+        "help": "CRT tube curvature bending the frame inward (0 to 1). 0 disables.",
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      {
+        "key": "saturation",
+        "label": "Saturation",
+        "kind": "number",
+        "default": 1,
+        "help": "Color saturation. 1 keeps the content's colors, 0 is grayscale.",
+        "min": 0,
+        "max": 2,
+        "step": 0.05
+      },
+      {
+        "key": "exposure",
+        "label": "Exposure",
+        "kind": "number",
+        "default": 1,
+        "help": "Extra brightness multiplier applied at the end.",
+        "min": 0.5,
+        "max": 2,
+        "step": 0.05
+      }
+    ]
+  }
+]

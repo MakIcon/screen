@@ -130,8 +130,16 @@ pnpm tauri dev
 To create a native application bundle or installer for your development platform:
 
 ```bash
-pnpm tauri build
+pnpm build:app
 ```
+
+For a standalone debug executable that embeds the frontend and runs without the Vite server:
+
+```bash
+pnpm build:app --debug --no-bundle
+```
+
+`build:app` explicitly enables `tauri/custom-protocol`, including for debug builds.
 
 Useful checks:
 
