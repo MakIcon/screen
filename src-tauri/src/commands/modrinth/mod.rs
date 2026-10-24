@@ -2,13 +2,17 @@ use crate::commands::errors::{CommandError, ErrorCode};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
+    sync::OnceLock,
 };
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::{fs, sync::watch};
+use tokio::{
+    fs,
+    sync::{watch, Mutex},
+};
 
 use crate::models::InstanceItem;
 
@@ -37,6 +41,17 @@ pub(crate) enum ModDownloadControlState {
     Cancelled,
 }
 
+type ActiveModDownloads = Mutex<HashMap<String, watch::Sender<ModDownloadControlState>>>;
+static ACTIVE_MOD_DOWNLOADS: OnceLock<ActiveModDownloads> = OnceLock::new();
+
+fn active_mod_downloads() -> &'static ActiveModDownloads {
+    ACTIVE_MOD_DOWNLOADS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn download_key(instance_id: &str, project_id: &str) -> String {
+    format!("{instance_id}\0{project_id}")
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ModDownloadProgressPayload {
@@ -58,17 +73,48 @@ pub(crate) struct ModDownloadContext {
 }
 
 impl ModDownloadContext {
-    pub(crate) fn new(
+    pub(crate) async fn start(
         app: AppHandle,
         instance_id: String,
         project_id: String,
-        control: watch::Receiver<ModDownloadControlState>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, CommandError> {
+        let key = download_key(&instance_id, &project_id);
+        let (sender, control) = watch::channel(ModDownloadControlState::Downloading);
+        let mut active = active_mod_downloads().lock().await;
+        if active.contains_key(&key) {
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "This content download is already running",
+            ));
+        }
+        active.insert(key, sender);
+        Ok(Self {
             app,
             instance_id,
             project_id,
             control,
+        })
+    }
+
+    pub(crate) async fn finish(
+        &self,
+        result: Result<(), CommandError>,
+    ) -> Result<(), CommandError> {
+        active_mod_downloads()
+            .lock()
+            .await
+            .remove(&download_key(&self.instance_id, &self.project_id));
+        match result {
+            Ok(()) => {
+                self.emit("", 0, 0, "completed");
+                Ok(())
+            }
+            Err(error) => {
+                if error.code == ErrorCode::Cancelled {
+                    self.emit("", 0, 0, "cancelled");
+                }
+                Err(error)
+            }
         }
     }
 

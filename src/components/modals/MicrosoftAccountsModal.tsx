@@ -11,7 +11,7 @@ const MinecraftSkinPreview = lazy(() =>
   import("./MinecraftSkinPreview").then((module) => ({ default: module.MinecraftSkinPreview })),
 );
 
-type ProfileAction = "skin" | "skin-reset" | "cape" | "cape-hide" | null;
+type ProfileAction = "skin" | "skin-reset" | "cape" | null;
 
 type SkinDraft = {
   fileName: string;
@@ -278,23 +278,6 @@ export function MicrosoftAccountsModal({
     }
   };
 
-  const handleHideCape = async () => {
-    if (!selectedAccount) return;
-
-    setProfileAction("cape-hide");
-    setProfileError("");
-    try {
-      const nextProfile = await invoke<MinecraftProfile>("hide_minecraft_cape", {
-        accountId: selectedAccount.id,
-      });
-      syncPreviewFromProfile(nextProfile);
-    } catch (error) {
-      setProfileError(toErrorMessage(error));
-    } finally {
-      setProfileAction(null);
-    }
-  };
-
   return (
     <div className="confirm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="ms-modal ms-modal-manager" onClick={(e) => e.stopPropagation()}>
@@ -360,11 +343,11 @@ export function MicrosoftAccountsModal({
                     <div className="ms-account-info">
                       <span className="ms-account-name">{acc.username}</span>
                       <span className="ms-account-uuid">{acc.uuid}</span>
-                    </div>
-                    <div className="ms-account-actions">
                       {isActive && (
                         <span className="ms-account-badge">{tr("microsoftAccounts.active")}</span>
                       )}
+                    </div>
+                    <div className="ms-account-actions">
                       <button
                         className="ms-account-remove"
                         data-tooltip={tr("microsoftAccounts.removeAccount")}
@@ -474,7 +457,7 @@ export function MicrosoftAccountsModal({
                         <span>
                           {skinDraft
                             ? tr("microsoftAccounts.localPreview")
-                            : (activeSkin?.variant ?? tr("microsoftAccounts.default"))}{" "}
+                            : tr(`microsoftAccounts.skin.${skinVariant}`)}{" "}
                           /{" "}
                           {previewSecondLayer
                             ? tr("microsoftAccounts.layer2")
@@ -565,8 +548,7 @@ export function MicrosoftAccountsModal({
                           <strong>
                             {skinDraft?.fileName ??
                               activeSkin?.alias ??
-                              activeSkin?.variant ??
-                              tr("ui.default")}
+                              tr(`microsoftAccounts.skin.${skinVariant}`)}
                           </strong>
                         </div>
 
@@ -637,15 +619,11 @@ export function MicrosoftAccountsModal({
                           >
                             <MinecraftCapeThumb url={null} />
                             <span>{tr("microsoftAccounts.noCape")}</span>
-                            {activeCapeId === null && (
-                              <strong>{tr("microsoftAccounts.active")}</strong>
-                            )}
                           </button>
 
                           {profile?.capes.map((cape) => {
                             const capeId = cape.id ?? "";
                             const isPreviewed = capeId !== "" && capeId === previewCapeId;
-                            const isActive = capeId !== "" && capeId === activeCapeId;
 
                             return (
                               <button
@@ -660,7 +638,6 @@ export function MicrosoftAccountsModal({
                               >
                                 <MinecraftCapeThumb url={cape.url ?? null} />
                                 <span>{getCapeLabel(cape)}</span>
-                                {isActive && <strong>{tr("microsoftAccounts.active")}</strong>}
                               </button>
                             );
                           })}
@@ -676,16 +653,6 @@ export function MicrosoftAccountsModal({
                             {profileAction === "cape"
                               ? tr("microsoftAccounts.saving")
                               : tr("microsoftAccounts.applyCape")}
-                          </button>
-                          <button
-                            className="ghost-action"
-                            type="button"
-                            onClick={handleHideCape}
-                            disabled={!activeCapeId || profileAction !== null}
-                          >
-                            {profileAction === "cape-hide"
-                              ? tr("microsoftAccounts.hiding")
-                              : tr("microsoftAccounts.hideCape")}
                           </button>
                         </div>
                       </section>

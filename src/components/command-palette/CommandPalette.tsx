@@ -376,7 +376,7 @@ export function CommandPalette({
                 : "50% 0",
             }}
           >
-            <div className="command-palette-heading" title={tr("commandPalette.drag")}>
+            <div className="command-palette-heading" data-tooltip={tr("commandPalette.drag")}>
               <span id={`${id}-title`}>{tr("commandPalette.title")}</span>
               <span className="command-palette-drag-grip" aria-hidden="true" />
               <kbd>{tr("commandPalette.shortcut")}</kbd>

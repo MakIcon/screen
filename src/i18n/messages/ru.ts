@@ -1257,7 +1257,7 @@ export const ru = {
   "instances.loading": "ЗАГРУЗКА…",
   "instances.buildSettings": "Настройки сборки",
   "instances.buildConfiguration": "НАСТРОЙКА СБОРКИ",
-  "instances.worldBackups": "КОПИИ МИРОВ",
+  "instances.worldBackups": "БЭКАП МИРОВ",
   "instances.renameBuild": "ПЕРЕИМЕНОВАТЬ СБОРКУ",
   "instances.saveNewName": "Сохранить новое имя",
   "instances.cancelRename": "Отменить переименование",
@@ -1382,12 +1382,12 @@ export const ru = {
   "microsoftAccounts.viewer": "ПРОСМОТР",
   "microsoftAccounts.rotating": "ВРАЩЕНИЕ",
   "microsoftAccounts.previewAnimation": "Анимация просмотра",
-  "microsoftAccounts.pauseRotate": "ОСТАНОВИТЬ ВРАЩЕНИЕ",
+  "microsoftAccounts.pauseRotate": "ПАУЗА ВРАЩЕНИЯ",
   "microsoftAccounts.autoRotate": "АВТОВРАЩЕНИЕ",
   "microsoftAccounts.hideLayer2": "СКРЫТЬ СЛОЙ 2",
   "microsoftAccounts.showLayer2": "ПОКАЗАТЬ СЛОЙ 2",
-  "microsoftAccounts.zoomOff": "МАСШТАБ ВЫКЛ",
-  "microsoftAccounts.zoomOn": "МАСШТАБ ВКЛ",
+  "microsoftAccounts.zoomOff": "ВЫКЛЮЧИТЬ ЗУМ",
+  "microsoftAccounts.zoomOn": "ВКЛЮЧИТЬ ЗУМ",
   "microsoftAccounts.resetView": "СБРОСИТЬ ВИД",
   "microsoftAccounts.skin": "СКИН",
   "microsoftAccounts.skinModel": "Модель скина",
@@ -1399,8 +1399,6 @@ export const ru = {
   "microsoftAccounts.capes": "ПЛАЩИ",
   "microsoftAccounts.saving": "СОХРАНЕНИЕ…",
   "microsoftAccounts.applyCape": "ПРИМЕНИТЬ ПЛАЩ",
-  "microsoftAccounts.hiding": "СКРЫТИЕ…",
-  "microsoftAccounts.hideCape": "СКРЫТЬ ПЛАЩ",
 
   // minecraftSearch
   "minecraftSearch.blocksAndGroups": "Блоки и группы",
@@ -1498,6 +1496,7 @@ export const ru = {
   "overview.nickname": "НИК",
   "overview.loggedIn": "ВХОД ВЫПОЛНЕН",
   "overview.noAccountClickTo": "Нет аккаунта — нажмите, чтобы добавить",
+  "overview.addAccount": "Добавить аккаунт",
   "overview.account": "АККАУНТ",
   "overview.noBuilds": "СБОРОК ПОКА НЕТ",
   "overview.createAMinecraftBuild":
@@ -1840,7 +1839,7 @@ export const ru = {
   // microsoftAccounts.motion
   "microsoftAccounts.motion.STILL": "СТОИТ",
   "microsoftAccounts.motion.IDLE": "ОЖИДАНИЕ",
-  "microsoftAccounts.motion.WALK": "ШАГ",
+  "microsoftAccounts.motion.WALK": "ХОДЬБА",
   "microsoftAccounts.motion.RUN": "БЕГ",
   "microsoftAccounts.motion.WAVE": "ПРИВЕТ",
 
@@ -2118,7 +2117,7 @@ export const ru = {
   // tabs
   "tabs.overview": "ГЛАВНАЯ",
   "tabs.instances": "СБОРКИ",
-  "tabs.mods": "MODRINTH",
+  "tabs.mods": "МОДЫ",
   "tabs.resourcepacks": "НАБОРЫ",
   "tabs.shaders": "ШЕЙДЕРЫ",
   "tabs.settings": "НАСТРОЙКИ",

@@ -1356,8 +1356,6 @@ export const en: EnglishMessages = {
   "microsoftAccounts.capes": "CAPES",
   "microsoftAccounts.saving": "SAVING...",
   "microsoftAccounts.applyCape": "APPLY CAPE",
-  "microsoftAccounts.hiding": "HIDING...",
-  "microsoftAccounts.hideCape": "HIDE CAPE",
 
   // minecraftSearch
   "minecraftSearch.blocksAndGroups": "Blocks and groups",
@@ -1454,6 +1452,7 @@ export const en: EnglishMessages = {
   "overview.nickname": "NICKNAME",
   "overview.loggedIn": "LOGGED IN",
   "overview.noAccountClickTo": "No account — click to add",
+  "overview.addAccount": "Add account",
   "overview.account": "ACCOUNT",
   "overview.noBuilds": "NO BUILDS",
   "overview.createAMinecraftBuild":

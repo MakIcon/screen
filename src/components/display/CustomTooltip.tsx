@@ -117,6 +117,7 @@ export function CustomTooltip() {
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("close", hide, true);
     document.addEventListener("scroll", onScroll, true);
     window.addEventListener("blur", hide);
     window.addEventListener("resize", hide);
@@ -129,6 +130,7 @@ export function CustomTooltip() {
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("close", hide, true);
       document.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("blur", hide);
       window.removeEventListener("resize", hide);
@@ -198,6 +200,7 @@ export function CustomTooltip() {
     <div ref={popupRef} id={id} className="custom-tooltip" role="tooltip" style={position}>
       {tooltip.text}
     </div>,
-    document.body,
+    // Native modal dialogs render above body portals, regardless of z-index.
+    tooltip.target.closest("dialog[open]") ?? document.body,
   );
 }

@@ -145,6 +145,7 @@
   transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
   position: relative;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .mod-card.modrinth-card:hover {
@@ -154,32 +155,135 @@
   box-shadow: var(--surface-shadow);
 }
 
-.mod-download-progress {
-  display: grid;
-  gap: 7px;
-  margin: 12px 0 4px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+.modrinth-card[data-download-state] {
+  --catalog-progress-color: var(--accent);
+  border-color: color-mix(in srgb, var(--catalog-progress-color) 35%, var(--line));
 }
 
-.mod-download-progress-head,
-.mod-download-progress-actions {
+.modrinth-card[data-download-state]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--catalog-progress-color) 7%, transparent),
+    color-mix(in srgb, var(--catalog-progress-color) 13%, transparent) 80%,
+    color-mix(in srgb, var(--catalog-progress-color) 21%, transparent)
+  );
+  box-shadow: inset -2px 0 color-mix(in srgb, var(--catalog-progress-color) 65%, transparent);
+  transform: scaleX(var(--catalog-download-progress, 0));
+  transform-origin: left;
+  transition:
+    transform 180ms linear,
+    opacity 180ms ease;
+}
+
+.modrinth-card[data-download-indeterminate="true"]::after {
+  animation: catalog-download-search 1.8s ease-in-out infinite;
+}
+
+.modrinth-card[data-download-state="paused"],
+.modrinth-card[data-download-state="cancelled"] {
+  --catalog-progress-color: var(--muted-strong);
+}
+
+.modrinth-card[data-download-state="paused"]::after,
+.modrinth-card[data-download-state="cancelled"]::after {
+  animation-play-state: paused;
+  opacity: 0.6;
+}
+
+.catalog-download-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
+  min-height: 43px;
+}
+
+.catalog-download-status {
+  display: grid;
+  gap: 3px;
+  margin-inline-end: 6px;
+  color: var(--catalog-progress-color);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-download-status strong {
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 1px;
 }
 
-.mod-download-progress-head span {
-  color: var(--accent);
-  font-size: 10px;
+.catalog-download-status > span {
+  min-width: 4ch;
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 800;
 }
 
-.mod-download-progress-track,
+.catalog-download-control {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--catalog-progress-color) 20%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.catalog-download-control:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--catalog-progress-color) 12%, var(--bg));
+  border-color: var(--catalog-progress-color);
+  color: var(--catalog-progress-color);
+}
+
+.catalog-download-control--cancel:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.catalog-download-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.catalog-download-control:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@keyframes catalog-download-search {
+  from {
+    transform: translateX(-32%) scaleX(0.32);
+  }
+  to {
+    transform: translateX(100%) scaleX(0.32);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modrinth-card[data-download-state]::after {
+    transition: none;
+    animation: none;
+  }
+
+  .modrinth-card[data-download-indeterminate="true"]::after {
+    transform: scaleX(1);
+    opacity: 0.5;
+  }
+}
+
 .modrinth-detail-download-progress > i {
   display: block;
   height: 4px;
@@ -187,7 +291,6 @@
   background: var(--line);
 }
 
-.mod-download-progress-track span,
 .modrinth-detail-download-progress > i span {
   display: block;
   height: 100%;
@@ -195,16 +298,6 @@
   transition: width 120ms linear;
 }
 
-.mod-download-progress-actions > span {
-  min-width: 0;
-  margin-right: auto;
-  overflow: hidden;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mod-download-progress-actions button,
 .modrinth-detail-download-progress button {
   border: 0;
   background: transparent;
@@ -215,7 +308,6 @@
   cursor: pointer;
 }
 
-.mod-download-progress-actions button.danger,
 .modrinth-detail-download-progress button:last-child {
   color: var(--accent);
 }

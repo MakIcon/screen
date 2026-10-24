@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { ModDownloadProgressPayload, ModrinthProject } from "../../types";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import { ModrinthProjectIcon } from "./ModrinthProjectModal";
@@ -34,39 +35,71 @@ function truncateDescription(description: string) {
 
 function ModDownloadControls({
   progress,
+  percent,
+  determinate,
   onPause,
   onCancel,
 }: {
   progress: ModDownloadProgressPayload;
+  percent: number;
+  determinate: boolean;
   onPause: (paused: boolean) => Promise<void>;
   onCancel: () => Promise<void>;
 }) {
   const tr = useTranslation();
   const paused = progress.state === "paused";
-  const percent = Math.round(progress.percent);
+  const finished = progress.state === "completed" || progress.state === "cancelled";
+  const label = paused
+    ? tr("common.paused")
+    : progress.state === "completed"
+      ? tr("catalogProjectCard.downloaded")
+      : progress.state === "cancelled"
+        ? tr("common.working")
+        : tr("common.downloading");
   return (
-    <div className="mod-download-progress" onClick={(event) => event.stopPropagation()}>
-      <div className="mod-download-progress-head">
-        <strong>{paused ? tr("common.paused") : tr("common.downloading")}</strong>
-        <span>{percent}%</span>
-      </div>
+    <div className="catalog-download-controls">
       <div
-        className="mod-download-progress-track"
-        aria-label={`${tr("catalogProjectCard.download")} ${percent}%`}
+        className="catalog-download-status"
+        role="progressbar"
+        aria-label={tr("catalogProjectCard.download")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={determinate ? percent : undefined}
+        aria-valuetext={`${label}${determinate ? ` ${Math.round(percent)}%` : ""}`}
+        data-tooltip={progress.filename || tr("catalogProjectCard.resolvingDependencies")}
       >
-        <span style={{ width: `${percent}%` }} />
+        <strong>{label}</strong>
+        <span>{determinate ? `${Math.round(percent)}%` : "…"}</span>
       </div>
-      <div className="mod-download-progress-actions">
-        <span data-tooltip={progress.filename}>
-          {progress.filename || tr("catalogProjectCard.resolvingDependencies")}
-        </span>
-        <button type="button" onClick={() => void onPause(!paused)}>
-          {paused ? tr("common.resume") : tr("common.pause")}
-        </button>
-        <button className="danger" type="button" onClick={() => void onCancel()}>
-          {tr("common.cancel")}
-        </button>
-      </div>
+      <button
+        className="catalog-download-control"
+        type="button"
+        aria-label={paused ? tr("common.resume") : tr("common.pause")}
+        data-tooltip={paused ? tr("common.resume") : tr("common.pause")}
+        disabled={finished}
+        onClick={() => void onPause(!paused)}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          {paused ? <path d="m5 3 8 5-8 5Z" /> : <path d="M4 3h3v10H4zm5 0h3v10H9z" />}
+        </svg>
+      </button>
+      <button
+        className="catalog-download-control catalog-download-control--cancel"
+        type="button"
+        aria-label={tr("common.cancel")}
+        data-tooltip={tr("common.cancel")}
+        disabled={finished}
+        onClick={() => void onCancel()}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="m4 4 8 8m0-8-8 8"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -86,12 +119,28 @@ export function CatalogProjectCard({
   cancelDownload,
 }: CatalogProjectCardProps) {
   const tr = useTranslation();
+  const progress = busy && downloadProgress?.projectId === item.projectId ? downloadProgress : null;
+  const percent = progress
+    ? progress.state === "completed"
+      ? 100
+      : Number.isFinite(progress.percent)
+        ? Math.max(0, Math.min(100, progress.percent))
+        : 0
+    : 0;
+  const determinate = Boolean(
+    progress && (progress.state === "completed" || progress.totalBytes > 0),
+  );
   return (
     <div
       ref={(node) => {
         if (node) catalogProjects.set(node, item);
       }}
       className="mod-card modrinth-card"
+      data-download-state={progress?.state}
+      data-download-indeterminate={progress && !determinate ? "true" : undefined}
+      style={
+        progress ? ({ "--catalog-download-progress": percent / 100 } as CSSProperties) : undefined
+      }
       key={item.projectId}
       role="button"
       tabIndex={0}
@@ -118,7 +167,15 @@ export function CatalogProjectCard({
           </div>
         </div>
         <div className="mod-card-actions" onClick={(event) => event.stopPropagation()}>
-          {item.installed ? (
+          {progress ? (
+            <ModDownloadControls
+              progress={progress}
+              percent={percent}
+              determinate={determinate}
+              onPause={setDownloadPaused}
+              onCancel={cancelDownload}
+            />
+          ) : item.installed ? (
             installedCatalogMode === "downloaded" ? (
               <>
                 <button className="ghost-action installed catalog-action" type="button" disabled>
@@ -169,13 +226,6 @@ export function CatalogProjectCard({
           )}
         </div>
       </div>
-      {kind === "mods" && busy && downloadProgress?.projectId === item.projectId && (
-        <ModDownloadControls
-          progress={downloadProgress}
-          onPause={setDownloadPaused}
-          onCancel={cancelDownload}
-        />
-      )}
       <p className="mod-description">{truncateDescription(item.description)}</p>
       <div className="mod-meta-strip">
         <span>

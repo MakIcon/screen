@@ -75,8 +75,8 @@ export function MinecraftSkinPreview({
     const rect = parent.getBoundingClientRect();
     const viewer = new skinview3d.SkinViewer({
       canvas,
-      width: Math.max(260, Math.round(rect.width || 320)),
-      height: Math.max(300, Math.round(rect.height || 360)),
+      width: Math.max(1, Math.round(rect.width || 320)),
+      height: Math.max(1, Math.round(rect.height || 360)),
       fov: 52,
       zoom: PREVIEW_ZOOM,
       enableControls: true,
@@ -100,8 +100,8 @@ export function MinecraftSkinPreview({
     const resizeObserver = new ResizeObserver(([entry]) => {
       if (!entry) return;
       viewer.setSize(
-        Math.max(240, Math.round(entry.contentRect.width)),
-        Math.max(280, Math.round(entry.contentRect.height)),
+        Math.max(1, Math.round(entry.contentRect.width)),
+        Math.max(1, Math.round(entry.contentRect.height)),
       );
     });
 

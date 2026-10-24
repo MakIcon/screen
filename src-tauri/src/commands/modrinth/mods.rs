@@ -1,15 +1,9 @@
 use crate::commands::errors::{CommandError, ErrorCode};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 use tauri::AppHandle;
-use tokio::{
-    fs,
-    sync::{watch, Mutex},
-};
+use tokio::fs;
 
 use crate::{minecraft::LoaderKind, models::ActionResult};
 
@@ -18,24 +12,14 @@ use super::file_content::{
     uninstall_file_content, validate_filename, FileContentConfig,
 };
 use super::{
-    build_client, choose_primary_file, fetch_modrinth_search, http_json, install_project_to_dir,
-    resolve_project_install_plan, reusable_installed_entry, InstalledModEntry, InstalledModView,
-    ModDownloadContext, ModDownloadControlState, ModrinthSearchResponse, ModrinthVersion,
-    ModrinthVersionFile, MODRINTH_API_BASE, SEARCH_PAGE_SIZE_MAX,
+    active_mod_downloads, build_client, choose_primary_file, download_key, fetch_modrinth_search,
+    http_json, install_project_to_dir, resolve_project_install_plan, reusable_installed_entry,
+    InstalledModEntry, InstalledModView, ModDownloadContext, ModDownloadControlState,
+    ModrinthSearchResponse, ModrinthVersion, ModrinthVersionFile, MODRINTH_API_BASE,
+    SEARCH_PAGE_SIZE_MAX,
 };
 
 const MODS_STATE_FILE: &str = ".screenlauncher-modrinth.json";
-
-type ActiveModDownloads = Mutex<HashMap<String, watch::Sender<ModDownloadControlState>>>;
-static ACTIVE_MOD_DOWNLOADS: OnceLock<ActiveModDownloads> = OnceLock::new();
-
-fn active_mod_downloads() -> &'static ActiveModDownloads {
-    ACTIVE_MOD_DOWNLOADS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn download_key(instance_id: &str, project_id: &str) -> String {
-    format!("{instance_id}\0{project_id}")
-}
 
 // Mods share the generic content state layer, but keep their own command
 // surface because installs are loader-aware and resolve dependencies.
@@ -227,25 +211,8 @@ pub async fn install_modrinth_project(
 
         let target_dir = ensure_content_dir(&instance, MODS).await?;
         let mut install_batch = read_state(&instance, MODS).await?;
-        let key = download_key(&instance_id, &project_id);
-        let (control_sender, control_receiver) =
-            watch::channel(ModDownloadControlState::Downloading);
-        {
-            let mut active = active_mod_downloads().lock().await;
-            if active.contains_key(&key) {
-                return Err(CommandError::new(
-                    ErrorCode::InvalidInput,
-                    "This mod download is already running",
-                ));
-            }
-            active.insert(key.clone(), control_sender);
-        }
-        let context = ModDownloadContext::new(
-            app,
-            instance_id.clone(),
-            project_id.clone(),
-            control_receiver,
-        );
+        let context =
+            ModDownloadContext::start(app, instance_id.clone(), project_id.clone()).await?;
 
         let install_result = install_project_to_dir(
             &client,
@@ -258,15 +225,7 @@ pub async fn install_modrinth_project(
             Some(&context),
         )
         .await;
-        active_mod_downloads().lock().await.remove(&key);
-
-        if let Err(error) = install_result {
-            if error.code == ErrorCode::Cancelled {
-                context.emit("", 0, 0, "cancelled");
-            }
-            return Err(error);
-        }
-        context.emit("", 0, 0, "completed");
+        context.finish(install_result).await?;
 
         Ok(ActionResult {
             ok: true,
@@ -289,7 +248,10 @@ pub async fn set_modrinth_download_paused(
         let control = active
             .get(&download_key(&instance_id, &project_id))
             .ok_or_else(|| {
-                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Content download is no longer active",
+                )
             })?;
         control
             .send(if paused {
@@ -298,7 +260,10 @@ pub async fn set_modrinth_download_paused(
                 ModDownloadControlState::Downloading
             })
             .map_err(|_| {
-                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Content download is no longer active",
+                )
             })
     }
     .await;
@@ -315,12 +280,18 @@ pub async fn cancel_modrinth_download(
         let control = active
             .get(&download_key(&instance_id, &project_id))
             .ok_or_else(|| {
-                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Content download is no longer active",
+                )
             })?;
         control
             .send(ModDownloadControlState::Cancelled)
             .map_err(|_| {
-                CommandError::new(ErrorCode::InvalidInput, "Mod download is no longer active")
+                CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "Content download is no longer active",
+                )
             })
     }
     .await;

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { InstanceItem, ModrinthProject, ModrinthSearchResponse } from "../types";
+import type {
+  InstanceItem,
+  ModDownloadProgressPayload,
+  ModrinthProject,
+  ModrinthSearchResponse,
+} from "../types";
+import type { ModrinthContentKind } from "./useModrinthContent";
 
 // Exercise the hook's async handlers without a browser or a new DOM dependency.
 // State/ref slots persist across renders; effects run when their dependencies change.
@@ -8,6 +14,7 @@ const runtime = vi.hoisted(() => ({
   cursor: 0,
   pending: [] as (() => void)[],
   invoke: vi.fn(),
+  progressListeners: new Set<(event: { payload: ModDownloadProgressPayload }) => void>(),
 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
@@ -41,7 +48,14 @@ vi.mock("react", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: runtime.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(
+    async (_name: string, listener: (event: { payload: ModDownloadProgressPayload }) => void) => {
+      runtime.progressListeners.add(listener);
+      return () => runtime.progressListeners.delete(listener);
+    },
+  ),
+}));
 
 import { useModrinthContent } from "./useModrinthContent";
 
@@ -62,11 +76,14 @@ function page(id: string): ModrinthSearchResponse {
 }
 const build = { id: "one", version: "1.21.1", loader: "Fabric" } as InstanceItem;
 const callbacks = { setActionError: vi.fn(), setBusyMessage: vi.fn(), pushToast: vi.fn() };
-function RenderHookHarness(target: InstanceItem | null = build) {
+function RenderHookHarness(
+  target: InstanceItem | null = build,
+  kind: ModrinthContentKind = "resourcepacks",
+) {
   runtime.cursor = 0;
   const controller = useModrinthContent({
-    kind: "resourcepacks",
-    activeTab: "resourcepacks",
+    kind,
+    activeTab: kind,
     target,
     ...callbacks,
   });
@@ -84,6 +101,7 @@ describe("Modrinth asynchronous results", () => {
     runtime.slots = [];
     runtime.pending = [];
     runtime.invoke.mockReset();
+    runtime.progressListeners.clear();
     runtime.invoke.mockImplementation(async (command: string) => {
       if (command.startsWith("list_")) return [];
       if (command.startsWith("search_")) return page("initial");
@@ -184,4 +202,62 @@ describe("Modrinth asynchronous results", () => {
     expect(controller.installedItems.map((item) => item.projectId)).toEqual(["new-install"]);
     expect(controller.installedLoading).toBe(false);
   });
+
+  it.each<ModrinthContentKind>(["mods", "resourcepacks", "shaders"])(
+    "tracks the active %s download, supports pause/resume/cancel, and ignores unrelated events",
+    async (kind) => {
+      RenderHookHarness(build, kind);
+      await vi.advanceTimersByTimeAsync(180);
+      const installation = deferred<{ ok: boolean; message: string }>();
+      runtime.invoke.mockImplementation((command: string) => {
+        if (command.startsWith("install_")) return installation.promise;
+        if (command.startsWith("list_")) return Promise.resolve([]);
+        if (command.startsWith("search_")) return Promise.resolve(page("initial"));
+        return Promise.resolve();
+      });
+      const pending = RenderHookHarness(build, kind).install("initial");
+      const progress: ModDownloadProgressPayload = {
+        instanceId: build.id,
+        projectId: "initial",
+        filename: "download.zip",
+        receivedBytes: 42,
+        totalBytes: 100,
+        percent: 42,
+        state: "downloading",
+      };
+      const emit = (payload: ModDownloadProgressPayload) => {
+        for (const listener of runtime.progressListeners) listener({ payload });
+      };
+      emit({ ...progress, instanceId: "other-build" });
+      emit({ ...progress, projectId: "other-project" });
+      expect(RenderHookHarness(build, kind).downloadProgress?.percent).toBe(0);
+      emit(progress);
+      expect(RenderHookHarness(build, kind).downloadProgress?.percent).toBe(42);
+
+      await RenderHookHarness(build, kind).setDownloadPaused(true);
+      expect(runtime.invoke).toHaveBeenCalledWith("set_modrinth_download_paused", {
+        instanceId: build.id,
+        projectId: "initial",
+        paused: true,
+      });
+      expect(RenderHookHarness(build, kind).downloadProgress?.state).toBe("paused");
+      await RenderHookHarness(build, kind).setDownloadPaused(false);
+      expect(RenderHookHarness(build, kind).downloadProgress?.state).toBe("downloading");
+      await RenderHookHarness(build, kind).cancelDownload();
+      expect(runtime.invoke).toHaveBeenCalledWith("cancel_modrinth_download", {
+        instanceId: build.id,
+        projectId: "initial",
+      });
+      expect(RenderHookHarness(build, kind).downloadProgress?.state).toBe("cancelled");
+
+      installation.reject(
+        Object.assign(new Error("MOD_DOWNLOAD_CANCELLED"), { code: "cancelled" }),
+      );
+      await pending;
+      emit(progress);
+      const controller = RenderHookHarness(build, kind);
+      expect(controller.downloadProgress).toBeNull();
+      expect(controller.busyProjectId).toBeNull();
+    },
+  );
 });

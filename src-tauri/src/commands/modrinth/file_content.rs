@@ -4,6 +4,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use tauri::AppHandle;
 use tokio::fs;
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
 
 use super::{
     build_client, fetch_modrinth_search, install_project_to_dir, InstalledModEntry,
-    InstalledModView, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
+    InstalledModView, ModDownloadContext, ModrinthSearchResponse, SEARCH_PAGE_SIZE_MAX,
 };
 
 #[derive(Clone, Copy)]
@@ -155,6 +156,7 @@ pub(super) async fn search_file_content(
 
 pub(super) async fn install_file_content(
     config: FileContentConfig,
+    app: AppHandle,
     instance_id: String,
     project_id: String,
 ) -> Result<ActionResult, CommandError> {
@@ -165,7 +167,8 @@ pub(super) async fn install_file_content(
     let target_dir = ensure_content_dir(&instance, config).await?;
     let mut install_batch = read_state(&instance, config).await?;
 
-    install_project_to_dir(
+    let context = ModDownloadContext::start(app, instance_id.clone(), project_id.clone()).await?;
+    let install_result = install_project_to_dir(
         &client,
         &instance,
         &project_id,
@@ -173,9 +176,10 @@ pub(super) async fn install_file_content(
         &metadata_path(&instance, config),
         &[],
         &mut install_batch,
-        None,
+        Some(&context),
     )
-    .await?;
+    .await;
+    context.finish(install_result).await?;
 
     Ok(ActionResult {
         ok: true,

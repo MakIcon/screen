@@ -434,9 +434,7 @@ export function ModrinthContentTab({
           if (selectedProject) void uninstall(selectedProject.projectId);
         }}
         downloadProgress={
-          kind === "mods" && downloadProgress?.projectId === selectedProject?.projectId
-            ? downloadProgress
-            : null
+          downloadProgress?.projectId === selectedProject?.projectId ? downloadProgress : null
         }
         onDownloadPause={setDownloadPaused}
         onDownloadCancel={cancelDownload}

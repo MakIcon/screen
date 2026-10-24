@@ -124,8 +124,14 @@ export function OverviewPanel({
                   </button>
                 </HoverRevealValue>
               ) : (
-                <button className="mockup-ms-row mockup-ms-row--empty" onClick={onOpenMsModal}>
-                  <span className="mockup-ms-none">{tr("overview.noAccountClickTo")}</span>
+                <button
+                  className="mockup-ms-row mockup-ms-row--empty"
+                  type="button"
+                  onClick={onOpenMsModal}
+                  aria-label={tr("overview.noAccountClickTo")}
+                  data-tooltip={tr("overview.noAccountClickTo")}
+                >
+                  <span className="mockup-ms-none">{tr("overview.addAccount")}</span>
                 </button>
               )}
             </div>

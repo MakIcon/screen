@@ -190,17 +190,22 @@
 }
 
 .ms-modal-manager {
-  width: min(1040px, calc(100vw - 42px));
-  height: min(820px, calc(100vh - 42px));
-  max-width: calc(100vw - 42px);
-  max-height: calc(100vh - 42px);
+  width: min(1160px, calc(100vw - 32px));
+  height: min(780px, calc(100vh - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
+.ms-modal-manager .ms-modal-head {
+  flex-shrink: 0;
+  padding: 14px 22px;
 }
 
 .ms-manager-body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: clamp(210px, 22vw, 260px) minmax(0, 1fr);
 }
 
 .ms-account-pane {
@@ -238,6 +243,7 @@
 }
 
 .ms-account-pane .ms-account-row {
+  gap: 10px;
   padding: 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -248,6 +254,24 @@
 
 .ms-account-pane .ms-add-btn {
   margin-top: auto;
+  padding: 12px 10px;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.ms-account-pane .ms-add-btn svg {
+  flex-shrink: 0;
+}
+
+.ms-account-pane .ms-auth-error {
+  margin: 0;
+}
+
+.ms-account-info .ms-account-badge {
+  align-self: flex-start;
+  padding: 2px 5px;
+  font-size: 8px;
+  letter-spacing: 1px;
 }
 
 .ms-modal-empty-compact {
@@ -263,12 +287,13 @@
 }
 
 .ms-profile-head {
-  min-height: 78px;
+  min-height: 64px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 18px 24px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -296,7 +321,7 @@
 }
 
 .ms-profile-uuid {
-  max-width: 280px;
+  max-width: 45%;
   font-size: 10px;
   color: var(--muted);
   letter-spacing: 0.4px;
@@ -310,9 +335,9 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(270px, 0.88fr) minmax(340px, 1.12fr);
-  gap: 18px;
-  padding: 20px 24px;
+  grid-template-columns: minmax(180px, 0.88fr) minmax(290px, 1.12fr);
+  gap: 14px;
+  padding: 12px 16px;
 }
 
 .ms-preview-panel {
@@ -327,7 +352,7 @@
 .ms-preview-canvas-shell {
   position: relative;
   flex: 1;
-  min-height: 360px;
+  min-height: 0;
   overflow: hidden;
   background:
     linear-gradient(45deg, rgba(26, 26, 26, 0.035) 25%, transparent 25%),
@@ -369,12 +394,13 @@
 }
 
 .ms-preview-meta {
-  min-height: 54px;
+  min-height: 40px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 10px 12px;
   border-top: 1px solid var(--line);
   font-size: 10px;
   font-weight: 800;
@@ -400,34 +426,23 @@
 .ms-editor-panel {
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-}
-
-.ms-editor-panel::-webkit-scrollbar {
-  width: 3px;
-}
-
-.ms-editor-panel::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, max-content);
+  align-content: start;
+  gap: 8px;
 }
 
 .ms-editor-section {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--line);
   background: var(--bg-card);
 }
 
 .ms-editor-section-fill {
-  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -464,14 +479,16 @@
 }
 
 .ms-segmented button {
-  min-height: 40px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px;
   background: transparent;
   border: none;
   border-right: 1px solid var(--line);
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -486,28 +503,24 @@
   color: var(--accent);
 }
 
-.ms-viewer-section {
-  gap: 12px;
-  padding: 12px;
-}
-
 .ms-motion-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
   border: 1px solid var(--line);
 }
 
 .ms-motion-grid button {
   min-width: 0;
-  min-height: 32px;
-  padding: 7px 4px;
+  min-height: 30px;
+  padding: 6px 3px;
   background: transparent;
   border: none;
   border-right: 1px solid var(--line);
   color: var(--muted);
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  overflow-wrap: anywhere;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -525,13 +538,16 @@
 .ms-viewer-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .ms-toggle-action {
-  min-height: 34px;
-  padding: 8px 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px;
   font-size: 9px;
+  line-height: 1.3;
+  letter-spacing: 0.5px;
   text-align: center;
   white-space: normal;
 }
@@ -545,14 +561,17 @@
 .ms-action-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .ms-action-pair button {
   width: 100%;
-  min-height: 38px;
-  padding: 10px 10px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 7px 6px;
   font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.5px;
   text-align: center;
   white-space: normal;
 }
@@ -580,32 +599,31 @@
 }
 
 .ms-cape-list {
-  flex: 0 0 auto;
-  min-height: 56px;
-  max-height: 150px;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  grid-auto-rows: minmax(48px, auto);
+  gap: 6px;
   overflow-y: auto;
-  border: 1px solid var(--line);
 }
 
 .ms-cape-row {
   width: 100%;
-  min-height: 66px;
+  min-width: 0;
+  min-height: 48px;
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: none;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
+  column-gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-card);
   color: var(--ink);
   text-align: left;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-}
-
-.ms-cape-row:last-child {
-  border-bottom: none;
 }
 
 .ms-cape-row:hover:not(:disabled),
@@ -619,29 +637,19 @@
   cursor: not-allowed;
 }
 
-.ms-cape-row span:nth-child(2),
-.ms-cape-row strong {
+.ms-cape-row span:nth-child(2) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ms-cape-row span:nth-child(2) {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.4px;
 }
 
-.ms-cape-row strong {
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  color: var(--accent);
-}
-
 .ms-cape-thumb {
-  width: 44px;
-  height: 50px;
+  width: 34px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -652,12 +660,13 @@
 
 .ms-cape-thumb-cape {
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
 }
 
 .ms-cape-face {
-  width: 17px;
-  height: 30px;
+  width: 13px;
+  height: 24px;
+  flex-shrink: 0;
   border: 1px solid rgba(26, 26, 26, 0.08);
   background-repeat: no-repeat;
   background-size: 640% 200%;
@@ -683,6 +692,7 @@
 }
 
 .ms-cape-actions {
+  grid-template-columns: minmax(0, 1fr);
   flex-shrink: 0;
 }
 
@@ -709,15 +719,35 @@
   display: none;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 781px) and (max-height: 720px) {
+  .ms-modal-manager .ms-modal-head {
+    padding: 8px 18px;
+  }
+
+  .ms-profile-head {
+    min-height: 56px;
+    padding: 8px 14px;
+  }
+
+  .ms-profile-grid {
+    gap: 10px;
+    padding: 8px 12px;
+  }
+
+  .ms-editor-section {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 780px) {
   .ms-modal-manager {
     height: min(780px, calc(100vh - 28px));
     max-width: calc(100vw - 28px);
   }
 
   .ms-manager-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 230px) minmax(0, 1fr);
+    display: block;
+    overflow-y: auto;
   }
 
   .ms-account-pane {
@@ -725,21 +755,26 @@
     border-bottom: 1px solid var(--line);
   }
 
+  .ms-account-list {
+    max-height: 160px;
+    flex-shrink: 0;
+  }
+
   .ms-profile-grid {
+    flex: none;
     grid-template-columns: 1fr;
-    overflow-y: auto;
   }
 
   .ms-preview-canvas-shell {
     min-height: 320px;
   }
 
-  .ms-motion-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .ms-editor-panel {
+    grid-template-rows: auto;
   }
 
-  .ms-motion-grid button:nth-child(3) {
-    border-right: none;
+  .ms-cape-list {
+    flex: auto;
   }
 }
 

@@ -1,5 +1,6 @@
 use crate::commands::errors::CommandError;
 use crate::models::ActionResult;
+use tauri::AppHandle;
 
 use super::{
     file_content::{
@@ -41,11 +42,12 @@ pub async fn search_modrinth_resourcepacks(
 
 #[tauri::command]
 pub async fn install_modrinth_resourcepack(
+    app: AppHandle,
     instance_id: String,
     project_id: String,
 ) -> Result<ActionResult, CommandError> {
     let result: Result<_, CommandError> =
-        async { install_file_content(RESOURCE_PACKS, instance_id, project_id).await }.await;
+        async { install_file_content(RESOURCE_PACKS, app, instance_id, project_id).await }.await;
     result
 }
 

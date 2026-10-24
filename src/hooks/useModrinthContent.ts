@@ -127,6 +127,7 @@ export function useModrinthContent({
   const [installedItems, setInstalledItems] = useState<InstalledModView[]>([]);
   const [installedLoading, setInstalledLoading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<ModDownloadProgressPayload | null>(null);
+  const activeDownload = useRef<{ instanceId: string; projectId: string } | null>(null);
   const clearBusyTimer = useRef<number | null>(null);
   const searchRequests = useRef(new RequestGeneration());
   const installedRequests = useRef(new RequestGeneration());
@@ -204,12 +205,16 @@ export function useModrinthContent({
   }, []);
 
   useEffect(() => {
-    if (kind !== "mods") return;
     setDownloadProgress(null);
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<ModDownloadProgressPayload>("mod-download-progress", (event) => {
       if (event.payload.instanceId !== target?.id) return;
+      if (
+        event.payload.instanceId !== activeDownload.current?.instanceId ||
+        event.payload.projectId !== activeDownload.current.projectId
+      )
+        return;
       setDownloadProgress(event.payload);
     })
       .then((dispose) => {
@@ -324,17 +329,16 @@ export function useModrinthContent({
 
     try {
       setBusyProjectId(projectId);
-      if (kind === "mods") {
-        setDownloadProgress({
-          instanceId: target.id,
-          projectId,
-          filename: projectName,
-          receivedBytes: 0,
-          totalBytes: 0,
-          percent: 0,
-          state: "downloading",
-        });
-      }
+      activeDownload.current = { instanceId: target.id, projectId };
+      setDownloadProgress({
+        instanceId: target.id,
+        projectId,
+        filename: projectName,
+        receivedBytes: 0,
+        totalBytes: 0,
+        percent: 0,
+        state: "downloading",
+      });
       setActionError("");
       setBusyMessage(commands.installingMessage());
       const result = await invoke<ActionResult>(commands.install, {
@@ -363,13 +367,14 @@ export function useModrinthContent({
       pushToast("error", message, { title: translate(commands.installFailedTitle) });
     } finally {
       setBusyProjectId(null);
-      if (kind === "mods") setDownloadProgress(null);
+      activeDownload.current = null;
+      setDownloadProgress(null);
       scheduleBusyMessageClear();
     }
   };
 
   const setDownloadPaused = async (paused: boolean) => {
-    if (kind !== "mods" || !target || !busyProjectId) return;
+    if (!target || !busyProjectId || activeDownload.current?.instanceId !== target.id) return;
     setDownloadProgress((current) =>
       current ? { ...current, state: paused ? "paused" : "downloading" } : current,
     );
@@ -385,7 +390,7 @@ export function useModrinthContent({
   };
 
   const cancelDownload = async () => {
-    if (kind !== "mods" || !target || !busyProjectId) return;
+    if (!target || !busyProjectId || activeDownload.current?.instanceId !== target.id) return;
     setDownloadProgress((current) => (current ? { ...current, state: "cancelled" } : current));
     try {
       await invoke("cancel_modrinth_download", {
