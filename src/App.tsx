@@ -9,6 +9,7 @@ import {
   type CSSProperties,
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
@@ -1181,19 +1182,39 @@ export default function App() {
           height: 238,
           minWidth: 420,
           minHeight: 210,
-          center: true,
-          focus: true,
+          visible: false,
+          focus: false,
           resizable: false,
           decorations: false,
         });
 
-        void progressWindow.once("tauri://created", () => {
+        void progressWindow.once("tauri://created", async () => {
           installProgressWindowOpeningRef.current = false;
           void progressWindow.emit(
             INSTALL_PROGRESS_WINDOW_EVENT,
             installProgressWindowStateRef.current,
           );
-          void progressWindow.setFocus();
+          try {
+            const [launcherPosition, launcherSize, progressSize] = await Promise.all([
+              win.outerPosition(),
+              win.outerSize(),
+              progressWindow.outerSize(),
+            ]);
+            await progressWindow.setPosition(
+              new PhysicalPosition(
+                Math.round(launcherPosition.x + (launcherSize.width - progressSize.width) / 2),
+                Math.round(launcherPosition.y + (launcherSize.height - progressSize.height) / 2),
+              ),
+            );
+          } catch (error) {
+            logger.error("install progress window position failed", error);
+          }
+          try {
+            await progressWindow.show();
+            await progressWindow.setFocus();
+          } catch (error) {
+            logger.error("install progress window show failed", error);
+          }
         });
         void progressWindow.once("tauri://error", (event) => {
           installProgressWindowOpeningRef.current = false;
@@ -1206,7 +1227,7 @@ export default function App() {
     };
 
     void syncProgressWindow();
-  }, [busyMessage, installProgress, tr]);
+  }, [busyMessage, installProgress, tr, win]);
   useEffect(() => {
     const unlistenExit = win.listen<MinecraftExitPayload>("minecraft-process-exited", (event) => {
       const payload = event.payload;
