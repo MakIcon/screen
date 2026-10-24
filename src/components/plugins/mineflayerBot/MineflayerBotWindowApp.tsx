@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../../appearance/useAppearance";
+import { useStandaloneAppearanceRuntime } from "../../../appearance/useStandaloneAppearanceRuntime";
 import { RuntimeMonitorScope, useRuntimeMonitorController } from "../../../hooks/useRuntimeMonitor";
 import type { LauncherPluginsSettings, LauncherSettings } from "../../../types";
 import { toErrorMessage } from "../../../utils/errors";
@@ -18,7 +19,8 @@ function closeBotWindow() {
 }
 
 export function MineflayerBotWindowApp() {
-  useAppearance();
+  const { appearance } = useAppearance();
+  const appearanceRootRef = useStandaloneAppearanceRuntime(appearance, "settings");
   const tr = useTranslation();
   const monitor = useRuntimeMonitorController([], true, false);
   const [plugins, setPlugins] = useState<LauncherPluginsSettings | null>(null);
@@ -69,7 +71,7 @@ export function MineflayerBotWindowApp() {
 
   return (
     <RuntimeMonitorScope controller={monitor}>
-      <div className="mineflayer-bot-window-root">
+      <div className="mineflayer-bot-window-root" ref={appearanceRootRef}>
         {plugins ? (
           <LauncherPluginsModal
             standalone

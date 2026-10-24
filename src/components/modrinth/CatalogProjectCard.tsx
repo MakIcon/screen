@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { ProgressBar } from "../display/ProgressBar";
 import type { ModDownloadProgressPayload, ModrinthProject } from "../../types";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import { ModrinthProjectIcon } from "./ModrinthProjectModal";
@@ -58,19 +59,17 @@ function ModDownloadControls({
         : tr("common.downloading");
   return (
     <div className="catalog-download-controls">
-      <div
+      <ProgressBar
         className="catalog-download-status"
-        role="progressbar"
+        value={determinate ? percent : null}
+        label={label}
+        settings={{ height: 2 }}
+        state={paused ? "paused" : "running"}
+        style={{ "--progress-screen-fill": "var(--catalog-progress-color)" } as CSSProperties}
         aria-label={tr("catalogProjectCard.download")}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={determinate ? percent : undefined}
-        aria-valuetext={`${label}${determinate ? ` ${Math.round(percent)}%` : ""}`}
         data-tooltip={progress.filename || tr("catalogProjectCard.resolvingDependencies")}
-      >
-        <strong>{label}</strong>
-        <span>{determinate ? `${Math.round(percent)}%` : "…"}</span>
-      </div>
+        aria-valuetext={`${label}${determinate ? ` ${Math.round(percent)}%` : ""}`}
+      />
       <button
         className="catalog-download-control"
         type="button"

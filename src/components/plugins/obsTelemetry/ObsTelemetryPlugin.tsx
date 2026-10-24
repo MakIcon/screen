@@ -1,3 +1,4 @@
+import { TextField } from "../../inputs/TextField";
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
@@ -160,7 +161,7 @@ function ObsTelemetrySettingsEditor({
       >
         <label className="obs-telemetry-field">
           <span>{tr("obsTelemetry.obsPort")}</span>
-          <input
+          <TextField
             value={settings.port}
             inputMode="numeric"
             onChange={(event) => update({ port: Number(event.target.value) })}
@@ -169,7 +170,7 @@ function ObsTelemetrySettingsEditor({
 
         <label className="obs-telemetry-field obs-telemetry-field--wide">
           <span>{tr("obsTelemetry.mainOverlayAddress")}</span>
-          <input value={overlayUrl} readOnly spellCheck={false} />
+          <TextField value={overlayUrl} readOnly spellCheck={false} />
         </label>
       </PluginSettingsGroup>
       <div className="obs-telemetry-subhead">{tr("obsTelemetry.overlayControls")}</div>

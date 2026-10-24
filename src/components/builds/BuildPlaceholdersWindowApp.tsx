@@ -1,7 +1,9 @@
+import { TextField } from "../inputs/TextField";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../appearance/useAppearance";
+import { useStandaloneAppearanceRuntime } from "../../appearance/useStandaloneAppearanceRuntime";
 import { logger } from "../../utils/logger";
 import { useLocale, useTranslation, Trans } from "../../i18n/locale";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
@@ -55,7 +57,8 @@ function CopyIcon({ copied }: { copied: boolean }) {
 }
 
 export function BuildPlaceholdersWindowApp() {
-  useAppearance();
+  const { appearance } = useAppearance();
+  const appearanceRootRef = useStandaloneAppearanceRuntime<HTMLElement>(appearance, "instances");
   const locale = useLocale();
   const tr = useTranslation();
   const [query, setQuery] = useState("");
@@ -109,7 +112,7 @@ export function BuildPlaceholdersWindowApp() {
   }
 
   return (
-    <main className="bpg-surface" lang={locale}>
+    <main className="bpg-surface" lang={locale} ref={appearanceRootRef}>
       <article
         className="bpg-paper"
         aria-labelledby="bpg-title"
@@ -200,7 +203,7 @@ export function BuildPlaceholdersWindowApp() {
               <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.3" />
               <path d="m10 10 4 4" stroke="currentColor" strokeWidth="1.3" />
             </svg>
-            <input
+            <TextField
               type="search"
               aria-label={tr("buildPlaceholders.findAPlaceholder")}
               placeholder={tr("buildPlaceholders.searchByNameOr")}

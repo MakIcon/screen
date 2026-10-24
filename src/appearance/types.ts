@@ -89,6 +89,8 @@ export type AppearanceElementKind =
   | "toggle"
   | "checkbox"
   | "dropdown"
+  | "textfield"
+  | "progressbar"
   | "button"
   | "input"
   | "select"
@@ -134,6 +136,77 @@ export type AppearanceDropdownSettings = {
   showLabel: boolean;
   visibleItems: number;
   itemHeight: number;
+  searchEnabled: boolean;
+  searchPlaceholder: string;
+  emptyText: string;
+  showArrow: boolean;
+  showSelectedMark: boolean;
+  highlightMatches: boolean;
+  showResultCount: boolean;
+  showDescriptions: boolean;
+  closeOnSelect: boolean;
+  wrapNavigation: boolean;
+  caseSensitive: boolean;
+  searchMatch: "contains" | "starts-with";
+  sortMode: "source" | "ascending" | "descending";
+  placement: "auto" | "down" | "up";
+  menuGap: number;
+  menuMinWidth: number;
+  defaultValue: string;
+  showDefaultMarker: boolean;
+  showClear: boolean;
+};
+
+export type AppearanceTextFieldSettings = {
+  label: string;
+  placeholder: string;
+  hint: string;
+  defaultValue: string;
+  showLabel: boolean;
+  showPlaceholder: boolean;
+  showHint: boolean;
+  showCounter: boolean;
+  showClear: boolean;
+  showCopy: boolean;
+  showReset: boolean;
+  showPasswordToggle: boolean;
+  selectOnFocus: boolean;
+  trimOnBlur: boolean;
+  maxLength: number;
+  height: number;
+  paddingX: number;
+  fontSize: number;
+  borderRadius: number;
+  textAlign: "inherit" | "left" | "center" | "right";
+  rows: number;
+  resize: "inherit" | "none" | "vertical" | "both";
+};
+
+export type AppearanceProgressBarSettings = {
+  label: string;
+  showLabel: boolean;
+  showValue: boolean;
+  showDetail: boolean;
+  valueFormat: "percent" | "fraction" | "value";
+  precision: number;
+  variant: "line" | "rounded" | "segmented";
+  height: number;
+  borderRadius: number;
+  animated: boolean;
+  animationDuration: number;
+  striped: boolean;
+  stripeWidth: number;
+  segmentCount: number;
+  segmentGap: number;
+  tickMode: "none" | "quarters" | "tenths" | "custom";
+  customTicks: number[];
+  showTickLabels: boolean;
+  highlightPassedTicks: boolean;
+  defaultValue: number;
+  showDefaultMarker: boolean;
+  fillColor: string;
+  trackColor: string;
+  markerColor: string;
 };
 
 export type AppearanceComponentSettingsMap = {
@@ -141,6 +214,8 @@ export type AppearanceComponentSettingsMap = {
   toggle: AppearanceToggleSettings;
   checkbox: AppearanceCheckboxSettings;
   dropdown: AppearanceDropdownSettings;
+  textfield: AppearanceTextFieldSettings;
+  progressbar: AppearanceProgressBarSettings;
 };
 
 export type AppearanceComponentKind = keyof AppearanceComponentSettingsMap;

@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import {
   useEffect,
   useMemo,
@@ -365,7 +366,7 @@ export function BuildRuntimeSettingsEditor({
             <div className="brs-find-row">
               <label className="brs-search-field">
                 <span>{tr("buildRuntimeSettings.search")}</span>
-                <input
+                <TextField
                   value={argsSearchQuery}
                   placeholder="G1, gc, heap"
                   onChange={(event) => setArgsSearchQuery(event.target.value)}
@@ -421,7 +422,7 @@ export function BuildRuntimeSettingsEditor({
             <div className="brs-replace-row">
               <label className="brs-search-field">
                 <span>{tr("buildRuntimeSettings.replace")}</span>
-                <input
+                <TextField
                   value={argsReplaceValue}
                   placeholder={tr("buildRuntimeSettings.newValue")}
                   onChange={(event) => setArgsReplaceValue(event.target.value)}
@@ -528,7 +529,7 @@ export function BuildRuntimeSettingsEditor({
               </div>
 
               <label className="brs-field">
-                <input
+                <TextField
                   value={draft.javaPath}
                   placeholder={tr("buildRuntimeSettings.autoManagedRuntimeOr")}
                   onChange={(event) => setJavaPath(event.target.value)}

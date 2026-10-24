@@ -100,7 +100,7 @@ const ACTIONS: {
     id: "trash",
     label: "commandPalette.deletedBuilds",
     keywords: "корзина удаленные восстановить сборку trash deleted restore",
-    icon: "archive",
+    icon: "trash",
   },
   {
     id: "accounts",

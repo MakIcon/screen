@@ -155,11 +155,15 @@
   opacity: 1;
 }
 
-.settings-icon-action {
+.settings-icon-action,
+.import-action,
+.export-action {
   color: var(--muted);
 }
 
-.settings-icon-action:hover {
+.settings-icon-action:hover,
+.import-action:hover,
+.export-action:hover {
   color: var(--accent);
   border-color: rgba(194, 65, 12, 0.35);
   opacity: 1;

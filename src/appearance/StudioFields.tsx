@@ -59,7 +59,7 @@ export function RangeField({
 
   return (
     <div className="studio-range-field">
-      <div>
+      <div className="studio-range-field-heading">
         <span>{copy(label)}</span>
         <div className="studio-range-value-editor">
           <CustomNumberInput

@@ -1,3 +1,4 @@
+import { TextField } from "../components/inputs/TextField";
 import { useState } from "react";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
 import { HoverRevealValue } from "../components/display/HoverRevealValue";
@@ -61,7 +62,7 @@ export function OverviewPanel({
               <span className="mockup-label">{tr("overview.nickname")}</span>
               <HoverRevealValue value={nickname}>
                 {editingNickname ? (
-                  <input
+                  <TextField
                     className="mockup-input"
                     value={nickname}
                     onChange={(e) => {

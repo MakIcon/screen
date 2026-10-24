@@ -111,7 +111,7 @@
   letter-spacing: 0.04em;
 }
 .proxy-field input,
-.proxy-field select,
+.proxy-field .searchable-select > .inline-dropdown-trigger,
 .proxy-field textarea {
   width: 100%;
   min-width: 0;
@@ -130,6 +130,9 @@
 }
 .proxy-field select {
   cursor: pointer;
+}
+.proxy-field .searchable-select > .inline-dropdown-trigger {
+  padding: 0;
 }
 .proxy-field select option {
   color: var(--ink);

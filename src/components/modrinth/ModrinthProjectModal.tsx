@@ -1,3 +1,4 @@
+import { ProgressBar } from "../display/ProgressBar";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -357,17 +358,18 @@ export function ModrinthProjectModal({
 
         {busy && downloadProgress && (
           <div className="modrinth-detail-download-progress">
-            <div>
-              <strong>
-                {downloadProgress.state === "paused"
-                  ? tr("common.paused")
-                  : tr("common.downloading")}
-              </strong>
-              <span>{Math.round(downloadProgress.percent)}%</span>
-            </div>
-            <i>
-              <span style={{ width: `${Math.round(downloadProgress.percent)}%` }} />
-            </i>
+            <ProgressBar
+              value={
+                downloadProgress.totalBytes > 0 || downloadProgress.state === "completed"
+                  ? downloadProgress.percent
+                  : null
+              }
+              label={
+                downloadProgress.state === "paused" ? tr("common.paused") : tr("common.downloading")
+              }
+              state={downloadProgress.state === "paused" ? "paused" : "running"}
+              settings={{ height: 4 }}
+            />
             <div>
               <button
                 type="button"

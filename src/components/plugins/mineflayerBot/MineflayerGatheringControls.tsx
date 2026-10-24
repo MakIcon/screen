@@ -1,3 +1,5 @@
+import { ProgressBar } from "../../display/ProgressBar";
+import { TextField } from "../../inputs/TextField";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   isPlainMessageKey,
@@ -282,7 +284,7 @@ export function MineflayerGatheringControls({
   ) => (
     <label className="mineflayer-bot-field">
       <span>{label}</span>
-      <input
+      <TextField
         value={value}
         spellCheck={false}
         placeholder={placeholder}
@@ -395,10 +397,11 @@ export function MineflayerGatheringControls({
                 )}
               </div>
               {active.count > 0 && (
-                <progress
+                <ProgressBar
                   aria-label={tr("bot.gathering.currentTaskProgress")}
                   max={active.count}
                   value={Math.min(active.mined, active.count)}
+                  settings={{ height: 4, showLabel: false, showValue: false }}
                 />
               )}
             </div>

@@ -286,7 +286,11 @@ function readElementDefaults(
 
 function readComponentTarget(element: HTMLElement): AppearanceElementComponentTarget | undefined {
   const kind = element.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE);
-  if (!kind || !["slider", "toggle", "checkbox", "dropdown"].includes(kind)) return undefined;
+  if (
+    !kind ||
+    !["slider", "toggle", "checkbox", "dropdown", "textfield", "progressbar"].includes(kind)
+  )
+    return undefined;
   const rawProps = element.getAttribute(APPEARANCE_COMPONENT_PROPS_ATTRIBUTE);
   if (!rawProps) return undefined;
   try {
@@ -428,9 +432,20 @@ export function resolveElementTarget(
   const follow = (start: HTMLElement, path: AppearanceElementPathSegment[]) => {
     let current = start;
     for (const segment of path) {
-      const next = Array.from(current.children).filter(
-        (candidate) => candidate.tagName.toLowerCase() === segment.tag,
-      )[segment.index];
+      // Text fields now have an appearance root and an action container. Continue
+      // resolving profiles saved when the native control was a direct child.
+      const next = Array.from(current.children)
+        .flatMap((child) =>
+          child.classList.contains("text-field") &&
+          (segment.tag === "input" || segment.tag === "textarea")
+            ? Array.from(
+                child.querySelectorAll(
+                  ":scope > .text-field-body > input, :scope > .text-field-body > textarea",
+                ),
+              )
+            : [child],
+        )
+        .filter((candidate) => candidate.tagName.toLowerCase() === segment.tag)[segment.index];
       if (!(next instanceof HTMLElement)) return null;
       if (segment.marker) {
         const [kind, marker] = segment.marker.split(":", 2);
@@ -1190,6 +1205,14 @@ function eventElement(event: Event, root: HTMLElement) {
   if (!element || element === root || !root.contains(element)) return null;
   if (element.closest(".paper-texture, .appearance-background")) return null;
   const component = element.closest<HTMLElement>(`[${APPEARANCE_COMPONENT_ATTRIBUTE}]`);
+  if (
+    component &&
+    ["textfield", "dropdown", "progressbar"].includes(
+      component.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE) ?? "",
+    )
+  ) {
+    return { element: component, textSource: element };
+  }
   const interactive = element.closest<HTMLElement>(
     "button, input, select, textarea, label, [role='button'], [role='switch'], [role='slider'], [role='checkbox'], [role='option']",
   );

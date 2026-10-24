@@ -1,0 +1,131 @@
+.element-progress {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  --progress-fill: var(--progress-screen-fill, var(--accent));
+  --progress-track: var(--progress-screen-track, var(--line));
+  --progress-marker: var(--ink);
+}
+.element-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.element-progress-header strong {
+  color: var(--ink);
+}
+.element-progress .element-progress-track {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: var(--progress-height);
+  border-radius: var(--progress-radius);
+  background: transparent;
+  overflow: hidden;
+}
+.element-progress .element-progress-meter {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--progress-track);
+}
+.element-progress .element-progress-fill {
+  display: block;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  background: var(--progress-fill);
+  border-radius: inherit;
+  transition: width var(--progress-duration) ease;
+}
+.element-progress-stripes {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    120deg,
+    transparent 0,
+    transparent calc(var(--progress-stripe-width) / 2),
+    #ffffff30 calc(var(--progress-stripe-width) / 2),
+    #ffffff30 var(--progress-stripe-width)
+  );
+}
+.element-progress .element-progress-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+  background: var(--progress-marker);
+  pointer-events: none;
+}
+.element-progress[data-indeterminate="true"] .element-progress-fill {
+  animation: element-progress-sweep 1.4s ease-in-out infinite;
+}
+.element-progress[data-progress-state="paused"] .element-progress-fill {
+  opacity: 0.55;
+  animation-play-state: paused;
+}
+.element-progress[data-progress-state="error"] {
+  --progress-fill: #df524a;
+}
+.element-progress[data-progress-state="success"] {
+  --progress-fill: #40965c;
+}
+.element-progress[data-animated="false"] .element-progress-fill,
+.element-progress[data-animated="false"] .element-progress-track::after {
+  animation: none !important;
+}
+.element-progress-ticks {
+  position: relative;
+  height: 5px;
+  margin-inline: 1px;
+}
+.element-progress-ticks.with-labels {
+  height: 20px;
+}
+.element-progress-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.element-progress-tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 4px;
+  border-left: 1px solid currentColor;
+}
+.element-progress-tick.passed {
+  color: var(--progress-fill);
+}
+.element-progress-detail {
+  color: var(--muted);
+  font-size: 10px;
+}
+@keyframes element-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .element-progress .element-progress-fill,
+  .element-progress .element-progress-track::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

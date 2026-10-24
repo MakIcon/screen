@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "../../i18n/locale";
 import { CustomScrollArea } from "../layout/CustomScrollArea";
 import { ModrinthProjectIcon } from "../modrinth/ModrinthProjectIcon";
+import { TrashIcon } from "../display/TrashIcon";
 import type { ModrinthProject } from "../../types";
 import type { PaletteCatalogTargets } from "./paletteCatalog";
 import { usePaletteCatalog } from "./usePaletteCatalog";
@@ -39,7 +40,8 @@ type CommandPaletteProps = {
 };
 
 function CommandIcon({ icon }: { icon: PaletteCommand["icon"] }) {
-  const paths: Record<PaletteCommand["icon"], string> = {
+  if (icon === "trash") return <TrashIcon size={20} />;
+  const paths: Record<Exclude<PaletteCommand["icon"], "trash">, string> = {
     arrow: "M4 10h12m-5-5 5 5-5 5",
     build: "m10 2 7 4v8l-7 4-7-4V6l7-4Zm0 8v8M3 6l7 4 7-4",
     folder: "M2 5a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5Z",

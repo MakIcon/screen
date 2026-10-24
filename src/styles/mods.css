@@ -319,7 +319,8 @@
   border-top: 1px solid var(--line);
 }
 
-.modrinth-detail-download-progress > div {
+.modrinth-detail-download-progress > div:not(.element-progress),
+.modrinth-detail-download-progress .element-progress-header {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -330,6 +331,22 @@
 
 .modrinth-detail-download-progress > div:last-child {
   justify-content: flex-end;
+}
+
+.catalog-download-status .element-progress-header {
+  display: grid;
+  gap: 3px;
+  color: var(--catalog-progress-color);
+  text-align: end;
+}
+.catalog-download-status .element-progress-header > span {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.catalog-download-status .element-progress-header > strong {
+  font-size: 15px;
+  color: inherit;
 }
 
 .mod-card.modrinth-card::before {

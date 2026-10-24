@@ -1,11 +1,7 @@
-import { toErrorMessage } from "../../utils/errors";
+import { ProgressBar } from "../display/ProgressBar";
+import { TextField } from "../inputs/TextField";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type {
-  ExportedItem,
-  ImportInstanceResult,
-  InstanceExportData,
-  InstanceItem,
-} from "../../types";
+import type { ExportedItem, InstanceExportData, InstanceItem } from "../../types";
 import {
   formatJavaArgsMeta,
   formatWindowSettingsMeta,
@@ -68,7 +64,6 @@ type InstanceTransferModalsProps = CommonPreviewProps & {
   importProgress: ImportProgress | null;
   importCancelRequested: boolean;
   importError: string;
-  importResult: ImportInstanceResult | null;
   setImportError: Dispatch<SetStateAction<string>>;
   setImportSourcePath: Dispatch<SetStateAction<string>>;
   importSourceFormat: "slbuild" | "mrpack";
@@ -323,137 +318,104 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
         </p>
         {props.importData ? (
           <>
-            {!props.importResult && (
-              <div className="eximp-options">
-                {rows.map(({ key, label, meta, disabled, items }) => {
-                  const ownerId = `import-${key}`;
-                  return (
-                    <div key={key}>
-                      <div
-                        className={`eximp-option${disabled ? " disabled" : ""}`}
-                        data-list-preview-owner={ownerId}
-                        onClick={() => !disabled && toggle(key)}
-                        onMouseEnter={(event) =>
-                          attachPreview(event, items, label, ownerId, props.previewProps)
-                        }
-                        onMouseLeave={(event) => detachPreview(event, ownerId, props.previewProps)}
-                      >
-                        <OptionToggle
-                          enabled={props.importOptions[key] && !disabled}
-                          onToggle={() => !disabled && toggle(key)}
-                          disabled={disabled}
-                        />
-                        <span className="eximp-option-label">{label}</span>
-                        <span className="eximp-option-meta">
-                          {items && items.length > 0 && (
-                            <span className="eximp-alt-hint">alt </span>
-                          )}
-                          {meta}
-                        </span>
-                      </div>
-                      {key === "name" && !props.importOptions.name && (
-                        <div className="eximp-name-input-wrap">
-                          <input
-                            placeholder={tr("instanceTransferModals.enterABuildName")}
-                            value={props.importCustomName}
-                            onChange={(event) => props.setImportCustomName(event.target.value)}
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                        </div>
-                      )}
+            <div className="eximp-options">
+              {rows.map(({ key, label, meta, disabled, items }) => {
+                const ownerId = `import-${key}`;
+                return (
+                  <div key={key}>
+                    <div
+                      className={`eximp-option${disabled ? " disabled" : ""}`}
+                      data-list-preview-owner={ownerId}
+                      onClick={() => !disabled && toggle(key)}
+                      onMouseEnter={(event) =>
+                        attachPreview(event, items, label, ownerId, props.previewProps)
+                      }
+                      onMouseLeave={(event) => detachPreview(event, ownerId, props.previewProps)}
+                    >
+                      <OptionToggle
+                        enabled={props.importOptions[key] && !disabled}
+                        onToggle={() => !disabled && toggle(key)}
+                        disabled={disabled}
+                      />
+                      <span className="eximp-option-label">{label}</span>
+                      <span className="eximp-option-meta">
+                        {items && items.length > 0 && <span className="eximp-alt-hint">alt </span>}
+                        {meta}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            {!props.importResult && (
-              <p className="eximp-notice">
-                {props.importSourceFormat === "mrpack"
-                  ? tr("instanceTransferModals.filesFromTheMrpack")
-                  : tr("instanceTransferModals.versionAndLoaderCome")}
-              </p>
-            )}
-            {props.importResult && (
-              <div className="eximp-import-results" role="status">
-                <p className="eximp-notice">
-                  {tr("instanceTransferModals.importSummary", {
-                    installed: props.importResult.items.filter((item) => item.success).length,
-                    total: props.importResult.items.length,
-                  })}
-                </p>
-                {props.importResult.items.map((result, index) => (
-                  <div
-                    className={`eximp-import-result ${result.success ? "success" : "error"}`}
-                    key={`${result.category}-${result.item.projectId ?? result.item.title}-${index}`}
-                  >
-                    <strong>
-                      {result.success ? "✓" : "!"} {result.item.title}
-                    </strong>
-                    <span>
-                      {result.category === "resourcePacks"
-                        ? tr("ui.resourcePacks")
-                        : result.category === "mods"
-                          ? tr("ui.mods")
-                          : tr("ui.shaders")}{" "}
-                      ·{" "}
-                      {result.success
-                        ? tr("instanceTransferModals.installed")
-                        : toErrorMessage(result.message)}
-                    </span>
+                    {key === "name" && !props.importOptions.name && (
+                      <div className="eximp-name-input-wrap">
+                        <TextField
+                          placeholder={tr("instanceTransferModals.enterABuildName")}
+                          value={props.importCustomName}
+                          onChange={(event) => props.setImportCustomName(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
+            <p className="eximp-notice">
+              {props.importSourceFormat === "mrpack"
+                ? tr("instanceTransferModals.filesFromTheMrpack")
+                : tr("instanceTransferModals.versionAndLoaderCome")}
+            </p>
+
             {props.importError && (
               <p className="panel-text" style={{ marginTop: 12, color: "var(--accent)" }}>
                 {props.importError}
               </p>
             )}
             {props.importWorking && props.importProgress ? (
-              <div className="eximp-progress" role="status" aria-live="polite">
-                <div className="eximp-progress-label">
-                  <strong>
-                    {
-                      (
-                        {
-                          preparing: tr("instanceTransferModals.preparing"),
-                          installing: tr("instanceTransferModals.installing"),
-                          downloading: tr("common.downloading"),
-                          extracting: tr("instanceTransferModals.extracting"),
-                          complete: tr("instanceTransferModals.done"),
-                        } as const
-                      )[props.importProgress.stage]
-                    }
-                  </strong>
-                  <span>
-                    {props.importProgress.total > 0
-                      ? `${props.importProgress.processed} / ${props.importProgress.total}`
-                      : "…"}
-                  </span>
-                </div>
-                <div
-                  className={`eximp-progress-track${props.importProgress.total === 0 ? " indeterminate" : ""}`}
-                  role="progressbar"
-                  aria-label={tr("instanceTransferModals.buildImportProgress")}
-                  aria-valuemin={0}
-                  aria-valuemax={props.importProgress.total || undefined}
-                  aria-valuenow={
-                    props.importProgress.total ? props.importProgress.processed : undefined
+              <div
+                className="eximp-progress"
+                data-complete={props.importProgress.stage === "complete" || undefined}
+                role="status"
+                aria-live="polite"
+              >
+                <ProgressBar
+                  value={
+                    props.importProgress.stage === "complete"
+                      ? props.importProgress.total || 1
+                      : props.importProgress.total > 0
+                        ? props.importProgress.processed
+                        : null
                   }
-                >
-                  <span
-                    style={{
-                      width: props.importProgress.total
-                        ? `${Math.min(100, (props.importProgress.processed / props.importProgress.total) * 100)}%`
-                        : "35%",
-                    }}
-                  />
-                </div>
-                <small data-tooltip={props.importProgress.filename}>
-                  {props.importCancelRequested
-                    ? tr("instanceTransferModals.stoppingAndCleaningUp")
-                    : props.importProgress.filename || tr("instanceTransferModals.preparingFiles")}
-                </small>
+                  max={props.importProgress.total || 1}
+                  label={
+                    (
+                      {
+                        preparing: tr("instanceTransferModals.preparing"),
+                        installing: tr("instanceTransferModals.installing"),
+                        downloading: tr("common.downloading"),
+                        extracting: tr("instanceTransferModals.extracting"),
+                        complete: tr("instanceTransferModals.done"),
+                      } as const
+                    )[props.importProgress.stage]
+                  }
+                  aria-label={tr("instanceTransferModals.buildImportProgress")}
+                  settings={{ height: 8 }}
+                  style={
+                    {
+                      gap: 0,
+                      "--progress-screen-track": "var(--bg-hover-strong)",
+                    } as React.CSSProperties
+                  }
+                  headerClassName="eximp-progress-label"
+                  trackClassName="eximp-progress-track"
+                  detail={
+                    props.importProgress.stage === "complete" ? undefined : (
+                      <small data-tooltip={props.importProgress.filename}>
+                        {props.importCancelRequested
+                          ? tr("instanceTransferModals.stoppingAndCleaningUp")
+                          : props.importProgress.filename ||
+                            tr("instanceTransferModals.preparingFiles")}
+                      </small>
+                    )
+                  }
+                />
               </div>
             ) : props.importWorking ? (
               <p className="eximp-working">{tr("instanceTransferModals.importing")}</p>
@@ -464,29 +426,21 @@ function ImportModal(props: InstanceTransferModalsProps & { previewProps: Common
                 type="button"
                 disabled={
                   props.importWorking ||
-                  (!props.importResult &&
-                    !props.importOptions.name &&
-                    !props.importCustomName.trim())
+                  (!props.importOptions.name && !props.importCustomName.trim())
                 }
                 onClick={props.onImportConfirm}
               >
-                {props.importWorking
-                  ? tr("common.working")
-                  : props.importResult
-                    ? props.importResult.items.some(
-                        (item) =>
-                          !item.success && item.item.source === "modrinth" && !!item.item.projectId,
-                      )
-                      ? tr("instanceTransferModals.retryFailed")
-                      : tr("instanceTransferModals.done")
-                    : tr("instanceTransferModals.import")}
+                {props.importWorking ? tr("common.working") : tr("instanceTransferModals.import")}
               </button>
               <button
                 className="ghost-action"
                 type="button"
                 onClick={props.importWorking ? props.onImportCancel : close}
                 disabled={
-                  props.importWorking && (!props.importProgress || props.importCancelRequested)
+                  props.importWorking &&
+                  (!props.importProgress ||
+                    props.importCancelRequested ||
+                    props.importProgress.stage === "complete")
                 }
               >
                 {props.importWorking

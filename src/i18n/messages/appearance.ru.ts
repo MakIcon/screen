@@ -29,6 +29,11 @@ export const appearanceRu = {
   "appearance.motion": "АНИМАЦИЯ",
   "appearance.transitionsAndEffects": "Переходы и эффекты",
   "appearance.canvasUi": "CANVAS UI",
+  "appearance.componentSettings": "SELECT SETTINGS",
+  "appearance.componentContentAndBehavior": "Содержимое и поведение компонентов",
+  "appearance.pickAComponent": "ВЫБЕРИТЕ КОМПОНЕНТ В ЛАУНЧЕРЕ",
+  "appearance.selectComponentHint":
+    "Выберите текстовое поле, выпадающий список, прогресс-бар, слайдер, переключатель или чекбокс, чтобы настроить его поведение и содержимое.",
 
   "appearance.label": "ПОДПИСЬ",
   "appearance.content": "СОДЕРЖИМОЕ",
@@ -289,7 +294,7 @@ export const appearanceRu = {
   "appearance.to": "ДО",
   "appearance.valuesOutside": "· ЗНАЧЕНИЯ ЗА ПРЕДЕЛАМИ",
   "appearance.staySaved": "СОХРАНЯЮТСЯ",
-  "appearance.09ElementInspector": "09 / ИНСПЕКТОР ЭЛЕМЕНТА",
+  "appearance.09ElementInspector": "10 / ИНСПЕКТОР ЭЛЕМЕНТА",
   "appearance.pickAnyObjectInTheLauncher": "ВЫБЕРИТЕ ОБЪЕКТ В ЛАУНЧЕРЕ",
   "appearance.selectAButtonTitleCardOrControlItsText":
     "Выберите кнопку, заголовок, карточку или элемент управления. Его текст и оформление появятся здесь и будут сразу обновляться в главном окне.",

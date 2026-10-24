@@ -14,6 +14,7 @@ import {
   resolveElementTarget,
   type AppearanceElementPreviewPayload,
   type AppearanceElementSelectionPayload,
+  type AppearanceElementPickedPayload,
   type DrawingCursorPayload,
   type WindowAnimationPreviewPayload,
 } from "./elementOverrides";
@@ -206,6 +207,12 @@ export function useMainAppearanceRuntime({
         );
       }),
       listen(APPEARANCE_ELEMENT_PICK_CANCEL_EVENT, () => {
+        pickerCleanupRef.current?.();
+        pickerCleanupRef.current = null;
+      }),
+      listen<AppearanceElementPickedPayload | null>(APPEARANCE_ELEMENT_PICKED_EVENT, (event) => {
+        // A pick in another launcher window completes this pick session too.
+        if (event.payload && "continuing" in event.payload && event.payload.continuing) return;
         pickerCleanupRef.current?.();
         pickerCleanupRef.current = null;
       }),

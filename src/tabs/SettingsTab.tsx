@@ -1,3 +1,4 @@
+import { TextField } from "../components/inputs/TextField";
 import { useEffect, useRef, useState } from "react";
 import type { SettingsCommandTarget } from "../components/command-palette/settingsCommands";
 import { SettingsChoiceSwitch } from "../components/settings/SettingsChoiceSwitch";
@@ -366,7 +367,7 @@ export function SettingsTab({
                 >
                   <label className="mascot-name-field" data-guide-target="settings-mascot-name">
                     <span>{tr("settings.mascotName")}</span>
-                    <input
+                    <TextField
                       type="text"
                       value={mascotNameDraft}
                       maxLength={24}

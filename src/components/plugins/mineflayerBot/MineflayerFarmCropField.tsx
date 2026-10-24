@@ -1,4 +1,5 @@
 import { FARM_CROPS } from "./farming";
+import { SearchableSelect } from "../../inputs/SearchableSelect";
 import { useTranslation } from "../../../i18n/locale";
 
 export function MineflayerFarmCropField({
@@ -12,17 +13,14 @@ export function MineflayerFarmCropField({
   return (
     <label className="mineflayer-bot-field">
       <span>{tr("bot.farmCrop.crop")}</span>
-      <select
-        className="mineflayer-farm-select"
+      <SearchableSelect
+        label={tr("bot.farmCrop.crop")}
+        variant="field"
+        allowEmpty={false}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {FARM_CROPS.map((name) => (
-          <option key={name} value={name}>
-            {tr(`bot.crop.${name}`)}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={FARM_CROPS.map((name) => ({ value: name, label: tr(`bot.crop.${name}`) }))}
+      />
     </label>
   );
 }

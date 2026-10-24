@@ -1,3 +1,4 @@
+import { ProgressBar } from "../components/display/ProgressBar";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { VisibleUpdateState } from "./useLauncherUpdater";
 import {
@@ -159,35 +160,29 @@ export function LauncherUpdateOverlay({
           <div
             className={`launcher-update__progress${downloading && ratio === null ? " is-indeterminate" : ""}`}
           >
-            <div className="launcher-update__progress-head">
-              <span role="status">
-                {installing
+            <ProgressBar
+              value={installing ? 100 : ratio === null ? null : ratio * 100}
+              label={
+                installing
                   ? tr("launcherUpdate.installingUpdate")
                   : verifying
                     ? tr("launcherUpdate.verifyingFileSignature")
-                    : tr("launcherUpdate.downloadingUpdate")}
-              </span>
-              <span>
-                {installing
+                    : tr("launcherUpdate.downloadingUpdate")
+              }
+              valueLabel={
+                installing
                   ? tr("launcherUpdate.restartingAutomatically")
                   : verifying
                     ? tr("launcherUpdate.almostReady")
                     : eta
                       ? `${tr("launcherUpdate.remaining")} ${eta}`
-                      : ""}
-              </span>
-            </div>
-            <div
-              className="launcher-update__track"
-              role="progressbar"
+                      : ""
+              }
               aria-label={
                 installing
                   ? tr("launcherUpdate.installingUpdate2")
                   : tr("launcherUpdate.downloadingUpdate2")
               }
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={installing ? undefined : (percent ?? undefined)}
               aria-valuetext={
                 installing
                   ? tr("launcherUpdate.installing")
@@ -197,14 +192,18 @@ export function LauncherUpdateOverlay({
                       ? tr("launcherUpdate.downloadSizeIsUnknown")
                       : undefined
               }
-            >
-              <div
-                className="launcher-update__fill"
-                style={{
-                  width: installing ? "100%" : ratio === null ? undefined : `${ratio * 100}%`,
-                }}
-              />
-            </div>
+              headerClassName="launcher-update__progress-head"
+              trackClassName="launcher-update__track"
+              fillClassName="launcher-update__fill"
+              settings={{ height: 5, animationDuration: 250 }}
+              style={
+                {
+                  gap: 0,
+                  "--progress-screen-fill": "var(--u-accent)",
+                  "--progress-screen-track": "var(--u-track)",
+                } as CSSProperties
+              }
+            />
             <div className="launcher-update__meta">
               <span>
                 {downloading

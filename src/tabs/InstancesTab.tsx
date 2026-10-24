@@ -1,3 +1,5 @@
+import { TrashIcon } from "../components/display/TrashIcon";
+import { TextField } from "../components/inputs/TextField";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
 import { InlineDropdown } from "../components/inputs/InlineDropdown";
@@ -251,18 +253,11 @@ export function InstancesTab({
                 aria-label={tr("instances.buildTrash")}
                 onClick={onOpenTrash}
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path
-                    d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                <TrashIcon />
                 <span>{tr("instances.trash")}</span>
               </button>
               <button
-                className="ghost-action icon-square-action"
+                className="ghost-action icon-square-action import-action"
                 type="button"
                 data-tooltip={tr("instances.importBuildFromFile")}
                 aria-label={tr("instances.importBuildFromFile")}
@@ -439,7 +434,7 @@ export function InstancesTab({
                 <div className="form-grid single-form-grid">
                   <label className="field">
                     <span>{tr("instances.buildName")}</span>
-                    <input
+                    <TextField
                       placeholder={tr("instances.myVanillaBuild")}
                       value={createBuildName}
                       onChange={(e) => setCreateBuildName(e.target.value)}
@@ -575,7 +570,7 @@ export function InstancesTab({
                       <>
                         <label className="field build-name-field">
                           <span>{tr("instances.renameBuild")}</span>
-                          <input
+                          <TextField
                             autoFocus
                             value={buildNameDraft}
                             onChange={(event) => setBuildNameDraft(event.target.value)}
@@ -813,21 +808,7 @@ export function InstancesTab({
                       data-mascot-instance-name={selectedInstance?.name}
                       onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
                     >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-                          stroke="currentColor"
-                          strokeWidth="1.2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <TrashIcon />
                     </button>
                   </div>
                 </div>

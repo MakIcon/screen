@@ -1,3 +1,5 @@
+import { TextField } from "../inputs/TextField";
+import { TRASH_ICON_PATH, TRASH_ICON_SIZE } from "../display/trashIconGeometry";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { translateFor, useLocale, useTranslation } from "../../i18n/locale";
 import { invoke } from "@tauri-apps/api/core";
@@ -308,10 +310,7 @@ export function BuildConstellation({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Same trash glyph as the "delete build" button (14×14 viewBox).
-    const trashPath = new Path2D(
-      "M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8",
-    );
+    const trashPath = new Path2D(TRASH_ICON_PATH);
 
     const nodes: SimNode[] = installedNodesRef.current.map((n) => ({ ...n }));
     const pendingInstalls = new Set<SimNode>();
@@ -1345,16 +1344,13 @@ export function BuildConstellation({
         const groupW = iconW + gap + textW;
         const startX = tr.x + (tr.w - groupW) / 2;
 
-        // trash glyph (14×14 viewBox centred on its slot)
+        // Use the same filled geometry as the SVG buttons, centred in its slot.
         ctx.save();
         ctx.translate(startX + iconW / 2, cy);
-        ctx.scale(iconScale, iconScale);
-        ctx.translate(-7, -7);
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 1.2 / iconScale;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.stroke(trashPath);
+        ctx.scale(iconW / TRASH_ICON_SIZE, iconW / TRASH_ICON_SIZE);
+        ctx.translate(-TRASH_ICON_SIZE / 2, -TRASH_ICON_SIZE / 2);
+        ctx.fillStyle = col;
+        ctx.fill(trashPath, "evenodd");
         ctx.restore();
 
         ctx.fillStyle = col;
@@ -1429,7 +1425,7 @@ export function BuildConstellation({
           ))}
         </div>
         <label className="constellation-search">
-          <input
+          <TextField
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={tr("buildConstellation.search")}

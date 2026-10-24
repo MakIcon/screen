@@ -1,6 +1,8 @@
+import { ProgressBar } from "../display/ProgressBar";
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppearance } from "../../appearance/useAppearance";
+import { useStandaloneAppearanceRuntime } from "../../appearance/useStandaloneAppearanceRuntime";
 import type { InstallProgressPayload } from "../../types";
 import { useLocale, useTranslation } from "../../i18n/locale";
 import { installProgressCopy } from "../../utils/installProgress";
@@ -46,7 +48,8 @@ function clampProgressPercent(value: number) {
 export function InstallProgressWindowApp() {
   const tr = useTranslation();
   const locale = useLocale();
-  useAppearance();
+  const { appearance } = useAppearance();
+  const appearanceRootRef = useStandaloneAppearanceRuntime(appearance, "instances");
   const [state, setState] = useState<InstallProgressWindowState>(() =>
     readPersistedInstallProgressState(),
   );
@@ -78,7 +81,7 @@ export function InstallProgressWindowApp() {
   };
 
   return (
-    <div className="install-progress-window-root">
+    <div className="install-progress-window-root" ref={appearanceRootRef}>
       <div className="install-progress-window-shell">
         <div className="install-progress-titlebar" onMouseDown={startDrag}>
           <div className="install-progress-titlebar-title">
@@ -95,7 +98,9 @@ export function InstallProgressWindowApp() {
               aria-label={tr("installProgress.minimize")}
               onClick={() => void getCurrentWindow().minimize()}
             >
-              -
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
             </button>
             <button
               className="install-progress-window-action install-progress-window-action--close"
@@ -103,7 +108,14 @@ export function InstallProgressWindowApp() {
               aria-label={tr("common.close2")}
               onClick={() => void getCurrentWindow().close()}
             >
-              x
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path
+                  d="m2 2 8 8m0-8-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
           </div>
         </div>
@@ -119,21 +131,32 @@ export function InstallProgressWindowApp() {
               </div>
 
               <div className="download-progress-box download-progress-box--floating">
-                <div className="download-progress-head">
-                  <span>{phase}</span>
-                  <strong>{Math.round(percent)}%</strong>
-                </div>
-                <div className="download-progress-track">
-                  <div className="download-progress-fill" style={{ width: `${percent}%` }} />
-                </div>
-                {hasCount && (
-                  <div className="download-progress-meta">
-                    <span>{detail || tr("progress.working")}</span>
-                    <strong>
-                      {progress.current} / {progress.total}
-                    </strong>
-                  </div>
-                )}
+                <ProgressBar
+                  value={percent}
+                  label={phase}
+                  aria-label={phase}
+                  headerClassName="download-progress-head"
+                  trackClassName="download-progress-track"
+                  fillClassName="download-progress-fill"
+                  settings={{ height: 8 }}
+                  style={
+                    {
+                      gap: 0,
+                      "--progress-screen-track": "var(--bg-elevated)",
+                    } as React.CSSProperties
+                  }
+                  detail={
+                    hasCount ? (
+                      <>
+                        <span>{detail || tr("progress.working")}</span>
+                        <strong>
+                          {progress.current} / {progress.total}
+                        </strong>
+                      </>
+                    ) : undefined
+                  }
+                  detailClassName="download-progress-meta"
+                />
               </div>
             </>
           ) : (

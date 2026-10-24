@@ -5,7 +5,16 @@ export type PaletteCommand = {
   keywords?: string[];
   category?: string;
   imageUrl?: string | null;
-  icon: "arrow" | "build" | "folder" | "plus" | "play" | "search" | "settings" | "archive";
+  icon:
+    | "arrow"
+    | "build"
+    | "folder"
+    | "plus"
+    | "play"
+    | "search"
+    | "settings"
+    | "archive"
+    | "trash";
   run: () => void;
 };
 

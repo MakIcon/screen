@@ -1,3 +1,5 @@
+import { TextField } from "../../inputs/TextField";
+import { SearchableSelect } from "../../inputs/SearchableSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isPlainMessageKey, translate, useLocale, useTranslation } from "../../../i18n/locale";
 import { localizeCatalog } from "./catalogLocalization";
@@ -213,15 +215,19 @@ export function MineflayerProductionControls({
           {number(tr("bot.production.howManyToCraft"), count, setCount, 1, 256)}
           <label className="mineflayer-bot-field">
             <span>{tr("bot.production.craftingSpot")}</span>
-            <select
+            <SearchableSelect
+              label={tr("bot.production.craftingSpot")}
+              variant="field"
+              allowEmpty={false}
               value={craftMode}
-              onChange={(event) => setCraftMode(event.target.value)}
+              onChange={setCraftMode}
               disabled={disabled}
-            >
-              <option value="auto">{tr("bot.production.automatic")}</option>
-              <option value="inventory">{tr("bot.production.inventory22")}</option>
-              <option value="table">{tr("bot.production.craftingTable33")}</option>
-            </select>
+              options={[
+                { value: "auto", label: tr("bot.production.automatic") },
+                { value: "inventory", label: tr("bot.production.inventory22") },
+                { value: "table", label: tr("bot.production.craftingTable33") },
+              ]}
+            />
           </label>
         </div>
         <p className="mineflayer-production-hint">{tr("bot.production.theCountIsIn")}</p>
@@ -268,16 +274,20 @@ export function MineflayerProductionControls({
           />
           <label className="mineflayer-bot-field">
             <span>{tr("bot.production.furnace")}</span>
-            <select
+            <SearchableSelect
+              label={tr("bot.production.furnace")}
+              variant="field"
+              allowEmpty={false}
               value={furnace}
-              onChange={(event) => setFurnace(event.target.value)}
+              onChange={setFurnace}
               disabled={disabled}
-            >
-              <option value="auto">{tr("bot.production.automatic")}</option>
-              <option value="furnace">{tr("bot.production.regularFurnace")}</option>
-              <option value="blast_furnace">{tr("bot.production.blastFurnace")}</option>
-              <option value="smoker">{tr("bot.production.smoker")}</option>
-            </select>
+              options={[
+                { value: "auto", label: tr("bot.production.automatic") },
+                { value: "furnace", label: tr("bot.production.regularFurnace") },
+                { value: "blast_furnace", label: tr("bot.production.blastFurnace") },
+                { value: "smoker", label: tr("bot.production.smoker") },
+              ]}
+            />
           </label>
         </div>
         <div className="mineflayer-coordinate-actions">
@@ -302,17 +312,18 @@ export function MineflayerProductionControls({
         <div className="mineflayer-bot-grid">
           <label className="mineflayer-bot-field">
             <span>{tr("bot.production.blockNearTheBot")}</span>
-            <select
+            <SearchableSelect
+              label={tr("bot.production.blockNearTheBot")}
+              variant="field"
+              allowEmpty={false}
               value={station}
-              onChange={(event) => setStation(event.target.value)}
+              onChange={setStation}
               disabled={disabled}
-            >
-              {STATIONS.map((value) => (
-                <option key={value} value={value}>
-                  {tr(`bot.production.station.${value}`)}
-                </option>
-              ))}
-            </select>
+              options={STATIONS.map((value) => ({
+                value,
+                label: tr(`bot.production.station.${value}`),
+              }))}
+            />
           </label>
           <div className="mineflayer-coordinate-actions">
             <button
@@ -425,7 +436,7 @@ export function MineflayerProductionControls({
               <>
                 <label className="mineflayer-bot-field">
                   <span>{tr("bot.production.newItemName")}</span>
-                  <input
+                  <TextField
                     value={name}
                     maxLength={35}
                     disabled={disabled}

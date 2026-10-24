@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { InlineDropdown } from "../inputs/InlineDropdown";
@@ -200,7 +201,7 @@ export function BackgroundSection({ draft, onDraftChange, onUploadImage }: Props
       {mode === "url" && (
         <>
           <EditorRow label="URL">
-            <input
+            <TextField
               className="bce-url-input"
               type="url"
               placeholder="https://..."

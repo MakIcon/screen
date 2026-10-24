@@ -1,3 +1,4 @@
+import { TextField } from "../../inputs/TextField";
 import { useMemo, useRef, useState } from "react";
 import { useLocale, useTranslation } from "../../../i18n/locale";
 import { localizeCatalog, localizeStorageFilter } from "./catalogLocalization";
@@ -363,7 +364,7 @@ export function MineflayerStorageGroups({
                   <div className="mineflayer-storage-group-body">
                     <label className="mineflayer-bot-field">
                       <span>{tr("bot.storageGroups.groupName")}</span>
-                      <input
+                      <TextField
                         value={group.name}
                         maxLength={64}
                         placeholder={tr("bot.storageGroups.forExampleWoodAt")}
@@ -533,7 +534,7 @@ export function MineflayerStorageGroups({
                           : tr("bot.storageGroups.aimedAt")}
                       </button>
                       <div>
-                        <input
+                        <TextField
                           aria-label={`${tr("bot.storageGroups.chestCoordinatesFor")} ${group.name}`}
                           placeholder="X Y Z"
                           value={coordinates[group.id] || ""}

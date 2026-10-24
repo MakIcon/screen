@@ -1,0 +1,100 @@
+.select-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  box-sizing: border-box;
+}
+.select-search-row input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--line);
+  background: var(--bg-field);
+  color: var(--ink);
+  padding: 0 9px;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+.select-search-row input:focus-visible {
+  border-color: var(--muted);
+}
+.select-search-row > span,
+.select-description {
+  color: var(--muted);
+  font-size: 10px;
+}
+.select-description {
+  display: block;
+  margin-top: 5px;
+  white-space: normal;
+  font-weight: 400;
+}
+.inline-dropdown-item[data-active="true"] {
+  background: var(--bg-hover);
+}
+.inline-dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.inline-dropdown-item mark {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: inherit;
+}
+.select-empty {
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.select-default-marker {
+  color: var(--accent);
+}
+.searchable-select > .inline-dropdown-trigger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.searchable-select > .inline-dropdown-trigger:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.select-clear {
+  position: absolute;
+  right: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: var(--bg-field);
+  color: var(--muted);
+  cursor: pointer;
+}
+.searchable-select--field > .inline-dropdown-trigger {
+  height: 38px;
+  font-size: 12px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--ui-radius);
+  background: var(--bg-field);
+  color: var(--ink);
+}
+.searchable-select--field > .inline-dropdown-trigger > .inline-dropdown-trigger-inner {
+  min-height: 0;
+  height: 100%;
+  padding: 0 38px 0 12px;
+  justify-content: center;
+}
+.searchable-select--field .inline-dropdown-value {
+  font: inherit;
+}
+.searchable-select--field .inline-dropdown-chevron-wrap {
+  right: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inline-dropdown-menu {
+    animation: none;
+  }
+}

@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import type { ChangeEventHandler, MouseEventHandler, Ref } from "react";
 
 interface CatalogSearchFieldProps {
@@ -22,12 +23,13 @@ export function CatalogSearchField({
   return (
     <label className={`field compact-field search-field${className ? ` ${className}` : ""}`}>
       <span>{label}</span>
-      <input
+      <TextField
         ref={inputRef}
         placeholder={placeholder}
         value={value}
         onChange={onChange}
         onClick={onClick}
+        autoComplete="off"
         spellCheck={false}
       />
     </label>

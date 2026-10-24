@@ -1,3 +1,5 @@
+import { ProgressBar } from "../../display/ProgressBar";
+import { TextField } from "../../inputs/TextField";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -406,7 +408,7 @@ export function MineflayerWorkflow({
       >
         <div className="mf-workflow-name">
           <label htmlFor="mf-workflow-name">{tr("bot.workflow.workflowName")}</label>
-          <input
+          <TextField
             id="mf-workflow-name"
             aria-label={tr("bot.workflow.workflowName2")}
             value={running ? workflow?.name || name : (customName ?? automaticName)}
@@ -527,10 +529,11 @@ export function MineflayerWorkflow({
                     {completed} / {workflow.steps.length}
                   </span>
                 </div>
-                <progress
+                <ProgressBar
                   max={workflow.steps.length || 1}
                   value={completed}
                   aria-label={tr("bot.workflow.completedSteps")}
+                  settings={{ height: 3, showLabel: false, showValue: false }}
                 />
                 <p>
                   {workflow.message}

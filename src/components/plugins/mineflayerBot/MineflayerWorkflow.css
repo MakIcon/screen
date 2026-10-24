@@ -249,7 +249,7 @@
   letter-spacing: 0.055em;
   color: var(--text-alt);
 }
-.mf-workflow-name > input {
+.mf-workflow-name input {
   flex: 1 1 160px;
   min-width: 0;
   padding: 6px 8px;
@@ -259,6 +259,10 @@
   color: var(--ink);
   font: inherit;
   font-size: 12px;
+}
+.mf-workflow-name > .text-field {
+  flex: 1 1 160px;
+  width: auto;
 }
 .mf-name-auto {
   min-height: 30px;
@@ -843,7 +847,7 @@
   border-top: 1px solid var(--line);
   background: var(--bg-selected);
 }
-.mf-workflow-progress > div {
+.mf-workflow-progress > div:not(.element-progress) {
   display: flex;
   justify-content: space-between;
   gap: 12px;

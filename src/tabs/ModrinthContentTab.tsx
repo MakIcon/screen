@@ -15,6 +15,8 @@ import {
   createPlaceholderValueAttributes,
 } from "../utils/placeholders";
 import { useTranslation } from "../i18n/locale";
+import { sortInstancesNewestFirst } from "../utils/instances";
+import { TrashIcon } from "../components/display/TrashIcon";
 
 /** Text fields resolve to `modrinthContent.<kind>.<field>` messages. */
 const TEXT_FIELDS = [
@@ -106,20 +108,6 @@ type ModrinthContentTabProps = {
   requestProjectIcons: (items: ExportedItem[]) => Promise<void>;
 };
 
-function TrashIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path
-        d="M1 3.5h12M5 3.5V2.5a1 1 0 011-1h2a1 1 0 011 1v1M5.5 6v5M8.5 6v5M2.5 3.5l.7 8a1 1 0 001 .9h5.6a1 1 0 001-.9l.7-8"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export function ModrinthContentTab({
   requestedProject,
   onCloseProject,
@@ -139,6 +127,10 @@ export function ModrinthContentTab({
 }: ModrinthContentTabProps) {
   const tr = useTranslation();
   const copy = useMemo(() => contentPresentation(kind, tr), [kind, tr]);
+  const sortedTargetInstances = useMemo(
+    () => sortInstancesNewestFirst(targetInstances),
+    [targetInstances],
+  );
   const iconKind = kind === "resourcepacks" ? "resourcePacks" : kind;
   const {
     search,
@@ -306,7 +298,7 @@ export function ModrinthContentTab({
             <InlineDropdown
               label={copy.targetDropdownLabel}
               value={selectedTarget?.name || copy.targetPlaceholder}
-              options={targetInstances.map((instance) => instance.name)}
+              options={sortedTargetInstances.map((instance) => instance.name)}
               isOpen={openDropdown === copy.dropdownKey}
               onToggle={() =>
                 setOpenDropdown(openDropdown === copy.dropdownKey ? null : copy.dropdownKey)
@@ -318,7 +310,7 @@ export function ModrinthContentTab({
               }}
               instanceInfos={
                 copy.showInstanceInfo
-                  ? targetInstances.map(({ id, name, loader }) => ({ id, name, loader }))
+                  ? sortedTargetInstances.map(({ id, name, loader }) => ({ id, name, loader }))
                   : undefined
               }
             />
@@ -389,7 +381,7 @@ export function ModrinthContentTab({
                           disabled={!item.projectId || busyProjectId !== null}
                           onClick={() => item.projectId && void uninstall(item.projectId)}
                         >
-                          <TrashIcon />
+                          <TrashIcon size={18} />
                         </button>
                       </div>
                       <div className="installed-mod-row">

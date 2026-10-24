@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import type { EnvironmentVariable } from "../../types";
 import { getEnvironmentVariablesError } from "../../utils/environmentVariables";
 import { useLocale, useTranslation } from "../../i18n/locale";
@@ -38,7 +39,7 @@ export function BuildEnvironmentVariablesEditor({ entries, onChange }: Props) {
           <div className="brs-env-name-row">
             <label className="brs-field">
               <span>{tr("buildEnvironmentVariables.name")}</span>
-              <input
+              <TextField
                 value={entry.name}
                 placeholder="VARIABLE_NAME"
                 spellCheck={false}
@@ -61,7 +62,7 @@ export function BuildEnvironmentVariablesEditor({ entries, onChange }: Props) {
           </div>
           <label className="brs-field">
             <span>{tr("buildEnvironmentVariables.value")}</span>
-            <input
+            <TextField
               value={entry.value}
               placeholder={tr("buildEnvironmentVariables.valueCanBeEmpty")}
               spellCheck={false}

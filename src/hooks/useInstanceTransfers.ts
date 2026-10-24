@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type {
   ExportedItem,
-  ImportContentResult,
   ImportInstanceResult,
   InstanceExportData,
   InstanceItem,
@@ -12,10 +11,12 @@ import type {
 import type { InstanceTransferOptions } from "../components/transfer/types";
 import type { PushToast } from "./useToasts";
 import {
+  completedImportProgress,
   hasEnvironmentVariablesData,
   hasJavaArgsData,
   hasJavaPathData,
   hasWindowSettingsData,
+  type ImportProgress,
 } from "../utils/instanceTransfer";
 import { logger } from "../utils/logger";
 import { isCancelledError, toErrorMessage } from "../utils/errors";
@@ -33,13 +34,8 @@ const DEFAULT_OPTIONS: InstanceTransferOptions = {
   resourcePacks: true,
 };
 
-export type ImportProgress = {
-  operationId: string;
-  stage: "preparing" | "installing" | "downloading" | "extracting" | "complete";
-  processed: number;
-  total: number;
-  filename: string;
-};
+export type { ImportProgress } from "../utils/instanceTransfer";
+export const IMPORT_COMPLETION_HOLD_MS = 200;
 
 function exportSlug(name: string) {
   return (
@@ -74,16 +70,18 @@ export function useInstanceTransfers({
   const [importError, setImportError] = useState("");
   const [importSourcePath, setImportSourcePath] = useState("");
   const [importSourceFormat, setImportSourceFormat] = useState<"slbuild" | "mrpack">("slbuild");
-  const [importResult, setImportResult] = useState<ImportInstanceResult | null>(null);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importCancelRequested, setImportCancelRequested] = useState(false);
   const importOperationIdRef = useRef<string | null>(null);
+  const importProgressRef = useRef<ImportProgress | null>(null);
+  const progressListenerReadyRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    void listen<ImportProgress>("build-import-progress", (event) => {
+    progressListenerReadyRef.current = listen<ImportProgress>("build-import-progress", (event) => {
       if (event.payload.operationId === importOperationIdRef.current) {
+        importProgressRef.current = event.payload;
         setImportProgress(event.payload);
       }
     })
@@ -225,7 +223,7 @@ export function useInstanceTransfers({
       resourcePacks: (data.resourcePacks?.length ?? 0) > 0,
     });
     setImportError("");
-    setImportResult(null);
+    importProgressRef.current = null;
     setImportProgress(null);
     setImportCancelRequested(false);
     setImportModalOpen(true);
@@ -268,50 +266,56 @@ export function useInstanceTransfers({
   };
 
   const handleImportConfirm = async () => {
-    if (!importData) return;
+    if (!importData || importWorking || importOperationIdRef.current) return;
     setImportWorking(true);
     setImportError("");
     setImportCancelRequested(false);
     const operationId = crypto.randomUUID();
     importOperationIdRef.current = operationId;
-    setImportProgress({ operationId, stage: "preparing", processed: 0, total: 0, filename: "" });
+    const initialProgress: ImportProgress = {
+      operationId,
+      stage: "preparing",
+      processed: 0,
+      total: 0,
+      filename: "",
+    };
+    importProgressRef.current = initialProgress;
+    setImportProgress(initialProgress);
     const name = importOptions.name ? importData.name : importCustomName;
     const ram = importOptions.ram && importData.ram ? importData.ram : defaultRamGb;
+    const finishImport = async (instance: InstanceItem, failedCount = 0) => {
+      const fallbackTotal =
+        (importOptions.mods ? (importData.mods?.length ?? 0) : 0) +
+        (importOptions.shaders ? (importData.shaders?.length ?? 0) : 0) +
+        (importOptions.resourcePacks ? (importData.resourcePacks?.length ?? 0) : 0);
+      const completed = completedImportProgress(
+        operationId,
+        importProgressRef.current,
+        fallbackTotal,
+      );
+      // Freeze the completed state: queued file events must not move the bar backwards.
+      importOperationIdRef.current = null;
+      importProgressRef.current = completed;
+      setImportProgress(completed);
+      await Promise.all([
+        new Promise<void>((resolve) => window.setTimeout(resolve, IMPORT_COMPLETION_HOLD_MS)),
+        refreshInstances(instance.id).catch((error) =>
+          logger.error("refresh after build import failed", error),
+        ),
+      ]);
+      setImportModalOpen(false);
+      setImportData(null);
+      setImportSourcePath("");
+      pushToast(
+        failedCount ? "warning" : "info",
+        failedCount
+          ? translate("instanceTransfers.buildCreatedButComponents", { failedCount })
+          : translate("instanceTransfers.buildImported", { name: instance.name }),
+        { title: translate(failedCount ? "toast.importIncomplete" : "toast.buildImported") },
+      );
+    };
     try {
-      if (importResult) {
-        const retryable = (entry: ImportContentResult) =>
-          !entry.success && entry.item.source === "modrinth" && !!entry.item.projectId;
-        const failed = importResult.items.filter(retryable);
-        if (failed.length === 0) {
-          setImportModalOpen(false);
-          setImportData(null);
-          setImportSourcePath("");
-          return;
-        }
-        const retried = await invoke<ImportContentResult[]>("retry_import_content", {
-          operationId,
-          instanceId: importResult.instance.id,
-          mods: failed.filter((entry) => entry.category === "mods").map((entry) => entry.item),
-          shaders: failed
-            .filter((entry) => entry.category === "shaders")
-            .map((entry) => entry.item),
-          resourcePacks: failed
-            .filter((entry) => entry.category === "resourcePacks")
-            .map((entry) => entry.item),
-        });
-        let index = 0;
-        const nextItems = importResult.items.map((entry) =>
-          retryable(entry) ? (retried[index++] ?? entry) : entry,
-        );
-        setImportResult({ ...importResult, items: nextItems });
-        await refreshInstances(importResult.instance.id);
-        if (nextItems.every((entry) => entry.success)) {
-          pushToast("info", translate("instanceTransfers.allBuildComponentsAre"), {
-            title: translate("toast.importComplete"),
-          });
-        }
-        return;
-      }
+      await progressListenerReadyRef.current;
       if (importSourceFormat === "mrpack") {
         const newInstance = await invoke<InstanceItem>("import_mrpack", {
           operationId,
@@ -332,15 +336,7 @@ export function useInstanceTransfers({
             includeResourcePacks: importOptions.resourcePacks,
           },
         });
-        await refreshInstances(newInstance.id);
-        setImportModalOpen(false);
-        setImportData(null);
-        setImportSourcePath("");
-        pushToast(
-          "info",
-          translate("instanceTransfers.buildImported", { name: newInstance.name }),
-          { title: translate("toast.buildImported") },
-        );
+        await finishImport(newInstance);
       } else {
         const result = await invoke<ImportInstanceResult>("import_instance", {
           operationId,
@@ -363,27 +359,15 @@ export function useInstanceTransfers({
             resourcePacks: importOptions.resourcePacks ? (importData.resourcePacks ?? []) : [],
           },
         });
-        await refreshInstances(result.instance.id);
-        setImportResult(result);
         const failedCount = result.items.filter((entry) => !entry.success).length;
-        pushToast(
-          failedCount ? "warning" : "info",
-          failedCount
-            ? translate("instanceTransfers.buildCreatedButComponents", { failedCount })
-            : translate("instanceTransfers.buildImported", { name: result.instance.name }),
-          {
-            title: translate(failedCount ? "toast.importIncomplete" : "toast.buildImported"),
-          },
-        );
+        await finishImport(result.instance, failedCount);
       }
     } catch (caught) {
       if (isCancelledError(caught)) {
-        await refreshInstances();
-        setImportError(
-          importResult
-            ? translate("instanceTransfers.reinstallCancelledFilesThat")
-            : translate("instanceTransfers.importCancelledYouCan"),
+        await refreshInstances().catch((error) =>
+          logger.error("refresh after cancelled import failed", error),
         );
+        setImportError(translate("instanceTransfers.importCancelledYouCan"));
         pushToast("info", translate("instanceTransfers.buildImportCancelled"), {
           title: translate("toast.importCancelled"),
         });
@@ -393,6 +377,7 @@ export function useInstanceTransfers({
       pushToast("error", toErrorMessage(caught), { title: translate("toast.importFailed") });
     } finally {
       importOperationIdRef.current = null;
+      importProgressRef.current = null;
       setImportProgress(null);
       setImportCancelRequested(false);
       setImportWorking(false);
@@ -436,7 +421,6 @@ export function useInstanceTransfers({
     setImportError,
     setImportSourcePath,
     importSourceFormat,
-    importResult,
     importProgress,
     importCancelRequested,
     importBuildFromPath,

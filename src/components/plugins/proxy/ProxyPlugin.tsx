@@ -1,3 +1,6 @@
+import { TextField, TextArea } from "../../inputs/TextField";
+import { SearchableSelect } from "../../inputs/SearchableSelect";
+import { TrashIcon } from "../../display/TrashIcon";
 import { useEffect, useId, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProxyPluginSettings } from "../../../types";
@@ -34,7 +37,6 @@ const GLYPHS = {
   eye: "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10-3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
   test: "m13 2-9 12h7l-1 8 10-13h-7l1-7Z",
   save: "M5 3h12l4 4v14H3V3h2Zm2 0v7h10V3M7 21v-7h10v7",
-  trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
   reset: "M4 9a8 8 0 1 1 0 7M4 3v6h6",
   arrow: "M4 12h16m-6-6 6 6-6 6",
 } as const;
@@ -306,10 +308,13 @@ function ProxySettingsEditor({
             <>
               <label className="proxy-field">
                 <span>{tr("proxy.protocol")}</span>
-                <select
+                <SearchableSelect
+                  label={tr("proxy.protocol")}
+                  variant="field"
+                  allowEmpty={false}
                   value={draft.fields.protocol}
-                  onChange={(event) => {
-                    const protocol = event.target.value as ProxyFields["protocol"];
+                  onChange={(value) => {
+                    const protocol = value as ProxyFields["protocol"];
                     updateFields({
                       protocol,
                       ...(draft.fields.port === defaultProxyPort(draft.fields.protocol)
@@ -317,13 +322,11 @@ function ProxySettingsEditor({
                         : {}),
                     });
                   }}
-                >
-                  {PROXY_PROTOCOLS.map((protocol) => (
-                    <option key={protocol} value={protocol}>
-                      {protocol.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+                  options={PROXY_PROTOCOLS.map((protocol) => ({
+                    value: protocol,
+                    label: protocol.toUpperCase(),
+                  }))}
+                />
               </label>
               <p className="proxy-hint proxy-protocol-hint">
                 {tr(
@@ -337,7 +340,7 @@ function ProxySettingsEditor({
               <div className="proxy-address-grid">
                 <label className="proxy-field">
                   <span>{tr("proxy.host")}</span>
-                  <input
+                  <TextField
                     value={draft.fields.host}
                     placeholder="127.0.0.1"
                     spellCheck={false}
@@ -350,7 +353,7 @@ function ProxySettingsEditor({
                 </label>
                 <label className="proxy-field">
                   <span>{tr("proxy.port")}</span>
-                  <input
+                  <TextField
                     value={draft.fields.port}
                     placeholder="1080"
                     inputMode="numeric"
@@ -364,7 +367,7 @@ function ProxySettingsEditor({
               <div className="proxy-credentials-grid">
                 <label className="proxy-field">
                   <span>{tr("proxy.username")}</span>
-                  <input
+                  <TextField
                     value={draft.fields.username}
                     placeholder={tr("proxy.optional")}
                     spellCheck={false}
@@ -376,7 +379,7 @@ function ProxySettingsEditor({
                 <label className="proxy-field">
                   <span>{tr("proxy.password")}</span>
                   <span className="proxy-secret-input">
-                    <input
+                    <TextField
                       type={showSecret ? "text" : "password"}
                       aria-label={tr("proxy.password")}
                       value={draft.fields.password}
@@ -406,7 +409,7 @@ function ProxySettingsEditor({
               <label className="proxy-field">
                 <span>{tr("proxy.proxyAddress")}</span>
                 <span className="proxy-secret-input">
-                  <input
+                  <TextField
                     type={showSecret ? "text" : "password"}
                     aria-label={tr("proxy.proxyAddress")}
                     value={draft.raw}
@@ -470,7 +473,7 @@ function ProxySettingsEditor({
         </div>
         <label className="proxy-field">
           <span>{tr("proxy.proxyExceptions")}</span>
-          <textarea
+          <TextArea
             value={draft.bypass}
             placeholder={"localhost, 127.0.0.1, .example.com\n10.0.0.0/8"}
             spellCheck={false}
@@ -553,7 +556,7 @@ function ProxySettingsEditor({
                       setNotice(tr("proxy.profileDeleted"));
                     }}
                   >
-                    <Glyph name="trash" />
+                    <TrashIcon size={18} />
                   </button>
                 </li>
               );
@@ -571,7 +574,7 @@ function ProxySettingsEditor({
         >
           <label className="proxy-field">
             <span>{tr("proxy.profileName")}</span>
-            <input
+            <TextField
               value={profileName}
               maxLength={64}
               placeholder={tr("proxy.profileNamePlaceholder")}

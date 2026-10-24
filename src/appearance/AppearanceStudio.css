@@ -829,23 +829,28 @@ button {
 }
 
 .appearance-element-summary {
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 12px;
-  margin: -4px 0 22px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 0 0 12px;
   padding: 13px;
   border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
   background: color-mix(in srgb, var(--accent) 5%, var(--bg-card));
 }
 
+.appearance-element-summary > span {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 .appearance-element-summary > strong {
   grid-column: 1 / -1;
-  overflow: hidden;
   color: var(--ink);
   font-size: 10px;
   letter-spacing: 0.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 .appearance-element-summary > small {
@@ -853,9 +858,11 @@ button {
   color: var(--muted);
   font-family: ui-monospace, monospace;
   font-size: 7px;
+  overflow-wrap: anywhere;
 }
 
 .studio-text-field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -1375,6 +1382,7 @@ button {
 }
 
 .studio-color-field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -1411,6 +1419,7 @@ button {
 }
 
 .studio-range-field {
+  min-width: 0;
   display: block;
   margin-top: 17px;
 }
@@ -1419,6 +1428,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
 }
 
@@ -1531,8 +1541,9 @@ button {
 }
 
 .studio-select-field {
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(116px, 1fr) minmax(145px, 1.25fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   align-items: center;
   gap: 12px;
   margin-top: 12px;
@@ -2421,6 +2432,7 @@ button {
 }
 
 .studio-section {
+  min-width: 0;
   padding: 11px 12px 12px;
   border: 1px solid var(--line);
   border-radius: var(--ui-radius);
@@ -2505,6 +2517,22 @@ button {
   display: none;
 }
 
+.appearance-component-settings .studio-section-content:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.appearance-component-settings .studio-section-content > * {
+  min-width: 0;
+  margin-block: 0;
+}
+
+.appearance-component-settings .studio-text-field > small {
+  white-space: normal;
+  line-height: 1.5;
+}
+
 @media (max-width: 620px) {
   .appearance-target-bar {
     padding-inline: 12px;
@@ -2517,5 +2545,10 @@ button {
   .appearance-studio-controls,
   .appearance-element-list {
     padding-inline: 12px;
+  }
+
+  .studio-select-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
   }
 }

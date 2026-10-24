@@ -30,6 +30,7 @@ import { createDefaultCanvasUi, type CanvasUiSettings } from "./canvasUi";
 import { ElementBackgroundPicker } from "./ElementBackgroundPicker";
 import { ElementTextColorPicker } from "./ElementTextColorPicker";
 import { ElementInspector } from "./ElementInspector";
+import { ComponentSettingsInspector } from "./ComponentSettingsInspector";
 import { CustomFontManager } from "./CustomFontManager";
 import { refreshElementSizingTarget } from "./elementSizing";
 import {
@@ -92,6 +93,7 @@ type StudioCategory =
   | "opacity"
   | "motion"
   | "canvas-ui"
+  | "select-settings"
   | "element";
 
 type EditorNotice =
@@ -108,6 +110,12 @@ const CATEGORIES: { id: StudioCategory; index: string; label: string; note: stri
   { id: "opacity", index: "06", label: "OPACITY", note: "Window, panels and controls" },
   { id: "motion", index: "07", label: "MOTION", note: "Transitions and effects" },
   { id: "canvas-ui", index: "08", label: "CANVAS UI", note: "" },
+  {
+    id: "select-settings",
+    index: "09",
+    label: "SELECT SETTINGS",
+    note: "Component content and behavior",
+  },
 ];
 
 const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
@@ -120,6 +128,8 @@ const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
   motion: "animation transitions effects",
   "canvas-ui":
     "canvas webgl effects liquid glass glitch particles shaders эффекты жидкость стекло частицы",
+  "select-settings":
+    "component props input text field dropdown search progress slider toggle checkbox настройки компонентов поле поиск список прогресс слайдер переключатель",
 };
 
 function elementStyleBadges(override: AppearanceElementOverride) {
@@ -380,7 +390,9 @@ export function AppearanceStudioApp() {
       });
       if (!additive) setElementInteractionState("normal");
       setPickingElement(continuing);
-      setCategory((current) => (current === "canvas-ui" ? current : "element"));
+      setCategory((current) =>
+        current === "canvas-ui" || current === "select-settings" ? current : "element",
+      );
       setElementListOpen(false);
       setMessage(
         continuing
@@ -649,7 +661,7 @@ export function AppearanceStudioApp() {
 
   const requestElementPick = () => {
     setElementListOpen(false);
-    if (category !== "canvas-ui") setCategory("element");
+    if (category !== "canvas-ui" && category !== "select-settings") setCategory("element");
     setPickingElement(true);
     setMessage("CLICK AN ELEMENT IN THE MAIN LAUNCHER");
     void emit(APPEARANCE_ELEMENT_PICK_REQUEST_EVENT).catch(() => {
@@ -747,6 +759,7 @@ export function AppearanceStudioApp() {
   const selectCategory = (nextCategory: StudioCategory) => {
     setElementListOpen(false);
     setCategory(nextCategory);
+    if (nextCategory === "select-settings") setElementInteractionState("normal");
     if (nextCategory !== "background") {
       void emit(APPEARANCE_DRAWING_CURSOR_EVENT, {
         visible: false,
@@ -860,6 +873,16 @@ export function AppearanceStudioApp() {
 
   const renderEditor = () => {
     switch (category) {
+      case "select-settings":
+        return (
+          <ComponentSettingsInspector
+            target={selectedTarget}
+            override={selectedOverride}
+            onPick={requestElementPick}
+            onComponentChange={patchSelectedComponent}
+          />
+        );
+
       case "canvas-ui":
         return (
           <CanvasUiPanel
@@ -893,9 +916,7 @@ export function AppearanceStudioApp() {
             onPick={requestElementPick}
             onStyleChange={patchSelectedStyle}
             onTextChange={patchSelectedText}
-            onComponentChange={patchSelectedComponent}
             onStateTransitionChange={patchSelectedStateTransition}
-            onCanvasUi={() => setCategory("canvas-ui")}
           />
         );
 
@@ -1725,13 +1746,13 @@ export function AppearanceStudioApp() {
 
   const activeEditorContext = elementListOpen
     ? {
-        index: "10",
+        index: "11",
         label: "EDITED ELEMENTS",
         note: "Review every element with its own style and jump back to it in the launcher.",
       }
     : category === "element"
       ? {
-          index: "09",
+          index: "10",
           label: selectedTarget ? "ELEMENT SETTINGS" : "PICK AN ELEMENT",
           note: selectedTarget
             ? copy("Fine-tune {target} without changing the rest of the launcher.", {
@@ -1888,7 +1909,7 @@ export function AppearanceStudioApp() {
               onClick={() => selectCategory("element")}
               aria-current={!elementListOpen && category === "element" ? "step" : undefined}
             >
-              <span>09</span>
+              <span>10</span>
               <div>
                 <strong>{copy("PICK ELEMENT")}</strong>
                 <small>
@@ -1906,7 +1927,7 @@ export function AppearanceStudioApp() {
               onClick={openElementList}
               aria-current={elementListOpen ? "step" : undefined}
             >
-              <span>10</span>
+              <span>11</span>
               <div>
                 <strong>
                   {copy("EDITED ELEMENTS")} <em>{draft.elementOverrides.length}</em>
@@ -1970,7 +1991,7 @@ export function AppearanceStudioApp() {
                 </small>
               </button>
             </div>
-            {selectedTarget && category !== "canvas-ui" && (
+            {selectedTarget && category !== "canvas-ui" && category !== "select-settings" && (
               <section className="appearance-interaction-state">
                 <span>{copy("VISUAL STATE")}</span>
                 <div>

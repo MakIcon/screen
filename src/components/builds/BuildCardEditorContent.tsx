@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { ElementSlider } from "../inputs/ElementSlider";
@@ -134,7 +135,7 @@ function ContentTagRow({
         <div className="bce-tag-row-body">
           <EditorRow label={tr("buildCardEditorContent.text")}>
             <div className="bce-placeholder-field">
-              <input
+              <TextField
                 className="bce-text-input"
                 type="text"
                 maxLength={160}

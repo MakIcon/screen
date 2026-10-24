@@ -1,3 +1,4 @@
+import { TextField, TextArea } from "../../inputs/TextField";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "../../../i18n/locale";
@@ -412,7 +413,7 @@ function MineflayerBotSettingsEditor({
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field mineflayer-bot-field--wide">
                   <span>{tr("bot.main.serverAddress")}</span>
-                  <input
+                  <TextField
                     value={settings.host}
                     placeholder={tr("bot.main.localhostOrPlayExample")}
                     spellCheck={false}
@@ -434,7 +435,7 @@ function MineflayerBotSettingsEditor({
 
                 <label className="mineflayer-bot-field">
                   <span>{tr("bot.main.version")}</span>
-                  <input
+                  <TextField
                     value={settings.version}
                     placeholder={tr("common.auto")}
                     spellCheck={false}
@@ -472,7 +473,7 @@ function MineflayerBotSettingsEditor({
               {settings.botAccountMode === "offline" ? (
                 <label className="mineflayer-bot-field mineflayer-bot-field--full">
                   <span>{tr("bot.main.botNickname")}</span>
-                  <input
+                  <TextField
                     value={settings.botNickname}
                     maxLength={16}
                     spellCheck={false}
@@ -706,7 +707,7 @@ function MineflayerBotSettingsEditor({
               >
                 <label className="mineflayer-bot-field mineflayer-bot-field--full">
                   <span>{tr("bot.main.messageText")}</span>
-                  <input
+                  <TextField
                     value={settings.spawnMessage}
                     maxLength={200}
                     placeholder={tr("bot.main.readyOwner")}
@@ -878,7 +879,7 @@ function MineflayerBotSettingsEditor({
               <div className="mineflayer-bot-grid">
                 <label className="mineflayer-bot-field">
                   <span>{tr("bot.main.commandPrefix")}</span>
-                  <input
+                  <TextField
                     value={settings.commandPrefix}
                     maxLength={8}
                     spellCheck={false}
@@ -919,7 +920,7 @@ function MineflayerBotSettingsEditor({
 
               <label className="mineflayer-bot-field mineflayer-bot-field--full">
                 <span>{tr("bot.main.extraOwnersCommaSeparated")}</span>
-                <textarea
+                <TextArea
                   value={settings.extraOwners}
                   rows={3}
                   spellCheck={false}
@@ -1067,7 +1068,7 @@ function MineflayerBotSettingsEditor({
                 }}
               >
                 <label className="mineflayer-bot-field">
-                  <input
+                  <TextField
                     ref={chatInputRef}
                     aria-label={tr("bot.main.messageAsTheBot")}
                     placeholder={

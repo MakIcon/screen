@@ -1512,7 +1512,6 @@ export default function App() {
     setImportCustomName,
     importWorking,
     importError,
-    importResult,
     importProgress,
     importCancelRequested,
     setImportError,
@@ -3025,7 +3024,6 @@ export default function App() {
             setImportCustomName={setImportCustomName}
             importWorking={importWorking}
             importError={importError}
-            importResult={importResult}
             importProgress={importProgress}
             importCancelRequested={importCancelRequested}
             setImportError={setImportError}

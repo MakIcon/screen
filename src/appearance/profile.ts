@@ -12,6 +12,7 @@ import {
   type TabAnimationId,
   type UiMotionStyle,
 } from "./animations";
+import { normalizeExtendedComponentValues } from "./componentDefaults";
 import type {
   AppearanceBackgroundKind,
   AppearanceComponentKind,
@@ -247,6 +248,8 @@ function normalizeWindowGradient(value: unknown, fallbackColor: string): Appeara
 }
 
 const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
+  "textfield",
+  "progressbar",
   "slider",
   "toggle",
   "checkbox",
@@ -260,6 +263,8 @@ const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
 ];
 
 const COMPONENT_KINDS: readonly AppearanceComponentKind[] = [
+  "textfield",
+  "progressbar",
   "slider",
   "toggle",
   "checkbox",
@@ -272,6 +277,9 @@ function normalizeComponentValues(
   partial: boolean,
 ): Record<string, unknown> {
   const raw = isRecord(value) ? value : {};
+  if (kind === "textfield" || kind === "progressbar" || kind === "dropdown") {
+    return normalizeExtendedComponentValues(kind, raw, partial);
+  }
   const output: Record<string, unknown> = {};
   const has = (key: string) => !partial || Object.prototype.hasOwnProperty.call(raw, key);
 
@@ -347,14 +355,6 @@ function normalizeComponentValues(
     if (has("label")) output.label = pickString(raw.label, "CHECKBOX").slice(0, 120);
     if (has("indicatorSize")) output.indicatorSize = clampNumber(raw.indicatorSize, 16, 10, 36);
     if (has("labelGap")) output.labelGap = clampNumber(raw.labelGap, 10, 0, 40);
-  }
-
-  if (kind === "dropdown") {
-    if (has("label")) output.label = pickString(raw.label, "OPTIONS").slice(0, 120);
-    if (has("showLabel")) output.showLabel = raw.showLabel !== false;
-    if (has("visibleItems"))
-      output.visibleItems = Math.round(clampNumber(raw.visibleItems, 5, 1, 12));
-    if (has("itemHeight")) output.itemHeight = clampNumber(raw.itemHeight, 49, 28, 96);
   }
 
   return output;

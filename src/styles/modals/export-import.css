@@ -290,27 +290,22 @@
   animation: eximp-progress-glide 1.5s linear infinite;
   pointer-events: none;
 }
-.eximp-progress-track > span {
+.eximp-progress-track .element-progress-fill {
   display: block;
   height: 100%;
   background: var(--accent);
   transition: width 180ms ease;
 }
-.eximp-progress-track.indeterminate > span {
-  animation: eximp-progress-scan 1.2s ease-in-out infinite alternate;
+.eximp-progress[data-complete="true"] .element-progress-fill {
+  transition: none;
+}
+.eximp-progress[data-complete="true"] .eximp-progress-track::after {
+  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .eximp-progress-track::after,
-  .eximp-progress-track.indeterminate > span {
+  .eximp-progress-track .element-progress-fill {
     animation: none;
-  }
-}
-@keyframes eximp-progress-scan {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(285%);
   }
 }
 @keyframes eximp-progress-glide {
@@ -362,31 +357,4 @@
   to {
     transform: rotate(360deg);
   }
-}
-.eximp-import-results {
-  max-height: 260px;
-  overflow-y: auto;
-  margin-top: 16px;
-}
-
-.eximp-import-result {
-  border: 1px solid var(--line);
-  padding: 9px 12px;
-  margin-top: 7px;
-  overflow-wrap: anywhere;
-}
-
-.eximp-import-result strong,
-.eximp-import-result span {
-  display: block;
-  font-size: 11px;
-}
-
-.eximp-import-result span {
-  color: var(--muted-strong);
-  margin-top: 3px;
-}
-
-.eximp-import-result.error strong {
-  color: var(--accent);
 }

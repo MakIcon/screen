@@ -1,3 +1,4 @@
+import { TextField } from "../inputs/TextField";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { ColorPicker } from "../color-picker/ColorPicker";
@@ -63,7 +64,7 @@ export function BadgeSection({ draft, onDraftChange }: Props) {
 
       <EditorRow label={tr("buildCardEditorBadge.text")}>
         <div className="bce-placeholder-field">
-          <input
+          <TextField
             className="bce-text-input bce-badge-text-input"
             type="text"
             maxLength={22}

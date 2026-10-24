@@ -96,15 +96,26 @@
 .install-progress-window-action {
   width: 42px;
   height: 38px;
+  padding: 0;
   border: none;
   border-left: 1px solid var(--line);
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.install-progress-window-action svg {
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .install-progress-window-action:hover {
@@ -271,8 +282,12 @@
 }
 
 @keyframes confirm-overlay-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .confirm-dialog {
@@ -287,8 +302,14 @@
 }
 
 @keyframes confirm-dialog-in {
-  from { opacity: 0; transform: translateY(14px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .confirm-label {
@@ -324,4 +345,3 @@
 .confirm-btn-delete {
   padding: 16px 28px;
 }
-

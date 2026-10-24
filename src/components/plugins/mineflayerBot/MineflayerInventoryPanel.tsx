@@ -1,3 +1,4 @@
+import { ProgressBar } from "../../display/ProgressBar";
 import { useState } from "react";
 import type { MineflayerBotStatus, MineflayerInventoryItem } from "../../../types";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
@@ -138,7 +139,12 @@ export function MineflayerInventoryPanel({
                     <small> / {stat.max}</small>
                   </strong>
                 </div>
-                <progress aria-label={stat.label} value={stat.value} max={stat.max} />
+                <ProgressBar
+                  aria-label={stat.label}
+                  value={stat.value}
+                  max={stat.max}
+                  settings={{ height: 4, showLabel: false, showValue: false }}
+                />
                 <p>{stat.note}</p>
               </div>
             ))}

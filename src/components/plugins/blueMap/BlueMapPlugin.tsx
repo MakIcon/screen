@@ -1,3 +1,4 @@
+import { TextField } from "../../inputs/TextField";
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { BlueMapPluginSettings, BlueMapStatus } from "../../../types";
@@ -147,7 +148,7 @@ function BlueMapSettingsEditor({
       >
         <label className="blue-map-field blue-map-field--full">
           <span>{tr("blueMap.mapAddress")}</span>
-          <input
+          <TextField
             value={settings.mapUrl}
             placeholder={DEFAULT_MAP_URL}
             spellCheck={false}
@@ -161,7 +162,7 @@ function BlueMapSettingsEditor({
       >
         <label className="blue-map-field blue-map-field--full">
           <span>{tr("blueMap.bluemapCliFileJar")}</span>
-          <input
+          <TextField
             value={settings.cliJarPath}
             placeholder="C:\\Program Files\\BlueMap\\BlueMap-cli.jar"
             spellCheck={false}
@@ -171,7 +172,7 @@ function BlueMapSettingsEditor({
 
         <label className="blue-map-field">
           <span>{tr("blueMap.workingFolder")}</span>
-          <input
+          <TextField
             value={settings.workingDir}
             placeholder={tr("blueMap.folderContainingTheJar")}
             spellCheck={false}
@@ -181,7 +182,7 @@ function BlueMapSettingsEditor({
 
         <label className="blue-map-field">
           <span>{tr("common.javaPath")}</span>
-          <input
+          <TextField
             value={settings.javaPath}
             placeholder="java"
             spellCheck={false}

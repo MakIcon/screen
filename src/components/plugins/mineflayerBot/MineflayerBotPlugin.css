@@ -28,7 +28,9 @@
   border-color: var(--accent);
   background: var(--bg-hover-strong);
 }
-.mineflayer-production-slots small { color: var(--text-alt); }
+.mineflayer-production-slots small {
+  color: var(--text-alt);
+}
 
 .mineflayer-bot-gathering-fields {
   border: 0;
@@ -278,9 +280,9 @@
   letter-spacing: 0.06em;
 }
 
-.mineflayer-bot-field > input,
-.mineflayer-bot-field > select,
-.mineflayer-bot-field > textarea {
+.mineflayer-bot-field input,
+.mineflayer-bot-field .searchable-select > .inline-dropdown-trigger,
+.mineflayer-bot-field textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -298,9 +300,13 @@
     opacity 0.14s;
 }
 
-.mineflayer-bot-field > input,
-.mineflayer-bot-field > select {
+.mineflayer-bot-field input,
+.mineflayer-bot-field .searchable-select > .inline-dropdown-trigger {
   min-height: 36px;
+}
+.mineflayer-bot-field .searchable-select > .inline-dropdown-trigger {
+  height: 36px;
+  padding: 0;
 }
 
 .mineflayer-bot-choice {
@@ -344,20 +350,20 @@
   line-height: 1.5;
 }
 
-.mineflayer-bot-field > textarea {
+.mineflayer-bot-field textarea {
   min-height: 72px;
   padding-top: 11px;
   line-height: 1.45;
 }
 
-.mineflayer-bot-field > input:focus,
+.mineflayer-bot-field input:focus,
 .mineflayer-bot-field > select:focus,
-.mineflayer-bot-field > textarea:focus {
+.mineflayer-bot-field textarea:focus {
   border-color: var(--accent);
   background: var(--bg-panel);
 }
 
-.mineflayer-bot-field > input:disabled,
+.mineflayer-bot-field input:disabled,
 .mineflayer-bot-field > select:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -1000,11 +1006,10 @@
   font-size: 13px;
   font-weight: 500;
 }
-.mineflayer-vital progress {
+.mineflayer-vital > .element-progress {
   grid-column: 1 / -1;
   width: 100%;
-  height: 4px;
-  accent-color: var(--vital-color);
+  --progress-screen-fill: var(--vital-color);
 }
 .mineflayer-vital p {
   grid-column: 1 / -1;

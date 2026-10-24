@@ -1,3 +1,4 @@
+import { TextField } from "../../inputs/TextField";
 import type { DiscordRpcPluginSettings } from "../../../types";
 import type { PluginSettingsProps } from "../pluginTypes";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
@@ -53,7 +54,7 @@ function DiscordRpcSettingsEditor({
         <div className="drpc-config">
           <label className="drpc-config-field drpc-config-field--app">
             <span>{tr("ui.applicationId")}</span>
-            <input
+            <TextField
               value={settings.applicationId}
               placeholder={tr("discordRpc.discordApplicationId")}
               spellCheck={false}
@@ -89,7 +90,7 @@ function DiscordRpcSettingsEditor({
       >
         <label className="drpc-config-field">
           <span>{tr("discordRpc.activityName")}</span>
-          <input
+          <TextField
             value={settings.activityNameTemplate}
             placeholder="ScreenLauncher"
             onChange={(event) => update({ activityNameTemplate: event.target.value })}
@@ -97,7 +98,7 @@ function DiscordRpcSettingsEditor({
         </label>
         <label className="drpc-config-field">
           <span>{tr("discordRpc.mainLine")}</span>
-          <input
+          <TextField
             value={settings[modeTemplates.detailsKey]}
             placeholder={modeTemplates.detailsPlaceholder}
             onChange={(event) => update({ [modeTemplates.detailsKey]: event.target.value })}
@@ -105,7 +106,7 @@ function DiscordRpcSettingsEditor({
         </label>
         <label className="drpc-config-field">
           <span>{tr("discordRpc.secondLine")}</span>
-          <input
+          <TextField
             value={settings[modeTemplates.stateKey]}
             placeholder={modeTemplates.statePlaceholder}
             onChange={(event) => update({ [modeTemplates.stateKey]: event.target.value })}
@@ -130,7 +131,7 @@ function DiscordRpcSettingsEditor({
         <div className="plugin-settings-fields">
           <label className="drpc-config-field">
             <span>{tr("discordRpc.largeImageKey")}</span>
-            <input
+            <TextField
               value={settings.largeImageKey}
               placeholder="minecraft"
               onChange={(event) => update({ largeImageKey: event.target.value })}
@@ -138,7 +139,7 @@ function DiscordRpcSettingsEditor({
           </label>
           <label className="drpc-config-field">
             <span>{tr("discordRpc.smallImageKey")}</span>
-            <input
+            <TextField
               value={settings.smallImageKey}
               placeholder="launcher"
               onChange={(event) => update({ smallImageKey: event.target.value })}
@@ -146,7 +147,7 @@ function DiscordRpcSettingsEditor({
           </label>
           <label className="drpc-config-field">
             <span>{tr("discordRpc.buttonText")}</span>
-            <input
+            <TextField
               value={settings.buttonLabel}
               placeholder={tr("discordRpc.optional")}
               onChange={(event) => update({ buttonLabel: event.target.value })}
@@ -154,7 +155,7 @@ function DiscordRpcSettingsEditor({
           </label>
           <label className="drpc-config-field">
             <span>{tr("discordRpc.buttonLink")}</span>
-            <input
+            <TextField
               value={settings.buttonUrl}
               placeholder="https://example.com"
               onChange={(event) => update({ buttonUrl: event.target.value })}

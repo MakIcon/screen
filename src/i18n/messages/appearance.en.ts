@@ -31,6 +31,11 @@ export const appearanceEn = {
   "appearance.motion": "MOTION",
   "appearance.transitionsAndEffects": "Transitions and effects",
   "appearance.canvasUi": "CANVAS UI",
+  "appearance.componentSettings": "SELECT SETTINGS",
+  "appearance.componentContentAndBehavior": "Component content and behavior",
+  "appearance.pickAComponent": "PICK A COMPONENT IN THE LAUNCHER",
+  "appearance.selectComponentHint":
+    "Select a text field, dropdown, progress bar, slider, toggle or checkbox to edit its behavior and content.",
 
   "appearance.label": "LABEL",
   "appearance.content": "CONTENT",
@@ -291,7 +296,7 @@ export const appearanceEn = {
   "appearance.to": "TO",
   "appearance.valuesOutside": "· VALUES OUTSIDE",
   "appearance.staySaved": "STAY SAVED",
-  "appearance.09ElementInspector": "09 / ELEMENT INSPECTOR",
+  "appearance.09ElementInspector": "10 / ELEMENT INSPECTOR",
   "appearance.pickAnyObjectInTheLauncher": "PICK ANY OBJECT IN THE LAUNCHER",
   "appearance.selectAButtonTitleCardOrControlItsText":
     "Select a button, title, card or control. Its text and visual settings will appear here and update live in the main window.",

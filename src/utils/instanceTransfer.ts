@@ -1,6 +1,25 @@
 import type { InstanceExportData } from "../types";
 import { DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH } from "./javaArgs";
 
+export type ImportProgress = {
+  operationId: string;
+  stage: "preparing" | "installing" | "downloading" | "extracting" | "complete";
+  processed: number;
+  total: number;
+  filename: string;
+};
+
+/** Command success is authoritative even if the final IPC progress event arrives late. */
+export function completedImportProgress(
+  operationId: string,
+  progress: ImportProgress | null,
+  fallbackTotal: number,
+): ImportProgress {
+  const current = progress?.operationId === operationId ? progress : null;
+  const total = Math.max(1, current?.total || fallbackTotal, current?.processed || 0);
+  return { operationId, stage: "complete", processed: total, total, filename: "" };
+}
+
 export function hasEnvironmentVariablesData(
   data: Pick<InstanceExportData, "environmentVariables"> | null | undefined,
 ) {

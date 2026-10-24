@@ -1,3 +1,5 @@
+import { TextField } from "../inputs/TextField";
+import { TrashIcon } from "../display/TrashIcon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BackupWorldInfo, InstanceItem, WorldBackupInfo } from "../../types";
 import type { PushToast } from "../../hooks/useToasts";
@@ -16,7 +18,7 @@ import {
 function BackupIcon({
   kind = "archive",
 }: {
-  kind?: "archive" | "refresh" | "close" | "check" | "trash" | "chevron";
+  kind?: "archive" | "refresh" | "close" | "check" | "chevron";
 }) {
   const paths: Record<typeof kind, ReactNode> = {
     archive: (
@@ -28,7 +30,6 @@ function BackupIcon({
     refresh: <path d="M20 10a8 8 0 0 0-14-5L3 8M3 3v5h5M4 14a8 8 0 0 0 14 5l3-3m0 5v-5h-5" />,
     close: <path d="m6 6 12 12M6 18 18 6" />,
     check: <path d="m5 12 4 4L19 6" />,
-    trash: <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />,
     chevron: <path d="m6 9 6 6 6-6" />,
   };
   return (
@@ -465,7 +466,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                   {tr("worldBackups.backupName")} <span>{tr("worldBackups.optional")}</span>
                 </label>
                 <div className="wb-compose-row">
-                  <input
+                  <TextField
                     id="wb-name"
                     maxLength={80}
                     value={name}
@@ -650,7 +651,7 @@ export function WorldBackupsModal({ instance, running, onClose, pushToast }: Pro
                                 disabled={backups.working}
                                 onClick={() => beginConfirmation(backup, "delete")}
                               >
-                                <BackupIcon kind="trash" />
+                                <TrashIcon size={20} />
                               </button>
                             </div>
                           )}

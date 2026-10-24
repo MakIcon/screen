@@ -1,0 +1,64 @@
+.text-field {
+  display: grid;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  gap: 6px;
+}
+.text-field-body {
+  display: grid;
+  position: relative;
+  min-width: 0;
+}
+.text-field .text-field-control {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.text-field-label,
+.text-field-hint,
+.text-field-counter {
+  font-size: 10px;
+  color: var(--muted);
+}
+.text-field-counter {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.text-field[data-invalid="true"] .text-field-control {
+  border-color: var(--accent);
+}
+.text-field[data-invalid="true"] .text-field-hint {
+  color: var(--accent);
+}
+.text-field .text-field-actions {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+}
+.text-field-actions button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.text-field-actions button:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.text-field-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.text-field-actions button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
