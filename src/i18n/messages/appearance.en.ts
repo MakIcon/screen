@@ -35,7 +35,8 @@ export const appearanceEn = {
   "appearance.componentContentAndBehavior": "Component content and behavior",
   "appearance.pickAComponent": "PICK A COMPONENT IN THE LAUNCHER",
   "appearance.selectComponentHint":
-    "Select a text field, dropdown, progress bar, slider, toggle or checkbox to edit its behavior and content.",
+    "Select a text field, dropdown, progress bar, slider, toggle, checkbox, button or badge to edit its behavior and content.",
+  "appearance.badge": "BADGE",
 
   "appearance.label": "LABEL",
   "appearance.content": "CONTENT",

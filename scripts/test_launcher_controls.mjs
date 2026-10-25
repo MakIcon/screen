@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { testAppearanceStudio } from "./test_appearance_studio.mjs";
+import { testButtonsAndBadges } from "./test_button_badge_controls.mjs";
 
 const entry = process.env.PLAYWRIGHT_MODULE;
 const { chromium } = await import(entry ? pathToFileURL(path.resolve(entry)).href : "playwright");
@@ -233,10 +234,11 @@ try {
       .evaluate((node) => getComputedStyle(node).animationName),
     "none",
   );
+  await testButtonsAndBadges(page);
   assert.deepEqual(errors, []);
   await testAppearanceStudio(browser, process.env.CONTROL_TEST_URL || "http://127.0.0.1:1420");
   console.log(
-    "PASS: controlled editing, original dimensions, search and keyboard, component picking, live settings, saved profiles, reset and reduced motion.",
+    "PASS: fields, selects, progress, buttons and badges; keyboard, loading, component picking, live settings, saved profiles, reset and reduced motion.",
   );
 } finally {
   await browser.close();

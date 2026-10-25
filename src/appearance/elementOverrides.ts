@@ -288,7 +288,16 @@ function readComponentTarget(element: HTMLElement): AppearanceElementComponentTa
   const kind = element.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE);
   if (
     !kind ||
-    !["slider", "toggle", "checkbox", "dropdown", "textfield", "progressbar"].includes(kind)
+    ![
+      "slider",
+      "toggle",
+      "checkbox",
+      "dropdown",
+      "textfield",
+      "progressbar",
+      "button",
+      "badge",
+    ].includes(kind)
   )
     return undefined;
   const rawProps = element.getAttribute(APPEARANCE_COMPONENT_PROPS_ATTRIBUTE);
@@ -473,16 +482,27 @@ export function resolveElementTextTarget(
 ) {
   if (!target.textTarget) return null;
   let current: Node = element;
+  let complete = true;
   for (const index of target.textTarget.path) {
     const stableChildren = Array.from(current.childNodes).filter(
       (node) =>
         !(node instanceof HTMLCanvasElement) || node.dataset.appearanceLiquidGlassCanvas !== "true",
     );
     const next = stableChildren[index];
-    if (!next) return null;
+    if (!next) {
+      complete = false;
+      break;
+    }
     current = next;
   }
-  return current instanceof Text ? current : null;
+  if (complete && current instanceof Text) return current;
+  // Profiles made before shared buttons/badges pointed to their direct text.
+  // Keep those labels resolvable after adding icon, dot and loading wrappers.
+  if (element.matches(".element-button, .element-badge")) {
+    const label = element.querySelector<HTMLElement>(".element-button-label, .element-badge-label");
+    return label ? findEditableTextNode(label) : null;
+  }
+  return null;
 }
 
 function buildElementOverrideStateRule(
@@ -1207,7 +1227,7 @@ function eventElement(event: Event, root: HTMLElement) {
   const component = element.closest<HTMLElement>(`[${APPEARANCE_COMPONENT_ATTRIBUTE}]`);
   if (
     component &&
-    ["textfield", "dropdown", "progressbar"].includes(
+    ["textfield", "dropdown", "progressbar", "button", "badge"].includes(
       component.getAttribute(APPEARANCE_COMPONENT_ATTRIBUTE) ?? "",
     )
   ) {

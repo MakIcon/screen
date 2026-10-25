@@ -102,7 +102,7 @@ export function ComponentSettingsInspector({
         <strong>{copy("PICK A COMPONENT IN THE LAUNCHER")}</strong>
         <p>
           {copy(
-            "Select a text field, dropdown, progress bar, slider, toggle or checkbox to edit its behavior and content.",
+            "Select a text field, dropdown, progress bar, slider, toggle, checkbox, button or badge to edit its behavior and content.",
           )}
         </p>
         <button type="button" onClick={onPick}>

@@ -1,4 +1,7 @@
+import { Button } from "../components/inputs/Button";
+import { IconButton } from "../components/inputs/IconButton";
 import { TrashIcon } from "../components/display/TrashIcon";
+import { StatusChip } from "../components/display/StatusChip";
 import { TextField } from "../components/inputs/TextField";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { CustomScrollArea } from "../components/layout/CustomScrollArea";
@@ -246,17 +249,19 @@ export function InstancesTab({
           <div className="card-topline build-library-heading">
             <span className="panel-label">{tr("instances.instanceLibrary")}</span>
             <div className="build-library-actions" data-guide-target="build-library-actions">
-              <button
+              <Button
+                variant="inherit"
+                icon={<TrashIcon />}
                 className="ghost-action build-library-trash-action"
                 type="button"
                 data-tooltip={tr("instances.buildTrash")}
                 aria-label={tr("instances.buildTrash")}
                 onClick={onOpenTrash}
               >
-                <TrashIcon />
-                <span>{tr("instances.trash")}</span>
-              </button>
-              <button
+                {tr("instances.trash")}
+              </Button>
+              <IconButton
+                variant="inherit"
                 className="ghost-action icon-square-action import-action"
                 type="button"
                 data-tooltip={tr("instances.importBuildFromFile")}
@@ -278,8 +283,9 @@ export function InstancesTab({
                     strokeLinejoin="round"
                   />
                 </svg>
-              </button>
-              <button
+              </IconButton>
+              <Button
+                variant="inherit"
                 className="ghost-action"
                 type="button"
                 onClick={() => {
@@ -288,7 +294,7 @@ export function InstancesTab({
                 }}
               >
                 {tr("instances.createBuild")}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -392,7 +398,11 @@ export function InstancesTab({
                         </span>
                         <BuildCardPin appearance={cardAppearance} pinned={instance.pinned} />
                         {shouldShowBuildCardBadge(cardAppearance, isRunning(instance.id)) && (
-                          <span
+                          <StatusChip
+                            tone="accent"
+                            variant="solid"
+                            size="sm"
+                            showDot={false}
                             className="instance-running-badge"
                             data-card-layout-element
                             style={{
@@ -405,7 +415,7 @@ export function InstancesTab({
                             )}
                           >
                             {resolveBadgeTemplate(badgeTemplate)}
-                          </span>
+                          </StatusChip>
                         )}
                       </div>
                       <div className="instance-card-meta instance-card-meta--content">
@@ -532,12 +542,17 @@ export function InstancesTab({
                     {working ? tr("common.working") : tr("instances.createBuild")}
                   </button>
                   {instances.length > 0 && (
-                    <button className="ghost-action" onClick={() => setCreateMode(false)}>
+                    <Button
+                      variant="inherit"
+                      className="ghost-action"
+                      onClick={() => setCreateMode(false)}
+                    >
                       {tr("common.cancel")}
-                    </button>
+                    </Button>
                   )}
                   {advancedSettingsEnabled && (
-                    <button
+                    <IconButton
+                      variant="inherit"
                       className="ghost-action icon-square-action settings-icon-action"
                       type="button"
                       onClick={() => openBuildCardSettings(null)}
@@ -545,7 +560,7 @@ export function InstancesTab({
                       aria-label={tr("instances.buildSettings")}
                     >
                       <SettingsGearIcon />
-                    </button>
+                    </IconButton>
                   )}
                 </div>
               </>
@@ -554,13 +569,14 @@ export function InstancesTab({
                 <div className="card-topline">
                   <span className="panel-label">{tr("instances.buildConfiguration")}</span>
                   {selectedInstance && (
-                    <button
+                    <Button
+                      variant="inherit"
                       className="ghost-action"
                       type="button"
                       onClick={() => onOpenWorldBackups(selectedInstance.id)}
                     >
                       {tr("instances.worldBackups")}
-                    </button>
+                    </Button>
                   )}
                 </div>
 
@@ -581,7 +597,8 @@ export function InstancesTab({
                             disabled={working}
                           />
                         </label>
-                        <button
+                        <IconButton
+                          variant="inherit"
                           className="ghost-action build-identity-action build-confirm-action"
                           type="button"
                           disabled={
@@ -594,8 +611,9 @@ export function InstancesTab({
                           onClick={() => void commitBuildRename()}
                         >
                           <ConfirmIcon />
-                        </button>
-                        <button
+                        </IconButton>
+                        <IconButton
+                          variant="inherit"
                           className="ghost-action build-identity-action"
                           type="button"
                           disabled={working}
@@ -604,7 +622,7 @@ export function InstancesTab({
                           onClick={cancelBuildRename}
                         >
                           <CancelIcon />
-                        </button>
+                        </IconButton>
                       </>
                     ) : (
                       <>
@@ -612,7 +630,8 @@ export function InstancesTab({
                           <span>{tr("instances.buildName")}</span>
                           <div className="build-name-value">{selectedInstance.name}</div>
                         </div>
-                        <button
+                        <IconButton
+                          variant="inherit"
                           className="ghost-action build-identity-action"
                           type="button"
                           disabled={working || isRunning(selectedInstance.id)}
@@ -625,7 +644,7 @@ export function InstancesTab({
                           onClick={() => setRenamingBuild(true)}
                         >
                           <RenameIcon />
-                        </button>
+                        </IconButton>
                         <button
                           className={`ghost-action build-identity-action build-pin-action${selectedInstance.pinned ? " active" : ""}`}
                           type="button"
@@ -709,7 +728,8 @@ export function InstancesTab({
                       data-mascot-label={tr("buildPlay.playBuild")}
                     />
                   )}
-                  <button
+                  <Button
+                    variant="inherit"
                     className="ghost-action"
                     type="button"
                     onClick={handleInstallSelected}
@@ -719,25 +739,28 @@ export function InstancesTab({
                     data-mascot-label={tr("common.install")}
                   >
                     {tr("common.install")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="inherit"
                     className="ghost-action"
                     type="button"
                     onClick={handleOpenFolder}
                     data-tooltip={tr("instances.folder")}
                   >
                     {tr("instances.folder")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="inherit"
                     className="ghost-action"
                     type="button"
                     onClick={() => selectedInstance && setStatsInstanceId(selectedInstance.id)}
                     data-tooltip={tr("instances.stats")}
                   >
                     {tr("instances.stats")}
-                  </button>
+                  </Button>
                   <div className="instance-side-actions">
-                    <button
+                    <IconButton
+                      variant="inherit"
                       className="ghost-action icon-square-action export-action"
                       type="button"
                       data-tooltip={tr("instances.exportBuild")}
@@ -759,9 +782,10 @@ export function InstancesTab({
                           strokeLinejoin="round"
                         />
                       </svg>
-                    </button>
+                    </IconButton>
                     {advancedSettingsEnabled && (
-                      <button
+                      <IconButton
+                        variant="inherit"
                         className="ghost-action icon-square-action settings-icon-action"
                         type="button"
                         onClick={() => openBuildCardSettings(selectedInstance?.id ?? null)}
@@ -769,9 +793,10 @@ export function InstancesTab({
                         aria-label={tr("instances.buildSettings")}
                       >
                         <SettingsGearIcon />
-                      </button>
+                      </IconButton>
                     )}
-                    <button
+                    <IconButton
+                      variant="inherit"
                       className="ghost-action icon-square-action screenshots-action"
                       type="button"
                       data-tooltip={tr("instances.screenshots")}
@@ -795,8 +820,9 @@ export function InstancesTab({
                         />
                         <circle cx="7" cy="7.3" r="2.1" stroke="currentColor" strokeWidth="1.2" />
                       </svg>
-                    </button>
-                    <button
+                    </IconButton>
+                    <IconButton
+                      variant="inherit"
                       className="ghost-action icon-square-action trash-action"
                       type="button"
                       data-tooltip={tr("instances.deleteBuild")}
@@ -809,7 +835,7 @@ export function InstancesTab({
                       onClick={() => selectedInstance && handleDeleteInstance(selectedInstance.id)}
                     >
                       <TrashIcon />
-                    </button>
+                    </IconButton>
                   </div>
                 </div>
               </>
@@ -829,7 +855,8 @@ export function InstancesTab({
                   failedBuildAction &&
                   failedBuildAction.id === selectedInstance?.id &&
                   !working && (
-                    <button
+                    <Button
+                      variant="inherit"
                       className="ghost-action"
                       type="button"
                       onClick={() =>
@@ -841,7 +868,7 @@ export function InstancesTab({
                       {failedBuildAction.action === "install"
                         ? tr("instances.retryInstall")
                         : tr("instances.retryLaunch")}
-                    </button>
+                    </Button>
                   )}
               </div>
             </div>

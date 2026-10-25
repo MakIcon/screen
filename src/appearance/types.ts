@@ -92,6 +92,7 @@ export type AppearanceElementKind =
   | "textfield"
   | "progressbar"
   | "button"
+  | "badge"
   | "input"
   | "select"
   | "list"
@@ -209,7 +210,39 @@ export type AppearanceProgressBarSettings = {
   markerColor: string;
 };
 
+export type AppearanceButtonSettings = {
+  label: string;
+  /** Runtime constraint, captured by the picker and never overridden by a profile. */
+  iconOnly: boolean;
+  variant: "inherit" | "primary" | "secondary" | "ghost" | "danger";
+  size: "sm" | "md" | "lg";
+  showIcon: boolean;
+  iconPosition: "start" | "end";
+  fullWidth: boolean;
+  height: number;
+  paddingX: number;
+  fontSize: number;
+  borderRadius: number;
+  iconSize: number;
+  gap: number;
+};
+
+export type AppearanceBadgeSettings = {
+  label: string;
+  tone: "neutral" | "accent" | "success" | "warning" | "danger";
+  variant: "soft" | "solid" | "outline" | "plain";
+  size: "sm" | "md" | "lg";
+  showIcon: boolean;
+  showDot: boolean;
+  pulse: boolean;
+  paddingX: number;
+  fontSize: number;
+  borderRadius: number;
+};
+
 export type AppearanceComponentSettingsMap = {
+  button: AppearanceButtonSettings;
+  badge: AppearanceBadgeSettings;
   slider: AppearanceSliderSettings;
   toggle: AppearanceToggleSettings;
   checkbox: AppearanceCheckboxSettings;

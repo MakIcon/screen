@@ -35,8 +35,9 @@ export const APPEARANCE_TEXT_KEYS = {
   "SELECT SETTINGS": "appearance.componentSettings",
   "Component content and behavior": "appearance.componentContentAndBehavior",
   "PICK A COMPONENT IN THE LAUNCHER": "appearance.pickAComponent",
-  "Select a text field, dropdown, progress bar, slider, toggle or checkbox to edit its behavior and content.":
+  "Select a text field, dropdown, progress bar, slider, toggle, checkbox, button or badge to edit its behavior and content.":
     "appearance.selectComponentHint",
+  BADGE: "appearance.badge",
 
   LABEL: "appearance.label",
   CONTENT: "appearance.content",

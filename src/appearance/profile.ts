@@ -248,6 +248,7 @@ function normalizeWindowGradient(value: unknown, fallbackColor: string): Appeara
 }
 
 const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
+  "badge",
   "textfield",
   "progressbar",
   "slider",
@@ -263,6 +264,8 @@ const ELEMENT_KINDS: readonly AppearanceElementKind[] = [
 ];
 
 const COMPONENT_KINDS: readonly AppearanceComponentKind[] = [
+  "button",
+  "badge",
   "textfield",
   "progressbar",
   "slider",
@@ -277,7 +280,13 @@ function normalizeComponentValues(
   partial: boolean,
 ): Record<string, unknown> {
   const raw = isRecord(value) ? value : {};
-  if (kind === "textfield" || kind === "progressbar" || kind === "dropdown") {
+  if (
+    kind === "textfield" ||
+    kind === "progressbar" ||
+    kind === "dropdown" ||
+    kind === "button" ||
+    kind === "badge"
+  ) {
     return normalizeExtendedComponentValues(kind, raw, partial);
   }
   const output: Record<string, unknown> = {};

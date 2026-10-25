@@ -4,6 +4,7 @@ import { PluginIcon } from "./PluginIcon";
 import { pluginStatusLabel } from "./pluginStatus";
 import { pluginCopy } from "./pluginLocalization";
 import { useLocale, useTranslation } from "../../i18n/locale";
+import { StatusChip } from "../display/StatusChip";
 
 type PluginCardProps = {
   definition: PluginDefinition;
@@ -29,7 +30,14 @@ export function PluginCard({
   const locale = useLocale();
   const tr = useTranslation();
   const status = uninstalling ? "REMOVING" : definition.getStatus(plugins);
-  const statusTone = packageReady && status === "ON" ? "on" : status === "OFF" ? "off" : "warning";
+  const pending = packageChecking || installing || uninstalling;
+  const statusTone = pending
+    ? "warning"
+    : packageReady && status === "ON"
+      ? "success"
+      : status === "OFF"
+        ? "neutral"
+        : "warning";
   const statusLabel = packageChecking
     ? tr("pluginCard.checking")
     : installing
@@ -48,7 +56,14 @@ export function PluginCard({
       <span className="plugin-card-copy">
         <strong>{definition.title}</strong>
         <span className="plugin-card-category">{pluginCopy(definition, locale).tag}</span>
-        <span className={`plugin-card-state plugin-card-state--${statusTone}`}>{statusLabel}</span>
+        <StatusChip
+          className="plugin-card-state plugin-card-status"
+          tone={statusTone}
+          size="sm"
+          pulse={pending}
+        >
+          {statusLabel}
+        </StatusChip>
       </span>
     </button>
   );

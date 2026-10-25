@@ -75,6 +75,8 @@ export async function testAppearanceStudio(browser, origin) {
                 dropdown: "DROPDOWN_DEFAULTS",
                 textfield: "TEXT_FIELD_DEFAULTS",
                 progressbar: "PROGRESS_BAR_DEFAULTS",
+                button: "BUTTON_DEFAULTS",
+                badge: "BADGE_DEFAULTS",
               }[componentKind]
             ];
       if (!props) throw new Error(`Missing defaults for ${componentKind}`);
@@ -146,7 +148,7 @@ export async function testAppearanceStudio(browser, origin) {
     );
     await page.keyboard.press("Escape");
 
-    for (const kind of ["dropdown", "textfield", "progressbar", "slider"]) {
+    for (const kind of ["dropdown", "textfield", "progressbar", "button", "badge", "slider"]) {
       await pick(kind);
       await controls
         .locator(".appearance-element-summary strong")

@@ -118,18 +118,21 @@
 .mod-meta-strip {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+  row-gap: 8px;
   margin: 12px 0;
   color: var(--muted);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  overflow-wrap: anywhere;
 }
 
-.mod-meta-strip span:not(:last-child)::after {
+.mod-meta-strip > span:not(.mod-category) + span:not(.mod-category)::before {
   content: "|";
-  margin-left: 12px;
+  margin-right: 12px;
   opacity: 0.3;
 }
 
@@ -637,9 +640,26 @@
 }
 
 .modrinth-card .mod-title-row h3 {
+  min-width: 0;
   max-width: 100%;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.modrinth-card > .mod-category {
+  position: absolute;
+  bottom: -1px;
+  right: 24px;
+  width: max-content;
+  max-width: calc(100% - 48px);
+  letter-spacing: 0.8px;
+  clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 100%, 0 100%);
+}
+
+.modrinth-card .mod-category .element-badge-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mod-card-actions {
@@ -666,6 +686,10 @@
 
   .modrinth-card .mod-card-project {
     flex-basis: 100%;
+  }
+
+  .modrinth-card .mod-card-actions {
+    flex-wrap: wrap;
   }
 }
 

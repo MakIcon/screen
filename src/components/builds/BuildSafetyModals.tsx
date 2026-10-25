@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { InstanceItem } from "../../types";
 import "./BuildSafetyModals.css";
 import { useTranslation } from "../../i18n/locale";
+import { Button } from "../inputs/Button";
 
 type TrashProps = {
   items: InstanceItem[];
@@ -47,17 +48,12 @@ export function DeletedBuildsModal({
                 </span>
               </div>
               <div className="build-safety-actions">
-                <button
-                  className="ghost-action"
-                  type="button"
-                  disabled={working}
-                  onClick={() => onRestore(item.id)}
-                >
+                <Button type="button" disabled={working} onClick={() => onRestore(item.id)}>
                   {tr("buildSafetyModals.restore")}
-                </button>
+                </Button>
                 {confirmPurge === item.id ? (
-                  <button
-                    className="ghost-action build-safety-danger"
+                  <Button
+                    variant="danger"
                     type="button"
                     disabled={working}
                     onClick={() => {
@@ -66,16 +62,16 @@ export function DeletedBuildsModal({
                     }}
                   >
                     {tr("buildSafetyModals.confirmDelete")}
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    className="ghost-action build-safety-danger"
+                  <Button
+                    variant="danger"
                     type="button"
                     disabled={working}
                     onClick={() => setConfirmPurge(item.id)}
                   >
                     {tr("buildSafetyModals.deleteForever")}
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -87,9 +83,9 @@ export function DeletedBuildsModal({
           </p>
         )}
         <div className="confirm-actions">
-          <button className="ghost-action" type="button" disabled={working} onClick={onClose}>
+          <Button type="button" disabled={working} onClick={onClose}>
             {tr("common.close")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

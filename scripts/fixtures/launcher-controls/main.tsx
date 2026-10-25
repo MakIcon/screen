@@ -4,12 +4,17 @@ import { TextField, TextArea } from "../../../src/components/inputs/TextField";
 import { SearchableSelect } from "../../../src/components/inputs/SearchableSelect";
 import { InlineDropdown } from "../../../src/components/inputs/InlineDropdown";
 import { ProgressBar } from "../../../src/components/display/ProgressBar";
+import { Button } from "../../../src/components/inputs/Button";
+import { IconButton } from "../../../src/components/inputs/IconButton";
+import { Badge } from "../../../src/components/display/Badge";
+import { StatusChip } from "../../../src/components/display/StatusChip";
 import { ComponentPropsInspector } from "../../../src/appearance/ComponentPropsInspector";
 import {
   createElementTarget,
   applyElementAppearanceOverrides,
   beginElementPicker,
   resolveElementTarget,
+  resolveElementTextTarget,
 } from "../../../src/appearance/elementOverrides";
 import { normalizeAppearanceProfile } from "../../../src/appearance/profile";
 import type {
@@ -32,6 +37,7 @@ Object.assign(window, {
     normalizeAppearanceProfile,
     beginElementPicker,
     resolveElementTarget,
+    resolveElementTextTarget,
   },
 });
 
@@ -42,6 +48,16 @@ function Fixture() {
   const [component, setComponent] = useState<AppearanceElementComponentTarget | null>(null);
   const [override, setOverride] = useState<AppearanceElementComponentOverride>();
   const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [buttonLoading, setButtonLoading] = useState(false);
+  const [buttonClicks, setButtonClicks] = useState(0);
+  const [iconClicks, setIconClicks] = useState(0);
+  const [formSubmits, setFormSubmits] = useState(0);
+  const [running, setRunning] = useState(true);
+  const playIcon = (
+    <svg viewBox="0 0 16 16" fill="currentColor">
+      <path d="m5 3 8 5-8 5Z" />
+    </svg>
+  );
   const inspect = (id: string) => {
     const node = document.querySelector<HTMLElement>(`#${id} [data-appearance-component]`)!;
     setTarget(node);
@@ -179,6 +195,67 @@ function Fixture() {
           settings={{ variant: "segmented", valueFormat: "fraction", height: 12 }}
         />
         <button id="after-select">Next control</button>
+        <h2>Buttons & badges</h2>
+        <section id="button-example">
+          <Button
+            variant="primary"
+            icon={playIcon}
+            loading={buttonLoading}
+            loadingLabel="Installing build"
+            onClick={() => {
+              setButtonClicks((count) => count + 1);
+              setButtonLoading(true);
+            }}
+          >
+            Install build
+          </Button>
+        </section>
+        <output id="button-clicks">{buttonClicks}</output>
+        <button onClick={() => setButtonLoading(false)}>Finish loading</button>
+        <button onClick={() => inspect("button-example")}>Inspect button</button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Button>Secondary</Button>
+          <Button variant="ghost">Ghost</Button>
+          <Button variant="danger">Delete build</Button>
+          <Button disabled>Disabled</Button>
+          <Button loading>Loading</Button>
+        </div>
+        <section id="icon-button-example">
+          <IconButton aria-label="Open folder" onClick={() => setIconClicks((count) => count + 1)}>
+            {playIcon}
+          </IconButton>
+        </section>
+        <output id="icon-clicks">{iconClicks}</output>
+        <button onClick={() => inspect("icon-button-example")}>Inspect icon button</button>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setFormSubmits((count) => count + 1);
+          }}
+        >
+          <Button>Default action</Button>
+          <Button type="submit">Submit action</Button>
+          <output id="form-submits">{formSubmits}</output>
+        </form>
+        <section id="badge-example">
+          <StatusChip tone={running ? "success" : "neutral"} pulse={running}>
+            {running ? "Running" : "Stopped"}
+          </StatusChip>
+        </section>
+        <button onClick={() => setRunning((value) => !value)}>Switch status</button>
+        <button onClick={() => inspect("badge-example")}>Inspect badge</button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Badge variant="outline">Fabric</Badge>
+          <Badge tone="accent" variant="solid">
+            Installed
+          </Badge>
+          <StatusChip tone="warning">Paused</StatusChip>
+          <StatusChip tone="danger">Error</StatusChip>
+          <StatusChip announce>Announced status</StatusChip>
+          <button id="nested-badge">
+            <StatusChip tone="success">Card status</StatusChip>
+          </button>
+        </div>
       </main>
       <aside style={{ minWidth: 0 }}>
         {component && (

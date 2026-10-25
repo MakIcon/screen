@@ -1,5 +1,8 @@
 import type { CSSProperties } from "react";
 import { ProgressBar } from "../display/ProgressBar";
+import { Badge } from "../display/Badge";
+import { Button } from "../inputs/Button";
+import { IconButton } from "../inputs/IconButton";
 import type { ModDownloadProgressPayload, ModrinthProject } from "../../types";
 import type { ModrinthContentKind } from "../../hooks/useModrinthContent";
 import { ModrinthProjectIcon } from "./ModrinthProjectModal";
@@ -70,7 +73,9 @@ function ModDownloadControls({
         data-tooltip={progress.filename || tr("catalogProjectCard.resolvingDependencies")}
         aria-valuetext={`${label}${determinate ? ` ${Math.round(percent)}%` : ""}`}
       />
-      <button
+      <IconButton
+        size="sm"
+        variant="ghost"
         className="catalog-download-control"
         type="button"
         aria-label={paused ? tr("common.resume") : tr("common.pause")}
@@ -81,8 +86,10 @@ function ModDownloadControls({
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
           {paused ? <path d="m5 3 8 5-8 5Z" /> : <path d="M4 3h3v10H4zm5 0h3v10H9z" />}
         </svg>
-      </button>
-      <button
+      </IconButton>
+      <IconButton
+        size="sm"
+        variant="ghost"
         className="catalog-download-control catalog-download-control--cancel"
         type="button"
         aria-label={tr("common.cancel")}
@@ -98,7 +105,7 @@ function ModDownloadControls({
             strokeLinecap="round"
           />
         </svg>
-      </button>
+      </IconButton>
     </div>
   );
 }
@@ -157,12 +164,22 @@ export function CatalogProjectCard({
       data-mascot-content-title={item.title}
       data-mascot-installed={item.installed ? "true" : "false"}
     >
+      <Badge
+        className="mod-category"
+        tone="accent"
+        variant="soft"
+        size="sm"
+        settings={{ fontSize: 9, paddingX: 14, borderRadius: 0 }}
+        title={category.toUpperCase()}
+        data-tooltip={category.toUpperCase()}
+      >
+        {category.toUpperCase()}
+      </Badge>
       <div className="mod-card-head">
         <div className="mod-card-project">
           <ModrinthProjectIcon iconUrl={item.iconUrl} title={item.title} />
           <div className="mod-title-row">
             <h3>{item.title}</h3>
-            <span className="mod-category">{category.toUpperCase()}</span>
           </div>
         </div>
         <div className="mod-card-actions" onClick={(event) => event.stopPropagation()}>
@@ -177,51 +194,67 @@ export function CatalogProjectCard({
           ) : item.installed ? (
             installedCatalogMode === "downloaded" ? (
               <>
-                <button className="ghost-action installed catalog-action" type="button" disabled>
+                <Button
+                  variant="inherit"
+                  className="ghost-action installed catalog-action"
+                  disabled
+                >
                   {tr("catalogProjectCard.downloaded")}
-                </button>
-                <button
-                  className="ghost-action danger catalog-action"
+                </Button>
+                <Button
+                  variant="danger"
+                  className="catalog-action"
                   type="button"
                   disabled={contentBusy}
+                  loading={busy}
+                  loadingLabel={tr("catalogProjectCard.removing")}
                   onClick={onUninstall}
                 >
-                  {busy ? tr("catalogProjectCard.removing") : tr("common.deleteCaps")}
-                </button>
+                  {tr("common.deleteCaps")}
+                </Button>
               </>
             ) : (
               <>
-                <button
-                  className="ghost-action danger catalog-action"
+                <Button
+                  variant="danger"
+                  className="catalog-action"
                   type="button"
                   disabled={contentBusy}
+                  loading={busy}
+                  loadingLabel={tr("catalogProjectCard.removing")}
                   onClick={onUninstall}
                 >
-                  {busy ? "..." : tr("common.remove")}
-                </button>
-                <button
+                  {tr("common.remove")}
+                </Button>
+                <Button
+                  variant="inherit"
                   className="ghost-action installed catalog-action"
                   type="button"
                   disabled={contentBusy}
+                  loading={busy}
+                  loadingLabel={tr("catalogProjectCard.installing")}
                   onClick={onInstall}
                   data-mascot-stealable
                   data-mascot-label={tr("catalogProjectCard.update")}
                 >
-                  {busy ? "..." : tr("catalogProjectCard.update")}
-                </button>
+                  {tr("catalogProjectCard.update")}
+                </Button>
               </>
             )
           ) : (
-            <button
-              className="catalog-action install"
+            <Button
+              variant="primary"
+              className="catalog-action"
               type="button"
               disabled={contentBusy}
+              loading={busy}
+              loadingLabel={tr("catalogProjectCard.installing")}
               onClick={onInstall}
               data-mascot-stealable
               data-mascot-label={tr("common.install")}
             >
-              {busy ? tr("catalogProjectCard.installing") : tr("common.install")}
-            </button>
+              {tr("common.install")}
+            </Button>
           )}
         </div>
       </div>

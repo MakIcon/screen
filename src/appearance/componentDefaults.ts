@@ -2,7 +2,38 @@ import type {
   AppearanceDropdownSettings,
   AppearanceTextFieldSettings,
   AppearanceProgressBarSettings,
+  AppearanceButtonSettings,
+  AppearanceBadgeSettings,
 } from "./types";
+
+export const BUTTON_DEFAULTS: AppearanceButtonSettings = {
+  label: "",
+  iconOnly: false,
+  variant: "secondary",
+  size: "md",
+  showIcon: true,
+  iconPosition: "start",
+  fullWidth: false,
+  height: 0,
+  paddingX: -1,
+  fontSize: 0,
+  borderRadius: -1,
+  iconSize: 16,
+  gap: 8,
+};
+
+export const BADGE_DEFAULTS: AppearanceBadgeSettings = {
+  label: "",
+  tone: "neutral",
+  variant: "soft",
+  size: "md",
+  showIcon: true,
+  showDot: false,
+  pulse: false,
+  paddingX: -1,
+  fontSize: 0,
+  borderRadius: -1,
+};
 
 export const TEXT_FIELD_DEFAULTS: AppearanceTextFieldSettings = {
   label: "",
@@ -82,7 +113,18 @@ export const PROGRESS_BAR_DEFAULTS: AppearanceProgressBarSettings = {
   markerColor: "",
 };
 
+export const EXTENDED_COMPONENT_DEFAULTS = {
+  button: BUTTON_DEFAULTS,
+  badge: BADGE_DEFAULTS,
+  textfield: TEXT_FIELD_DEFAULTS,
+  dropdown: DROPDOWN_DEFAULTS,
+  progressbar: PROGRESS_BAR_DEFAULTS,
+};
+export type ExtendedComponentKind = keyof typeof EXTENDED_COMPONENT_DEFAULTS;
+
 const bounds: Record<string, readonly [number, number]> = {
+  iconSize: [8, 48],
+  gap: [0, 32],
   visibleItems: [1, 20],
   itemHeight: [24, 96],
   menuGap: [0, 32],
@@ -113,18 +155,25 @@ const choices: Record<string, readonly string[]> = {
 
 /** Keep imported component settings bounded without turning partial overrides into defaults. */
 export function normalizeExtendedComponentValues(
-  kind: "textfield" | "dropdown" | "progressbar",
+  kind: ExtendedComponentKind,
   raw: Record<string, unknown>,
   partial: boolean,
 ): Record<string, unknown> {
-  const defaults =
-    kind === "textfield"
-      ? TEXT_FIELD_DEFAULTS
-      : kind === "dropdown"
-        ? DROPDOWN_DEFAULTS
-        : PROGRESS_BAR_DEFAULTS;
+  const defaults = EXTENDED_COMPONENT_DEFAULTS[kind];
+  const componentChoices: Record<string, readonly string[]> = {
+    ...choices,
+    ...(kind === "button"
+      ? { variant: ["inherit", "primary", "secondary", "ghost", "danger"] }
+      : kind === "badge"
+        ? { variant: ["soft", "solid", "outline", "plain"] }
+        : {}),
+    size: ["sm", "md", "lg"],
+    tone: ["neutral", "accent", "success", "warning", "danger"],
+    iconPosition: ["start", "end"],
+  };
   const output: Record<string, unknown> = {};
   for (const [key, fallback] of Object.entries(defaults)) {
+    if (key === "iconOnly" && partial) continue;
     if (partial && !Object.prototype.hasOwnProperty.call(raw, key)) continue;
     const value = raw[key];
     if (Array.isArray(fallback)) {
@@ -151,7 +200,8 @@ export function normalizeExtendedComponentValues(
         output[key] = Math.round(output[key] as number);
     } else {
       output[key] =
-        typeof value === "string" && (!choices[key] || choices[key].includes(value))
+        typeof value === "string" &&
+        (!componentChoices[key] || componentChoices[key].includes(value))
           ? value.slice(0, key === "defaultValue" ? 2000 : 500)
           : fallback;
     }

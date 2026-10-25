@@ -92,10 +92,14 @@ describe("progress display", () => {
 });
 
 describe("persisted component settings", () => {
-  it.each(["textfield", "dropdown", "progressbar"] as const)(
+  it.each(["textfield", "dropdown", "progressbar", "button", "badge"] as const)(
     "round-trips %s settings through an appearance profile",
     (kind) => {
       const props = normalizeExtendedComponentValues(kind, {}, false);
+      const settings =
+        kind === "button" || kind === "badge"
+          ? { label: "Custom label", size: "lg", borderRadius: 12 }
+          : { showLabel: false };
       const profile = normalizeAppearanceProfile({
         customized: true,
         elementOverrides: [
@@ -105,13 +109,13 @@ describe("persisted component settings", () => {
             kind,
             path: [{ tag: "div", index: 0 }],
             component: { kind, props },
-            componentSettings: { kind, settings: { showLabel: false } },
+            componentSettings: { kind, settings },
           },
         ],
       });
       expect(profile.elementOverrides[0]).toMatchObject({
         component: { kind },
-        componentSettings: { kind, settings: { showLabel: false } },
+        componentSettings: { kind, settings },
       });
       expect(
         normalizeAppearanceProfile(JSON.parse(JSON.stringify(profile))).elementOverrides,
@@ -130,11 +134,41 @@ describe("persisted component settings", () => {
       height: 0,
     });
   });
+  it("keeps button and badge variants separate and rejects imported runtime state", () => {
+    expect(
+      normalizeExtendedComponentValues(
+        "button",
+        {
+          variant: "solid",
+          size: "giant",
+          iconSize: -100,
+          gap: Infinity,
+          disabled: false,
+          loading: true,
+          onClick: "unexpected",
+        },
+        true,
+      ),
+    ).toEqual({ variant: "secondary", size: "md", iconSize: 8, gap: 8 });
+    expect(
+      normalizeExtendedComponentValues(
+        "badge",
+        {
+          variant: "primary",
+          tone: "invalid",
+          pulse: "yes",
+          paddingX: -100,
+          fontSize: 999,
+        },
+        true,
+      ),
+    ).toEqual({ variant: "soft", tone: "neutral", pulse: false, paddingX: -1, fontSize: 48 });
+  });
   it("has localized labels and options for every inspector setting", () => {
     for (const fields of Object.values(COMPONENT_INSPECTOR_FIELDS))
       for (const field of fields) {
         for (const locale of ["ru", "en"] as const) {
-          const key = `components.settings.${field.key}` as PlainMessageKey;
+          const key = field.labelKey ?? (`components.settings.${field.key}` as PlainMessageKey);
           expect(translateFor(locale, key)).not.toBe(key);
           for (const option of field.choices ?? []) {
             const optionKey = `components.option.${option}` as PlainMessageKey;

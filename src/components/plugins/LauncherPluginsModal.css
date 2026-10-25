@@ -220,6 +220,9 @@
   font-size: 11px;
   line-height: 1.5;
 }
+.plugin-card-status {
+  justify-self: start;
+}
 .plugin-card-state--on {
   color: var(--success);
 }
@@ -738,7 +741,8 @@
     padding: 10px;
   }
   .plugin-card-category,
-  .plugin-card-state {
+  .plugin-card-state,
+  .plugin-card-status {
     display: none;
   }
   .plugin-detail-hero {

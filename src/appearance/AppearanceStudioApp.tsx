@@ -129,7 +129,7 @@ const CATEGORY_SEARCH_TERMS: Partial<Record<StudioCategory, string>> = {
   "canvas-ui":
     "canvas webgl effects liquid glass glitch particles shaders эффекты жидкость стекло частицы",
   "select-settings":
-    "component props input text field dropdown search progress slider toggle checkbox настройки компонентов поле поиск список прогресс слайдер переключатель",
+    "component props input text field dropdown search progress slider toggle checkbox button icon badge status chip настройки компонентов поле поиск список прогресс слайдер переключатель кнопка иконка бейдж статус",
 };
 
 function elementStyleBadges(override: AppearanceElementOverride) {

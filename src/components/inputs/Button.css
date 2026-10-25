@@ -1,0 +1,167 @@
+/* Screen-specific layout classes can still supply their own dimensions. */
+:where(.element-button) {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.element-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  vertical-align: middle;
+  min-height: 42px;
+  padding: 12px 18px;
+  border-radius: var(--button-radius, var(--ui-radius, 0px));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms,
+    border-color 160ms,
+    opacity 160ms;
+}
+
+button.element-button[data-variant="primary"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+button.element-button[data-variant="secondary"],
+button.element-button[data-variant="ghost"] {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+button.element-button[data-variant="ghost"] {
+  border-color: transparent;
+}
+
+button.element-button[data-variant="danger"] {
+  background: transparent;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.element-button[data-size="sm"] {
+  min-height: 32px;
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
+.element-button[data-size="lg"] {
+  min-height: 52px;
+  padding: 16px 26px;
+  font-size: 12px;
+}
+
+.element-button--icon {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
+
+.element-button--icon[data-size="sm"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.element-button--icon[data-size="lg"] {
+  width: 52px;
+  height: 52px;
+  padding: 0;
+}
+.element-button[data-full-width="true"] {
+  width: 100%;
+}
+button.element-button:not([data-variant="inherit"]):not(:disabled):hover {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+button.element-button[data-variant="primary"]:not(:disabled):hover {
+  background: var(--ink);
+  opacity: 0.9;
+}
+button.element-button[data-variant="danger"]:not(:disabled):hover {
+  background: var(--bg-hover-strong);
+  border-color: var(--accent);
+}
+
+.element-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Keep a component radius usable when the launcher's global shape is customized. */
+[data-appearance-custom="true"] .gallery-root button.element-button {
+  border-radius: var(--button-radius, var(--ui-radius, 0px)) !important;
+}
+
+.element-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.element-button[data-loading="true"] {
+  cursor: wait;
+}
+
+.element-button-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--button-gap, 8px);
+  min-width: 0;
+}
+
+.element-button-content[data-icon-position="end"] {
+  flex-direction: row-reverse;
+}
+.element-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.element-button-icon > svg {
+  width: var(--button-icon-size, 16px);
+  height: var(--button-icon-size, 16px);
+}
+.element-button[data-loading="true"] > .element-button-content {
+  opacity: 0;
+}
+
+.element-button-spinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: var(--button-icon-size, 16px);
+  height: var(--button-icon-size, 16px);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: element-button-spin 700ms linear infinite;
+  pointer-events: none;
+}
+
+@keyframes element-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .element-button {
+    transition: none;
+  }
+  .element-button-spinner {
+    animation: none;
+  }
+}

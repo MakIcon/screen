@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation, type PlainMessageKey } from "../i18n/locale";
 import { RangeField, Section, SelectField, ColorField } from "./StudioFields";
 import type { AppearanceElementComponentOverride, AppearanceElementComponentTarget } from "./types";
+import type { ExtendedComponentKind } from "./componentDefaults";
 
 type Field = {
   key: string;
@@ -10,6 +11,7 @@ type Field = {
   max?: number;
   step?: number;
   choices?: readonly string[];
+  labelKey?: PlainMessageKey;
 };
 const text = (key: string): Field => ({ key, type: "text" });
 const toggle = (key: string): Field => ({ key, type: "boolean" });
@@ -26,10 +28,39 @@ const choice = (key: string, choices: readonly string[]): Field => ({
   choices,
 });
 
-export const COMPONENT_INSPECTOR_FIELDS: Record<
-  "textfield" | "dropdown" | "progressbar",
-  readonly Field[]
-> = {
+export const COMPONENT_INSPECTOR_FIELDS: Record<ExtendedComponentKind, readonly Field[]> = {
+  button: [
+    text("label"),
+    {
+      ...choice("variant", ["inherit", "primary", "secondary", "ghost", "danger"]),
+      labelKey: "components.settings.buttonVariant",
+    },
+    choice("size", ["sm", "md", "lg"]),
+    toggle("showIcon"),
+    choice("iconPosition", ["start", "end"]),
+    toggle("fullWidth"),
+    range("height", 0, 240),
+    range("paddingX", -1, 64),
+    range("fontSize", 0, 48),
+    range("borderRadius", -1, 120),
+    range("iconSize", 8, 48),
+    range("gap", 0, 32),
+  ],
+  badge: [
+    text("label"),
+    choice("tone", ["neutral", "accent", "success", "warning", "danger"]),
+    {
+      ...choice("variant", ["soft", "solid", "outline", "plain"]),
+      labelKey: "components.settings.badgeVariant",
+    },
+    choice("size", ["sm", "md", "lg"]),
+    toggle("showIcon"),
+    toggle("showDot"),
+    toggle("pulse"),
+    range("paddingX", -1, 64),
+    range("fontSize", 0, 48),
+    range("borderRadius", -1, 120),
+  ],
   textfield: [
     text("label"),
     toggle("showLabel"),
@@ -169,7 +200,9 @@ export function ComponentPropsInspector({
   if (
     component.kind !== "textfield" &&
     component.kind !== "dropdown" &&
-    component.kind !== "progressbar"
+    component.kind !== "progressbar" &&
+    component.kind !== "button" &&
+    component.kind !== "badge"
   )
     return null;
   const values = {
@@ -186,7 +219,11 @@ export function ComponentPropsInspector({
       ? "components.textFieldSettings"
       : component.kind === "dropdown"
         ? "components.selectSettings"
-        : "components.progressSettings",
+        : component.kind === "button"
+          ? "components.buttonSettings"
+          : component.kind === "badge"
+            ? "components.badgeSettings"
+            : "components.progressSettings",
   );
   return (
     <Section
@@ -198,7 +235,13 @@ export function ComponentPropsInspector({
       )}
     >
       {COMPONENT_INSPECTOR_FIELDS[component.kind].map((field) => {
-        const label = tr(`components.settings.${field.key}` as PlainMessageKey);
+        if (
+          component.kind === "button" &&
+          component.props.iconOnly &&
+          (field.key === "showIcon" || field.key === "iconPosition")
+        )
+          return null;
+        const label = tr(field.labelKey ?? (`components.settings.${field.key}` as PlainMessageKey));
         const value = values[field.key];
         if (field.type === "boolean")
           return (
@@ -278,7 +321,12 @@ export function ComponentPropsInspector({
           onChange={(ticks) => patch("customTicks", ticks)}
         />
       )}
-      <div className="studio-unavailable-note">{tr("components.defaultHint")}</div>
+      {component.kind !== "button" && component.kind !== "badge" && (
+        <div className="studio-unavailable-note">{tr("components.defaultHint")}</div>
+      )}
+      {(component.kind === "button" || component.kind === "badge") && (
+        <div className="studio-unavailable-note">{tr("components.liveLabelHint")}</div>
+      )}
     </Section>
   );
 }

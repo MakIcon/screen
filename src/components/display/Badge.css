@@ -1,0 +1,89 @@
+.element-badge {
+  --badge-tone: var(--muted-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  vertical-align: middle;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius, 0px);
+  color: var(--badge-tone);
+  background: color-mix(in srgb, var(--badge-tone) 9%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.8px;
+}
+
+.element-badge[data-tone] {
+  color: var(--badge-tone);
+}
+.element-badge[data-tone="accent"] {
+  --badge-tone: var(--accent);
+}
+.element-badge[data-tone="success"] {
+  --badge-tone: var(--success);
+}
+.element-badge[data-tone="warning"] {
+  --badge-tone: var(--warning);
+}
+.element-badge[data-tone="danger"] {
+  --badge-tone: var(--danger);
+}
+.element-badge[data-variant="solid"] {
+  background: var(--badge-tone);
+  color: var(--bg);
+}
+.element-badge[data-variant="outline"] {
+  border-color: color-mix(in srgb, var(--badge-tone) 35%, transparent);
+  background: transparent;
+}
+.element-badge[data-variant="plain"] {
+  border-color: transparent;
+  background: transparent;
+}
+.element-badge[data-size="sm"] {
+  padding: 3px 6px;
+  font-size: 9px;
+  gap: 4px;
+}
+.element-badge[data-size="lg"] {
+  padding: 6px 10px;
+  font-size: 11px;
+  gap: 7px;
+}
+.element-badge-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.element-badge-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+.element-badge-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.element-badge-icon > svg {
+  width: 12px;
+  height: 12px;
+}
+.element-badge[data-pulse="true"] > .element-badge-dot {
+  animation: element-badge-pulse 1.6s ease-in-out infinite;
+}
+@keyframes element-badge-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .element-badge-dot {
+    animation: none !important;
+  }
+}
