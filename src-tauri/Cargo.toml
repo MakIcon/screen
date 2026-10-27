@@ -1,6 +1,6 @@
 [package]
 name = "screen"
-version = "0.2.2"
+version = "0.2.3"
 description = "ScreenLauncher desktop application"
 authors = ["makar"]
 edition = "2021"
