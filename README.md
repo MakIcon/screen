@@ -3,8 +3,6 @@
 <a href="README.md"><img src="docs/assets/language-ru.svg" alt="Читать на русском" height="38" /></a>&nbsp;
 <a href="README.en.md"><img src="docs/assets/language-en.svg" alt="Read in English" height="38" /></a>
 
-<br /><br />
-
 <a href="https://github.com/MakIcon/screen/releases/latest">
   <img src="docs/assets/readme-banner-ru.svg" alt="ScreenLauncher — Minecraft по твоим правилам" width="100%" />
 </a>
