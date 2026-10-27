@@ -221,12 +221,4 @@ pnpm release --skip-build --notes-file release-notes.md --publish
   <img src="docs/assets/github-contribution-snake.svg" alt="Анимированная змейка на графике активности MakIcon в GitHub" width="100%" />
 </picture>
 
-<br /><br />
-
-<sub>Автор: <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Сторонние компоненты</a> · <a href="https://github.com/MakIcon/screen/issues">Сообщить об ошибке</a></sub>
-
-<br />
-
-<sub>ScreenLauncher — независимый проект, не связанный с Mojang Studios или Microsoft и не одобренный ими.</sub>
-
 </div>

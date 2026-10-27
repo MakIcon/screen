@@ -221,12 +221,4 @@ The template is based on Tauri CLI 2.10.1. When upgrading the CLI, compare chang
   <img src="docs/assets/github-contribution-snake.svg" alt="Animated snake moving across MakIcon's GitHub contribution graph" width="100%" />
 </picture>
 
-<br /><br />
-
-<sub>Made by <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a> · <a href="https://github.com/MakIcon/screen/issues">Report an issue</a></sub>
-
-<br />
-
-<sub>ScreenLauncher is an independent project and is not affiliated with or endorsed by Mojang Studios or Microsoft.</sub>
-
 </div>
