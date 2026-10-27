@@ -1,124 +1,118 @@
 <div align="center">
 
-<a href="https://github.com/MakIcon/screen/releases">
-  <img src="docs/assets/readme-banner.svg" alt="ScreenLauncher — Minecraft, the way you want it. View releases." width="100%" />
+<a href="README.md"><img src="docs/assets/language-ru.svg" alt="Читать на русском" height="38" /></a>&nbsp;
+<a href="README.en.md"><img src="docs/assets/language-en.svg" alt="Read in English" height="38" /></a>
+
+<br /><br />
+
+<a href="https://github.com/MakIcon/screen/releases/latest">
+  <img src="docs/assets/readme-banner-ru.svg" alt="ScreenLauncher — Minecraft по твоим правилам" width="100%" />
 </a>
 
 <br />
 
-**Your Minecraft. Your builds. Your rules.**
+**Твой Minecraft. Твои сборки. Твои правила.**
 
-A desktop Minecraft launcher that brings your builds, mods and settings together.
+Лаунчер Minecraft Java Edition для Windows: сборки, моды, миры и настройки в одном месте.
 
 <br />
 
-<a href="https://github.com/MakIcon/screen/releases/download/apperance/ScreenLauncher_0.1.0_x64-setup.exe">
-  <img src="docs/assets/download-windows.svg" alt="Download ScreenLauncher for Windows (64-bit EXE installer)" width="320" />
+<a href="https://github.com/MakIcon/screen/releases/latest">
+  <img src="docs/assets/download-windows-ru.svg" alt="Установить ScreenLauncher для Windows x64 — открыть последний релиз" width="320" />
 </a>
 
 <br />
 
-<sub>Windows x64 · EXE installer · <a href="https://github.com/MakIcon/screen/releases">All releases</a></sub>
+<sub>Windows x64 · Установщик EXE · <a href="https://github.com/MakIcon/screen/releases/latest">Последний релиз</a> · <a href="https://github.com/MakIcon/screen/releases">Все версии</a></sub>
 
 <br /><br />
 
 </div>
 
-## Your Minecraft, all in one place
+## Что умеет ScreenLauncher
 
-ScreenLauncher makes it easier to organize different Minecraft setups without having to manage their files by hand. Create a build for the way you want to play, install content from Modrinth and launch it from one place.
+- **Отдельные сборки Minecraft.** Vanilla, Fabric, Quilt, Forge и NeoForge с собственными модами, настройками Java, памятью, аргументами JVM и переменными окружения.
+- **Каталог Modrinth.** Поиск и установка совместимых модов, ресурспаков и шейдеров, загрузка обязательных зависимостей, прогресс, пауза, продолжение и отмена загрузок.
+- **Управление сборками и мирами.** Импорт и экспорт `.slbuild` и `.mrpack`, резервные копии миров, восстановление удалённых сборок из корзины, закрепление и настройка карточек.
+- **Аккаунты и внешний вид персонажа.** Вход Microsoft, офлайн-профили, управление скинами и плащами с 3D-просмотром.
+- **Статистика игры.** Время в игре, недавние запуски и календарь активности.
+- **Русский и английский интерфейс.** Переключение языка в настройках лаунчера.
+- **Автообновление.** Проверка новых версий при запуске и в настройках, установка подписанных обновлений из лаунчера.
 
-- **Separate builds, no compromises.** Set up Vanilla, Fabric, Quilt, Forge or NeoForge installations independently. Each build keeps its own configuration.
-- **Mods without leaving the launcher.** Discover mods, resource packs and shaders through Modrinth. Required mod dependencies are resolved when installing compatible projects.
-- **A look that feels like yours.** Customize the launcher appearance and build cards instead of settling for the same layout everywhere.
-- **Control over your game.** Choose Java settings, allocated memory and other options for individual builds.
-- **Pick up where you left off.** See your recent build and playtime information, then get back into the game.
+## Установка и первый запуск
 
-## Download & installation
+1. Нажмите **«Установить»** вверху — откроется последний опубликованный релиз.
+2. Скачайте установщик `ScreenLauncher_…_x64-setup.exe` из раздела **Assets** и запустите его.
+3. Откройте лаунчер, добавьте аккаунт и создайте сборку: выберите версию Minecraft и загрузчик модов.
+4. При необходимости установите моды, ресурспаки и шейдеры из Modrinth, затем нажмите **«Играть»**.
 
-Getting started doesn't require any development tools.
+Для установки готового лаунчера инструменты разработки не нужны. Следующие версии можно устанавливать через встроенное обновление.
 
-1. **Download** the Windows installer using the button above.
-2. **Install** ScreenLauncher by running the downloaded `.exe` file.
-3. **Open the launcher**, create a build, choose your Minecraft version and press Play.
+## Appearance Studio
 
-Want to add mods? Open the **Modrinth** section after creating a compatible build.
+Редактор оформления позволяет настроить весь лаунчер и отдельные элементы интерфейса.
 
-> [!NOTE]
-> The latest published release is labeled **v2.0**, although its Windows installer is named `ScreenLauncher_0.1.0_x64-setup.exe`. That published installer may not include every change on the `main` branch.
+- Цвета, фон, собственные шрифты, анимированные градиенты и готовые пресеты.
+- Эффекты Canvas UI: стекло, жидкость, частицы, глитч, VHS, ASCII и 3D-объекты.
+- Собственные изображения, SVG и модели GLB/GLTF для поддерживаемых эффектов.
+- Выбор элемента прямо в лаунчере: оформление кнопок, карточек, текста и панелей.
+- Раздел **Select Settings** для настройки подписей, размеров, иконок и поведения кнопок, полей ввода, списков, прогресс-баров, слайдеров, переключателей и флажков.
+- Сохранение настроек элементов, отмена и повтор изменений.
 
-## More than just a Play button
+Открыть редактор: **Ctrl+Shift+A**. Палитра **Ctrl+K** помогает найти сборку, раздел настроек, действие лаунчера или контент Modrinth.
 
-- **Build import & export** — move or back up build configurations using supported transfer formats.
-- **Microsoft and offline account workflows** — manage supported ways to start the game.
-- **Flexible runtime settings** — configure Java, JVM arguments and per-build environment variables.
-- **Safer downloads** — verify downloaded Minecraft files using available checksums and reuse valid cached files.
-- **Optional integrations** — Discord Rich Presence, OBS telemetry and a Mineflayer bot extension for more advanced setups.
+## Плагины и интеграции
 
-These extras are available when you need them; you can also keep things simple and just play.
+| Интеграция                | Возможности                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Mineflayer Bot**        | Отдельное окно бота и инвентаря, навигация, добыча, крафт, фермерство, хранение предметов, сценарии действий, выживание и PvP. |
+| **Proxy**                 | HTTP(S), SOCKS4/4a и SOCKS5/5h; профили подключений, авторизация, проверка соединения и исключения для локальной сети.         |
+| **Discord Rich Presence** | Отображение активности лаунчера и игры в Discord.                                                                              |
+| **OBS Telemetry**         | Передача данных игры для OBS через локальный сервис и вспомогательный клиентский Fabric-мод.                                   |
+| **BlueMap**               | Настройка карты BlueMap и управление дополнительным серверным пакетом.                                                         |
 
-## Frequently asked questions
+Интеграции включаются и настраиваются отдельно. Дополнительные пакеты устанавливаются из интерфейса плагинов, когда они нужны.
+
+Подробнее о боте: [бой](extensions/mineflayer-bot/COMBAT.md), [выживание](extensions/mineflayer-bot/SURVIVAL.md), [поиск пути](extensions/mineflayer-bot/pathfinding/README.md). О вспомогательном моде: [OBS Telemetry](obs-telemetry-mod/README.md).
+
+## Частые вопросы
 
 <details>
-<summary><b>Do I need to install Java myself?</b></summary>
+<summary><b>Нужно ли устанавливать Java вручную?</b></summary>
 
-ScreenLauncher includes Java runtime selection and management. Depending on your Minecraft version and setup, a compatible runtime may need to be selected or downloaded. A Java settings test can help diagnose problems.
+В лаунчере есть управление Java и выбор среды выполнения. Для выбранной версии Minecraft можно подобрать или загрузить подходящую Java и проверить её в настройках.
 
 </details>
 
 <details>
-<summary><b>Does it support Fabric, Forge and other mod loaders?</b></summary>
+<summary><b>Как найти изменения в новой версии?</b></summary>
 
-Yes. You can create builds for Vanilla, Fabric, Quilt, Forge and NeoForge. The Modrinth browser can help you find content compatible with your build.
-
-</details>
-
-<details>
-<summary><b>Where can I download another version?</b></summary>
-
-See [GitHub Releases](https://github.com/MakIcon/screen/releases). The most recent published release provides a Windows x64 EXE installer, and an [older release](https://github.com/MakIcon/screen/releases/tag/first) includes an MSI installer.
+Откройте [последний релиз](https://github.com/MakIcon/screen/releases/latest): в описании перечислены изменения, а в **Assets** находится установщик. Предыдущие версии доступны в [списке релизов](https://github.com/MakIcon/screen/releases).
 
 </details>
 
 <details>
-<summary><b>Is there a macOS or Linux download?</b></summary>
+<summary><b>Есть ли установщики для Linux и macOS?</b></summary>
 
-There is no published macOS or Linux installer listed in the repository's current releases. The project is based on Tauri, but that does not mean builds for every platform are already available.
+Готовый установщик распространяется для **Windows x64**. Инструкции по сборке из исходников находятся ниже; для других платформ потребуются соответствующие инструменты и проверка совместимости.
 
 </details>
 
----
+<details>
+<summary><b>Как сообщить об ошибке?</b></summary>
 
-<div align="center">
+Создайте [issue](https://github.com/MakIcon/screen/issues), укажите версию лаунчера, шаги воспроизведения и текст ошибки. Журнал ошибок находится в `%APPDATA%\ScreenLauncher\logs\launcher-errors.jsonl`.
 
-### Built with
+</details>
 
-<a href="https://tauri.app"><img src="docs/assets/badge-tauri.svg" alt="Built with Tauri 2" height="28" /></a>&nbsp;
-<a href="https://www.rust-lang.org"><img src="docs/assets/badge-rust.svg" alt="Powered by Rust" height="28" /></a>&nbsp;
-<a href="https://react.dev"><img src="docs/assets/badge-react.svg" alt="React and TypeScript frontend" height="28" /></a>
-
-<sub>React 19 · TypeScript · Vite 7 · Tauri 2 · Rust</sub>
-
-</div>
-
-## Activity snake
-
-<div align="center">
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/github-contribution-snake-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/github-contribution-snake.svg" />
-  <img src="docs/assets/github-contribution-snake.svg" alt="Animated snake moving across MakIcon's GitHub contribution graph" width="100%" />
-</picture>
-
-</div>
+## Разработка
 
 <details>
-<summary><b>Development & building from source</b></summary>
+<summary><b>Запуск и сборка из исходников</b></summary>
 
-ScreenLauncher uses React and TypeScript for its frontend, with Tauri 2 and Rust for its desktop backend.
+Интерфейс написан на **React 19 и TypeScript**, сборка использует **Vite 7**, настольная часть — **Tauri 2 и Rust**.
 
-**Requirements:** Node.js, pnpm, Rust and the [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/).
+Потребуются **Node.js 22**, **pnpm**, **Rust** и [системные зависимости Tauri](https://v2.tauri.app/start/prerequisites/). Для сборки установщика Windows также нужны Visual Studio Build Tools с компонентами C++ для x64 и x86.
 
 ```bash
 git clone https://github.com/MakIcon/screen.git
@@ -127,88 +121,114 @@ pnpm install
 pnpm tauri dev
 ```
 
-To create a native application bundle or installer for your development platform:
+Собрать приложение и установщик:
 
 ```bash
 pnpm build:app
 ```
 
-For a standalone debug executable that embeds the frontend and runs without the Vite server:
+Собрать отладочный exe со встроенным интерфейсом, который запускается без Vite:
 
 ```bash
 pnpm build:app --debug --no-bundle
 ```
 
-`build:app` explicitly enables `tauri/custom-protocol`, including for debug builds.
+Команда `build:app` включает `tauri/custom-protocol`, в том числе для отладочной сборки.
 
-Useful checks:
+| Команда                 | Назначение                                                   |
+| ----------------------- | ------------------------------------------------------------ |
+| `pnpm check`            | Проверка TypeScript и Rust.                                  |
+| `pnpm lint`             | Проверка поддерживаемого кода интерфейса, скриптов и worker. |
+| `pnpm test:web`         | Проверка локализации и тесты интерфейса.                     |
+| `pnpm test`             | Тесты Rust.                                                  |
+| `pnpm test:release`     | Проверка сценариев публикации релизов.                       |
+| `pnpm test:i18n`        | Проверка словарей и поведения локализации.                   |
+| `pnpm build:pathfinder` | Сборка навигатора для бота и интеграционных тестов.          |
+| `pnpm test:worker`      | Тесты worker Mineflayer Bot.                                 |
+| `pnpm test:pathfinder`  | Полные симуляции поиска пути; могут занимать более 15 минут. |
 
-```bash
-pnpm check             # TypeScript and Rust
-pnpm test              # Rust tests
-pnpm test:web          # Frontend tests
-pnpm build:pathfinder  # Build the navigator used by worker integration tests
-pnpm test:pathfinder   # Full pathfinder simulations (can take 15+ minutes)
-pnpm test:worker       # Mineflayer worker tests, including simulations
-pnpm lint              # Lint maintained frontend, scripts and worker sources
-```
+Перед тестами worker и pathfinder выполните `pnpm build:pathfinder`. Проверки `pnpm test:controls` и `pnpm test:canvas-ui` используют запущенный Vite и Playwright; путь к отдельной установке Playwright можно задать через `PLAYWRIGHT_MODULE`.
 
-ESLint excludes local `*.local/` snapshots, historical `reports/`, build outputs,
-bundled extension code and vendored libraries. CI runs the frontend checks on
-Linux, Rust formatting/Clippy/tests on Linux and Windows (including DPAPI tests),
-and the full worker and pathfinder suites as separate jobs using Node.js 22.
-
-IPC failures carry `{ code, detail }`. Rust operations return `CommandError` and
-assign an `ErrorCode` at the failure site; I/O errors use `std::io::ErrorKind`.
-Preserve the code when adding diagnostic context. In the UI, use `LauncherError`
-for local failures. Display text is translated from the code; diagnostic text is
-never parsed to choose a category. Unrecognized external codes become `unknown`.
-
-**Project structure**
+CI проверяет интерфейс на Linux, форматирование, Clippy и тесты Rust на Linux и Windows, а worker и pathfinder запускает отдельными заданиями. Локальные снимки `*.local/`, результаты сборки и сторонний код исключены из ESLint.
 
 ```text
-src/                       React frontend, components and hooks
-src-tauri/src/             Tauri commands and Minecraft backend
-extensions/mineflayer-bot/ Optional bot worker and pathfinding
-obs-telemetry-mod/         Fabric client-side telemetry helper
-public/                    App icon and web assets
-scripts/                   Build and packaging tools
+src/                       Интерфейс React, компоненты и хуки
+src-tauri/src/             Команды Tauri и работа с Minecraft
+src-tauri/nsis/            Установщик и удаление для Windows
+extensions/mineflayer-bot/ Worker бота и поиск пути
+obs-telemetry-mod/         Клиентский Fabric-мод телеметрии
+public/                    Иконка приложения и веб-ресурсы
+scripts/                   Сборка, упаковка и проверки
+docs/                      Документация и ресурсы README
 ```
 
-**Releasing an update.** Installed launchers check an update manifest at `https://gist.githubusercontent.com/MakIcon/7f89bdec5673899ca35511d92c58794a/raw/latest.json` on start and update in place, without the Windows installer window. GitHub Releases contain only the `.exe` installer; the manifest is hosted separately in a [GitHub Gist](https://gist.github.com/MakIcon/7f89bdec5673899ca35511d92c58794a). Build, sign and publish a new version with:
+Ошибки IPC передаются как `{ code, detail }`: Rust возвращает `CommandError`, интерфейс выбирает перевод по `code` и сохраняет технический `detail` для диагностики. Подробности: [локализация](docs/localization.md) и [вход Microsoft с PKCE](docs/microsoft-oauth-pkce.md).
 
-```bash
-pnpm release --version 0.2.1 --notes-file notes.md --publish
-```
-
-The script creates or updates the release, uploads the installer, then replaces `latest.json` in the configured Gist. It removes legacy `latest.json` / installer `.sig` release assets after the manifest is published. No update branch is created or changed. GitHub authentication uses `GH_TOKEN` / `GITHUB_TOKEN`, an existing `gh auth login`, or the account saved by Git Credential Manager; authenticate as the Gist owner with access to releases and Gists (`repo` and `gist` scopes for a classic token, or equivalent fine-grained permissions). GitHub CLI is optional.
-
-The Gist is selected by `plugins.updater.endpoints` in `src-tauri/tauri.conf.json`; keep its raw URL free of a revision SHA so installed launchers always read the latest contents. The release command validates the Gist before uploading. Keep the same Gist for future releases; changing its ID requires rebuilding and distributing the launcher. GitHub may cache raw Gist responses for a few minutes, so newly published updates may not appear immediately.
-
-For an existing release whose tag differs from `v<version>`, pass its exact tag, for example `pnpm release --tag 0.2.0 --publish`. To retry publication without rebuilding, use `pnpm release --tag 0.2.0 --skip-build --publish`.
-
-The updater signing key lives outside the repository at `%USERPROFILE%\.tauri\screenlauncher-updater.key`; keep a backup, because releases signed with any other key are rejected by installed launchers. Without `--publish`, the installer, signature and `latest.json` remain in `dist-release/v<version>/`. For manual publication, upload only the `.exe` to the release and replace `latest.json` in the configured Gist after the installer is available. Every update must publish a new manifest with the matching installer signature and download URL.
-
-The main application icon is maintained in `public/launcher-icon.svg`. Use `pnpm icons` to regenerate platform icons.
-
-**Windows installer.** The NSIS installer and uninstaller use the Quiet Start design: custom welcome, maintenance, folder/shortcut selection, installation progress and completion pages. `src-tauri/nsis/quiet-start.nsh` defines the layout; `skin.cpp` draws buttons and toggles while preserving their native keyboard and accessibility behavior. The percentage reads the real NSIS progress control. Silent updater flags (`/S`, `/UPDATE`, `/NS`, `/R`) retain Tauri's behavior.
-
-The `beforeBundleCommand` builds the small x86 NSIS skin plugin into `src-tauri/target/nsis-skin/` with the MSVC x86 C++ tools from Visual Studio Build Tools (the Desktop development with C++ workload). It is embedded in the installer; end users need no extra installation for the skin. `src-tauri/nsis/installer.nsi` is based on Tauri CLI 2.10.1's template. When upgrading the Tauri CLI, compare its upstream installer template and carry over changes to installation, WebView2, updater flags and uninstallation before releasing.
-
-The native checkbox and text field skin follows the launcher's `ElementCheckbox` and input styles: square 16px indicators, a 10px label gap, antialiased check marks, flat input borders and centred text with 12px padding. Existing versions retain their old `uninstall.exe` until the new installer runs; NSIS upgrades default to installing in place, which replaces it with the custom uninstaller while preserving application data.
-
-Both windows share a custom frame with a draggable header, native accessible minimise/close buttons, and system shadow/corners. Brand and version share a measured baseline; checkbox glyphs, input text and button captions align using visible font metrics. The layout uses a 32px gutter and a common footer row. Closing respects NSIS's disabled cancel state during installation; silent updates create no window.
-
-For the bot extension, see the [combat guide](extensions/mineflayer-bot/COMBAT.md), [survival guide](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding documentation](extensions/mineflayer-bot/pathfinding/README.md).
+Основная иконка хранится в `public/launcher-icon.svg`; команда `pnpm icons` обновляет иконки для платформ.
 
 </details>
 
+<details>
+<summary><b>Публикация релиза и автообновление</b></summary>
+
+Релизы собираются на Windows. Подготовьте описание изменений в Markdown и укажите **новый номер версии** через `--version`. Например, для версии после 0.2.3:
+
+```bash
+pnpm release --version 0.2.4 --notes-file release-notes.md
+pnpm release --skip-build --notes-file release-notes.md --publish
+```
+
+Первая команда обновляет версии и собирает подписанный NSIS-установщик. Файлы сохраняются в `dist-release/v<version>/`. Вторая публикует установщик в GitHub Releases и затем обновляет манифест автообновления. Можно выполнить всё одной командой, добавив `--publish` к первой.
+
+В релиз прикрепляется **только `.exe`**. Подпись и описание обновления находятся в `latest.json`, который хранится в отдельном [GitHub Gist](https://gist.github.com/MakIcon/7f89bdec5673899ca35511d92c58794a). Лаунчер использует постоянный адрес из `plugins.updater.endpoints` в `src-tauri/tauri.conf.json`; в нём не должно быть SHA конкретной ревизии. GitHub может кешировать манифест несколько минут.
+
+Ключ подписи хранится вне репозитория: `%USERPROFILE%\.tauri\screenlauncher-updater.key`. Сохраните его резервную копию: установленный лаунчер принимает только обновления, подписанные соответствующим ключом. Другой путь задаётся через `TAURI_SIGNING_PRIVATE_KEY_PATH`, содержимое ключа — через `TAURI_SIGNING_PRIVATE_KEY`.
+
+Публикация использует `GH_TOKEN` / `GITHUB_TOKEN`, авторизацию `gh` или учётную запись Git Credential Manager. Нужна учётная запись владельца Gist с правами на релизы и Gist; для classic token используются области `repo` и `gist`. GitHub CLI необязателен.
+
+Для нестандартного тега используется `--tag`. Для повторной публикации без пересборки — `--skip-build --publish`. Перед публикацией тег должен указывать на коммит с соответствующими исходниками; скрипт публикации сам не коммитит и не отправляет изменения исходников. Манифест публикуется после установщика, чтобы обновление ссылалось на доступный файл.
+
+</details>
+
+<details>
+<summary><b>Установщик Windows</b></summary>
+
+Установщик NSIS и удаление используют оформление Quiet Start: приветствие, обновление существующей установки, выбор папки и ярлыков, прогресс и завершение. Разметка находится в `src-tauri/nsis/quiet-start.nsh`, отрисовка — в `skin.cpp`, шаблон — в `installer.nsi`.
+
+Перед упаковкой `beforeBundleCommand` собирает x86-плагин оформления с помощью MSVC и встраивает его в установщик. Пользователю не требуется устанавливать инструменты сборки. Тихие флаги `/S`, `/UPDATE`, `/NS`, `/R` сохраняют поведение Tauri; встроенное обновление проходит без окна установщика.
+
+Шаблон основан на Tauri CLI 2.10.1. При обновлении CLI сверяйте изменения шаблона Tauri, особенно обработку обновлений, WebView2 и удаления.
+
+</details>
+
+## Технологии
+
 <div align="center">
 
-<sub>Made by <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a> · <a href="https://github.com/MakIcon/screen/issues">Issues</a></sub>
+<a href="https://tauri.app"><img src="docs/assets/badge-tauri.svg" alt="Tauri 2" height="28" /></a>&nbsp;
+<a href="https://www.rust-lang.org"><img src="docs/assets/badge-rust.svg" alt="Rust" height="28" /></a>&nbsp;
+<a href="https://react.dev"><img src="docs/assets/badge-react.svg" alt="React и TypeScript" height="28" /></a>
+
+<sub>React 19 · TypeScript · Vite 7 · Tauri 2 · Rust</sub>
+
+</div>
+
+## Активность проекта
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/github-contribution-snake-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/github-contribution-snake.svg" />
+  <img src="docs/assets/github-contribution-snake.svg" alt="Анимированная змейка на графике активности MakIcon в GitHub" width="100%" />
+</picture>
+
+<br /><br />
+
+<sub>Автор: <a href="https://github.com/MakIcon">MakIcon</a> · <a href="THIRD_PARTY_NOTICES.md">Сторонние компоненты</a> · <a href="https://github.com/MakIcon/screen/issues">Сообщить об ошибке</a></sub>
 
 <br />
 
-<sub>ScreenLauncher is an independent project and is not affiliated with or endorsed by Mojang Studios or Microsoft.</sub>
+<sub>ScreenLauncher — независимый проект, не связанный с Mojang Studios или Microsoft и не одобренный ими.</sub>
 
 </div>

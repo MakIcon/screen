@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="72" viewBox="0 0 320 72" role="img" aria-labelledby="title desc">
+  <title id="title">Установить ScreenLauncher для Windows</title>
+  <desc id="desc">Windows x64 — последний релиз</desc>
+  <rect width="320" height="72" rx="12" fill="#c94709"/>
+  <g transform="translate(30 21)" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2v17"/>
+    <path d="m6 13 6 6 6-6"/>
+    <path d="M3 24v3h18v-3"/>
+  </g>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="76" y="31" font-size="17" font-weight="700" letter-spacing="-.35" fill="#ffffff">Установить</text>
+    <text x="76" y="50" font-size="13" fill="#ffe2d2">Windows x64 · последняя версия</text>
+  </g>
+</svg>
