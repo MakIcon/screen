@@ -7,6 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 if (process.platform === "win32") {
+  const test = process.argv.includes("--test");
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const vswhere = path.join(
     process.env["ProgramFiles(x86)"],
@@ -54,7 +55,7 @@ if (process.platform === "win32") {
     compiler,
     [
       "/nologo",
-      "/LD",
+      ...(test ? [] : ["/LD"]),
       "/O2",
       "/MT",
       "/W4",
@@ -63,8 +64,9 @@ if (process.platform === "win32") {
       "/std:c++17",
       "/utf-8",
       "/D_WIN32_WINNT=0x0A00",
-      path.join(root, "src-tauri", "nsis", "skin.cpp"),
-      `/Fo${path.join(output, "ScreenSkin.obj")}`,
+      path.join(root, "src-tauri", "nsis", test ? "skin.test.cpp" : "skin.cpp"),
+      `/Fo${path.join(output, test ? "ScreenSkinTest.obj" : "ScreenSkin.obj")}`,
+      ...(test ? [`/Fe${path.join(output, "ScreenSkinTest.exe")}`] : []),
       "/link",
       "/NOLOGO",
       "/MACHINE:X86",
@@ -76,9 +78,16 @@ if (process.platform === "win32") {
       "dwmapi.lib",
       "comctl32.lib",
       "uxtheme.lib",
-      `/OUT:${path.join(output, "ScreenSkin.dll")}`,
+      `/OUT:${path.join(output, test ? "ScreenSkinTest.exe" : "ScreenSkin.dll")}`,
     ],
     { env, cwd: output, stdio: "inherit", windowsHide: true },
   );
-  log("ScreenLauncher installer skin built (x86 NSIS plugin).");
+  if (test) {
+    execFileSync(path.join(output, "ScreenSkinTest.exe"), [], {
+      stdio: "inherit",
+      windowsHide: true,
+    });
+  } else {
+    log("ScreenLauncher installer skin built (x86 NSIS plugin).");
+  }
 }

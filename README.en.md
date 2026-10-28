@@ -193,6 +193,8 @@ Use `--tag` for a custom tag and `--skip-build --publish` to retry without rebui
 
 The NSIS installer and uninstaller use the Quiet Start design: welcome, maintenance, folder and shortcut selection, progress and completion pages. Layout lives in `src-tauri/nsis/quiet-start.nsh`, drawing in `skin.cpp`, and the installer template in `installer.nsi`.
 
+The skin persists through focus changes and backward navigation, including error dialogs and aborted installations. Run the Windows control checks with `pnpm test:installer` (requires MSVC x86 build tools).
+
 Before bundling, `beforeBundleCommand` builds an x86 skin plugin with MSVC and embeds it in the installer. End users need no build tools. Silent flags `/S`, `/UPDATE`, `/NS` and `/R` retain Tauri's behavior; built-in updates run without an installer window.
 
 The template is based on Tauri CLI 2.10.1. When upgrading the CLI, compare changes to Tauri's template, especially update, WebView2 and uninstall handling.

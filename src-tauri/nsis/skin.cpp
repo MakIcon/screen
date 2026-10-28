@@ -25,15 +25,25 @@ constexpr UINT_PTR progressId = 0x53435052;
 constexpr wchar_t hoverProperty[] = L"ScreenLauncher.Hover";
 constexpr wchar_t editProperty[] = L"ScreenLauncher.Input";
 constexpr wchar_t chromeProperty[] = L"ScreenLauncher.Chrome";
+constexpr wchar_t messageBoxProperty[] = L"ScreenLauncher.MessageBox";
 constexpr int minimizeId = 0x5C01;
 constexpr int closeId = 0x5C02;
 constexpr int headerLineId = 0x5C03;
 constexpr int footerLineId = 0x5C04;
 constexpr UINT_PTR chromeTimerId = 0x53434348;
+constexpr UINT failureMessage = WM_APP + 0x534;
 ULONG_PTR graphicsToken{};
+HWND installerWindow{};
+thread_local HHOOK messageBoxHook{};
+HBRUSH dialogBackground{};
 struct Stack { Stack* next; wchar_t text[1]; };
 struct ProgressState { HWND label; };
+struct MessageBoxState {
+  HWND primary;
+  HWND close;
+};
 struct ChromeState {
+  bool failed{};
   HWND brand{};
   HWND version{};
   HWND minimize{};
@@ -102,7 +112,12 @@ void Text(HWND window, HDC dc, RECT rect, COLORREF color, UINT flags) {
 
 void DrawPushButton(const DRAWITEMSTRUCT& item) {
   const auto window = item.hwndItem;
-  const bool primary = GetDlgCtrlID(window) == IDOK && GetParent(window) == GetAncestor(window, GA_ROOT);
+  const auto parent = GetParent(window);
+  const auto messageBox = reinterpret_cast<MessageBoxState*>(GetProp(parent, messageBoxProperty));
+  const auto chrome = reinterpret_cast<ChromeState*>(GetProp(parent, chromeProperty));
+  const bool primary = messageBox ? window == messageBox->primary
+                                 : GetDlgCtrlID(window) == (chrome && chrome->failed ? IDCANCEL : IDOK) &&
+                                   parent == GetAncestor(window, GA_ROOT);
   const bool disabled = (item.itemState & ODS_DISABLED) != 0;
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
   const bool hovered = GetProp(window, hoverProperty) != nullptr;
@@ -337,6 +352,32 @@ LRESULT CALLBACK HoverProc(HWND window, UINT message, WPARAM wParam, LPARAM lPar
   return DefSubclassProc(window, message, wParam, lParam);
 }
 
+LRESULT CALLBACK PushButtonProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
+                                UINT_PTR id, DWORD_PTR) {
+  const auto chrome = reinterpret_cast<ChromeState*>(GetProp(GetParent(window), chromeProperty));
+  const auto controlId = GetDlgCtrlID(window);
+  if (chrome) {
+    if (message == WM_SETTEXT) {
+      if (controlId == 3) lParam = reinterpret_cast<LPARAM>(L"Назад");
+      if (chrome->failed && controlId == IDCANCEL) lParam = reinterpret_cast<LPARAM>(L"Закрыть");
+    }
+  }
+  // Dialog navigation changes the default button with BM_SETSTYLE. Letting that
+  // replace BS_OWNERDRAW makes Back/Next fall back to the stock Windows button.
+  if (message == BM_SETSTYLE) wParam = (wParam & ~BS_TYPEMASK) | BS_OWNERDRAW;
+  if (message == WM_STYLECHANGING && wParam == static_cast<WPARAM>(GWL_STYLE)) {
+    const auto style = reinterpret_cast<STYLESTRUCT*>(lParam);
+    style->styleNew = (style->styleNew & ~BS_TYPEMASK) | BS_OWNERDRAW;
+  }
+  const auto result = DefSubclassProc(window, message, wParam, lParam);
+  if (message == BM_SETSTYLE || message == BM_SETSTATE || message == WM_ENABLE ||
+      message == WM_SETFOCUS || message == WM_KILLFOCUS || message == WM_UPDATEUISTATE ||
+      message == WM_SETTEXT || message == WM_THEMECHANGED)
+    InvalidateRect(window, nullptr, FALSE);
+  if (message == WM_NCDESTROY) RemoveWindowSubclass(window, PushButtonProc, id);
+  return result;
+}
+
 bool CanClose(HWND window) {
   const auto cancel = GetDlgItem(window, IDCANCEL);
   const auto next = GetDlgItem(window, IDOK);
@@ -398,10 +439,62 @@ LRESULT CALLBACK CenterLabelProc(HWND window, UINT message, WPARAM wParam, LPARA
   return DefSubclassProc(window, message, wParam, lParam);
 }
 
+void LayoutFailure(HWND window) {
+  ShowWindow(GetDlgItem(window, 3), SW_HIDE);
+  ShowWindow(GetDlgItem(window, IDOK), SW_HIDE);
+  const auto close = GetDlgItem(window, IDCANCEL);
+  SetWindowText(close, L"Закрыть");
+  SetWindowPos(close, nullptr, Scale(window, 558), Scale(window, 468), Scale(window, 130),
+               Scale(window, 36), SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 LRESULT CALLBACK DialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                             UINT_PTR id, DWORD_PTR) {
+  const auto messageBox = reinterpret_cast<MessageBoxState*>(GetProp(window, messageBoxProperty));
+  if (messageBox) {
+    if (message == WM_NCCALCSIZE) return 0;
+    if (message == WM_NCHITTEST) {
+      POINT point{static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam))};
+      ScreenToClient(window, &point);
+      if (point.y >= 0 && point.y < Scale(window, 56) && point.x < Scale(window, 448)) return HTCAPTION;
+      return HTCLIENT;
+    }
+    if (message == WM_NCLBUTTONDBLCLK) return 0;
+    if (message == WM_COMMAND && LOWORD(wParam) == closeId && HIWORD(wParam) == BN_CLICKED) {
+      PostMessage(window, WM_CLOSE, 0, 0);
+      return 0;
+    }
+    if (message == WM_ERASEBKGND || message == WM_PAINT) {
+      PAINTSTRUCT paint{};
+      const auto dc = message == WM_PAINT ? BeginPaint(window, &paint) : reinterpret_cast<HDC>(wParam);
+      RECT bounds{};
+      GetClientRect(window, &bounds);
+      FillRect(dc, &bounds, dialogBackground);
+      const auto line = CreatePen(PS_SOLID, std::max(1, Scale(window, 1)), border);
+      const auto previous = SelectObject(dc, line);
+      for (const auto y : {Scale(window, 56), static_cast<int>(bounds.bottom) - Scale(window, 68)}) {
+        MoveToEx(dc, Scale(window, 24), y, nullptr);
+        LineTo(dc, bounds.right - Scale(window, 24), y);
+      }
+      SelectObject(dc, previous);
+      DeleteObject(line);
+      if (message == WM_PAINT) EndPaint(window, &paint);
+      return 1;
+    }
+    if (message == WM_CTLCOLORDLG || message == WM_CTLCOLORSTATIC) {
+      const auto dc = reinterpret_cast<HDC>(wParam);
+      SetBkColor(dc, bg);
+      SetTextColor(dc, ink);
+      return reinterpret_cast<LRESULT>(dialogBackground);
+    }
+    if (message == WM_NCDESTROY) {
+      RemoveProp(window, messageBoxProperty);
+      delete messageBox;
+    }
+  }
   const auto chrome = reinterpret_cast<ChromeState*>(GetProp(window, chromeProperty));
   if (chrome) {
+    if (message == failureMessage && chrome->failed) { LayoutFailure(window); return 0; }
     if (message == WM_NCCALCSIZE) return 0;
     if (message == WM_GETMINMAXINFO) {
       const auto limits = reinterpret_cast<MINMAXINFO*>(lParam);
@@ -471,6 +564,11 @@ LRESULT CALLBACK DialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
       return result;
     }
     if (message == WM_NCDESTROY) {
+      if (window == installerWindow) {
+        UnhookWindowsHookEx(messageBoxHook);
+        messageBoxHook = nullptr;
+        installerWindow = nullptr;
+      }
       KillTimer(window, chromeTimerId);
       RemoveProp(window, chromeProperty);
       DeleteObject(chrome->background);
@@ -504,6 +602,7 @@ BOOL CALLBACK SkinChild(HWND window, LPARAM) {
       SetWindowSubclass(window, ToggleProc, skinId, type == BS_RADIOBUTTON || type == BS_AUTORADIOBUTTON);
       SetWindowSubclass(window, HoverProc, skinId, 0);
     } else if (type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON || type == BS_OWNERDRAW) {
+      SetWindowSubclass(window, PushButtonProc, skinId, 0);
       SetWindowLongPtr(window, GWL_STYLE, (style & ~BS_TYPEMASK) | BS_OWNERDRAW);
       SetWindowTheme(window, L"", L"");
       SetWindowSubclass(window, HoverProc, skinId, 0);
@@ -519,6 +618,106 @@ BOOL CALLBACK SkinChild(HWND window, LPARAM) {
     RedrawWindow(window, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE);
   }
   return TRUE;
+}
+
+void SkinMessageBox(HWND window) {
+  if (GetProp(window, messageBoxProperty)) return;
+  HWND buttons[11]{};
+  int buttonCount{};
+  for (int id = IDOK; id <= IDCONTINUE; ++id) {
+    const auto button = GetDlgItem(window, id);
+    if (button && (GetWindowLongPtr(button, GWL_STYLE) & WS_VISIBLE)) buttons[buttonCount++] = button;
+  }
+  const auto text = GetDlgItem(window, 0xFFFF);
+  if (!text || buttonCount == 0) return;
+  const auto font = reinterpret_cast<HFONT>(SendMessage(GetDlgItem(installerWindow, IDOK), WM_GETFONT, 0, 0));
+  const auto primaryId = LOWORD(SendMessage(window, DM_GETDEFID, 0, 0));
+  const auto primary = GetDlgItem(window, primaryId);
+  auto state = new MessageBoxState{primary ? primary : buttons[0], nullptr};
+  SetProp(window, messageBoxProperty, state);
+  SetWindowSubclass(window, DialogProc, skinId, 0);
+
+  RECT original{};
+  GetClientRect(window, &original);
+  const int width = std::max(Scale(window, 512), static_cast<int>(original.right));
+  wchar_t caption[8192]{};
+  GetWindowText(text, caption, static_cast<int>(std::size(caption)));
+  const auto icon = GetDlgItem(window, 20);
+  const int textLeft = Scale(window, icon ? 72 : 24);
+  RECT measured{0, 0, width - textLeft - Scale(window, 24), 0};
+  const auto dc = GetDC(window);
+  const auto previous = SelectObject(dc, font);
+  DrawText(dc, caption, -1, &measured, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+  if (previous) SelectObject(dc, previous);
+  ReleaseDC(window, dc);
+  const int textHeight = std::max(Scale(window, 48), static_cast<int>(measured.bottom));
+  const int height = Scale(window, 76 + 24 + 68) + textHeight;
+  const auto style = GetWindowLongPtr(window, GWL_STYLE);
+  SetWindowLongPtr(window, GWL_STYLE, (style & ~WS_CAPTION) | WS_THICKFRAME);
+  SetWindowLongPtr(window, GWL_EXSTYLE, GetWindowLongPtr(window, GWL_EXSTYLE) & ~WS_EX_DLGMODALFRAME);
+  const MARGINS margins{1, 1, 1, 1};
+  DwmExtendFrameIntoClientArea(window, &margins);
+  const DWORD corners = 2;
+  DwmSetWindowAttribute(window, 33, &corners, sizeof(corners));
+  DwmSetWindowAttribute(window, 34, &border, sizeof(border));
+  RECT owner{};
+  GetWindowRect(installerWindow, &owner);
+  SetWindowPos(window, nullptr, owner.left + (owner.right - owner.left - width) / 2,
+               owner.top + (owner.bottom - owner.top - height) / 2, width, height,
+               SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  SetWindowPos(text, nullptr, textLeft, Scale(window, 76), measured.right, textHeight,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+  SendMessage(text, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  if (icon) SetWindowPos(icon, nullptr, Scale(window, 24), Scale(window, 76), Scale(window, 32),
+                         Scale(window, 32), SWP_NOZORDER | SWP_NOACTIVATE);
+  const auto brand = CreateWindowEx(0, L"STATIC", L"screen / launcher", WS_CHILD | WS_VISIBLE | SS_NOPREFIX,
+                                    Scale(window, 24), Scale(window, 18), width - Scale(window, 96),
+                                    Scale(window, 28), window, nullptr, nullptr, nullptr);
+  SendMessage(brand, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  state->close = CreateWindowEx(0, L"BUTTON", L"Закрыть", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                                width - Scale(window, 60), Scale(window, 10), Scale(window, 36),
+                                Scale(window, 36), window, reinterpret_cast<HMENU>(closeId), nullptr, nullptr);
+  const auto closeState = GetMenuState(GetSystemMenu(window, FALSE), SC_CLOSE, MF_BYCOMMAND);
+  EnableWindow(state->close, (closeState & (MF_GRAYED | MF_DISABLED)) == 0);
+  for (int index = 0; index < buttonCount; ++index) {
+    SetWindowPos(buttons[index], nullptr, width - Scale(window, 24 + (buttonCount - index) * 108 - 8),
+                 height - Scale(window, 52), Scale(window, 100), Scale(window, 36),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    SendMessage(buttons[index], WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+  }
+  EnumChildWindows(window, SkinChild, 0);
+  RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+LRESULT CALLBACK MessageBoxHook(int code, WPARAM wParam, LPARAM lParam) {
+  if (code == HCBT_ACTIVATE) {
+    const auto window = reinterpret_cast<HWND>(wParam);
+    wchar_t className[64]{};
+    GetClassName(window, className, static_cast<int>(std::size(className)));
+    // Only message boxes owned by this installer. Leave the Windows folder
+    // picker and other applications' dialogs to their own UI.
+    if (window != installerWindow && GetAncestor(window, GA_ROOTOWNER) == installerWindow &&
+        wcscmp(className, L"#32770") == 0 && GetDlgItem(window, 0xFFFF)) {
+      bool messageBox = true;
+      for (auto child = GetWindow(window, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {
+        GetClassName(child, className, static_cast<int>(std::size(className)));
+        if (wcscmp(className, L"Static") != 0 && wcscmp(className, L"Button") != 0) {
+          messageBox = false;
+          break;
+        }
+      }
+      if (messageBox) SkinMessageBox(window);
+    }
+  }
+  return CallNextHookEx(messageBoxHook, code, wParam, lParam);
+}
+
+void StopProgressTracking(HWND window) {
+  DWORD_PTR data{};
+  if (!GetWindowSubclass(window, DialogProc, progressId, &data)) return;
+  KillTimer(window, progressId);
+  RemoveWindowSubclass(window, DialogProc, progressId);
+  delete reinterpret_cast<ProgressState*>(data);
 }
 
 void CALLBACK ProgressTimer(HWND window, UINT, UINT_PTR, DWORD) {
@@ -537,12 +736,10 @@ void CALLBACK ProgressTimer(HWND window, UINT, UINT_PTR, DWORD) {
 }
 
 LRESULT CALLBACK ProgressProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                              UINT_PTR id, DWORD_PTR data) {
+                              UINT_PTR id, DWORD_PTR) {
   if (message == WM_NCDESTROY) {
-    KillTimer(window, progressId);
-    RemoveWindowSubclass(window, DialogProc, progressId);
+    StopProgressTracking(window);
     RemoveWindowSubclass(window, ProgressProc, id);
-    delete reinterpret_cast<ProgressState*>(data);
   }
   return DefSubclassProc(window, message, wParam, lParam);
 }
@@ -572,6 +769,7 @@ extern "C" __declspec(dllexport) void __cdecl Apply(HWND parent, int, wchar_t*, 
     Gdiplus::GdiplusStartupInput startup;
     // /NOUNLOAD keeps the process-lifetime graphics context alive with the skin.
     Gdiplus::GdiplusStartup(&graphicsToken, &startup, nullptr);
+    dialogBackground = CreateSolidBrush(bg);
   }
   SetWindowSubclass(parent, DialogProc, skinId, 0);
   EnumChildWindows(parent, SkinChild, 0);
@@ -581,11 +779,35 @@ extern "C" __declspec(dllexport) void __cdecl TrackProgress(HWND, int, wchar_t*,
   auto progress = PopHandle(stack);
   auto label = PopHandle(stack);
   if (!IsWindow(progress) || !IsWindow(label)) return;
+  StopProgressTracking(progress);
   auto state = new ProgressState{label};
   SetWindowSubclass(progress, DialogProc, progressId, reinterpret_cast<DWORD_PTR>(state));
   SetWindowSubclass(progress, ProgressProc, skinId, reinterpret_cast<DWORD_PTR>(state));
   SetTimer(progress, progressId, 80, ProgressTimer);
   ProgressTimer(progress, 0, progressId, 0);
+}
+
+extern "C" __declspec(dllexport) void __cdecl StopProgress(HWND, int, wchar_t*, Stack** stack, void*) {
+  const auto progress = PopHandle(stack);
+  StopProgressTracking(progress);
+  RemoveWindowSubclass(progress, ProgressProc, skinId);
+}
+
+extern "C" __declspec(dllexport) void __cdecl Failed(HWND parent, int, wchar_t*, Stack**, void*) {
+  const auto chrome = reinterpret_cast<ChromeState*>(GetProp(parent, chromeProperty));
+  if (!chrome) return;
+  chrome->failed = true;
+  LayoutFailure(parent);
+  // NSIS finishes changing button visibility after the leave callback returns.
+  // Reapply before the next paint, once that native update has completed.
+  PostMessage(parent, failureMessage, 0, 0);
+}
+
+extern "C" __declspec(dllexport) void __cdecl WatchDialogs(HWND, int, wchar_t*, Stack**, void*) {
+  // NSIS also creates errors on its installation worker, so each calling thread
+  // needs its own hook. Windows removes a thread's hook when that thread exits.
+  if (IsWindow(installerWindow) && !messageBoxHook)
+    messageBoxHook = SetWindowsHookEx(WH_CBT, MessageBoxHook, nullptr, GetCurrentThreadId());
 }
 
 extern "C" __declspec(dllexport) void __cdecl CenterLabel(HWND, int, wchar_t*, Stack** stack, void*) {
@@ -600,6 +822,8 @@ extern "C" __declspec(dllexport) void __cdecl Decorate(HWND parent, int, wchar_t
   const auto brandFont = reinterpret_cast<HFONT>(PopHandle(stack));
   const auto smallFont = reinterpret_cast<HFONT>(PopHandle(stack));
   if (GetProp(parent, chromeProperty)) return;
+  installerWindow = parent;
+  WatchDialogs(parent, 0, nullptr, nullptr, nullptr);
   auto chrome = new ChromeState;
   chrome->brandFont = brandFont;
   chrome->smallFont = smallFont;
@@ -635,6 +859,8 @@ extern "C" __declspec(dllexport) void __cdecl Decorate(HWND parent, int, wchar_t
                                       0, 0, 1, 1, parent, reinterpret_cast<HMENU>(footerLineId), nullptr, nullptr);
   SetWindowSubclass(chrome->minimize, HoverProc, skinId, 0);
   SetWindowSubclass(chrome->close, HoverProc, skinId, 0);
+  SetWindowSubclass(chrome->minimize, PushButtonProc, skinId, 0);
+  SetWindowSubclass(chrome->close, PushButtonProc, skinId, 0);
   LayoutChrome(parent, *chrome);
   SetTimer(parent, chromeTimerId, 100, nullptr);
   RedrawWindow(parent, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);

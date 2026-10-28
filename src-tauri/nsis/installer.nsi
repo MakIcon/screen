@@ -37,6 +37,7 @@ ${StrLoc}
 
 !define MANUFACTURER "{{manufacturer}}"
 !define PRODUCTNAME "{{product_name}}"
+!define DESKTOP_SHORTCUT_NAME "Screen Launcher"
 !define VERSION "{{version}}"
 !define VERSIONWITHBUILD "{{version_with_build}}"
 !define HOMEPAGE "{{homepage}}"
@@ -390,6 +391,7 @@ Var AppStartMenuFolder
 
 ; 7. Installation page
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW ScreenInstallShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE ScreenInstallLeave
 !insertmacro MUI_PAGE_INSTFILES
 
 ; 8. Finish page
@@ -408,6 +410,7 @@ UninstPage custom un.ScreenConfirm un.ScreenConfirmLeave
 
 ; 2. Uninstalling Page
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.ScreenInstallShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ScreenInstallLeave
 !insertmacro MUI_UNPAGE_INSTFILES
 UninstPage custom un.ScreenFinish
 
@@ -472,6 +475,7 @@ FunctionEnd
 
 
 Section EarlyChecks
+  ScreenSkin::WatchDialogs /NOUNLOAD
   ; Abort silent installer if downgrades is disabled
   !if "${ALLOWDOWNGRADES}" == "false"
   ${If} ${Silent}
@@ -509,7 +513,8 @@ Section WebView2
       !if "${INSTALLWEBVIEW2MODE}" == "downloadBootstrapper"
         Delete "$TEMP\MicrosoftEdgeWebview2Setup.exe"
         DetailPrint "$(webview2Downloading)"
-        NSISdl::download "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$TEMP\MicrosoftEdgeWebview2Setup.exe"
+        ; Keep dependency downloads on our progress page instead of the stock popup.
+        NSISdl::download_quiet "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$TEMP\MicrosoftEdgeWebview2Setup.exe"
         Pop $0
         ${If} $0 == "success"
           DetailPrint "$(webview2DownloadSuccess)"
@@ -723,6 +728,7 @@ Function un.onInit
 FunctionEnd
 
 Section Uninstall
+  ScreenSkin::WatchDialogs /NOUNLOAD
 
   !ifmacrodef NSIS_HOOK_PREUNINSTALL
     !insertmacro NSIS_HOOK_PREUNINSTALL
@@ -789,6 +795,12 @@ Section Uninstall
     ${EndIf}
 
     ; Remove desktop shortcuts
+    !insertmacro IsShortcutTarget "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    Pop $0
+    ${If} $0 = 1
+      !insertmacro UnpinShortcut "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk"
+      Delete "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk"
+    ${EndIf}
     !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     Pop $0
     ${If} $0 = 1
@@ -903,12 +915,29 @@ Function CreateOrUpdateStartMenuShortcut
 FunctionEnd
 
 Function CreateOrUpdateDesktopShortcut
+  ; Migrate the desktop label even during updates, but only for this installation.
+  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  Pop $0
+  ${If} $0 <> 1
+    !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+    Pop $0
+  ${EndIf}
+  ${If} $0 = 1
+    ClearErrors
+    CreateShortcut "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    ${IfNot} ${Errors}
+      !insertmacro SetLnkAppUserModelId "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk"
+      Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+    ${EndIf}
+    Return
+  ${EndIf}
+
   ; We used to use product name as MAINBINARYNAME
   ; migrate old shortcuts to target the new MAINBINARYNAME
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
+  !insertmacro IsShortcutTarget "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk" "$INSTDIR\$OldMainBinaryName"
   Pop $0
   ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    !insertmacro SetShortcutTarget "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
     Return
   ${EndIf}
 
@@ -921,6 +950,6 @@ Function CreateOrUpdateDesktopShortcut
     ${EndIf}
   ${EndIf}
 
-  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
+  CreateShortcut "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  !insertmacro SetLnkAppUserModelId "$DESKTOP\${DESKTOP_SHORTCUT_NAME}.lnk"
 FunctionEnd

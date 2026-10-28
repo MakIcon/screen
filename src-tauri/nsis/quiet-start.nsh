@@ -28,6 +28,7 @@ Var ScreenDesktop
 Var ScreenDesktopChoice
 Var ScreenRun
 Var ScreenProgress
+Var ScreenProgressTitle
 Var ScreenPercent
 Var ScreenX
 Var ScreenY
@@ -257,8 +258,13 @@ Function ${PREFIX}ScreenInstallShow
   SendMessage $ScreenControl ${WM_SETTEXT} 0 "STR:Подробности"
   GetDlgItem $ScreenControl $ScreenDialog 1016
   !insertmacro ScreenMove $ScreenControl 0 214 656 100
+  System::Call 'uxtheme::SetWindowTheme(p $ScreenControl, w "", w "")'
+  SendMessage $ScreenControl 0x1001 0 0xF2F7F8 ; LVM_SETBKCOLOR
+  SendMessage $ScreenControl 0x1024 0 0x1F2324 ; LVM_SETTEXTCOLOR
+  SendMessage $ScreenControl 0x1026 0 0xF2F7F8 ; LVM_SETTEXTBKCOLOR
 
   !insertmacro ScreenNativeLabel 0 0 490 104 "${TITLE}" $ScreenTitleFont "${SCREEN_INK}"
+  StrCpy $ScreenProgressTitle $ScreenControl
   !insertmacro ScreenNativeLabel 500 36 156 80 "0%" $ScreenPercentFont "${SCREEN_INK}"
   StrCpy $ScreenPercent $ScreenControl
   SendMessage $ScreenFooter ${WM_SETTEXT} 0 "STR:${FOOTER}"
@@ -268,6 +274,38 @@ FunctionEnd
 !macroend
 !insertmacro ScreenSharedProgress "" "Немного терпения.$\r$\nПочти на месте." "03 / 03     Установка"
 !insertmacro ScreenSharedProgress "un." "Немного терпения.$\r$\nУдаляем лаунчер." "Удаление"
+
+!macro ScreenSharedFailure PREFIX TITLE FOOTER
+Function ${PREFIX}ScreenInstallLeave
+  ; The instfiles leave callback runs as soon as installation finishes/aborts.
+  ; .onInstFailed runs only when the user subsequently closes the failed wizard.
+  IfAbort 0 done
+  Call ${PREFIX}ScreenInstallFailed
+  done:
+FunctionEnd
+
+Function ${PREFIX}ScreenInstallFailed
+  SetAutoClose false
+  ScreenSkin::StopProgress /NOUNLOAD "$ScreenProgress"
+  SendMessage $ScreenProgressTitle ${WM_SETTEXT} 0 "STR:${TITLE}"
+  SendMessage $ScreenPercent ${WM_SETTEXT} 0 "STR:!"
+  SendMessage $ScreenFooter ${WM_SETTEXT} 0 "STR:${FOOTER}"
+  SetDetailsView show
+  GetDlgItem $ScreenControl $ScreenDialog 1027
+  ShowWindow $ScreenControl 0
+  GetDlgItem $ScreenControl $HWNDPARENT 3
+  ShowWindow $ScreenControl 0
+  GetDlgItem $ScreenControl $HWNDPARENT 1
+  ShowWindow $ScreenControl 0
+  GetDlgItem $ScreenControl $HWNDPARENT 2
+  EnableWindow $ScreenControl 1
+  SendMessage $ScreenControl ${WM_SETTEXT} 0 "STR:Закрыть"
+  ScreenSkin::Failed /NOUNLOAD
+  ScreenSkin::Apply /NOUNLOAD
+FunctionEnd
+!macroend
+!insertmacro ScreenSharedFailure "" "Установка$\r$\nпрервана." "Не удалось завершить установку"
+!insertmacro ScreenSharedFailure "un." "Удаление$\r$\nпрервано." "Не удалось завершить удаление"
 
 Function ScreenFinish
   Call ScreenCreatePage

@@ -1,7 +1,7 @@
 {
   "name": "screen",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "test:controls": "node scripts/test_launcher_controls.mjs",
     "test:worker": "pnpm --filter @screenlauncher/mineflayer-bot test",
     "test:release": "node --test scripts/launcher_release_github.test.mjs",
+    "test:installer": "node scripts/build_installer_skin.mjs --test",
     "release": "node scripts/release_launcher.mjs",
     "package:extensions": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_optional_extensions.ps1",
     "lint:i18n": "node scripts/check_localization.mjs",
