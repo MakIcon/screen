@@ -588,6 +588,32 @@ Section WebView2
 SectionEnd
 
 Section Install
+  ; Check silent /D installs too. Never extract into an empty path or a drive
+  ; root, and report permission problems before starting to copy application files.
+  ${GetRoot} "$INSTDIR" $0
+  ${If} $INSTDIR == ""
+  ${OrIf} $0 == ""
+  ${OrIf} $INSTDIR == "$0"
+  ${OrIf} $INSTDIR == "$0\"
+    IfSilent +2
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Укажите отдельную папку для установки ScreenLauncher."
+    SetErrorLevel 2
+    Abort
+  ${EndIf}
+  ClearErrors
+  CreateDirectory "$INSTDIR"
+  ${IfNot} ${Errors}
+    GetTempFileName $0 "$INSTDIR"
+    ${IfNot} ${Errors}
+      Delete "$0"
+    ${EndIf}
+  ${EndIf}
+  ${If} ${Errors}
+    IfSilent +2
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Не удалось записать файлы в папку установки. Выберите доступную папку."
+    SetErrorLevel 2
+    Abort
+  ${EndIf}
   SetOutPath $INSTDIR
 
   !ifmacrodef NSIS_HOOK_PREINSTALL

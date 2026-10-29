@@ -712,7 +712,7 @@ export type ObsTelemetryStatus = {
   logs: string[];
 };
 
-export type OptionalExtensionId = "mineflayer-bot" | "blue-map-server";
+export type OptionalExtensionId = "mineflayer-bot" | "blue-map-server" | "obs-telemetry";
 
 export type OptionalExtensionStatus = {
   id: OptionalExtensionId;

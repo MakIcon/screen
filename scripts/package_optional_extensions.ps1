@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+& (Join-Path $PSScriptRoot "package_obs_telemetry.ps1") -OutputDirectory $OutputDirectory
 $workspaceRoot = Split-Path -Parent $PSScriptRoot
 $sourceDirectory = Join-Path $workspaceRoot "extensions\mineflayer-bot"
 $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $workspaceRoot $OutputDirectory))

@@ -147,7 +147,7 @@ export function LauncherPluginsModal({
       const extension = runtimeMonitor.snapshot.optionalExtensions.find(
         (candidate) => candidate.id === definition.optionalExtensionId,
       );
-      if (!extension?.installed) {
+      if (!extension?.installed && definition.optionalExtensionId !== installingExtensionId) {
         next = definition.setEnabled(next, false);
         changedIds.push(definition.id);
       }
@@ -157,7 +157,7 @@ export function LauncherPluginsModal({
       setDraft(normalized);
       persistPlugins(normalized, changedIds);
     }
-  }, [draft, persistPlugins, runtimeMonitor.snapshot, standalone]);
+  }, [draft, installingExtensionId, persistPlugins, runtimeMonitor.snapshot, standalone]);
 
   const detachBot = async () => {
     setOpeningWindow(true);
@@ -409,6 +409,19 @@ export function LauncherPluginsModal({
                           ? tr("launcherPlugins.disable")
                           : tr("common.enable")}
               </button>
+
+              {selectedExtensionId && selectedPackageReady && (
+                <button
+                  className="plugin-detail-update"
+                  type="button"
+                  disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
+                  onClick={() => void installExtension(selectedExtensionId)}
+                >
+                  {selectedInstalling
+                    ? tr("launcherPlugins.updating")
+                    : tr("launcherPlugins.updatePackage")}
+                </button>
+              )}
 
               {selectedExtensionId && selectedPackageReady && (
                 <button

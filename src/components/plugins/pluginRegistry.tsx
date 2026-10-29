@@ -143,6 +143,7 @@ export const PLUGIN_DEFINITIONS: PluginDefinition[] = [
     title: "OBS TELEMETRY",
     mark: "OBS",
     icon: { src: obsMinecraftIcon, alt: "OBS Minecraft" },
+    optionalExtensionId: "obs-telemetry",
     getEnabled: (plugins) => plugins.obsTelemetry.enabled,
     getStatus: (plugins) => {
       if (!plugins.obsTelemetry.enabled) return "OFF";

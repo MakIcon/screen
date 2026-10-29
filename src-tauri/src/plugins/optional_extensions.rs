@@ -14,10 +14,13 @@ use crate::paths::{edit_settings, extensions_root};
 use super::{
     blue_map::{self, BlueMapState},
     mineflayer_bot::{self, MineflayerBotState},
+    obs_telemetry::{self, ObsTelemetryState},
+    obs_telemetry_package,
 };
 
 pub const MINEFLAYER_BOT_ID: &str = "mineflayer-bot";
 pub const BLUE_MAP_SERVER_ID: &str = "blue-map-server";
+static PACKAGE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 const MINEFLAYER_WORKER: &str = include_str!("../../../extensions/mineflayer-bot/worker.cjs");
 const MINEFLAYER_KNOCKBACK: &str = include_str!("../../../extensions/mineflayer-bot/knockback.cjs");
@@ -235,7 +238,10 @@ struct ExtensionManifest {
 }
 
 pub fn extension_dir(id: &str) -> Result<PathBuf, CommandError> {
-    if !matches!(id, MINEFLAYER_BOT_ID | BLUE_MAP_SERVER_ID) {
+    if !matches!(
+        id,
+        MINEFLAYER_BOT_ID | BLUE_MAP_SERVER_ID | obs_telemetry_package::ID
+    ) {
         return Err(CommandError::new(
             ErrorCode::InvalidInput,
             format!("Unknown optional extension: {id}"),
@@ -380,7 +386,11 @@ fn blue_map_status() -> OptionalExtensionStatus {
 }
 
 pub fn statuses() -> Vec<OptionalExtensionStatus> {
-    vec![mineflayer_status(), blue_map_status()]
+    vec![
+        mineflayer_status(),
+        blue_map_status(),
+        obs_telemetry_package::status(),
+    ]
 }
 
 fn npm_executable() -> &'static str {
@@ -531,33 +541,59 @@ async fn install_mineflayer_package() -> Result<OptionalExtensionStatus, Command
             "Mineflayer package is incomplete",
         ));
     }
-    if target.exists() {
-        tokio::fs::remove_dir_all(&target).await.map_err(|error| {
-            let detail = format!("Replace Mineflayer package error: {error}");
-            CommandError::from(error).context(detail)
-        })?;
-    }
-    tokio::fs::rename(&staging, &target)
-        .await
-        .map_err(|error| {
-            let detail = format!("Activate Mineflayer package error: {error}");
-            CommandError::from(error).context(detail)
-        })?;
+    activate_package(&staging, &target).await?;
 
     Ok(mineflayer_status())
+}
+
+// Prepare downloads before replacing the installed package, and roll back if
+// activation fails (for example when Windows still holds a file open).
+pub(super) async fn activate_package(staging: &Path, target: &Path) -> Result<(), CommandError> {
+    let backup = target.with_file_name(format!(".extension-backup-{}", uuid::Uuid::new_v4()));
+    let had_target = target.exists();
+    if had_target {
+        fs::rename(target, &backup)?;
+    }
+    if let Err(error) = fs::rename(staging, target) {
+        if had_target {
+            fs::rename(&backup, target).map_err(|restore_error| {
+                CommandError::from(restore_error).context(format!(
+                    "Restore extension failed; previous package is at {}",
+                    backup.display()
+                ))
+            })?;
+        }
+        return Err(CommandError::from(error).context("Activate extension package failed"));
+    }
+    if had_target {
+        let _ = tokio::fs::remove_dir_all(backup).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn install_optional_extension(
     extension_id: String,
+    mineflayer_state: State<'_, MineflayerBotState>,
+    blue_map_state: State<'_, BlueMapState>,
+    obs_telemetry_state: State<'_, ObsTelemetryState>,
 ) -> Result<OptionalExtensionStatus, CommandError> {
     let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("extension", None)?;
+        let _package_lock = PACKAGE_LOCK.lock().await;
         match extension_id.as_str() {
-            MINEFLAYER_BOT_ID => install_mineflayer_package().await,
+            MINEFLAYER_BOT_ID => {
+                mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
+                install_mineflayer_package().await
+            }
             BLUE_MAP_SERVER_ID => {
+                blue_map::stop_bluemap(blue_map_state).await?;
                 super::blue_map::install_server_package().await?;
                 Ok(blue_map_status())
+            }
+            obs_telemetry_package::ID => {
+                obs_telemetry::stop_obs_telemetry(obs_telemetry_state).await?;
+                obs_telemetry_package::install().await
             }
             _ => Err(CommandError::new(
                 ErrorCode::InvalidInput,
@@ -622,9 +658,11 @@ pub async fn uninstall_optional_extension(
     extension_id: String,
     mineflayer_state: State<'_, MineflayerBotState>,
     blue_map_state: State<'_, BlueMapState>,
+    obs_telemetry_state: State<'_, ObsTelemetryState>,
 ) -> Result<OptionalExtensionStatus, CommandError> {
     let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("extension", None)?;
+        let _package_lock = PACKAGE_LOCK.lock().await;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => {
                 mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
@@ -633,6 +671,14 @@ pub async fn uninstall_optional_extension(
             BLUE_MAP_SERVER_ID => {
                 blue_map::stop_bluemap(blue_map_state).await?;
                 uninstall_blue_map_package().await
+            }
+            obs_telemetry_package::ID => {
+                obs_telemetry::stop_obs_telemetry(obs_telemetry_state).await?;
+                let status = obs_telemetry_package::uninstall().await?;
+                let mut settings = edit_settings().await?;
+                settings.plugins.obs_telemetry.enabled = false;
+                settings.commit().await?;
+                Ok(status)
             }
             _ => Err(CommandError::new(
                 ErrorCode::InvalidInput,
@@ -647,6 +693,26 @@ pub async fn uninstall_optional_extension(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn failed_package_activation_restores_the_previous_installation() {
+        let root = std::env::temp_dir().join(format!(
+            "screen-extension-rollback-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let target = root.join("installed");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("keep.txt"), "installed package").unwrap();
+        assert!(activate_package(&root.join("missing-staging"), &target)
+            .await
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(target.join("keep.txt")).unwrap(),
+            "installed package"
+        );
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn fabric_runtime_is_installed_and_refreshed_with_the_worker() {

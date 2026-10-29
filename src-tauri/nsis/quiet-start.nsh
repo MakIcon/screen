@@ -219,7 +219,15 @@ Function ScreenOptionsLeave
     MessageBox MB_OK|MB_ICONEXCLAMATION "Укажите полный путь к папке установки."
     Abort
   ${EndIf}
-  GetFullPathName $2 "$0"
+  ; NSIS GetFullPathName returns an empty string for a directory that does not
+  ; exist yet. Win32 resolves it without requiring a previous installation.
+  System::Call 'kernel32::GetFullPathNameW(w r0, i ${NSIS_MAX_STRLEN}, w .r2, p 0) i .r3'
+  ${If} $3 == 0
+  ${OrIf} $3 >= ${NSIS_MAX_STRLEN}
+  ${OrIf} $2 == ""
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Не удалось определить папку установки. Укажите полный путь."
+    Abort
+  ${EndIf}
   ${If} $2 == "$1\"
   ${OrIf} $2 == "$1"
     MessageBox MB_OK|MB_ICONEXCLAMATION "Выберите отдельную папку для ScreenLauncher, а не корень диска."

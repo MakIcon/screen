@@ -228,7 +228,6 @@ pub async fn launch_instance(
             )
             .await?;
             let obs_jvm_args = prepare_obs_telemetry_for_launch(
-                &app,
                 &obs_telemetry_state,
                 &settings.plugins.obs_telemetry,
                 &instance,

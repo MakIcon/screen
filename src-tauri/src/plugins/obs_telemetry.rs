@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use tokio::fs as async_fs;
 use uuid::Uuid;
 
@@ -549,13 +549,19 @@ fn handle_font_request(stream: &mut TcpStream, path: &str) {
         return;
     }
 
-    write_response_with_cache(
-        stream,
-        "200 OK",
-        "font/ttf",
-        MONOCRAFT_TTF,
-        "public, max-age=31536000, immutable",
-    );
+    match super::optional_extensions::extension_dir(super::obs_telemetry_package::ID)
+        .and_then(|directory| fs::read(directory.join("Monocraft.ttf")).map_err(CommandError::from))
+    {
+        Ok(bytes) => {
+            write_response_with_cache(stream, "200 OK", "font/ttf", bytes, "public, max-age=3600")
+        }
+        Err(_) => write_response(
+            stream,
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            "font not installed",
+        ),
+    }
 }
 
 fn handle_telemetry_post(
@@ -778,6 +784,7 @@ fn ensure_obs_telemetry_started(
     state: &ObsTelemetryState,
     plugin: &ObsTelemetryPluginSettings,
 ) -> Result<(u16, String), CommandError> {
+    super::obs_telemetry_package::directory()?;
     {
         let runtime = state.inner.lock().map_err(|_| {
             CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
@@ -823,22 +830,6 @@ fn ensure_obs_telemetry_started(
     Ok((selected_port, token))
 }
 
-fn telemetry_resource_dir(app: &AppHandle) -> Result<PathBuf, CommandError> {
-    if cfg!(debug_assertions) {
-        return Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("obs-telemetry"));
-    }
-
-    app.path()
-        .resource_dir()
-        .map(|path| path.join("resources").join("obs-telemetry"))
-        .map_err(|error| {
-            let detail = format!("resolve resource dir error: {error}");
-            CommandError::from(error).context(detail)
-        })
-}
-
 fn telemetry_jar_matches_version(file_name: &str, minecraft_version: &str) -> bool {
     let lower = file_name.to_ascii_lowercase();
     let version = minecraft_version.to_ascii_lowercase();
@@ -849,8 +840,8 @@ fn telemetry_jar_matches_version(file_name: &str, minecraft_version: &str) -> bo
             || lower.contains(&format!("_mc{version}.jar")))
 }
 
-fn find_telemetry_jar(app: &AppHandle, minecraft_version: &str) -> Result<PathBuf, CommandError> {
-    let resource_dir = telemetry_resource_dir(app)?;
+fn find_telemetry_jar(minecraft_version: &str) -> Result<PathBuf, CommandError> {
+    let resource_dir = super::obs_telemetry_package::directory()?;
     if !resource_dir.exists() {
         return Err(CommandError::new(
             ErrorCode::InvalidInput,
@@ -880,16 +871,13 @@ fn find_telemetry_jar(app: &AppHandle, minecraft_version: &str) -> Result<PathBu
     candidates.sort();
     candidates.into_iter().next().ok_or_else(|| {
         CommandError::new(ErrorCode::InvalidInput, format!(
-            "No OBS telemetry mod jar found for Minecraft {minecraft_version}. Build obs-telemetry-mod first."
+            "OBS Telemetry does not support Minecraft {minecraft_version}. Supported Fabric versions: 1.21, 1.21.1, 1.21.4."
         ))
     })
 }
 
-async fn install_telemetry_mod(
-    app: &AppHandle,
-    instance: &InstanceItem,
-) -> Result<PathBuf, CommandError> {
-    let source_jar = find_telemetry_jar(app, &instance.version)?;
+async fn install_telemetry_mod(instance: &InstanceItem) -> Result<PathBuf, CommandError> {
+    let source_jar = find_telemetry_jar(&instance.version)?;
     let mods_dir = PathBuf::from(&instance.game_dir).join("mods");
     async_fs::create_dir_all(&mods_dir).await.map_err(|error| {
         let detail = format!("create mods dir error: {error}");
@@ -938,7 +926,6 @@ async fn install_telemetry_mod(
 }
 
 pub async fn prepare_obs_telemetry_for_launch(
-    app: &AppHandle,
     state: &ObsTelemetryState,
     plugin: &ObsTelemetryPluginSettings,
     instance: &InstanceItem,
@@ -954,8 +941,8 @@ pub async fn prepare_obs_telemetry_for_launch(
         ));
     }
 
+    let installed_path = install_telemetry_mod(instance).await?;
     let (port, token) = ensure_obs_telemetry_started(state, plugin)?;
-    let installed_path = install_telemetry_mod(app, instance).await?;
 
     if let Ok(mut runtime) = state.inner.lock() {
         push_log(
@@ -1062,7 +1049,6 @@ pub async fn open_obs_telemetry_overlay(
 }
 
 const OBS_OVERLAY_HTML_V2: &str = include_str!("obs_overlay.html");
-const MONOCRAFT_TTF: &[u8] = include_bytes!("../../resources/obs-telemetry/Monocraft.ttf");
 
 #[allow(dead_code)]
 const OBS_OVERLAY_HTML: &str = r#"<!doctype html>

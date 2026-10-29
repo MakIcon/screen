@@ -1254,6 +1254,8 @@ export const en: EnglishMessages = {
   "launcherPlugins.installing": "Installing…",
   "launcherPlugins.removing": "Removing…",
   "launcherPlugins.install": "Install",
+  "launcherPlugins.updatePackage": "Update package",
+  "launcherPlugins.updating": "Updating…",
   "launcherPlugins.disable": "Disable",
   "launcherPlugins.confirmRemoval": "Confirm removal",
   "launcherPlugins.removePackage": "Remove package",

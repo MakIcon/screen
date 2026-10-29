@@ -1,0 +1,38 @@
+{
+  "id": "obs-telemetry",
+  "name": "OBS Telemetry",
+  "version": "1.0.0",
+  "minimumLauncherVersion": "0.2.4",
+  "files": [
+    {
+      "name": "Monocraft-OFL-1.1.txt",
+      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/Monocraft-OFL-1.1.txt",
+      "sha256": "f69c147003e052dbc9d96c40a9f73647e72766cfda95a597b94ed827fe25acb1",
+      "size": 4377
+    },
+    {
+      "name": "Monocraft.ttf",
+      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/Monocraft.ttf",
+      "sha256": "262e31822e0a75be567b02320bfa092143d871e8a273e529d1c5ab0c04cd215f",
+      "size": 210192
+    },
+    {
+      "name": "obs-telemetry-1.0.0+mc1.21.1.jar",
+      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.1.jar",
+      "sha256": "de33e564a1ba978eb219c30856dbae68ab266fc375d3d5dd31eaa7f54d9454f1",
+      "size": 16076
+    },
+    {
+      "name": "obs-telemetry-1.0.0+mc1.21.4.jar",
+      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.4.jar",
+      "sha256": "8590e6f877b2e28029da5c117975ec2c286c75f86a98424cf23a0c3303fdc285",
+      "size": 16076
+    },
+    {
+      "name": "obs-telemetry-1.0.0+mc1.21.jar",
+      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.jar",
+      "sha256": "1a4269bb15106f5ddc743c0be48d6813ad564c5cc8784dbb58a857ae8f33dad8",
+      "size": 16073
+    }
+  ]
+}

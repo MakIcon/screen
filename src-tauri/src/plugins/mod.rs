@@ -2,6 +2,7 @@ pub mod blue_map;
 pub mod discord_rpc;
 pub mod mineflayer_bot;
 pub mod obs_telemetry;
+mod obs_telemetry_package;
 pub mod optional_extensions;
 pub mod runtime_monitor;
 

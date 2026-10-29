@@ -71,6 +71,8 @@
 
 Интеграции включаются и настраиваются отдельно. Дополнительные пакеты устанавливаются из интерфейса плагинов, когда они нужны.
 
+Mineflayer Bot, BlueMap Server и OBS Telemetry устанавливаются, обновляются и удаляются отдельными пакетами. OBS Telemetry больше не входит в установщик лаунчера: Fabric-моды, шрифт и лицензия скачиваются в папку расширений пользователя. Discord RPC и Proxy обновляются вместе с лаунчером.
+
 Подробнее о боте: [бой](extensions/mineflayer-bot/COMBAT.md), [выживание](extensions/mineflayer-bot/SURVIVAL.md), [поиск пути](extensions/mineflayer-bot/pathfinding/README.md). О вспомогательном моде: [OBS Telemetry](obs-telemetry-mod/README.md).
 
 ## Частые вопросы

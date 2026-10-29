@@ -71,6 +71,8 @@ Open the editor with **Ctrl+Shift+A**. The **Ctrl+K** command palette helps you 
 
 Enable and configure integrations separately. Optional packages can be installed from the plugins interface when needed.
 
+Mineflayer Bot, BlueMap Server and OBS Telemetry can be installed, updated and removed as separate packages. OBS Telemetry's Fabric mods, font and license download into the user's extensions folder. Discord RPC and Proxy update with the launcher.
+
 Bot documentation: [combat](extensions/mineflayer-bot/COMBAT.md), [survival](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding](extensions/mineflayer-bot/pathfinding/README.md). Companion mod: [OBS Telemetry](obs-telemetry-mod/README.md).
 
 ## Frequently asked questions

@@ -310,6 +310,7 @@
 }
 .plugin-detail-toggle,
 .plugin-detail-detach,
+.plugin-detail-update,
 .plugin-detail-uninstall,
 .plugins-footer button {
   min-height: 36px;
@@ -326,6 +327,7 @@
 }
 .plugin-detail-toggle:hover:not(:disabled),
 .plugin-detail-detach:hover:not(:disabled),
+.plugin-detail-update:hover:not(:disabled),
 .plugin-detail-uninstall:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);

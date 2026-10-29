@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["resources/obs-telemetry/*"],
+    "resources": [],
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",

@@ -25,8 +25,10 @@
     "test:worker": "pnpm --filter @screenlauncher/mineflayer-bot test",
     "test:release": "node --test scripts/launcher_release_github.test.mjs",
     "test:installer": "node scripts/build_installer_skin.mjs --test",
+    "test:installer-paths": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_installer_paths.ps1",
     "release": "node scripts/release_launcher.mjs",
     "package:extensions": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_optional_extensions.ps1",
+    "package:obs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_obs_telemetry.ps1",
     "lint:i18n": "node scripts/check_localization.mjs",
     "test:i18n": "vitest run src/i18n src/appearance/localization.test.ts src/utils/errors.test.ts src/utils/installProgress.test.ts && node --test scripts/check_localization.test.mjs"
   },

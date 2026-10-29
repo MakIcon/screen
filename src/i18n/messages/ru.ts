@@ -1298,6 +1298,8 @@ export const ru = {
   "launcherPlugins.installing": "Установка…",
   "launcherPlugins.removing": "Удаление…",
   "launcherPlugins.install": "Установить",
+  "launcherPlugins.updatePackage": "Обновить пакет",
+  "launcherPlugins.updating": "Обновление…",
   "launcherPlugins.disable": "Выключить",
   "launcherPlugins.confirmRemoval": "Подтвердить удаление",
   "launcherPlugins.removePackage": "Удалить пакет",
