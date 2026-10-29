@@ -55,6 +55,8 @@ type Options = {
   ready: boolean;
   /** Hold back installation while a game is running. Backend tasks are checked separately. */
   deferAutomatic: boolean;
+  /** Queue update notices, prompts and installation until onboarding is dismissed. */
+  deferPresentation?: boolean;
   proxy: string | null;
 };
 
@@ -75,7 +77,12 @@ const toInfo = (update: Update): LauncherUpdateInfo => ({
   releaseUrl: launcherReleaseUrl(update.version, update.rawJson),
 });
 
-export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
+export function useLauncherUpdater({
+  ready,
+  deferAutomatic,
+  deferPresentation = false,
+  proxy,
+}: Options) {
   const [state, setState] = useState<LauncherUpdateState>({ stage: "idle" });
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<LauncherUpdateInfo | null>(null);
@@ -85,7 +92,7 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
   const proxyRef = useRef(proxy);
   const [operationsBusy, setOperationsBusy] = useState(true);
   const deferredRef = useRef(true);
-  deferredRef.current = deferAutomatic || operationsBusy;
+  deferredRef.current = deferAutomatic || deferPresentation || operationsBusy;
   const downloadedUpdateRef = useRef<Update | null>(null);
 
   useEffect(() => {
@@ -250,7 +257,9 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
 
   const held = state.stage === "available" && state.autoStart && (deferAutomatic || operationsBusy);
   const overlayState: VisibleUpdateState | null =
-    state.stage === "idle" || state.stage === "checking" || held ? null : state;
+    state.stage === "idle" || state.stage === "checking" || held || deferPresentation
+      ? null
+      : state;
   const visible = overlayState !== null;
 
   useEffect(() => {
@@ -263,7 +272,7 @@ export function useLauncherUpdater({ ready, deferAutomatic, proxy }: Options) {
     state,
     overlayState,
     currentVersion,
-    availableUpdate,
+    availableUpdate: deferPresentation ? null : availableUpdate,
     checking: state.stage === "checking",
     checkForUpdates,
     startUpdate,

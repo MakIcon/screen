@@ -52,9 +52,14 @@ vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 
 import { useLauncherUpdater } from "./useLauncherUpdater";
 
-function RenderHarness(ready = false) {
+function RenderHarness(ready = false, deferPresentation = false) {
   runtime.cursor = 0;
-  const updater = useLauncherUpdater({ ready, deferAutomatic: false, proxy: null });
+  const updater = useLauncherUpdater({
+    ready,
+    deferAutomatic: false,
+    deferPresentation,
+    proxy: null,
+  });
   for (const effect of runtime.effects.splice(0)) effect();
   return updater;
 }
@@ -118,6 +123,74 @@ describe("launcher update notifications", () => {
     expect(runtime.check).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["completed", "skipped"])("queues a startup notice until the guide is %s", async () => {
+    const update = release();
+    runtime.check.mockResolvedValue(update);
+    RenderHarness(true, true);
+    await vi.advanceTimersByTimeAsync(0);
+    let updater = RenderHarness(true, true);
+    expect(updater.availableUpdate).toBeNull();
+    expect(updater.overlayState).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000);
+    updater = RenderHarness(true, true);
+    expect(updater.availableUpdate).toBeNull();
+    expect(update.download).not.toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
+
+    updater = RenderHarness(true, false);
+    expect(updater.availableUpdate?.version).toBe("0.3.0");
+    expect(updater.overlayState).toBeNull();
+    expect(runtime.check).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues an in-flight installation prompt while the guide is pending", async () => {
+    const update = release();
+    runtime.check.mockResolvedValueOnce(null);
+    RenderHarness(true);
+    await vi.advanceTimersByTimeAsync(0);
+    RenderHarness(true);
+    let resolveCheck!: (update: Update) => void;
+    runtime.check.mockReturnValue(
+      new Promise<Update>((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
+    const pendingCheck = RenderHarness(true).checkForUpdates({ manual: true });
+    RenderHarness(true, true);
+    resolveCheck(update);
+    await pendingCheck;
+    let updater = RenderHarness(true, true);
+    expect(updater.availableUpdate).toBeNull();
+    expect(updater.overlayState).toBeNull();
+
+    await updater.startUpdate();
+    await vi.advanceTimersByTimeAsync(10_000);
+    updater = RenderHarness(true, true);
+    expect(updater.overlayState).toBeNull();
+    expect(update.download).not.toHaveBeenCalled();
+    expect(update.install).not.toHaveBeenCalled();
+    expect(update.close).not.toHaveBeenCalled();
+
+    // With backend operations confirmed idle, the held prompt becomes visible
+    // after onboarding. Its countdown starts only when it is on screen.
+    RenderHarness(true, false);
+    await vi.advanceTimersByTimeAsync(0);
+    updater = RenderHarness(true, false);
+    expect(updater.availableUpdate?.version).toBe("0.3.0");
+    expect(updater.overlayState).toMatchObject({ stage: "available", autoStart: true });
+    expect(update.download).not.toHaveBeenCalled();
+  });
+
+  it("holds an existing update prompt when the guide is replayed", async () => {
+    runtime.check.mockResolvedValue(release());
+    await RenderHarness().checkForUpdates({ manual: true });
+    expect(RenderHarness().overlayState?.stage).toBe("available");
+    expect(RenderHarness(false, true).overlayState).toBeNull();
+    expect(RenderHarness(false, true).availableUpdate).toBeNull();
+    expect(RenderHarness().overlayState?.stage).toBe("available");
+    expect(runtime.check).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the release notification when an explicit installation prompt is dismissed", async () => {
     runtime.check.mockResolvedValue(release());
     await RenderHarness().checkForUpdates({ manual: true });
@@ -131,14 +204,18 @@ describe("launcher update notifications", () => {
   it("retains a known release if a subsequent check fails", async () => {
     runtime.check.mockResolvedValueOnce(release()).mockRejectedValueOnce(new Error("timeout"));
     await RenderHarness().checkForUpdates({ manual: false });
-    expect(await RenderHarness().checkForUpdates({ manual: false })).toMatchObject({ status: "error" });
+    expect(await RenderHarness().checkForUpdates({ manual: false })).toMatchObject({
+      status: "error",
+    });
     expect(RenderHarness().availableUpdate?.version).toBe("0.3.0");
   });
 
   it("hides the notification when the server confirms there is no newer version", async () => {
     runtime.check.mockResolvedValueOnce(release()).mockResolvedValueOnce(null);
     await RenderHarness().checkForUpdates({ manual: false });
-    expect(await RenderHarness().checkForUpdates({ manual: false })).toEqual({ status: "up-to-date" });
+    expect(await RenderHarness().checkForUpdates({ manual: false })).toEqual({
+      status: "up-to-date",
+    });
     expect(RenderHarness().availableUpdate).toBeNull();
   });
 });

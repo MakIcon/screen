@@ -473,6 +473,11 @@ export default function App() {
   const [guidePreviewDismissed, setGuidePreviewDismissed] = useState(false);
   const [guideRunRequested, setGuideRunRequested] = useState(false);
   const [guideNicknameEntered, setGuideNicknameEntered] = useState(false);
+  // The guide can temporarily hide behind account/settings dialogs. Keep
+  // updates queued until the user actually finishes or skips the guide.
+  const launcherGuidePending =
+    !guidePreviewDismissed &&
+    (FORCE_FIRST_LAUNCH_GUIDE_PREVIEW || guideRunRequested || !firstLaunchGuideCompleted);
   const {
     appearances: buildCardAppearances,
     persistAppearances: persistBuildCardAppearances,
@@ -849,6 +854,7 @@ export default function App() {
   const launcherUpdater = useLauncherUpdater({
     ready: phase === "ready",
     deferAutomatic: runningInstances.size > 0,
+    deferPresentation: launcherGuidePending,
     proxy: updaterProxy?.enabled && updaterProxy.url.trim() ? updaterProxy.url.trim() : null,
   });
 
@@ -2448,8 +2454,7 @@ export default function App() {
   const firstLaunchGuideActive =
     phase === "ready" &&
     launcherSettings !== null &&
-    !guidePreviewDismissed &&
-    (FORCE_FIRST_LAUNCH_GUIDE_PREVIEW || guideRunRequested || !firstLaunchGuideCompleted) &&
+    launcherGuidePending &&
     !showMsModal &&
     !buildCardSettingsOpen;
 
