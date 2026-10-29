@@ -1,8 +1,27 @@
 {
   "id": "obs-telemetry",
   "name": "OBS Telemetry",
-  "version": "1.0.0",
-  "minimumLauncherVersion": "0.2.4",
+  "version": "1.1.0",
+  "minimumLauncherVersion": "0.2.5",
+  "supportedMinecraftVersions": [
+    "1.21",
+    "1.21.1",
+    "1.21.2",
+    "1.21.3",
+    "1.21.4",
+    "1.21.5",
+    "1.21.6",
+    "1.21.7",
+    "1.21.8",
+    "1.21.9",
+    "1.21.10",
+    "1.21.11",
+    "26.1",
+    "26.1.1",
+    "26.1.2",
+    "26.2",
+    "26.3"
+  ],
   "files": [
     {
       "name": "Monocraft-OFL-1.1.txt",
@@ -17,22 +36,106 @@
       "size": 210192
     },
     {
-      "name": "obs-telemetry-1.0.0+mc1.21.1.jar",
-      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.1.jar",
-      "sha256": "de33e564a1ba978eb219c30856dbae68ab266fc375d3d5dd31eaa7f54d9454f1",
-      "size": 16076
+      "name": "obs-telemetry-1.1.0+mc1.21.jar",
+      "url": "",
+      "sha256": "461f6f5133d02bb0480621e4746f653e6be5360ee755511726b78d54806fe8d2",
+      "size": 16642
     },
     {
-      "name": "obs-telemetry-1.0.0+mc1.21.4.jar",
-      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.4.jar",
-      "sha256": "8590e6f877b2e28029da5c117975ec2c286c75f86a98424cf23a0c3303fdc285",
-      "size": 16076
+      "name": "obs-telemetry-1.1.0+mc1.21.1.jar",
+      "url": "",
+      "sha256": "8a10da55cc5becd0282e8b7d1c9f4601990e45e5234d732918ef4a4e8d1a4b14",
+      "size": 16645
     },
     {
-      "name": "obs-telemetry-1.0.0+mc1.21.jar",
-      "url": "https://raw.githubusercontent.com/MakIcon/screen/5f4406ea6719b7c2f4f50ad48467ca6124151c59/src-tauri/resources/obs-telemetry/obs-telemetry-1.0.0%2Bmc1.21.jar",
-      "sha256": "1a4269bb15106f5ddc743c0be48d6813ad564c5cc8784dbb58a857ae8f33dad8",
-      "size": 16073
+      "name": "obs-telemetry-1.1.0+mc1.21.2.jar",
+      "url": "",
+      "sha256": "6fd7168542c9195c7cc5ae182b253d0b097d545cae48d79f213db856e76b0829",
+      "size": 16645
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.3.jar",
+      "url": "",
+      "sha256": "10bb8ea82fbdbb7f9a2914b13080fb0c610d15891baa78aeea160100c22edd1e",
+      "size": 16647
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.4.jar",
+      "url": "",
+      "sha256": "8eceb9991a993e1d9c118389b8cf155d9d73db48ef1034eb458e3c34ab2f294f",
+      "size": 16645
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.5.jar",
+      "url": "",
+      "sha256": "b4e0ddc9c91b76c368fa1dafa4b80ed87fd53af4dc95a7ce12edda9eefe2f357",
+      "size": 16647
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.6.jar",
+      "url": "",
+      "sha256": "d50f942c655767a64f17a3c3e6e70f8d88dced060d68e21054aa6f68f4bddb0a",
+      "size": 16647
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.7.jar",
+      "url": "",
+      "sha256": "d678add69938ac42a464e53060a1bc823f5ea21625d78b9cef82397637fcfb70",
+      "size": 16647
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.8.jar",
+      "url": "",
+      "sha256": "419194b7d83b4a7cca862a878c7c181995645d50d634364154437c7d854e9dd1",
+      "size": 16647
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.9.jar",
+      "url": "",
+      "sha256": "c7b19854247fa94c4a8ad6ceae7f7790a8901242ee809734547ab473777b3ae4",
+      "size": 16646
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.10.jar",
+      "url": "",
+      "sha256": "a48ffb8d203de51185505a731e8d1f4424b40692c2cc2eed1e9634ffe9bcd409",
+      "size": 16645
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc1.21.11.jar",
+      "url": "",
+      "sha256": "1098297d1e6897819a47ab804efb45855a01b30c3bbdd8be3b79ed63e25fd032",
+      "size": 16646
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc26.1.jar",
+      "url": "",
+      "sha256": "40559dfc2e1ce607606a03a76dfdb2a553ff5509560c4bc57f86ab1226312300",
+      "size": 16927
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc26.1.1.jar",
+      "url": "",
+      "sha256": "dbb7ccb5a0f58ac2996915f7408a69aea21cd1ca604a874a825ee8bb29bee719",
+      "size": 16929
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc26.1.2.jar",
+      "url": "",
+      "sha256": "9edac8a1435fd60196bc80166a0da3ab159e02f820bffc28889b653b6339e31d",
+      "size": 16930
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc26.2.jar",
+      "url": "",
+      "sha256": "1c685830aafeaab5086c0334b2d75f4e12e4c0ac9d90929ada88be5bb2a9d67b",
+      "size": 16927
+    },
+    {
+      "name": "obs-telemetry-1.1.0+mc26.3.jar",
+      "url": "",
+      "sha256": "6d15e1b85ec8d4ba648823227ab2e1c9602e16a11ed40527301ffcca084afa3d",
+      "size": 16928
     }
   ]
 }

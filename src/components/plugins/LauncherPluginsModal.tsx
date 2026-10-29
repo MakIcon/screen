@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type WheelEvent } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   LauncherPluginsSettings,
   MicrosoftAccount,
@@ -20,6 +21,7 @@ import { openMineflayerBotWindow } from "./mineflayerBot/mineflayerBotWindow";
 import { logger } from "../../utils/logger";
 import { useLocale, useTranslation } from "../../i18n/locale";
 import { pluginCopy } from "./pluginLocalization";
+import obsPackageCatalog from "../../../extensions/obs-telemetry/extension.json";
 import "./LauncherPluginsModal.css";
 
 type LauncherPluginsModalProps = {
@@ -74,6 +76,8 @@ export function LauncherPluginsModal({
     PLUGIN_DEFINITIONS.find((definition) => definition.id === selectedPluginId) ??
     PLUGIN_DEFINITIONS[0];
   const selectedExtensionId = selectedDefinition.optionalExtensionId;
+  const obsPackageNeedsZip =
+    selectedExtensionId === "obs-telemetry" && obsPackageCatalog.files.some((file) => !file.url);
   const selectedExtensionStatus = selectedExtensionId
     ? runtimeMonitor.snapshot?.optionalExtensions.find(
         (extension) => extension.id === selectedExtensionId,
@@ -210,6 +214,25 @@ export function LauncherPluginsModal({
       setInstallError({ id: extensionId, message: toErrorMessage(caught) });
     } finally {
       setUninstallingExtensionId(null);
+    }
+  };
+
+  const importObsPackage = async () => {
+    if (installingExtensionId || uninstallingExtensionId) return;
+    try {
+      setInstallingExtensionId("obs-telemetry");
+      setInstallError(null);
+      const path = await open({
+        multiple: false,
+        filters: [{ name: "OBS Telemetry", extensions: ["zip"] }],
+      });
+      if (!path) return;
+      await invoke<OptionalExtensionStatus>("import_obs_telemetry_package", { path });
+      await runtimeMonitor.refresh();
+    } catch (caught) {
+      setInstallError({ id: "obs-telemetry", message: toErrorMessage(caught) });
+    } finally {
+      setInstallingExtensionId(null);
     }
   };
 
@@ -357,6 +380,16 @@ export function LauncherPluginsModal({
             </div>
 
             <div className="plugin-detail-actions">
+              {selectedExtensionId === "obs-telemetry" && !obsPackageNeedsZip && (
+                <button
+                  className="plugin-detail-update"
+                  type="button"
+                  disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
+                  onClick={() => void importObsPackage()}
+                >
+                  {tr("obsTelemetry.installZip")}
+                </button>
+              )}
               {!standalone && selectedPluginId === "mineflayerBot" && (
                 <button
                   type="button"
@@ -391,7 +424,8 @@ export function LauncherPluginsModal({
                 }
                 onClick={() => {
                   if (!selectedPackageReady && selectedExtensionId) {
-                    void installExtension(selectedExtensionId);
+                    if (obsPackageNeedsZip) void importObsPackage();
+                    else void installExtension(selectedExtensionId);
                     return;
                   }
                   commitPlugins(selectedDefinition.setEnabled(draft, !selectedEnabled));
@@ -404,7 +438,9 @@ export function LauncherPluginsModal({
                     : selectedUninstalling
                       ? tr("launcherPlugins.removing")
                       : !selectedPackageReady
-                        ? tr("launcherPlugins.install")
+                        ? obsPackageNeedsZip
+                          ? tr("obsTelemetry.installZip")
+                          : tr("launcherPlugins.install")
                         : selectedEnabled
                           ? tr("launcherPlugins.disable")
                           : tr("common.enable")}
@@ -415,7 +451,11 @@ export function LauncherPluginsModal({
                   className="plugin-detail-update"
                   type="button"
                   disabled={Boolean(installingExtensionId || uninstallingExtensionId)}
-                  onClick={() => void installExtension(selectedExtensionId)}
+                  onClick={() =>
+                    obsPackageNeedsZip
+                      ? void importObsPackage()
+                      : void installExtension(selectedExtensionId)
+                  }
                 >
                   {selectedInstalling
                     ? tr("launcherPlugins.updating")

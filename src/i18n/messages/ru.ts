@@ -1463,6 +1463,13 @@ export const ru = {
   "modrinthProject.update": "ОБНОВИТЬ",
 
   // obsTelemetry
+  "obsTelemetry.title": "OBS TELEMETRY",
+  "obsTelemetry.compatibility": "Fabric · 1.21–26.3",
+  "obsTelemetry.installZip": "УСТАНОВИТЬ ИЗ ZIP",
+  "obsTelemetry.connected": "Данные поступают",
+  "obsTelemetry.waiting": "Ожидание Minecraft",
+  "obsTelemetry.stopped": "Оверлей остановлен",
+  "obsTelemetry.setupHint": "Fabric 1.21–26.3 · Запустите игру и добавьте адрес в источник «Браузер» в OBS.",
   "obsTelemetry.obsSource": "ИСТОЧНИК ДЛЯ OBS",
   "obsTelemetry.addThisAddressAs": "Добавьте этот адрес как источник «Браузер» в OBS",
   "obsTelemetry.obsPort": "ПОРТ OBS",

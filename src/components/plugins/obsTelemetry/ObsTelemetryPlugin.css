@@ -4,6 +4,57 @@
   gap: 14px 18px;
 }
 
+.obs-telemetry-connection {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-card-strong);
+}
+
+.obs-telemetry-connection > div {
+  display: grid;
+  gap: 8px;
+}
+.obs-telemetry-connection strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+.obs-telemetry-connection span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.obs-telemetry-connection .obs-telemetry-eyebrow {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+.obs-telemetry-connection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+.obs-telemetry-connection-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.obs-telemetry-connection.is-live .obs-telemetry-connection-badge i {
+  background: #43c79a;
+  box-shadow: 0 0 0 4px #43c79a18;
+}
+
 .obs-telemetry-field {
   display: flex;
   min-width: 0;
@@ -65,6 +116,7 @@
   cursor: pointer;
   padding: 10px 12px;
   text-align: left;
+  border-radius: 8px;
 }
 
 .obs-telemetry-links button:hover {
@@ -100,7 +152,7 @@
 
 .obs-telemetry-controls {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
 
@@ -115,6 +167,7 @@
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.1em;
+  border-radius: 8px;
   transition:
     background 0.14s,
     border-color 0.14s,
@@ -132,11 +185,22 @@
   opacity: 0.42;
 }
 
+.obs-telemetry-controls button:first-child:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-field);
+}
+.obs-telemetry-settings button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .obs-telemetry-status,
 .obs-telemetry-readout {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .obs-telemetry-status div,

@@ -136,6 +136,7 @@ pub fn run() {
             plugins::obs_telemetry::stop_obs_telemetry,
             plugins::obs_telemetry::get_obs_telemetry_status,
             plugins::obs_telemetry::open_obs_telemetry_overlay,
+            plugins::optional_extensions::import_obs_telemetry_package,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

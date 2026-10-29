@@ -8,7 +8,7 @@
     @font-face {
       font-family: "Monocraft";
       src: url("/font/monocraft.ttf") format("truetype");
-      font-display: block;
+      font-display: swap;
     }
 
     :root {
@@ -55,7 +55,11 @@
     }
 
     body.bg { --panel: var(--debug-panel); }
-    body.view-settings { overflow: auto; }
+    body.view-settings { overflow: auto; display: block; }
+    body[data-stale="true"]:not(.view-settings) .hud { visibility: hidden; }
+    .connection-state { position: fixed; bottom: 16px; left: 16px; display: none; padding: 8px 12px; border: 1px solid #ffffff24; border-radius: 20px; background: #131b26e8; color: #c9d0dc; font: 12px/1.4 system-ui, sans-serif; }
+    body.bg .connection-state, body.view-settings .connection-state { display: block; }
+    body[data-stale="false"] .connection-state { color: #74e8b4; }
 
     .hud {
       width: fit-content;
@@ -100,6 +104,7 @@
 
     body.view-settings .hud {
       width: min(920px, 100vw);
+      margin: 0 auto;
       padding: 16px;
       gap: 10px;
     }
@@ -259,6 +264,7 @@
       width: 0%;
       height: 100%;
       background: linear-gradient(90deg, #d92626 0%, #ffd94a 45%, #36f05d 100%);
+      transition: width 180ms ease, background-color 180ms ease;
     }
 
     .gear-slot.no-durability .durability,
@@ -300,11 +306,14 @@
     .dimension.end .dimension-cube { background: #7665c8; }
 
     .settings {
-      width: min(920px, 100vw);
+      width: 100%;
       display: grid;
-      gap: 10px;
-      padding: 14px;
-      background: rgba(0,0,0,0.72);
+      gap: 20px;
+      padding: 28px;
+      border: 1px solid #ffffff18;
+      border-radius: 18px;
+      background: #111820f5;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       text-shadow: none;
     }
 
@@ -335,7 +344,15 @@
       cursor: pointer;
       padding: 10px;
       text-align: left;
+      border-radius: 10px;
+      padding: 14px 16px;
+      transition: background 150ms, border-color 150ms;
     }
+    .settings-card:hover { background: #ffffff14; border-color: #74e8b4; }
+    .settings-card:focus-visible { outline: 2px solid #74e8b4; outline-offset: 3px; }
+    .settings-card[data-copied="true"] { border-color: #74e8b4; }
+    @media (max-width: 560px) { .settings-grid { grid-template-columns: 1fr; } .settings { padding: 18px; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
     .settings-card span {
       display: block;
@@ -355,7 +372,8 @@
     }
   </style>
 </head>
-<body>
+<body data-stale="true">
+  <div class="connection-state" id="connectionState" role="status"></div>
   <main class="hud">
     <section class="panel" data-panel="health"><div class="stat-row" id="healthRow"></div></section>
     <section class="panel" data-panel="food"><div class="stat-row" id="foodRow"></div></section>
@@ -381,8 +399,8 @@
     <section class="panel single-slot" data-panel="offhand" id="offhandPanel"></section>
     <section class="panel" data-panel="settings">
       <div class="settings">
-        <h1>OBS Telemetry Sources</h1>
-        <p>Click a tile to copy the URL. The overlay auto-fits the browser source; add ?scale=8 to force a size, or ?bg=1 for a dark preview background.</p>
+        <h1 id="settingsTitle">OBS Telemetry</h1>
+        <p id="settingsHint"></p>
         <div class="settings-grid" id="settingsGrid"></div>
       </div>
     </section>
@@ -391,6 +409,14 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
+    const ru = (params.get("lang") || navigator.language || "en").startsWith("ru");
+    document.documentElement.lang = ru ? "ru" : "en";
+    const labels = ru
+      ? { overlay: "Весь оверлей", settings: "Настройки", health: "Здоровье", food: "Еда", xp: "Опыт", armor: "Броня", helmet: "Шлем", chestplate: "Нагрудник", leggings: "Поножи", boots: "Ботинки", coords: "Координаты", dimension: "Измерение", items: "Предметы", mainhand: "Основная рука", offhand: "Вторая рука" }
+      : { overlay: "Full overlay", settings: "Settings", health: "Health", food: "Food", xp: "Experience", armor: "Armor", helmet: "Helmet", chestplate: "Chestplate", leggings: "Leggings", boots: "Boots", coords: "Coordinates", dimension: "Dimension", items: "Items", mainhand: "Main hand", offhand: "Off hand" };
+    $("settingsHint").textContent = ru
+      ? "Нажмите на виджет, чтобы скопировать адрес для источника «Браузер» в OBS. Размер подбирается автоматически. ?scale=8 задаёт масштаб, ?bg=1 включает фон для предпросмотра. Fabric 1.21–26.3."
+      : "Click a widget to copy its Browser source URL for OBS. Size adjusts automatically. Use ?scale=8 for a fixed scale or ?bg=1 for a preview background. Fabric 1.21–26.3.";
     const view = location.pathname.replace("/", "") || "overlay";
     document.body.classList.add(`view-${view}`);
     if (view !== "overlay") document.body.classList.add("single", `view-${view}`);
@@ -421,7 +447,7 @@
       const safeWidth = Math.max(1, window.innerWidth - 8);
       const safeHeight = Math.max(1, window.innerHeight - 8);
       const fit = Math.floor(Math.min(safeWidth / baseWidth, safeHeight / baseHeight));
-      return clamp(fit, view === "settings" ? 1 : 2, view === "settings" ? 1 : 24);
+      return clamp(fit, 1, view === "settings" ? 1 : 24);
     }
 
     function applyScale() {
@@ -446,6 +472,7 @@
     }
 
     function iconUrl(version, item) {
+      if (item?.itemId && !item.itemId.startsWith("minecraft:")) return "";
       const key = (item?.itemId || "").replace(/^minecraft:/, "");
       return key && key !== "air" ? `/icon/${encodeURIComponent(version || "1.21.1")}/${encodeURIComponent(key)}` : "";
     }
@@ -528,6 +555,7 @@
       const src = iconUrl(version, item);
       const hasItem = Boolean(src);
       const hasDurability = Boolean(item?.maxDamage);
+      slot.title = item?.displayName || "";
 
       slot.classList.toggle("no-durability", !hasDurability);
       img.classList.toggle("missing", !hasItem);
@@ -543,6 +571,7 @@
       if (hasDurability) {
         const durability = clamp(item.durabilityPercent, 0, 100);
         fill.style.width = `${durability}%`;
+        fill.style.background = `hsl(${durability * 1.2} 78% 55%)`;
         pct.textContent = `${fmt(durability, 0)}%`;
       } else {
         fill.style.width = "0%";
@@ -567,9 +596,9 @@
     }
 
     function dimensionInfo(raw) {
-      if (raw === "minecraft:the_nether") return ["nether", "Nether"];
-      if (raw === "minecraft:the_end") return ["end", "The End"];
-      if (raw === "minecraft:overworld") return ["overworld", "Overworld"];
+      if (raw === "minecraft:the_nether") return ["nether", ru ? "Незер" : "Nether"];
+      if (raw === "minecraft:the_end") return ["end", ru ? "Энд" : "The End"];
+      if (raw === "minecraft:overworld") return ["overworld", ru ? "Обычный мир" : "Overworld"];
       return ["overworld", raw || "--"];
     }
 
@@ -582,22 +611,54 @@
         const button = document.createElement("button");
         button.className = "settings-card";
         const url = `${origin}/${viewName === "overlay" ? "overlay" : viewName}`;
-        button.onclick = () => navigator.clipboard?.writeText(url);
-        button.innerHTML = `<span>${viewName.toUpperCase()}</span><strong>${url}</strong>`;
+        button.type = "button";
+        const label = document.createElement("span");
+        label.textContent = labels[viewName];
+        const address = document.createElement("strong");
+        address.textContent = url;
+        button.append(label, address);
+        button.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            label.textContent = ru ? "Скопировано" : "Copied";
+            button.dataset.copied = "true";
+            setTimeout(() => { label.textContent = labels[viewName]; delete button.dataset.copied; }, 1600);
+          } catch {
+            label.textContent = ru ? "Выделите и скопируйте адрес" : "Select and copy the address";
+            const range = document.createRange();
+            range.selectNodeContents(address);
+            window.getSelection()?.removeAllRanges();
+            window.getSelection()?.addRange(range);
+          }
+        };
         grid.appendChild(button);
       }
     }
 
+    let lastPayloadKey = "";
+    function setLive(live, playerName = "") {
+      document.body.dataset.stale = String(!live);
+      const message = live
+        ? `${ru ? "В эфире" : "Live"} · ${playerName}`
+        : ru ? "Ожидание данных Minecraft" : "Waiting for Minecraft data";
+      if ($("connectionState").textContent !== message) $("connectionState").textContent = message;
+    }
+
     function update(status) {
-      renderSettings();
       const payload = status.lastPayload;
-      const stale = status.lastUpdateAgeMs == null || status.lastUpdateAgeMs > 5000;
-      if (!payload || stale) return;
+      const stale = !status.running || status.lastUpdateAgeMs == null || status.lastUpdateAgeMs > 3000;
+      setLive(Boolean(payload) && !stale, payload?.playerName);
+      if (!payload || stale || view === "settings") return;
+      const key = JSON.stringify(payload);
+      if (key === lastPayloadKey) return;
+      lastPayloadKey = key;
 
       const version = payload.minecraftVersion || "1.21.1";
-      renderSprites($("healthRow"), version, clamp(Math.ceil(payload.health || 0), 0, 20), "gui/sprites/hud/heart/full", "gui/sprites/hud/heart/half", "gui/sprites/hud/heart/container");
-      renderSprites($("foodRow"), version, clamp(Math.ceil(payload.food || 0), 0, 20), "gui/sprites/hud/food_full", "gui/sprites/hud/food_half", "gui/sprites/hud/food_empty");
-      renderSprites($("armorRow"), version, clamp(Math.ceil(payload.armor || 0), 0, 20), "gui/sprites/hud/armor_full", "gui/sprites/hud/armor_half", "gui/sprites/hud/armor_empty");
+      const visible = (panel) => view === "overlay" || view === panel;
+      if (visible("health")) renderSprites($("healthRow"), version, clamp(Math.ceil((payload.health || 0) * 20 / (payload.maxHealth || 20)), 0, 20), "gui/sprites/hud/heart/full", "gui/sprites/hud/heart/half", "gui/sprites/hud/heart/container");
+      $("healthRow").title = `${fmt(payload.health, 1)} / ${fmt(payload.maxHealth, 1)}`;
+      if (visible("food")) renderSprites($("foodRow"), version, clamp(Math.ceil(payload.food || 0), 0, 20), "gui/sprites/hud/food_full", "gui/sprites/hud/food_half", "gui/sprites/hud/food_empty");
+      if (visible("armor")) renderSprites($("armorRow"), version, clamp(Math.ceil(payload.armor || 0), 0, 20), "gui/sprites/hud/armor_full", "gui/sprites/hud/armor_half", "gui/sprites/hud/armor_empty");
 
       $("xpBg").style.backgroundImage = `url("${texture(version, "gui/sprites/hud/experience_bar_background")}")`;
       $("xpFill").style.backgroundImage = `url("${texture(version, "gui/sprites/hud/experience_bar_progress")}")`;
@@ -605,7 +666,17 @@
       $("xpLevel").textContent = payload.experienceLevel || 0;
 
       const block = payload.blockPosition || {};
-      $("coordsLine").innerHTML = `<span class="axis-x">x:</span> ${block.x ?? "--"} <span class="axis-y">y:</span> ${block.y ?? "--"} <span class="axis-z">z:</span> ${block.z ?? "--"}`;
+      const coords = $("coordsLine");
+      if (!coords.children.length) {
+        for (const axis of ["x", "y", "z"]) {
+          const label = document.createElement("span");
+          label.className = `axis-${axis}`;
+          label.textContent = `${axis}:`;
+          const value = document.createElement("strong");
+          coords.append(label, value);
+        }
+      }
+      ["x", "y", "z"].forEach((axis, index) => { coords.children[index * 2 + 1].textContent = block[axis] ?? "--"; });
 
       const [dimensionClass, dimensionLabel] = dimensionInfo(payload.dimension);
       const dimensionLine = $("dimensionLine");
@@ -614,23 +685,35 @@
 
       const armorBySlot = Object.fromEntries((payload.armorItems || []).map((item) => [item.slot, item]));
       const armorItems = [armorBySlot.head, armorBySlot.chest, armorBySlot.legs, armorBySlot.feet];
-      renderSlotList($("armorSet"), armorItems, version);
-      setItemPanel("helmetPanel", armorBySlot.head, version);
-      setItemPanel("chestplatePanel", armorBySlot.chest, version);
-      setItemPanel("leggingsPanel", armorBySlot.legs, version);
-      setItemPanel("bootsPanel", armorBySlot.feet, version);
-      setItemPanel("mainhandPanel", payload.heldItem, version);
-      setItemPanel("offhandPanel", payload.offhandItem, version);
-      renderSlotList($("mainhandFull"), [payload.heldItem], version);
-      renderSlotList($("offhandFull"), [payload.offhandItem], version);
+      if (visible("armor")) renderSlotList($("armorSet"), armorItems, version);
+      if (view === "helmet") setItemPanel("helmetPanel", armorBySlot.head, version);
+      if (view === "chestplate") setItemPanel("chestplatePanel", armorBySlot.chest, version);
+      if (view === "leggings") setItemPanel("leggingsPanel", armorBySlot.legs, version);
+      if (view === "boots") setItemPanel("bootsPanel", armorBySlot.feet, version);
+      if (view === "mainhand") setItemPanel("mainhandPanel", payload.heldItem, version);
+      if (view === "offhand") setItemPanel("offhandPanel", payload.offhandItem, version);
+      if (visible("items")) {
+        renderSlotList($("mainhandFull"), [payload.heldItem], version);
+        renderSlotList($("offhandFull"), [payload.offhandItem], version);
+      }
     }
 
+    let failures = 0;
+    let pollTimer;
     async function poll() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1800);
       try {
-        const response = await fetch("/state.json", { cache: "no-store" });
+        const response = await fetch("/overlay.json", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         update(await response.json());
+        failures = 0;
       } catch {
-        renderSettings();
+        setLive(false);
+        failures = Math.min(failures + 1, 4);
+      } finally {
+        clearTimeout(timeout);
+        pollTimer = setTimeout(poll, Math.min(5000, (view === "settings" ? 1000 : 300) * 2 ** failures));
       }
     }
 
@@ -638,8 +721,9 @@
     window.addEventListener("resize", applyScale);
     document.fonts?.ready?.then(applyScale);
     renderSettings();
+    setLive(false);
     poll();
-    setInterval(poll, 350);
+    window.addEventListener("pagehide", () => clearTimeout(pollTimer));
   </script>
 </body>
 </html>

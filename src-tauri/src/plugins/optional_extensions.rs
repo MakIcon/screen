@@ -605,6 +605,16 @@ pub async fn install_optional_extension(
     result
 }
 
+#[tauri::command]
+pub async fn import_obs_telemetry_package(
+    path: String,
+    obs_telemetry_state: State<'_, ObsTelemetryState>,
+) -> Result<OptionalExtensionStatus, CommandError> {
+    let _guard = PACKAGE_LOCK.lock().await;
+    obs_telemetry::stop_obs_telemetry(obs_telemetry_state).await?;
+    obs_telemetry_package::import_archive(PathBuf::from(path)).await
+}
+
 async fn uninstall_mineflayer_package() -> Result<OptionalExtensionStatus, CommandError> {
     let target = extension_dir(MINEFLAYER_BOT_ID)?;
     if target.exists() {

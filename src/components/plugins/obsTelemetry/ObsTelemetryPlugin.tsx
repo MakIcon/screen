@@ -1,5 +1,5 @@
 import { TextField } from "../../inputs/TextField";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ObsTelemetryPayload,
@@ -59,6 +59,13 @@ function ObsTelemetrySettingsEditor({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [copiedUrl, setCopiedUrl] = useState("");
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
   const overlayUrl = useMemo(
     () => status?.overlayUrl ?? `http://127.0.0.1:${settings.port}/overlay`,
     [settings.port, status?.overlayUrl],
@@ -86,10 +93,16 @@ function ObsTelemetrySettingsEditor({
   );
   const lastUpdateAgeMs = status?.lastUpdateAgeMs;
   const isLive =
+    Boolean(status?.running) &&
     Boolean(status?.lastPayload) &&
     lastUpdateAgeMs !== null &&
     lastUpdateAgeMs !== undefined &&
     lastUpdateAgeMs <= 3000;
+  const connectionLabel = isLive
+    ? tr("obsTelemetry.connected")
+    : status?.running
+      ? tr("obsTelemetry.waiting")
+      : tr("obsTelemetry.stopped");
 
   const update = (patch: Partial<ObsTelemetryPluginSettings>) => {
     onChange(normalizeObsTelemetrySettings({ ...settings, ...patch }));
@@ -131,6 +144,7 @@ function ObsTelemetrySettingsEditor({
   };
 
   const openOverlay = async () => {
+    if (busy || !status?.running) return;
     try {
       setBusy(true);
       setActionError("");
@@ -146,7 +160,8 @@ function ObsTelemetrySettingsEditor({
     try {
       await navigator.clipboard.writeText(url);
       setCopiedUrl(url);
-      window.setTimeout(() => setCopiedUrl((current) => (current === url ? "" : current)), 1200);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopiedUrl(""), 1600);
     } catch (error) {
       setActionError(toErrorMessage(error));
     }
@@ -154,6 +169,17 @@ function ObsTelemetrySettingsEditor({
 
   return (
     <div className="obs-telemetry-settings">
+      <div className={`obs-telemetry-connection${isLive ? " is-live" : ""}`}>
+        <div>
+          <span className="obs-telemetry-eyebrow">{tr("obsTelemetry.title")}</span>
+          <strong>{connectionLabel}</strong>
+          <span>{tr("obsTelemetry.setupHint")}</span>
+        </div>
+        <span className="obs-telemetry-connection-badge">
+          <i aria-hidden="true" />
+          {isLive ? status?.lastPlayerName : tr("obsTelemetry.compatibility")}
+        </span>
+      </div>
       <PluginSettingsGroup
         title={tr("obsTelemetry.obsSource")}
         description={tr("obsTelemetry.addThisAddressAs")}
@@ -164,6 +190,7 @@ function ObsTelemetrySettingsEditor({
           <TextField
             value={settings.port}
             inputMode="numeric"
+            disabled={Boolean(status?.running)}
             onChange={(event) => update({ port: Number(event.target.value) })}
           />
         </label>
@@ -189,7 +216,11 @@ function ObsTelemetrySettingsEditor({
         <button type="button" disabled={busy} onClick={() => void refreshStatus()}>
           {tr("common.refresh")}
         </button>
-        <button type="button" disabled={busy} onClick={() => void openOverlay()}>
+        <button
+          type="button"
+          disabled={busy || !status?.running}
+          onClick={() => void openOverlay()}
+        >
           {tr("obsTelemetry.open")}
         </button>
         <button type="button" onClick={() => void copySourceUrl(overlayUrl)}>
@@ -213,11 +244,12 @@ function ObsTelemetrySettingsEditor({
       <PluginSettingsGroup
         title={tr("obsTelemetry.dataAndLog")}
         description={tr("obsTelemetry.serverStateAndThe")}
+        defaultExpanded
       >
         <div className="obs-telemetry-status">
           <div>
             <span>{tr("obsTelemetry.server")}</span>
-            <strong>{formatStatusValue(status?.state)}</strong>
+            <strong>{connectionLabel}</strong>
           </div>
           <div>
             <span>{tr("obsTelemetry.liveData")}</span>

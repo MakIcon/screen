@@ -6,7 +6,7 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.makicon.screen.obs.OBSTelemetry;
 import net.fabricmc.api.ClientModInitializer;
-import net.minecraft.SharedConstants;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -26,11 +26,16 @@ public class OBSTelemetryClient implements ClientModInitializer {
 	private static final long SEND_INTERVAL_MS = 250L;
 	private static final int PORT = Integer.getInteger("screen.obs.port", -1);
 	private static final String TOKEN = System.getProperty("screen.obs.token", "");
+	private static final String MINECRAFT_VERSION = FabricLoader.getInstance()
+		.getModContainer("minecraft").orElseThrow().getMetadata().getVersion().getFriendlyString();
 
 	private final HttpClient httpClient = HttpClient.newBuilder()
 		.connectTimeout(Duration.ofMillis(600))
 		.build();
 	private final AtomicBoolean sending = new AtomicBoolean(false);
+	private final AtomicBoolean sampleQueued = new AtomicBoolean(false);
+	private volatile long nextAttemptMs = 0L;
+	private int failures = 0;
 	private volatile long lastErrorLogMs = 0L;
 
 	@Override
@@ -54,13 +59,24 @@ public class OBSTelemetryClient implements ClientModInitializer {
 		while (!Thread.currentThread().isInterrupted()) {
 			try {
 				Minecraft minecraft = Minecraft.getInstance();
-				if (minecraft != null) {
-					minecraft.execute(() -> sampleAndSend(minecraft));
+				if (minecraft != null && !sending.get() && System.currentTimeMillis() >= nextAttemptMs
+					&& sampleQueued.compareAndSet(false, true)) {
+					minecraft.execute(() -> {
+						try {
+							sampleAndSend(minecraft);
+						} catch (RuntimeException error) {
+							sending.set(false);
+							logSendError(error);
+						} finally {
+							sampleQueued.set(false);
+						}
+					});
 				}
 				Thread.sleep(SEND_INTERVAL_MS);
 			} catch (InterruptedException error) {
 				Thread.currentThread().interrupt();
-			} catch (Throwable error) {
+			} catch (RuntimeException error) {
+				sampleQueued.set(false);
 				logSendError(error);
 				sleepQuietly(1000L);
 			}
@@ -85,12 +101,17 @@ public class OBSTelemetryClient implements ClientModInitializer {
 		httpClient
 			.sendAsync(request, HttpResponse.BodyHandlers.discarding())
 			.whenComplete((response, error) -> {
-				sending.set(false);
 				if (error != null) {
+					backoff();
 					logSendError(error);
 				} else if (response.statusCode() >= 400) {
+					backoff();
 					logSendError(new IllegalStateException("HTTP " + response.statusCode()));
+				} else {
+					failures = 0;
+					nextAttemptMs = 0L;
 				}
+				sending.set(false);
 			});
 	}
 
@@ -98,7 +119,7 @@ public class OBSTelemetryClient implements ClientModInitializer {
 		JsonObject payload = new JsonObject();
 		BlockPos block = player.blockPosition();
 
-		payload.addProperty("minecraftVersion", SharedConstants.getCurrentVersion().getName());
+		payload.addProperty("minecraftVersion", MINECRAFT_VERSION);
 		payload.addProperty("playerName", player.getName().getString());
 		payload.addProperty("dimension", player.level().dimension().location().toString());
 		payload.addProperty("health", player.getHealth());
@@ -177,6 +198,11 @@ public class OBSTelemetryClient implements ClientModInitializer {
 		}
 		lastErrorLogMs = now;
 		OBSTelemetry.LOGGER.warn("OBS telemetry send failed: {}", error.getMessage());
+	}
+
+	private void backoff() {
+		failures = Math.min(failures + 1, 5);
+		nextAttemptMs = System.currentTimeMillis() + Math.min(5000L, SEND_INTERVAL_MS << failures);
 	}
 
 	private static void sleepQuietly(long millis) {

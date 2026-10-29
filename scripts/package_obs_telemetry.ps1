@@ -33,7 +33,7 @@ foreach ($file in $manifest.files) {
     }
     if ((Get-Item -LiteralPath $source).Length -ne $file.size -or
         $hash -ne $file.sha256) {
-        throw "OBS catalog needs updated hashes and immutable download URLs: $($file.name)"
+        throw "OBS catalog hashes are stale. Run scripts/update_obs_telemetry_catalog.ps1: $($file.name)"
     }
 }
 if (Test-Path -LiteralPath $stageDirectory) {

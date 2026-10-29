@@ -1419,6 +1419,13 @@ export const en: EnglishMessages = {
   "modrinthProject.update": "UPDATE",
 
   // obsTelemetry
+  "obsTelemetry.title": "OBS TELEMETRY",
+  "obsTelemetry.compatibility": "Fabric · 1.21–26.3",
+  "obsTelemetry.installZip": "INSTALL FROM ZIP",
+  "obsTelemetry.connected": "Receiving live data",
+  "obsTelemetry.waiting": "Waiting for Minecraft",
+  "obsTelemetry.stopped": "Overlay stopped",
+  "obsTelemetry.setupHint": "Fabric 1.21–26.3 · Launch the game and add the address as a Browser source in OBS.",
   "obsTelemetry.obsSource": "OBS SOURCE",
   "obsTelemetry.addThisAddressAs": "Add this address as a Browser source in OBS",
   "obsTelemetry.obsPort": "OBS PORT",

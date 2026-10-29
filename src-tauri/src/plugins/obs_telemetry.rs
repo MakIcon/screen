@@ -5,7 +5,10 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, Mutex,
+    },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -27,6 +30,9 @@ const DEFAULT_OBS_TELEMETRY_PORT: u16 = 18991;
 const OBS_TELEMETRY_PORT_SCAN_LIMIT: u16 = 50;
 const MAX_LOG_LINES: usize = 80;
 const MAX_REQUEST_BYTES: usize = 512 * 1024;
+const MAX_HEADER_BYTES: usize = 16 * 1024;
+const MAX_CLIENTS: usize = 16;
+const STALE_AFTER_MS: u64 = 3000;
 
 #[derive(Clone, Default)]
 pub struct ObsTelemetryState {
@@ -42,6 +48,7 @@ struct ObsTelemetryRuntime {
     server: Option<ObsTelemetryServer>,
     state: String,
     port: u16,
+    configured_port: u16,
     token: String,
     last_payload: Option<ObsTelemetryPayload>,
     last_update_ms: Option<u64>,
@@ -62,6 +69,7 @@ impl Default for ObsTelemetryRuntime {
             server: None,
             state: "idle".to_string(),
             port: DEFAULT_OBS_TELEMETRY_PORT,
+            configured_port: DEFAULT_OBS_TELEMETRY_PORT,
             token: String::new(),
             last_payload: None,
             last_update_ms: None,
@@ -125,7 +133,14 @@ fn snapshot_status(runtime: &ObsTelemetryRuntime) -> ObsTelemetryStatus {
 
     ObsTelemetryStatus {
         running: runtime.server.is_some(),
-        state: runtime.state.clone(),
+        state: if runtime.server.is_some()
+            && runtime.state == "receiving"
+            && last_update_age_ms.is_none_or(|age| age > STALE_AFTER_MS)
+        {
+            "waiting".to_string()
+        } else {
+            runtime.state.clone()
+        },
         port: runtime.port,
         overlay_url: overlay_url(runtime.port),
         overlay_urls: overlay_urls(runtime.port),
@@ -163,13 +178,19 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, CommandError
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 4096];
     let header_end = loop {
-        if bytes.len() > MAX_REQUEST_BYTES {
+        if bytes.len() > MAX_HEADER_BYTES {
             return Err(CommandError::new(
                 ErrorCode::InvalidInput,
                 "request too large",
             ));
         }
         if let Some(header_end) = find_header_end(&bytes) {
+            if header_end > MAX_HEADER_BYTES {
+                return Err(CommandError::new(
+                    ErrorCode::InvalidInput,
+                    "headers too large",
+                ));
+            }
             break header_end;
         }
 
@@ -211,11 +232,25 @@ fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest, CommandError
         }
     }
 
+    if headers.contains_key("transfer-encoding") {
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "transfer encoding is unsupported",
+        ));
+    }
     let content_length = headers
         .get("content-length")
-        .and_then(|value| value.parse::<usize>().ok())
+        .map(|value| value.parse::<usize>())
+        .transpose()
+        .map_err(|_| CommandError::new(ErrorCode::InvalidInput, "invalid content length"))?
         .unwrap_or(0);
     let body_start = header_end + 4;
+    if content_length > MAX_REQUEST_BYTES.saturating_sub(body_start) {
+        return Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "request too large",
+        ));
+    }
 
     while bytes.len() < body_start + content_length {
         if bytes.len() > MAX_REQUEST_BYTES {
@@ -640,6 +675,7 @@ fn handle_telemetry_post(
 }
 
 fn handle_http_client(mut stream: TcpStream, state: Arc<Mutex<ObsTelemetryRuntime>>) {
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
     let request = match read_http_request(&mut stream) {
         Ok(request) => request,
         Err(error) => {
@@ -697,12 +733,13 @@ fn handle_http_client(mut stream: TcpStream, state: Arc<Mutex<ObsTelemetryRuntim
                 &mut stream,
                 "200 OK",
                 "text/html; charset=utf-8",
-                OBS_OVERLAY_HTML_V2,
+                OBS_OVERLAY_HTML,
             );
         }
         ("GET", "/state.json") => match state.lock() {
             Ok(runtime) => {
                 let status = snapshot_status(&runtime);
+                drop(runtime);
                 write_json_response(&mut stream, "200 OK", &status);
             }
             Err(_) => write_response(
@@ -712,6 +749,22 @@ fn handle_http_client(mut stream: TcpStream, state: Arc<Mutex<ObsTelemetryRuntim
                 "OBS telemetry state lock poisoned",
             ),
         },
+        ("GET", "/overlay.json") => {
+            let snapshot = state.lock().ok().map(|runtime| serde_json::json!({
+                "running": runtime.server.is_some(),
+                "lastPayload": runtime.last_payload,
+                "lastUpdateAgeMs": runtime.last_update_ms.map(|time| now_millis().saturating_sub(time))
+            }));
+            match snapshot {
+                Some(snapshot) => write_json_response(&mut stream, "200 OK", &snapshot),
+                None => write_response(
+                    &mut stream,
+                    "503 Service Unavailable",
+                    "text/plain",
+                    "state unavailable",
+                ),
+            }
+        }
         ("POST", "/api/telemetry") => handle_telemetry_post(&mut stream, request, state),
         _ => write_response(
             &mut stream,
@@ -751,15 +804,34 @@ fn spawn_obs_server(
     state: Arc<Mutex<ObsTelemetryRuntime>>,
 ) -> ObsTelemetryServer {
     let (shutdown, shutdown_rx) = mpsc::channel::<()>();
+    let clients = Arc::new(AtomicUsize::new(0));
     let handle = thread::spawn(move || loop {
-        if shutdown_rx.try_recv().is_ok() {
+        if !matches!(shutdown_rx.try_recv(), Err(mpsc::TryRecvError::Empty)) {
             break;
         }
 
         match listener.accept() {
             Ok((stream, _)) => {
+                if clients
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                        (count < MAX_CLIENTS).then_some(count + 1)
+                    })
+                    .is_err()
+                {
+                    continue;
+                }
                 let request_state = state.clone();
-                thread::spawn(move || handle_http_client(stream, request_state));
+                let clients = clients.clone();
+                thread::spawn(move || {
+                    struct ClientGuard(Arc<AtomicUsize>);
+                    impl Drop for ClientGuard {
+                        fn drop(&mut self) {
+                            self.0.fetch_sub(1, Ordering::Relaxed);
+                        }
+                    }
+                    let _guard = ClientGuard(clients);
+                    handle_http_client(stream, request_state);
+                });
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(40));
@@ -785,46 +857,52 @@ fn ensure_obs_telemetry_started(
     plugin: &ObsTelemetryPluginSettings,
 ) -> Result<(u16, String), CommandError> {
     super::obs_telemetry_package::directory()?;
-    {
-        let runtime = state.inner.lock().map_err(|_| {
-            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
-        })?;
-        if runtime.server.is_some() {
-            return Ok((runtime.port, runtime.token.clone()));
-        }
-    }
+    start_server(state, plugin)
+}
 
-    let (listener, selected_port) = bind_obs_listener(plugin.port)?;
-    let token = Uuid::new_v4().simple().to_string();
-
-    {
-        let mut runtime = state.inner.lock().map_err(|_| {
-            CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
-        })?;
-        runtime.port = selected_port;
-        runtime.token = token.clone();
-        runtime.state = "serving".to_string();
-        runtime.last_error = None;
-        push_log(
-            &mut runtime,
-            format!(
-                "OBS overlay server listening on {}",
-                overlay_url(selected_port)
-            ),
-        );
-        if selected_port != plugin.port {
-            push_log(
-                &mut runtime,
-                format!("port {} was busy; using {selected_port}", plugin.port),
-            );
-        }
-    }
-
-    let server = spawn_obs_server(listener, state.inner.clone());
+fn start_server(
+    state: &ObsTelemetryState,
+    plugin: &ObsTelemetryPluginSettings,
+) -> Result<(u16, String), CommandError> {
     let mut runtime = state
         .inner
         .lock()
         .map_err(|_| CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned"))?;
+    if runtime.server.is_some() {
+        return Ok((runtime.port, runtime.token.clone()));
+    }
+
+    let requested_port = if plugin.port == runtime.configured_port && !runtime.token.is_empty() {
+        runtime.port
+    } else {
+        plugin.port
+    };
+    let (listener, selected_port) = bind_obs_listener(requested_port)?;
+    let token = if runtime.token.is_empty() {
+        Uuid::new_v4().simple().to_string()
+    } else {
+        runtime.token.clone()
+    };
+
+    runtime.port = selected_port;
+    runtime.configured_port = plugin.port;
+    runtime.token = token.clone();
+    runtime.state = "serving".to_string();
+    runtime.last_error = None;
+    push_log(
+        &mut runtime,
+        format!(
+            "OBS overlay server listening on {}",
+            overlay_url(selected_port)
+        ),
+    );
+    if selected_port != plugin.port {
+        push_log(
+            &mut runtime,
+            format!("port {} was busy; using {selected_port}", plugin.port),
+        );
+    }
+    let server = spawn_obs_server(listener, state.inner.clone());
     runtime.server = Some(server);
 
     Ok((selected_port, token))
@@ -834,7 +912,7 @@ fn telemetry_jar_matches_version(file_name: &str, minecraft_version: &str) -> bo
     let lower = file_name.to_ascii_lowercase();
     let version = minecraft_version.to_ascii_lowercase();
     lower.ends_with(".jar")
-        && lower.contains("obs-telemetry")
+        && lower.starts_with("obs-telemetry-")
         && (lower.contains(&format!("+mc{version}.jar"))
             || lower.contains(&format!("-mc{version}.jar"))
             || lower.contains(&format!("_mc{version}.jar")))
@@ -868,10 +946,16 @@ fn find_telemetry_jar(minecraft_version: &str) -> Result<PathBuf, CommandError> 
         })
         .collect::<Vec<_>>();
 
-    candidates.sort();
-    candidates.into_iter().next().ok_or_else(|| {
+    candidates.sort_by_cached_key(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("obs-telemetry-"))
+            .and_then(|name| name.split('+').next())
+            .and_then(|version| semver::Version::parse(version).ok())
+    });
+    candidates.into_iter().next_back().ok_or_else(|| {
         CommandError::new(ErrorCode::InvalidInput, format!(
-            "OBS Telemetry does not support Minecraft {minecraft_version}. Supported Fabric versions: 1.21, 1.21.1, 1.21.4."
+            "OBS Telemetry has no mod for Minecraft {minecraft_version} in the installed package. Update OBS Telemetry from Extensions (Fabric 1.21 through 26.3)."
         ))
     })
 }
@@ -884,6 +968,18 @@ async fn install_telemetry_mod(instance: &InstanceItem) -> Result<PathBuf, Comma
         CommandError::from(error).context(detail)
     })?;
 
+    let target_file_name = source_jar
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorCode::InvalidInput,
+                "OBS telemetry jar file name missing",
+            )
+        })?;
+    let mut transaction = crate::file_transaction::FileTransaction::new(&mods_dir)?;
+    let staged = transaction.staged(target_file_name);
+    async_fs::copy(&source_jar, &staged).await?;
     let mut entries = async_fs::read_dir(&mods_dir).await.map_err(|error| {
         let detail = format!("read mods dir error: {error}");
         CommandError::from(error).context(detail)
@@ -897,30 +993,17 @@ async fn install_telemetry_mod(instance: &InstanceItem) -> Result<PathBuf, Comma
             continue;
         };
         let lower = file_name.to_ascii_lowercase();
-        if lower.ends_with(".jar") && lower.contains("obs-telemetry") {
-            async_fs::remove_file(&path).await.map_err(|error| {
-                let detail = format!("remove old OBS telemetry jar error: {error}");
-                CommandError::from(error).context(detail)
-            })?;
+        if lower.ends_with(".jar")
+            && lower.starts_with("obs-telemetry-")
+            && file_name != target_file_name
+        {
+            transaction.remove(file_name)?;
         }
     }
 
-    let target_file_name = source_jar
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            CommandError::new(
-                ErrorCode::InvalidInput,
-                "OBS telemetry jar file name missing",
-            )
-        })?;
     let target_path = mods_dir.join(target_file_name);
-    async_fs::copy(&source_jar, &target_path)
-        .await
-        .map_err(|error| {
-            let detail = format!("copy OBS telemetry jar error: {error}");
-            CommandError::from(error).context(detail)
-        })?;
+    transaction.replace(&staged, target_file_name)?;
+    transaction.commit()?;
 
     Ok(target_path)
 }
@@ -994,31 +1077,33 @@ pub async fn start_obs_telemetry(
 pub async fn stop_obs_telemetry(
     state: State<'_, ObsTelemetryState>,
 ) -> Result<ObsTelemetryStatus, CommandError> {
-    let result: Result<_, CommandError> = async {
-        let server = {
-            let mut runtime = state.inner.lock().map_err(|_| {
-                CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
-            })?;
-            runtime.server.take()
-        };
+    stop_server(&state)
+}
 
-        if let Some(mut server) = server {
-            let _ = server.shutdown.send(());
-            if let Some(handle) = server.handle.take() {
-                let _ = handle.join();
-            }
-        }
-
+fn stop_server(state: &ObsTelemetryState) -> Result<ObsTelemetryStatus, CommandError> {
+    let server = {
         let mut runtime = state.inner.lock().map_err(|_| {
             CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned")
         })?;
-        runtime.state = "stopped".to_string();
-        runtime.token.clear();
-        push_log(&mut runtime, "stop requested from launcher");
-        Ok(snapshot_status(&runtime))
+        runtime.server.take()
+    };
+
+    if let Some(mut server) = server {
+        let _ = server.shutdown.send(());
+        if let Some(handle) = server.handle.take() {
+            let _ = handle.join();
+        }
     }
-    .await;
-    result
+
+    let mut runtime = state
+        .inner
+        .lock()
+        .map_err(|_| CommandError::new(ErrorCode::Unknown, "OBS telemetry state lock poisoned"))?;
+    runtime.state = "stopped".to_string();
+    runtime.last_payload = None;
+    runtime.last_update_ms = None;
+    push_log(&mut runtime, "stop requested from launcher");
+    Ok(snapshot_status(&runtime))
 }
 
 #[tauri::command]
@@ -1048,292 +1133,119 @@ pub async fn open_obs_telemetry_overlay(
     result
 }
 
-const OBS_OVERLAY_HTML_V2: &str = include_str!("obs_overlay.html");
+const OBS_OVERLAY_HTML: &str = include_str!("obs_overlay.html");
 
-#[allow(dead_code)]
-const OBS_OVERLAY_HTML: &str = r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Screen OBS Telemetry</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --bg: rgba(8, 12, 18, 0.78);
-      --line: rgba(255, 255, 255, 0.16);
-      --ink: #f8fafc;
-      --muted: #9aa4b2;
-      --accent: #35d0ba;
-      --warn: #ffb454;
-      --bad: #ff6262;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(address: std::net::SocketAddr, raw: &[u8]) -> Vec<u8> {
+        let mut stream = TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        stream.write_all(raw).unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        response
     }
 
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-width: 360px;
-      background: transparent;
-      color: var(--ink);
-      overflow: hidden;
+    #[test]
+    fn accepts_authenticated_data_and_reports_staleness() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let runtime = Arc::new(Mutex::new(ObsTelemetryRuntime {
+            token: "test-token".into(),
+            ..Default::default()
+        }));
+        let server = spawn_obs_server(listener, runtime.clone());
+        runtime.lock().unwrap().server = Some(server);
+        let body = br#"{"playerName":"Test","health":18,"maxHealth":20,"minecraftVersion":"26.3"}"#;
+        let post = |token: &str| {
+            let mut raw = format!("POST /api/telemetry HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nX-Screen-OBS-Token: {token}\r\n\r\n", body.len()).into_bytes();
+            raw.extend_from_slice(body);
+            request(address, &raw)
+        };
+        assert!(post("wrong-token").starts_with(b"HTTP/1.1 401"));
+        assert!(runtime.lock().unwrap().last_payload.is_none());
+        assert!(post("test-token").starts_with(b"HTTP/1.1 204"));
+        let response = request(
+            address,
+            b"GET /overlay.json HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        let offset = find_header_end(&response).unwrap() + 4;
+        let json: serde_json::Value = serde_json::from_slice(&response[offset..]).unwrap();
+        assert_eq!(json["lastPayload"]["playerName"], "Test");
+        assert!(json.get("logs").is_none());
+        let mut state = runtime.lock().unwrap();
+        assert_eq!(snapshot_status(&state).state, "receiving");
+        state.last_update_ms = Some(now_millis() - STALE_AFTER_MS - 1);
+        assert_eq!(snapshot_status(&state).state, "waiting");
+        let mut server = state.server.take().unwrap();
+        drop(state);
+        server.shutdown.send(()).unwrap();
+        server.handle.take().unwrap().join().unwrap();
     }
 
-    .hud {
-      width: min(760px, 100vw);
-      padding: 14px;
-      display: grid;
-      gap: 10px;
+    #[test]
+    fn rejects_invalid_or_overflowing_content_lengths_before_reading_body() {
+        for length in ["invalid", "18446744073709551615", "524289"] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                assert!(read_http_request(&mut stream).is_err());
+            });
+            let mut stream = TcpStream::connect(address).unwrap();
+            stream
+                .write_all(
+                    format!("POST /api/telemetry HTTP/1.1\r\nContent-Length: {length}\r\n\r\n")
+                        .as_bytes(),
+                )
+                .unwrap();
+            server.join().unwrap();
+        }
     }
 
-    .top,
-    .stats,
-    .equipment {
-      border: 1px solid var(--line);
-      background: var(--bg);
-      backdrop-filter: blur(12px);
+    #[test]
+    fn jar_selection_requires_the_exact_game_version() {
+        assert!(telemetry_jar_matches_version(
+            "obs-telemetry-1.1.0+mc26.3.jar",
+            "26.3"
+        ));
+        assert!(telemetry_jar_matches_version(
+            "obs-telemetry-1.1.0+mc1.21.10.jar",
+            "1.21.10"
+        ));
+        for name in [
+            "obs-telemetry-1.1.0+mc26.3.jar",
+            "obs-telemetry-1.1.0+mc1.21.10.jar",
+            "other-obs-telemetry-1.0+mc1.21.1.jar",
+        ] {
+            assert!(!telemetry_jar_matches_version(name, "1.21.1"));
+        }
     }
 
-    .top {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: center;
-      padding: 12px 14px;
+    #[test]
+    fn restarting_preserves_the_running_games_port_and_token() {
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        let state = ObsTelemetryState::default();
+        let settings = ObsTelemetryPluginSettings {
+            enabled: true,
+            port,
+        };
+        let (first_port, first_token) = start_server(&state, &settings).unwrap();
+        assert_eq!(
+            start_server(&state, &settings).unwrap(),
+            (first_port, first_token.clone())
+        );
+        assert!(!stop_server(&state).unwrap().running);
+        let (second_port, second_token) = start_server(&state, &settings).unwrap();
+        assert_eq!(first_port, second_port);
+        assert_eq!(first_token, second_token);
+        stop_server(&state).unwrap();
     }
-
-    .player {
-      min-width: 0;
-      display: grid;
-      gap: 4px;
-    }
-
-    .player strong {
-      overflow: hidden;
-      font-size: 18px;
-      line-height: 1;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .player span,
-    .label {
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    .status {
-      color: var(--accent);
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    .status.offline { color: var(--bad); }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .tile {
-      min-width: 0;
-      padding: 12px;
-      border-right: 1px solid var(--line);
-    }
-
-    .tile:last-child { border-right: 0; }
-
-    .value {
-      margin-top: 6px;
-      overflow: hidden;
-      font-size: 20px;
-      font-weight: 900;
-      line-height: 1;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .bar {
-      height: 6px;
-      margin-top: 8px;
-      background: rgba(255,255,255,0.12);
-      overflow: hidden;
-    }
-
-    .bar span {
-      display: block;
-      width: 0%;
-      height: 100%;
-      background: var(--accent);
-      transition: width 0.18s ease;
-    }
-
-    .bar.health span { background: #ff6262; }
-    .bar.food span { background: #ffb454; }
-
-    .equipment {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0;
-    }
-
-    .slot {
-      min-width: 0;
-      padding: 12px;
-      border-right: 1px solid var(--line);
-    }
-
-    .slot:last-child { border-right: 0; }
-
-    .slot strong {
-      display: block;
-      margin-top: 6px;
-      overflow: hidden;
-      font-size: 13px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .slot small {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
-    }
-
-    @media (max-width: 520px) {
-      .stats,
-      .equipment {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .tile,
-      .slot {
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-      }
-    }
-  </style>
-</head>
-<body>
-  <main class="hud">
-    <section class="top">
-      <div class="player">
-        <span id="dimension">WAITING FOR MINECRAFT</span>
-        <strong id="player">NO PLAYER</strong>
-      </div>
-      <div id="status" class="status offline">OFFLINE</div>
-    </section>
-
-    <section class="stats">
-      <div class="tile">
-        <div class="label">Health</div>
-        <div id="health" class="value">-- / --</div>
-        <div class="bar health"><span id="healthBar"></span></div>
-      </div>
-      <div class="tile">
-        <div class="label">Armor</div>
-        <div id="armor" class="value">--</div>
-        <div class="bar"><span id="armorBar"></span></div>
-      </div>
-      <div class="tile">
-        <div class="label">Food</div>
-        <div id="food" class="value">--</div>
-        <div class="bar food"><span id="foodBar"></span></div>
-      </div>
-      <div class="tile">
-        <div class="label">Coords</div>
-        <div id="coords" class="value">-- -- --</div>
-      </div>
-    </section>
-
-    <section class="equipment">
-      <div class="slot">
-        <div class="label">Main Hand</div>
-        <strong id="mainHand">Empty</strong>
-        <small id="mainDurability">--</small>
-      </div>
-      <div class="slot">
-        <div class="label">Offhand</div>
-        <strong id="offhand">Empty</strong>
-        <small id="offhandDurability">--</small>
-      </div>
-      <div class="slot">
-        <div class="label">Armor Items</div>
-        <strong id="armorItems">Empty</strong>
-        <small id="armorDurability">--</small>
-      </div>
-    </section>
-  </main>
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const fmt = (value, digits = 0) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "--";
-    const pct = (value, max) => Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
-
-    function itemName(item) {
-      if (!item || !item.displayName) return "Empty";
-      return item.count > 1 ? `${item.displayName} x${item.count}` : item.displayName;
-    }
-
-    function durability(item) {
-      if (!item || !item.maxDamage) return "--";
-      return `${item.durability}/${item.maxDamage} (${fmt(item.durabilityPercent, 0)}%)`;
-    }
-
-    function setOffline() {
-      $("status").textContent = "OFFLINE";
-      $("status").classList.add("offline");
-    }
-
-    function update(status) {
-      const payload = status.lastPayload;
-      const stale = status.lastUpdateAgeMs == null || status.lastUpdateAgeMs > 3000;
-      if (!payload || stale) {
-        setOffline();
-        return;
-      }
-
-      $("status").textContent = "LIVE";
-      $("status").classList.remove("offline");
-      $("player").textContent = payload.playerName || "PLAYER";
-      $("dimension").textContent = payload.dimension || "minecraft:overworld";
-      $("health").textContent = `${fmt(payload.health, 1)} / ${fmt(payload.maxHealth, 1)}`;
-      $("armor").textContent = `${payload.armor ?? 0}`;
-      $("food").textContent = `${payload.food ?? 0}`;
-      $("coords").textContent = `${payload.blockPosition?.x ?? "--"} ${payload.blockPosition?.y ?? "--"} ${payload.blockPosition?.z ?? "--"}`;
-      $("healthBar").style.width = `${pct(payload.health, payload.maxHealth)}%`;
-      $("armorBar").style.width = `${pct(payload.armor ?? 0, 20)}%`;
-      $("foodBar").style.width = `${pct(payload.food ?? 0, 20)}%`;
-      $("mainHand").textContent = itemName(payload.heldItem);
-      $("mainDurability").textContent = durability(payload.heldItem);
-      $("offhand").textContent = itemName(payload.offhandItem);
-      $("offhandDurability").textContent = durability(payload.offhandItem);
-
-      const armorItems = payload.armorItems || [];
-      $("armorItems").textContent = armorItems.length ? armorItems.map(itemName).join(" | ") : "Empty";
-      $("armorDurability").textContent = armorItems.length ? armorItems.map(durability).join(" | ") : "--";
-    }
-
-    async function poll() {
-      try {
-        const response = await fetch("/state.json", { cache: "no-store" });
-        update(await response.json());
-      } catch {
-        setOffline();
-      }
-    }
-
-    poll();
-    setInterval(poll, 250);
-  </script>
-</body>
-</html>
-"#;
+}
