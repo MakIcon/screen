@@ -7,8 +7,8 @@ mod java_install;
 mod launch;
 mod loaders;
 mod manifest;
-pub mod offline_lan;
 pub mod mirrors;
+pub mod offline_lan;
 mod version;
 
 pub use environment::normalize_environment_variables;
