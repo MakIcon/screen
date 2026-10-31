@@ -50,8 +50,6 @@ interface SettingsTabProps {
   saveOptimizedJavaArgs: (enabled: boolean) => Promise<void>;
   autoDownloadJava: boolean;
   saveAutoDownloadJava: (enabled: boolean) => Promise<void>;
-  offlineLanEnabled: boolean;
-  saveOfflineLanEnabled: (enabled: boolean) => Promise<void>;
   mascotEnabled: boolean;
   saveMascotEnabled: (enabled: boolean) => Promise<void>;
   mascotSettings: MascotSettings;
@@ -97,8 +95,6 @@ export function SettingsTab({
   saveOptimizedJavaArgs,
   autoDownloadJava,
   saveAutoDownloadJava,
-  offlineLanEnabled,
-  saveOfflineLanEnabled,
   mascotEnabled,
   saveMascotEnabled,
   mascotSettings,
@@ -343,14 +339,6 @@ export function SettingsTab({
               <span className="panel-label">{tr("settings.preferences")}</span>
 
               <div className="settings-toggle-block settings-toggle-block--bare">
-                <ElementToggle
-                  title={tr("settings.offlineLan")}
-                  note={tr("settings.offlineLanNote")}
-                  enabled={offlineLanEnabled}
-                  onToggle={() => void saveOfflineLanEnabled(!offlineLanEnabled)}
-                  guideTarget="settings-offline-lan"
-                />
-
                 <ElementToggle
                   title={tr("settings.optimizedJavaArguments")}
                   note={tr("settings.launchWithG1gcSettings")}

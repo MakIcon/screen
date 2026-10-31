@@ -467,6 +467,45 @@ pub fn read_latest_launch_log(instance: &InstanceItem) -> LaunchLogSnapshot {
     }
 }
 
+fn launch_auth_tokens(
+    nickname: &str,
+    ms_account: Option<&MicrosoftAccount>,
+) -> HashMap<&'static str, String> {
+    let (username, uuid, access_token, user_type) = if let Some(account) = ms_account {
+        (
+            account.username.clone(),
+            account.uuid.clone(),
+            account.access_token.clone(),
+            "msa",
+        )
+    } else {
+        let name = if nickname.trim().is_empty() {
+            "PLAYER"
+        } else {
+            nickname.trim()
+        };
+        (
+            name.to_string(),
+            offline_uuid(name),
+            "0".to_string(),
+            "legacy",
+        )
+    };
+    let session = if ms_account.is_some() {
+        format!("token:{access_token}:{}", uuid.replace('-', ""))
+    } else {
+        "0".to_string()
+    };
+    HashMap::from([
+        ("auth_player_name", username),
+        ("auth_uuid", uuid),
+        ("auth_access_token", access_token.clone()),
+        ("access_token", access_token),
+        ("auth_session", session),
+        ("user_type", user_type.to_string()),
+    ])
+}
+
 pub async fn build_launch_command(
     app: &AppHandle,
     instance: &InstanceItem,
@@ -508,40 +547,18 @@ pub async fn build_launch_command(
         .map(|x| x.id.clone())
         .or_else(|| resolved.assets.clone())
         .unwrap_or_else(|| "legacy".to_string());
-    let (username, auth_uuid, auth_access_token, user_type) = if let Some(acc) = ms_account {
-        (
-            acc.username.clone(),
-            acc.uuid.clone(),
-            acc.access_token.clone(),
-            "msa".to_string(),
-        )
-    } else {
-        let un = if nickname.trim().is_empty() {
-            "PLAYER".to_string()
-        } else {
-            nickname.trim().to_string()
-        };
-        let uu = offline_uuid(&un);
-        (un, uu, "0".to_string(), "legacy".to_string())
-    };
-
-    let mut tokens: HashMap<&str, String> = HashMap::new();
-    tokens.insert("auth_player_name", username.clone());
+    let mut tokens = launch_auth_tokens(nickname, ms_account);
     tokens.insert("version_name", resolved.id.clone());
     tokens.insert("game_directory", game_dir.to_string_lossy().to_string());
     tokens.insert("assets_root", assets.to_string_lossy().to_string());
     tokens.insert("assets_index_name", asset_index_name.clone());
-    tokens.insert("auth_uuid", auth_uuid);
-    tokens.insert("auth_access_token", auth_access_token.clone());
-    tokens.insert("auth_session", auth_access_token);
-    tokens.insert("user_type", user_type);
     tokens.insert("version_type", "release".to_string());
     tokens.insert(
         "natives_directory",
         natives_dir.to_string_lossy().to_string(),
     );
     tokens.insert("launcher_name", "ScreenLauncher".to_string());
-    tokens.insert("launcher_version", "0.1.0".to_string());
+    tokens.insert("launcher_version", env!("CARGO_PKG_VERSION").to_string());
     tokens.insert("classpath", classpath);
     tokens.insert("classpath_separator", classpath_separator.to_string());
     tokens.insert(
@@ -575,7 +592,6 @@ pub async fn build_launch_command(
     tokens.insert("auth_xuid", "".to_string());
     tokens.insert("clientid", "".to_string());
     tokens.insert("client_id", "".to_string());
-    tokens.insert("access_token", "0".to_string());
 
     let java_bin = instance
         .java_path
@@ -591,17 +607,6 @@ pub async fn build_launch_command(
         optimized_java_args_enabled,
     );
     args.extend(extra_jvm_args.iter().cloned());
-
-    // For offline accounts block the real auth endpoints; MS accounts use real ones
-    if ms_account.is_none() {
-        args.extend(vec![
-            "-Dminecraft.api.env=custom".to_string(),
-            "-Dminecraft.api.auth.host=https://nope.invalid".to_string(),
-            "-Dminecraft.api.account.host=https://nope.invalid".to_string(),
-            "-Dminecraft.api.session.host=https://nope.invalid".to_string(),
-            "-Dminecraft.api.services.host=https://nope.invalid".to_string(),
-        ]);
-    }
 
     if is_modern_mc(&instance.version) {
         args.extend(vec![
@@ -683,13 +688,23 @@ fn redact_sensitive_launch_args(args: &[String]) -> Vec<String> {
     let mut redact_next = false;
 
     for arg in args {
+        // Pre-1.6 versions pass the session positionally rather than as --session.
+        if arg.starts_with("token:") {
+            redacted.push("<redacted>".to_string());
+            redact_next = false;
+            continue;
+        }
         if redact_next {
             redacted.push("<redacted>".to_string());
             redact_next = false;
             continue;
         }
 
-        if arg == "--accessToken" || arg == "--access_token" || arg == "--clientToken" {
+        if arg.eq_ignore_ascii_case("--accessToken")
+            || arg.eq_ignore_ascii_case("--access_token")
+            || arg.eq_ignore_ascii_case("--clientToken")
+            || arg.eq_ignore_ascii_case("--session")
+        {
             redacted.push(arg.clone());
             redact_next = true;
             continue;
@@ -699,6 +714,7 @@ fn redact_sensitive_launch_args(args: &[String]) -> Vec<String> {
             if key.eq_ignore_ascii_case("--accesstoken")
                 || key.eq_ignore_ascii_case("--access_token")
                 || key.eq_ignore_ascii_case("--clienttoken")
+                || key.eq_ignore_ascii_case("--session")
             {
                 redacted.push(format!("{key}=<redacted>"));
                 continue;
@@ -954,6 +970,54 @@ mod tests {
         vanilla.loader_version = None;
         assert!(should_append_client_jar(&vanilla).unwrap());
         assert!(should_append_client_jar(&instance_with_loader("Fabric")).unwrap());
+    }
+
+    #[test]
+    fn offline_launch_identity_is_consistent_across_argument_formats() {
+        let tokens = launch_auth_tokens("  Friend  ", None);
+        assert_eq!(tokens["auth_player_name"], "Friend");
+        assert_eq!(tokens["auth_uuid"], offline_uuid("Friend"));
+        assert_eq!(tokens["auth_access_token"], "0");
+        assert_eq!(tokens["access_token"], "0");
+        assert_eq!(tokens["auth_session"], "0");
+        assert_eq!(tokens["user_type"], "legacy");
+        assert_eq!(launch_auth_tokens(" ", None)["auth_player_name"], "PLAYER");
+    }
+
+    #[test]
+    fn microsoft_launch_uses_the_real_token_for_modern_aliases_and_legacy_sessions() {
+        let account = MicrosoftAccount {
+            id: "account".into(),
+            username: "OnlineFriend".into(),
+            uuid: "12345678-1234-1234-1234-123456789abc".into(),
+            access_token: "valid-token".into(),
+            refresh_token: String::new(),
+            expires_at: u64::MAX,
+        };
+        let tokens = launch_auth_tokens("OfflineName", Some(&account));
+        assert_eq!(tokens["auth_player_name"], account.username);
+        assert_eq!(tokens["auth_access_token"], account.access_token);
+        assert_eq!(tokens["access_token"], account.access_token);
+        assert_eq!(
+            tokens["auth_session"],
+            "token:valid-token:12345678123412341234123456789abc"
+        );
+        assert_eq!(tokens["user_type"], "msa");
+        let args = vec![
+            tokens["auth_session"].clone(),
+            "--session".into(),
+            tokens["auth_session"].clone(),
+            format!("--session={}", tokens["auth_session"]),
+        ];
+        assert_eq!(
+            redact_sensitive_launch_args(&args),
+            vec![
+                "<redacted>",
+                "--session",
+                "<redacted>",
+                "--session=<redacted>"
+            ]
+        );
     }
 
     #[test]

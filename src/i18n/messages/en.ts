@@ -1624,9 +1624,6 @@ export const en: EnglishMessages = {
   "settings.editDesignInAppearance": "Edit design in Appearance Studio (Ctrl+Shift+A)",
   "settings.downloadSource": "DOWNLOAD SOURCE",
   "settings.autoDownloadJava": "AUTO-DOWNLOAD JAVA",
-  "settings.offlineLan": "Offline players in LAN",
-  "settings.offlineLanNote":
-    "For Vanilla 26.1, 26.1.1 and 26.1.2. The world host enables this before launching the game, then chooses Open to LAN. Friends can join with offline accounts and different nicknames. Use a trusted network: player names are not verified.",
   "settings.language": "LANGUAGE",
   "settings.launcherUpdates": "LAUNCHER UPDATES",
   "settings.version": "Version",

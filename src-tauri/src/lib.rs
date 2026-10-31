@@ -107,7 +107,6 @@ pub fn run() {
             commands::settings::set_default_ram_gb,
             commands::settings::set_optimized_java_args,
             commands::settings::set_auto_download_java,
-            commands::settings::set_offline_lan_enabled,
             commands::settings::set_mascot_enabled,
             commands::settings::set_mascot_settings,
             commands::settings::set_launcher_plugins,

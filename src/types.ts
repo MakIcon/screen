@@ -263,7 +263,6 @@ export type LauncherSettings = {
   defaultRamGb: number;
   optimizedJavaArgs: boolean;
   autoDownloadJava: boolean;
-  offlineLanEnabled: boolean;
   mascotEnabled: boolean;
   mascot: MascotSettings;
   network: NetworkSettings;

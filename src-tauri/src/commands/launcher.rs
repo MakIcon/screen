@@ -233,14 +233,7 @@ pub async fn launch_instance(
                 &instance,
             )
             .await?;
-            extra_jvm_args.extend(
-                crate::minecraft::offline_lan::launch_args(
-                    settings.offline_lan_enabled,
-                    &instance.version,
-                    &instance.loader,
-                )
-                .await?,
-            );
+            extra_jvm_args.extend(crate::minecraft::offline_lan::launch_args().await?);
             let (java_bin, args) = build_launch_command(
                 &app,
                 &instance,

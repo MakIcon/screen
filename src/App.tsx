@@ -1743,17 +1743,6 @@ export default function App() {
     }
   };
 
-  const saveOfflineLanEnabled = async (enabled: boolean) => {
-    try {
-      const updated = await invoke<LauncherSettings>("set_offline_lan_enabled", { enabled });
-      setLauncherSettings(updated);
-    } catch (error) {
-      logger.error(error);
-      setActionError(toErrorMessage(error));
-      pushToast("error", toErrorMessage(error), { title: tr("toast.couldntSaveSetting") });
-    }
-  };
-
   const saveMascotSettings = async (mascot: MascotSettings) => {
     try {
       const updated = await invoke<LauncherSettings>("set_mascot_settings", { mascot });
@@ -2426,8 +2415,6 @@ export default function App() {
             saveOptimizedJavaArgs={saveOptimizedJavaArgs}
             autoDownloadJava={launcherSettings?.autoDownloadJava ?? true}
             saveAutoDownloadJava={saveAutoDownloadJava}
-            offlineLanEnabled={launcherSettings?.offlineLanEnabled ?? false}
-            saveOfflineLanEnabled={saveOfflineLanEnabled}
             mascotEnabled={launcherSettings?.mascotEnabled ?? false}
             saveMascotEnabled={saveMascotEnabled}
             mascotSettings={launcherSettings?.mascot ?? DEFAULT_MASCOT_SETTINGS}

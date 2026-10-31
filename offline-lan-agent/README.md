@@ -1,39 +1,42 @@
 # Offline LAN hosting
 
-ScreenLauncher includes a small Java agent for **Vanilla 26.1, 26.1.1 and 26.1.2**.
-The world host enables **Settings → Offline players in LAN** before starting
-Minecraft, then opens a single-player world to LAN. Guests can use offline accounts
-and must choose distinct nicknames. The host can use either an offline or Microsoft
-account. A running game must be restarted after changing the setting.
+ScreenLauncher loads this agent automatically for every Minecraft launch, with
+no version/loader allowlist and no settings toggle. It runs on Java 8 and newer.
+The host launches the game through ScreenLauncher and opens a world to LAN;
+guests use distinct nicknames. Offline and Microsoft host accounts are supported.
 
-The setting defaults to off. It only affects the integrated server in the host's
-game process after `isPublished()` becomes true. It overrides
-`IntegratedServer.usesAuthentication()` to return false while the world is shared;
-private worlds delegate to the original superclass implementation. Vanilla's
-integrated server already returns false for `enforceSecureProfile()`. Dedicated
-servers, remote server connections, Microsoft sign-in, and the original Minecraft
-JAR are unchanged. The agent does not open ports or change firewall settings.
+The transformer recognizes integrated servers by their vanilla startup log marker
+and superclass, and recognizes the login hello handler by its invariant protocol
+validation message. It preserves the original authentication getter and routes
+its result through a bootstrap-visible helper. Only recognized integrated server
+instances accept offline logins; dedicated servers retain their original decision.
+Obfuscated, named and remapped class names are detected rather than hardcoded.
+Legacy pre-Netty LAN versions already disable authentication themselves and need
+no login patch. Versions without integrated LAN hosting are left unchanged.
 
-Use a trusted LAN/VPN: offline player names are not authenticated. Enabling the
-setting on a guest cannot change the authentication policy of a friend's host.
-The friend must use this setting or configure equivalent offline hosting in their
-own launcher/mod. Other versions and mod loaders retain their original behavior.
+Use a trusted LAN/VPN: offline player names are not authenticated. The friend must
+run the updated launcher on the host, or configure equivalent offline hosting.
+A guest launcher cannot change remote server policy. Servers requiring Microsoft
+authentication still require a valid Microsoft account and session. The original
+Minecraft JAR, firewall and port forwarding are unchanged. Unknown or ambiguous
+modded login layouts retain the original behavior and are logged for diagnosis;
+there is no claim that every third-party networking replacement is compatible.
 
-The agent uses Java 25's standard Class-File API, without external libraries.
-Its JAR is embedded in the launcher; users do not need a compiler. At launch it is
-extracted to a content-addressed file under `%APPDATA%\ScreenLauncher\agents`.
+ASM core and tree are shaded into an isolated package to avoid mod-loader library
+conflicts. A separate JDK-only bootstrap JAR makes the helper visible even to game
+class loaders with no application parent. Both JARs are embedded and extracted
+together under a content-addressed directory in `%APPDATA%\ScreenLauncher\agents`.
+Dependency checksums and the BSD license are included in this directory's sources.
 
-Rebuild with JDK 25 or newer on PATH (or set `JAVA_HOME`), and test:
+Rebuild with JDK 17 or newer on PATH (or set `JAVA_HOME`), and test:
 
 ```powershell
 node scripts/build_offline_lan_agent.mjs --test
 ```
 
-Pass real Minecraft client JAR paths after `--test` to verify their transformations
-and preservation of every original method's bytecode. The fixture runs with full
-JVM verification both with and without `-javaagent` and checks private worlds,
-published worlds, closing LAN, and unchanged superclass behavior. With installed
-Minecraft JARs, it also loads each real IntegratedServer class and executes its
-authentication methods without creating a world or opening a window. Set
-`SCREEN_LAN_TEST_JAVA` to test with a specific Java runtime executable. This does
-not replace a two-computer LAN connection check.
+Pass real Minecraft client JAR paths after `--test`. The test parses each real
+host/login class, verifies the transformed method and the original authentication
+getter, then executes equivalent obfuscated calls in an isolated loader with full
+JVM verification. It checks unchanged dedicated-server decisions and recognizes
+native offline LAN in older releases. Set `SCREEN_LAN_TEST_JAVA` to test a specific
+Java runtime executable. These are bytecode/VM checks, not a two-computer LAN test.

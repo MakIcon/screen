@@ -40,12 +40,6 @@ const SETTINGS_COMMANDS: { target: string; label: PlainMessageKey; keywords: str
     keywords: "java jvm g1gc arguments performance аргументы оптимизация производительность",
   },
   {
-    target: "settings-offline-lan",
-    label: "settings.offlineLan",
-    keywords:
-      "lan offline invalid session friends local network офлайн друзья локальная сеть сессия",
-  },
-  {
     target: "settings-wheel",
     label: "settings.wheelTabSwitching",
     keywords: "wheel tabs navigation колесо мышь вкладки",

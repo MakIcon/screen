@@ -1,5 +1,9 @@
 # Third-party notices
 
+## ASM
+
+The offline LAN agent bundles ASM 9.9.1 (core and tree), relocated to its own package to avoid conflicts with Minecraft mod loaders. ASM Commons is used only by the build helper. Source and checksums are listed in `offline-lan-agent/lib/dependencies.json`. The BSD 3-Clause license is included in [offline-lan-agent/LICENSE-ASM.txt](offline-lan-agent/LICENSE-ASM.txt) and in the bundled agent JAR.
+
 ## Canvas UI
 
 `src/components/canvasui/` contains the React WebGL components installed from the [Canvas UI shadcn registry](https://canvasui.dev/docs/mcp), copyright (c) 2026 David Haz. The full MIT + Commons Clause notice is included in [src/components/canvasui/LICENSE.md](src/components/canvasui/LICENSE.md).
