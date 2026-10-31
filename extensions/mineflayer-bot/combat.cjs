@@ -383,7 +383,13 @@ function configureCombatPlugins(
       return Promise.resolve();
     if (reason === "normal" && blocking(bot.swordpvp.target)) return Promise.resolve();
     if (!aimedAt(bot.swordpvp.target)) return Promise.resolve();
-    if (settings.adaptiveCombat && bot.swordpvp.ticksToNextAttack > 0) return Promise.resolve();
+    const disablingShield =
+      reason === "disableshield" &&
+      bot.launcherBreakingShield &&
+      bot.heldItem?.name.endsWith("_axe") &&
+      blocking(bot.swordpvp.target);
+    if (settings.adaptiveCombat && bot.swordpvp.ticksToNextAttack > 0 && !disablingShield)
+      return Promise.resolve();
     if (Math.random() * 100 >= settings.meleeSkill) {
       bot.swordpvp.ticksToNextAttack = 1;
       return Promise.resolve();

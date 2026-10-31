@@ -9,7 +9,9 @@ import path from "node:path";
 // launcher navigator and versioned packet serialization. The opponent is a
 // scripted entity. A small vanilla server model scores every serialized attack
 // (attack strength, critical/sprint state, shield delay, invulnerability and
-// knockback). There is no network latency; the bot reports a 50 ms ping.
+// knockback). Optional opponents return attacks with normal knockback; their
+// damage is recorded separately while bot health stays fixed to isolate spacing.
+// There is no network latency; the bot reports a 50 ms ping.
 // SCREEN_COMBAT_RUNTIME points at another source snapshot for comparisons.
 const require = createRequire(import.meta.url);
 const runtime = process.env.SCREEN_COMBAT_RUNTIME
@@ -35,6 +37,15 @@ const SWORD_DAMAGE = 7; // diamond sword, no armour
 const PING = 50; // reported round trip; shields block after 5 ticks (200 ms + sync)
 const profiles = {
   default: {},
+  spacing: {
+    style: "melee",
+    criticals: "off",
+    strafe: "off",
+    shield: false,
+    sprintTap: "wtap",
+    bowEnabled: false,
+    maceDefense: false,
+  },
   aggressive: {
     adaptiveCombat: true,
     combatHealing: true,
@@ -65,6 +76,14 @@ function seeded(seed) {
 }
 const yawTo = (from, to) => Math.atan2(-(to.x - from.x), -(to.z - from.z));
 const headingVector = (yaw, speed) => new Vec3(-Math.sin(yaw) * speed, 0, -Math.cos(yaw) * speed);
+const closeIn = ({ enemy, bot }) => {
+  const delta = bot.entity.position.minus(enemy.position);
+  const distance = Math.hypot(delta.x, delta.z);
+  enemy.yaw = yawTo(enemy.position, bot.entity.position);
+  return distance > 0.4
+    ? new Vec3(delta.x / distance, 0, delta.z / distance).scaled(SPRINT)
+    : new Vec3(0, 0, 0);
+};
 
 // Opponent scripts. `move` returns the intended horizontal displacement for
 // this tick; knockback and gravity are applied by the duel model.
@@ -74,6 +93,21 @@ const scenarios = {
     ticks: 200,
     start: new Vec3(3.1, 64, 0.5),
     move: () => new Vec3(0, 0, 0),
+  },
+  trading: {
+    title: "Opponent sprints in and returns charged hits",
+    ticks: 240,
+    start: new Vec3(3.6, 64, 0.5),
+    enemyAttack: true,
+    move: closeIn,
+  },
+  lowKnockback: {
+    title: "Attacking opponent with controlled 30% knockback",
+    ticks: 240,
+    start: new Vec3(3.6, 64, 0.5),
+    enemyAttack: true,
+    knockbackScale: 0.3,
+    move: closeIn,
   },
   wall: {
     title: "Opponent pinned against a wall (no knockback travel)",
@@ -273,8 +307,11 @@ export async function duel(version, profileName, scenarioName) {
     shieldSince: null,
     knockback: new Vec3(0, 0, 0),
     vy: 0,
+    ownShieldSince: null,
+    enemyAttackAt: 6,
   };
   const hits = [];
+  const incoming = [];
   const serializer = protocol.createSerializer({ state: "play", isServer: false, version });
   bot._client.state = "play";
   bot._client.write = (name, params) => {
@@ -283,6 +320,9 @@ export async function duel(version, profileName, scenarioName) {
       if ([3, "start_sprinting"].includes(params.actionId)) server.sprinting = true;
       if ([4, "stop_sprinting"].includes(params.actionId)) server.sprinting = false;
     }
+    if (name === "use_item" && params.hand === 1 && bot.inventory.slots[45]?.name === "shield")
+      server.ownShieldSince = tick;
+    if (name === "block_dig" && params.status === 5) server.ownShieldSince = null;
     if (name === "attack" || (name === "use_entity" && params.mouse === 1)) score();
   };
   function score() {
@@ -325,6 +365,7 @@ export async function duel(version, profileName, scenarioName) {
       if (!invulnerable) {
         const yaw = bot.entity.yaw;
         const push = (strength) => {
+          strength *= scenario.knockbackScale ?? 1;
           const length = Math.hypot(Math.sin(yaw), Math.cos(yaw));
           server.knockback = server.knockback
             .scaled(0.5)
@@ -343,6 +384,34 @@ export async function duel(version, profileName, scenarioName) {
       }
     }
     hits.push(hit);
+  }
+  function scoreIncoming() {
+    if (!scenario.enemyAttack || tick < server.enemyAttackAt) return;
+    const eyes = enemy.position.offset(0, 1.62, 0);
+    const own = bot.entity.position;
+    const reach = Math.hypot(
+      Math.max(own.x - 0.3 - eyes.x, 0, eyes.x - own.x - 0.3),
+      Math.max(own.y - eyes.y, 0, eyes.y - own.y - 1.8),
+      Math.max(own.z - 0.3 - eyes.z, 0, eyes.z - own.z - 0.3),
+    );
+    if (reach > 3.0001) return;
+    server.enemyAttackAt = tick + 13;
+    bot.emit("entitySwingArm", enemy);
+    const toward = enemy.position.minus(own);
+    const view = headingVector(bot.entity.yaw, 1);
+    const blocked =
+      server.ownShieldSince !== null &&
+      tick - server.ownShieldSince >= 5 &&
+      bot.usingHeldItem &&
+      toward.x * view.x + toward.z * view.z > 0;
+    incoming.push({ tick, blocked, damage: blocked ? 0 : SWORD_DAMAGE });
+    if (blocked) return;
+    const direction = headingVector(enemy.yaw, 1);
+    bot.entity.velocity.x = bot.entity.velocity.x / 2 + direction.x * 0.7;
+    bot.entity.velocity.z = bot.entity.velocity.z / 2 + direction.z * 0.7;
+    if (bot.entity.onGround) bot.entity.velocity.y = Math.min(0.4, bot.entity.velocity.y / 2 + 0.4);
+    bot.entity.onGround = false;
+    bot.emit("entityHurt", bot.entity);
   }
   function setUsing(item) {
     if (item === "shield") {
@@ -383,6 +452,7 @@ export async function duel(version, profileName, scenarioName) {
   const cpu = [];
   const distances = [];
   let routedTicks = 0;
+  let closeTicks = 0;
   try {
     controller.select(enemy);
     for (tick = 0; tick < scenario.ticks; tick++) {
@@ -434,6 +504,7 @@ export async function duel(version, profileName, scenarioName) {
       if (!enemy.position.equals(before)) bot.emit("entityMoved", enemy);
       // Player physics, then the physics tick listeners (Mineflayer order).
       bot.physics.simulatePlayer(new PlayerState(bot, bot.controlState), world).apply(bot);
+      scoreIncoming();
       const held = bot.heldItem?.name ?? null;
       if (held !== server.lastHeld) {
         if (server.lastHeld !== null) server.switchedAt = tick;
@@ -446,6 +517,7 @@ export async function duel(version, profileName, scenarioName) {
       await flush();
       const delta = enemy.position.minus(bot.entity.position);
       distances.push(Math.hypot(delta.x, delta.z));
+      if (Math.hypot(delta.x, delta.z) < 2.2) closeTicks++;
       if (bot.pathfinder.goal) routedTicks++;
       if (process.env.SCREEN_DUEL_TRACE === scenarioName) {
         const controls = ["forward", "back", "left", "right", "sprint", "jump"]
@@ -482,6 +554,10 @@ export async function duel(version, profileName, scenarioName) {
     critical: landed.filter((hit) => hit.critical).length,
     sprintHits: landed.filter((hit) => hit.sprintHit).length,
     damage: Number(landed.reduce((total, hit) => total + hit.damage, 0).toFixed(2)),
+    receivedDamage: incoming.reduce((total, hit) => total + hit.damage, 0),
+    enemyHits: incoming.filter((hit) => !hit.blocked).length,
+    enemyBlocked: incoming.filter((hit) => hit.blocked).length,
+    closeTicks,
     firstHitMs: landed.length ? (landed[0].tick + 1) * 50 : null,
     meanIntervalMs: intervals.length
       ? Number((intervals.reduce((a, b) => a + b, 0) / intervals.length).toFixed(1))
@@ -513,6 +589,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
           `${version} ${profile.padEnd(10)} ${scenario.padEnd(9)} landed ${String(result.landed).padStart(2)}` +
             ` dmg ${result.damage.toFixed(1).padStart(6)} first ${String(result.firstHitMs ?? "-").padStart(5)} ms` +
             ` crit ${result.critical} sprint ${result.sprintHits} blocked ${result.blocked}` +
+            ` received ${result.receivedDamage}` +
             ` dist ${result.meanDistance.toFixed(2)} cpu ${result.tickCpuMedianMs} ms${result.errors.length ? ` errors ${result.errors.length}` : ""}`,
         );
       }
@@ -546,6 +623,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       console.log(
         `${result.version} ${result.profile.padEnd(10)} ${result.scenario.padEnd(9)} ` +
           `${old.landed} → ${result.landed}; ${old.damage.toFixed(1)} → ${result.damage.toFixed(1)}; ` +
+          `received ${old.receivedDamage} → ${result.receivedDamage}; ` +
           `${old.firstHitMs ?? "-"} → ${result.firstHitMs ?? "-"} ms`,
       );
     }

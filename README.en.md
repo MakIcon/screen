@@ -78,6 +78,15 @@ Bot documentation: [combat](extensions/mineflayer-bot/COMBAT.md), [survival](ext
 ## Frequently asked questions
 
 <details>
+<summary><b>How do offline accounts join a Vanilla 26.1 LAN world?</b></summary>
+
+The world host enables **Settings → Offline players in LAN**, restarts Minecraft, then chooses **Open to LAN**. Supported versions are Vanilla **26.1, 26.1.1 and 26.1.2**. Guests use different nicknames; the host can use an offline or Microsoft account.
+
+This setting applies to the host's world. Enabling it only on the guest cannot fix `Invalid session` when the friend's host still requires Microsoft authentication. Use a trusted LAN or VPN: player names are not verified in this mode.
+
+</details>
+
+<details>
 <summary><b>Do I need to install Java manually?</b></summary>
 
 The launcher includes Java runtime management and selection. You can select or download a runtime suitable for your Minecraft version and test it in Settings.

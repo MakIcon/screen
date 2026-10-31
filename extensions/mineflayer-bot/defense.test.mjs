@@ -72,6 +72,7 @@ function fixture(version) {
   };
   installCombatProtocol(bot);
   bot.pathfinder = { stop: async () => {}, goto: () => new Promise(() => {}) };
+  const equips = [];
   bot.equip = async (entry, destination) => {
     const from = entry.slot,
       to = bot.getEquipmentDestSlot(destination);
@@ -80,6 +81,7 @@ function fixture(version) {
     if (old) old.slot = from;
     bot.inventory.slots[to] = entry;
     entry.slot = to;
+    equips.push({ held: entry.name, hand: destination, tick: bot.defenseTestTick });
   };
   const flagsIndex =
     bot.registry.entitiesByName.player?.metadataKeys?.indexOf("living_entity_flags") ?? -1;
@@ -99,10 +101,10 @@ function fixture(version) {
     metadata: [],
   };
   bot.entities[2] = enemy;
-  return { rig, world, bot, packets, item, enemy, flagsIndex };
+  return { rig, world, bot, packets, equips, item, enemy, flagsIndex };
 }
 
-test("mace combat finishes its airborne axe shield break before resuming wind jumps", async () => {
+test("mace combat disables a shield before resuming wind jumps", async () => {
   const f = fixture("26.1.2");
   const { bot, enemy, packets } = f;
   f.item(36, "mace");
@@ -142,8 +144,9 @@ test("mace combat finishes its airborne axe shield break before resuming wind ju
       time += 50;
     }
     const hits = packets.filter((packet) => packet.name === "attack");
-    assert.ok(hits.length > 0, "the axe jump survives mode selection until its falling hit");
-    assert.ok(hits.every((hit) => hit.held === "diamond_axe" && !hit.onGround && hit.vy < 0));
+    assert.ok(hits.length > 0, "mode selection retains the shield-disable sequence");
+    assert.ok(hits.every((hit) => hit.held === "diamond_axe"));
+    assert.equal(hits[0].onGround, true, "the fast disable does not need a wind jump or crit");
     enemy.metadata[f.flagsIndex] = 0;
     for (let tick = 0; tick < 20; tick++) {
       bot.physics
@@ -169,7 +172,7 @@ test("mace combat finishes its airborne axe shield break before resuming wind ju
 
 for (const version of ["1.20.4", "26.1.2"]) {
   test(
-    `default shield/axe combat stays focused across the yaw seam and lands its first falling hit on ${version}`,
+    `default shield/axe combat stays focused and follows a fast disable with a charged sword on ${version}`,
     { timeout: 5000 },
     async () => {
       const f = fixture(version),
@@ -237,8 +240,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
           "the first server-confirmed shield break completes the axe cycle",
         );
         assert.equal(hits[0], axeHits[0], "do not waste a sword hit against the shield");
-        assert.equal(axeHits[0].onGround, false);
-        assert.ok(axeHits[0].vy < 0);
+        assert.equal(axeHits[0].onGround, true, "disable without a critical jump");
         assert.equal(
           axeHits[0].aimHit,
           true,
@@ -246,15 +248,18 @@ for (const version of ["1.20.4", "26.1.2"]) {
         );
         assert.equal(axeHits[0].usingItem, false, "release our shield before striking");
         assert.ok(
-          axeHits[0].tick <= 25,
-          `lands in the first charged jump, tick=${axeHits[0].tick}`,
+          axeHits[0].tick <= 4,
+          `disable before a full axe charge, tick=${axeHits[0].tick}`,
         );
         assert.equal(
           frames.some((frame) => frame.axe && (frame.left || frame.right)),
           false,
         );
-        assert.ok(frames.some((frame) => frame.axe && frame.airborne));
-        assert.equal(routes, 0, "the jump apex never transfers the camera to pathfinding");
+        assert.equal(
+          frames.some((frame) => frame.axe && frame.airborne),
+          false,
+        );
+        assert.equal(routes, 0, "the close-range disable does not start pathfinding");
         for (let tick = 1; tick < frames.length; tick++) {
           if (tick > axeHits[0].tick) break;
           assert.ok(
@@ -265,6 +270,15 @@ for (const version of ["1.20.4", "26.1.2"]) {
         assert.ok(
           hits.some((p) => p.held === "diamond_sword"),
           "resume sword attacks after the shield drops",
+        );
+        const restored = f.equips.find(
+          (equip) => equip.held === "diamond_sword" && equip.tick > axeHits[0].tick,
+        );
+        const swordHit = hits.find((hit) => hit.held === "diamond_sword");
+        assert.equal(restored.tick, axeHits[0].tick + 1, "swap back on the next observed tick");
+        assert.ok(
+          swordHit.tick - restored.tick >= 13 && swordHit.tick - restored.tick <= 14,
+          "charge the sword without inheriting the axe cooldown",
         );
         assert.deepEqual(errors, []);
       } finally {
@@ -448,6 +462,11 @@ for (const version of ["1.20.4", "26.1.2"]) {
     f.item(45, "shield");
     enemy.equipment[1] = { name: "shield" };
     enemy.metadata[f.flagsIndex] = 3;
+    const equip = bot.equip;
+    bot.equip = async (entry, hand) => {
+      await equip(entry, hand);
+      if (entry.name === "diamond_axe") enemy.metadata[f.flagsIndex] = 0;
+    };
     let time = 0;
     const errors = [];
     const controller = createCombatController(
@@ -465,7 +484,6 @@ for (const version of ["1.20.4", "26.1.2"]) {
       for (let tick = 0; tick < 35; tick++) {
         time = tick * 50;
         bot.defenseTestTick = tick;
-        if (tick === 10) enemy.metadata[f.flagsIndex] = 0;
         bot.physics
           .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
           .apply(bot);
@@ -478,7 +496,8 @@ for (const version of ["1.20.4", "26.1.2"]) {
       );
       assert.ok(hits.length > 0);
       assert.ok(hits.every((hit) => hit.held === "diamond_sword"));
-      assert.ok(hits[0].tick >= 23, `charge the sword after its equip: tick=${hits[0].tick}`);
+      const restored = f.equips.find((entry) => entry.held === "diamond_sword" && entry.tick > 0);
+      assert.ok(hits[0].tick - restored.tick >= 13, "charge the sword after its equip");
       assert.equal(hits[0].usingItem, false);
       assert.equal(hits[0].aimHit, true);
       assert.deepEqual(errors, []);
@@ -531,8 +550,128 @@ for (const version of ["1.20.4", "26.1.2"]) {
     }
   });
 
+  for (const { ping, delay, cps } of [
+    { ping: 50, delay: 4, cps: 20 },
+    { ping: 600, delay: 10, cps: 1 },
+  ]) {
+    test(`shield confirmation waits ${delay} ticks at ping=${ping}, cps=${cps} on ${version}`, async () => {
+      const f = fixture(version),
+        { bot, enemy, packets } = f;
+      f.item(36, "diamond_sword");
+      f.item(37, "diamond_axe");
+      f.item(45, "shield");
+      bot.player = { ping };
+      enemy.equipment[1] = { name: "shield" };
+      enemy.metadata[f.flagsIndex] = 0;
+      let tick = 0;
+      const errors = [];
+      const controller = createCombatController(
+        bot,
+        { style: "melee", criticals: "off", smoothAim: false, strafe: "off", cps },
+        { now: () => tick * 50, onError: (error) => errors.push(error) },
+      );
+      try {
+        controller.select(enemy);
+        for (; tick < 65; tick++) {
+          bot.defenseTestTick = tick;
+          const first = packets.find(
+            (p) =>
+              p.held === "diamond_axe" &&
+              (p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1)),
+          );
+          if (first && tick >= first.tick + delay) enemy.metadata[f.flagsIndex] = 0;
+          else if (packets.some((p) => p.held === "diamond_sword" && p.aimHit))
+            enemy.metadata[f.flagsIndex] = 3;
+          bot.physics
+            .simulatePlayer(new PlayerState(bot, bot.controlState), { getBlock: bot.blockAt })
+            .apply(bot);
+          bot.emit("physicsTick");
+          await controller.idleTask;
+          await flush();
+        }
+        const hits = packets.filter(
+          (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+        );
+        const axeHits = hits.filter((hit) => hit.held === "diamond_axe");
+        assert.equal(axeHits.length, 1, "no duplicate disable during delayed confirmation");
+        assert.ok(
+          axeHits[0].tick - hits[0].tick >= Math.ceil(20 / cps),
+          "the quick disable also respects the CPS limit after a sword hit",
+        );
+        const restored = f.equips.find(
+          (entry) => entry.held === "diamond_sword" && entry.tick > axeHits[0].tick,
+        );
+        assert.equal(restored.tick, axeHits[0].tick + delay);
+        const swordHits = hits.filter(
+          (hit) => hit.held === "diamond_sword" && hit.tick > restored.tick,
+        );
+        assert.ok(swordHits.length > 0);
+        const interval = Math.max(13, Math.ceil(20 / cps));
+        assert.ok(swordHits[0].tick - restored.tick >= interval);
+        for (let index = 1; index < swordHits.length; index++)
+          assert.ok(swordHits[index].tick - swordHits[index - 1].tick >= interval);
+        assert.deepEqual(errors, []);
+      } finally {
+        controller.dispose();
+        f.rig.stopPassivePhysics();
+      }
+    });
+  }
+
+  for (const change of ["shield lowered", "out of reach", "occluded"]) {
+    test(`fast disable rechecks ${change} after turning on ${version}`, async () => {
+      const f = fixture(version),
+        { bot, enemy, packets, world } = f;
+      f.item(36, "diamond_sword");
+      f.item(37, "diamond_axe");
+      f.item(45, "shield");
+      enemy.equipment[1] = { name: "shield" };
+      enemy.metadata[f.flagsIndex] = 3;
+      const look = bot.look.bind(bot);
+      let changed = false;
+      bot.look = (...args) => {
+        if (!changed && bot.heldItem?.name === "diamond_axe") {
+          changed = true;
+          if (change === "shield lowered") enemy.metadata[f.flagsIndex] = 0;
+          else if (change === "out of reach") enemy.position.x = 8.5;
+          else {
+            world.setBlock(new Vec3(1, 64, 0), "stone");
+            world.setBlock(new Vec3(1, 65, 0), "stone");
+          }
+        }
+        return look(...args);
+      };
+      const errors = [];
+      const controller = createCombatController(
+        bot,
+        { style: "melee", criticals: "off", smoothAim: false, strafe: "off" },
+        { onError: (error) => errors.push(error) },
+      );
+      try {
+        controller.select(enemy);
+        for (let tick = 0; tick < 5; tick++) {
+          bot.emit("physicsTick");
+          await controller.idleTask;
+          await flush();
+        }
+        assert.equal(changed, true);
+        assert.equal(
+          packets.some(
+            (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
+          ),
+          false,
+          "a changed target cannot receive the queued uncharged axe hit",
+        );
+        assert.deepEqual(errors, []);
+      } finally {
+        controller.dispose();
+        f.rig.stopPassivePhysics();
+      }
+    });
+  }
+
   for (const criticals of ["hop", "shorthop", "off"]) {
-    test(`real axe attacks charge and criticals=${criticals} against a raised shield on ${version}`, async () => {
+    test(`fast shield disables fall back to charged attacks if unconfirmed, criticals=${criticals} on ${version}`, async () => {
       const f = fixture(version),
         { bot, enemy, packets } = f;
       const axeName = criticals === "shorthop" ? "netherite_axe" : "diamond_axe";
@@ -583,20 +722,22 @@ for (const version of ["1.20.4", "26.1.2"]) {
         const hits = packets.filter(
           (p) => p.name === "attack" || (p.name === "use_entity" && p.params.mouse === 1),
         );
-        assert.ok(hits.length >= 2, "repeats charged attacks until the server clears blocking");
+        assert.ok(hits.length >= 3, "unconfirmed disables eventually use charged attacks");
         assert.ok(
           hits.every((p) => p.held === axeName),
           `all shield attacks use the axe: ${JSON.stringify(hits)}`,
         );
-        for (let i = 1; i < hits.length; i++)
+        assert.ok(hits[0].tick <= 4, `first disable tick=${hits[0].tick}`);
+        assert.ok(hits[1].tick - hits[0].tick < 20, "one bounded quick retry before fallback");
+        assert.ok(
+          hits.slice(0, 2).every((hit) => hit.onGround),
+          "quick attempts do not jump",
+        );
+        for (let i = 2; i < hits.length; i++)
           assert.ok(hits[i].tick - hits[i - 1].tick >= 20, "respects the real axe attack cooldown");
-        for (const hit of hits) {
+        for (const hit of hits.slice(2)) {
           assert.equal(hit.sprint, false);
-          assert.equal(
-            hit.onGround,
-            false,
-            "shield breaking jumps even with general criticals off",
-          );
+          assert.equal(hit.onGround, false, "the charged server-rule fallback uses criticals");
           assert.ok(hit.vy < 0, "attack lands while falling");
         }
         enemy.metadata[f.flagsIndex] = 0;
@@ -705,11 +846,14 @@ for (const version of ["1.20.4", "26.1.2"]) {
         );
         const critical = variant.onlyAxe || variant.criticals !== "off";
         if (critical) {
+          const chargedHits = variant.shieldBreak ? hits.slice(1) : hits;
           assert.ok(
-            hits.every((hit) => !hit.onGround && hit.vy < 0 && !hit.sprint),
-            "every axe strike is a falling hit without sprint",
+            chargedHits.every((hit) => !hit.onGround && hit.vy < 0 && !hit.sprint),
+            "ordinary axe strikes are falling hits without sprint",
           );
-          assert.ok(hits[0].tick >= 20, "initial axe strike is charged");
+          if (variant.shieldBreak)
+            assert.ok(hits[0].tick <= 4 && hits[0].onGround, "fast initial shield disable");
+          else assert.ok(hits[0].tick >= 20, "initial axe strike is charged");
           for (let i = 1; i < hits.length; i++)
             assert.ok(hits[i].tick - hits[i - 1].tick >= 20, "each axe strike respects cooldown");
           if (variant.shieldBreak) {
@@ -746,7 +890,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
       }
     });
   }
-  for (const cancellation of ["stop", "target loss", "bow defense"]) {
+  for (const cancellation of ["stop", "target loss", "bow defense", "survival", "death"]) {
     test(`shield-break equip is cancelled by ${cancellation} on ${version}`, async () => {
       const f = fixture(version),
         { bot, enemy, packets } = f;
@@ -779,7 +923,11 @@ for (const version of ["1.20.4", "26.1.2"]) {
         assert.equal(typeof finish, "function", "axe equip is pending");
         if (cancellation === "stop") controller.stop();
         else if (cancellation === "target loss") bot.emit("entityGone", enemy);
-        else {
+        else if (cancellation === "survival") bot.launcherSurvival = { busy: true };
+        else if (cancellation === "death") {
+          bot.health = 0;
+          bot.emit("death");
+        } else {
           const archer = {
             ...enemy,
             id: 4,

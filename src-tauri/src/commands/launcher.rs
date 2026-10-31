@@ -227,19 +227,27 @@ pub async fn launch_instance(
                 settings.auto_download_java,
             )
             .await?;
-            let obs_jvm_args = prepare_obs_telemetry_for_launch(
+            let mut extra_jvm_args = prepare_obs_telemetry_for_launch(
                 &obs_telemetry_state,
                 &settings.plugins.obs_telemetry,
                 &instance,
             )
             .await?;
+            extra_jvm_args.extend(
+                crate::minecraft::offline_lan::launch_args(
+                    settings.offline_lan_enabled,
+                    &instance.version,
+                    &instance.loader,
+                )
+                .await?,
+            );
             let (java_bin, args) = build_launch_command(
                 &app,
                 &instance,
                 &nickname,
                 ms_account.as_ref(),
                 settings.optimized_java_args,
-                &obs_jvm_args,
+                &extra_jvm_args,
             )
             .await?;
             spawn_minecraft_and_persist(app, &instance, java_bin, args).await

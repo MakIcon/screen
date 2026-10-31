@@ -5,6 +5,7 @@ const { targetBlocking } = require("./melee-shield.cjs");
 // A sprint jump covers about this distance before landing (12 ticks in air).
 const JUMP_RUN = 4.3;
 const JUMP_TICKS = 12;
+const GROUND_DRAG = 0.546;
 
 // Ground beneath an airborne entity. Knockback lifts a player more than a block;
 // that height is not a terrain step and must not hand the chase to the navigator.
@@ -68,6 +69,7 @@ function createCombatFootwork(
     grounded = null,
     samples = [],
     lead = null,
+    recentShield = null,
     motion = new Vec3(0, 0, 0),
     hit = null;
   function reset() {
@@ -81,14 +83,22 @@ function createCombatFootwork(
     grounded = null;
     samples = [];
     lead = null;
+    recentShield = null;
     hit = null;
   }
   // Opponent velocity in blocks per tick from the last few observed positions.
   function observe(target) {
     const position = target.position.clone();
+    const previous = samples.at(-1);
     samples = samples.filter((sample) => now() - sample.at <= 250);
     const last = samples.at(-1);
-    if (last?.target !== target || (last && position.distanceTo(last.position) > 4)) samples = [];
+    if (previous && (previous.target !== target || position.distanceTo(previous.position) > 4)) {
+      samples = [];
+      hit = null;
+      tapTicks = 0;
+      recentShield = null;
+    }
+    if (targetBlocking(bot, target)) recentShield = { target, at: now() };
     samples.push({ target, position, at: now() });
     if (samples.length > 4) samples.shift();
     const first = samples[0];
@@ -99,6 +109,106 @@ function createCombatFootwork(
         last && last.target === target && Math.abs(position.y - last.position.y) > 1e-3,
       ),
     };
+  }
+  // Backing is limited to a short, flat corridor. In particular, a one-block
+  // drop that forward navigation may accept is not safe for a blind S-tap.
+  function canBack(position) {
+    const yaw = bot.entity.yaw;
+    const end = position.offset(Math.sin(yaw) * 0.9, 0, Math.cos(yaw) * 0.9);
+    if (walkSegment(bot, end, 0, 0.9, position)?.jump !== false) return false;
+    const half = (bot.entity.width ?? 0.6) / 2 + 0.05;
+    for (const distance of [0.3, 0.6, 0.9])
+      for (const side of [-half, 0, half]) {
+        const point = position.offset(
+          Math.sin(yaw) * distance + Math.cos(yaw) * side,
+          -0.05,
+          Math.cos(yaw) * distance - Math.sin(yaw) * side,
+        );
+        const block = bot.blockAt(point);
+        if (block?.boundingBox !== "block") return false;
+        const shapes = block.shapes ?? [[0, 0, 0, 1, 1, 1]];
+        const supported = shapes.some(
+          (shape) =>
+            point.x - Math.floor(point.x) >= shape[0] &&
+            point.x - Math.floor(point.x) <= shape[3] &&
+            point.z - Math.floor(point.z) >= shape[2] &&
+            point.z - Math.floor(point.z) <= shape[5] &&
+            Math.abs(Math.floor(point.y) + shape[4] - position.y) < 0.05,
+        );
+        if (!supported) return false;
+      }
+    return true;
+  }
+  function spacing(target, decision, distance, delta, ground, airborne, shielded, sprintAllowed) {
+    const engine = bot.swordpvp;
+    if (
+      !hit ||
+      hit.target !== target ||
+      now() - hit.at > 750 ||
+      settings.sprintTap === "off" ||
+      bot.supportFeature?.("doesntHaveOffHandSlot") ||
+      !bot.heldItem?.name.endsWith("_sword") ||
+      bot.launcherAxeAttacking ||
+      engine?.tickOverride ||
+      decision?.visible === false ||
+      decision?.facing === false ||
+      ["finish", "punish"].includes(decision?.action) ||
+      (recentShield?.target === target && now() - recentShield.at < 800) ||
+      blocking(target) ||
+      distance < 0.05 ||
+      distance > settings.attackRange + 1
+    )
+      return null;
+    // Low lift is a useful opening for the selected crit style. Do not trade
+    // away that close pressure just to impose sword-combo spacing on every kit.
+    if (settings.criticals !== "off" && target.position.y - ground.y < 0.55) return null;
+    const direction = delta.scaled(1 / distance);
+    const enemyGround = target.position.offset(0, ground.y - target.position.y, 0);
+    // A cornered opponent cannot be comboed away. Preserve close crit pressure
+    // instead of stepping back from a useful wall pin.
+    if (
+      walkSegment(bot, enemyGround.plus(direction.scaled(0.7)), 0, 0.7, enemyGround)?.jump !== false
+    )
+      return null;
+    const radial = (velocity) => velocity.x * direction.x + velocity.z * direction.z;
+    const horizon = Math.max(1, Math.min(4, (engine?.ticksToNextAttack ?? 0) + 1));
+    const drag = airborne ? 0.91 : GROUND_DRAG;
+    const enemyTravel = (1 - drag ** horizon) / (1 - drag);
+    const current = Math.max(-0.6, Math.min(0.9, radial(motion)));
+    // Separate the observed impulse from the pre-hit running velocity. A new
+    // approach/reversal immediately replaces the old away prediction.
+    const running =
+      current < 0 ? current : Math.max(-0.35, Math.min(current, radial(hit.velocity)));
+    const predicted = distance + running * horizon + Math.max(0, current - running) * enemyTravel;
+    const ownDrag = bot.entity.onGround ? GROUND_DRAG : 0.91;
+    const ownTravel = (1 - ownDrag ** horizon) / (1 - ownDrag);
+    const ownVelocity = radial(bot.entity.velocity ?? new Vec3(0, 0, 0));
+    const speed =
+      Math.max(
+        sprintAllowed && (bot.food ?? 20) > 6 ? 0.2806 : 0.2158,
+        Math.min(0.6, ownVelocity),
+      ) * (shielded ? 0.2 : 1);
+    // Mineflayer stores velocity after drag; the next tick adds acceleration
+    // before moving. Include that first input instead of reacting a tick late.
+    const forward = predicted - ownVelocity * ownTravel - speed * (horizon - ownDrag * ownTravel);
+    const coast = predicted - ownVelocity * ownTravel;
+    const ping = Number.isFinite(bot.player?.ping) ? Math.max(0, bot.player.ping) : 100;
+    const margin = 0.3 + Math.min(0.3, (ping / 1000) * Math.abs(current - ownVelocity));
+    const desired = Math.max(0.5, settings.attackRange + (target.width ?? 0.6) / 2 - margin);
+    // Keep a little hysteresis around the useful distance. Chasing a runner
+    // must not lose a tick of forward input merely to perform a fixed W-tap.
+    if (forward >= desired - 0.12 || distance > settings.attackRange + 0.15) return "forward";
+    if (
+      coast < desired - 0.35 &&
+      distance < desired - 0.2 &&
+      bot.entity.onGround &&
+      hit.backTicks < 3 &&
+      canBack(ground)
+    ) {
+      hit.backTicks++;
+      return "back";
+    }
+    return "coast";
   }
   function tick(target, decision) {
     if (!target || !bot.setControlState || !bot.blockAt) return false;
@@ -184,28 +294,41 @@ function createCombatFootwork(
     const turn = Math.atan2(Math.sin(yaw - bot.entity.yaw), Math.cos(yaw - bot.entity.yaw));
     const committed = bot.launcherAxeAttacking;
     const shielding = bot.usingHeldItem && bot.inventory?.slots?.[45]?.name === "shield";
-    const pressing = !(committed && !bot.entity.onGround) && distance > stop;
+    let pressing = !(committed && !bot.entity.onGround) && distance > stop;
     // Reset sprint on the tick after every hit, so the server sees the next
     // charged hit as a sprint hit again. A time window missed most 50 ms ticks.
     const tap = tapTicks > 0 && settings.sprintTap !== "off";
     if (tapTicks > 0) tapTicks--;
     const sprintAllowed = bot.pathfinder.defaultMoveSettings?.allowSprinting !== false;
+    const correction =
+      level && segment.jump === false && Math.abs(turn) < 0.4
+        ? spacing(
+            target,
+            decision,
+            distance,
+            delta,
+            groundPosition,
+            airborne,
+            shielding,
+            sprintAllowed,
+          )
+        : null;
+    if (correction) pressing = correction === "forward";
+    const movingForward =
+      pressing && Math.abs(turn) < 0.65 && !(tap && settings.sprintTap === "wtap" && !correction);
     // Custom PvP releases sprint for a critical whenever a ready attack meets a
     // fast fall. Agree with it instead of toggling sprint twice per tick.
     const engine = bot.swordpvp;
     const critRelease =
       engine?.ticksToNextAttack <= -1 && !engine.tickOverride && bot.entity.velocity.y <= -0.25;
-    bot.setControlState("back", false);
-    bot.setControlState(
-      "forward",
-      pressing && Math.abs(turn) < 0.65 && !(tap && settings.sprintTap === "wtap"),
-    );
-    if (!pressing || Math.abs(turn) >= 0.65) progress = null;
+    bot.setControlState("back", correction === "back");
+    bot.setControlState("forward", movingForward);
+    if (!movingForward) progress = null;
     else if (!progress || position.distanceTo(progress.position) >= 0.12)
       progress = { at: now(), position: position.clone() };
     bot.setControlState(
       "sprint",
-      pressing && !tap && !critRelease && !bot.launcherAxeAttacking && sprintAllowed,
+      movingForward && !tap && !critRelease && !bot.launcherAxeAttacking && sprintAllowed,
     );
     // Our hit adds knockback that decays: about 1.2 ticks of travel on the
     // ground (×0.546 per tick), about 5 while still airborne (×0.91). The
@@ -242,6 +365,7 @@ function createCombatFootwork(
     // back: it is eating, drinking or drawing a bow ("punish"), or faces away.
     const strafe =
       settings.strafe !== "off" &&
+      !correction &&
       level &&
       decision?.facing !== false &&
       !committed &&
@@ -274,9 +398,15 @@ function createCombatFootwork(
   return {
     tick,
     reset,
-    attacked() {
+    attacked(target, reason) {
       tapTicks = 1;
-      hit = { at: now(), velocity: motion.clone() };
+      hit = {
+        target,
+        at: now(),
+        velocity: motion.clone(),
+        backTicks: 0,
+      };
+      if (reason === "disableshield") hit = null;
     },
     // Point to face while closing distance on a runner; null means the target.
     get lead() {

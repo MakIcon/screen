@@ -399,6 +399,9 @@ pub struct LauncherSettings {
     /// Download a matching Java runtime automatically when none is found locally.
     #[serde(default = "default_auto_download_java")]
     pub auto_download_java: bool,
+    /// Allow offline players in explicitly shared Vanilla 26.1.x LAN worlds.
+    #[serde(default)]
+    pub offline_lan_enabled: bool,
     /// Show the interactive mascot in the launcher sidebar.
     #[serde(default = "default_mascot_enabled")]
     pub mascot_enabled: bool,
@@ -1114,6 +1117,7 @@ impl Default for LauncherSettings {
             default_ram_gb: 4,
             optimized_java_args: default_optimized_java_args(),
             auto_download_java: default_auto_download_java(),
+            offline_lan_enabled: false,
             mascot_enabled: default_mascot_enabled(),
             mascot: MascotSettings::default(),
             network: NetworkSettings::default(),

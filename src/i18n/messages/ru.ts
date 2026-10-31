@@ -1671,6 +1671,9 @@ export const ru = {
   "settings.editDesignInAppearance": "Изменить дизайн в студии оформления (Ctrl+Shift+A)",
   "settings.downloadSource": "ИСТОЧНИК ЗАГРУЗКИ",
   "settings.autoDownloadJava": "АВТОЗАГРУЗКА JAVA",
+  "settings.offlineLan": "Офлайн-игроки в LAN",
+  "settings.offlineLanNote":
+    "Для Vanilla 26.1, 26.1.1 и 26.1.2. Включает хозяин мира перед запуском игры, затем выбирает «Открыть для сети». Друзья смогут входить с офлайн-аккаунтами и разными никами. Используйте в доверенной сети: ники игроков не проверяются.",
   "settings.language": "ЯЗЫК",
   "settings.launcherUpdates": "ОБНОВЛЕНИЯ ЛАУНЧЕРА",
   "settings.version": "Версия",

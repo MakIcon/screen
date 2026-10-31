@@ -109,6 +109,15 @@ pub async fn set_auto_download_java(enabled: bool) -> Result<LauncherSettings, C
 }
 
 #[tauri::command]
+pub async fn set_offline_lan_enabled(enabled: bool) -> Result<LauncherSettings, CommandError> {
+    let _operation = crate::operations::begin("settings", None)?;
+    let mut settings = edit_settings().await?;
+    settings.offline_lan_enabled = enabled;
+    settings.commit().await?;
+    Ok((*settings).clone())
+}
+
+#[tauri::command]
 pub async fn set_mascot_enabled(enabled: bool) -> Result<LauncherSettings, CommandError> {
     let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;

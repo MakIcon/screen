@@ -15,6 +15,21 @@ for (const version of ["1.20.4", "26.1.2"]) {
     assert.ok(result.critical >= 10, `criticals ${result.critical}`);
     assert.equal(result.routedTicks, 0, "a lifted opponent is not a terrain step");
   });
+  test(`spacing retains pressure against an attacking opponent with low knockback on ${version}`, async () => {
+    const result = await duel(version, "spacing", "lowKnockback");
+    assert.deepEqual(result.errors, []);
+    assert.ok(result.landed >= 15, `landed ${result.landed}; the fixed tap baseline landed 14`);
+    assert.ok(result.receivedDamage <= 105, `received ${result.receivedDamage}`);
+    assert.equal(result.outOfReach, 0);
+  });
+  test(`spacing converts sprint-hit trades into damage without accelerating cooldowns on ${version}`, async () => {
+    const result = await duel(version, "spacing", "trading");
+    assert.deepEqual(result.errors, []);
+    assert.ok(result.damage >= 100, `damage ${result.damage}; the fixed tap baseline dealt 94.5`);
+    assert.ok(result.receivedDamage <= 84, `received ${result.receivedDamage}`);
+    assert.equal(result.outOfReach, 0);
+    assert.ok(result.meanIntervalMs >= 650, "the sword still needs its normal cooldown");
+  });
 }
 
 test("knockback lift keeps direct pursuit on open ground", async () => {
@@ -50,4 +65,7 @@ test("a shield raised as the hit becomes ready is hit before it can block", asyn
     assert.equal(result.blocked, 0, `${scenario}: never strike an effective shield`);
     if (scenario === "shieldLate") assert.ok(result.landed >= 15, `landed ${result.landed}`);
   }
+  const aggressive = await duel("26.1.2", "aggressive", "shieldLate");
+  assert.equal(aggressive.blocked, 0);
+  assert.ok(aggressive.landed >= 19, "spacing cannot consume the shield warm-up opening");
 });

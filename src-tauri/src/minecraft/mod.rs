@@ -7,6 +7,7 @@ mod java_install;
 mod launch;
 mod loaders;
 mod manifest;
+pub mod offline_lan;
 pub mod mirrors;
 mod version;
 

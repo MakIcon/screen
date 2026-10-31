@@ -1,5 +1,66 @@
 # PvP, mace and bow combat
 
+## Adaptive post-hit spacing (1.19.2)
+
+Custom PvP with **Adaptive combat** and sprint taps enabled now adjusts movement
+after a sword attack instead of always releasing forward for one tick. A short
+forecast (at most four physics ticks) uses observed opponent motion, pre-hit
+running velocity, knockback decay, our current velocity, shield slowdown, weapon
+cooldown and a bounded ping margin. It keeps advancing when the target is moving
+out of reach, coasts when forward input would collapse the gap, and can briefly
+back out of an overlap. Sprint still resets after the attack; movement never
+changes reach, weapon cooldown, player velocity or outgoing damage directly.
+
+Backward input is limited to three ticks per attack. Every backward step checks
+a flat 0.9-block corridor with body width, headroom and continuous support;
+walls, liquids, unknown blocks and even a one-block drop reject the step. Spacing
+suppresses sideways movement while correcting distance and does not ask the
+navigator to dig/build a retreat. Normal terrain navigation remains in charge
+outside a checked combat corridor.
+
+The spacing plan expires after 750 ms and is discarded on target changes,
+teleports and combat reset. Axe/shield-break ownership, pearls, survival actions,
+finishing pressure and item-use punishment retain priority. A recent enemy shield
+raise commits to close pressure for 800 ms, preserving the previous shield
+warm-up and disable follow-ups. A wall pin retains close pressure. With criticals
+enabled, a grounded or barely lifted opponent also retains the selected close
+crit style; combo spacing is most apparent with criticals off. Sprint taps off,
+legacy 1.8 combat and the basic PvP engine retain their existing movement.
+
+For an in-game check, use Custom PvP, adaptive combat, W-tap and criticals off.
+Try a sword duel without raising a shield: step toward the bot after a hit,
+then back away. The bot should brake/briefly back up in a tight exchange and
+immediately follow a retreat. Repeat near an edge to check that it does not
+choose an unsafe backward step. See [the duel report](COMBAT-DUELS.md) for the
+controlled before/after results and the limits of the simulation.
+
+## Fast shield disabling (1.19.1)
+
+Custom PvP now separates a shield disable from a charged axe damage attack.
+With **Shield break** enabled and an axe available, it aims and attacks the active
+shield without waiting for a full axe cooldown or starting a critical jump.
+Range, visibility, current aim, melee skill and the configured CPS cap still apply.
+The target's shield state is checked again after aiming, so lowering the shield
+during setup cancels the uncharged attack.
+
+The bot waits for observed shield metadata, rather than assuming that sending an
+attack disabled it. The confirmation window accounts for our reported ping, with
+a minimum of six physics ticks and a maximum of forty (seven if ping is unknown).
+It holds its own shield while waiting. One quick retry is allowed; if neither
+attempt is confirmed, the existing charged falling axe cycle handles servers
+with different shield rules.
+
+When the enemy stops blocking, the bot restores its preferred weapon on the next
+physics tick, including while airborne. Switching to a sword starts the sword's
+own cooldown without carrying over the axe's longer timer. An axe preference or
+an axe-only inventory retains ordinary charged axe attacks. Stop, target loss,
+death, survival actions and bow defense cancel pending strikes.
+
+`defense.test.mjs` checks fast disables, delayed confirmation at 50/600 ms ping,
+CPS limits, restored sword charge, last-moment shield/range/visibility changes,
+charged fallback and cancellation with real player physics and serialized packets
+on 1.20.4 and 26.1.2. Live shield rules still need an in-game check.
+
 ## Faster melee pursuit and openings (1.15.7)
 
 - **Attack rhythm.** Both melee loops struck one tick after their counter reached
@@ -336,10 +397,11 @@ Navigation digs or builds only after that search finds no route, subject to the
 existing movement permissions and carried materials. A planning timeout retries
 movement without treating the time limit as a reason to alter the battlefield.
 Custom axe shield breaking reads active-hand metadata for the current Minecraft
-version, charges the axe cooldown, jumps and strikes while falling independently
-of the general critical-hit setting. Stop, target loss and bow defense cancel
-the cycle. The preferred weapon is restored after the
-opponent lowers its shield; an axe weapon preference stays an axe.
+version and first attempts a quick disable without a critical jump. After two
+unconfirmed attempts it charges the axe, jumps and strikes while falling
+independently of the general critical-hit setting. Stop, target loss, survival
+actions and bow defense cancel the cycle. The preferred weapon is restored after
+the opponent lowers its shield; an axe weapon preference stays an axe.
 With only axes available, Custom PvP automatically chooses an axe even with a
 sword preference and prepares a falling critical for every charged attack,
 including when shield breaking and general criticals are disabled. With both

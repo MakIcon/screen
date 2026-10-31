@@ -175,6 +175,194 @@ test("direct pursuit closes distance; strafe is bounded and rejects cliffs and u
   f.brain.dispose();
 });
 
+function spacingFixture(settings = {}) {
+  const controls = {};
+  let time = 0;
+  const bot = {
+    entity: {
+      position: new Vec3(0.5, 64, 0.5),
+      velocity: new Vec3(0.28, 0, 0),
+      yaw: -Math.PI / 2,
+      width: 0.6,
+      onGround: true,
+    },
+    heldItem: { name: "diamond_sword" },
+    food: 20,
+    player: { ping: 50 },
+    swordpvp: { ticksToNextAttack: 11 },
+    pathfinder: { defaultMoveSettings: {} },
+    setControlState: (key, value) => {
+      controls[key] = value;
+    },
+    getControlState: (key) => controls[key],
+    blockAt: (p) => ({
+      name: p.y < 64 ? "stone" : "air",
+      boundingBox: p.y < 64 ? "block" : "empty",
+    }),
+  };
+  const target = { position: new Vec3(2.9, 64, 0.5), width: 0.6, height: 1.8 };
+  const movement = createCombatFootwork(
+    bot,
+    { ...defaults, criticals: "off", ...settings },
+    { now: () => time },
+  );
+  const tick = (at) => {
+    time = at;
+    return movement.tick(target, { action: "pressure" });
+  };
+  tick(0);
+  movement.attacked(target, "normal");
+  return { bot, target, movement, controls, tick };
+}
+
+test("post-hit spacing keeps moving after strong knockback while resetting sprint", () => {
+  const f = spacingFixture();
+  f.target.position.x += 0.9;
+  f.target.position.y += 0.3;
+  f.tick(50);
+  assert.equal(f.controls.forward, true, "do not lose a pursuit tick to a fixed W release");
+  assert.equal(f.controls.sprint, false, "still reset sprint after the attack");
+  assert.equal(f.controls.back, false);
+  f.target.position.x += 0.3;
+  f.tick(100);
+  assert.equal(f.controls.forward, true);
+  assert.equal(f.controls.sprint, true);
+});
+
+test("weak knockback brakes an overlap, bounds backward inputs and resumes pursuit", () => {
+  const f = spacingFixture();
+  for (let tick = 1; tick <= 3; tick++) {
+    f.tick(tick * 50);
+    assert.equal(f.controls.back, true);
+    assert.equal(f.controls.forward, false);
+    assert.equal(f.controls.sprint, false);
+    assert.equal(f.controls.left || f.controls.right, false, "spacing has no sideways shuffle");
+  }
+  f.tick(200);
+  assert.equal(f.controls.back, false, "at most three backward inputs per attack");
+  assert.equal(f.controls.forward, false, "coast instead of running into the opponent");
+  f.target.position.x = 4.2;
+  f.tick(250);
+  assert.equal(f.controls.forward, true, "immediately follow a retreat");
+  assert.equal(f.controls.back, false);
+  assert.equal(f.bot.swordpvp.ticksToNextAttack, 11, "movement cannot accelerate weapon cooldown");
+});
+
+for (const hazard of ["gap", "drop", "lava", "wall", "unknown"]) {
+  test(`spacing never backs toward ${hazard}`, () => {
+    const f = spacingFixture();
+    const flat = f.bot.blockAt;
+    f.bot.blockAt = (point) => {
+      if (point.x >= 0) return flat(point);
+      if (hazard === "unknown") return null;
+      const solid = hazard === "wall" ? point.y < 67 : hazard === "drop" && point.y < 63;
+      return {
+        name: solid ? "stone" : hazard === "lava" && point.y < 64 ? "lava" : "air",
+        boundingBox: solid ? "block" : "empty",
+      };
+    };
+    f.tick(50);
+    assert.equal(f.controls.back, false);
+    assert.equal(
+      f.controls.forward,
+      false,
+      "hold a safe position rather than entering the overlap",
+    );
+    assert.equal(
+      f.bot.pathfinder.goal,
+      undefined,
+      "a rejected retreat does not dig or start a route",
+    );
+  });
+}
+
+test("a wall pin keeps close pressure instead of backing away", () => {
+  const f = spacingFixture();
+  const flat = f.bot.blockAt;
+  f.bot.blockAt = (point) =>
+    point.x >= 3 && point.x < 4 && point.y >= 64 && point.y < 67
+      ? { name: "stone", boundingBox: "block" }
+      : flat(point);
+  f.tick(50);
+  f.tick(100);
+  assert.equal(f.controls.back, false);
+  assert.equal(f.controls.forward, true);
+});
+
+test("enabled criticals retain close pressure on a barely lifted opponent", () => {
+  const f = spacingFixture({ criticals: "hop" });
+  f.target.position.y = 64.25;
+  f.tick(50);
+  f.tick(100);
+  assert.equal(f.controls.back, false);
+  assert.equal(f.controls.forward, true);
+});
+
+test("a recent shield opening keeps pressure before spacing resumes", () => {
+  const f = spacingFixture();
+  f.bot.registry = { entitiesByName: { player: { metadataKeys: ["living_entity_flags"] } } };
+  Object.assign(f.target, { name: "player", equipment: [null, { name: "shield" }], metadata: [3] });
+  f.tick(50);
+  f.target.metadata[0] = 0;
+  f.movement.attacked(f.target, "normal");
+  f.tick(100);
+  f.tick(150);
+  assert.equal(f.controls.back, false, "do not waste a newly opened shield window");
+  assert.equal(f.controls.forward, true);
+  // Another attack after the short shield-response commitment may space again.
+  f.bot.entity.position.x += 0.15;
+  f.tick(800);
+  f.movement.attacked(f.target, "normal");
+  f.tick(900);
+  assert.equal(f.controls.back, true);
+});
+
+test("a shorter configured reach does not inherit the three-block spacing band", () => {
+  const f = spacingFixture({ attackRange: 1 });
+  f.target.position.x = 1.9;
+  f.tick(50);
+  assert.equal(f.controls.forward, true, "keep closing until the shorter hit can reach");
+  assert.equal(f.controls.back, false);
+});
+
+test("target changes, teleports and expired attacks discard the previous spacing plan", () => {
+  for (const change of ["target", "teleport", "timeout", "reset"]) {
+    const f = spacingFixture();
+    if (change === "target") f.movement.tick({ ...f.target }, { action: "pressure" });
+    if (change === "teleport") {
+      f.target.position.x = 12;
+      f.tick(50);
+      f.target.position.x = 2.9;
+    }
+    if (change === "reset") f.movement.reset();
+    if (change === "timeout") f.tick(50);
+    f.tick(change === "timeout" ? 800 : 100);
+    assert.equal(f.controls.back, false, change);
+    assert.equal(f.controls.forward, true, change);
+  }
+});
+
+test("disabled taps and legacy combat retain ordinary pursuit", () => {
+  for (const legacy of [false, true]) {
+    const f = spacingFixture(legacy ? {} : { sprintTap: "off" });
+    if (legacy) f.bot.supportFeature = (feature) => feature === "doesntHaveOffHandSlot";
+    f.tick(50);
+    f.tick(100);
+    assert.equal(f.controls.back, false);
+    assert.equal(f.controls.forward, true);
+  }
+});
+
+test("a teleport after a sparse movement update cannot reuse the old spacing plan", () => {
+  const f = spacingFixture();
+  f.target.position.x = -2.4;
+  f.bot.entity.yaw = Math.PI / 2;
+  f.bot.entity.velocity.x = -0.28;
+  f.tick(350);
+  assert.equal(f.controls.forward, true);
+  assert.equal(f.controls.back, false);
+});
+
 test("director decision cost stays comfortably below a physics tick", (t) => {
   const f = fixture();
   try {

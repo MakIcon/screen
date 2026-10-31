@@ -49,11 +49,13 @@ function installShieldBreak(
   let task = Promise.resolve();
   let disposed = false;
   let attacks = 0;
+  let ticksSinceAttack = Infinity;
   let ownsShield = false;
   let restoring = false;
   let revision = 0;
   const attacked = () => {
     attacks++;
+    ticksSinceAttack = 0;
   };
   engine.on("attackedTarget", attacked);
   function cooldown() {
@@ -125,6 +127,7 @@ function installShieldBreak(
       state &&
       (state.target !== target ||
         (!reason && bot.entity.onGround) ||
+        (state.reason === "disableshield" && reason !== "disableshield") ||
         engine.botReach() > settings.attackRange + (bot.entity.onGround ? 0.4 : 1.5))
     ) {
       reset();
@@ -140,13 +143,13 @@ function installShieldBreak(
           !bot.launcherSurvival?.busy;
         restoring = true;
         engine.tickOverride = true;
+        const previousWeapon = bot.heldItem;
         task = equipCombatItem(bot, preferred, "hand", valid)
           .then(() => {
-            if (valid())
-              engine.ticksToNextAttack = Math.max(
-                engine.ticksToNextAttack,
-                engine.meleeAttackRate.getTicks(bot.heldItem),
-              );
+            // A real swap starts the new weapon's cooldown. Do not carry the
+            // axe's longer timer over to the sword, or reset an unchanged axe.
+            if (valid() && bot.heldItem !== previousWeapon)
+              engine.ticksToNextAttack = engine.meleeAttackRate.getTicks(bot.heldItem);
           })
           .catch(onError)
           .finally(() => {
@@ -158,13 +161,19 @@ function installShieldBreak(
       }
     }
     if (state) {
-      if (reason) state.reason = reason;
+      if (reason && reason !== state.reason) {
+        state.reason = reason;
+        if (reason === "disableshield" && state.phase !== "equip") {
+          state.phase = "disable";
+          state.disableAttempts = 0;
+        }
+      }
       bot.launcherBreakingShield = state.reason === "disableshield";
     }
     if (state || !reason || engine.botReach() > settings.attackRange || engine.tickOverride) return;
     const axe = bot.heldItem?.name.endsWith("_axe") ? bot.heldItem : bestMeleeWeapon(bot, "axe");
     if (!axe?.name.endsWith("_axe")) return;
-    const action = { target, reason, phase: "equip", airTicks: 0 };
+    const action = { target, reason, phase: "equip", airTicks: 0, disableAttempts: 0 };
     state = action;
     engine.tickOverride = true;
     bot.launcherBreakingShield = reason === "disableshield";
@@ -175,22 +184,70 @@ function installShieldBreak(
     task = equipCombatItem(bot, axe, "hand", () => current(action))
       .then(() => {
         if (!current(action)) return;
-        // Switching weapons resets attack strength on the server. Charge the axe
-        // fully instead of the upstream fixed three-tick shield attack.
+        // Ordinary damage needs a charged axe. An active vanilla shield can be
+        // disabled without that charge; its short attempt has a separate timer.
         engine.ticksToNextAttack = cooldown();
-        action.phase = "charge";
+        action.phase = action.reason === "disableshield" ? "disable" : "charge";
       })
       .catch((error) => {
         if (state === action) reset();
         onError(error);
       });
   }
+  function disable(action) {
+    if (action.phase === "confirm") {
+      shield(true);
+      if (--action.confirmTicks <= 0)
+        action.phase = action.disableAttempts < 2 ? "disable" : "charge";
+      return;
+    }
+    // Respect the configured click rate, including a preceding sword hit.
+    if (ticksSinceAttack < Math.ceil(20 / settings.cps)) {
+      shield(true);
+      return;
+    }
+    const before = attacks;
+    action.phase = "strike";
+    task = Promise.resolve(focus(action.target, true))
+      .then(async () => {
+        // Re-read the shield after aiming: a lowered shield is not permission
+        // to publish an uncharged axe hit into the opponent's counterattack.
+        if (
+          !current(action) ||
+          !blocking(action.target) ||
+          !bot.heldItem?.name.endsWith("_axe") ||
+          engine.botReach() > settings.attackRange ||
+          !aimedAt(action.target)
+        )
+          return;
+        shield(false);
+        if (bot.usingHeldItem) bot.deactivateItem();
+        await engine.attemptAttack("disableshield");
+        if (current(action) && attacks > before)
+          engine.ticksToNextAttack = Math.max(engine.ticksToNextAttack, cooldown());
+      })
+      .catch(onError)
+      .finally(() => {
+        if (state !== action) return;
+        if (attacks === before) {
+          action.phase = "disable";
+          return;
+        }
+        action.disableAttempts++;
+        const ping = Number.isFinite(bot.player?.ping) ? Math.max(0, bot.player.ping) : 250;
+        action.confirmTicks = Math.max(6, Math.min(40, Math.ceil(ping / 50) + 2));
+        action.phase = "confirm";
+        // Wait for observed shield metadata before declaring success. After
+        // two unconfirmed attempts, use charged attacks for custom server rules.
+        shield(current(action));
+      });
+  }
   function tick() {
     if (!state || !current(state) || ["equip", "strike"].includes(state.phase)) return;
     const action = state;
+    if (["disable", "confirm"].includes(action.phase)) return disable(action);
     bot.setControlState("sprint", false);
-    // Shield breaking owns its critical jump independently of the general crit
-    // option. Ordinary axe combat also waits for a falling hit on every cycle.
+    // Charged axe damage (and the server-rule fallback) retains falling hits.
     if (!bot.entity.isInWater && !bot.entity.isInLava) {
       if (action.phase === "charge") {
         if (
@@ -250,6 +307,7 @@ function installShieldBreak(
       });
   }
   function update() {
+    ticksSinceAttack++;
     prepare();
     if (!bot.launcherDefendingBow && !bot.launcherSurvival?.busy) original.update();
     tick();

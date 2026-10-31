@@ -1,4 +1,39 @@
-# Melee duel benchmark, 1.15.6 → 1.15.7
+# Melee duel benchmarks
+
+## Adaptive spacing, 1.19.1 → 1.19.2
+
+Measured on 2026-10-29 using the same harness against the staged 1.19.1 runtime
+and the updated source. Both 1.20.4 and 26.1.2 produced the results below. The
+`spacing` profile selects adaptive Custom PvP, W-tap, no planned critical jumps,
+no strafe, no shield use and the usual sword cooldown. Falling hits caused by
+normal knockback can still be criticals. Figures are raw HP without armour.
+
+| Controlled scenario                        | Landed hits, before → after | Damage dealt, before → after | Damage received, before → after |
+| ------------------------------------------ | --------------------------: | ---------------------------: | ------------------------------: |
+| Standing opponent, normal knockback, 10 s  |                     11 → 14 |                     77 → 119 |                           0 → 0 |
+| Attacking opponent, normal knockback, 12 s |                     12 → 12 |                 94.5 → 101.5 |                         84 → 84 |
+| Attacking opponent, 30% knockback, 12 s    |                     14 → 15 |                     98 → 105 |                       105 → 105 |
+| Opponent sprinting away, 10 s              |                       5 → 5 |                  45.5 → 45.5 |                           0 → 0 |
+
+The two attacking scenarios return charged sword sprint hits on a 13-tick
+cooldown when the bot is within ordinary three-block eye-to-hitbox reach. They
+apply normal local knockback and emit swing/hurt events. The low-knockback case
+scales the opponent's incoming impulse to 30%; it is a controlled probe, not a
+complete model of netherite armour. Bot health stays fixed so healing/death do
+not obscure movement differences. Received damage is recorded separately.
+
+The existing default/aggressive profiles did not lose recorded hit counts or
+damage in these scenarios, including wall pressure, shield timing and chasing.
+The added regression checks cover attacking opponents and the late shield raise;
+unit checks cover retreat support, hazards, expired plans, target changes and
+teleports. The harness does not model network jitter, another player's future
+inputs or all server-specific combat rules. These numbers are not live win rates.
+
+Before/after reports are saved locally under `reports/pvp-spacing-1.19.2/`.
+Run the existing benchmark command below against the two runtime snapshots to
+reproduce. `SCREEN_DUEL_SCENARIOS=trading,lowKnockback` limits the new cases.
+
+## Original benchmark, 1.15.6 → 1.15.7
 
 `pvp-duel-benchmark.mjs` runs simulated duels with real Mineflayer player
 physics (prismarine-physics), the published Custom PvP plugin, the launcher
@@ -21,8 +56,8 @@ A small vanilla server model scores every serialized attack packet:
   and 50 ms of round trip, so a hit later than the second tick after the bot
   saw the raise is blocked.
 
-The opponent never attacks, so the bot's health, healing and retreat logic do
-not interfere. There is no network jitter. Each scenario is deterministic (fixed
+The original scenarios below never attack, so the bot's health, healing and
+retreat logic do not interfere. There is no network jitter. Each scenario is deterministic (fixed
 seeds, fixed 50 ms clock); repeated runs give identical outcomes. CPU time per
 tick is the only measured wall-clock value. These are simulation results, not
 live server duels.
@@ -32,7 +67,7 @@ intelligent strafing, hop criticals, W-tap, shield). `aggressive` is the
 АГРЕССИВНЫЙ preset. The bot carries a diamond sword and an offhand shield and
 uses the worker's default movement settings (sprinting and parkour allowed).
 
-## Results
+### Results
 
 Measured on 2026-10-17 with Node 24.13.1 and an AMD Ryzen 5 9600X. Before is
 `0c57fcd` (1.15.6), after is 1.15.7. Three alternating runs per version gave
