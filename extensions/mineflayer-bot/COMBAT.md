@@ -1,5 +1,146 @@
 # PvP, mace and bow combat
 
+## Trap and water corrections (1.21.2)
+
+Retreat webs now follow recently vacated cells and the clear lane toward the
+pursuer, rather than requiring contact with the pursuer's current feet. The
+default placement interval is 500 ms; existing custom intervals remain intact.
+Webs can be placed while the bot is jumping. An owner explicitly selected as the
+combat opponent can be trapped, while other owners remain protected.
+
+Automatic web escape now tries water for a single web as well as multiple webs,
+including when no combat target is selected. An explicit sword-first preference,
+the Nether restriction and fallback after failed water attempts still apply.
+Critical healing no longer interrupts a committed escape action.
+
+Water extinguishing also detects a fire block touching the body before the
+burning metadata arrives. Its **Neutralize nearby lava with water** option pours
+beside reachable hostile lava within 2.5 blocks and waits for the server to
+replace the lava before recovering the source. The bot's tracked attack lava is
+excluded. Ground fire and burning must also clear before collection.
+
+Live vanilla **26.1.2** checks verified single-web water escape with a carried
+sword, fire-block extinguishing, lava-to-obsidian conversion and water pickup,
+explicit owner trapping through the full combat controller, and repeated webs
+behind a moving retreat. See Mineflayer's
+[bucket interaction fix](https://github.com/PrismarineJS/mineflayer/pull/3740)
+for the ordinary item-use API used by these bucket actions.
+
+## Utility section switches (1.21.1)
+
+**Cobweb escape** has a master switch independent of the saved sword/water
+permissions and preferred method. Disabling it prevents both escape actions;
+independent water extinguishing remains enabled when configured.
+
+**Confirmation and source recovery** toggles custom recovery settings. When off,
+the bot uses the standard confirmation timeout, pickup retry count and source
+recovery window. The configured values are retained for re-enabling. Placement
+confirmation and ordinary pickup remain active in either mode.
+
+## Defensive utilities and detailed settings (1.21.0)
+
+The **PvP** editor now groups utility settings into eight collapsible sections:
+lava ignition, web traps, web/lava combinations, web escape, water extinguishing,
+auto totem, retreat webs, and confirmation/source recovery. Fields are disabled
+with their feature. All HP labels use health points (20 HP = 10 hearts).
+Restart the bot after changing combat settings.
+
+- **Lava:** minimum own HP, maximum enemy distance, cooldown and contact time
+  before pickup (100–1000 ms). **Traps:** distance, cooldown and movement lead.
+  **Combinations:** maximum wait for actual web contact before giving up.
+- **Escape:** automatic/sword-first/water-first preference, independent tool
+  permissions, total attempt limit, water movement limit and optional pickup.
+- **Extinguishing:** own fire metadata triggers water after a configurable delay
+  and below a configurable HP cap. The source and emptied bucket must be confirmed;
+  pickup waits until the server clears the fire flag. Optional pickup, cooldown
+  and skipping water with observed fire resistance are configurable. Nether water
+  remains disabled. Emergency MLG retains priority. An interrupted committed lava
+  source is retained separately for later bounded cleanup.
+- **Totem:** danger-only or always-held mode, equip HP, restore HP, hold delay,
+  absorption accounting, nearby crystal protection/range and offhand restoration.
+  Defaults equip at 8 HP and restore at 14 HP after 1500 ms without danger. The
+  offhand lock is published before queued shield/bow equips. Slot updates and
+  own entity status 35 trigger replacement after a real activation. A foreign
+  container or occupied cursor defers the inventory swap. Legacy versions without
+  an offhand/totem skip the feature. Leaving restoration off keeps the owned totem.
+- **Retreat webs:** maximum HP, pursuer distance, cooldown and a cobweb reserve.
+  During adaptive healing retreats the bot intercepts the pursuer without placing
+  a web in its own body, then continues the same retreat without resetting its
+  healing deadline. This action never chains offensive lava.
+- **Recovery:** server confirmation timeout, bounded pickup attempts and maximum
+  source recovery age apply to both lava and water. Configured deadlines still
+  include a bounded margin for observed connection latency.
+
+Worker and launcher share `combat-utility-options.json` for numeric limits and
+strategy choices; Rust persists all fields and checks its defaults against the
+worker JSON. [Mojang's totem guide](https://www.minecraft.net/en-us/article/taking-inventory--totem-undying)
+describes the offhand/fatal-damage mechanic used here; actual swaps use Mineflayer's
+ordinary inventory queue and await server acknowledgements.
+
+Live vanilla 1.20.4 checks confirmed self-extinguishing and water recovery, a
+low-HP offhand swap, real fatal-damage totem activation with automatic refill,
+shield restoration after healing, and a retreat web with a clear walking path
+away. Ground fire is included in bucket outline prediction, and pickup waits
+until both the entity fire flag and touching fire blocks are gone so removing
+the source does not immediately reignite the bot.
+
+## Lava bucketing, web trapping and web escape (1.20.0)
+
+**PvP → Лава и паутина** has separate switches for lava bucketing, web trapping,
+web/lava combinations, sword escape and water escape. All five default to on;
+saved explicit off values are preserved. Restart the bot after changing settings.
+Both melee engines can use these actions; offensive placement belongs to Auto
+and Melee styles, while gathering defense may only use escape actions.
+
+Carry a sword, cobwebs and water/lava buckets in the ordinary inventory or offhand.
+The bot places webs at the enemy's feet or on a short, observed movement intercept.
+It waits for the block update before considering a trap successful. A combination
+waits for actual contact with a web, places lava at the enemy's feet, holds it for
+250 ms after confirmation, and collects the source with an empty bucket. Fluid
+can destroy the web: this is a trap followed by ignition, not a promise that a
+lava source and a cobweb can occupy the same block. Ordinary attacks resume with
+the same target after restoring the previous weapon.
+
+Escape scans the full player bounding box, including head webs and webs across
+block boundaries. Automatic mode prefers water even for a single web. Sword-first
+mode and fallback mining use vanilla dig timing. The bot places water against a
+reachable solid face, waits for a source
+and an emptied bucket, moves/swims toward checked adjacent ground while still
+trapped, then collects the water. The Nether skips water and retains sword escape.
+If a server does not wash webs away, the water attempt times out and the sword
+can be tried instead.
+
+Lava placement checks the live enemy position after equip/aim, a 4.5-block eye
+reach, solid reference faces, loaded terrain, nearby owners, our body, water and
+unsupported edges. It avoids filling an existing fluid source. Placement and
+pickup are acknowledged separately by world and inventory changes; rejected
+actions back off without reporting success. Target changes, stop, death and
+survival preemption invalidate delayed actions. A committed source can still be
+recovered nearby after target loss or survival recovery, for up to eight seconds;
+cleanup never places another source or starts a route. A replaced/unreachable
+source is reported, rather than treated as a successful pickup.
+
+`combat-utilities.test.mjs` exercises the actual Mineflayer inventory, placement,
+digging APIs and packet serializers on 1.8.9, 1.20.4 and 26.1.2, plus body-boundary
+detection, combinations, cancellation, denied placement, owner protection and
+resumption through both combat engines. These fixtures simulate server block
+and inventory acknowledgements; server plugins can impose different rules.
+
+Mechanics and terminology checked against these primary sources:
+
+A local vanilla 1.20.4 server was also used for live checks with two connected
+clients: lava ignited the opponent (20 → 16 HP) and was collected, a sword broke
+a real web, water cleared a two-high web trap and was collected, and a confirmed
+web trap was followed by lava placement and pickup. Bucket planning models the
+web's full outline shape, including when the bot's eyes begin inside a head web;
+its empty collision shape alone predicts the wrong source position.
+
+- [UHC players discussing lava placement and quick pickup](https://hypixel.net/threads/can-some-uhc-duel-professionals-tell-me-how-to-lava-correctly.3380727/).
+- [Bucket usage by the Mineflayer guide's author](https://pix3lpirat3.github.io/mineflayer-guide/snippets/snippets/buckets).
+- [Mineflayer's placement and digging API](https://github.com/PrismarineJS/mineflayer/blob/master/docs/api.md).
+- [Mojang's 26.3 Snapshot 2 notes](https://www.minecraft.net/en-us/article/minecraft-26-3-snapshot-2),
+  which explicitly fix MC-309206, water failing to destroy cobwebs.
+
 ## Adaptive post-hit spacing (1.19.2)
 
 Custom PvP with **Adaptive combat** and sprint taps enabled now adjusts movement

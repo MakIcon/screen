@@ -1,4 +1,5 @@
 const defaults = require("./combat-defaults.json");
+const utilityOptions = require("./combat-utility-options.json");
 const { Vec3 } = require("vec3");
 const { toNotchianYaw, toNotchianPitch } = require("mineflayer/lib/conversions");
 const { goals } = require("./pathfinder.cjs");
@@ -8,6 +9,8 @@ const { createCombatBrain, crystalOpportunity, observedHealth } = require("./com
 const { createCombatFootwork } = require("./combat-footwork.cjs");
 const { createBowDefense } = require("./bow-defense.cjs");
 const { createBowAim } = require("./bow-aim.cjs");
+const { createCombatUtilities } = require("./combat-utilities.cjs");
+const { createAutoTotem } = require("./auto-totem.cjs");
 const {
   carriedItems,
   bestMeleeWeapon,
@@ -103,6 +106,7 @@ function normalizeCombat(value = {}) {
   const draft = value && typeof value === "object" ? value : {};
   const result = { ...defaults };
   const enums = {
+    ...utilityOptions.choices,
     engine: ["custom", "basic"],
     style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
@@ -116,6 +120,7 @@ function normalizeCombat(value = {}) {
     bowDefenseMode: ["early", "trajectory"],
   };
   const bounds = {
+    ...utilityOptions.bounds,
     bowDefenseCheckMs: [0, 500],
     bowDefenseRange: [4, 128],
     bowDefenseMargin: [0, 2],
@@ -153,6 +158,7 @@ function normalizeCombat(value = {}) {
     } else if (typeof draft[key] === "number" && Number.isFinite(draft[key])) {
       const [min, max] = bounds[key];
       const numeric = [
+        ...utilityOptions.fractional,
         "attackRange",
         "targetRange",
         "bowRange",
@@ -167,6 +173,7 @@ function normalizeCombat(value = {}) {
     }
   }
   result.pearlMinDistance = Math.min(result.pearlMinDistance, result.pearlMaxDistance);
+  result.totemReleaseHealth = Math.max(result.totemHealth, result.totemReleaseHealth);
   return result;
 }
 
@@ -240,8 +247,14 @@ function configureCombatPlugins(
   // hand. All custom PvP equips must use the same queue and ownership checks.
   bot.swordpvp.equipWeapon = async (weapon) => {
     const enemy = bot.swordpvp.target;
-    const current = () => Boolean(enemy && bot.swordpvp.target === enemy &&
-      !bot.launcherDefendingBow && !bot.launcherSurvival?.busy && !bot.launcherPearling);
+    const current = () =>
+      Boolean(
+        enemy &&
+        bot.swordpvp.target === enemy &&
+        !bot.launcherDefendingBow &&
+        !bot.launcherSurvival?.busy &&
+        !bot.launcherPearling,
+      );
     if (!weapon || !current()) return false;
     await equipCombatItem(bot, weapon, "hand", current);
     return current() && bot.heldItem?.name === weapon.name;
@@ -470,6 +483,7 @@ function createCombatController(
   } = {},
 ) {
   const settings = normalizeCombat(value);
+  const autoTotem = createAutoTotem(bot, settings, { now, onStatus });
   installCombatNavigation(bot, onError, now);
   const bowAim = createBowAim(bot, { now });
   // Vanilla shields block only after 5 ticks (250 ms) of use. A raise that the
@@ -592,6 +606,7 @@ function createCombatController(
       (settings.enabled && settings.bowDefense) ||
       Boolean(bot.launcherGathering?.protecting && bot.launcherGathering.settings.defendArrows),
     beforeDefend() {
+      utilities.cancel();
       generation++;
       pending = false;
       stopEngines();
@@ -616,6 +631,26 @@ function createCombatController(
   let nextCrystalPlanAt = 0;
   let crystalReposition = null;
   let crystalPressureUntil = 0;
+  const utilities = createCombatUtilities(bot, settings, {
+    now,
+    isOwner,
+    isCombatTarget: (entity) => entity === target && !workTarget && allowed(entity),
+    onStatus,
+    beforeStart(kind) {
+      generation++;
+      pending = false;
+      stopEngines();
+      recoveryMovement.cancel();
+      if (kind !== "retreatWeb") recovery = null;
+      return Promise.all([
+        bot.pathfinder.stop(),
+        prepareTask,
+        actionTask,
+        crystalMovement.task,
+        bot.swordpvp?.launcherShieldBreak?.task,
+      ]);
+    },
+  });
 
   function distance(entity) {
     return bot.entity.position.distanceTo(entity.position);
@@ -664,6 +699,7 @@ function createCombatController(
     bot._client.write("look", combatLookPacket(bot, yaw, pitch));
   }
   function stop(suspendAuto = true) {
+    utilities.cancel();
     suspended = suspendAuto || (workTarget && workSuspended);
     workTarget = false;
     generation++;
@@ -726,6 +762,11 @@ function createCombatController(
       settings.bowEnabled &&
       items.some((item) => item.name === "bow") &&
       items.some((item) => ["arrow", "spectral_arrow", "tipped_arrow"].includes(item.name))
+    );
+  }
+  function bowOffhand() {
+    return (
+      settings.bowOffhand && !autoTotem.protected && !bot.supportFeature("doesntHaveOffHandSlot")
     );
   }
   function chooseMode() {
@@ -954,8 +995,7 @@ function createCombatController(
       const items = carriedItems(bot);
       const current = () => revision === generation && target && !bot.launcherDefendingBow;
       if (nextMode === "ranged") {
-        const hand =
-          settings.bowOffhand && !bot.supportFeature("doesntHaveOffHandSlot") ? "off-hand" : "hand";
+        const hand = bowOffhand() ? "off-hand" : "hand";
         await equipCombatItem(
           bot,
           items.find((item) => item.name === "bow"),
@@ -1037,7 +1077,7 @@ function createCombatController(
       const spread = (1 - settings.bowAccuracy / 100) * 0.12;
       aimOffset = [(random() - 0.5) * spread, (random() - 0.5) * spread];
       chargeAt = time;
-      bot.activateItem(settings.bowOffhand && !bot.supportFeature("doesntHaveOffHandSlot"));
+      bot.activateItem(bowOffhand());
     }
     const revision = generation;
     const look =
@@ -1460,8 +1500,15 @@ function createCombatController(
     )
       return;
     try {
+      autoTotem.tick();
+      if (utilities.extinguishNeeded || ["extinguish", "coolLava"].includes(utilities.kind)) {
+        defense.stop();
+        if (utilities.tick(target, { offensive: false })) return;
+      }
+      if (mode === "ranged" && settings.bowOffhand && !bowOffhand() && bot.heldItem?.name !== "bow")
+        stopEngines();
       if (defense.tick(true) || (suspended && !workTarget) || (!settings.enabled && !workTarget))
-        return;
+        return void utilities.tick(null, { offensive: false });
       if (!target && autoEnabled && !bot.launcherGathering?.busy && now() >= nextActionAt) {
         const entity = bot.nearestEntity(
           (entity) =>
@@ -1474,7 +1521,51 @@ function createCombatController(
         if (entity) select(entity);
         else nextActionAt = now() + 500;
       }
-      if (!target) return;
+      if (!target) return void utilities.tick(null, { offensive: false });
+      if (settings.adaptiveCombat && !workTarget && allowed(target))
+        decision = brain.evaluate(target, {
+          visible: canSeeTarget(bot, target),
+          airborne: mace.airborne,
+        });
+      // Emergency recovery retains priority over an ongoing bucket/web action.
+      // The ordinary survival acquisition below cancels queued utility equips.
+      if (
+        utilities.busy &&
+        ["web", "lava"].includes(utilities.kind) &&
+        settings.adaptiveCombat &&
+        !workTarget &&
+        bot.health <= 7
+      ) {
+        decision = brain.evaluate(target, {
+          visible: canSeeTarget(bot, target),
+          airborne: mace.airborne,
+        });
+        if (decision.heal) {
+          utilities.cancel();
+          if (recover()) return;
+        }
+      }
+      const utilityEnemy = target;
+      if (
+        utilities.tick(target, {
+          retreating: Boolean(recovery || ["retreat", "escape"].includes(decision?.action)),
+          current: () =>
+            target === utilityEnemy &&
+            !disposed &&
+            !suspended &&
+            allowed(utilityEnemy) &&
+            distance(utilityEnemy) <= combatRange(),
+          offensive:
+            !workTarget &&
+            ["auto", "melee"].includes(requestedStyle) &&
+            !mace.airborne &&
+            !bot.launcherAxeAttacking &&
+            !pending &&
+            !bowBusy &&
+            now() >= nextActionAt,
+        })
+      )
+        return;
       if (!workTarget) {
         sampleEnemyTeleport();
         observePearlHand();
@@ -1509,8 +1600,12 @@ function createCombatController(
         const current = () => target === enemy && !disposed && !suspended;
         // Non-adaptive combat still uses potions when space is already available.
         const potion = settings.combatHealing && bot.launcherSurvival?.healingPotion?.();
-        if (potion && (distance(enemy) >= 6 || !canSeeTarget(bot, enemy)) &&
-          bot.launcherSurvival.requestCombatHeal(potion, current)) return;
+        if (
+          potion &&
+          (distance(enemy) >= 6 || !canSeeTarget(bot, enemy)) &&
+          bot.launcherSurvival.requestCombatHeal(potion, current)
+        )
+          return;
         if (bot.launcherSurvival?.requestCombatBuff?.(enemy, current)) return;
       }
       if (closeWithPearl()) return;
@@ -1643,6 +1738,7 @@ function createCombatController(
       return Boolean(target && !workTarget && settings.adaptiveCombat && settings.combatHealing);
     },
     pauseForSurvival() {
+      utilities.cancel();
       generation++;
       pending = false;
       defense.stop();
@@ -1661,6 +1757,8 @@ function createCombatController(
         defense.task,
         mace.task,
         crystalMovement.task,
+        utilities.task,
+        autoTotem.task,
         bot.swordpvp?.launcherShieldBreak?.task,
       ]);
     },
@@ -1686,7 +1784,7 @@ function createCombatController(
     },
     get status() {
       return target
-        ? `${mode || "preparing"} ${target.username || target.name || target.id}${decision ? `; ${decision.action}; hp ${decision.health}; enemy hp ${decision.enemyHealth ?? "unknown"}` : ""}`
+        ? `${utilities.status || mode || "preparing"} ${target.username || target.name || target.id}${decision ? `; ${decision.action}; hp ${decision.health}; enemy hp ${decision.enemyHealth ?? "unknown"}` : ""}`
         : autoEnabled && !suspended
           ? "hostile mobs"
           : defense.threat
@@ -1696,6 +1794,8 @@ function createCombatController(
     dispose() {
       disposed = true;
       stop(true);
+      autoTotem.dispose();
+      utilities.dispose();
       defense.dispose();
       bowAim.dispose();
       mace.dispose();

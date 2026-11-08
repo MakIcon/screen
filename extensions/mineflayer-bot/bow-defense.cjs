@@ -348,6 +348,10 @@ function createBowDefense(
         `${candidate?.mace ? "mace" : "bow"} threat: ${threat.username || threat.name || threat.id}`,
       );
     const shield = carriedItems(bot).find((i) => i.name === "shield");
+    if (bot.launcherAutoTotem?.protected) {
+      if (active) stop();
+      return false;
+    }
     if (!settings.shield || !shield || bot.supportFeature("doesntHaveOffHandSlot")) {
       if (active) stop();
       if (now() >= nextUnavailableAt) {
@@ -368,6 +372,10 @@ function createBowDefense(
       if (starting) await beforeDefend();
       if (rev !== generation || bot.health <= 0) return;
       await equipCombatItem(bot, shield, "off-hand", () => rev === generation && bot.health > 0);
+      if (bot.launcherAutoTotem?.protected) {
+        stop();
+        return;
+      }
       if (rev !== generation || bot.health <= 0) return;
       await bot.lookAt(defensePoint ?? entity.position, true);
       if (rev !== generation || bot.health <= 0) return;

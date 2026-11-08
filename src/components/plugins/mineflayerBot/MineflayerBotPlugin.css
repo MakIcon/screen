@@ -230,6 +230,19 @@
   margin: 0;
   padding: 0;
 }
+
+.mineflayer-bot-utility-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.mineflayer-bot-utility-settings .mineflayer-bot-combat-group .mineflayer-bot-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+
+.mineflayer-bot-utility-settings .mineflayer-bot-combat-group .mineflayer-bot-toggle-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
 .mineflayer-bot-combat-group:disabled {
   opacity: 0.45;
 }

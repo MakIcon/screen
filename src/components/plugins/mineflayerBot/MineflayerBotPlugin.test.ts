@@ -2,11 +2,110 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MINEFLAYER_BOT_SETTINGS, normalizeMineflayerBotSettings } from "../pluginSettings";
 
 describe("normalizeMineflayerBotSettings", () => {
+  it("preserves independent PvP bucket and web switches through saved settings", () => {
+    const keys = [
+      "lavaBucket",
+      "webTrap",
+      "webLavaCombo",
+      "webEscape",
+      "utilityRecoverySettings",
+      "webEscapeSword",
+      "webEscapeWater",
+      "autoExtinguish",
+      "extinguishPickupWater",
+      "extinguishSkipResistance",
+      "extinguishLava",
+      "autoTotem",
+      "totemRestoreOffhand",
+      "totemUseAbsorption",
+      "totemOnCrystal",
+      "retreatWeb",
+    ] as const;
+    for (const key of keys) {
+      expect(normalizeMineflayerBotSettings({}).combat[key]).toBe(true);
+      const saved = JSON.parse(
+        JSON.stringify(normalizeMineflayerBotSettings({ combat: { [key]: false } })),
+      );
+      expect(normalizeMineflayerBotSettings(saved).combat[key]).toBe(false);
+    }
+  });
+  it("persists utility strategy, timing, HP, reserve and recovery thresholds", () => {
+    const combat = normalizeMineflayerBotSettings({
+      combat: {
+        lavaHoldMs: 600,
+        lavaCooldownMs: 900,
+        lavaMaxDistance: 2.5,
+        webEscapeMode: "water",
+        webEscapeTimeoutMs: 7000,
+        webComboWaitMs: 2000,
+        extinguishDelayMs: 250,
+        extinguishHealth: 12,
+        totemMode: "always",
+        totemHealth: 12,
+        totemReleaseHealth: 5,
+        retreatWebReserve: 4,
+        utilityPickupRetries: 5,
+      },
+    }).combat;
+    expect(combat.lavaHoldMs).toBe(600);
+    expect(combat.lavaMaxDistance).toBe(2.5);
+    expect(combat.webEscapeMode).toBe("water");
+    expect(combat.extinguishHealth).toBe(12);
+    expect(combat.totemMode).toBe("always");
+    expect(combat.totemReleaseHealth).toBe(12);
+    expect(combat.retreatWebReserve).toBe(4);
+    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify({ combat }))).combat).toEqual(
+      combat,
+    );
+  });
+  it("master switches preserve the escape preferences and custom recovery values", () => {
+    const combat = normalizeMineflayerBotSettings({
+      combat: {
+        webEscape: false,
+        webEscapeSword: false,
+        webEscapeWater: true,
+        webEscapeMode: "water",
+        utilityRecoverySettings: false,
+        utilityConfirmTimeoutMs: 3500,
+        utilityPickupRetries: 5,
+      },
+    }).combat;
+    expect(combat.webEscape).toBe(false);
+    expect(combat.webEscapeSword).toBe(false);
+    expect(combat.webEscapeWater).toBe(true);
+    expect(combat.webEscapeMode).toBe("water");
+    expect(combat.utilityRecoverySettings).toBe(false);
+    expect(combat.utilityConfirmTimeoutMs).toBe(3500);
+    expect(combat.utilityPickupRetries).toBe(5);
+  });
+  it("rejects invalid utility modes and clamps unsafe timings and distances", () => {
+    const combat = normalizeMineflayerBotSettings({
+      combat: {
+        lavaHoldMs: -1,
+        lavaMaxDistance: 100,
+        utilityPickupRetries: 100,
+        webEscapeMode: "teleport",
+        totemMode: "sometimes",
+        totemHealth: Number.NaN,
+      },
+    }).combat;
+    expect(combat.lavaHoldMs).toBe(100);
+    expect(combat.lavaMaxDistance).toBe(4.5);
+    expect(combat.utilityPickupRetries).toBe(5);
+    expect(combat.webEscapeMode).toBe("auto");
+    expect(combat.totemMode).toBe("danger");
+    expect(combat.totemHealth).toBe(8);
+  });
   it("preserves the low-ceiling jump switch separately from parkour", () => {
     for (const allowLowCeilingJumps of [true, false]) {
-      const saved = JSON.parse(JSON.stringify(normalizeMineflayerBotSettings({
-        allowLowCeilingJumps, allowParkour: false,
-      })));
+      const saved = JSON.parse(
+        JSON.stringify(
+          normalizeMineflayerBotSettings({
+            allowLowCeilingJumps,
+            allowParkour: false,
+          }),
+        ),
+      );
       expect(normalizeMineflayerBotSettings(saved).allowLowCeilingJumps).toBe(allowLowCeilingJumps);
     }
   });

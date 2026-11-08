@@ -1,0 +1,117 @@
+{
+  "bounds": {
+    "lavaMinHealth": [
+      1,
+      20
+    ],
+    "lavaMaxDistance": [
+      1,
+      4.5
+    ],
+    "lavaCooldownMs": [
+      500,
+      10000
+    ],
+    "lavaHoldMs": [
+      100,
+      1000
+    ],
+    "webTrapDistance": [
+      1,
+      4.5
+    ],
+    "webTrapCooldownMs": [
+      300,
+      10000
+    ],
+    "webPredictionTicks": [
+      0,
+      6
+    ],
+    "webComboWaitMs": [
+      200,
+      5000
+    ],
+    "webEscapeTimeoutMs": [
+      1500,
+      10000
+    ],
+    "webEscapeMoveMs": [
+      300,
+      5000
+    ],
+    "extinguishHealth": [
+      1,
+      20
+    ],
+    "extinguishDelayMs": [
+      0,
+      1500
+    ],
+    "extinguishCooldownMs": [
+      500,
+      10000
+    ],
+    "totemHealth": [
+      1,
+      20
+    ],
+    "totemReleaseHealth": [
+      1,
+      20
+    ],
+    "totemHoldMs": [
+      0,
+      10000
+    ],
+    "totemDangerRange": [
+      2,
+      12
+    ],
+    "retreatWebHealth": [
+      1,
+      20
+    ],
+    "retreatWebDistance": [
+      1,
+      6
+    ],
+    "retreatWebCooldownMs": [
+      500,
+      10000
+    ],
+    "retreatWebReserve": [
+      0,
+      64
+    ],
+    "utilityConfirmTimeoutMs": [
+      500,
+      5000
+    ],
+    "utilityPickupRetries": [
+      1,
+      5
+    ],
+    "utilitySourceLifetimeMs": [
+      2000,
+      15000
+    ]
+  },
+  "choices": {
+    "webEscapeMode": [
+      "auto",
+      "sword",
+      "water"
+    ],
+    "totemMode": [
+      "danger",
+      "always"
+    ]
+  },
+  "fractional": [
+    "lavaMaxDistance",
+    "webTrapDistance",
+    "totemDangerRange",
+    "retreatWebDistance"
+  ]
+}

@@ -723,6 +723,49 @@ pub struct MineflayerCombatSettings {
     pub shield: bool,
     pub shield_break: bool,
     pub mace_defense: bool,
+    pub lava_bucket: bool,
+    pub web_trap: bool,
+    pub web_lava_combo: bool,
+    pub web_escape: bool,
+    pub web_escape_sword: bool,
+    pub web_escape_water: bool,
+    pub lava_min_health: u32,
+    pub lava_max_distance: f64,
+    pub lava_cooldown_ms: u32,
+    pub lava_hold_ms: u32,
+    pub web_trap_distance: f64,
+    pub web_trap_cooldown_ms: u32,
+    pub web_prediction_ticks: u32,
+    pub web_combo_wait_ms: u32,
+    pub web_escape_mode: String,
+    pub web_escape_timeout_ms: u32,
+    pub web_escape_move_ms: u32,
+    pub web_escape_pickup_water: bool,
+    pub auto_extinguish: bool,
+    pub extinguish_health: u32,
+    pub extinguish_delay_ms: u32,
+    pub extinguish_cooldown_ms: u32,
+    pub extinguish_pickup_water: bool,
+    pub extinguish_skip_resistance: bool,
+    pub extinguish_lava: bool,
+    pub auto_totem: bool,
+    pub totem_mode: String,
+    pub totem_health: u32,
+    pub totem_release_health: u32,
+    pub totem_hold_ms: u32,
+    pub totem_restore_offhand: bool,
+    pub totem_use_absorption: bool,
+    pub totem_on_crystal: bool,
+    pub totem_danger_range: f64,
+    pub retreat_web: bool,
+    pub retreat_web_health: u32,
+    pub retreat_web_distance: f64,
+    pub retreat_web_cooldown_ms: u32,
+    pub retreat_web_reserve: u32,
+    pub utility_confirm_timeout_ms: u32,
+    pub utility_recovery_settings: bool,
+    pub utility_pickup_retries: u32,
+    pub utility_source_lifetime_ms: u32,
     pub smooth_aim: bool,
     pub smooth_aim_speed: u32,
     pub bow_enabled: bool,
@@ -795,6 +838,49 @@ impl Default for MineflayerCombatSettings {
             shield: true,
             shield_break: true,
             mace_defense: true,
+            lava_bucket: true,
+            web_trap: true,
+            web_lava_combo: true,
+            web_escape: true,
+            web_escape_sword: true,
+            web_escape_water: true,
+            lava_min_health: 8,
+            lava_max_distance: 4.0,
+            lava_cooldown_ms: 2500,
+            lava_hold_ms: 250,
+            web_trap_distance: 4.0,
+            web_trap_cooldown_ms: 1800,
+            web_prediction_ticks: 3,
+            web_combo_wait_ms: 1200,
+            web_escape_mode: "auto".into(),
+            web_escape_timeout_ms: 5000,
+            web_escape_move_ms: 2000,
+            web_escape_pickup_water: true,
+            auto_extinguish: true,
+            extinguish_health: 20,
+            extinguish_delay_ms: 100,
+            extinguish_cooldown_ms: 2000,
+            extinguish_pickup_water: true,
+            extinguish_skip_resistance: true,
+            extinguish_lava: true,
+            auto_totem: true,
+            totem_mode: "danger".into(),
+            totem_health: 8,
+            totem_release_health: 14,
+            totem_hold_ms: 1500,
+            totem_restore_offhand: true,
+            totem_use_absorption: true,
+            totem_on_crystal: true,
+            totem_danger_range: 6.0,
+            retreat_web: true,
+            retreat_web_health: 12,
+            retreat_web_distance: 4.5,
+            retreat_web_cooldown_ms: 500,
+            retreat_web_reserve: 0,
+            utility_confirm_timeout_ms: 1500,
+            utility_recovery_settings: true,
+            utility_pickup_retries: 3,
+            utility_source_lifetime_ms: 8000,
             smooth_aim: true,
             smooth_aim_speed: 100,
             bow_enabled: true,
@@ -1530,7 +1616,7 @@ mod loader_schema_tests {
     #[test]
     fn mineflayer_combat_round_trips_and_defaults_match_worker() {
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
-            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175, "pearlChase": true, "weapon": "mace", "maceDefense": false }
+            "combat": { "engine": "basic", "bowEngine": "hawkeye", "bowPredict": false, "attackRange": 2.5, "smoothAimSpeed": 175, "pearlChase": true, "weapon": "mace", "maceDefense": false, "lavaBucket": false, "webTrap": false, "webLavaCombo": false, "webEscapeSword": false, "webEscapeWater": false, "webEscape": false, "utilityRecoverySettings": false, "autoExtinguish": false, "autoTotem": false, "retreatWeb": false, "totemHealth": 10, "totemReleaseHealth": 16, "totemMode": "always", "webEscapeMode": "water", "lavaHoldMs": 600 }
         })).unwrap();
         let saved = serde_json::to_value(&parsed).unwrap();
         assert_eq!(saved["combat"]["engine"], "basic");
@@ -1542,6 +1628,25 @@ mod loader_schema_tests {
         assert_eq!(saved["combat"]["pearlChase"], true);
         assert_eq!(saved["combat"]["weapon"], "mace");
         assert_eq!(saved["combat"]["maceDefense"], false);
+        for key in [
+            "lavaBucket",
+            "webTrap",
+            "webLavaCombo",
+            "webEscapeSword",
+            "webEscapeWater",
+            "webEscape",
+            "utilityRecoverySettings",
+            "autoExtinguish",
+            "autoTotem",
+            "retreatWeb",
+        ] {
+            assert_eq!(saved["combat"][key], false);
+        }
+        assert_eq!(saved["combat"]["totemHealth"], 10);
+        assert_eq!(saved["combat"]["totemReleaseHealth"], 16);
+        assert_eq!(saved["combat"]["totemMode"], "always");
+        assert_eq!(saved["combat"]["webEscapeMode"], "water");
+        assert_eq!(saved["combat"]["lavaHoldMs"], 600);
         let worker: super::MineflayerCombatSettings = serde_json::from_str(include_str!(
             "../../extensions/mineflayer-bot/combat-defaults.json"
         ))

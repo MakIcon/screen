@@ -9,6 +9,7 @@ import type {
   ProxyPluginSettings,
 } from "../../types";
 import combatDefaults from "../../../extensions/mineflayer-bot/combat-defaults.json";
+import utilityOptions from "../../../extensions/mineflayer-bot/combat-utility-options.json";
 import survivalDefaults from "../../../extensions/mineflayer-bot/survival-defaults.json";
 import gatheringDefaults from "../../../extensions/mineflayer-bot/gathering-defaults.json";
 import { normalizeStorageGroups } from "./mineflayerBot/storageGroups";
@@ -38,7 +39,8 @@ export function normalizeMineflayerGatheringSettings(value: unknown): Mineflayer
 }
 
 export function normalizeMineflayerSurvivalSettings(value: unknown): MineflayerSurvivalSettings {
-  const draft = value && typeof value === "object" ? value as Partial<MineflayerSurvivalSettings> : {};
+  const draft =
+    value && typeof value === "object" ? (value as Partial<MineflayerSurvivalSettings>) : {};
   const defaults = DEFAULT_MINEFLAYER_SURVIVAL_SETTINGS;
   return {
     autoEat: normalizeBoolean(draft.autoEat, defaults.autoEat),
@@ -59,6 +61,7 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
   const draft = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const result = { ...DEFAULT_MINEFLAYER_COMBAT_SETTINGS };
   const choices: Record<string, string[]> = {
+    ...utilityOptions.choices,
     engine: ["custom", "basic"],
     style: ["auto", "melee", "ranged", "crystal"],
     autoTarget: ["manual", "hostile"],
@@ -72,6 +75,7 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
     bowDefenseMode: ["early", "trajectory"],
   };
   const bounds: Record<string, [number, number]> = {
+    ...(utilityOptions.bounds as unknown as Record<string, [number, number]>),
     bowDefenseCheckMs: [0, 500],
     bowDefenseRange: [4, 128],
     bowDefenseMargin: [0, 2],
@@ -109,6 +113,7 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
         normalized[key] = draft[key];
     } else if (typeof draft[key] === "number" && Number.isFinite(draft[key])) {
       const numeric = [
+        ...utilityOptions.fractional,
         "attackRange",
         "targetRange",
         "bowRange",
@@ -123,6 +128,7 @@ export function normalizeMineflayerCombatSettings(value: unknown): MineflayerCom
     }
   }
   result.pearlMinDistance = Math.min(result.pearlMinDistance, result.pearlMaxDistance);
+  result.totemReleaseHealth = Math.max(result.totemHealth, result.totemReleaseHealth);
   return result;
 }
 
@@ -301,7 +307,10 @@ export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPlu
     followDistance: normalizeInteger(draft.followDistance, defaults.followDistance, 1, 16),
     gotoRadius: normalizeInteger(draft.gotoRadius, defaults.gotoRadius, 1, 16),
     allowSprinting: normalizeBoolean(draft.allowSprinting, defaults.allowSprinting),
-    allowLowCeilingJumps: normalizeBoolean(draft.allowLowCeilingJumps, defaults.allowLowCeilingJumps),
+    allowLowCeilingJumps: normalizeBoolean(
+      draft.allowLowCeilingJumps,
+      defaults.allowLowCeilingJumps,
+    ),
     allowParkour: normalizeBoolean(draft.allowParkour, defaults.allowParkour),
     allowAirStrafe: normalizeBoolean(draft.allowAirStrafe, defaults.allowAirStrafe),
     canDig: normalizeBoolean(draft.canDig, defaults.canDig),

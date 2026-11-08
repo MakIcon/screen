@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useState } from "react";
 import type { MineflayerCombatSettings } from "../../../types";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementSlider } from "../../inputs/ElementSlider";
@@ -7,6 +7,8 @@ import { InlineDropdown } from "../../inputs/InlineDropdown";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { DEFAULT_MINEFLAYER_COMBAT_SETTINGS } from "../pluginSettings";
 import { useTranslation } from "../../../i18n/locale";
+import { MineflayerUtilitySettings } from "./MineflayerUtilitySettings";
+import { CombatSettingsGroup } from "./CombatSettingsGroup";
 
 type Props = {
   settings: MineflayerCombatSettings;
@@ -91,17 +93,6 @@ const PRESETS: Array<{
     },
   },
 ];
-
-function CombatSettingsGroup({
-  disabled = false,
-  ...props
-}: ComponentProps<typeof PluginSettingsGroup> & { disabled?: boolean }) {
-  return (
-    <fieldset className="mineflayer-bot-combat-group" disabled={disabled}>
-      <PluginSettingsGroup {...props} />
-    </fieldset>
-  );
-}
 
 export function MineflayerCombatSettingsEditor({ settings, onChange, commandPrefix }: Props) {
   const tr = useTranslation();
@@ -346,6 +337,7 @@ export function MineflayerCombatSettingsEditor({ settings, onChange, commandPref
             <p className="mineflayer-bot-combat-note">{tr("bot.combatSettings.100IsTheNormal")}</p>
           </PluginSettingsGroup>
         </CombatSettingsGroup>
+        <MineflayerUtilitySettings settings={settings} onChange={onChange} />
         <CombatSettingsGroup
           disabled={!settings.enabled}
           title={tr("bot.combatSettings.arrowDefense")}
