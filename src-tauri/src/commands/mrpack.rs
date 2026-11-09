@@ -110,7 +110,10 @@ struct MrpackBundle {
 fn safe_relative_path(raw: &str) -> Result<PathBuf, CommandError> {
     let normalized = raw.replace('\\', "/");
     let path = Path::new(&normalized);
-    if path.is_absolute() {
+    // A Windows drive prefix is still unsafe when inspecting the pack on Unix.
+    let windows_drive = normalized.as_bytes().get(1) == Some(&b':')
+        && normalized.as_bytes()[0].is_ascii_alphabetic();
+    if path.is_absolute() || windows_drive {
         return Err(CommandError::new(
             ErrorCode::InvalidInput,
             format!("absolute path is not allowed in mrpack: {raw}"),
@@ -1246,6 +1249,8 @@ mod tests {
         assert!(safe_relative_path("../escape.jar").is_err());
         assert!(safe_relative_path("mods/../../escape.jar").is_err());
         assert!(safe_relative_path("C:/escape.jar").is_err());
+        assert!(safe_relative_path(r"C:\escape.jar").is_err());
+        assert!(safe_relative_path("C:escape.jar").is_err());
         assert!(safe_relative_path("mods/example.jar").is_ok());
     }
 
