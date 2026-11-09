@@ -313,22 +313,20 @@ fn java_bin_from_env(var_name: &str) -> Option<String> {
 }
 
 fn java_root_candidates() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-
     #[cfg(windows)]
-    {
-        roots.extend([
-            PathBuf::from(r"C:\Program Files\Java"),
-            PathBuf::from(r"C:\Program Files\Eclipse Adoptium"),
-            PathBuf::from(r"C:\Program Files\Eclipse Foundation"),
-            PathBuf::from(r"C:\Program Files\Microsoft"),
-            PathBuf::from(r"C:\Program Files\Azul Systems\Zulu"),
-            PathBuf::from(r"C:\Program Files\Amazon Corretto"),
-            PathBuf::from(r"C:\Program Files\BellSoft\LibericaJDK"),
-            PathBuf::from(r"C:\Program Files\IBM Semeru Runtime Open Edition"),
-            PathBuf::from(r"C:\Program Files\SapMachine"),
-        ]);
-    }
+    let roots = vec![
+        PathBuf::from(r"C:\Program Files\Java"),
+        PathBuf::from(r"C:\Program Files\Eclipse Adoptium"),
+        PathBuf::from(r"C:\Program Files\Eclipse Foundation"),
+        PathBuf::from(r"C:\Program Files\Microsoft"),
+        PathBuf::from(r"C:\Program Files\Azul Systems\Zulu"),
+        PathBuf::from(r"C:\Program Files\Amazon Corretto"),
+        PathBuf::from(r"C:\Program Files\BellSoft\LibericaJDK"),
+        PathBuf::from(r"C:\Program Files\IBM Semeru Runtime Open Edition"),
+        PathBuf::from(r"C:\Program Files\SapMachine"),
+    ];
+    #[cfg(not(windows))]
+    let roots = Vec::new();
 
     roots
 }

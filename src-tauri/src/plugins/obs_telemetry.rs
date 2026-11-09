@@ -812,12 +812,22 @@ fn spawn_obs_server(
 
         match listener.accept() {
             Ok((stream, _)) => {
-                if clients
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
-                        (count < MAX_CLIENTS).then_some(count + 1)
-                    })
-                    .is_err()
-                {
+                let mut count = clients.load(Ordering::Relaxed);
+                let reserved = loop {
+                    if count >= MAX_CLIENTS {
+                        break false;
+                    }
+                    match clients.compare_exchange_weak(
+                        count,
+                        count + 1,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break true,
+                        Err(current) => count = current,
+                    }
+                };
+                if !reserved {
                     continue;
                 }
                 let request_state = state.clone();
