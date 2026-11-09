@@ -104,6 +104,7 @@ pub fn run() {
             commands::modrinth::list_installed_shaders,
             commands::modrinth::uninstall_modrinth_shader,
             commands::settings::get_launcher_settings,
+            commands::settings::set_player_nickname,
             commands::settings::set_default_ram_gb,
             commands::settings::set_optimized_java_args,
             commands::settings::set_auto_download_java,

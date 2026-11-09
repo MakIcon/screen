@@ -394,6 +394,9 @@ pub struct AssetObject {
 #[serde(rename_all = "camelCase")]
 pub struct LauncherSettings {
     pub default_ram_gb: u32,
+    /// Keep the offline player identity outside the webview's versioned cache.
+    #[serde(default)]
+    pub player_nickname: Option<String>,
     #[serde(default = "default_optimized_java_args")]
     pub optimized_java_args: bool,
     /// Download a matching Java runtime automatically when none is found locally.
@@ -1198,6 +1201,7 @@ impl Default for LauncherSettings {
     fn default() -> Self {
         Self {
             default_ram_gb: 4,
+            player_nickname: None,
             optimized_java_args: default_optimized_java_args(),
             auto_download_java: default_auto_download_java(),
             mascot_enabled: default_mascot_enabled(),
@@ -1786,6 +1790,7 @@ mod loader_schema_tests {
         });
         let parsed: LauncherSettings = serde_json::from_value(legacy).unwrap();
 
+        assert_eq!(parsed.player_nickname, None);
         assert_eq!(parsed.mascot.name, "PIXEL");
         assert!(parsed.mascot.show_name);
         assert!(parsed.mascot.rage_enabled);

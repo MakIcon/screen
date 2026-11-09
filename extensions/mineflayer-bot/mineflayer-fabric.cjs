@@ -26,9 +26,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/binary.js
+// vendor/mineflayer-fabric/src/binary.js
 var require_binary = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/binary.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/binary.js"(exports2, module2) {
     "use strict";
     var utf8 = new TextDecoder("utf-8", { fatal: true });
     var lenientUtf8 = new TextDecoder("utf-8");
@@ -261,9 +261,9 @@ var require_binary = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/registry.js
+// vendor/mineflayer-fabric/src/registry.js
 var require_registry = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/registry.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/registry.js"(exports2, module2) {
     "use strict";
     var { Reader, check, identifier, isIdentifier, readNbt, FabricProtocolError } = require_binary();
     function decodeBinary(buffer, maxEntries, withAttributes, allowTrailing) {
@@ -386,9 +386,9 @@ var require_registry = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/protocol.js
+// vendor/mineflayer-fabric/src/protocol.js
 var require_protocol = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/protocol.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/protocol.js"(exports2, module2) {
     "use strict";
     var { dirname } = require("node:path");
     function mineflayerProtocolPath() {
@@ -421,9 +421,9 @@ var require_protocol = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/handshake.js
+// vendor/mineflayer-fabric/src/handshake.js
 var require_handshake = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/handshake.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/handshake.js"(exports2, module2) {
     "use strict";
     var { EventEmitter } = require("node:events");
     var {
@@ -919,9 +919,9 @@ var require_handshake = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/adapter.js
+// vendor/mineflayer-fabric/src/adapter.js
 var require_adapter = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/adapter.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/adapter.js"(exports2, module2) {
     "use strict";
     var FULL_CUBE = [[0, 0, 0, 1, 1, 1]];
     var SIMPLE_TABLES = [
@@ -1264,9 +1264,9 @@ var require_adapter = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/src/mineflayer.js
+// vendor/mineflayer-fabric/src/mineflayer.js
 var require_mineflayer = __commonJS({
-  "extensions/mineflayer-bot/vendor/mineflayer-fabric/src/mineflayer.js"(exports2, module2) {
+  "vendor/mineflayer-fabric/src/mineflayer.js"(exports2, module2) {
     "use strict";
     var { fabricHandshake } = require_handshake();
     var { FabricProtocolError } = require_binary();
@@ -1390,7 +1390,7 @@ var require_mineflayer = __commonJS({
   }
 });
 
-// extensions/mineflayer-bot/vendor/mineflayer-fabric/index.js
+// vendor/mineflayer-fabric/index.js
 module.exports = {
   ...require_handshake(),
   ...require_mineflayer(),

@@ -70,6 +70,14 @@ pub async fn get_launcher_settings() -> Result<LauncherSettings, CommandError> {
 }
 
 #[tauri::command]
+pub async fn set_player_nickname(nickname: String) -> Result<(), CommandError> {
+    let _operation = crate::operations::begin("settings", None)?;
+    let mut settings = edit_settings().await?;
+    settings.player_nickname = Some(nickname);
+    settings.commit().await
+}
+
+#[tauri::command]
 pub async fn set_default_ram_gb(ram: u32) -> Result<LauncherSettings, CommandError> {
     let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;

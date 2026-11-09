@@ -407,11 +407,13 @@ mod name_tests {
             }
         });
         first.default_ram_gb = 7;
+        first.player_nickname = Some("ReturningPlayer".into());
         first.commit().await.unwrap();
         drop(first);
         second.await.unwrap();
         let result = SettingsStore::open(path.clone(), lock).await.unwrap();
         assert_eq!(result.default_ram_gb, 7);
+        assert_eq!(result.player_nickname.as_deref(), Some("ReturningPlayer"));
         assert_eq!(result.plugins.blue_map.cli_jar_path, "extension.jar");
         drop(result);
         tokio::fs::remove_file(path).await.unwrap();

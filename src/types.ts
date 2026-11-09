@@ -261,6 +261,7 @@ export type MascotSettings = {
 
 export type LauncherSettings = {
   defaultRamGb: number;
+  playerNickname?: string | null;
   optimizedJavaArgs: boolean;
   autoDownloadJava: boolean;
   mascotEnabled: boolean;

@@ -272,7 +272,7 @@ export default function App() {
     setActiveMsAccountId,
     showMsModal,
     setShowMsModal,
-  } = useAccounts();
+  } = useAccounts(launcherSettings);
   const pluginSettingsVersion = useRef(0);
 
   useEffect(() => {
