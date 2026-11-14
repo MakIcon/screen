@@ -2,20 +2,26 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "../../../i18n/locale";
 import { RuntimeMonitorScope, useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
-import type { MineflayerBotPluginSettings } from "../../../types";
+import type {
+  MineflayerBotPluginSettings,
+  MineflayerBotProfile,
+  MineflayerBotStatus,
+} from "../../../types";
 import type { PluginSettingsProps } from "../pluginTypes";
 import { normalizeMineflayerBotSettings } from "../pluginSettings";
 import { flushPluginSettings } from "../pluginSettingsSync";
 import { MineflayerBotCreator } from "./MineflayerBotCreator";
 import { MineflayerFleetControl } from "./MineflayerFleetControl";
-import { toErrorMessage } from "../../../utils/errors";
+import { toErrorDetails, toErrorMessage } from "../../../utils/errors";
 import { BotSessionContext } from "./BotSessionContext";
+import { BotFleetContext } from "./BotFleetContext";
+import { botConfiguration, createBotProfiles, DEFAULT_BOT_ID } from "./botFleet";
 import {
-  botConfiguration,
-  createBotProfiles,
-  DEFAULT_BOT_ID,
-  chaoticMovementTargets,
-} from "./botFleet";
+  dispatchFleetRequests,
+  workflowIsRunning,
+  type FleetReceipt,
+  type FleetRequest,
+} from "./fleetControl";
 
 type Props = PluginSettingsProps & {
   renderEditor: (
@@ -23,51 +29,70 @@ type Props = PluginSettingsProps & {
     onChange: (next: MineflayerBotPluginSettings) => void,
   ) => ReactNode;
 };
+const commandRequest = (message: string): FleetRequest => ({
+  command: "send_mineflayer_bot_chat",
+  args: { message, command: true },
+});
+const diagnostic = (cause: unknown) => {
+  const message = toErrorMessage(cause),
+    detail = toErrorDetails(cause);
+  return detail && detail !== message ? `${message}: ${detail}` : message;
+};
 
 export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }: Props) {
   const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const root = plugins.mineflayerBot;
-  const [selected, setSelected] = useState(DEFAULT_BOT_ID);
-  const [count, setCount] = useState(1);
-  const [prefix, setPrefix] = useState("SCREEN_BOT");
-  const [busy, setBusy] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const [chaosBusy, setChaosBusy] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [selection, setSelection] = useState<string[]>([DEFAULT_BOT_ID]);
+  const [focusId, setFocusId] = useState(DEFAULT_BOT_ID);
+  const [count, setCount] = useState(1),
+    [prefix, setPrefix] = useState("SCREEN_BOT");
+  const [lifecycle, setLifecycle] = useState("");
+  const [dispatching, setDispatching] = useState(false);
+  const [receipts, setReceipts] = useState<FleetReceipt[]>([]);
+  const [lastAction, setLastAction] = useState("");
   const [error, setError] = useState("");
-  const busyRef = useRef(false);
-  const stoppingRef = useRef(false);
-  const chaosBusyRef = useRef(false);
-  const deletingRef = useRef(false);
-  const cancelled = useRef(false);
+  const lifecycleRef = useRef("");
+  const cancelledStartup = useRef(false);
+  const startupGeneration = useRef(0);
+  const currentRun = useRef<{ cancelled: boolean } | null>(null);
   useEffect(
     () => () => {
-      cancelled.current = true;
+      cancelledStartup.current = true;
+      if (currentRun.current) currentRun.current.cancelled = true;
+      currentRun.current = null;
     },
     [],
   );
   const profiles = [{ id: DEFAULT_BOT_ID, settings: botConfiguration(root) }, ...root.bots];
-  const active = profiles.find((bot) => bot.id === selected) ?? profiles[0];
+  const recipients = profiles.filter((bot) => selection.includes(bot.id));
+  const active = recipients.find((bot) => bot.id === focusId) ?? recipients[0] ?? profiles[0];
   const statuses =
     monitor.snapshot?.mineflayerBots ?? (monitor.snapshot ? [monitor.snapshot.mineflayerBot] : []);
   const statusFor = (id: string) =>
     statuses.find((status) => (status.botId ?? DEFAULT_BOT_ID) === id);
-  const activeStatus = statusFor(active.id) ?? {
+  const activeStatus: MineflayerBotStatus = statusFor(active.id) ?? {
     botId: active.id,
     revision: 0,
     running: false,
     state: "idle",
     logs: [],
   };
-  const connected = statuses.filter(
-    (status) => status.running && status.state === "connected",
-  ).length;
-  const chaosActive = chaoticMovementTargets(statuses, false).length > 0;
-  const packageReady = Boolean(
-    monitor.snapshot?.optionalExtensions.find((extension) => extension.id === "mineflayer-bot")
-      ?.installed,
+  const online = recipients.filter(
+    (bot) => statusFor(bot.id)?.running && statusFor(bot.id)?.state === "connected",
   );
+  const packageReady = Boolean(
+    monitor.snapshot?.optionalExtensions.find((item) => item.id === "mineflayer-bot")?.installed,
+  );
+  const locked = Boolean(lifecycle) || dispatching;
+  const nameFor = (bot: MineflayerBotProfile) =>
+    statusFor(bot.id)?.botUsername ||
+    (bot.settings.botAccountMode === "microsoft"
+      ? context.microsoftAccounts.find(
+          (account) => account.id === bot.settings.botMicrosoftAccountId,
+        )?.username
+      : null) ||
+    bot.settings.botNickname;
   const save = (mineflayerBot: MineflayerBotPluginSettings) =>
     onChange({ ...plugins, mineflayerBot });
   const updateActive = (next: MineflayerBotPluginSettings) => {
@@ -80,26 +105,64 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
         ),
       });
   };
-
-  const add = () => {
-    const bots = createBotProfiles(root, active.settings, count, prefix);
-    if (!bots.length) return;
-    save(normalizeMineflayerBotSettings({ ...root, bots: [...root.bots, ...bots] }));
-    setSelected(bots[0].id);
+  const select = (ids: string[]) => {
+    setSelection(ids);
+    if (!ids.includes(focusId)) setFocusId(ids[0] ?? DEFAULT_BOT_ID);
   };
 
-  const startAll = async () => {
-    if (busyRef.current || stoppingRef.current || deletingRef.current) return;
-    busyRef.current = true;
-    cancelled.current = false;
-    setBusy(true);
+  async function run(
+    label: string,
+    requests: (bot: MineflayerBotProfile, status?: MineflayerBotStatus) => FleetRequest[],
+    emergency = false,
+  ) {
+    if (lifecycleRef.current || (!emergency && currentRun.current) || !recipients.length) return;
+    if (currentRun.current) currentRun.current.cancelled = true;
+    const token = { cancelled: false };
+    currentRun.current = token;
+    setDispatching(true);
     setError("");
+    setLastAction(label);
+    setReceipts([]);
+    try {
+      const jobs = recipients.flatMap((bot) => {
+        const status = statusFor(bot.id);
+        const offline = !status?.running || status.state !== "connected";
+        const planned = requests(bot, status);
+        return !offline && !planned.length
+          ? []
+          : [{ botId: bot.id, name: nameFor(bot), requests: planned, offline }];
+      });
+      await dispatchFleetRequests(jobs, invoke, {
+        cancelled: () => token.cancelled,
+        offlineMessage: tr("bot.fleetControl.offline"),
+        errorMessage: diagnostic,
+        onReceipt: (receipt) => {
+          if (currentRun.current === token) setReceipts((previous) => [...previous, receipt]);
+        },
+      });
+      await monitor.refresh();
+    } catch (cause) {
+      if (currentRun.current === token) setError(diagnostic(cause));
+    } finally {
+      if (currentRun.current === token) {
+        currentRun.current = null;
+        setDispatching(false);
+      }
+    }
+  }
+
+  async function connectSelected() {
+    if (lifecycleRef.current || currentRun.current || !recipients.length) return;
+    lifecycleRef.current = "start";
+    setLifecycle("start");
+    setError("");
+    cancelledStartup.current = false;
+    const generation = ++startupGeneration.current;
     const failures: string[] = [];
     try {
       await flushPluginSettings();
-      for (let index = 0; index < profiles.length; index++) {
-        if (cancelled.current) break;
-        const bot = profiles[index];
+      for (const [index, bot] of recipients.entries()) {
+        if (cancelledStartup.current || generation !== startupGeneration.current) break;
         if (statusFor(bot.id)?.running) continue;
         try {
           await invoke("start_mineflayer_bot", {
@@ -109,220 +172,321 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
             launcherMsAccountId: context.launcherMsAccountId ?? undefined,
           });
         } catch (cause) {
-          failures.push(`${bot.settings.botNickname}: ${toErrorMessage(cause)}`);
+          failures.push(`${nameFor(bot)}: ${diagnostic(cause)}`);
         }
-        if (index < profiles.length - 1 && !cancelled.current)
+        if (
+          index < recipients.length - 1 &&
+          !cancelledStartup.current &&
+          generation === startupGeneration.current
+        )
           await new Promise((resolve) => window.setTimeout(resolve, 1000));
       }
-      if (failures.length) setError(failures.join("\n"));
+      if (generation === startupGeneration.current) setError(failures.join("\n"));
     } catch (cause) {
-      setError(toErrorMessage(cause));
+      if (generation === startupGeneration.current) setError(diagnostic(cause));
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      if (generation === startupGeneration.current && lifecycleRef.current === "start") {
+        lifecycleRef.current = "";
+        setLifecycle("");
+      }
       await monitor.refresh();
     }
-  };
+  }
 
-  const stopAll = async () => {
-    if (stoppingRef.current || deletingRef.current) return;
-    cancelled.current = true;
-    stoppingRef.current = true;
-    setStopping(true);
-    setError("");
-    try {
-      await invoke("stop_all_mineflayer_bots");
-      await monitor.refresh();
-    } catch (cause) {
-      setError(toErrorMessage(cause));
-    } finally {
-      stoppingRef.current = false;
-      setStopping(false);
-    }
-  };
-
-  const deleteAll = async () => {
-    if (deletingRef.current || stoppingRef.current || !root.bots.length) return;
-    deletingRef.current = true;
-    cancelled.current = true;
-    setDeleting(true);
-    setError("");
-    try {
-      // Stop the current worker and any queued group startup before removing
-      // profiles, so a deleted bot cannot remain connected in the background.
-      await invoke("stop_all_mineflayer_bots");
-      await flushPluginSettings();
-      save({ ...root, bots: [] });
-      setSelected(DEFAULT_BOT_ID);
-      setCount(1);
-      await flushPluginSettings();
-      await monitor.refresh();
-    } catch (cause) {
-      setError(toErrorMessage(cause));
-    } finally {
-      deletingRef.current = false;
-      setDeleting(false);
-    }
-  };
-
-  const controller = {
-    ...monitor,
-    snapshot: monitor.snapshot ? { ...monitor.snapshot, mineflayerBot: activeStatus } : null,
-  };
-
-  const toggleChaosAll = async () => {
-    if (chaosBusyRef.current || busyRef.current || stoppingRef.current || deletingRef.current)
-      return;
-    const targets = chaoticMovementTargets(statuses, !chaosActive);
-    if (!targets.length) return;
-    chaosBusyRef.current = true;
-    setChaosBusy(true);
+  async function disconnectSelected() {
+    if (lifecycleRef.current && lifecycleRef.current !== "start") return;
+    cancelledStartup.current = true;
+    startupGeneration.current++;
+    if (currentRun.current) currentRun.current.cancelled = true;
+    lifecycleRef.current = "stop";
+    setLifecycle("stop");
     setError("");
     try {
       const results = await Promise.allSettled(
-        targets.map((bot) =>
-          invoke("send_mineflayer_bot_chat", {
-            botId: bot.botId ?? DEFAULT_BOT_ID,
-            message: chaosActive ? "chaos off" : "chaos on",
-            command: true,
-          }),
-        ),
+        recipients.map((bot) => invoke("stop_mineflayer_bot", { botId: bot.id })),
       );
       setError(
         results
           .flatMap((result, index) =>
             result.status === "rejected"
-              ? [
-                  `${targets[index].botUsername || targets[index].botId || root.botNickname}: ${toErrorMessage(result.reason)}`,
-                ]
+              ? [`${nameFor(recipients[index])}: ${diagnostic(result.reason)}`]
               : [],
           )
           .join("\n"),
       );
-      await monitor.refresh();
-    } catch (cause) {
-      setError(toErrorMessage(cause));
     } finally {
-      chaosBusyRef.current = false;
-      setChaosBusy(false);
+      lifecycleRef.current = "";
+      setLifecycle("");
+      await monitor.refresh();
     }
+  }
+
+  async function removeProfiles(all: boolean) {
+    if (lifecycleRef.current || currentRun.current) return;
+    const ids = (all ? root.bots : recipients)
+      .filter((bot) => bot.id !== DEFAULT_BOT_ID)
+      .map((bot) => bot.id);
+    if (!ids.length) return;
+    lifecycleRef.current = "delete";
+    setLifecycle("delete");
+    setError("");
+    try {
+      await Promise.all(ids.map((botId) => invoke("stop_mineflayer_bot", { botId })));
+      await flushPluginSettings();
+      save({ ...root, bots: root.bots.filter((bot) => !ids.includes(bot.id)) });
+      select([DEFAULT_BOT_ID]);
+      await flushPluginSettings();
+    } catch (cause) {
+      setError(diagnostic(cause));
+    } finally {
+      lifecycleRef.current = "";
+      setLifecycle("");
+      await monitor.refresh();
+    }
+  }
+
+  const quick = (action: "come" | "follow" | "deliver" | "pause" | "resume" | "stop") =>
+    void run(
+      tr(`bot.fleetControl.action.${action}`),
+      (_bot, status) => {
+        if (["pause", "resume"].includes(action)) {
+          const phase = status?.inventory?.workflow?.phase;
+          if (workflowIsRunning(status)) {
+            if (action === "resume" && !["paused", "pausing"].includes(phase ?? "")) return [];
+            if (action === "pause" && !["starting", "running"].includes(phase ?? "")) return [];
+            return [{ command: "control_mineflayer_bot_workflow", args: { action } }];
+          }
+          if (!status?.gathering?.active && !status?.gathering?.suspended) return [];
+          return [commandRequest(`work ${action}`)];
+        }
+        return [commandRequest(action)];
+      },
+      action === "stop",
+    );
+  const chaosActive = online.some((bot) => statusFor(bot.id)?.inventory?.chaoticMovement);
+  const failed = receipts.filter((receipt) => receipt.state === "error").length;
+  const controller = {
+    ...monitor,
+    snapshot: monitor.snapshot ? { ...monitor.snapshot, mineflayerBot: activeStatus } : null,
   };
 
   return (
-    <div className="mf-fleet">
-      <section className="mf-fleet-panel" aria-label={tr("bot.fleet.title")}>
-        <div className="mf-fleet-heading">
-          <div>
-            <strong>{tr("bot.fleet.title")}</strong>
-            <span>{tr("bot.fleet.summary", { total: profiles.length, connected })}</span>
+    <div className="mf-workspace">
+      <div className="mf-workspace-layout">
+        <aside className="mf-workspace-sidebar">
+          <MineflayerFleetControl
+            profiles={profiles}
+            statuses={statuses}
+            selectedIds={recipients.map((bot) => bot.id)}
+            onSelectionChange={select}
+            nameFor={nameFor}
+            disabled={locked}
+          />
+          <details className="mf-sidebar-section">
+            <summary>{tr("bot.workspaceNew.addBots")}</summary>
+            <div className="mf-sidebar-section-body">
+              <MineflayerBotCreator
+                settings={root}
+                count={count}
+                prefix={prefix}
+                disabled={locked}
+                onCountChange={setCount}
+                onPrefixChange={setPrefix}
+                onCreate={() => {
+                  const created = createBotProfiles(root, active.settings, count, prefix);
+                  if (!created.length) return;
+                  save(
+                    normalizeMineflayerBotSettings({ ...root, bots: [...root.bots, ...created] }),
+                  );
+                  select(created.map((bot) => bot.id));
+                }}
+              />
+            </div>
+          </details>
+          <details className="mf-sidebar-section mf-sidebar-manage">
+            <summary>{tr("bot.workspaceNew.manage")}</summary>
+            <div className="mf-sidebar-section-body">
+              <button
+                type="button"
+                className="mf-button"
+                disabled={locked || !recipients.some((bot) => bot.id !== DEFAULT_BOT_ID)}
+                onClick={() => void removeProfiles(false)}
+              >
+                {tr("bot.workspaceNew.deleteSelected")}
+              </button>
+              <button
+                type="button"
+                className="mf-button mf-danger-button"
+                disabled={locked || !root.bots.length}
+                onClick={() => void removeProfiles(true)}
+              >
+                {tr("bot.workspaceNew.deleteAdditional")}
+              </button>
+              <p className="mf-workspace-note">{tr("bot.workspaceNew.deleteHint")}</p>
+            </div>
+          </details>
+        </aside>
+        <main className="mf-workspace-main">
+          <header className="mf-workspace-header">
+            <div className="mf-workspace-target">
+              <span className="mf-workspace-eyebrow">{tr("bot.workspaceNew.control")}</span>
+              <h2>
+                {recipients.length === 1
+                  ? nameFor(recipients[0])
+                  : tr(
+                      recipients.length
+                        ? "bot.workspaceNew.groupTitle"
+                        : "bot.workspaceNew.chooseBots",
+                      { count: recipients.length },
+                    )}
+              </h2>
+              <p>
+                {tr("bot.workspaceNew.onlineSummary", {
+                  online: online.length,
+                  total: recipients.length,
+                })}
+              </p>
+            </div>
+            <div className="mf-workspace-connection-actions">
+              <button
+                type="button"
+                className="mf-button mf-button--primary"
+                disabled={
+                  locked ||
+                  !recipients.length ||
+                  !root.enabled ||
+                  !packageReady ||
+                  recipients.every((bot) => statusFor(bot.id)?.running)
+                }
+                onClick={() => void connectSelected()}
+              >
+                {tr(
+                  lifecycle === "start"
+                    ? "bot.fleet.starting"
+                    : recipients.length === 1
+                      ? "bot.main.connectBot"
+                      : "bot.workspaceNew.connect",
+                )}
+              </button>
+              <button
+                type="button"
+                className="mf-button"
+                disabled={
+                  Boolean(lifecycle && lifecycle !== "start") ||
+                  (!lifecycle && !recipients.some((bot) => statusFor(bot.id)?.running))
+                }
+                onClick={() => void disconnectSelected()}
+              >
+                {tr(
+                  recipients.length === 1 ? "bot.main.disconnect" : "bot.workspaceNew.disconnect",
+                )}
+              </button>
+            </div>
+          </header>
+          <div className="mf-workspace-targets" title={recipients.map(nameFor).join(", ")}>
+            {recipients.map((bot) => (
+              <span key={bot.id}>{nameFor(bot)}</span>
+            ))}
           </div>
-          <div className="mf-bot-toolbar-actions">
-            <button
-              type="button"
-              className="mf-button mf-chaos-button"
-              aria-pressed={chaosActive}
-              title={tr("bot.chaos.description")}
-              disabled={chaosBusy || busy || stopping || deleting || !connected}
-              onClick={() => void toggleChaosAll()}
-            >
-              {tr(
-                chaosBusy
-                  ? "bot.main.pleaseWait"
-                  : chaosActive
-                    ? "bot.chaos.stopAll"
-                    : "bot.chaos.startAll",
-              )}
-            </button>
-            <button
-              type="button"
-              className="mf-button mf-button--primary"
-              disabled={busy || stopping || deleting || !root.enabled || !packageReady}
-              onClick={() => void startAll()}
-            >
-              {tr(busy ? "bot.fleet.starting" : "bot.fleet.startAll")}
-            </button>
-            <button
-              type="button"
-              className="mf-button"
-              disabled={
-                stopping || deleting || (!busy && !statuses.some((status) => status.running))
-              }
-              onClick={() => void stopAll()}
-            >
-              {tr("bot.fleet.stopAll")}
-            </button>
+          <div
+            className="mf-workspace-quick"
+            role="group"
+            aria-label={tr("bot.fleetControl.quickActions")}
+          >
+            {(["come", "follow", "deliver", "pause", "resume", "stop"] as const).map((action) => (
+              <button
+                key={action}
+                type="button"
+                className={`mf-button${action === "stop" ? " mf-danger-button" : ""}`}
+                disabled={
+                  action === "stop"
+                    ? Boolean(lifecycle) || !online.length
+                    : locked || !online.length
+                }
+                onClick={() => quick(action)}
+              >
+                {tr(`bot.fleetControl.action.${action}`)}
+              </button>
+            ))}
+            <details className="mf-workspace-more">
+              <summary aria-label={tr("bot.workspaceNew.more")}>···</summary>
+              <div>
+                <button
+                  type="button"
+                  className="mf-button"
+                  disabled={locked || !online.length}
+                  aria-pressed={chaosActive}
+                  onClick={() =>
+                    void run(
+                      tr(chaosActive ? "bot.chaos.stop" : "bot.chaos.start"),
+                      (_bot, status) =>
+                        chaosActive && !status?.inventory?.chaoticMovement
+                          ? []
+                          : [commandRequest(chaosActive ? "chaos off" : "chaos on")],
+                    )
+                  }
+                >
+                  {tr(chaosActive ? "bot.chaos.stop" : "bot.chaos.start")}
+                </button>
+              </div>
+            </details>
           </div>
-        </div>
-        <MineflayerFleetControl
-          profiles={profiles}
-          statuses={statuses}
-          activeId={active.id}
-          onInspect={setSelected}
-          nameFor={(bot) =>
-            statusFor(bot.id)?.botUsername ||
-            (bot.settings.botAccountMode === "microsoft"
-              ? context.microsoftAccounts.find(
-                  (account) => account.id === bot.settings.botMicrosoftAccountId,
-                )?.username || bot.settings.botNickname
-              : bot.settings.botNickname)
-          }
-          refresh={monitor.refresh}
-          disabled={busy || stopping || deleting || chaosBusy}
-        />
-        <div className="mf-fleet-profile-actions">
-          {active.id !== DEFAULT_BOT_ID && (
-            <button
-              type="button"
-              className="mf-button"
-              disabled={busy || stopping || deleting || activeStatus.running}
-              onClick={() => {
-                save({ ...root, bots: root.bots.filter((bot) => bot.id !== active.id) });
-                setSelected(DEFAULT_BOT_ID);
-              }}
-            >
-              {tr("bot.fleet.remove")}
-            </button>
+          {error && (
+            <p className="mineflayer-bot-error" role="alert">
+              {error}
+            </p>
           )}
-          {root.bots.length > 0 && (
-            <button
-              type="button"
-              className="mf-button mf-fleet-remove-all"
-              title={tr("bot.fleet.removeAllHint")}
-              disabled={deleting || stopping}
-              onClick={() => void deleteAll()}
+          {(receipts.length > 0 || dispatching) && (
+            <details
+              key={lastAction + String(failed > 0)}
+              className={`mf-workspace-receipts${failed ? " has-errors" : ""}`}
+              open={failed > 0}
             >
-              {tr(deleting ? "bot.fleet.removingAll" : "bot.fleet.removeAll")}
-            </button>
+              <summary>
+                <strong>{lastAction}</strong>
+                <span role="status">
+                  {dispatching
+                    ? tr("bot.main.sending")
+                    : tr("bot.fleetControl.results", {
+                        accepted: receipts.filter((receipt) => receipt.state === "accepted").length,
+                        failed,
+                      })}
+                </span>
+              </summary>
+              <ul>
+                {receipts.map((receipt) => (
+                  <li key={receipt.botId} className={`is-${receipt.state}`}>
+                    <strong>{receipt.name}</strong>
+                    <span>{receipt.error || tr(`bot.fleetControl.receipt.${receipt.state}`)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
-        </div>
-        <MineflayerBotCreator
-          settings={root}
-          count={count}
-          prefix={prefix}
-          disabled={busy || stopping || deleting}
-          onCountChange={setCount}
-          onPrefixChange={setPrefix}
-          onCreate={add}
-        />
-        <p className="mf-fleet-note">{tr("bot.fleet.note")}</p>
-        {error && (
-          <p className="mineflayer-bot-error" role="alert">
-            {error}
-          </p>
-        )}
-      </section>
-      <p className="mf-fleet-editor-label">
-        {tr("bot.fleetControl.editing", {
-          name: activeStatus.botUsername || active.settings.botNickname,
-        })}
-      </p>
-      <BotSessionContext.Provider value={active.id}>
-        <RuntimeMonitorScope controller={controller}>
-          <fieldset key={active.id} className="mf-fleet-editor" disabled={deleting}>
-            {renderEditor({ ...active.settings, enabled: root.enabled, bots: [] }, updateActive)}
-          </fieldset>
-        </RuntimeMonitorScope>
-      </BotSessionContext.Provider>
+          <BotFleetContext.Provider
+            value={{
+              recipients,
+              statuses,
+              busy: locked,
+              focusId: active.id,
+              focus: setFocusId,
+              nameFor,
+              run,
+            }}
+          >
+            <BotSessionContext.Provider value={active.id}>
+              <RuntimeMonitorScope controller={controller}>
+                <fieldset className="mf-fleet-editor" disabled={Boolean(lifecycle)}>
+                  {renderEditor(
+                    { ...active.settings, enabled: root.enabled, bots: [] },
+                    updateActive,
+                  )}
+                </fieldset>
+              </RuntimeMonitorScope>
+            </BotSessionContext.Provider>
+          </BotFleetContext.Provider>
+        </main>
+      </div>
     </div>
   );
 }

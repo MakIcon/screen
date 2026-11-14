@@ -1,8 +1,9 @@
-import type { MineflayerBotProfile, MineflayerBotStatus } from "../../../types";
-import { DEFAULT_BOT_ID } from "./botFleet";
+import type {
+  MineflayerBotProfile,
+  MineflayerBotStatus,
+  MineflayerWorkflowStep,
+} from "../../../types";
 
-export type FleetScope = "active" | "selected" | "all";
-export type FleetTask = "mine" | "forest" | "farm" | "collect" | "craft" | "smelt" | "goto";
 export type FleetRequest = { command: string; args: Record<string, unknown> };
 export type FleetReceipt = {
   botId: string;
@@ -12,62 +13,51 @@ export type FleetReceipt = {
 };
 export type FleetGroup = { id: string; name: string; botIds: string[] };
 
-export function fleetRecipients(
-  profiles: MineflayerBotProfile[],
-  statuses: MineflayerBotStatus[],
-  scope: FleetScope,
-  activeId: string,
-  selectedIds: string[],
-) {
-  const online = new Set(
-    statuses
-      .filter((bot) => bot.running && bot.state === "connected")
-      .map((bot) => bot.botId ?? DEFAULT_BOT_ID),
+export const workflowIsRunning = (status?: MineflayerBotStatus) =>
+  Boolean(
+    status?.running &&
+    status.state === "connected" &&
+    ["starting", "running", "pausing", "paused", "stopping"].includes(
+      status.inventory?.workflow?.phase ?? "",
+    ),
   );
-  return profiles.filter((bot) =>
-    scope === "all"
-      ? online.has(bot.id)
-      : scope === "active"
-        ? bot.id === activeId
-        : selectedIds.includes(bot.id),
-  );
-}
 
-/** A total smaller than the group assigns work only to the first N bots. */
-export function fleetTaskCounts(count: number, recipients: number, split: boolean): number[] {
-  if (!Number.isSafeInteger(count) || count < 1 || count > 1000000 || recipients < 1) return [];
-  return Array.from({ length: recipients }, (_, index) =>
-    split ? Math.floor(count / recipients) + (index < count % recipients ? 1 : 0) : count,
-  );
-}
-
-export function fleetTaskCommand(
-  task: FleetTask,
-  item: string,
-  count: number,
-  radius: number,
-  coordinates: string,
-): string | null {
-  if (task === "goto") {
-    const parts = coordinates.trim().split(/\s+/);
-    const values = parts.map(Number);
-    return parts.length === 3 &&
-      values.every(Number.isFinite) &&
-      Math.abs(values[0]) <= 30000000 &&
-      Math.abs(values[2]) <= 30000000 &&
-      values[1] >= -2048 &&
-      values[1] <= 2048
-      ? `goto ${values.join(" ")}`
-      : null;
-  }
-  if (!Number.isSafeInteger(count) || count < 1 || count > 1000000) return null;
-  if (!Number.isSafeInteger(radius) || radius < 1 || radius > 64) return null;
-  const name = item.trim().replace(/^minecraft:/, "");
-  if (!["forest", "collect"].includes(task) && !/^[a-z0-9_]+$/.test(name)) return null;
-  if (task === "forest") return `forest ${radius} ${count} logs scaffold`;
-  if (task === "collect") return `collect ${radius}`;
-  if (task === "mine" || task === "farm") return `${task} ${name} ${count} ${radius}`;
-  return `${task} ${name} ${count} auto`;
+export function fleetWorkflowRequests(
+  bot: MineflayerBotProfile,
+  action: "start" | "pause" | "resume" | "stop",
+  steps: MineflayerWorkflowStep[] = [],
+  name = "",
+): FleetRequest[] {
+  const settings = bot.settings.gathering;
+  return [
+    ...(action === "start"
+      ? [
+          { command: "configure_mineflayer_bot_storage", args: { groups: settings.storageGroups } },
+          {
+            command: "send_mineflayer_bot_chat",
+            args: {
+              command: true,
+              message: `work defense ${settings.defendMobs ? "on" : "off"} ${settings.defendPlayers ? "on" : "off"} ${settings.defendArrows ? "on" : "off"}`,
+            },
+          },
+          {
+            command: "send_mineflayer_bot_chat",
+            args: {
+              command: true,
+              message: `work tunnels ${settings.tunnelWidth} ${settings.tunnelHeight} ${settings.stairWidth} ${settings.stairHeight} ${settings.placeTorches ? "on" : "off"} ${settings.torchInterval}`,
+            },
+          },
+        ]
+      : []),
+    {
+      command: "control_mineflayer_bot_workflow",
+      args: {
+        action,
+        steps: action === "start" ? steps : null,
+        name: action === "start" ? name : null,
+      },
+    },
+  ];
 }
 
 export function parseFleetGroups(raw: string | null): FleetGroup[] {

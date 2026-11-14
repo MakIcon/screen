@@ -9,6 +9,49 @@ type EnglishMessages = {
 
 /** English interface text. Keys mirror `ru.ts`. */
 export const en: EnglishMessages = {
+  "bot.workspaceNew.team": "Team",
+  "bot.workspaceNew.control": "Workspace",
+  "bot.workspaceNew.search": "Find a bot…",
+  "bot.workspaceNew.selectAll": "Select all",
+  "bot.workspaceNew.clearSelection": "Clear selection",
+  "bot.workspaceNew.selectOnly": "Control only {name}",
+  "bot.workspaceNew.moving": "Moving",
+  "bot.workspaceNew.noMatches": "No bots found",
+  "bot.workspaceNew.selectionHelp":
+    "Click a name to control one bot. Check several bots for shared commands and scenarios.",
+  "bot.workspaceNew.storageError": "Could not save the group. Check local storage access.",
+  "bot.workspaceNew.addBots": "+ Add bots",
+  "bot.workspaceNew.manage": "Manage profiles",
+  "bot.workspaceNew.deleteSelected": "Delete selected profiles",
+  "bot.workspaceNew.deleteAdditional": "Delete all additional profiles",
+  "bot.workspaceNew.deleteHint":
+    "Deleting a profile disconnects its bot. The main profile stays in the list.",
+  "bot.workspaceNew.groupTitle": "Bot group · {count}",
+  "bot.workspaceNew.chooseBots": "Select bots on the left",
+  "bot.workspaceNew.onlineSummary": "{online} of {total} selected connected",
+  "bot.workspaceNew.connect": "Connect selected",
+  "bot.workspaceNew.disconnect": "Disconnect selected",
+  "bot.workspaceNew.more": "More movement commands",
+  "bot.workspaceNew.inspectBot": "Bot details",
+  "bot.workspaceNew.personalScope":
+    "Inventory, workstations and settings apply to this bot. The shared scenario still runs for the entire selected group.",
+  "bot.workspaceNew.journalScope":
+    "The log shows this bot. Commands and messages are sent to all bots selected on the left.",
+  "bot.workspaceNew.commandHint":
+    "All selected bots execute this command inside the app. The prefix is optional. Build tasks in the Scenario tab.",
+  "bot.workspaceNew.startScenario": "Starting scenario",
+  "bot.workspaceNew.checkResults": "Delivery results for each bot are shown above the tabs.",
+  "bot.workspaceNew.scenarioSingle":
+    "{name} will run this scenario. Change the selection on the left to run the same plan for several bots.",
+  "bot.workspaceNew.scenarioGroup":
+    "One plan for {count} selected bots. Each runs all steps with its own storage and gathering settings.",
+  "bot.workspaceNew.runForGroup": "Run for {count} bots",
+  "bot.workspaceNew.groupProgress": "Progress by bot",
+  "bot.workspaceNew.sameScenario": "Same steps · independent progress",
+  "bot.workspaceNew.actionCategories": "Action categories",
+  "bot.workspaceNew.category.resources": "Resources",
+  "bot.workspaceNew.category.farm": "Farming",
+  "bot.workspaceNew.category.items": "Items and storage",
   "bot.fleetControl.title": "Control center",
   "bot.fleetControl.recipients": "Task recipients",
   "bot.fleetControl.scope.active": "Current bot",

@@ -7,6 +7,50 @@ import type { RussianPlural } from "./types";
  * TypeScript reports a missing or extra English key. Placeholders use `{name}`.
  */
 export const ru = {
+  "bot.workspaceNew.team": "Команда",
+  "bot.workspaceNew.control": "Рабочее место",
+  "bot.workspaceNew.search": "Найти бота…",
+  "bot.workspaceNew.selectAll": "Выбрать всех",
+  "bot.workspaceNew.clearSelection": "Снять выбор",
+  "bot.workspaceNew.selectOnly": "Управлять только {name}",
+  "bot.workspaceNew.moving": "В движении",
+  "bot.workspaceNew.noMatches": "Боты не найдены",
+  "bot.workspaceNew.selectionHelp":
+    "Нажмите на имя для одного бота. Отметьте галочками нескольких для общей команды и сценария.",
+  "bot.workspaceNew.storageError":
+    "Не удалось сохранить группу. Проверьте доступ к локальному хранилищу.",
+  "bot.workspaceNew.addBots": "+ Добавить ботов",
+  "bot.workspaceNew.manage": "Управление профилями",
+  "bot.workspaceNew.deleteSelected": "Удалить выбранные профили",
+  "bot.workspaceNew.deleteAdditional": "Удалить все дополнительные",
+  "bot.workspaceNew.deleteHint":
+    "При удалении бот отключается. Основной профиль остаётся в списке.",
+  "bot.workspaceNew.groupTitle": "Группа ботов · {count}",
+  "bot.workspaceNew.chooseBots": "Выберите ботов слева",
+  "bot.workspaceNew.onlineSummary": "Подключено {online} из {total} выбранных",
+  "bot.workspaceNew.connect": "Подключить выбранных",
+  "bot.workspaceNew.disconnect": "Отключить выбранных",
+  "bot.workspaceNew.more": "Другие команды движения",
+  "bot.workspaceNew.inspectBot": "Подробности бота",
+  "bot.workspaceNew.personalScope":
+    "Инвентарь, рабочие блоки и настройки относятся к этому боту. Общий сценарий по-прежнему запускается для всей выбранной группы.",
+  "bot.workspaceNew.journalScope":
+    "Журнал показывает этого бота. Команды и сообщения отправляются всем ботам, выбранным слева.",
+  "bot.workspaceNew.commandHint":
+    "Команда выполняется всеми выбранными ботами внутри приложения. Префикс не обязателен. Задачи собирайте во вкладке «Сценарий».",
+  "bot.workspaceNew.startScenario": "Запуск сценария",
+  "bot.workspaceNew.checkResults": "Результаты отправки для каждого бота показаны над вкладками.",
+  "bot.workspaceNew.scenarioSingle":
+    "Сценарий выполнит {name}. Измените выбор слева, чтобы запустить этот же план у нескольких ботов.",
+  "bot.workspaceNew.scenarioGroup":
+    "Один план для {count} выбранных ботов. Каждый выполнит все шаги со своими настройками склада и добычи.",
+  "bot.workspaceNew.runForGroup": "Запустить у {count} ботов",
+  "bot.workspaceNew.groupProgress": "Выполнение по ботам",
+  "bot.workspaceNew.sameScenario": "Одинаковые шаги · независимый прогресс",
+  "bot.workspaceNew.actionCategories": "Категории действий",
+  "bot.workspaceNew.category.resources": "Ресурсы",
+  "bot.workspaceNew.category.farm": "Огород",
+  "bot.workspaceNew.category.items": "Предметы и склад",
   "bot.fleetControl.title": "Центр управления",
   "bot.fleetControl.recipients": "Кому отправить задачу",
   "bot.fleetControl.scope.active": "Текущий бот",

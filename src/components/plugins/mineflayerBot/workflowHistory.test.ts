@@ -21,6 +21,12 @@ const run: WorkflowHistoryEntry = {
   ],
 };
 describe("scenario history", () => {
+  it("keeps bot attribution separate from the reusable scenario name", () => {
+    const restored = readWorkflowHistory(JSON.stringify([{ ...run, botName: "Miner_2" }]))[0];
+    expect(restored.botName).toBe("Miner_2");
+    expect(restored.name).toBe(run.name);
+    expect(sameWorkflow(run.steps, restored)).toBe(true);
+  });
   it("persists full runs and distinguishes errors, stops and success", () => {
     const entries = [
       run,

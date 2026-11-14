@@ -4,7 +4,7 @@ import { workflowName, isGenericWorkflowName, isAutomaticWorkflowName } from "./
 
 export const WORKFLOW_HISTORY_KEY = "screenlauncher.mineflayer.history.v1";
 export const WORKFLOW_NAME_KEY = "screenlauncher.mineflayer.workflow-name.v1";
-export type WorkflowHistoryEntry = MineflayerWorkflowRun & { server: string };
+export type WorkflowHistoryEntry = MineflayerWorkflowRun & { server: string; botName?: string };
 const LIMIT = 50;
 
 export function readWorkflowHistory(value: string | null): WorkflowHistoryEntry[] {
@@ -44,6 +44,9 @@ export function readWorkflowHistory(value: string | null): WorkflowHistoryEntry[
               ? workflowName(steps)
               : entry.name.slice(0, 120),
           server: typeof entry.server === "string" ? entry.server.slice(0, 300) : "",
+          ...(typeof entry.botName === "string" && entry.botName
+            ? { botName: entry.botName.slice(0, 64) }
+            : {}),
           startedAt: entry.startedAt,
           finishedAt: entry.finishedAt,
           phase: entry.phase,

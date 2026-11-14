@@ -14,7 +14,7 @@ export function MineflayerWorkflowPresets({
   onAppend: (steps: WorkflowDraftStep[]) => void;
 }) {
   const tr = useTranslation();
-  const [expanded, setExpanded] = useState(stepCount === 0);
+  const [expanded, setExpanded] = useState(false);
   const [group, setGroup] = useState<string>("farm");
   const presets = WORKFLOW_PRESETS.filter((preset) => group === "all" || preset.group === group);
   return (

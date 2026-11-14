@@ -93,6 +93,7 @@ export function MineflayerWorkflowHistory({
                   <span className="mf-history-copy">
                     <strong>{entry.name}</strong>
                     <span>
+                      {entry.botName && <>{entry.botName} · </>}
                       {stateLabel(entry.phase)} ·{" "}
                       {tr("bot.workflowHistory.progress", { completed, count: entry.steps.length })}{" "}
                       · {duration(entry)}

@@ -3,6 +3,9 @@ import { TextField } from "../../inputs/TextField";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { botStorageKey, useBotId, useBotInvoke } from "./BotSessionContext";
+import { useBotFleet } from "./BotFleetContext";
+import { fleetWorkflowRequests, workflowIsRunning } from "./fleetControl";
+import { MineflayerFleetProgress } from "./MineflayerFleetProgress";
 import type {
   MinecraftCatalog,
   MineflayerBotStatus,
@@ -126,19 +129,29 @@ export function MineflayerWorkflow({
   const locale = useLocale();
   const invoke = useBotInvoke();
   const botId = useBotId();
-  const draftKey = botStorageKey(WORKFLOW_DRAFT_KEY, botId);
-  const historyKey = botStorageKey(WORKFLOW_HISTORY_KEY, botId);
-  const nameKey = botStorageKey(WORKFLOW_NAME_KEY, botId);
+  const fleet = useBotFleet();
+  const workspaceId = fleet ? "fleet-workspace" : botId;
+  const draftKey = botStorageKey(WORKFLOW_DRAFT_KEY, workspaceId);
+  const historyKey = botStorageKey(WORKFLOW_HISTORY_KEY, workspaceId);
+  const nameKey = botStorageKey(WORKFLOW_NAME_KEY, workspaceId);
   const tr = useTranslation();
-  const [steps, setSteps] = useState<WorkflowDraftStep[]>(() => loadDraft(botId));
-  const [customName, setCustomName] = useState(() => loadName(botId));
-  const [nameVariant, setNameVariant] = useState(() => loadNameVariant(botId));
+  const [steps, setSteps] = useState<WorkflowDraftStep[]>(() => {
+    const shared = loadDraft(workspaceId);
+    try {
+      return localStorage.getItem(draftKey) !== null ? shared : loadDraft(botId);
+    } catch {
+      return shared;
+    }
+  });
+  const [customName, setCustomName] = useState(() => loadName(workspaceId));
+  const [nameVariant, setNameVariant] = useState(() => loadNameVariant(workspaceId));
   const automaticName = workflowName(steps, nameVariant);
   const name = customName?.trim() || automaticName;
-  const [history, setHistory] = useState<WorkflowHistoryEntry[]>(() => loadHistory(botId));
+  const [history, setHistory] = useState<WorkflowHistoryEntry[]>(() => loadHistory(workspaceId));
   const historyRef = useRef(history);
   const planRef = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [actionCategory, setActionCategory] = useState<"resources" | "farm" | "items">("resources");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [error, setError] = useState("");
@@ -155,32 +168,59 @@ export function MineflayerWorkflow({
       }),
     [catalog, locale],
   );
-  const workflow = connected ? status?.inventory?.workflow : null;
-  const running = Boolean(
-    workflow && ["starting", "running", "pausing", "paused", "stopping"].includes(workflow.phase),
-  );
-  const locked = running || sending;
+  const group = Boolean(fleet && fleet.recipients.length > 1);
+  const selectedStatuses = fleet
+    ? fleet.statuses.filter((value) =>
+        fleet.recipients.some((bot) => bot.id === (value.botId ?? "default")),
+      )
+    : [];
+  const workflow = connected && !group ? status?.inventory?.workflow : null;
+  const running = group
+    ? selectedStatuses.some(workflowIsRunning)
+    : Boolean(
+        workflow &&
+        ["starting", "running", "pausing", "paused", "stopping"].includes(workflow.phase),
+      );
+  const paused = group
+    ? selectedStatuses
+        .filter(workflowIsRunning)
+        .every((value) => ["paused", "pausing"].includes(value.inventory?.workflow?.phase ?? ""))
+    : ["paused", "pausing"].includes(workflow?.phase ?? "");
+  const locked = running || sending || Boolean(fleet?.busy);
   const reorder = useCallback((id: string, beforeId: string | null) => {
     setSteps((current) => placeWorkflowStep(current, id, beforeId));
   }, []);
   const { drag, onPointerDown, onClickCapture } = useWorkflowStepDrag(steps, locked, reorder);
   const draggedStep = drag ? steps.find((step) => step.id === drag.id) : null;
-  const shownSteps = running
-    ? workflow!.steps.map((step, index) => ({ ...step, id: `run-${index}` }))
-    : steps;
-  const otherWork = Boolean(
-    status?.gathering?.active ||
-    status?.gathering?.queued ||
-    status?.inventory?.production?.busy ||
-    status?.inventory?.production?.station,
-  );
+  const shownSteps =
+    running && workflow
+      ? workflow!.steps.map((step, index) => ({ ...step, id: `run-${index}` }))
+      : steps;
+  const otherWork =
+    !group &&
+    Boolean(
+      status?.gathering?.active ||
+      status?.gathering?.queued ||
+      status?.inventory?.production?.busy ||
+      status?.inventory?.production?.station,
+    );
   const completed = workflow?.steps.filter((step) => step.state === "complete").length || 0;
   const canAdd = !locked && steps.length < WORKFLOW_STEP_LIMIT;
   const incomingHistoryJson = JSON.stringify(
-    (status?.inventory?.workflow?.history || []).map((entry) => ({
-      ...entry,
-      server: status?.server || "",
-    })),
+    fleet
+      ? selectedStatuses.flatMap((value) =>
+          (value.inventory?.workflow?.history ?? []).map((entry) => ({
+            ...entry,
+            botName:
+              value.botUsername ||
+              fleet.nameFor(fleet.recipients.find((bot) => bot.id === (value.botId ?? "default"))!),
+            server: value.server || "",
+          })),
+        )
+      : (status?.inventory?.workflow?.history || []).map((entry) => ({
+          ...entry,
+          server: status?.server || "",
+        })),
   );
   const incomingHistory = useMemo(
     () => readWorkflowHistory(incomingHistoryJson),
@@ -201,13 +241,13 @@ export function MineflayerWorkflow({
       historyRef.current = merged;
       setHistory(merged);
     }
-    if (newComplete && sameWorkflow(steps, newComplete)) {
+    if (newComplete && sameWorkflow(steps, newComplete) && !fleet) {
       setSteps([]);
       setEditing(null);
       setCustomName(null);
       setNameVariant(0);
     }
-  }, [incomingHistory, steps]);
+  }, [incomingHistory, steps, fleet]);
   useEffect(() => {
     try {
       localStorage.setItem(historyKey, JSON.stringify(history));
@@ -282,7 +322,40 @@ export function MineflayerWorkflow({
     setError("");
   }
   async function control(action: "start" | "pause" | "resume" | "stop") {
-    if (!connected || sendingRef.current) return;
+    if (!connected || (sendingRef.current && action !== "stop")) return;
+    if (fleet) {
+      setSending(true);
+      sendingRef.current = true;
+      setError("");
+      try {
+        await fleet.run(
+          tr(
+            action === "start"
+              ? "bot.workspaceNew.startScenario"
+              : action === "pause"
+                ? "bot.fleetControl.action.pause"
+                : action === "resume"
+                  ? "bot.fleetControl.action.resume"
+                  : "bot.fleetControl.action.stop",
+          ),
+          (bot, current) => {
+            const phase = current?.inventory?.workflow?.phase;
+            if (action === "pause" && !["running", "starting"].includes(phase ?? "")) return [];
+            if (action === "resume" && !["paused", "pausing"].includes(phase ?? "")) return [];
+            if (action === "stop" && !workflowIsRunning(current)) return [];
+            return fleetWorkflowRequests(bot, action, workflowPayload(steps), name);
+          },
+          action === "stop",
+        );
+        setEditing(null);
+      } catch (cause) {
+        setError(toErrorMessage(cause));
+      } finally {
+        sendingRef.current = false;
+        setSending(false);
+      }
+      return;
+    }
     sendingRef.current = true;
     setSending(true);
     setError("");
@@ -373,6 +446,20 @@ export function MineflayerWorkflow({
 
   return (
     <div className="mf-workflow">
+      {fleet && (
+        <p className="mf-scenario-scope">
+          {tr(
+            fleet.recipients.length === 1
+              ? "bot.workspaceNew.scenarioSingle"
+              : "bot.workspaceNew.scenarioGroup",
+            {
+              count: fleet.recipients.length,
+              name: fleet.recipients.length === 1 ? fleet.nameFor(fleet.recipients[0]) : "",
+            },
+          )}
+        </p>
+      )}
+      <MineflayerFleetProgress />
       <section className="mf-workflow-actions" aria-label={tr("bot.workflow.addAnAction")}>
         <div className="mf-actions-heading">
           <h3>{tr("bot.workflow.addAnAction2")}</h3>
@@ -386,8 +473,31 @@ export function MineflayerWorkflow({
             {tr("bot.workflow.setUpStorage")}
           </button>
         </div>
+        <div
+          className="mf-action-categories"
+          role="group"
+          aria-label={tr("bot.workspaceNew.actionCategories")}
+        >
+          {(["resources", "farm", "items"] as const).map((category) => (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={actionCategory === category}
+              onClick={() => setActionCategory(category)}
+            >
+              {tr(`bot.workspaceNew.category.${category}`)}
+            </button>
+          ))}
+        </div>
         <div className="mf-action-buttons">
-          {WORKFLOW_ACTIONS.map((action) => (
+          {WORKFLOW_ACTIONS.filter((action) =>
+            (actionCategory === "resources"
+              ? ["mine", "forest", "collect"]
+              : actionCategory === "farm"
+                ? ["till", "plant", "harvest", "farm"]
+                : ["craft", "smelt", "deposit", "return"]
+            ).includes(action.kind),
+          ).map((action) => (
             <button
               key={action.kind}
               type="button"
@@ -464,17 +574,9 @@ export function MineflayerWorkflow({
                   type="button"
                   className="mf-button"
                   disabled={sending || workflow?.phase === "stopping"}
-                  onClick={() =>
-                    void control(
-                      workflow?.phase === "paused" || workflow?.phase === "pausing"
-                        ? "resume"
-                        : "pause",
-                    )
-                  }
+                  onClick={() => void control(paused ? "resume" : "pause")}
                 >
-                  {workflow?.phase === "paused" || workflow?.phase === "pausing"
-                    ? tr("bot.workflow.resume")
-                    : tr("bot.workflow.pauseAfterStep")}
+                  {paused ? tr("bot.workflow.resume") : tr("bot.workflow.pauseAfterStep")}
                 </button>
                 <button
                   type="button"
@@ -493,6 +595,7 @@ export function MineflayerWorkflow({
                   !connected ||
                   !steps.length ||
                   sending ||
+                  Boolean(fleet?.busy) ||
                   otherWork ||
                   steps.some(
                     (step) => ["mine", "craft", "smelt"].includes(step.kind) && !step.item?.trim(),
@@ -501,7 +604,11 @@ export function MineflayerWorkflow({
                 onClick={() => void control("start")}
               >
                 <WorkflowIcon kind="play" />
-                {sending ? tr("bot.workflow.starting") : tr("bot.workflow.runWorkflow")}
+                {sending
+                  ? tr("bot.workflow.starting")
+                  : group
+                    ? tr("bot.workspaceNew.runForGroup", { count: fleet!.recipients.length })
+                    : tr("bot.workflow.runWorkflow")}
               </button>
             )}
           </div>

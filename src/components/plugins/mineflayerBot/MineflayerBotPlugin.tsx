@@ -1,6 +1,8 @@
 import { TextField, TextArea } from "../../inputs/TextField";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBotInvoke } from "./BotSessionContext";
+import { useBotId, useBotInvoke } from "./BotSessionContext";
+import { useBotFleet } from "./BotFleetContext";
+import { SearchableSelect } from "../../inputs/SearchableSelect";
 import { useTranslation } from "../../../i18n/locale";
 import type { MineflayerBotPluginSettings, MineflayerBotStatus } from "../../../types";
 import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
@@ -120,6 +122,8 @@ function MineflayerBotSettingsEditor({
   context: PluginRenderContext;
 }) {
   const invoke = useBotInvoke();
+  const botId = useBotId();
+  const fleet = useBotFleet();
   const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const status = monitor.snapshot?.mineflayerBot ?? null;
@@ -129,6 +133,7 @@ function MineflayerBotSettingsEditor({
   const [busyAction, setBusyAction] = useState("");
   const [actionError, setActionError] = useState("");
   const [chatMessage, setChatMessage] = useState("");
+  const [chatMode, setChatMode] = useState("command");
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState("");
   const [chatFeedback, setChatFeedback] = useState("");
@@ -257,15 +262,33 @@ function MineflayerBotSettingsEditor({
   const sendChatMessage = async () => {
     const draft = chatMessage;
     const message = draft.trim();
-    if (!chatConnected || !message || chatSendingRef.current) return;
+    const canSend = fleet
+      ? fleet.recipients.some((bot) =>
+          fleet.statuses.some(
+            (value) =>
+              (value.botId ?? "default") === bot.id && value.running && value.state === "connected",
+          ),
+        ) && !fleet.busy
+      : chatConnected;
+    if (!canSend || !message || chatSendingRef.current) return;
     chatSendingRef.current = true;
     setChatSending(true);
     setChatError("");
     setChatFeedback("");
     try {
-      await invoke("send_mineflayer_bot_chat", { message });
+      if (fleet)
+        await fleet.run(
+          tr(chatMode === "command" ? "bot.fleetControl.command" : "bot.fleetControl.chat"),
+          () => [
+            {
+              command: "send_mineflayer_bot_chat",
+              args: { message, command: chatMode === "command" },
+            },
+          ],
+        );
+      else await invoke("send_mineflayer_bot_chat", { message, command: chatMode === "command" });
       setChatMessage((current) => (current === draft ? "" : current));
-      setChatFeedback(tr("bot.main.sentToTheBot"));
+      setChatFeedback(tr(fleet ? "bot.workspaceNew.checkResults" : "bot.main.sentToTheBot"));
       void monitor.refresh();
     } catch (error) {
       setChatError(toErrorMessage(error));
@@ -334,33 +357,36 @@ function MineflayerBotSettingsEditor({
 
   return (
     <div className="mineflayer-bot-settings">
-      <header className="mf-bot-toolbar">
-        <div className={`mf-bot-identity${chatConnected ? " is-connected" : ""}`}>
-          <span className="mf-bot-connection-dot" aria-hidden="true" />
-          <div>
-            <strong>
-              {status?.botUsername ||
-                activeBotMsAccount?.username ||
-                settings.botNickname ||
-                "Mineflayer Bot"}
-            </strong>
-            <span>
-              {chatConnected
-                ? tr("bot.main.connected")
-                : status?.state === "reconnecting"
-                  ? tr("bot.main.reconnecting")
-                  : status?.running
-                    ? tr("bot.main.connecting")
-                    : tr("bot.main.notConnected")}
-              <span aria-hidden="true"> · </span>
-              {settings.host || tr("bot.main.noServerSet")}
-              {settings.host ? `:${settings.port}` : ""}
-            </span>
+      {!fleet && (
+        <header className="mf-bot-toolbar">
+          <div className={`mf-bot-identity${chatConnected ? " is-connected" : ""}`}>
+            <span className="mf-bot-connection-dot" aria-hidden="true" />
+            <div>
+              <strong>
+                {status?.botUsername ||
+                  activeBotMsAccount?.username ||
+                  settings.botNickname ||
+                  "Mineflayer Bot"}
+              </strong>
+              <span>
+                {chatConnected
+                  ? tr("bot.main.connected")
+                  : status?.state === "reconnecting"
+                    ? tr("bot.main.reconnecting")
+                    : status?.running
+                      ? tr("bot.main.connecting")
+                      : tr("bot.main.notConnected")}
+                <span aria-hidden="true"> · </span>
+                {settings.host || tr("bot.main.noServerSet")}
+                {settings.host ? `:${settings.port}` : ""}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="mf-bot-toolbar-actions">{connectionControls}</div>
-      </header>
-      {!status?.running &&
+          <div className="mf-bot-toolbar-actions">{connectionControls}</div>
+        </header>
+      )}
+      {(!fleet || fleet.recipients.length === 1) &&
+        !status?.running &&
         (!settings.enabled ||
           !settings.host.trim() ||
           sameAsLauncherAccount ||
@@ -397,9 +423,47 @@ function MineflayerBotSettingsEditor({
         ))}
       </nav>
 
+      {fleet && fleet.recipients.length > 1 && activeView !== "scenario" && (
+        <div className="mf-workspace-inspector">
+          <label>
+            <span>{tr("bot.workspaceNew.inspectBot")}</span>
+            <SearchableSelect
+              label={tr("bot.workspaceNew.inspectBot")}
+              value={fleet.focusId}
+              allowEmpty={false}
+              variant="field"
+              disabled={fleet.busy}
+              onChange={fleet.focus}
+              options={fleet.recipients.map((bot) => ({
+                value: bot.id,
+                label: fleet.nameFor(bot),
+              }))}
+            />
+          </label>
+          <p>
+            {tr(
+              activeView === "control"
+                ? "bot.workspaceNew.journalScope"
+                : "bot.workspaceNew.personalScope",
+            )}
+          </p>
+        </div>
+      )}
+
       <div hidden={activeView !== "scenario"}>
         <MineflayerWorkflow
-          connected={chatConnected}
+          connected={
+            fleet
+              ? fleet.recipients.some((bot) =>
+                  fleet.statuses.some(
+                    (value) =>
+                      (value.botId ?? "default") === bot.id &&
+                      value.running &&
+                      value.state === "connected",
+                  ),
+                )
+              : chatConnected
+          }
           status={status}
           gatheringSettings={settings.gathering}
           refresh={monitor.refresh}
@@ -425,6 +489,7 @@ function MineflayerBotSettingsEditor({
       <div className="mineflayer-bot-section" key={activeSection}>
         {activeSection === "gathering" && (
           <MineflayerGatheringControls
+            key={botId}
             connected={chatConnected}
             refresh={monitor.refresh}
             status={status}
@@ -434,10 +499,15 @@ function MineflayerBotSettingsEditor({
           />
         )}
         {activeSection === "inventory" && (
-          <MineflayerInventoryPanel status={status} onOpenTasks={() => setActiveView("scenario")} />
+          <MineflayerInventoryPanel
+            key={botId}
+            status={status}
+            onOpenTasks={() => setActiveView("scenario")}
+          />
         )}
         {activeSection === "production" && (
           <MineflayerProductionControls
+            key={botId}
             connected={chatConnected}
             refresh={monitor.refresh}
             status={status}
@@ -1054,7 +1124,7 @@ function MineflayerBotSettingsEditor({
               role="group"
               aria-label={tr("bot.main.botConnection")}
             >
-              {connectionControls}
+              {!fleet && connectionControls}
               <button
                 type="button"
                 className="mf-button"
@@ -1093,9 +1163,25 @@ function MineflayerBotSettingsEditor({
 
             <PluginSettingsGroup
               title={tr("bot.main.botChatAndCommands")}
-              description={tr("bot.main.forestChopTreesDeliver")}
+              description={tr(
+                chatMode === "command"
+                  ? "bot.workspaceNew.commandHint"
+                  : "bot.fleetControl.chatHint",
+              )}
               collapsible={false}
             >
+              <SearchableSelect
+                label={tr("bot.fleetControl.messageMode")}
+                value={chatMode}
+                onChange={setChatMode}
+                disabled={chatSending || Boolean(fleet?.busy)}
+                allowEmpty={false}
+                variant="field"
+                options={[
+                  { value: "command", label: tr("bot.fleetControl.command") },
+                  { value: "chat", label: tr("bot.fleetControl.chat") },
+                ]}
+              />
               <form
                 className="mineflayer-bot-chat"
                 onSubmit={(event) => {
@@ -1107,12 +1193,14 @@ function MineflayerBotSettingsEditor({
                   <TextField
                     ref={chatInputRef}
                     aria-label={tr("bot.main.messageAsTheBot")}
-                    placeholder={
-                      chatConnected ? tr("bot.main.typeAMessage") : tr("bot.main.connectTheBotTo")
-                    }
+                    placeholder={tr(
+                      chatMode === "command"
+                        ? "bot.fleetControl.commandPlaceholder"
+                        : "bot.fleetControl.chatPlaceholder",
+                    )}
                     value={chatMessage}
                     maxLength={240}
-                    disabled={!chatConnected}
+                    disabled={chatSending || Boolean(fleet?.busy)}
                     onChange={(event) => {
                       setChatMessage(event.target.value);
                       setChatError("");
@@ -1127,7 +1215,21 @@ function MineflayerBotSettingsEditor({
                 </label>
                 <button
                   type="submit"
-                  disabled={!chatConnected || chatSending || !chatMessage.trim()}
+                  disabled={
+                    !(fleet
+                      ? fleet.recipients.some((bot) =>
+                          fleet.statuses.some(
+                            (value) =>
+                              (value.botId ?? "default") === bot.id &&
+                              value.running &&
+                              value.state === "connected",
+                          ),
+                        )
+                      : chatConnected) ||
+                    chatSending ||
+                    Boolean(fleet?.busy) ||
+                    !chatMessage.trim()
+                  }
                 >
                   {chatSending ? tr("bot.main.sending") : tr("bot.main.send")}
                 </button>
