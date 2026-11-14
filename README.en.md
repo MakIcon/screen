@@ -73,7 +73,13 @@ Enable and configure integrations separately. Optional packages can be installed
 
 Mineflayer Bot, BlueMap Server and OBS Telemetry can be installed, updated and removed as separate packages. OBS Telemetry's Fabric mods, font and license download into the user's extensions folder. Discord RPC and Proxy update with the launcher.
 
-Bot documentation: [combat](extensions/mineflayer-bot/COMBAT.md), [survival](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding](extensions/mineflayer-bot/pathfinding/README.md). Companion mod: [OBS Telemetry](obs-telemetry-mod/README.md).
+Bot documentation: [bot and group controls (Russian)](extensions/mineflayer-bot/CONTROL.md), [combat](extensions/mineflayer-bot/COMBAT.md), [survival](extensions/mineflayer-bot/SURVIVAL.md) and [pathfinding](extensions/mineflayer-bot/pathfinding/README.md). Companion mod: [OBS Telemetry](obs-telemetry-mod/README.md).
+
+The “My bots” panel supports up to 100 bots. Enter a username prefix and count, then select “Create bots”. New profiles copy the selected bot’s settings and receive unique offline usernames. Each profile has its own server or LAN address, account, behavior, inventory, chat, logs and workflows. For a single-player world, open it to LAN first and enter the port shown by Minecraft. “Start all” connects bots sequentially at one-second intervals; “Stop all” cancels the queue and disconnects all running bots. Each Microsoft bot needs its own account. Select a bot’s card to configure or control it, and stop it before deleting it.
+
+“Chaotic movement” makes the selected bot move in random directions near its starting position. “Chaos for all” enables this for all connected bots. Press again to stop; a new task, death or disconnection also ends the mode. Owners can use `!chaos on`, `!chaos off` and `!stop` with their configured command prefix.
+
+In the Inventory tab, select an item or equipped armor and choose “Drop 1”, “Drop stack” or “Drop item”. “Drop everything” clears the selected bot’s backpack, hotbar, armor and offhand. Chest contents are preserved. An action is rejected if the selected item has changed; select it again. Restart an already connected bot to enable these actions.
 
 ## Frequently asked questions
 

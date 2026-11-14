@@ -278,6 +278,51 @@ describe("runtime monitor events", () => {
     expect(RenderHookHarness().snapshot?.mineflayerBot).toBe(update);
   });
 
+  it("versions secondary bots independently and leaves the primary status intact", async () => {
+    const initial = await start();
+    emit({ ...bot(50), botId: "default" });
+    const miner = { ...bot(2), botId: "miner", logs: ["Mining"] };
+    const farmer = { ...bot(1), botId: "farmer", logs: ["Farming"] };
+    emit(miner);
+    emit(farmer);
+    emit({ ...bot(1), botId: "miner", state: "stopped" });
+    const current = RenderHookHarness().snapshot;
+    expect(current?.mineflayerBot.revision).toBe(50);
+    expect(current?.mineflayerBots?.find((bot) => bot.botId === "miner")).toBe(miner);
+    expect(current?.mineflayerBots?.find((bot) => bot.botId === "farmer")).toBe(farmer);
+    expect(initial.snapshot?.mineflayerBot.revision).toBe(1);
+  });
+
+  it("preserves fleet events received while a full snapshot is in flight", async () => {
+    const initial = await start();
+    const pending = deferred<RuntimeMonitorSnapshot>();
+    runtime.invoke.mockReturnValueOnce(pending.promise);
+    const refreshing = initial.refresh();
+    const miner = { ...bot(8), botId: "miner", state: "stopped", running: false };
+    const farmer = { ...bot(2), botId: "farmer" };
+    emit(miner);
+    emit(farmer);
+    pending.resolve({ ...snapshot(), mineflayerBots: [{ ...bot(3), botId: "miner" }] });
+    const current = await refreshing;
+    expect(current?.mineflayerBots?.find((bot) => bot.botId === "miner")).toBe(miner);
+    expect(current?.mineflayerBots?.find((bot) => bot.botId === "farmer")).toBe(farmer);
+  });
+
+  it("preserves secondary events received before the initial snapshot", async () => {
+    const pending = deferred<RuntimeMonitorSnapshot>();
+    runtime.invoke.mockReturnValueOnce(pending.promise);
+    RenderHookHarness();
+    await flush();
+    RenderHookHarness();
+    const miner = { ...bot(4), botId: "miner" };
+    emit(miner);
+    pending.resolve({ ...snapshot(), mineflayerBots: [] });
+    await flush();
+    expect(RenderHookHarness().snapshot?.mineflayerBots?.find((bot) => bot.botId === "miner")).toBe(
+      miner,
+    );
+  });
+
   it("falls back to the original polling cadence if event subscription fails", async () => {
     runtime.listen.mockRejectedValueOnce(new Error("Event bridge unavailable"));
     await start();

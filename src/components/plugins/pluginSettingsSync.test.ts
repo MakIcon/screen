@@ -4,11 +4,25 @@ import { DEFAULT_LAUNCHER_PLUGINS_SETTINGS } from "./pluginRegistry";
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: bridge.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: bridge.listen }));
-import { savePluginSettings, subscribePluginSettings } from "./pluginSettingsSync";
+import {
+  flushPluginSettings,
+  savePluginSettings,
+  subscribePluginSettings,
+} from "./pluginSettingsSync";
 
 afterEach(() => vi.clearAllMocks());
 
 describe("plugin settings across launcher windows", () => {
+  it("waits for profile persistence before startup and reports a failed save", async () => {
+    bridge.invoke.mockRejectedValueOnce(new Error("profile save failed"));
+    const pending = savePluginSettings(DEFAULT_LAUNCHER_PLUGINS_SETTINGS, ["mineflayerBot"]);
+    const failure = expect(pending).rejects.toThrow("profile save failed");
+    await expect(flushPluginSettings()).rejects.toThrow("profile save failed");
+    await failure;
+    bridge.invoke.mockResolvedValueOnce({});
+    await savePluginSettings(DEFAULT_LAUNCHER_PLUGINS_SETTINGS, ["mineflayerBot"]);
+    await expect(flushPluginSettings()).resolves.toBeUndefined();
+  });
   it("serializes rapid edits, sends only edited plugin IDs, and recovers after an error", async () => {
     let finish!: (value: unknown) => void;
     bridge.invoke.mockImplementationOnce(

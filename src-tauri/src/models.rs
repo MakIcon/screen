@@ -535,7 +535,7 @@ pub struct DiscordRpcPluginSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MineflayerBotPluginSettings {
+pub struct MineflayerBotConfiguration {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
@@ -998,6 +998,7 @@ pub struct ProxyProfile {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MineflayerBotStatus {
+    pub bot_id: String,
     pub revision: u64,
     pub running: bool,
     pub state: String,
@@ -1246,7 +1247,36 @@ impl Default for DiscordRpcPluginSettings {
     }
 }
 
-impl Default for MineflayerBotPluginSettings {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineflayerBotPluginSettings {
+    #[serde(flatten)]
+    pub configuration: MineflayerBotConfiguration,
+    #[serde(default)]
+    pub bots: Vec<MineflayerBotProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MineflayerBotProfile {
+    pub id: String,
+    pub settings: MineflayerBotConfiguration,
+}
+
+impl std::ops::Deref for MineflayerBotPluginSettings {
+    type Target = MineflayerBotConfiguration;
+    fn deref(&self) -> &Self::Target {
+        &self.configuration
+    }
+}
+
+impl std::ops::DerefMut for MineflayerBotPluginSettings {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.configuration
+    }
+}
+
+impl Default for MineflayerBotConfiguration {
     fn default() -> Self {
         Self {
             enabled: false,
@@ -1721,7 +1751,7 @@ mod loader_schema_tests {
             "../../extensions/mineflayer-bot/survival-defaults.json"
         ))
         .unwrap();
-        assert_eq!(serde_json::to_value(legacy.survival).unwrap(), defaults);
+        assert_eq!(serde_json::to_value(&legacy.survival).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "survival": { "autoEat": false, "emergencyMlg": false,
                 "autoBuff": false, "autoBuffHealing": false, "autoBuffCombat": false, "autoBuffMinHealth": 9,
@@ -1746,7 +1776,7 @@ mod loader_schema_tests {
             "../../extensions/mineflayer-bot/gathering-defaults.json"
         ))
         .unwrap();
-        assert_eq!(serde_json::to_value(legacy.gathering).unwrap(), defaults);
+        assert_eq!(serde_json::to_value(&legacy.gathering).unwrap(), defaults);
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12,
                 "defendMobs": false, "defendPlayers": true, "defendArrows": false,

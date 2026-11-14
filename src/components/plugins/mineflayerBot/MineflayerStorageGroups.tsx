@@ -2,7 +2,7 @@ import { TextField } from "../../inputs/TextField";
 import { useMemo, useRef, useState } from "react";
 import { useLocale, useTranslation } from "../../../i18n/locale";
 import { localizeCatalog, localizeStorageFilter } from "./catalogLocalization";
-import { invoke } from "@tauri-apps/api/core";
+import { useBotInvoke } from "./BotSessionContext";
 import { ExpandablePanel } from "../../layout/ExpandablePanel";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
@@ -41,6 +41,7 @@ export function MineflayerStorageGroups({
   onDeposit,
 }: Props) {
   const locale = useLocale();
+  const invoke = useBotInvoke();
   const tr = useTranslation();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState<Record<string, string>>({});

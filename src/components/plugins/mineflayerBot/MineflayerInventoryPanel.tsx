@@ -1,8 +1,13 @@
 import { ProgressBar } from "../../display/ProgressBar";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MineflayerBotStatus, MineflayerInventoryItem } from "../../../types";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { translate, useTranslation } from "../../../i18n/locale";
+import { Button } from "../../inputs/Button";
+import { useBotInvoke } from "./BotSessionContext";
+import { useRuntimeMonitor } from "../../../hooks/useRuntimeMonitor";
+import { toErrorMessage } from "../../../utils/errors";
+import { inventoryDropSelection } from "./inventoryDrop";
 
 const EQUIPMENT = [
   [5, "helmet"],
@@ -22,10 +27,41 @@ export function MineflayerInventoryPanel({
   onOpenTasks: () => void;
 }) {
   const tr = useTranslation();
+  const invoke = useBotInvoke();
+  const monitor = useRuntimeMonitor();
   const [selected, setSelected] = useState<number | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const droppingRef = useRef(false);
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
   const connected = Boolean(status?.running && status.state === "connected");
   const inventory = connected ? status?.inventory : null;
   const selectedItem = selected !== null ? inventory?.slots[selected] : null;
+  const busy = dropping || Boolean(inventory?.actionBusy);
+  const allItems = inventoryDropSelection(inventory, null);
+  const selectedItems = selected === null ? [] : inventoryDropSelection(inventory, selected);
+
+  async function dropItems(all = false, one = false) {
+    if (!connected || busy || droppingRef.current || (!all && selected === null)) return;
+    const items = inventoryDropSelection(inventory, all ? null : selected, one);
+    if (!items.length) return;
+    droppingRef.current = true;
+    setDropping(true);
+    setError("");
+    setFeedback("");
+    try {
+      await invoke("drop_mineflayer_bot_items", { items });
+      setFeedback(
+        tr("bot.inventory.dropDone", { count: items.reduce((sum, item) => sum + item.count, 0) }),
+      );
+    } catch (cause) {
+      setError(toErrorMessage(cause));
+    } finally {
+      await monitor.refresh();
+      droppingRef.current = false;
+      setDropping(false);
+    }
+  }
   function slot(index: number, label?: string) {
     const item = inventory?.slots[index];
     const held = inventory?.selectedSlot === index;
@@ -34,7 +70,7 @@ export function MineflayerInventoryPanel({
         type="button"
         key={index}
         className={`mineflayer-inventory-slot${held ? " is-held" : ""}${selected === index ? " is-selected" : ""}${item?.enchants.length ? " is-enchanted" : ""}`}
-        disabled={!inventory}
+        disabled={!inventory || busy}
         aria-label={
           item
             ? `${label || `${tr("bot.inventory.slot")} ${index}`}: ${itemTitle(item)}`
@@ -106,10 +142,29 @@ export function MineflayerInventoryPanel({
             {connected ? tr("bot.inventory.inGame") : tr("bot.inventory.disconnected")}
           </span>
         </div>
-        <button type="button" onClick={onOpenTasks}>
-          {tr("bot.inventory.toGatheringTasks")}
-        </button>
+        <div className="mineflayer-inventory-actions">
+          <button type="button" onClick={onOpenTasks}>
+            {tr("bot.inventory.toGatheringTasks")}
+          </button>
+          <Button
+            variant="danger"
+            className="mf-button"
+            disabled={busy || !allItems.length}
+            title={tr("bot.inventory.dropAllHint")}
+            onClick={() => void dropItems(true)}
+          >
+            {tr(dropping ? "bot.inventory.dropping" : "bot.inventory.dropAll")}
+          </Button>
+        </div>
       </div>
+      {(error || feedback) && (
+        <p
+          className={`mineflayer-inventory-feedback${error ? " is-error" : ""}`}
+          role={error ? "alert" : "status"}
+        >
+          {error || feedback}
+        </p>
+      )}
       {!inventory ? (
         <div className="mineflayer-inventory-empty" role="status">
           <strong>
@@ -213,6 +268,27 @@ export function MineflayerInventoryPanel({
                     </p>
                   )}
                 </div>
+                <div className="mineflayer-inventory-actions mineflayer-inventory-drop-actions">
+                  {selectedItem.count > 1 && (
+                    <Button
+                      className="mf-button"
+                      disabled={busy || !selectedItems.length}
+                      onClick={() => void dropItems(false, true)}
+                    >
+                      {tr("bot.inventory.dropOne")}
+                    </Button>
+                  )}
+                  <Button
+                    variant="danger"
+                    className="mf-button"
+                    disabled={busy || !selectedItems.length}
+                    onClick={() => void dropItems()}
+                  >
+                    {tr(
+                      selectedItem.count > 1 ? "bot.inventory.dropStack" : "bot.inventory.dropItem",
+                    )}
+                  </Button>
+                </div>
               </>
             ) : (
               <p>
@@ -222,6 +298,9 @@ export function MineflayerInventoryPanel({
               </p>
             )}
           </div>
+          {!inventory.dropSupported && (
+            <p className="mineflayer-inventory-feedback">{tr("bot.inventory.restartToDrop")}</p>
+          )}
         </>
       )}
     </PluginSettingsGroup>

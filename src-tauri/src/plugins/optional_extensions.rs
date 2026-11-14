@@ -61,6 +61,14 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ("worker.cjs", MINEFLAYER_WORKER),
     (
+        "inventory-actions.cjs",
+        include_str!("../../../extensions/mineflayer-bot/inventory-actions.cjs"),
+    ),
+    (
+        "chaotic-movement.cjs",
+        include_str!("../../../extensions/mineflayer-bot/chaotic-movement.cjs"),
+    ),
+    (
         "fabric.cjs",
         include_str!("../../../extensions/mineflayer-bot/fabric.cjs"),
     ),
@@ -595,7 +603,7 @@ pub async fn install_optional_extension(
         let _package_lock = PACKAGE_LOCK.lock().await;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => {
-                mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
+                mineflayer_bot::stop_all_mineflayer_bots(mineflayer_state).await?;
                 install_mineflayer_package().await
             }
             BLUE_MAP_SERVER_ID => {
@@ -687,7 +695,7 @@ pub async fn uninstall_optional_extension(
         let _package_lock = PACKAGE_LOCK.lock().await;
         match extension_id.as_str() {
             MINEFLAYER_BOT_ID => {
-                mineflayer_bot::stop_mineflayer_bot(mineflayer_state).await?;
+                mineflayer_bot::stop_all_mineflayer_bots(mineflayer_state).await?;
                 uninstall_mineflayer_package().await
             }
             BLUE_MAP_SERVER_ID => {
@@ -743,6 +751,8 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         write_mineflayer_scaffold(&directory).await.unwrap();
         for name in [
+            "inventory-actions.cjs",
+            "chaotic-movement.cjs",
             "fabric.cjs",
             "mineflayer-fabric.cjs",
             "FABRIC.md",

@@ -2,7 +2,7 @@ import { ProgressBar } from "../../display/ProgressBar";
 import { TextField } from "../../inputs/TextField";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { botStorageKey, useBotId, useBotInvoke } from "./BotSessionContext";
 import type {
   MinecraftCatalog,
   MineflayerBotStatus,
@@ -79,30 +79,30 @@ function WorkflowIcon({ kind }: { kind: string }) {
   );
 }
 
-function loadDraft() {
+function loadDraft(botId: string) {
   try {
-    return readWorkflowDraft(localStorage.getItem(WORKFLOW_DRAFT_KEY));
+    return readWorkflowDraft(localStorage.getItem(botStorageKey(WORKFLOW_DRAFT_KEY, botId)));
   } catch {
     return [];
   }
 }
-function loadHistory() {
+function loadHistory(botId: string) {
   try {
-    return readWorkflowHistory(localStorage.getItem(WORKFLOW_HISTORY_KEY));
+    return readWorkflowHistory(localStorage.getItem(botStorageKey(WORKFLOW_HISTORY_KEY, botId)));
   } catch {
     return [];
   }
 }
-function loadName() {
+function loadName(botId: string) {
   try {
-    return readCustomWorkflowName(localStorage.getItem(WORKFLOW_NAME_KEY));
+    return readCustomWorkflowName(localStorage.getItem(botStorageKey(WORKFLOW_NAME_KEY, botId)));
   } catch {
     return null;
   }
 }
-function loadNameVariant() {
+function loadNameVariant(botId: string) {
   try {
-    return readWorkflowNameVariant(localStorage.getItem(WORKFLOW_NAME_KEY));
+    return readWorkflowNameVariant(localStorage.getItem(botStorageKey(WORKFLOW_NAME_KEY, botId)));
   } catch {
     return 0;
   }
@@ -124,13 +124,18 @@ export function MineflayerWorkflow({
   onOpenStorage: () => void;
 }) {
   const locale = useLocale();
+  const invoke = useBotInvoke();
+  const botId = useBotId();
+  const draftKey = botStorageKey(WORKFLOW_DRAFT_KEY, botId);
+  const historyKey = botStorageKey(WORKFLOW_HISTORY_KEY, botId);
+  const nameKey = botStorageKey(WORKFLOW_NAME_KEY, botId);
   const tr = useTranslation();
-  const [steps, setSteps] = useState<WorkflowDraftStep[]>(loadDraft);
-  const [customName, setCustomName] = useState(loadName);
-  const [nameVariant, setNameVariant] = useState(loadNameVariant);
+  const [steps, setSteps] = useState<WorkflowDraftStep[]>(() => loadDraft(botId));
+  const [customName, setCustomName] = useState(() => loadName(botId));
+  const [nameVariant, setNameVariant] = useState(() => loadNameVariant(botId));
   const automaticName = workflowName(steps, nameVariant);
   const name = customName?.trim() || automaticName;
-  const [history, setHistory] = useState<WorkflowHistoryEntry[]>(loadHistory);
+  const [history, setHistory] = useState<WorkflowHistoryEntry[]>(() => loadHistory(botId));
   const historyRef = useRef(history);
   const planRef = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -205,32 +210,29 @@ export function MineflayerWorkflow({
   }, [incomingHistory, steps]);
   useEffect(() => {
     try {
-      localStorage.setItem(WORKFLOW_HISTORY_KEY, JSON.stringify(history));
+      localStorage.setItem(historyKey, JSON.stringify(history));
     } catch {
       /* History remains available for this session. */
     }
-  }, [history]);
+  }, [history, historyKey]);
   useEffect(() => {
     try {
-      localStorage.setItem(
-        WORKFLOW_NAME_KEY,
-        JSON.stringify({ manual: customName, variant: nameVariant }),
-      );
+      localStorage.setItem(nameKey, JSON.stringify({ manual: customName, variant: nameVariant }));
     } catch {
       /* Name remains editable for this session. */
     }
-  }, [customName, nameVariant]);
+  }, [customName, nameVariant, nameKey]);
 
   useEffect(() => {
     try {
-      localStorage.setItem(WORKFLOW_DRAFT_KEY, JSON.stringify(workflowPayload(steps)));
+      localStorage.setItem(draftKey, JSON.stringify(workflowPayload(steps)));
     } catch {
       /* Draft remains editable when storage is unavailable. */
     }
-  }, [steps]);
+  }, [steps, draftKey]);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === WORKFLOW_DRAFT_KEY) {
+      if (event.key === draftKey) {
         const incoming = readWorkflowDraft(event.newValue);
         setSteps((current) =>
           JSON.stringify(workflowPayload(current)) === JSON.stringify(workflowPayload(incoming))
@@ -238,10 +240,10 @@ export function MineflayerWorkflow({
             : incoming,
         );
         setEditing(null);
-      } else if (event.key === WORKFLOW_NAME_KEY) {
+      } else if (event.key === nameKey) {
         setCustomName(readCustomWorkflowName(event.newValue));
         setNameVariant(readWorkflowNameVariant(event.newValue));
-      } else if (event.key === WORKFLOW_HISTORY_KEY) {
+      } else if (event.key === historyKey) {
         const merged = mergeWorkflowHistory(
           historyRef.current,
           readWorkflowHistory(event.newValue),
@@ -254,7 +256,7 @@ export function MineflayerWorkflow({
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [draftKey, nameKey, historyKey]);
   useEffect(() => {
     let cancelled = false;
     setCatalog(bundledCatalog as MinecraftCatalog);
@@ -267,7 +269,7 @@ export function MineflayerWorkflow({
     return () => {
       cancelled = true;
     };
-  }, [connected, status?.pid]);
+  }, [connected, status?.pid, invoke]);
 
   function append(added: WorkflowDraftStep[]) {
     if (locked || steps.length + added.length > WORKFLOW_STEP_LIMIT) return;

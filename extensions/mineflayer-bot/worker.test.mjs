@@ -9,6 +9,78 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("routes owner chat to a specific bot, several named bots or everyone before dispatch", () => {
+  const bare = new Set(["mine", "craft"]);
+  const body = (message, name = "Miner", prefix = "!") => worker.commandBodyForBot(message, prefix, name, bare);
+  assert.equal(body("!@Miner mine stone 64"), "mine stone 64");
+  assert.equal(body("!@miner mine stone 64", "MINER"), "mine stone 64");
+  assert.equal(body("!@Farmer mine stone 64"), null);
+  assert.equal(body("!@Miner,Farmer stop", "Farmer"), "stop");
+  assert.equal(body("!@Miner,@Farmer stop", "Farmer"), "stop");
+  assert.equal(body("!@Miner,Farmer stop", "Guard"), null);
+  assert.equal(body("!@all stop", "Farmer"), "stop");
+  assert.equal(body("!@* stop", "Farmer"), "stop");
+  assert.equal(body("!!@Miner follow", "Miner", "!!"), "follow");
+  assert.equal(body("!follow"), "follow");
+  assert.equal(body("mine stone 64"), "mine stone 64");
+  assert.equal(body("Hello Miner"), null);
+  assert.equal(body("!@Miner"), null);
+});
+
+test("explicit commands accept an optional prefix and explicit game chat remains literal", async () => {
+  const commands = [], chat = [], events = [];
+  const bot = {
+    launcherCommandPrefix: "!!",
+    launcherBareCommands: new Set(["mine"]),
+    launcherCommand: async message => commands.push(message),
+    chat: async message => chat.push(message),
+  };
+  await worker.handleLauncherMessages([
+    { type: "command", message: "follow" },
+    { type: "command", message: "!!stop" },
+    { type: "chat", message: "mine stone 64" },
+    { type: "chat", message: "mine stone 64", literalChat: true },
+    { type: "chat", message: "!!stop", literalChat: true },
+  ].map((request, index) => JSON.stringify({ ...request, requestId: String(index) })), () => bot, (type, event) => events.push({ type, ...event }));
+  assert.deepEqual(commands, ["!!follow", "!!stop", "!!mine stone 64"]);
+  assert.deepEqual(chat, ["mine stone 64", "!!stop"]);
+  assert.equal(events.length, 5);
+  assert.ok(events.every(event => !event.error));
+});
+
+test("inventory drops stay private, target the current bot and acknowledge validation errors", async () => {
+  const received = [], events = [];
+  const items = [{ slot: 5, count: 1, fingerprint: "a".repeat(64) }];
+  const bot = { chat() { assert.fail("Inventory operations must not enter chat"); }, launcherInventoryActions: { async drop(value) {
+    if (!value.length) throw new Error("Empty selection");
+    received.push(value); return "Dropped";
+  } } };
+  await worker.handleLauncherMessages([
+    JSON.stringify({ type: "inventory_drop", requestId: "armor", items }),
+    JSON.stringify({ type: "inventory_drop", requestId: "empty", items: [] }),
+  ], () => bot, (type, value) => events.push({ type, ...value }));
+  assert.deepEqual(received, [items]);
+  assert.equal(events.find(event => event.requestId === "armor").message, "Dropped");
+  assert.match(events.find(event => event.requestId === "empty").error, /Empty selection/);
+});
+
+test("keeps reading stop requests while a long inventory batch is in progress", async () => {
+  const events = [], order = [];
+  let finish;
+  const bot = { launcherInventoryActions: {
+    busy: true,
+    drop: () => new Promise(resolve => { finish = resolve; order.push("drop"); }),
+    cancel: () => { order.push("cancel"); finish("Cancelled"); },
+  }, launcherWorkflow: { dispatch: async () => "Stopped" } };
+  await worker.handleLauncherMessages([
+    JSON.stringify({ type: "inventory_drop", requestId: "drop", items: [] }),
+    JSON.stringify({ type: "workflow", requestId: "stop", action: "stop" }),
+  ], () => bot, (type, value) => events.push({ type, ...value }));
+  assert.deepEqual(order, ["drop", "cancel"]);
+  assert.equal(events.find(event => event.requestId === "drop").message, "Cancelled");
+  assert.equal(events.find(event => event.requestId === "stop").message, "Stopped");
+});
+
 test("structured scenarios bypass chat length limits and acknowledge worker validation errors", async () => {
   const events = [], received = [];
   const steps = Array.from({ length: 100 }, () => ({ kind: "craft", item: "stick", count: 8, mode: "auto" }));

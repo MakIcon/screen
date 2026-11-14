@@ -1493,6 +1493,7 @@ function createCombatController(
   function tick() {
     if (
       disposed ||
+      bot.launcherInventoryActions?.busy ||
       !bot.entity?.position ||
       bot.health <= 0 ||
       bot.launcherSurvival?.busy ||

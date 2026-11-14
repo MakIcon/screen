@@ -153,6 +153,7 @@ export const DEFAULT_DISCORD_RPC_SETTINGS: DiscordRpcPluginSettings = {
 };
 
 export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
+  bots: [],
   enabled: false,
   host: "",
   port: 25565,
@@ -276,11 +277,35 @@ export function normalizeDiscordRpcSettings(value: unknown): DiscordRpcPluginSet
   };
 }
 
-export function normalizeMineflayerBotSettings(value: unknown): MineflayerBotPluginSettings {
+export function normalizeMineflayerBotSettings(
+  value: unknown,
+  includeBots = true,
+): MineflayerBotPluginSettings {
   const draft =
     value && typeof value === "object" ? (value as Partial<MineflayerBotPluginSettings>) : {};
   const defaults = DEFAULT_MINEFLAYER_BOT_SETTINGS;
+  const ids = new Set<string>(["default"]);
+  const bots =
+    includeBots && Array.isArray(draft.bots)
+      ? draft.bots
+          .flatMap((bot) => {
+            if (
+              !bot ||
+              typeof bot !== "object" ||
+              typeof bot.id !== "string" ||
+              !/^[a-zA-Z0-9_-]{1,64}$/.test(bot.id) ||
+              ids.has(bot.id)
+            )
+              return [];
+            ids.add(bot.id);
+            const settings = normalizeMineflayerBotSettings(bot.settings, false);
+            const { bots: _nested, ...configuration } = settings;
+            return [{ id: bot.id, settings: configuration }];
+          })
+          .slice(0, 99)
+      : [];
   return {
+    bots,
     enabled: normalizeBoolean(draft.enabled, defaults.enabled),
     host: normalizeText(draft.host, defaults.host),
     port: normalizeInteger(draft.port, defaults.port, 1, 65535),

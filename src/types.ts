@@ -439,7 +439,7 @@ export type MineflayerSurvivalSettings = {
   mlgPickupWater: boolean;
 };
 
-export type MineflayerBotPluginSettings = {
+export type MineflayerBotConfiguration = {
   enabled: boolean;
   host: string;
   port: number;
@@ -478,6 +478,15 @@ export type MineflayerBotPluginSettings = {
   combat: MineflayerCombatSettings;
   survival: MineflayerSurvivalSettings;
   gathering: MineflayerGatheringSettings;
+};
+
+export type MineflayerBotProfile = {
+  id: string;
+  settings: MineflayerBotConfiguration;
+};
+
+export type MineflayerBotPluginSettings = MineflayerBotConfiguration & {
+  bots: MineflayerBotProfile[];
 };
 
 export type MineflayerGatheringSettings = {
@@ -561,6 +570,7 @@ export type MinecraftCatalog = {
 };
 export type MineflayerInventoryItem = {
   slot: number;
+  fingerprint?: string;
   name: string;
   displayName: string;
   count: number;
@@ -584,17 +594,23 @@ export type MineflayerStorageScan = {
   added: number;
   groups: MineflayerStorageGroup[];
   warnings: string[];
-  records: Array<MineflayerDiscoveredBlock & {
-    category?: string | null;
-    label: string;
-    configured?: boolean;
-    totalSlots?: number;
-    freeSlots?: number;
-    contents?: Array<{ name: string; count: number }>;
-    error?: string;
-  }>;
+  records: Array<
+    MineflayerDiscoveredBlock & {
+      category?: string | null;
+      label: string;
+      configured?: boolean;
+      totalSlots?: number;
+      freeSlots?: number;
+      contents?: Array<{ name: string; count: number }>;
+      error?: string;
+    }
+  >;
 };
 export type MineflayerInventory = {
+  dropSupported?: boolean;
+  actionBusy?: boolean;
+  chaoticMovement?: boolean;
+  movementGoal?: string;
   workflow?: MineflayerWorkflowStatus | null;
   username: string;
   health: number;
@@ -623,7 +639,18 @@ export type MineflayerInventory = {
   } | null;
 };
 export type MineflayerWorkflowStep = {
-  kind: "mine" | "forest" | "craft" | "smelt" | "collect" | "deposit" | "return" | "till" | "plant" | "harvest" | "farm";
+  kind:
+    | "mine"
+    | "forest"
+    | "craft"
+    | "smelt"
+    | "collect"
+    | "deposit"
+    | "return"
+    | "till"
+    | "plant"
+    | "harvest"
+    | "farm";
   item?: string;
   count?: number;
   radius?: number;
@@ -636,10 +663,21 @@ export type MineflayerWorkflowStatus = {
   startedAt?: number | null;
   finishedAt?: number | null;
   history?: MineflayerWorkflowRun[];
-  phase: "idle" | "starting" | "running" | "pausing" | "paused" | "stopping" | "stopped" | "complete" | "error";
+  phase:
+    | "idle"
+    | "starting"
+    | "running"
+    | "pausing"
+    | "paused"
+    | "stopping"
+    | "stopped"
+    | "complete"
+    | "error";
   message: string;
   current: number;
-  steps: Array<MineflayerWorkflowStep & { state: "waiting" | "running" | "complete" | "error" | "stopped" }>;
+  steps: Array<
+    MineflayerWorkflowStep & { state: "waiting" | "running" | "complete" | "error" | "stopped" }
+  >;
 };
 export type MineflayerWorkflowRun = {
   id: string;
@@ -651,6 +689,7 @@ export type MineflayerWorkflowRun = {
   steps: MineflayerWorkflowStatus["steps"];
 };
 export type MineflayerBotStatus = {
+  botId?: string;
   revision: number;
   running: boolean;
   state: string;
@@ -773,6 +812,7 @@ export type RuntimeProcessStatus = {
 
 export type RuntimeMonitorSnapshot = {
   mineflayerBot: MineflayerBotStatus;
+  mineflayerBots?: MineflayerBotStatus[];
   blueMap: BlueMapStatus;
   obsTelemetry: ObsTelemetryStatus;
   processes: RuntimeProcessStatus[];

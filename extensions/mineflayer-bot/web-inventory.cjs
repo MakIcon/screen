@@ -1,6 +1,7 @@
 const http = require("node:http");
 const { createRequire } = require("node:module");
 const { getItemEnchantments } = require("./pathfinder.cjs");
+const { inventoryItemFingerprint, playerInventorySlots } = require("./inventory-actions.cjs");
 const dependency = createRequire(require.resolve("mineflayer-web-inventory"));
 const express = dependency("express");
 const { Server } = dependency("socket.io");
@@ -152,15 +153,13 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
   }
   function emitSnapshot() {
     if (stopped) return;
-    const inventorySlots = [...(bot.inventory.slots || [])];
-    const window = bot.currentWindow;
-    if (window) for (let index = window.inventoryStart; index < window.inventoryEnd; index++)
-      inventorySlots[index - window.inventoryStart + 9] = window.slots[index];
+    const inventorySlots = playerInventorySlots(bot);
     const slots = inventorySlots.map((item, slot) => {
       if (!item) return null;
       const maximum = bot.registry.itemsByName[item.name]?.maxDurability;
       return {
         slot,
+        fingerprint: inventoryItemFingerprint(item),
         name: item.name,
         displayName: item.displayName || item.name,
         count: item.count,
@@ -184,6 +183,10 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
       .reduce((sum, item, index) => sum + (armorPoints[item?.name.split("_")[0]]?.[index] || 0), 0);
     const snapshot = {
       username: bot.username || "Бот",
+      chaoticMovement: Boolean(bot.launcherChaoticMovement?.active),
+      movementGoal: bot.launcherMovementGoal?.() || 'idle',
+      dropSupported: Boolean(bot.launcherInventoryActions),
+      actionBusy: Boolean(bot.launcherInventoryActions?.busy),
       health: bot.health ?? 0,
       maxHealth: attribute("max_health") || 20,
       food: bot.food ?? 0,
@@ -216,6 +219,8 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
     for (const name of ["health", "heldItemChanged", "entityAttributes", "respawn"])
       bot.off(name, schedule);
     bot.off("end", stop);
+    bot.off("launcherMovementChanged", emitSnapshot);
+    bot.off("launcherInventoryChanged", emitSnapshot);
     onUpdate(null);
   }
   const poll = setInterval(emitSnapshot, 1000);
@@ -224,6 +229,8 @@ function startInventoryTelemetry(bot, { onUpdate = () => {}, onCatalog = () => {
   for (const name of ["health", "heldItemChanged", "entityAttributes", "respawn"])
     bot.on(name, schedule);
   bot.once("end", stop);
+  bot.on("launcherMovementChanged", emitSnapshot);
+  bot.on("launcherInventoryChanged", emitSnapshot);
   emitSnapshot();
   return { stop };
 }

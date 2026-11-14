@@ -22,6 +22,7 @@ function installArmorManager(bot, onError = () => {}) {
     return queueInventoryTask(bot, async () => {
       if (
         disposed ||
+        bot.launcherInventoryActions?.busy ||
         bot.health <= 0 ||
         bot.launcherSurvival?.busy ||
         bot.launcherProduction?.busy ||

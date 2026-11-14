@@ -24,6 +24,7 @@ function createAutoTotem(bot, settings, { now = Date.now, onStatus = () => {} } 
     Boolean(bot.registry?.itemsByName?.totem_of_undying || bot.registry?.itemsByName?.totem);
   const available = () => carriedItems(bot).find(isTotem);
   const accessible = () =>
+    !bot.launcherInventoryActions?.busy &&
     !bot.inventory?.selectedItem && (!bot.currentWindow || bot.currentWindow === bot.inventory);
   function effectiveHealth() {
     const absorption = settings.totemUseAbsorption ? observedHealth(bot, bot.entity).absorption : 0;
