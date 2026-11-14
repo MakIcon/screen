@@ -63,7 +63,7 @@ function taskFromCommand(bot, work, command, args) {
       kind: "mine",
       blocks: command === "ores" ? "ores" : args[0],
       count: values[0] ?? 64,
-      radius: values[1] ?? 32,
+      radius: values[1] ?? 128,
       minY: values[2],
       maxY: values[3],
     };
@@ -77,7 +77,7 @@ function taskFromCommand(bot, work, command, args) {
       throw new Error("forest [радиус] [количество, 0 = все] [leaves|logs] [scaffold|plain]");
     return {
       kind: "forest",
-      radius: args[0] ?? 16,
+      radius: args[0] ?? 64,
       count: args[1] ?? 0,
       leaves: args[2] === "leaves",
       scaffold: args[3] !== "plain",

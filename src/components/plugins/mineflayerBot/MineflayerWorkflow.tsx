@@ -807,7 +807,7 @@ export function MineflayerWorkflow({
                                 : 256,
                           )}
                         {["mine", "forest", "collect", ...FARMING_KINDS].includes(step.kind) &&
-                          number(step, "radius", tr("bot.workflow.radiusBlocks"), 64)}
+                          number(step, "radius", tr("bot.workflow.radiusBlocks"), 256)}
                       </div>
                       {["harvest", "farm"].includes(step.kind) && (
                         <label className="mineflayer-bot-field">

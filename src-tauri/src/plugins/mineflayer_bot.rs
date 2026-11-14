@@ -4,9 +4,12 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -29,6 +32,13 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const MAX_LOG_LINES: usize = 80;
 const STATUS_EVENT: &str = "mineflayer-bot-status";
 const WORKFLOW_STEP_LIMIT: usize = 100;
+// Progress snapshots (logs, inventory, work) carry the bot's whole state. With a
+// fleet they arrive many times a second from every worker, so they are
+// coalesced per bot; the interval grows with the number of running workers.
+const STATUS_INTERVAL_PER_WORKER_MS: u64 = 35;
+const STATUS_INTERVAL_MIN_MS: u64 = 250;
+const STATUS_INTERVAL_MAX_MS: u64 = 2_500;
+static ACTIVE_WORKERS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Default)]
 pub struct MineflayerBotState {
@@ -56,6 +66,8 @@ struct MineflayerBotRuntime {
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
     catalog: Option<serde_json::Value>,
+    last_emit: Option<Instant>,
+    emit_pending: bool,
 }
 
 impl Default for MineflayerBotRuntime {
@@ -79,6 +91,8 @@ impl Default for MineflayerBotRuntime {
             inventory: None,
             gathering: None,
             catalog: None,
+            last_emit: None,
+            emit_pending: false,
         }
     }
 }
@@ -299,12 +313,61 @@ fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
     }
 }
 
-fn publish_status(runtime: &mut MineflayerBotRuntime) {
-    runtime.revision += 1;
+fn status_interval() -> Duration {
+    let workers = ACTIVE_WORKERS.load(Ordering::Relaxed) as u64;
+    Duration::from_millis(
+        (workers * STATUS_INTERVAL_PER_WORKER_MS)
+            .clamp(STATUS_INTERVAL_MIN_MS, STATUS_INTERVAL_MAX_MS),
+    )
+}
+
+fn worker_started() {
+    ACTIVE_WORKERS.fetch_add(1, Ordering::Relaxed);
+}
+
+fn worker_stopped() {
+    let _ = ACTIVE_WORKERS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+        count.checked_sub(1)
+    });
+}
+
+fn emit_status(runtime: &mut MineflayerBotRuntime) {
+    runtime.emit_pending = false;
+    runtime.last_emit = Some(Instant::now());
     if let Some(app) = &runtime.app {
         // Emit under the state lock so stdout, stderr and lifecycle changes stay ordered.
         // A failed delivery is repaired by the UI's occasional full snapshot.
         let _ = app.emit(STATUS_EVENT, snapshot_status(runtime));
+    }
+}
+
+/// Lifecycle changes reach the UI at once.
+fn publish_status(runtime: &mut MineflayerBotRuntime) {
+    runtime.revision += 1;
+    emit_status(runtime);
+}
+
+/// Logs, inventory and work progress are coalesced; the exit watcher delivers
+/// the latest snapshot once the interval has passed.
+fn publish_progress(runtime: &mut MineflayerBotRuntime) {
+    runtime.revision += 1;
+    if runtime
+        .last_emit
+        .map_or(true, |at| at.elapsed() >= status_interval())
+    {
+        emit_status(runtime);
+    } else {
+        runtime.emit_pending = true;
+    }
+}
+
+fn flush_status(runtime: &mut MineflayerBotRuntime) {
+    if runtime.emit_pending
+        && runtime
+            .last_emit
+            .map_or(true, |at| at.elapsed() >= status_interval())
+    {
+        emit_status(runtime);
     }
 }
 
@@ -348,6 +411,7 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
         runtime.generation += 1;
         fail_pending_chat(runtime);
         runtime.child.take();
+        worker_stopped();
         runtime.pid = None;
         runtime.state = "stopped".to_string();
         runtime.inventory_url = None;
@@ -361,6 +425,11 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
 
 fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEvent) {
     let status_changed = event.event_type != "minecraft_catalog";
+    let previous_state = runtime.state.clone();
+    let lifecycle = matches!(
+        event.event_type.as_str(),
+        "ready" | "end" | "inventory" | "production_started"
+    );
     match event.event_type.as_str() {
         "inventory" => runtime.inventory_url = event.inventory_url,
         "gathering" => runtime.gathering = event.gathering,
@@ -433,7 +502,11 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         }
     }
     if status_changed {
-        publish_status(runtime);
+        if lifecycle || runtime.state != previous_state {
+            publish_status(runtime);
+        } else {
+            publish_progress(runtime);
+        }
     }
 }
 
@@ -449,7 +522,7 @@ fn apply_worker_line(runtime: &mut MineflayerBotRuntime, line: &str, label: &str
         if label == "stderr" {
             runtime.last_error = Some(line.to_string());
         }
-        publish_status(runtime);
+        publish_progress(runtime);
     }
 }
 
@@ -492,6 +565,7 @@ fn spawn_exit_watcher(state: Arc<Mutex<MineflayerBotRuntime>>, generation: u64) 
         if runtime.child.is_none() {
             return;
         }
+        flush_status(&mut runtime);
     });
 }
 
@@ -850,6 +924,7 @@ fn stop_runtime(
     if let Some(mut child) = runtime.child.take() {
         let _ = child.kill();
         let _ = child.wait();
+        worker_stopped();
     }
     fail_pending_chat(&mut runtime);
     runtime.pid = None;
@@ -1154,6 +1229,7 @@ pub async fn start_mineflayer_bot(
         }
 
         runtime.child = Some(child);
+        worker_started();
         runtime.pid = runtime.child.as_ref().map(|child| child.id());
         runtime.state = "starting".to_string();
         runtime.owner_name = Some(owner_name);

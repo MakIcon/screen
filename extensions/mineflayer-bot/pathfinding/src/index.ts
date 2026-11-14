@@ -13,6 +13,7 @@ import { PathingUtil } from './PathingUtil'
 import { installClimbablePhysics } from './mineflayer-specific/climbablePhysics'
 import { installLowCeilingJumps } from './mineflayer-specific/lowCeilingJumps'
 import { installSupportingBlockPhysics } from './mineflayer-specific/supportingBlockPhysics'
+import { installCollisionDimensions } from './mineflayer-specific/collisionDimensions'
 import { installMiningToolMaterials } from './mineflayer-specific/miningTools'
 import { installItemEnchantmentCompatibility } from './mineflayer-specific/itemEnchantments'
 
@@ -41,6 +42,7 @@ export function createPlugin (opts?: HandlerOpts) {
     if (!bot.hasPlugin(utilPlugin)) bot.loadPlugin(utilPlugin)
     if (!bot.hasPlugin(physicsUtil)) bot.loadPlugin(physicsUtil)
     initSetup(bot.registry)
+    installCollisionDimensions(bot)
     installClimbablePhysics(bot)
     installSupportingBlockPhysics(bot)
     bot.pathfinder = new ThePathfinder(bot, opts)
@@ -75,6 +77,8 @@ declare module 'mineflayer' {
     pathGenerated: (path: Path) => void
     resetPath: (reason: ResetReason) => void
     enteredRecovery: (errorCount: number) => void
+    pathFailed: (failure: { message: string; stage: string; position: Vec3; velocity: Vec3; onGround: boolean; entry?: Vec3; exit?: Vec3;
+      movement?: string; jumpTicks: number; jumpQueued: boolean; controls: Record<string, boolean> }) => void
     exitedRecovery: (errorCount: number) => void
     goalSet: (goal: goals.Goal) => void
     goalFinished: (goal: goals.Goal) => void

@@ -1060,7 +1060,7 @@ export const ru = {
     "Бот вернётся к месту запуска сценария. Запускайте сценарий рядом с печью и местом для крафта.",
   "bot.workflow.usesTheChestGroups": "Используются группы сундуков из настроек склада.",
   "bot.workflow.theCountIsIn":
-    "Количество считается в блоках. Для железа нужна каменная кирка или лучше.",
+    "Количество — в блоках для каждого бота. Боты делят жилы между собой и разведывают радиус, если рядом пусто. Для железа нужна каменная кирка или лучше.",
   "bot.workflow.theActionStartsAfter": "Действие начнётся после завершения предыдущего шага.",
   "bot.workflow.connectTheBotTo": "Подключите бота, чтобы запустить сценарий.",
   "bot.workflow.connection": "Подключение ↗",
@@ -2228,6 +2228,7 @@ export const ru = {
   "bot.gathering.phase.deposit": "Выгружает",
   "bot.gathering.phase.deliver": "Несёт добычу к вам",
   "bot.gathering.phase.return": "Возвращается",
+  "bot.gathering.phase.explore": "Разведка",
   "bot.gathering.phase.paused": "На паузе",
 
   // bot.inventory.slot

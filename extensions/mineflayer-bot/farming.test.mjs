@@ -7,6 +7,7 @@ import plan from "./gathering-plan.cjs";
 import { createGatheringController } from "./gathering.cjs";
 import { taskFromCommand, handleGatheringCommand } from "./gathering-commands.cjs";
 import { validateWorkflow } from "./workflow.cjs";
+import fleetCrew from "./fleet-crew.cjs";
 
 const require = createRequire(import.meta.url);
 const { Vec3 } = require("vec3");
@@ -15,7 +16,7 @@ const blockFactory = require("prismarine-block");
 const key = (p) => `${p.x},${p.y},${p.z}`;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function fixture(version = "26.1.2") {
+function fixture(version = "26.1.2", hooks = {}) {
   const bot = new EventEmitter();
   bot.registry = mcData(version);
   const Block = blockFactory(bot.registry);
@@ -146,7 +147,7 @@ function fixture(version = "26.1.2") {
   const work = createGatheringController(
     bot,
     { dropWaitMs: 0, pickupTimeoutMs: 100, operationTimeoutMs: 300 },
-    {},
+    hooks,
   );
   const until = async (predicate) => {
     const end = Date.now() + 4000;
@@ -446,6 +447,30 @@ test("commands and workflow preserve crop selection and validate before preparin
       plan.normalizeTask(f.bot, { kind: "plant", crop: "minecraft:wheat_seeds" }).crop,
       "wheat",
     );
+  } finally {
+    await f.work.dispose();
+  }
+});
+
+test("crew bots split a field into plots instead of working the same beds", async () => {
+  const hub = fleetCrew.createHub();
+  const crew = (name) => ({ request: async (op, input) => hub.handle(name, op, input), setBeat() {} });
+  const f = fixture(undefined, { crew: crew("a") });
+  try {
+    // Two 4x4 plots: x 0..3 and x 4..7. Another bot holds the near one.
+    for (const x of [1, 2, 5, 6]) f.put("farmland", x, 63, 0, { moisture: 7 });
+    f.addItem("wheat_seeds", 8);
+    const task = f.work.validate({ kind: "plant", crop: "wheat" });
+    const plot = fleetCrew.groupSites(task, [new Vec3(1, 63, 0)], new Vec3(1, 64, 0), "overworld");
+    hub.handle("b", "claim", { scope: fleetCrew.scopeOf(task), dim: "overworld", pos: { x: 1, y: 64, z: 0 },
+      sites: [...plot.values()].map(fleetCrew.siteSummary), zone: "column", zoneCap: 8 });
+    f.work.enqueue({ kind: "plant", crop: "wheat", count: 0 });
+    const result = await f.finish();
+    assert.equal(result.outcome, "готово");
+    assert.equal(result.planted, 2);
+    assert.deepEqual(f.events.filter((event) => event.startsWith("plant:")),
+      ["plant:wheat:5,63,0", "plant:wheat:6,63,0"]);
+    assert.match(result.reason, /другие боты/);
   } finally {
     await f.work.dispose();
   }

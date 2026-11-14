@@ -33,8 +33,8 @@ export const workflowActionNote = (
 
 export function newWorkflowStep(kind: MineflayerWorkflowStep["kind"]): WorkflowDraftStep {
   const defaults: Record<MineflayerWorkflowStep["kind"], MineflayerWorkflowStep> = {
-    mine: { kind, item: "iron", count: 9, radius: 32 },
-    forest: { kind, count: 4, radius: 16 },
+    mine: { kind, item: "iron", count: 9, radius: 128 },
+    forest: { kind, count: 4, radius: 64 },
     till: { kind, count: 0, radius: 8 },
     plant: { kind, item: "auto", count: 0, radius: 8 },
     harvest: { kind, item: "auto", count: 0, radius: 8, replant: true },
@@ -80,7 +80,7 @@ export function readWorkflowDraft(value: string | null): WorkflowDraftStep[] {
             Math.min(
               step[key],
               key === "radius"
-                ? 64
+                ? 256
                 : step.kind === "mine" || farming
                   ? 4096
                   : step.kind === "smelt"

@@ -278,6 +278,35 @@ describe("runtime monitor events", () => {
     expect(RenderHookHarness().snapshot?.mineflayerBot).toBe(update);
   });
 
+  it("applies a fleet's progress in one batch per window but state changes at once", async () => {
+    await start();
+    const miner = { ...bot(1), botId: "miner" };
+    const farmer = { ...bot(1), botId: "farmer" };
+    emit(miner);
+    emit(farmer);
+    const before = RenderHookHarness().snapshot;
+    // Progress from both bots inside the window does not rerender the launcher.
+    const mined = { ...bot(2), botId: "miner", logs: ["Mined iron"] };
+    const farmed = { ...bot(2), botId: "farmer", logs: ["Planted wheat"] };
+    emit(mined);
+    emit(farmed);
+    emit({ ...farmed, revision: 3, logs: ["Planted wheat", "Planted carrot"] });
+    expect(RenderHookHarness().snapshot).toBe(before);
+    await vi.advanceTimersByTimeAsync(200);
+    const after = RenderHookHarness().snapshot;
+    expect(after?.mineflayerBots?.find((entry) => entry.botId === "miner")).toBe(mined);
+    expect(after?.mineflayerBots?.find((entry) => entry.botId === "farmer")?.revision).toBe(3);
+    expect(after?.mineflayerBots).toHaveLength(3);
+    // A stop is never delayed and carries the pending progress with it.
+    emit({ ...mined, revision: 4, logs: ["Mined gold"] });
+    emit({ ...bot(4), botId: "farmer", running: false, state: "stopped" });
+    const stopped = RenderHookHarness().snapshot;
+    expect(stopped?.mineflayerBots?.find((entry) => entry.botId === "farmer")?.state).toBe(
+      "stopped",
+    );
+    expect(stopped?.mineflayerBots?.find((entry) => entry.botId === "miner")?.revision).toBe(4);
+  });
+
   it("versions secondary bots independently and leaves the primary status intact", async () => {
     const initial = await start();
     emit({ ...bot(50), botId: "default" });

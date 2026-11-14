@@ -19,9 +19,9 @@ const mine = (item: string, count: number): MineflayerWorkflowStep => ({
   kind: "mine",
   item,
   count,
-  radius: 32,
+  radius: 96,
 });
-const forest = (count = 4): MineflayerWorkflowStep => ({ kind: "forest", count, radius: 16 });
+const forest = (count = 4): MineflayerWorkflowStep => ({ kind: "forest", count, radius: 48 });
 const home = (): MineflayerWorkflowStep => ({ kind: "return" });
 const craft = (item: string, count = 1): MineflayerWorkflowStep => ({
   kind: "craft",

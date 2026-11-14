@@ -54,6 +54,7 @@ function createMineIndex(bot) {
 async function scanMine(bot, task, { limit = 512, allowed, yieldControl, index }) {
   const ids = new Set(task.names.map((name) => bot.registry.blocksByName[name].id));
   const candidates = [];
+  const chunks = [];
   let remaining = 0,
     unloaded = 0,
     examined = 0;
@@ -96,11 +97,15 @@ async function scanMine(bot, task, { limit = 512, allowed, yieldControl, index }
         Math.hypot(b.x * 16 + 8 - bot.entity.position.x, b.z * 16 + 8 - bot.entity.position.z),
     );
     for (const { x, z } of columns) {
+      // Columns are visited nearest-first. With a wide radius, stop once the
+      // nearest batch is complete instead of indexing every loaded chunk.
+      if (candidates.length >= limit) break;
       const column = bot.world.getColumn(x, z);
       if (!column) {
         unloaded++;
         continue;
       }
+      chunks.push(`${x}:${z}`);
       const columnMinY =
         column.minY ?? bot.game?.minY ?? (bot.registry.version[">="]("1.18") ? -64 : 0);
       for (let y = Math.floor(task.minY / 16) * 16; y <= task.maxY; y += 16) {
@@ -152,6 +157,6 @@ async function scanMine(bot, task, { limit = 512, allowed, yieldControl, index }
     (a, b) =>
       a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position),
   );
-  return { candidates: candidates.slice(0, limit), remaining, unloaded };
+  return { candidates: candidates.slice(0, limit), remaining, unloaded, chunks };
 }
 module.exports = { scanMine, createMineIndex };

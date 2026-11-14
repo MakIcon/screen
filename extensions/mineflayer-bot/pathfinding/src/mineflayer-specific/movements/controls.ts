@@ -15,7 +15,11 @@ export function steerToPosition (bot: Bot, target: Vec3, limit = 0.1, precision 
   const sin = Math.sin(yaw); const cos = Math.cos(yaw)
   const choose = (delta: number, speed: number): number => {
     if (Math.abs(speed) > limit) return -Math.sign(speed)
-    if (Math.abs(delta) < precision) return Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0
+    // A full reverse input accelerates by more than a small alignment drift.
+    // Repeating it near a waypoint creates a stable forward/back oscillation
+    // (including on ordinary stone). Let ground friction settle these small
+    // corrections before applying another tap; still brake excessive speed.
+    if (Math.abs(delta) < precision) return continuous && Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0
     // Precision alignment coasts after each tap. Walking a step must keep
     // accelerating until it enters the braking distance of its landing.
     if (continuous && Math.abs(delta) > Math.abs(speed) * 2.5 + precision) return Math.sign(delta)

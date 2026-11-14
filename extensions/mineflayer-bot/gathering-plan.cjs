@@ -3,8 +3,9 @@ const farming = require("./farming.cjs");
 
 const DEFAULTS = Object.freeze({
   ...require("./gathering-defaults.json"),
-  radius: 32,
-  maxRadius: 64,
+  radius: 64,
+  maxRadius: 256,
+  maxExploreHops: 24,
   maxAreaVolume: 32768,
   maxQueue: 32,
   reserveSlots: 2,
@@ -56,6 +57,7 @@ const isWood = (name) => /^(?!stripped_).+_log$/.test(name) || ["crimson_stem", 
 const isLeaves = (name) =>
   /_leaves$/.test(name) || ["nether_wart_block", "warped_wart_block", "shroomlight"].includes(name);
 const isOre = (name) => /_ore$/.test(name) || name === "ancient_debris";
+const FALLING = /^(sand|red_sand|gravel|.*concrete_powder|.*anvil)$/;
 const key = (pos) => `${pos.x},${pos.y},${pos.z}`;
 
 function integer(value, label, min, max) {
@@ -147,6 +149,7 @@ function normalizeTask(bot, input, settings = DEFAULTS) {
     ),
     leaves: input.leaves === true,
     scaffold: input.kind === "forest" && input.scaffold !== false,
+    replantSaplings: input.kind === "forest" && input.replantSaplings !== false,
     routeDig: ["mine", "forest"].includes(input.kind) && input.routeDig !== false,
     tunnel: input.kind === "quarry" && input.tunnel === true,
   };
@@ -206,10 +209,21 @@ function safetyReason(bot, block) {
     if (!neighbor) return "Соседний чанк не загружен";
     if (FLUIDS.has(neighbor.name) || neighbor.getProperties?.().waterlogged === true)
       return "Рядом жидкость";
-    if (offset[1] === 1 && /^(sand|red_sand|gravel|.*concrete_powder|.*anvil)$/.test(neighbor.name))
+    // Gravel or sand above only matters when it would come down on the bot:
+    // a block over its own head. Beside the bot it simply falls into the
+    // opened cell and is dug again, as a player does in a gravel cave.
+    if (offset[1] === 1 && FALLING.test(neighbor.name) && overhead(bot, block))
       return "Сверху падающий блок";
   }
   return null;
+}
+function overhead(bot, block) {
+  const feet = bot.entity.position;
+  return (
+    block.position.y >= Math.floor(feet.y) + 1 &&
+    Math.abs(block.position.x + 0.5 - feet.x) < 0.8 &&
+    Math.abs(block.position.z + 0.5 - feet.z) < 0.8
+  );
 }
 function supportBlock(bot, block) {
   const feet = bot.entity.position;
@@ -243,6 +257,7 @@ module.exports = {
   AIR,
   FLUIDS,
   PROTECTED,
+  FALLING,
   key,
   integer,
   position,
@@ -257,5 +272,6 @@ module.exports = {
   remainingDurability,
   keepItem,
   isWood,
+  isOre,
   isLeaves,
 };

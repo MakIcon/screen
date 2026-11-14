@@ -1,0 +1,262 @@
+{
+  "min": [
+    -7,
+    -5,
+    -5
+  ],
+  "start": [
+    0.300675975096965,
+    0,
+    0.510739612551788
+  ],
+  "target": [
+    -3.027342416342094,
+    3,
+    -0.5091209130671359
+  ],
+  "palette": [
+    {
+      "name": "granite",
+      "properties": {}
+    },
+    {
+      "name": "stone",
+      "properties": {}
+    },
+    {
+      "name": "air",
+      "properties": {}
+    },
+    {
+      "name": "iron_ore",
+      "properties": {}
+    },
+    {
+      "name": "coal_ore",
+      "properties": {}
+    },
+    {
+      "name": "andesite",
+      "properties": {}
+    },
+    {
+      "name": "copper_ore",
+      "properties": {}
+    },
+    {
+      "name": "wall_torch",
+      "properties": {
+        "facing": "east"
+      }
+    },
+    {
+      "name": "wall_torch",
+      "properties": {
+        "facing": "west"
+      }
+    },
+    {
+      "name": "wall_torch",
+      "properties": {
+        "facing": "north"
+      }
+    }
+  ],
+  "layers": [
+    [
+      "AAAAAAAAABBBB",
+      "AAAAAAABBBBBB",
+      "AAAAABBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBAA",
+      "BBBBBBBBBBAAA",
+      "BBBBBBBBBAAAA",
+      "BBBBBBBBAAAAA",
+      "BBBBBBBAAAAAA"
+    ],
+    [
+      "AAAAAAAAAABBB",
+      "AAAAAAABBBBBB",
+      "AAAAABBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBAA",
+      "BBBBBBBBBBAAA",
+      "BBBBBBBBAAAAA",
+      "BBBBBBBBAAAAA"
+    ],
+    [
+      "AAAAAAAAABBBB",
+      "AAAAAAABBBBBB",
+      "AAAAABBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBCBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBA",
+      "BBBBBBBBBBBAA",
+      "BBBBBBBBBBAAA"
+    ],
+    [
+      "AAAAAAAAABBBB",
+      "AAAAAABBBBBBB",
+      "BBBBBBBBDBBBB",
+      "BBBBBBBBBCBBB",
+      "BBBBBBBBBCCEE",
+      "BBBBBBBBBCCEE",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB"
+    ],
+    [
+      "BBAAAABBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBDBBBB",
+      "BCCBBBBBBCBBB",
+      "CCCBBBBCCCCCE",
+      "CECBBBBFCCCEE",
+      "CBBBBBBBBBBBB",
+      "FFFBBBBBBBBBB",
+      "FFFFFBBBBBBBB",
+      "FFFFFBBBBBBBB",
+      "FFFBBBBBBBBBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BEEBBBBBBBBBB",
+      "CCCBBBBCCCCBB",
+      "CCCBBBBCCCCBB",
+      "CCFFFBBBBBBBB",
+      "CFFFFFFBBBBBB",
+      "FFFFFFFFBBBBB",
+      "FFFFFFFFBBBBB",
+      "FFFFFFFFBBBBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBGG",
+      "BBBBBBBCBBBGG",
+      "CCBBBBCCCCBBB",
+      "CCFFFBCCCCBBB",
+      "CCFFFFFFBBBBB",
+      "CFFFFFFFFBBBB",
+      "CFFFFFFFFFBBB",
+      "FFFFFFFFFFBBB",
+      "FFFFFFFFFFBBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBCCCBBBGG",
+      "BBBBBCCCBBBGG",
+      "BCBBBCCCCBBBB",
+      "FGGFFCCCCBBBB",
+      "CFGFFFFFFBBBB",
+      "CCFFFFFFFFFBB",
+      "CCFFFFFFFFFFB",
+      "FFFFFFFFFFFFB",
+      "FFFFFFFFFFFBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBCCCBBBBB",
+      "BBBBBCCCBBBBB",
+      "BBBHCCCCBBBBB",
+      "FGGCCCCCBBBBB",
+      "CFGFFFFFFFBBB",
+      "CCIFFFFFFFFFB",
+      "CCCFFFFFFFFFF",
+      "FFFFFFFFFFFFF",
+      "FFFFFFFFFFFFB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBCCCCBBBBBB",
+      "FFFCCCCBBBBBB",
+      "FFFCCFFFFFBBB",
+      "CCCCCFFFFFFBB",
+      "CCCCFFFFFFFFF",
+      "FFFFFFFFFFFFF",
+      "FFFFFFFFFFFFB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBCCBBBBBBB",
+      "FFFCCCBBBBBBB",
+      "FFFCCCFFFBBBB",
+      "FCCCCCFFFFBBB",
+      "FCCCCFFFFFFFB",
+      "FFFFFFFFFFFFB",
+      "FFFFFFFFFFFBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBCCBBBBBBBB",
+      "FFFCCCCBBBBBB",
+      "FFCCCCCFFBBBB",
+      "FFCCCFFFFFBBB",
+      "FFFFFFFFFFBBB",
+      "FFFFFFFFFBBBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBCCCCBBBBBB",
+      "BFCCCCCBBBBBB",
+      "FFFCCFCBBBBBB",
+      "FFFFFFFBBBBBB",
+      "BBBBBBBBBBBBB"
+    ],
+    [
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBBBBBBBBB",
+      "BBBBBCCBBBBBB",
+      "BBBCCCCCBBBBB",
+      "BBBCCCCCCCCCC",
+      "BBBBBBCCCCCCC",
+      "BBBBBBBDDBBBC",
+      "BBBBBBBBBBBBC"
+    ],
+    [
+      "BBBBBBBBAAAAA",
+      "BBBBBBBBAAAAA",
+      "BBBBBBBBBAAAA",
+      "BBBBBBBBBBBAA",
+      "BBBBBBBBBBBBA",
+      "BBBBBBBBBBBBB",
+      "BBBBBCCCBBBBB",
+      "BBBBCCCCCCCCC",
+      "BBBBBBCCJCCCC",
+      "BBBBBBBBBBBBC",
+      "BBBBBBBBBBBBC"
+    ]
+  ]
+}

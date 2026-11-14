@@ -3020,7 +3020,7 @@ var require_controls = __commonJS({
         if (Math.abs(speed) > limit)
           return -Math.sign(speed);
         if (Math.abs(delta) < precision)
-          return Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0;
+          return continuous && Math.abs(speed) > 0.02 ? -Math.sign(speed) : 0;
         if (continuous && Math.abs(delta) > Math.abs(speed) * 2.5 + precision)
           return Math.sign(delta);
         return delta * speed < 0 || Math.abs(speed) < 0.02 ? Math.sign(delta) : 0;
@@ -3847,6 +3847,10 @@ var require_movementExecutor = __commonJS({
       get canInterrupt() {
         return true;
       }
+      /** The current correction may intentionally lead away from the route exit. */
+      get progressTarget() {
+        return this.currentMove?.exitPos;
+      }
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
         this.controlGeneration = 0;
@@ -4444,6 +4448,9 @@ var require_movementExecutors = __commonJS({
       constructor() {
         super(...arguments);
         this.cornerSneaking = false;
+      }
+      get progressTarget() {
+        return this.cornerTarget ?? super.progressTarget;
       }
       reset() {
         this.cornerSneaking = false;
@@ -10473,6 +10480,7 @@ var require_pathExecutor = __commonJS({
         let digDeadline = 0;
         let collisionTicks = 0;
         let progressMove;
+        let lastProgressTarget;
         let bestMoveDistance = Infinity;
         let productiveAt = lastProgressAt;
         let stoppingAt;
@@ -10521,6 +10529,20 @@ var require_pathExecutor = __commonJS({
           if (settled)
             return;
           settled = true;
+          const failedMove = this.getCurrentMove();
+          bot.emit("pathFailed", {
+            message: String(err),
+            stage: runnerStage,
+            position: bot.entity.position.clone(),
+            velocity: bot.entity.velocity.clone(),
+            onGround: bot.entity.onGround,
+            entry: failedMove?.entryPos,
+            exit: failedMove?.exitPos,
+            movement: failedMove?.moveType.constructor.name,
+            jumpTicks: bot.jumpTicks,
+            jumpQueued: bot.jumpQueued,
+            controls: Object.fromEntries(["forward", "back", "left", "right", "jump", "sprint", "sneak"].map((key) => [key, bot.getControlState(key)]))
+          });
           bot.off("physicsTick", moveListener);
           if (this.getCurrentExecutionId() === myExecutionId) {
             const interaction = this.getCurrentExecutor()?.cI;
@@ -10817,13 +10839,16 @@ var require_pathExecutor = __commonJS({
             activeDig = void 0;
           const move = this.getCurrentMove();
           const horizontalStroke = bot.entity.isInWater === true && move != null && Math.abs(move.exitPos.y - move.entryPos.y) < 0.1;
-          if (move !== progressMove) {
+          const progressTarget = this.getCurrentExecutor()?.progressTarget ?? move?.exitPos;
+          if (move !== progressMove || progressTarget != null && (lastProgressTarget == null || !progressTarget.equals(lastProgressTarget))) {
             progressMove = move;
+            lastProgressTarget = progressTarget?.clone();
             bestMoveDistance = Infinity;
             productiveAt = now;
           }
           if (move != null && interaction == null && (runnerStage === "align" || runnerStage === "perform") && this.getCurrentExecutor()?.canInterrupt !== false) {
-            const remaining = horizontalStroke ? bot.entity.position.xzDistanceTo(move.exitPos) : bot.entity.position.distanceTo(move.exitPos);
+            const waypoint = progressTarget ?? move.exitPos;
+            const remaining = horizontalStroke ? bot.entity.position.xzDistanceTo(waypoint) : bot.entity.position.distanceTo(waypoint);
             if (remaining < bestMoveDistance - 0.08) {
               bestMoveDistance = remaining;
               productiveAt = now;
@@ -11182,7 +11207,9 @@ var require_traversalMemory = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.TraversalMemory = void 0;
     var TraversalMemory = class {
-      constructor(capacity = 4096) {
+      // A crew bot scouts hundreds of blocks from its start. Keep enough cells
+      // for the whole way back; the oldest ones (the way home) are evicted first.
+      constructor(capacity = 16384) {
         this.capacity = capacity;
         this.cells = /* @__PURE__ */ new Map();
       }
@@ -12638,7 +12665,7 @@ var require_ThePathfinder = __commonJS({
           return res;
         };
         let triedMemory = false;
-        const rememberedPath = async () => {
+        const rememberedPath = async (timeoutMs = 800, maxVisitedNodes = 12e3) => {
           if (triedMemory || this.traversalMemory.size < 8 || !this.traversalMemory.contains(startPos))
             return;
           const memoryTarget = target ?? (goal instanceof goals.GoalMiningApproach ? new vec3_1.Vec3(goal.position.x, goal.y, goal.position.z) : void 0);
@@ -12651,13 +12678,13 @@ var require_ThePathfinder = __commonJS({
             exclusionAreasStep: [...traversalSettings.exclusionAreasStep, (block) => block.position.distanceTo(startPos) <= 4 || destination != null && block.position.distanceTo(destination) <= 6 ? 0 : this.traversalMemory.stepCost(block.position)]
           });
           if (memoryTarget == null || this.traversalMemory.near(memoryTarget, 6)) {
-            const known = await probe(goal, corridor(memoryTarget), movements, 500, 8e3);
+            const known = await probe(goal, corridor(memoryTarget), movements, timeoutMs, maxVisitedNodes);
             if (known.result.status === "success" || known.result.status === "canceled")
               return known;
           } else {
             const anchor = this.traversalMemory.levelAnchor(memoryTarget);
             if (anchor != null) {
-              const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, 500, 8e3);
+              const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, timeoutMs, maxVisitedNodes);
               if (known.result.status === "canceled")
                 return known;
               if (known.result.status === "success" && known.result.path.length > 0) {
@@ -12680,7 +12707,8 @@ var require_ThePathfinder = __commonJS({
           }
           this._currentProducer = previousProducer;
         };
-        if (preferExistingTerrain || elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
+        const readyPassageCandidate = positionedGoal && (settings.canDig || settings.canPlace) && !this.world.getBlockInfo(startPos).liquid;
+        if (preferExistingTerrain || readyPassageCandidate || elevatedGoal && !settings.allowExcavatedDescent && settings.canDig || constructionCandidate) {
           let existing = await probe(goal, traversalSettings, movements, preferExistingTerrain ? this.pathfinderSettings.searchTimeoutMs * searchScale : 300, preferExistingTerrain ? this.pathfinderSettings.maxVisitedNodes * searchScale : 6e3);
           if (existing.result.status !== "success" && existing.result.status !== "canceled")
             existing = await rememberedPath() ?? existing;
@@ -12818,7 +12846,7 @@ var require_ThePathfinder = __commonJS({
           astarContext = res.astarContext;
           if (this.abortCalculation || this.disposed)
             result.status = "canceled";
-          if (!settings.canDig && !settings.canPlace && (result.status === "noPath" || result.status === "timeout")) {
+          if (result.status === "noPath" || result.status === "timeout") {
             const known = await rememberedPath();
             if (known != null) {
               result = known.result;
@@ -13147,7 +13175,7 @@ var require_ThePathfinder = __commonJS({
             }
             if (path == null)
               throw new Error("Pathfinding ended without a path.");
-            if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity && goal.isEnd === goals.GoalFollowEntity.prototype.isEnd) {
+            if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity && goal.isEnd === goals.GoalFollowEntity.prototype.isEnd && goal.distHeuristic === goals.GoalFollowEntity.prototype.distHeuristic) {
               executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist));
             }
             const last = path.path[path.path.length - 1];
@@ -13478,6 +13506,22 @@ var require_PathingUtil = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/collisionDimensions.js
+var require_collisionDimensions = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/mineflayer-specific/collisionDimensions.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.installCollisionDimensions = installCollisionDimensions;
+    function installCollisionDimensions(bot) {
+      if (!bot.version.startsWith("26."))
+        return;
+      const physics = bot.physics;
+      if (physics?.playerHalfWidth === 0.3)
+        physics.playerHalfWidth = Math.fround(0.6) / 2;
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/index.js
 var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
   if (k2 === void 0) k2 = k;
@@ -13530,6 +13574,7 @@ var PathingUtil_1 = require_PathingUtil();
 var climbablePhysics_1 = require_climbablePhysics();
 var lowCeilingJumps_1 = require_lowCeilingJumps();
 var supportingBlockPhysics_1 = require_supportingBlockPhysics();
+var collisionDimensions_1 = require_collisionDimensions();
 var miningTools_1 = require_miningTools();
 var itemEnchantments_1 = require_itemEnchantments();
 var ThePathfinder_2 = require_ThePathfinder();
@@ -13585,6 +13630,7 @@ function createPlugin(opts) {
     if (!bot.hasPlugin(mineflayer_physics_util_1.default))
       bot.loadPlugin(mineflayer_physics_util_1.default);
     (0, mineflayer_physics_util_1.initSetup)(bot.registry);
+    (0, collisionDimensions_1.installCollisionDimensions)(bot);
     (0, climbablePhysics_1.installClimbablePhysics)(bot);
     (0, supportingBlockPhysics_1.installSupportingBlockPhysics)(bot);
     bot.pathfinder = new ThePathfinder_1.ThePathfinder(bot, opts);

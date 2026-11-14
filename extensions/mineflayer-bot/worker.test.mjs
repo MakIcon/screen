@@ -4,10 +4,26 @@ import { createRequire } from "node:module";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import worker from "./worker.cjs";
+import { installCombatProtocol } from "./combat.cjs";
 
 const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
+
+test('modern movement packets include the actual horizontal collision even when flags already exist', () => {
+  const packets = [];
+  const bot = { registry: require('minecraft-data')('26.1.2'),
+    entity: { onGround: false, isCollidedHorizontally: true },
+    _client: { state: 'play', write: (name, packet) => packets.push([name, packet]) } };
+  installCombatProtocol(bot);
+  for (const name of ['position', 'position_look', 'look', 'flying']) {
+    const flags = { onGround: false, hasHorizontalCollision: undefined };
+    bot._client.write(name, { x: 0.7, y: 64.42, z: 0.5, yaw: 0, pitch: 0, onGround: false, flags });
+    assert.equal(packets.at(-1)[1].flags.hasHorizontalCollision, true, `${name} must report a riser collision`);
+    assert.equal(packets.at(-1)[1].flags.onGround, false);
+    assert.equal(flags.hasHorizontalCollision, undefined, 'do not mutate the physics plugin\'s reusable packet');
+  }
+});
 
 test("routes owner chat to a specific bot, several named bots or everyone before dispatch", () => {
   const bare = new Set(["mine", "craft"]);

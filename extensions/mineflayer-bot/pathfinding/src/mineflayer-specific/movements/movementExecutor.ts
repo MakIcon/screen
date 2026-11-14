@@ -83,6 +83,9 @@ export abstract class MovementExecutor extends Movement {
   /** Whether a supported position can safely end or retarget this movement. */
   public get canInterrupt (): boolean { return true }
 
+  /** The current correction may intentionally lead away from the route exit. */
+  public get progressTarget (): Vec3 | undefined { return this.currentMove?.exitPos }
+
   /**
    * Whether or not this movement is asking for a reset.
    */

@@ -191,6 +191,7 @@ export class PathExecutor {
     let digDeadline = 0
     let collisionTicks = 0
     let progressMove: Move | undefined
+    let lastProgressTarget: Vec3 | undefined
     let bestMoveDistance = Infinity
     let productiveAt = lastProgressAt
     let stoppingAt: Vec3 | undefined
@@ -246,6 +247,13 @@ export class PathExecutor {
     const fail = async (err: unknown): Promise<void> => {
       if (settled) return
       settled = true
+      const failedMove = this.getCurrentMove()
+      bot.emit('pathFailed', { message: String(err), stage: runnerStage, position: bot.entity.position.clone(),
+        velocity: bot.entity.velocity.clone(), onGround: bot.entity.onGround,
+        entry: failedMove?.entryPos, exit: failedMove?.exitPos, movement: failedMove?.moveType.constructor.name,
+        jumpTicks: (bot as any).jumpTicks, jumpQueued: (bot as any).jumpQueued,
+        controls: Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(key =>
+          [key, bot.getControlState(key as any)])) })
       bot.off('physicsTick', moveListener)
       if (this.getCurrentExecutionId() === myExecutionId) {
         const interaction = this.getCurrentExecutor()?.cI
@@ -611,14 +619,17 @@ export class PathExecutor {
       const move = this.getCurrentMove()
       const horizontalStroke = (bot.entity as any).isInWater === true && move != null &&
         Math.abs(move.exitPos.y - move.entryPos.y) < 0.1
-      if (move !== progressMove) {
+      const progressTarget = this.getCurrentExecutor()?.progressTarget ?? move?.exitPos
+      if (move !== progressMove || (progressTarget != null && (lastProgressTarget == null || !progressTarget.equals(lastProgressTarget)))) {
         progressMove = move
+        lastProgressTarget = progressTarget?.clone()
         bestMoveDistance = Infinity
         productiveAt = now
       }
       if (move != null && interaction == null && (runnerStage === 'align' || runnerStage === 'perform') &&
           this.getCurrentExecutor()?.canInterrupt !== false) {
-        const remaining = horizontalStroke ? bot.entity.position.xzDistanceTo(move.exitPos) : bot.entity.position.distanceTo(move.exitPos)
+        const waypoint = progressTarget ?? move.exitPos
+        const remaining = horizontalStroke ? bot.entity.position.xzDistanceTo(waypoint) : bot.entity.position.distanceTo(waypoint)
         if (remaining < bestMoveDistance - 0.08) {
           bestMoveDistance = remaining
           productiveAt = now

@@ -102,6 +102,8 @@ for (const file of [
   "gathering-defaults.json",
   "gathering-scan.cjs",
   "gathering.cjs",
+  "fleet-crew.cjs",
+  "fleet-crew.test.mjs",
   "farming.cjs",
   "farming.test.mjs",
   "farming-navigation.test.mjs",

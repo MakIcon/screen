@@ -128,7 +128,7 @@ function actionFor(bot, task, block) {
     return { kind: "till", position: block.position };
   return null;
 }
-async function scanFarming(bot, task, { inside, maxAttempts, scanLimit, yieldControl }) {
+async function scanFarming(bot, task, { inside, maxAttempts, scanLimit, yieldControl, pick }) {
   task.replants ||= new Map();
   task.farmHarvested ||= new Set();
   // Finish replanting even when the requested harvest count has been reached.
@@ -172,6 +172,8 @@ async function scanFarming(bot, task, { inside, maxAttempts, scanLimit, yieldCon
       priority[a.kind] - priority[b.kind] ||
       a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position),
   );
+  // A crew splits the field into plots; `pick` keeps this bot inside its own.
+  if (pick && actions.length) return (await pick(actions)) || null;
   return actions[0] || null;
 }
 async function executeFarming(bot, task, action, ctx) {

@@ -52,6 +52,160 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
   return { rig, bot, controller, messages };
 }
 
+for (const version of ['1.20.4', '26.1.2'])
+  test(`mining collects coal from a raised niche under a low ceiling on ${version}`, { timeout: 20000 }, async (t) => {
+    const world = createFlatWorld(version, 64, { renderDistance: 1 });
+    for (let x = -1; x <= 5; x++) {
+      for (const z of [-1, 1]) for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(x, y, z), 'stone');
+      world.setBlock(new Vec3(x, 66, 0), 'stone');
+    }
+    world.setBlock(new Vec3(1, 64, 0), 'stone');
+    world.setBlock(new Vec3(2, 64, 0), 'stone');
+    world.setBlock(new Vec3(2, 65, 0), 'coal_ore');
+    const { rig, bot, controller, messages } = prepare(version, world, false, new Vec3(0.69, 64, 0.5));
+    t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+    t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+    const Item = createRequire(new URL('./package.json', import.meta.url))('prismarine-item')(bot.registry);
+    const pickaxe = new Item(bot.registry.itemsByName.diamond_pickaxe.id, 1);
+    pickaxe.slot = 36; bot.inventory.slots[36] = pickaxe;
+    let drop, collected = false;
+    const dig = bot.dig;
+    bot.dig = async (block, ...args) => {
+      await dig(block, ...args);
+      if (block.name !== 'coal_ore') return;
+      drop = { id: 991, position: new Vec3(2.5, 65.2, 0.5), isValid: true,
+        getDroppedItem: () => ({ name: 'coal', count: 1 }) };
+      bot.entities[drop.id] = drop;
+      bot.emit('itemDrop', drop);
+    };
+    bot.on('physicsTick', () => {
+      if (!drop?.isValid || bot.entity.position.xzDistanceTo(drop.position) >= 0.8 ||
+          drop.position.y - bot.entity.position.y > 1.5) return;
+      collected = true;
+      bot.emit('playerCollect', bot.entity, drop);
+      drop.isValid = false;
+      delete bot.entities[drop.id];
+      bot.emit('entityGone', drop);
+    });
+    controller.enqueue({ kind: 'mine', blocks: 'coal_ore', radius: 8, count: 1 });
+    await waitForJob(controller, 17000);
+    assert.equal(collected, true, JSON.stringify({ position: bot.entity.position, messages, history: controller.snapshot.history }));
+    assert.equal(controller.snapshot.history[0].collected, 1);
+    assert.equal(bot.pathfinder.isPathing, false);
+  });
+
+for (const version of ['1.20.4', '26.1.2']) for (const roof of [false, true])
+  test(`loot recovery descends a step${roof ? ' and clears the remaining head block' : ''} on ${version}`, { timeout: 18000 }, async (t) => {
+    const floor = roof ? 63 : 64;
+    const feet = floor + 1;
+    const world = createFlatWorld(version, floor, { renderDistance: 1 });
+    for (let x = -1; x <= 2; x++) for (let y = floor; y <= feet + 3; y++) {
+      for (const z of [-1, 1]) world.setBlock(new Vec3(x, y, z), 'bedrock');
+      if (x === -1 || x === 2) world.setBlock(new Vec3(x, y, 0), 'bedrock');
+    }
+    world.setBlock(new Vec3(0, floor, 0), 'stone');
+    if (roof) world.setBlock(new Vec3(1, feet, 0), 'stone');
+    world.setBlock(new Vec3(1, feet + 1, 0), 'copper_ore');
+    const { rig, bot, controller, messages } = prepare(version, world, true, new Vec3(0.5, feet, 0.5));
+    t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+    t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+    controller.settings.pickupTimeoutMs = 1500;
+    const Item = createRequire(new URL('./package.json', import.meta.url))('prismarine-item')(bot.registry);
+    const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1, 0);
+    pick.slot = 36; bot.inventory.slots[36] = pick; bot.updateHeldItem(); bot.pathingUtil.refresh();
+    const drop = { id: 992, position: new Vec3(1.125, floor + 0.125, 0.5), isValid: true,
+      getDroppedItem: () => ({ name: 'raw_copper', count: 3 }) };
+    let lowest = feet;
+    bot.on('blockUpdate', (before, after) => {
+      if (before?.name !== 'copper_ore' || after?.name !== 'air') return;
+      bot.entities[drop.id] = drop; bot.emit('itemDrop', drop);
+    });
+    bot.on('physicsTick', () => {
+      lowest = Math.min(lowest, bot.entity.position.y);
+      if (!bot.entities[drop.id]) return;
+      // Actual player/item pickup AABB overlap: no teleport-to-goal shortcut.
+      const pos = bot.entity.position;
+      if (Math.abs(pos.x - drop.position.x) < 1.425 && Math.abs(pos.z - drop.position.z) < 1.425 &&
+          pos.y - 0.5 < drop.position.y + 0.25 && pos.y + 2.3 > drop.position.y) {
+        bot.emit('playerCollect', bot.entity, drop); drop.isValid = false;
+        delete bot.entities[drop.id]; bot.emit('entityGone', drop);
+      }
+    });
+    controller.enqueue({ kind: 'mine', blocks: 'copper_ore', count: 1, radius: 6 });
+    await waitForJob(controller, 14000);
+    assert.equal(controller.snapshot.history[0].collected, 3, JSON.stringify({ lowest, messages, history: controller.snapshot.history }));
+    assert.equal(controller.snapshot.history[0].missedDrops, 0);
+    assert.ok(lowest < feet - 0.2, `must descend toward the loot: y=${lowest}`);
+    if (roof) assert.equal(world.getBlock(new Vec3(1, feet, 0)).name, 'air');
+  });
+
+test('vein continuity walks and clears the near vein before mining a visible remote one', { timeout: 20000 }, async (t) => {
+  const world = createFlatWorld('26.1.2', 64, { renderDistance: 1 });
+  world.setBlock(new Vec3(1, 64, 0), 'stone');
+  const ore = [new Vec3(2, 65, 0), new Vec3(2, 64, 0), new Vec3(0, 64, 3)];
+  for (const pos of ore) world.setBlock(pos, 'copper_ore');
+  const { rig, bot, controller, messages } = prepare('26.1.2', world, true);
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const Item = createRequire(new URL('./package.json', import.meta.url))('prismarine-item')(bot.registry);
+  const pick = new Item(bot.registry.itemsByName.netherite_pickaxe.id, 1, 0);
+  pick.slot = 36; bot.inventory.slots[36] = pick; bot.updateHeldItem(); bot.pathingUtil.refresh();
+  const mined = [];
+  bot.on('blockUpdate', (before, after) => {
+    if (before?.name === 'copper_ore' && after?.name === 'air') mined.push(before.position.toString());
+  });
+  controller.enqueue({ kind: 'mine', blocks: 'copper_ore', count: 3, radius: 8 });
+  await waitForJob(controller, 16000);
+  assert.deepEqual(mined, ore.map(pos => pos.toString()), messages.join('\n'));
+  assert.equal(controller.snapshot.history[0].mined, 3);
+});
+
+test('mining clears a falling gravel column beside the bot without getting trapped', { timeout: 20000 }, async (t) => {
+  const world = createFlatWorld('26.1.2', 64, { renderDistance: 1 });
+  for (let x = -1; x <= 8; x++) {
+    for (const z of [-1, 1]) for (let y = 64; y <= 69; y++) world.setBlock(new Vec3(x, y, z), 'bedrock');
+    world.setBlock(new Vec3(x, 66, 0), 'bedrock');
+  }
+  world.setBlock(new Vec3(-1, 64, 0), 'bedrock');
+  world.setBlock(new Vec3(-1, 65, 0), 'bedrock');
+  world.setBlock(new Vec3(1, 64, 0), 'stone');
+  for (const y of [65, 66, 67]) world.setBlock(new Vec3(1, y, 0), 'gravel');
+  world.setBlock(new Vec3(6, 64, 0), 'coal_ore');
+  const { rig, bot, controller, messages } = prepare('26.1.2', world, true);
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  t.signal.addEventListener('abort', () => { void bot.pathfinder.stop(); }, { once: true });
+  const Item = createRequire(new URL('./package.json', import.meta.url))('prismarine-item')(bot.registry);
+  for (const [slot, name] of [[36, 'diamond_pickaxe'], [37, 'diamond_shovel']]) {
+    const item = new Item(bot.registry.itemsByName[name].id, 1);
+    item.slot = slot; bot.inventory.slots[slot] = item;
+  }
+  let falling, gravel = 0;
+  const update = (old, block) => {
+    if (!block?.position.equals(new Vec3(1, 64, 0)) || block.name !== 'air') return;
+    clearTimeout(falling);
+    falling = setTimeout(() => {
+      // Server block updates after the falling entities land, rather than
+      // leaving the original static gravel arrangement in the test world.
+      let count = 0;
+      for (let y = 65; y <= 67; y++) if (world.getBlock(new Vec3(1, y, 0)).name === 'gravel') {
+        world.setBlock(new Vec3(1, y, 0), 'air'); count++;
+      }
+      for (let y = 64; y < 64 + count; y++) world.setBlock(new Vec3(1, y, 0), 'gravel');
+    }, 100);
+  };
+  // Count real mining starts, excluding block updates caused by gravity.
+  bot._client.write = (name, packet) => {
+    if (name === 'block_dig' && packet.status === 0 && bot.blockAt(packet.location)?.name === 'gravel') gravel++;
+  };
+  world.on('blockUpdate', update);
+  t.after(() => { clearTimeout(falling); world.off('blockUpdate', update); });
+  controller.enqueue({ kind: 'mine', blocks: 'coal_ore', radius: 8, count: 1 });
+  await waitForJob(controller, 17000);
+  assert.equal(controller.snapshot.history[0].mined, 1, JSON.stringify({ messages, history: controller.snapshot.history }));
+  assert.equal(gravel, 3, `gravel cleared=${gravel}`);
+  assert.ok(bot.entity.position.x >= 2, `position=${bot.entity.position}`);
+});
+
 test('26.1.2 command-enchanted axe and shovel load after login and dig with Efficiency 20', { timeout: 8000 }, async (t) => {
   const world = createFlatWorld('26.1.2', 64, { renderDistance: 1 });
   const target = world.setBlock(new Vec3(1, 64, 0), 'dirt');

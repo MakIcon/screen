@@ -10,6 +10,7 @@ import worker from "./worker.cjs";
 import { createCombatController } from "./combat.cjs";
 import { key as storageKey } from "./gathering-storage.cjs";
 import { NavigationError } from "./pathfinder.cjs";
+import fleetCrew from "./fleet-crew.cjs";
 
 const require = createRequire(import.meta.url);
 const { Vec3 } = require("vec3");
@@ -1515,15 +1516,12 @@ test("delivery preempts an inventory pause, tosses loot beside the owner and ret
 test("delivery retains an explicit owner pause and never tosses when the owner is absent", async (t) => {
   const f = fixture();
   t.after(() => f.work.dispose());
+  f.items.push(f.item("spruce_log"));
+  await assert.rejects(f.work.deliver(() => null), /Владелец/);
   f.put("dirt", 2);
   f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
   f.work.pause();
   await f.work.task;
-  f.items.push(f.item("spruce_log"));
-  await assert.rejects(
-    f.work.deliver(() => null),
-    /Владелец/,
-  );
   let tossed = false;
   f.bot.tossStack = async () => {
     tossed = true;
@@ -1661,6 +1659,52 @@ test("health recovery resumes delivery and the interrupted work without a second
   assert.equal(f.work.snapshot.history[1].mined, 1);
 });
 
+for (const crew of [false, true]) test(`mining finishes a connected vein before a visible neighbouring vein; crew=${crew}`, async (t) => {
+  const f = fixture(undefined, crew ? { crew: crewFor(fleetCrew.createHub(), 'a') } : {});
+  t.after(() => f.work.dispose());
+  f.items.push(f.item('iron_pickaxe'));
+  const first = f.put('iron_ore', 2);
+  const hidden = f.put('iron_ore', 2, 65);
+  const other = f.put('iron_ore', 5);
+  f.bot.canSeeBlock = block => !block.position.equals(hidden.position) || !f.blocks.has(plan.key(first.position));
+  // Even after the first block opens, the next block needs an approach rather
+  // than an immediate dig. The visible other vein must not win that decision.
+  let approached = false;
+  f.bot.canDigBlock = block => !block.position.equals(hidden.position) || approached;
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async goal => {
+    if (!goal.trackedEntity) approached = true;
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: 'mine', blocks: 'iron', count: 3, radius: 8 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.filter(v => v.name === 'iron_ore').map(v => plan.key(v.position)),
+    [plan.key(first.position), plan.key(hidden.position), plan.key(other.position)]);
+});
+
+for (const reserved of [false, true]) test(`mining continues across crew cells while respecting another miner; reserved=${reserved}`, async (t) => {
+  const hub = fleetCrew.createHub();
+  const f = fixture(undefined, { crew: crewFor(hub, 'a') });
+  t.after(() => f.work.dispose());
+  f.bot.entity.position = new Vec3(6.5, 64, 0.5);
+  f.items.push(f.item('iron_pickaxe'));
+  const first = f.put('iron_ore', 7), next = f.put('iron_ore', 8), other = f.put('iron_ore', 3);
+  if (reserved) {
+    const task = f.work.validate({ kind: 'mine', blocks: 'iron', radius: 12 });
+    const groups = fleetCrew.groupSites(task, [next.position], next.position, 'overworld');
+    hub.handle('b', 'claim', { scope: fleetCrew.scopeOf(task), dim: 'overworld', pos: next.position,
+      sites: [...groups.values()].map(fleetCrew.siteSummary), zone: 'cube', zoneCap: 2 });
+  }
+  let approached = false;
+  f.bot.canDigBlock = block => !block.position.equals(next.position) || approached;
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async goal => { if (!goal.trackedEntity) approached = true; return goto(goal); };
+  f.work.enqueue({ kind: 'mine', blocks: 'iron', count: reserved ? 2 : 3, radius: 12 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.filter(v => v.name === 'iron_ore').map(v => plan.key(v.position)),
+    (reserved ? [first, other] : [first, next, other]).map(block => plan.key(block.position)));
+});
+
 test("reachable tree logs are chopped together with one axe selection before chasing drops", async (t) => {
   const f = fixture();
   t.after(() => f.work.dispose());
@@ -1705,10 +1749,101 @@ test("a stalled approach is stopped and skipped, and the next queued task still 
   f.work.enqueue({ kind: "mine", blocks: "dirt", count: 1 });
   f.work.enqueue({ kind: "forest", count: 1 });
   await until(f, () => f.work.snapshot.history.length === 2);
-  assert.equal(attempts, 2);
+  assert.equal(attempts, 4, "each target attempt includes one fresh walking retry");
   assert.equal(f.work.snapshot.history[0].outcome, "частично");
   assert.match(f.work.snapshot.history[0].reason, /подойти/);
   assert.equal(f.work.snapshot.history[1].mined, 1);
+});
+
+test("revisiting the same cells cannot keep a stalled route alive", async (t) => {
+  let clock = 0;
+  const f = fixture(undefined, { now: () => clock });
+  t.after(() => f.work.dispose());
+  f.work.settings.operationTimeoutMs = 10000;
+  f.work.settings.moveTimeoutMs = 12000;
+  f.put('dirt', 5);
+  f.bot.canDigBlock = () => false;
+  let release, step = 0;
+  f.bot.pathfinder.goto = () => new Promise(resolve => { release = resolve; });
+  f.bot.pathfinder.stop = async () => release?.();
+  // Each lap takes nine seconds: the old eight-second visit expiry falsely
+  // counted every new lap as progress, even though the bot never got closer.
+  const timer = setInterval(() => {
+    clock += 3000;
+    f.bot.entity.position.x = 0.5 + (step++ % 3);
+  }, 210);
+  t.after(() => clearInterval(timer));
+  f.work.enqueue({ kind: 'mine', blocks: 'dirt', count: 1, routeDig: false });
+  await until(f, () => f.work.snapshot.history.length === 1, 6000);
+  assert.equal(f.work.snapshot.history[0].outcome, 'частично');
+  assert.match(f.work.snapshot.history[0].reason, /подойти/);
+});
+
+test('a failed mining approach replans on foot before breaking an obstacle', async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.put('stone', 1);
+  f.put('coal_ore', 6);
+  f.items.push(f.item('diamond_pickaxe'));
+  let approaches = 0;
+  const pickup = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async goal => {
+    if (goal.trackedEntity) return pickup(goal);
+    approaches++;
+    if (approaches === 1) throw new NavigationError('recovery', 'stale corner approach');
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, false);
+    assert.equal(f.bot.pathfinder.defaultMoveSettings.canPlace, false);
+    f.bot.entity.position.x = 4.5;
+  };
+  f.bot.canDigBlock = block => block.position.distanceTo(f.bot.entity.position) < 4;
+  f.work.enqueue({ kind: 'mine', blocks: 'coal_ore', radius: 8, count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(approaches, 2);
+  assert.deepEqual(f.dug.map(block => block.name), ['coal_ore']);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.canDig, f.originalSettings.canDig);
+});
+
+test('delivery reacquires a distant owner at the last seen position and returns', async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const origin = f.bot.entity.position.clone();
+  const owner = { position: new Vec3(90.5, 64, 0.5), isValid: true };
+  f.bot.launcherOwnerName = 'Owner';
+  f.bot.players = { Owner: { entity: owner } };
+  f.bot.emit('physicsTick');
+  f.bot.players.Owner.entity = null;
+  f.items.push(f.item('diamond'));
+  let visible = false, delivered = 0;
+  const legs = [];
+  f.bot.pathfinder.goto = async goal => {
+    legs.push(goal.trackedEntity ? 'owner' : goal.x === owner.position.x ? 'anchor' : 'return');
+    if (goal.trackedEntity) f.bot.entity.position = owner.position.clone();
+    else if (goal.x === owner.position.x) {
+      assert.equal(delivered, 0);
+      f.bot.entity.position = owner.position.clone();
+      visible = true;
+    } else f.bot.entity.position = origin.clone();
+  };
+  f.bot.lookAt = async () => {};
+  f.bot.tossStack = async () => { assert.equal(visible, true); delivered++; };
+  await f.work.deliver(() => visible ? owner : null);
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(legs, ['anchor', 'owner', 'return']);
+  assert.equal(delivered, 1);
+  assert.ok(f.bot.entity.position.equals(origin));
+  assert.equal(f.work.snapshot.history[0].outcome, 'готово');
+});
+
+test('delivery never reuses an owner position from another dimension', async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.bot.launcherOwnerName = 'Owner';
+  f.bot.players = { Owner: { entity: { position: new Vec3(90, 64, 0), isValid: true } } };
+  f.bot.emit('physicsTick');
+  f.bot.players.Owner.entity = null;
+  f.bot.game.dimension = 'the_nether';
+  f.items.push(f.item('diamond'));
+  await assert.rejects(f.work.deliver(() => null), /Владелец/);
 });
 
 test("batch chopping stops as soon as the inventory fills", async (t) => {
@@ -1862,4 +1997,95 @@ test("queue edits preserve the active job and cancelling it runs the reordered q
   );
   assert.equal(f.work.snapshot.history[0].outcome, "отменено");
   assert.equal(f.work.snapshot.history[2].mined, 1);
+});
+
+function crewFor(hub, name) {
+  return { request: async (op, input) => hub.handle(name, op, input), setBeat() {} };
+}
+
+test("a crew bot takes a free tree first and helps a staffed one only at the end", async (t) => {
+  const hub = fleetCrew.createHub();
+  const f = fixture(undefined, { crew: crewFor(hub, "a") });
+  t.after(() => f.work.dispose());
+  for (const y of [64, 65, 66]) {
+    f.put("oak_log", 2, y);
+    f.put("oak_log", -3, y);
+  }
+  // Another bot already works on the nearer tree.
+  const task = f.work.validate({ kind: "forest", radius: 8 });
+  const near = fleetCrew.groupSites(task, [new Vec3(2, 64, 0)], new Vec3(2, 64, 0), "overworld");
+  hub.handle("b", "claim", { scope: fleetCrew.scopeOf(task), dim: "overworld", pos: { x: 2, y: 64, z: 0 },
+    sites: [...near.values()].map(fleetCrew.siteSummary), zone: "column", zoneCap: 3 });
+  f.work.enqueue({ kind: "forest", radius: 8, count: 0, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.slice(0, 3).map((v) => v.position.x), [-3, -3, -3]);
+  assert.equal(f.dug.length, 6, "with nothing left to scout it helps finish the staffed tree");
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+test("a felled tree is replaced with a sapling of its kind", async (t) => {
+  const f = fixture(undefined, { crew: crewFor(fleetCrew.createHub(), "a") });
+  t.after(() => f.work.dispose());
+  f.put("grass_block", 2, 63);
+  f.put("birch_log", 2, 64);
+  f.put("birch_log", 2, 65);
+  f.items.push(f.item("birch_sapling"));
+  const planted = [];
+  f.bot.placeBlock = async (soil, face) => {
+    planted.push({ soil: soil.position, face, held: f.bot.heldItem?.name });
+    f.put("birch_sapling", soil.position.x, soil.position.y + 1, soil.position.z);
+  };
+  f.work.enqueue({ kind: "forest", radius: 8, count: 0, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(planted.length, 1);
+  assert.deepEqual([planted[0].soil.x, planted[0].soil.y, planted[0].held], [2, 63, "birch_sapling"]);
+});
+
+test("a crew bot never routes through another bot's passage floor or the block under a player", async (t) => {
+  let beat, onReply;
+  const hub = fleetCrew.createHub();
+  const crew = { request: async (op, input) => hub.handle("a", op, input),
+    setBeat(source, reply) { beat = source; onReply = reply; } };
+  const f = fixture(undefined, { crew });
+  t.after(() => f.work.dispose());
+  for (const x of [4, 5, 7]) f.put("stone", x, 63);
+  f.put("iron_ore", 30, 40);
+  f.items.push(f.item("iron_pickaxe"));
+  // Another bot reports the floor of its staircase; a player stands on x=7.
+  hub.handle("b", "beat", { pos: { x: 5, y: 64, z: 0 }, dim: "overworld", floors: ["5,63,0"] });
+  onReply(hub.handle("a", "beat", beat()));
+  f.bot.entities[50] = { id: 50, type: "player", username: "Other", isValid: true, position: new Vec3(7.5, 64, 0.5) };
+  f.work.enqueue({ kind: "mine", blocks: "iron_ore", count: 1, radius: 40 });
+  const cost = f.bot.pathfinder.defaultMoveSettings.exclusionAreasBreak.at(-1);
+  const at = (x) => cost({ position: new Vec3(x, 63, 0) });
+  assert.equal(at(4), 0, "ordinary stone may be dug for a route");
+  assert.equal(at(5), 1000000, "another bot's passage floor is kept");
+  assert.equal(at(7), 1000000, "the block under another player is kept");
+  await f.work.stop();
+});
+
+test("with nothing loaded nearby a crew bot scouts unexplored chunks until it finds a tree", async (t) => {
+  const hub = fleetCrew.createHub();
+  const f = fixture(undefined, { crew: crewFor(hub, "a") });
+  t.after(() => f.work.dispose());
+  f.put("oak_log", 44, 64, 4);
+  // A small server view distance: only blocks and chunks near the bot exist for it.
+  const loaded = (x, z) => Math.hypot(x - f.bot.entity.position.x, z - f.bot.entity.position.z) <= 24;
+  f.bot.world = { getColumn: (cx, cz) => (loaded(cx * 16 + 8, cz * 16 + 8) ? {} : null) };
+  const findBlocks = f.bot.findBlocks;
+  f.bot.findBlocks = (options) => findBlocks(options).filter((pos) => loaded(pos.x, pos.z));
+  const goto = f.bot.pathfinder.goto;
+  const walkOnly = [];
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.constructor.name !== "GoalScout") return goto(goal);
+    walkOnly.push(f.bot.pathfinder.defaultMoveSettings.canDig);
+    assert.equal(goal.isEnd({ x: goal.x, y: -40, z: goal.z }), true, "height does not matter to a scout");
+    f.bot.entity.position = new Vec3(goal.x + 0.5, 64, goal.z + 0.5);
+  };
+  f.work.enqueue({ kind: "forest", radius: 64, count: 0, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1, 8000);
+  assert.deepEqual(f.dug.map((v) => v.name), ["oak_log"]);
+  assert.ok(walkOnly.length >= 1 && walkOnly.every((canDig) => canDig === false), "scouts walk before digging");
+  assert.ok(f.events.some((event) => event.startsWith("Разведка")));
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
 });

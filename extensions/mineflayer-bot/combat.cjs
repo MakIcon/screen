@@ -56,13 +56,13 @@ function installCombatProtocol(bot) {
     if (
       ["position", "position_look", "look", "flying"].includes(name) &&
       types?.MovementFlags &&
-      !packet.flags &&
-      typeof packet.onGround === "boolean"
+      (packet.flags || typeof packet.onGround === "boolean")
     ) {
       packet = {
         ...packet,
         flags: {
-          onGround: packet.onGround,
+          ...packet.flags,
+          onGround: packet.flags?.onGround ?? packet.onGround,
           hasHorizontalCollision: Boolean(bot.entity?.isCollidedHorizontally),
         },
       };

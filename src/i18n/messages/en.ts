@@ -1034,7 +1034,8 @@ export const en: EnglishMessages = {
   "bot.workflow.theBotReturnsTo":
     "The bot returns to where the workflow started. Start the workflow near a furnace and a crafting spot.",
   "bot.workflow.usesTheChestGroups": "Uses the chest groups from the storage settings.",
-  "bot.workflow.theCountIsIn": "The count is in blocks. Iron needs a stone pickaxe or better.",
+  "bot.workflow.theCountIsIn":
+    "The count is in blocks per bot. Bots split veins between themselves and scout the radius when nothing is nearby. Iron needs a stone pickaxe or better.",
   "bot.workflow.theActionStartsAfter": "The action starts after the previous step finishes.",
   "bot.workflow.connectTheBotTo": "Connect the bot to run the workflow.",
   "bot.workflow.connection": "Connection ↗",
@@ -2178,6 +2179,7 @@ export const en: EnglishMessages = {
   "bot.gathering.phase.deposit": "Unloading",
   "bot.gathering.phase.deliver": "Bringing loot to you",
   "bot.gathering.phase.return": "Returning",
+  "bot.gathering.phase.explore": "Scouting",
   "bot.gathering.phase.paused": "Paused",
 
   // bot.inventory.slot

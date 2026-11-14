@@ -16,6 +16,9 @@ import { toErrorMessage } from "../utils/errors";
 const STATUS_EVENT = "mineflayer-bot-status";
 const RECONCILE_INTERVAL_MS = 30_000;
 const ACTIVITY_INTERVAL_MS = 2_000;
+const FLEET_BATCH_MIN_MS = 200;
+const FLEET_BATCH_PER_BOT_MS = 20;
+const FLEET_BATCH_MAX_MS = 1_000;
 
 // IPC deserializes fresh objects even when no status has changed. Keep the
 // snapshot reference in that case so polling does not rerender the launcher.
@@ -103,43 +106,56 @@ export function useRuntimeMonitorController(
     mountedRef.current = true;
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
+    // A fleet reports progress from every bot several times a second. Each
+    // snapshot rerenders the launcher, so progress is applied in one batch per
+    // window; a bot that changes state (or is new) is shown at once.
+    const pending = new Map<string, MineflayerBotStatus>();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let appliedAt = 0;
+    const apply = () => {
+      timer = undefined;
+      if (disposed || !pending.size) return;
+      const updates = new Map(pending);
+      pending.clear();
+      appliedAt = Date.now();
+      setSnapshot((current) => {
+        if (!current) return current;
+        const primary = updates.get("default");
+        const secondary = [...updates.keys()].some((id) => id !== "default");
+        const listed = current.mineflayerBots ?? (secondary ? [current.mineflayerBot] : undefined);
+        return {
+          ...current,
+          ...(primary ? { mineflayerBot: primary } : {}),
+          ...(listed
+            ? {
+                mineflayerBots: [
+                  ...listed.filter((bot) => !updates.has(bot.botId ?? "default")),
+                  ...updates.values(),
+                ],
+              }
+            : {}),
+        };
+      });
+    };
     void listen<MineflayerBotStatus>(STATUS_EVENT, ({ payload }) => {
       if (disposed) return;
       const id = payload.botId ?? "default";
-      if (id !== "default") {
-        const latest = fleetStatusRef.current.get(id);
-        if (latest && payload.revision <= latest.revision) return;
-        fleetStatusRef.current.set(id, payload);
-        setSnapshot((current) => {
-          if (!current) return current;
-          const bots = current.mineflayerBots ?? [current.mineflayerBot];
-          return {
-            ...current,
-            mineflayerBots: [...bots.filter((bot) => (bot.botId ?? "default") !== id), payload],
-          };
-        });
-        return;
-      }
-      const latest = botStatusRef.current;
+      const latest = id === "default" ? botStatusRef.current : fleetStatusRef.current.get(id);
       if (latest && payload.revision <= latest.revision) return;
-      botStatusRef.current = payload;
+      if (id === "default") botStatusRef.current = payload;
       fleetStatusRef.current.set(id, payload);
-      setSnapshot((current) =>
-        current
-          ? {
-              ...current,
-              mineflayerBot: payload,
-              ...(current.mineflayerBots
-                ? {
-                    mineflayerBots: [
-                      ...current.mineflayerBots.filter((bot) => (bot.botId ?? "default") !== id),
-                      payload,
-                    ],
-                  }
-                : {}),
-            }
-          : current,
+      pending.set(id, payload);
+      const batch = Math.min(
+        FLEET_BATCH_MAX_MS,
+        Math.max(FLEET_BATCH_MIN_MS, fleetStatusRef.current.size * FLEET_BATCH_PER_BOT_MS),
       );
+      const urgent =
+        !latest || latest.state !== payload.state || latest.running !== payload.running;
+      const wait = appliedAt + batch - Date.now();
+      if (urgent || wait <= 0) {
+        if (timer !== undefined) clearTimeout(timer);
+        apply();
+      } else if (timer === undefined) timer = setTimeout(apply, wait);
     })
       .then((dispose) => {
         if (disposed) {
@@ -156,6 +172,7 @@ export function useRuntimeMonitorController(
     return () => {
       disposed = true;
       mountedRef.current = false;
+      if (timer !== undefined) clearTimeout(timer);
       unlisten?.();
     };
   }, []);

@@ -40,6 +40,8 @@ export class NewForwardExecutor extends MovementExecutor {
   private cornerSneaking = false
   private cornerTarget?: Vec3
 
+  override get progressTarget (): Vec3 | undefined { return this.cornerTarget ?? super.progressTarget }
+
   override reset (): void { this.cornerSneaking = false; this.cornerTarget = undefined; super.reset() }
 
   private async correctCorner (move: Move): Promise<boolean> {

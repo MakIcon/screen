@@ -144,7 +144,7 @@ export function MineflayerGatheringControls({
   const [mode, setMode] = useState<Mode>("forest");
   const [blocks, setBlocks] = useState("iron");
   const [count, setCount] = useState(0),
-    [radius, setRadius] = useState(16);
+    [radius, setRadius] = useState(64);
   const [leaves, setLeaves] = useState(false),
     [scaffold, setScaffold] = useState(true);
   const [corner1, setCorner1] = useState(""),
@@ -570,7 +570,7 @@ export function MineflayerGatheringControls({
                     radius,
                     setRadius,
                     1,
-                    64,
+                    256,
                   )}
                 {mode === "mine" && !autoDepth && (
                   <>

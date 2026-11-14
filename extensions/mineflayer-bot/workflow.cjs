@@ -18,7 +18,7 @@ function validateWorkflow(steps, { bot, gathering }) {
       if (["till", "plant", "harvest", "farm"].includes(kind)) {
         const spec = { kind, item: String(step.item || "auto"),
           count: integer(step.count ?? 0, "Действия", 0, 4096),
-          radius: integer(step.radius ?? 8, "Радиус", 4, 64), replant: step.replant ?? true };
+          radius: integer(step.radius ?? 8, "Радиус", 4, 256), replant: step.replant ?? true };
         gathering.validate(spec);
         return spec;
       }
@@ -29,18 +29,18 @@ function validateWorkflow(steps, { bot, gathering }) {
                 kind,
                 blocks: String(step.item || ""),
                 count: integer(step.count, "Блоки", 1, 4096),
-                radius: integer(step.radius, "Радиус", 4, 64),
+                radius: integer(step.radius, "Радиус", 4, 256),
               }
             : kind === "forest"
               ? {
                   kind,
                   count: integer(step.count, "Брёвна", 1, 256),
-                  radius: integer(step.radius, "Радиус", 4, 64),
+                  radius: integer(step.radius, "Радиус", 4, 256),
                   leaves: false,
                   scaffold: true,
                 }
               : kind === "collect"
-                ? { kind, radius: integer(step.radius, "Радиус", 4, 64) }
+                ? { kind, radius: integer(step.radius, "Радиус", 4, 256) }
                 : { kind };
         gathering.validate(spec);
         return { ...spec, item: kind === "mine" ? spec.blocks : undefined };

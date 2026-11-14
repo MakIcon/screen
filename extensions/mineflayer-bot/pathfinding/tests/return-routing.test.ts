@@ -3,6 +3,7 @@ import test from 'node:test'
 import { Vec3 } from 'vec3'
 import { createPlugin, goals, movementProviders } from '../src'
 import { createCacheWorld } from './setup'
+import { Move } from '../src/mineflayer-specific/move'
 
 function navigation (rig: ReturnType<typeof createCacheWorld>['rig'], canDig = true) {
   rig.bot.loadPlugin(createPlugin({
@@ -17,6 +18,21 @@ function navigation (rig: ReturnType<typeof createCacheWorld>['rig'], canDig = t
   rig.bot.inventory.slots[9].slot = 9
   return rig.bot.pathfinder
 }
+
+test('same-level travel uses an existing side passage even with an instant-mining tool', async () => {
+  const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 })
+  const navigator = navigation(rig)
+  navigator.setMoveOptions({ canPlace: false })
+  for (let z = -2; z <= 2; z++) for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(1, y, z), 'stone')
+  rig.bot.pathingUtil.digCost = () => 0
+  try {
+    const route = await navigator.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity,
+      new goals.GoalNear(8.5, 64, 0.5, 0.8))
+    assert.ok(route != null)
+    assert.ok(route.path.every((move: Move) => move.toBreak.length === 0 && move.toPlace.length === 0),
+      'a passage made by another bot needs no personal traversal memory to take priority over a new tunnel')
+  } finally { await navigator.destroy(); rig.stopPassivePhysics() }
+})
 
 test('come reuses an open mine staircase even when its entrance is away from the player', { timeout: 22000 }, async (t) => {
   const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { renderDistance: 1 })
@@ -117,5 +133,40 @@ test('overhead construction respects placement exclusions and available inventor
     assert.equal(await navigator.getPathFromToRaw(rig.bot.entity.position, rig.bot.entity.velocity, goal), null,
       'the fast probe cannot invent the missing tower blocks')
     assert.equal(rig.bot.entity.position.y, 64, 'planning never moves the real player')
+  } finally { await navigator.destroy(); rig.stopPassivePhysics() }
+})
+
+test('a long way back follows the walked passage instead of digging a straight tunnel', { timeout: 90000 }, async (t) => {
+  const { rig, world } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5), { renderDistance: 4 })
+  for (let x = -3; x <= 44; x++) for (let z = -3; z <= 30; z++)
+    for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(x, y, z), 'stone')
+  // An L-shaped mine: 40 blocks east, then 26 blocks south.
+  for (let x = -1; x <= 40; x++) for (const y of [64, 65]) world.setBlock(new Vec3(x, y, 0), 'air')
+  for (let z = 0; z <= 26; z++) for (const y of [64, 65]) world.setBlock(new Vec3(40, y, z), 'air')
+  // A dead-end side cave points straight at the entrance from the far end.
+  for (let x = 12; x <= 39; x++) for (const y of [64, 65]) world.setBlock(new Vec3(x, y, 26), 'air')
+  const navigator = navigation(rig, false)
+  const Item = require('prismarine-item')(rig.mcData)
+  rig.bot.inventory.slots[10] = new Item(rig.mcData.itemsByName.diamond_pickaxe.id, 1)
+  rig.bot.inventory.slots[10].slot = 10
+  const digs: Vec3[] = [], placed: Vec3[] = []
+  const dig = rig.bot.dig
+  rig.bot.dig = (block: any, ...args: any[]) => { digs.push(block.position.clone()); return dig(block, ...args) }
+  const place = rig.bot._placeBlockWithOptions
+  rig.bot._placeBlockWithOptions = (block: any, face: Vec3, ...args: any[]) => {
+    placed.push(block.position.plus(face)); return place(block, face, ...args)
+  }
+  t.signal.addEventListener('abort', () => { void navigator.stop() }, { once: true })
+  try {
+    await navigator.goto(new goals.GoalNear(40.5, 64, 26.5, 0.7))
+    // The owner waits at the entrance; editing terrain is allowed on the way back.
+    navigator.setMoveOptions({ canDig: true })
+    const searches: string[] = []
+    rig.bot.on('pathGenerated', (path: any) => searches.push(path.status))
+    await navigator.goto(new goals.GoalNear(0.5, 64, 0.5, 0.7))
+    assert.deepEqual(digs, [], 'the ready passage is walked, not bypassed with a new tunnel')
+    assert.deepEqual(placed, [])
+    assert.ok(rig.bot.entity.position.distanceTo(new Vec3(0.5, 64, 0.5)) < 0.8)
+    assert.ok(searches.length <= 2, `route searches=${searches}`)
   } finally { await navigator.destroy(); rig.stopPassivePhysics() }
 })

@@ -50,3 +50,26 @@ test('walking through a supported two-high tunnel does not tap sneak at its turn
     assert.equal(sneaks, 0, `sneak taps=${sneaks}`)
   } finally { await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
 })
+
+test('pickup execution preserves a follow goal with custom vertical reach', { timeout: 8000 }, async () => {
+  const { rig } = createCacheWorld('26.1.2', 64, new Vec3(0.5, 64, 0.5))
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, canPlace: false } }))
+  const navigator = rig.bot.pathfinder
+  const drop = { position: new Vec3(4.5, 65.4, 0.5) }
+  const goal = goals.GoalFollowEntity.fromEntity(drop, 0.75, { dynamic: true })
+  goal.distHeuristic = node => (node.exitPos ?? node).xzDistanceTo(drop.position)
+  const perform = navigator.perform.bind(navigator)
+  let executed = false
+  navigator.perform = async (path: any, executionGoal: any, ...args: any[]) => {
+    executed = true
+    const last = path.path[path.path.length - 1]
+    assert.equal(executionGoal.isEnd(last), true, 'the item can be collected above the feet at the planned landing')
+    return perform(path, executionGoal, ...args)
+  }
+  try {
+    await navigator.goto(goal)
+    assert.equal(executed, true)
+    assert.ok(rig.bot.entity.position.xzDistanceTo(drop.position) <= 0.75)
+    assert.equal(rig.bot.entity.position.y, 64)
+  } finally { await navigator.destroy(); rig.stopPassivePhysics() }
+})

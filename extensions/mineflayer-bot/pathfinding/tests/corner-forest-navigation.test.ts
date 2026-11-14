@@ -123,7 +123,10 @@ for (const version of ['1.20.4', '26.1.2']) {
     const failures: string[] = []
     const perform = rig.bot.pathfinder.perform.bind(rig.bot.pathfinder)
     rig.bot.pathfinder.perform = async (...args: Parameters<typeof perform>) => {
-      try { await perform(...args) } catch (error) { failures.push(String(error)); throw error }
+      try { await perform(...args) } catch (error) {
+        failures.push(`${error}; position=${rig.bot.entity.position}; entry=${rig.bot.pathfinder.currentMove?.entryPos}; exit=${rig.bot.pathfinder.currentMove?.exitPos}`)
+        throw error
+      }
     }
     rig.bot.on('pathGenerated', (path: any) => routes.push(path))
     rig.bot.on('physicsTick', () => {

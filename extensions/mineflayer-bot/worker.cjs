@@ -43,6 +43,7 @@ const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gath
 const { createProductionController } = require('./production.cjs')
 const { COMMANDS: PRODUCTION_COMMANDS, handleProductionCommand } = require('./production-commands.cjs')
 const { createWorkflowController } = require('./workflow.cjs')
+const { createCrewLink } = require('./fleet-crew.cjs')
 const { createChaoticMovementController } = require('./chaotic-movement.cjs')
 const { createInventoryActions } = require('./inventory-actions.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
@@ -409,6 +410,17 @@ function parseConfig (raw) {
   return config
 }
 
+// Forward a value only when it differs from the previous one.
+function onlyChanges (forward) {
+  let last
+  return value => {
+    const encoded = JSON.stringify(value)
+    if (encoded === last) return
+    last = encoded
+    forward(value)
+  }
+}
+
 function createLauncherInput (input) {
   return require('node:readline')
     .createInterface({ input, crlfDelay: Infinity })[Symbol.asyncIterator]()
@@ -580,6 +592,12 @@ async function main () {
   const serverLabel = `${config.server.host}:${config.server.port}`
   const allowedOwners = [ownerName, ...config.commands.extraOwners]
   const commandTimestamps = new Map()
+  // One crew link per worker: it outlives reconnects, so leases survive them.
+  const crew = createCrewLink({
+    key: `${String(config.server.host).toLowerCase()}:${config.server.port || 25565}`,
+    name: String(config.account.username).toLowerCase(),
+    log: message => emit('log', { message })
+  })
 
   let activeBot = null
   let chatReady = false
@@ -1048,10 +1066,13 @@ async function main () {
           onError: error => emit('error', { error: `chaotic movement: ${error.message || String(error)}` })
         })
         bot.launcherChaoticMovement = chaoticMovement
+        // The work loop reports once a second; forward only what changed so
+        // a fleet does not flood the launcher with identical snapshots.
         gathering = createGatheringController(bot, config.gathering, {
           isOwner,
-          onStatus: message => emit('status', { state: 'connected', message }),
-          onProgress: gathering => emit('gathering', { gathering })
+          crew,
+          onStatus: onlyChanges(message => emit('status', { state: 'connected', message })),
+          onProgress: onlyChanges(gathering => emit('gathering', { gathering }))
         })
         production = createProductionController(bot, {
           onStart: () => emit('production_started'),
@@ -1147,6 +1168,9 @@ async function main () {
       })
       bot.on('resetPath', (reason) => {
         emit('status', { state: 'connected', message: `path reset: ${reason}` })
+      })
+      bot.on('pathFailed', failure => {
+        emit('log', { message: `path execution failed: ${JSON.stringify(failure)}` })
       })
     }
 

@@ -4,7 +4,9 @@ import { Vec3 } from 'vec3'
 export class TraversalMemory {
   private readonly cells = new Map<string, Vec3>()
 
-  constructor (private readonly capacity = 4096) {}
+  // A crew bot scouts hundreds of blocks from its start. Keep enough cells
+  // for the whole way back; the oldest ones (the way home) are evicted first.
+  constructor (private readonly capacity = 16384) {}
 
   get size (): number { return this.cells.size }
 

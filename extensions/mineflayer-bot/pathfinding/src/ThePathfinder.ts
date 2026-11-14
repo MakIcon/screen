@@ -774,7 +774,7 @@ export class ThePathfinder {
       return res
     }
     let triedMemory = false
-    const rememberedPath = async (): Promise<ReturnType<ContinuousPathProducer['advance']> | undefined> => {
+    const rememberedPath = async (timeoutMs = 800, maxVisitedNodes = 12000): Promise<ReturnType<ContinuousPathProducer['advance']> | undefined> => {
       if (triedMemory || this.traversalMemory.size < 8 || !this.traversalMemory.contains(startPos)) return
       const memoryTarget = target ?? (goal instanceof goals.GoalMiningApproach
         ? new Vec3(goal.position.x, goal.y, goal.position.z) : undefined)
@@ -791,14 +791,14 @@ export class ThePathfinder {
       // passages. This prevents a broad cave from flooding the search before
       // it reaches the remembered stairs in the opposite direction.
       if (memoryTarget == null || this.traversalMemory.near(memoryTarget, 6)) {
-        const known = await probe(goal, corridor(memoryTarget), movements, 500, 8000)
+        const known = await probe(goal, corridor(memoryTarget), movements, timeoutMs, maxVisitedNodes)
         if (known.result.status === 'success' || known.result.status === 'canceled') return known
       } else {
         // The owner can move away from the mine entrance. Rejoin the known
         // exit on the destination's level, then validate a fresh walking tail.
         const anchor = this.traversalMemory.levelAnchor(memoryTarget)
         if (anchor != null) {
-          const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, 500, 8000)
+          const known = await probe(goals.GoalBlock.fromVec(anchor), corridor(anchor), movements, timeoutMs, maxVisitedNodes)
           if (known.result.status === 'canceled') return known
           if (known.result.status === 'success' && known.result.path.length > 0) {
             const last = known.result.path[known.result.path.length - 1]
@@ -818,7 +818,12 @@ export class ThePathfinder {
       }
       this._currentProducer = previousProducer
     }
-    if (preferExistingTerrain || (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
+    // A ready passage also takes priority for same-level travel and item
+    // pickup. It may have been opened by another bot and have no local memory.
+    const readyPassageCandidate = positionedGoal && (settings.canDig || settings.canPlace) &&
+      !this.world.getBlockInfo(startPos).liquid
+    if (preferExistingTerrain || readyPassageCandidate ||
+        (elevatedGoal && !settings.allowExcavatedDescent && settings.canDig) || constructionCandidate) {
       // Always try the complete enabled traversal repertoire before editing
       // terrain. Removing Neo/ladder providers here made a ready course appear
       // disconnected and sent the bot into bridge/tower construction instead.
@@ -992,7 +997,9 @@ export class ThePathfinder {
 
       if (this.abortCalculation || this.disposed) result.status = 'canceled'
 
-      if (!settings.canDig && !settings.canPlace && (result.status === 'noPath' || result.status === 'timeout')) {
+      // A failed search may still have a remembered passage, whatever the
+      // editing permissions are: walking it beats giving up or digging anew.
+      if (result.status === 'noPath' || result.status === 'timeout') {
         const known = await rememberedPath()
         if (known != null) { result = known.result; astarContext = known.astarContext }
       }
@@ -1346,7 +1353,8 @@ export class ThePathfinder {
         if (path == null) throw new Error('Pathfinding ended without a path.')
 
         if (!prefix && shore == null && goal instanceof goals.GoalFollowEntity &&
-            goal.isEnd === goals.GoalFollowEntity.prototype.isEnd) {
+            goal.isEnd === goals.GoalFollowEntity.prototype.isEnd &&
+            goal.distHeuristic === goals.GoalFollowEntity.prototype.distHeuristic) {
           executionGoal = new goals.GoalNear(goal.x, goal.y, goal.z, Math.sqrt(goal.sqDist))
         }
         const last = path.path[path.path.length - 1]
