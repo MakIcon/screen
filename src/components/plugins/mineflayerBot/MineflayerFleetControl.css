@@ -291,25 +291,6 @@
   flex-wrap: wrap;
   gap: 7px;
 }
-.mf-workspace-targets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 62px;
-  overflow: auto;
-  min-width: 0;
-}
-.mf-workspace-targets:empty {
-  display: none;
-}
-.mf-workspace-targets > span {
-  border: 1px solid var(--line);
-  padding: 4px 8px;
-  color: var(--text-alt);
-  background: var(--bg-panel);
-  font-size: 10px;
-  overflow-wrap: anywhere;
-}
 .mf-workspace-quick {
   display: flex;
   flex-wrap: wrap;
@@ -502,24 +483,67 @@
   border-color: var(--line);
 }
 .mf-group-progress {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
+  min-width: 0;
   border: 1px solid var(--line);
   background: var(--bg-panel);
 }
-.mf-group-progress > header {
+.mf-group-progress > summary {
   display: flex;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
   font-size: 11px;
+  cursor: pointer;
+  list-style: none;
 }
-.mf-group-progress > header > span {
+.mf-group-progress > summary::-webkit-details-marker {
+  display: none;
+}
+.mf-group-progress > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.mf-group-progress > summary > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mf-group-progress-count {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  color: var(--text-alt);
+  font-size: 10px;
+  font-weight: 500;
+}
+.mf-group-progress-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
   color: var(--text-alt);
   font-size: 10px;
 }
-.mf-group-progress > div {
+.mf-group-progress-hide,
+.mf-group-progress[open] .mf-group-progress-show {
+  display: none;
+}
+.mf-group-progress[open] .mf-group-progress-hide {
+  display: inline;
+}
+.mf-group-progress[open] .mf-group-progress-toggle svg {
+  transform: rotate(180deg);
+}
+.mf-group-progress-scroll,
+.mf-group-progress-scroll > .csa-content {
+  max-height: min(216px, 28dvh);
+}
+.mf-group-progress-scroll > .csa-content {
+  padding: 0 24px 12px 14px;
+  overscroll-behavior: contain;
+}
+.mf-group-progress-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;

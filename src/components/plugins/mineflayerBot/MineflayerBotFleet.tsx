@@ -383,11 +383,6 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               </button>
             </div>
           </header>
-          <div className="mf-workspace-targets" title={recipients.map(nameFor).join(", ")}>
-            {recipients.map((bot) => (
-              <span key={bot.id}>{nameFor(bot)}</span>
-            ))}
-          </div>
           <div
             className="mf-workspace-quick"
             role="group"

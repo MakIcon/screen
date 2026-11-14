@@ -220,9 +220,57 @@ try {
   );
   await page.evaluate(() => window.fleetQA.setLocale("en"));
   await page.getByRole("button", { name: "Run for 4 bots", exact: true }).waitFor();
+  await page.evaluate(() => window.fleetQA.setLocale("ru"));
+  await page.setViewportSize({ width: 1320, height: 1050 });
+  await page.goto(`${url}?extraBots=96`);
+  await page.getByRole("button", { name: "Выбрать всех", exact: true }).click();
+  assert.equal(
+    await page.locator(".mf-workspace-targets").count(),
+    0,
+    "no duplicate recipient list",
+  );
+  const progress = page.locator(".mf-group-progress");
+  assert.equal(await progress.count(), 1, "one progress panel for 100 bots");
+  assert.equal(await progress.getAttribute("open"), null, "large fleets start collapsed");
+  assert.ok((await progress.boundingBox()).height < 70, "collapsed progress stays compact");
+  await progress.locator("summary").click();
+  assert.equal(await progress.locator(".mf-group-progress-bot").count(), 100);
+  await progress.locator(".csa-thumb").waitFor({ state: "visible" });
+  const dimensions = await progress.evaluate((panel) => {
+    const scroll = panel.querySelector(".csa-content");
+    return {
+      panel: panel.getBoundingClientRect().height,
+      viewport: scroll.clientHeight,
+      content: scroll.scrollHeight,
+    };
+  });
+  assert.ok(
+    dimensions.panel < 280 && dimensions.viewport <= 216,
+    "expanded progress height is bounded",
+  );
+  assert.ok(dimensions.content > dimensions.viewport, "100 cards scroll inside the panel");
+  const viewport = progress.locator(".csa-content");
+  await viewport.hover();
+  await page.mouse.wheel(0, 650);
+  await page.waitForFunction(
+    () => document.querySelector(".mf-group-progress .csa-content").scrollTop > 0,
+  );
+  await page.screenshot({ path: path.join(output, "100-bots.png"), fullPage: true });
+  await progress.locator("summary").click();
+  assert.ok((await progress.boundingBox()).height < 70, "progress folds back into one row");
+  await page.setViewportSize({ width: 620, height: 1000 });
+  await progress.locator("summary").click();
+  assert.ok(
+    (await progress.boundingBox()).height < 280,
+    "narrow windows keep the same height limit",
+  );
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+    false,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "Unified bot workspace passed: one scenario editor, group and individual execution, persistent draft, independent settings, saved groups, partial errors, scoped chat, workflow pause/resume, emergency stop, lifecycle and responsive layout.",
+    "Unified bot workspace passed, including 100 bots in one collapsible panel with a bounded custom scrollbar.",
   );
 } catch (failure) {
   const output = path.resolve(process.env.FLEET_SCREENSHOT_DIR || "artifacts/bot-fleet.local");

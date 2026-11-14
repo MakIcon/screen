@@ -47,6 +47,7 @@ export const en: EnglishMessages = {
     "One plan for {count} selected bots. Each runs all steps with its own storage and gathering settings.",
   "bot.workspaceNew.runForGroup": "Run for {count} bots",
   "bot.workspaceNew.groupProgress": "Progress by bot",
+  "bot.workspaceNew.showProgress": "Show",
   "bot.workspaceNew.sameScenario": "Same steps · independent progress",
   "bot.workspaceNew.actionCategories": "Action categories",
   "bot.workspaceNew.category.resources": "Resources",

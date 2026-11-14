@@ -41,6 +41,18 @@ mockIPC(async (command, payload) => {
     });
   }
 });
+const extraBots = Array.from(
+  {
+    length: Math.max(
+      0,
+      Math.min(
+        96,
+        Math.floor(Number(new URLSearchParams(window.location.search).get("extraBots")) || 0),
+      ),
+    ),
+  },
+  (_, index) => ({ id: `stress-${index}`, settings: { botNickname: `SCREEN_BOT_${index + 5}` } }),
+);
 const botSettings = normalizeMineflayerBotSettings({
   enabled: true,
   botNickname: "Miner_1",
@@ -51,6 +63,7 @@ const botSettings = normalizeMineflayerBotSettings({
     },
     { id: "farmer", settings: { botNickname: "Farmer" } },
     { id: "offline", settings: { botNickname: "Sleeper" } },
+    ...extraBots,
   ],
 });
 const initialStatuses: MineflayerBotStatus[] = [
@@ -58,6 +71,7 @@ const initialStatuses: MineflayerBotStatus[] = [
   ["miner-2", "Miner_2"],
   ["farmer", "Farmer"],
   ["offline", "Sleeper"],
+  ...extraBots.map((bot) => [bot.id, bot.settings.botNickname]),
 ].map(([botId, botUsername]) => ({
   botId,
   botUsername,

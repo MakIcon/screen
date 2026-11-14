@@ -46,6 +46,7 @@ export const ru = {
     "Один план для {count} выбранных ботов. Каждый выполнит все шаги со своими настройками склада и добычи.",
   "bot.workspaceNew.runForGroup": "Запустить у {count} ботов",
   "bot.workspaceNew.groupProgress": "Выполнение по ботам",
+  "bot.workspaceNew.showProgress": "Показать",
   "bot.workspaceNew.sameScenario": "Одинаковые шаги · независимый прогресс",
   "bot.workspaceNew.actionCategories": "Категории действий",
   "bot.workspaceNew.category.resources": "Ресурсы",
