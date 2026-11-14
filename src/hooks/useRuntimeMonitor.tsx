@@ -54,6 +54,7 @@ export function useRuntimeMonitorController(
   const pidsRef = useRef(pids);
   const requestInFlightRef = useRef(false);
   const botStatusRef = useRef<MineflayerBotStatus | null>(null);
+  const fleetStatusRef = useRef(new Map<string, MineflayerBotStatus>());
   const mountedRef = useRef(true);
   const [eventsAvailable, setEventsAvailable] = useState<boolean | null>(null);
 
@@ -74,7 +75,19 @@ export function useRuntimeMonitorController(
       const mineflayerBot =
         latest && latest.revision > next.mineflayerBot.revision ? latest : next.mineflayerBot;
       botStatusRef.current = mineflayerBot;
-      const merged = { ...next, mineflayerBot };
+      const mineflayerBots = next.mineflayerBots?.map((status) => {
+        const latest = fleetStatusRef.current.get(status.botId ?? "default");
+        return latest && latest.revision > status.revision ? latest : status;
+      });
+      if (mineflayerBots) {
+        for (const [id, status] of fleetStatusRef.current) {
+          if (!mineflayerBots.some((bot) => (bot.botId ?? "default") === id))
+            mineflayerBots.push(status);
+        }
+        for (const status of mineflayerBots)
+          fleetStatusRef.current.set(status.botId ?? "default", status);
+      }
+      const merged = { ...next, mineflayerBot, ...(mineflayerBots ? { mineflayerBots } : {}) };
       setSnapshot((current) => (sameRuntimeValue(current, merged) ? current : merged));
       setError("");
       return merged;
@@ -92,10 +105,41 @@ export function useRuntimeMonitorController(
     let unlisten: UnlistenFn | undefined;
     void listen<MineflayerBotStatus>(STATUS_EVENT, ({ payload }) => {
       if (disposed) return;
+      const id = payload.botId ?? "default";
+      if (id !== "default") {
+        const latest = fleetStatusRef.current.get(id);
+        if (latest && payload.revision <= latest.revision) return;
+        fleetStatusRef.current.set(id, payload);
+        setSnapshot((current) => {
+          if (!current) return current;
+          const bots = current.mineflayerBots ?? [current.mineflayerBot];
+          return {
+            ...current,
+            mineflayerBots: [...bots.filter((bot) => (bot.botId ?? "default") !== id), payload],
+          };
+        });
+        return;
+      }
       const latest = botStatusRef.current;
       if (latest && payload.revision <= latest.revision) return;
       botStatusRef.current = payload;
-      setSnapshot((current) => (current ? { ...current, mineflayerBot: payload } : current));
+      fleetStatusRef.current.set(id, payload);
+      setSnapshot((current) =>
+        current
+          ? {
+              ...current,
+              mineflayerBot: payload,
+              ...(current.mineflayerBots
+                ? {
+                    mineflayerBots: [
+                      ...current.mineflayerBots.filter((bot) => (bot.botId ?? "default") !== id),
+                      payload,
+                    ],
+                  }
+                : {}),
+            }
+          : current,
+      );
     })
       .then((dispose) => {
         if (disposed) {

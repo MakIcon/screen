@@ -25,6 +25,7 @@ pub struct RuntimeProcessStatus {
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeMonitorSnapshot {
     pub mineflayer_bot: MineflayerBotStatus,
+    pub mineflayer_bots: Vec<MineflayerBotStatus>,
     pub blue_map: BlueMapStatus,
     pub obs_telemetry: ObsTelemetryStatus,
     pub processes: Vec<RuntimeProcessStatus>,
@@ -80,6 +81,7 @@ pub async fn get_runtime_monitor_snapshot(
 
         Ok(RuntimeMonitorSnapshot {
             mineflayer_bot,
+            mineflayer_bots: mineflayer_bot::current_statuses(&mineflayer_state)?,
             blue_map,
             obs_telemetry,
             processes,

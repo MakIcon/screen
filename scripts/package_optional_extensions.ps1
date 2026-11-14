@@ -28,6 +28,8 @@ if (Test-Path -LiteralPath $stageDirectory) {
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "inventory-actions.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "chaotic-movement.cjs") -Destination $stageDirectory
 foreach ($file in @("fabric.cjs", "mineflayer-fabric.cjs", "FABRIC.md", "FABRIC-LICENSE", "FABRIC-NOTICE")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }

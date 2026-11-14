@@ -3,7 +3,7 @@ import { SearchableSelect } from "../../inputs/SearchableSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isPlainMessageKey, translate, useLocale, useTranslation } from "../../../i18n/locale";
 import { localizeCatalog } from "./catalogLocalization";
-import { invoke } from "@tauri-apps/api/core";
+import { useBotInvoke } from "./BotSessionContext";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
@@ -52,6 +52,7 @@ export function MineflayerProductionControls({
   status: MineflayerBotStatus | null;
 }) {
   const locale = useLocale();
+  const invoke = useBotInvoke();
   const tr = useTranslation();
   const [item, setItem] = useState("stone_pickaxe"),
     [count, setCount] = useState(1);
@@ -96,7 +97,7 @@ export function MineflayerProductionControls({
     return () => {
       cancelled = true;
     };
-  }, [connected, status?.pid]);
+  }, [connected, status?.pid, invoke]);
   async function send(command: string) {
     if (!connected || sendingRef.current) return;
     sendingRef.current = true;

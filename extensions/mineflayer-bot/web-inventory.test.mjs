@@ -24,6 +24,57 @@ function botFixture(version) {
   return { bot, original };
 }
 
+test('drop controls receive fingerprints and immediate busy updates without exposing container items', t => {
+  const { bot } = botFixture('26.1.2');
+  bot.launcherInventoryActions = { busy: false };
+  const updates = [];
+  const telemetry = viewer.startInventoryTelemetry(bot, { onUpdate: value => updates.push(value) });
+  t.after(() => telemetry.stop());
+  assert.equal(updates[0].dropSupported, true);
+  assert.match(updates[0].slots[9].fingerprint, /^[a-f0-9]{64}$/);
+  const original = updates[0].slots[9].fingerprint;
+  bot.inventory.slots[9].count = 13;
+  bot.launcherInventoryActions.busy = true;
+  bot.emit('launcherInventoryChanged');
+  assert.equal(updates.at(-1).actionBusy, true);
+  assert.notEqual(updates.at(-1).slots[9].fingerprint, original);
+  bot.launcherInventoryActions.busy = false;
+  bot.emit('launcherInventoryChanged');
+  assert.equal(updates.at(-1).actionBusy, false);
+  telemetry.stop();
+  assert.equal(bot.listenerCount('launcherInventoryChanged'), 0);
+});
+
+test('chaotic movement updates the launcher toggle immediately and releases its listener', t => {
+  const { bot } = botFixture('26.1.2');
+  const updates = [];
+  bot.launcherChaoticMovement = { active: false };
+  const telemetry = viewer.startInventoryTelemetry(bot, { onUpdate: value => updates.push(value) });
+  t.after(() => telemetry.stop());
+  assert.equal(updates.at(-1).chaoticMovement, false);
+  bot.launcherChaoticMovement.active = true;
+  bot.emit('launcherMovementChanged');
+  assert.equal(updates.at(-1).chaoticMovement, true);
+  bot.launcherChaoticMovement.active = false;
+  bot.emit('launcherMovementChanged');
+  assert.equal(updates.at(-1).chaoticMovement, false);
+  telemetry.stop();
+  assert.equal(bot.listenerCount('launcherMovementChanged'), 0);
+});
+
+test('movement goals appear in fleet telemetry and update independently for each bot', t => {
+  const { bot } = botFixture('26.1.2');
+  let goal = 'follow Owner';
+  bot.launcherMovementGoal = () => goal;
+  const updates = [];
+  const telemetry = viewer.startInventoryTelemetry(bot, { onUpdate: value => updates.push(value) });
+  t.after(() => telemetry.stop());
+  assert.equal(updates.at(-1).movementGoal, 'follow Owner');
+  goal = 'idle';
+  bot.emit('launcherMovementChanged');
+  assert.equal(updates.at(-1).movementGoal, 'idle');
+});
+
 test("telemetry shows current workstation inventory and production without mutating the base window", async t => {
   const { bot, original } = botFixture("26.1.2");
   const slots = Array(39).fill(null);

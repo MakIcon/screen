@@ -4,6 +4,7 @@ import type { LauncherPluginsSettings, LauncherSettings } from "../../types";
 import type { PluginId } from "./pluginTypes";
 
 let saving: Promise<unknown> = Promise.resolve();
+let latestSave: Promise<unknown> = saving;
 
 // Keep rapid edits ordered. Each window sends only the plugins it actually edited.
 export function savePluginSettings(plugins: LauncherPluginsSettings, pluginIds?: PluginId[]) {
@@ -11,7 +12,12 @@ export function savePluginSettings(plugins: LauncherPluginsSettings, pluginIds?:
     invoke<LauncherSettings>("set_launcher_plugins", { plugins, pluginIds }),
   );
   saving = pending.catch(() => {});
+  latestSave = pending;
   return pending;
+}
+
+export async function flushPluginSettings() {
+  await latestSave;
 }
 
 export function subscribePluginSettings(onChange: (plugins: LauncherPluginsSettings) => void) {

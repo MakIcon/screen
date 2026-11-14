@@ -1,6 +1,6 @@
 import { TextField, TextArea } from "../../inputs/TextField";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useBotInvoke } from "./BotSessionContext";
 import { useTranslation } from "../../../i18n/locale";
 import type { MineflayerBotPluginSettings, MineflayerBotStatus } from "../../../types";
 import type { PluginRenderContext, PluginSettingsProps } from "../pluginTypes";
@@ -18,6 +18,8 @@ import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
 import { MineflayerProductionControls } from "./MineflayerProductionControls";
 import { MineflayerWorkflow } from "./MineflayerWorkflow";
 import { mergeScannedStorageGroups } from "./storageGroups";
+import { MineflayerBotFleet } from "./MineflayerBotFleet";
+import { flushPluginSettings } from "../pluginSettingsSync";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
@@ -117,6 +119,7 @@ function MineflayerBotSettingsEditor({
   onChange: (settings: MineflayerBotPluginSettings) => void;
   context: PluginRenderContext;
 }) {
+  const invoke = useBotInvoke();
   const tr = useTranslation();
   const monitor = useRuntimeMonitor();
   const status = monitor.snapshot?.mineflayerBot ?? null;
@@ -131,7 +134,9 @@ function MineflayerBotSettingsEditor({
   const [chatFeedback, setChatFeedback] = useState("");
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatSendingRef = useRef(false);
+  const chaosPendingRef = useRef(false);
   const chatConnected = Boolean(status?.running && status.state === "connected");
+  const chaosActive = chatConnected && Boolean(status?.inventory?.chaoticMovement);
   const savedScan = useRef("");
   const storageScan = chatConnected ? status?.inventory?.production?.storageScan : null;
   useEffect(() => {
@@ -156,7 +161,7 @@ function MineflayerBotSettingsEditor({
       message: `stash scan saved ${storageScan.id}`,
       command: true,
     }).catch((error) => setActionError(toErrorMessage(error)));
-  }, [storageScan, status?.pid, settings, onChange]);
+  }, [storageScan, status?.pid, settings, onChange, invoke]);
   const [activeView, setActiveView] = useState<WorkspaceView>("scenario");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("connection");
   const activeSection = activeView === "settings" ? settingsSection : activeView;
@@ -185,12 +190,14 @@ function MineflayerBotSettingsEditor({
     onChange(normalizeMineflayerBotSettings({ ...settings, ...patch }));
   };
 
-  const invokeStart = () =>
-    invoke<MineflayerBotStatus>("start_mineflayer_bot", {
+  const invokeStart = async () => {
+    await flushPluginSettings();
+    return invoke<MineflayerBotStatus>("start_mineflayer_bot", {
       launcherNickname: context.launcherNickname,
       launcherAccountType: context.launcherAccountType,
       launcherMsAccountId: context.launcherMsAccountId ?? undefined,
     });
+  };
 
   const startBot = async () => {
     if (!canStart) return;
@@ -269,8 +276,37 @@ function MineflayerBotSettingsEditor({
     }
   };
 
+  const toggleChaoticMovement = async () => {
+    if (!chatConnected || busyAction || chaosPendingRef.current) return;
+    chaosPendingRef.current = true;
+    setBusyAction("CHAOS");
+    setActionError("");
+    try {
+      await invoke("send_mineflayer_bot_chat", {
+        message: chaosActive ? "chaos off" : "chaos on",
+        command: true,
+      });
+      await monitor.refresh();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      chaosPendingRef.current = false;
+      setBusyAction("");
+    }
+  };
+
   const connectionControls = (
     <>
+      <button
+        type="button"
+        className="mf-button mf-chaos-button"
+        aria-pressed={chaosActive}
+        title={tr("bot.chaos.description")}
+        disabled={!chatConnected || Boolean(busyAction)}
+        onClick={() => void toggleChaoticMovement()}
+      >
+        {tr(chaosActive ? "bot.chaos.stop" : "bot.chaos.start")}
+      </button>
       {status?.running && (
         <button
           type="button"
@@ -1137,10 +1173,17 @@ function MineflayerBotSettingsEditor({
 
 export function MineflayerBotSettings({ plugins, onChange, context }: PluginSettingsProps) {
   return (
-    <MineflayerBotSettingsEditor
-      settings={plugins.mineflayerBot}
+    <MineflayerBotFleet
+      plugins={plugins}
+      onChange={onChange}
       context={context}
-      onChange={(mineflayerBot) => onChange({ ...plugins, mineflayerBot })}
+      renderEditor={(settings, onSettingsChange) => (
+        <MineflayerBotSettingsEditor
+          settings={settings}
+          context={context}
+          onChange={onSettingsChange}
+        />
+      )}
     />
   );
 }

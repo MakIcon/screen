@@ -95,7 +95,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
         }
         return;
       }
-      if (kind || !entity.onGround || climb || plannedDrop || bot.launcherPearling ||
+      if (kind || bot.launcherInventoryActions?.busy || !entity.onGround || climb || plannedDrop || bot.launcherPearling ||
         bot.launcherDefendingBow || now() < nextEatAt || !autoEat.needsFood()) return;
       // The combat director first creates room to eat. Ordinary hunger must not
       // make a healthy bot put away its weapon in the middle of a duel.

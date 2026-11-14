@@ -56,6 +56,7 @@ function equipCombatItem(bot, item, hand, current = () => true) {
   return queueInventoryTask(bot, async () => {
     if (
       !current() ||
+      bot.launcherInventoryActions?.busy ||
       bot.launcherSurvival?.busy ||
       bot.launcherProduction?.busy ||
       bot.launcherCombatUtility

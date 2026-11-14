@@ -1,0 +1,142 @@
+.mf-fleet-creator {
+  container-type: inline-size;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.mf-fleet-creator-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mf-fleet-creator-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.mf-fleet-creator-heading > span,
+.mf-fleet-creator-preview {
+  color: var(--text-alt);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mf-fleet-creator-fields {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 116px max-content;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mf-fleet-creator-prefix,
+.mf-fleet-creator-count {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.mf-fleet-creator-prefix .text-field-label,
+.mf-fleet-creator-count > span {
+  color: var(--text-alt);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+
+.mf-fleet-creator-prefix .text-field-control {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1.4;
+  outline: none;
+  transition:
+    border-color 150ms,
+    background 150ms,
+    box-shadow 150ms;
+}
+
+.mf-fleet-creator-prefix .text-field-control:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.mf-fleet-creator-prefix .text-field-control:focus {
+  border-color: var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.mf-fleet-creator-prefix .text-field-control:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.mf-fleet-creator-count .cni-root,
+.mf-fleet-creator-count .cni-input {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.mf-fleet-creator-count .cni-input {
+  height: 42px;
+  min-height: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-fleet-creator-fields .mf-fleet-creator-submit {
+  letter-spacing: 0;
+  font-size: 12px;
+}
+
+.mf-fleet-creator-preview,
+.mf-fleet-creator-names {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mf-fleet-creator-preview {
+  gap: 8px 12px;
+}
+
+.mf-fleet-creator-names code {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  color: var(--ink);
+  font:
+    11px/1.4 "Cascadia Mono",
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 540px) {
+  .mf-fleet-creator-fields {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+  .mf-fleet-creator-prefix {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 300px) {
+  .mf-fleet-creator-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -9,7 +9,7 @@ import {
   Trans,
 } from "../../../i18n/locale";
 import { localizeCatalog } from "./catalogLocalization";
-import { invoke } from "@tauri-apps/api/core";
+import { useBotInvoke } from "./BotSessionContext";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
@@ -139,6 +139,7 @@ export function MineflayerGatheringControls({
   onSettingsChange: (settings: MineflayerGatheringSettings) => void;
 }) {
   const locale = useLocale();
+  const invoke = useBotInvoke();
   const tr = useTranslation();
   const [mode, setMode] = useState<Mode>("forest");
   const [blocks, setBlocks] = useState("iron");
@@ -194,7 +195,7 @@ export function MineflayerGatheringControls({
     return () => {
       cancelled = true;
     };
-  }, [connected, status?.pid]);
+  }, [connected, status?.pid, invoke]);
   const command = farming
     ? mode === "till"
       ? `till ${count} ${radius}`

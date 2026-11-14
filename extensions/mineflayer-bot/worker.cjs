@@ -43,6 +43,8 @@ const { COMMANDS: GATHERING_COMMANDS, handleGatheringCommand } = require('./gath
 const { createProductionController } = require('./production.cjs')
 const { COMMANDS: PRODUCTION_COMMANDS, handleProductionCommand } = require('./production-commands.cjs')
 const { createWorkflowController } = require('./workflow.cjs')
+const { createChaoticMovementController } = require('./chaotic-movement.cjs')
+const { createInventoryActions } = require('./inventory-actions.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
@@ -304,6 +306,22 @@ function renderTemplate (template, values) {
   })
 }
 
+// Routing happens before cooldowns and task dispatch: other bots must ignore
+// an addressed command, including its arguments, entirely.
+function commandBodyForBot (rawMessage, prefix, botUsername, bareCommands = new Set()) {
+  if (typeof rawMessage !== 'string') return null
+  const prefixed = rawMessage.startsWith(prefix)
+  if (!prefixed && !bareCommands.has(rawMessage.trim().split(/\s+/)[0].toLowerCase())) return null
+  let body = (prefixed ? rawMessage.slice(prefix.length) : rawMessage).trim()
+  if (body.startsWith('@')) {
+    const [address, ...parts] = body.split(/\s+/)
+    const targets = address.slice(1).split(',').map(name => name.replace(/^@/, '').toLowerCase())
+    if (!targets.some(name => name === 'all' || name === '*' || name === String(botUsername).toLowerCase())) return null
+    body = parts.join(' ')
+  }
+  return body || null
+}
+
 function parseConfig (raw) {
   const config = JSON.parse(raw)
   if (!config.server || !config.server.host) {
@@ -406,6 +424,7 @@ function createCommandQueue (handler) {
 }
 
 async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
+  const pendingDrops = new Set()
   for await (const line of lines) {
     if (!line.trim()) continue
     let request
@@ -415,11 +434,27 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       sendEvent('log', { message: 'invalid launcher message' })
       continue
     }
-    if (!['chat', 'command', 'storage_config', 'workflow'].includes(request?.type) || typeof request.requestId !== 'string') continue
+    if (!['chat', 'command', 'storage_config', 'workflow', 'inventory_drop'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
       const bot = getBot()
       if (!bot) throw new Error('Бот не подключён к серверу')
+      if (request.type === 'inventory_drop') {
+        if (!bot.launcherInventoryActions) throw new Error('Перезапустите бота, чтобы включить управление инвентарём')
+        // Keep reading stdin while a batch is running so stop can cancel it.
+        // The controller owns the inventory queue and rejects duplicate drops.
+        const operation = Promise.resolve().then(() => bot.launcherInventoryActions.drop(request.items)).then(
+          message => sendEvent('chat_result', { requestId: request.requestId, message }),
+          error => sendEvent('chat_result', { requestId: request.requestId, error: error.message || String(error) })
+        )
+        pendingDrops.add(operation)
+        void operation.then(() => pendingDrops.delete(operation), () => pendingDrops.delete(operation))
+        continue
+      }
       if (request.type === 'workflow') {
+        if (bot.launcherInventoryActions?.busy) {
+          if (request.action === 'stop') bot.launcherInventoryActions.cancel()
+          else throw new Error('Бот выбрасывает предметы. Дождитесь завершения действия')
+        }
         if (!bot.launcherWorkflow) throw new Error('Сценарии ещё не готовы. Обновите расширение и перезапустите бота')
         const message = await bot.launcherWorkflow.dispatch(request.action, request.steps, request.name)
         sendEvent('chat_result', { requestId: request.requestId, message })
@@ -442,10 +477,10 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
         throw new Error('Сообщение слишком длинное или содержит недопустимые символы')
       }
       const bareCommand = bot.launcherBareCommands?.has(message.split(/\s+/)[0].toLowerCase())
-      const localCommand = request.type === 'command' || (bot.launcherCommand && (message.startsWith(bot.launcherCommandPrefix) || bareCommand))
+      const localCommand = request.type === 'command' || (!request.literalChat && bot.launcherCommand && (message.startsWith(bot.launcherCommandPrefix) || bareCommand))
       if (localCommand) {
         if (!bot.launcherCommand) throw new Error('Команды бота ещё не готовы')
-        await bot.launcherCommand(request.type === 'command' || bareCommand ? `${bot.launcherCommandPrefix}${message}` : message)
+        await bot.launcherCommand(message.startsWith(bot.launcherCommandPrefix) ? message : `${bot.launcherCommandPrefix}${message}`)
       }
       else await bot.chat(message)
       sendEvent('chat_result', {
@@ -459,6 +494,7 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       })
     }
   }
+  await Promise.all(pendingDrops)
 }
 
 function loadMovementExtras (bot) {
@@ -649,6 +685,7 @@ async function main () {
     let gathering = null
     let production = null
     let workflow = null
+    let chaoticMovement = null
     bot.launcherOwnerName = ownerName
 
     function reply (username, source, text) {
@@ -670,6 +707,7 @@ async function main () {
 
     async function stopMovement (cancelGathering = true, cancelWorkflow = true) {
       const generation = ++goalGeneration
+      chaoticMovement?.stop()
       if (cancelWorkflow) await workflow?.stop()
       combat?.stop(true)
       await production?.stop()
@@ -686,6 +724,7 @@ async function main () {
 
     function startGoal (goal, label, destination, kind, radius) {
       if (!bot.pathfinder) throw new Error('Bot is not ready to move yet')
+      chaoticMovement?.stop()
       const generation = ++goalGeneration
       combat?.stop(true)
       currentGoal = label
@@ -727,6 +766,7 @@ async function main () {
     }
 
     function commandHelp (username, source) {
+      reply(username, source, `Один бот: ${prefix}@${bot.username} mine stone 64; группа: ${prefix}@Bot1,Bot2 stop; все: ${prefix}@all stop`)
       const commands = [
         'help',
         'status',
@@ -734,6 +774,7 @@ async function main () {
         'come',
         'follow',
         'goto x y z',
+        'chaos on|off',
         'stop',
         'look',
         'jump',
@@ -764,9 +805,7 @@ async function main () {
 
     async function handleCommand (username, rawMessage, source) {
       if (activeBot !== bot || !isOwner(username) || (source !== 'launcher' && !sourceEnabled(source))) return
-      if (!rawMessage.startsWith(prefix) && !GATHERING_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase()) && !PRODUCTION_COMMANDS.has(rawMessage.trim().split(/\s+/)[0].toLowerCase())) return
-
-      const body = (rawMessage.startsWith(prefix) ? rawMessage.slice(prefix.length) : rawMessage).trim()
+      const body = commandBodyForBot(rawMessage, prefix, bot.username, bot.launcherBareCommands)
       if (!body) return
 
       const now = Date.now()
@@ -778,8 +817,27 @@ async function main () {
       const command = commandRaw.toLowerCase()
 
       try {
-        if (workflow?.busy && !['stop', 'status', 'where', 'help', 'inventory'].includes(command)) {
+        if (bot.launcherInventoryActions?.busy) {
+          if (['stop', 'quit'].includes(command)) bot.launcherInventoryActions.cancel()
+          else if (!['status', 'where', 'help', 'inventory'].includes(command))
+            throw new Error('Бот выбрасывает предметы. Дождитесь завершения действия')
+        }
+        if (workflow?.busy && !['stop', 'status', 'where', 'help', 'inventory'].includes(command) && !(command === 'chaos' && args[0]?.toLowerCase() === 'off')) {
           throw new Error('Бот выполняет сценарий. Остановите его перед другой командой')
+        }
+        if (command === 'chaos') {
+          if (!chaoticMovement) throw new Error('Движение ещё не готово. Перезапустите бота')
+          const action = (args[0] || 'on').toLowerCase()
+          if (!['on', 'off'].includes(action)) throw new Error(`Usage: ${prefix}chaos on|off`)
+          if (action === 'off') {
+            if (chaoticMovement.active) { chaoticMovement.stop(); currentGoal = 'idle' }
+          } else {
+            if (!(await stopMovement())) return
+            currentGoal = 'chaos'
+            chaoticMovement.start()
+          }
+          reply(username, source, action === 'on' ? 'Хаотичное движение включено' : 'Хаотичное движение остановлено')
+          return
         }
         if (command === 'inventory') {
           reply(username, source, bot.launcherInventoryUrl || 'Веб-инвентарь ещё запускается')
@@ -958,8 +1016,9 @@ async function main () {
     loadMovementExtras(bot)
     const queuedCommand = createCommandQueue(handleCommand)
     bot.launcherCommandPrefix = prefix
-    bot.launcherBareCommands = new Set([...GATHERING_COMMANDS, ...PRODUCTION_COMMANDS, 'inventory'])
+    bot.launcherBareCommands = new Set([...GATHERING_COMMANDS, ...PRODUCTION_COMMANDS, 'inventory', 'chaos'])
     bot.launcherCommand = message => queuedCommand(ownerName, message, 'launcher')
+    bot.launcherMovementGoal = () => currentGoal
 
     bot.once('spawn', () => {
       reconnectAttempts = 0
@@ -984,6 +1043,11 @@ async function main () {
           onError: error => emit('error', { error: `movement: ${error.message || String(error)}` })
         })
         bot.launcherTravel = travel
+        chaoticMovement = createChaoticMovementController(bot, config.movement, {
+          onChange: () => bot.emit('launcherMovementChanged'),
+          onError: error => emit('error', { error: `chaotic movement: ${error.message || String(error)}` })
+        })
+        bot.launcherChaoticMovement = chaoticMovement
         gathering = createGatheringController(bot, config.gathering, {
           isOwner,
           onStatus: message => emit('status', { state: 'connected', message }),
@@ -1003,6 +1067,10 @@ async function main () {
           config.gathering = { ...config.gathering, storageGroups: normalized }
           return normalized
         }
+        bot.launcherInventoryActions = createInventoryActions(bot, {
+          prepare: () => stopMovement(),
+          onChange: () => bot.emit('launcherInventoryChanged')
+        })
         startInventoryTelemetry(bot, {
           onUpdate: inventory => emit('bot_inventory', { inventory }),
           onCatalog: catalog => emit('minecraft_catalog', { catalog })
@@ -1036,7 +1104,7 @@ async function main () {
         let attempts = 0
         const tryFollow = () => {
           if (activeBot !== bot || ended || stopping) return
-          if (gathering?.busy || production?.busy || workflow?.busy) return
+          if (gathering?.busy || production?.busy || workflow?.busy || chaoticMovement?.active) return
           attempts += 1
           if (startFollowingOwner(false)) {
             emit('status', {
@@ -1116,6 +1184,8 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      bot.launcherInventoryActions?.dispose()
+      chaoticMovement?.dispose()
       void workflow?.stop().catch(error => emit('log', { message: `scenario shutdown: ${error.message}` }))
       void production?.dispose().catch(error => emit('log', { message: `production shutdown: ${error.message}` }))
       void gathering?.dispose().catch(error => emit('log', { message: `gathering shutdown: ${error.message}` }))
@@ -1140,6 +1210,8 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      activeBot.launcherInventoryActions?.dispose()
+      activeBot.launcherChaoticMovement?.dispose()
       void activeBot.launcherWorkflow?.stop().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherProduction?.dispose().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherGathering?.dispose().catch(error => emit('log', { message: error.message }))
@@ -1169,6 +1241,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  commandBodyForBot,
   createLauncherInput,
   createCommandQueue,
   handleLauncherMessages,
