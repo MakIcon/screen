@@ -7,6 +7,73 @@ import type { RussianPlural } from "./types";
  * TypeScript reports a missing or extra English key. Placeholders use `{name}`.
  */
 export const ru = {
+  "bot.warehouse.expandGroup": "Раскрыть склад {name}",
+  "bot.warehouse.collapseGroup": "Свернуть склад {name}",
+  "bot.warehouse.partialReady":
+    "Проверено {checked} из {total} контейнеров. Проверенные сундуки добавлены в список ниже; нажмите «Применить», чтобы сохранить их. Остальные можно проверить повторным поиском.",
+  "bot.warehouse.stoppedProgress": "Поиск остановлен. Проверено {checked} из {total} контейнеров.",
+  "bot.warehouse.incompleteProgress":
+    "Проверка завершена не полностью: {checked} из {total} контейнеров.",
+  "bot.warehouse.blockTotal": "Блоков сундуков: {count} (двойной сундук — один контейнер).",
+  "bot.fleetSpeed.title": "Скорость подключения",
+  "bot.fleetSpeed.current": "{value} мс между ботами",
+  "bot.fleetSpeed.interval": "Интервал входа, мс",
+  "bot.fleetSpeed.preset.0": "Без задержки",
+  "bot.fleetSpeed.preset.250": "Быстро · 250 мс",
+  "bot.fleetSpeed.preset.1000": "Спокойно · 1 с",
+  "bot.fleetSpeed.hint":
+    "Общая настройка для подключения выбранных ботов. По умолчанию — 250 мс. Если сервер ограничивает частые входы, увеличьте интервал. Авторизация и загрузка сервера занимают дополнительное время.",
+  "bot.warehouse.clearAll": "Удалить все склады у получателей",
+  "bot.warehouse.clearConfirm":
+    "Удалить все сохранённые склады и черновики у выбранных ботов ({count})? Сундуки и предметы в игре останутся на месте.",
+  "bot.warehouse.clearConfirmAction": "Да, удалить склады",
+  "bot.warehouse.clearCancel": "Отмена",
+  "bot.warehouse.clearing": "Удаляю склады…",
+  "bot.warehouse.cleared": "Склады удалены у ботов: {count}.",
+  "bot.warehouse.team": "Проверяют боты: {count}",
+  "bot.warehouse.title": "Склады",
+  "bot.warehouse.description":
+    "Сундуки и правила хранения ресурсов. Задачи добычи и разгрузки запускаются в сценариях.",
+  "bot.warehouse.recipients": "Кому применять склады",
+  "bot.warehouse.scope.one": "Одному боту",
+  "bot.warehouse.scope.group": "Выбранной группе · {count}",
+  "bot.warehouse.scope.all": "Всем ботам · {count}",
+  "bot.warehouse.chooseBot": "Бот для настройки складов",
+  "bot.warehouse.groupHint":
+    "Получатели — отмеченные боты в списке слева. Можно выбрать сохранённую группу.",
+  "bot.warehouse.allHint": "Склады будут сохранены для всех профилей, включая отключённых ботов.",
+  "bot.warehouse.different":
+    "У получателей разные склады. Сейчас открыт список {name}; «Применить» заменит списки получателей на этот.",
+  "bot.warehouse.discoveryEyebrow": "Автоматическая настройка",
+  "bot.warehouse.discovery": "Найти сундуки рядом со мной",
+  "bot.warehouse.discoveryHint":
+    "Ближайший подходящий бот найдёт сундуки у игрока. Для большого склада подключатся помощники: примерно один бот на 12 сундуков, до восьми ботов. Каждый проверит свой участок; результат сохранится для выбранных получателей.",
+  "bot.warehouse.radius": "Радиус вокруг игрока, блоки",
+  "bot.warehouse.find": "Отправить ботов на проверку",
+  "bot.warehouse.scanning": "Поиск складов…",
+  "bot.warehouse.connectHint":
+    "Подключите хотя бы одного бота на этом сервере и подойдите к нему, чтобы он видел игрока.",
+  "bot.warehouse.discoveryPreserves":
+    "Ручные склады сохранятся. Двойной сундук учитывается один раз. Помощники выбираются среди доступных ботов на этом сервере, которые видят того же игрока. Их добыча продолжится после проверки.",
+  "bot.warehouse.selecting": "Выбираю ближайшего бота, который видит игрока…",
+  "bot.warehouse.result": "Результат поиска",
+  "bot.warehouse.approaching": "Подходит к игроку…",
+  "bot.warehouse.inspecting": "Проверено сундуков: {checked} из {total}",
+  "bot.warehouse.complete": "Проверено: {total}. Распределено по складам: {added}.",
+  "bot.warehouse.cancelled": "Поиск остановлен. Сохранённые склады не изменены.",
+  "bot.warehouse.failed": "Не удалось завершить проверку. Сохранённые склады не изменены.",
+  "bot.warehouse.results": "Проверенные сундуки · {count}",
+  "bot.warehouse.unsaved": "Есть несохранённые изменения",
+  "bot.warehouse.ready": "Список складов готов к применению",
+  "bot.warehouse.applyHint":
+    "Подключённые боты получат склады сразу. Отключённые — при следующем запуске. Сценарии используют эти же склады.",
+  "bot.warehouse.apply": "Применить · {count}",
+  "bot.warehouse.applied":
+    "Склады сохранены. Получателей: {saved}; применено сейчас: {applied}; при подключении: {offline}.",
+  "bot.warehouse.workSettings": "Настройки добычи: защита, проходы и освещение",
+  "bot.workspaceNew.crowdAvoidance": "Не толпиться",
+  "bot.workspaceNew.crowdAvoidanceHint":
+    "Для всех ботов: обходить друг друга и пропускать в узких проходах. Выключите, чтобы вернуть прежнее движение.",
   "bot.workspaceNew.team": "Команда",
   "bot.workspaceNew.control": "Рабочее место",
   "bot.workspaceNew.search": "Найти бота…",
@@ -896,7 +963,7 @@ export const ru = {
 
   // bot.storageGroups
   "bot.storageGroups.sharedStorage": "Общий склад",
-  "bot.storageGroups.newGroup": "Новая группа",
+  "bot.storageGroups.newGroup": "Новый склад",
   "bot.storageGroups.thisChestIsAlready": "Этот сундук уже добавлен в группу.",
   "bot.storageGroups.aGroupCanHold": "В группу можно добавить до 32 сундуков",
   "bot.storageGroups.chestAddedTo": "Сундук {chest} добавлен в «{group}».",
@@ -907,8 +974,8 @@ export const ru = {
     "Бот проверяет содержимое сундуков. Найденные назначения сохранятся автоматически.",
   "bot.storageGroups.chestsAndSorting": "СУНДУКИ И СОРТИРОВКА",
   "bot.storageGroups.lootStorage": "СКЛАД ДОБЫЧИ",
-  "bot.storageGroups.groups": "Групп",
-  "bot.storageGroups.addGroup": "ДОБАВИТЬ ГРУППУ",
+  "bot.storageGroups.groups": "Складов",
+  "bot.storageGroups.addGroup": "Добавить склад",
   "bot.storageGroups.autoScanChests": "АВТОСКАНИРОВАНИЕ СУНДУКОВ",
   "bot.storageGroups.theBotFindsChests":
     "Бот найдёт сундуки, бочки и шалкеры, подойдёт к ним и определит назначение по содержимому. Из пустых выделит больше места под массовые блоки и мусор, отдельный склад — под ценности. Настроенные группы сохраняются.",
@@ -932,16 +999,16 @@ export const ru = {
   "bot.storageGroups.freeSlots": "Свободно слотов",
   "bot.storageGroups.aSeparateStorageFor": "Для каждого ресурса — свой склад",
   "bot.storageGroups.createAGroupChoose":
-    "Создайте группу, выберите, что в неё складывать, и добавьте один или несколько сундуков.",
+    "Добавьте склад, выберите ресурсы для хранения и укажите один или несколько сундуков.",
   "bot.storageGroups.wood3Chests": "Древесина → 3 сундука",
   "bot.storageGroups.diamonds1Chest": "Алмазы → 1 сундук",
   "bot.storageGroups.stone2Chests": "Камень → 2 сундука",
   "bot.storageGroups.addSelectedChest": "ДОБАВИТЬ ВЫБРАННЫЙ СУНДУК",
   "bot.storageGroups.chooseResources": "Выберите ресурсы",
   "bot.storageGroups.noChests": "Нет сундуков",
-  "bot.storageGroups.disableGroup": "Выключить группу",
-  "bot.storageGroups.enableGroup": "Включить группу",
-  "bot.storageGroups.groupName": "НАЗВАНИЕ ГРУППЫ",
+  "bot.storageGroups.disableGroup": "Выключить склад",
+  "bot.storageGroups.enableGroup": "Включить склад",
+  "bot.storageGroups.groupName": "Название склада",
   "bot.storageGroups.forExampleWoodAt": "Например, древесина на базе",
   "bot.storageGroups.resourceGroups": "Группы ресурсов",
   "bot.storageGroups.whatToStore": "ЧТО СКЛАДЫВАТЬ",
@@ -950,7 +1017,7 @@ export const ru = {
   "bot.storageGroups.itemsAndBlocks": "Предметы и блоки",
   "bot.storageGroups.anItemABlock": "Предмет, блок или несколько ресурсов",
   "bot.storageGroups.removeResource": "Убрать ресурс",
-  "bot.storageGroups.chestsInGroup": "СУНДУКИ В ГРУППЕ",
+  "bot.storageGroups.chestsInGroup": "Сундуки склада",
   "bot.storageGroups.filledInOrder": "Заполняются по порядку",
   "bot.storageGroups.unloaded": "Выгружено",
   "bot.storageGroups.full": "Заполнен",
@@ -966,7 +1033,7 @@ export const ru = {
   "bot.storageGroups.groupPriority": "Приоритет группы",
   "bot.storageGroups.moveGroupUp": "Поднять группу",
   "bot.storageGroups.moveGroupDown": "Опустить группу",
-  "bot.storageGroups.deleteGroup": "УДАЛИТЬ ГРУППУ",
+  "bot.storageGroups.deleteGroup": "Удалить склад",
   "bot.storageGroups.groupsAreSavedIn":
     "Группы сохраняются в лаунчере. Конкретные ресурсы проверяются сверху вниз; «Всё остальное» используется для оставшейся добычи. Если сундук заполнен или недоступен, бот пробует следующий в той же группе. Инструменты и еду оставляет у себя.",
   "bot.storageGroups.applying": "ПРИМЕНЯЮ…",
@@ -2185,7 +2252,7 @@ export const ru = {
   "bot.settingsSection.behavior": "Движение",
   "bot.settingsSection.survival": "Выживание",
   "bot.settingsSection.combat": "Бой и предметы",
-  "bot.settingsSection.gathering": "Добыча и склад",
+  "bot.settingsSection.gathering": "Склады",
   "bot.settingsSection.commands": "Команды",
 
   // bot.movementPreset.safe

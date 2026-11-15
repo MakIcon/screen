@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -151,6 +151,7 @@ pub async fn set_launcher_plugins(
     let result: Result<_, CommandError> = async {
         let _operation = crate::operations::begin("settings", None)?;
         let mut settings = edit_settings().await?;
+        let previous_crowd_avoidance = settings.plugins.mineflayer_bot.crowd_avoidance;
         merge_plugins(&mut settings.plugins, plugins, plugin_ids);
         // The proxy plugin feeds the shared network client. Validate the URL now so
         // a bad value surfaces in the UI instead of failing later mid-download.
@@ -163,6 +164,16 @@ pub async fn set_launcher_plugins(
 
         settings.commit().await?;
         let _ = app.emit("launcher-plugins-changed", &settings.plugins);
+        if previous_crowd_avoidance != settings.plugins.mineflayer_bot.crowd_avoidance {
+            if let Some(bots) =
+                app.try_state::<crate::plugins::mineflayer_bot::MineflayerBotState>()
+            {
+                crate::plugins::mineflayer_bot::sync_crowd_avoidance(
+                    &bots,
+                    settings.plugins.mineflayer_bot.crowd_avoidance,
+                )?;
+            }
+        }
         Ok((*settings).clone())
     }
     .await;

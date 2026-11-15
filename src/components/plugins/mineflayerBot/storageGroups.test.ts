@@ -8,6 +8,24 @@ import {
 import { normalizeMineflayerGatheringSettings } from "../pluginSettings";
 
 describe("storage groups", () => {
+  it("keeps all sixty destinations when a scan extends an existing full group", () => {
+    const makeGroup = (from: number, length: number) =>
+      normalizeStorageGroups([
+        {
+          id: "auto-scan-bulk",
+          name: "Камень",
+          enabled: true,
+          filters: ["#bulk", "#all"],
+          chests: Array.from({ length }, (_, i) => ({ x: from + i, y: 64, z: 0 })),
+        },
+      ]);
+    const current = makeGroup(0, 32),
+      found = makeGroup(32, 28);
+    const merged = mergeScannedStorageGroups(current, found);
+    expect(merged.map((group) => group.chests.length)).toEqual([32, 28]);
+    expect(mergeScannedStorageGroups(merged, found)).toEqual(merged);
+    expect(current[0].chests).toHaveLength(32);
+  });
   it("merges scan results once, keeps edits and disabled groups, and puts auto valuables before auto ores", () => {
     const current = normalizeStorageGroups([
       {
@@ -49,7 +67,7 @@ describe("storage groups", () => {
     expect(mergeScannedStorageGroups(merged, scanned)).toEqual(merged);
     expect(current).toHaveLength(2);
   });
-  it("survives settings serialization with order, filters, destinations and disabled groups", () => {
+  it("preserves all 100 groups through settings serialization and scan merging", () => {
     const groups = normalizeStorageGroups([
       {
         id: "wood",
@@ -61,12 +79,21 @@ describe("storage groups", () => {
           { x: 3, y: 65, z: 4 },
         ],
       },
+      ...Array.from({ length: 99 }, (_, index) => ({
+        id: `storage-${index}`,
+        name: `Склад ${index + 2}`,
+        enabled: true,
+        filters: ["#all"],
+        chests: [{ x: index + 10, y: 64, z: 0 }],
+      })),
     ]);
+    expect(groups).toHaveLength(100);
     expect(
       normalizeMineflayerGatheringSettings(JSON.parse(JSON.stringify({ storageGroups: groups })))
         .storageGroups,
     ).toEqual(groups);
     expect(groups[0].filters).toEqual(["#wood", "oak_log"]);
+    expect(mergeScannedStorageGroups(groups.slice(0, 99), [groups[99]])).toEqual(groups);
   });
   it("discards malformed and duplicate destinations while keeping a group available for editing", () => {
     const groups = normalizeStorageGroups([

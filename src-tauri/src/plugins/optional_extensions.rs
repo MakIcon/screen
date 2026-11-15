@@ -59,6 +59,10 @@ const MINEFLAYER_RESTORE_SOURCE: &str =
     include_str!("../../../extensions/mineflayer-bot/restore-pathfinder-source.cjs");
 
 const MINEFLAYER_FILES: &[(&str, &str)] = &[
+    (
+        "storage-inspection.cjs",
+        include_str!("../../../extensions/mineflayer-bot/storage-inspection.cjs"),
+    ),
     ("worker.cjs", MINEFLAYER_WORKER),
     (
         "inventory-actions.cjs",
@@ -159,6 +163,10 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     (
         "fleet-crew.cjs",
         include_str!("../../../extensions/mineflayer-bot/fleet-crew.cjs"),
+    ),
+    (
+        "fleet-navigation.cjs",
+        include_str!("../../../extensions/mineflayer-bot/fleet-navigation.cjs"),
     ),
     (
         "GATHERING.md",

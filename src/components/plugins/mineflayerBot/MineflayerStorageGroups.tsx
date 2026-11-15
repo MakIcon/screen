@@ -3,14 +3,13 @@ import { useMemo, useRef, useState } from "react";
 import { useLocale, useTranslation } from "../../../i18n/locale";
 import { localizeCatalog, localizeStorageFilter } from "./catalogLocalization";
 import { useBotInvoke } from "./BotSessionContext";
-import { ExpandablePanel } from "../../layout/ExpandablePanel";
 import { MinecraftSearchField } from "../../inputs/MinecraftSearchField";
-import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { minecraftSelectedNames } from "../../inputs/minecraftSearch";
 import { toErrorMessage } from "../../../utils/errors";
 import { formatBlockCoordinates, parseBlockCoordinates } from "./gatheringCoordinates";
 import {
   STORAGE_FILTERS,
+  MAX_STORAGE_GROUPS,
   moveStorageGroup,
   storageCatalog,
   storagePositionKey,
@@ -27,7 +26,6 @@ type Props = {
   disabled: boolean;
   status: MineflayerBotStatus | null;
   refresh: () => Promise<unknown>;
-  onDeposit: () => void;
 };
 
 export function MineflayerStorageGroups({
@@ -38,7 +36,6 @@ export function MineflayerStorageGroups({
   disabled,
   status,
   refresh,
-  onDeposit,
 }: Props) {
   const locale = useLocale();
   const invoke = useBotInvoke();
@@ -49,17 +46,13 @@ export function MineflayerStorageGroups({
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
-  const [scanRadius, setScanRadius] = useState(32);
   const latest = useRef(groups);
   latest.current = groups;
   const change = useRef(onChange);
   change.current = onChange;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const options = useMemo(() => storageCatalog(localizeCatalog(catalog)), [catalog, locale]);
-  const production = connected ? status?.inventory?.production : null;
-  const scan = production?.storageScan;
-  const scanning = scan?.state === "running";
-  const pending = disabled || Boolean(busy) || Boolean(production?.busy);
+  const pending = disabled || Boolean(busy);
   const total = groups.reduce((count, group) => count + group.chests.length, 0);
   const legacy = status?.gathering?.selection?.chest;
   const liveStatus = status?.gathering?.selection?.storageStatus;
@@ -125,48 +118,6 @@ export function MineflayerStorageGroups({
       setBusy("");
     }
   }
-  async function apply() {
-    if (pending || !connected) return;
-    setBusy("apply");
-    setError("");
-    setFeedback("");
-    try {
-      await invoke("configure_mineflayer_bot_storage", { groups: latest.current });
-      await refresh();
-      setFeedback(tr("bot.storageGroups.groupsAppliedToThe"));
-    } catch (failure) {
-      setError(toErrorMessage(failure));
-    } finally {
-      setBusy("");
-    }
-  }
-  async function scanChests() {
-    if (pending || !connected) return;
-    setBusy("scan");
-    setError("");
-    setFeedback("");
-    try {
-      await invoke("configure_mineflayer_bot_storage", { groups: latest.current });
-      await invoke("send_mineflayer_bot_chat", {
-        message: `stash scan ${scanRadius}`,
-        command: true,
-      });
-      await refresh();
-      setFeedback(tr("bot.storageGroups.theBotIsChecking"));
-    } catch (failure) {
-      setError(toErrorMessage(failure));
-    } finally {
-      setBusy("");
-    }
-  }
-  async function stopScan() {
-    try {
-      await invoke("send_mineflayer_bot_chat", { message: "station stop", command: true });
-      await refresh();
-    } catch (failure) {
-      setError(toErrorMessage(failure));
-    }
-  }
   function preset(group: MineflayerStorageGroup, token: string) {
     const next =
       token === "#all"
@@ -176,16 +127,13 @@ export function MineflayerStorageGroups({
           : [...group.filters.filter((value) => value !== "#all"), token];
     patch(group.id, {
       filters: next,
-      ...(group.name === "Новая группа" || group.name === "New group"
+      ...(["Новая группа", "New group", tr("bot.storageGroups.newGroup")].includes(group.name)
         ? { name: label(token) }
         : {}),
     });
   }
   return (
-    <ExpandablePanel
-      title={tr("bot.storageGroups.chestsAndSorting")}
-      icon={<span className="mineflayer-chest-icon" />}
-    >
+    <section aria-label={tr("bot.storageGroups.chestsAndSorting")}>
       <div className="mineflayer-storage">
         <div className="mineflayer-storage-toolbar">
           <div>
@@ -194,100 +142,13 @@ export function MineflayerStorageGroups({
               {tr("bot.storageGroups.groups")}: {groups.length} · {storageChestCount(total)}
             </span>
           </div>
-          <button type="button" disabled={pending || groups.length >= 32} onClick={() => create()}>
+          <button
+            type="button"
+            disabled={pending || groups.length >= MAX_STORAGE_GROUPS}
+            onClick={() => create()}
+          >
             <span aria-hidden="true">＋</span> {tr("bot.storageGroups.addGroup")}
           </button>
-        </div>
-        <div className="mineflayer-storage-scan">
-          <strong>{tr("bot.storageGroups.autoScanChests")}</strong>
-          <p>{tr("bot.storageGroups.theBotFindsChests")}</p>
-          <div className="mineflayer-bot-grid">
-            <label className="mineflayer-bot-field">
-              <span>{tr("bot.storageGroups.radiusAroundTheBot")}</span>
-              <CustomNumberInput
-                ariaLabel={tr("bot.storageGroups.chestScanRadius")}
-                background="transparent"
-                min={4}
-                max={64}
-                step={1}
-                value={scanRadius}
-                onChange={setScanRadius}
-                disabled={pending}
-              />
-            </label>
-            <button
-              type="button"
-              disabled={pending || !connected}
-              onClick={() => void scanChests()}
-            >
-              {busy === "scan" || scanning
-                ? tr("bot.storageGroups.scanning")
-                : tr("bot.storageGroups.scanAndAssign")}
-            </button>
-          </div>
-          <small>{tr("bot.storageGroups.aDoubleChestCounts")}</small>
-          {scan && (
-            <>
-              <p role="status" aria-live="polite">
-                {scanning
-                  ? `${tr("bot.storageGroups.checked")} ${scan.records.length}/${scan.total}. ${production?.message || ""}`
-                  : scan.state === "complete"
-                    ? tr("bot.storageGroups.scanCompleteFoundAdded", {
-                        total: scan.total,
-                        added: scan.added,
-                      })
-                    : scan.state === "cancelled"
-                      ? tr("bot.storageGroups.scanStoppedGroupsWere")
-                      : tr("bot.storageGroups.theScanDidNot")}
-              </p>
-              {scanning && (
-                <button type="button" disabled={!connected} onClick={() => void stopScan()}>
-                  {tr("bot.storageGroups.stopScan")}
-                </button>
-              )}
-              <div
-                className="mineflayer-storage-scan-results"
-                aria-label={tr("bot.storageGroups.chestsFound")}
-              >
-                {scan.records.map((record) => (
-                  <div
-                    key={storagePositionKey(record.position)}
-                    className={record.error ? "is-error" : ""}
-                  >
-                    <strong>
-                      {record.label}
-                      {record.configured ? ` · ${tr("bot.storageGroups.alreadyConfigured")}` : ""}
-                    </strong>
-                    <span>
-                      {formatBlockCoordinates(record.position)} ·{" "}
-                      {record.positions.length === 2
-                        ? tr("bot.storageGroups.doubleChest")
-                        : record.name === "barrel"
-                          ? tr("bot.storageGroups.barrel")
-                          : tr("bot.storageGroups.container")}{" "}
-                      · {tr("units.blocksShort", { value: record.distance })}
-                    </span>
-                    <small>
-                      {record.error ||
-                        `${tr("bot.storageGroups.freeSlots")}: ${record.freeSlots}/${record.totalSlots}${
-                          record.contents?.length
-                            ? ` · ${record.contents
-                                .slice(0, 3)
-                                .map((item) => `${label(item.name)} × ${item.count}`)
-                                .join(", ")}`
-                            : ""
-                        }`}
-                    </small>
-                  </div>
-                ))}
-              </div>
-              {scan.warnings.map((warning) => (
-                <p key={warning} className="mineflayer-bot-combat-note">
-                  {warning}
-                </p>
-              ))}
-            </>
-          )}
         </div>
         {!groups.length && (
           <div className="mineflayer-storage-empty">
@@ -345,9 +206,41 @@ export function MineflayerStorageGroups({
                         ? storageChestCount(group.chests.length)
                         : tr("bot.storageGroups.noChests")}
                     </span>
-                    <span className="mineflayer-storage-chevron" aria-hidden="true">
-                      {open ? "−" : "+"}
-                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="mineflayer-storage-delete"
+                    disabled={pending}
+                    aria-label={`${tr("bot.storageGroups.deleteGroup")} ${group.name}`}
+                    title={tr("bot.storageGroups.deleteGroup")}
+                    onClick={() => {
+                      change.current(latest.current.filter((entry) => entry.id !== group.id));
+                      if (open) setExpanded(null);
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="17"
+                      height="17"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 10v7M14 10v7" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="mineflayer-storage-expand"
+                    aria-expanded={open}
+                    aria-label={tr(
+                      open ? "bot.warehouse.collapseGroup" : "bot.warehouse.expandGroup",
+                      { name: group.name },
+                    )}
+                    onClick={() => setExpanded(open ? null : group.id)}
+                  >
+                    <span aria-hidden="true">{open ? "−" : "+"}</span>
                   </button>
                   <button
                     type="button"
@@ -586,14 +479,6 @@ export function MineflayerStorageGroups({
                         >
                           ↓
                         </button>
-                        <button
-                          type="button"
-                          className="is-danger"
-                          disabled={pending}
-                          onClick={() => onChange(groups.filter((entry) => entry.id !== group.id))}
-                        >
-                          {tr("bot.storageGroups.deleteGroup")}
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -602,24 +487,6 @@ export function MineflayerStorageGroups({
             );
           })}
         </div>
-        <p className="mineflayer-bot-combat-note">{tr("bot.storageGroups.groupsAreSavedIn")}</p>
-        <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
-          <button type="button" disabled={pending || !connected} onClick={() => void apply()}>
-            {busy === "apply"
-              ? tr("bot.storageGroups.applying")
-              : tr("bot.storageGroups.applyToBot")}
-          </button>
-          <button
-            type="button"
-            disabled={pending || !connected || (!total && !legacy)}
-            onClick={onDeposit}
-          >
-            {tr("bot.storageGroups.unloadLoot")}
-          </button>
-        </div>
-        <p className="mineflayer-bot-combat-note">
-          {tr("bot.storageGroups.groupsAreAppliedAutomatically")}
-        </p>
         {(feedback || error) && (
           <p
             className={`mineflayer-bot-chat-feedback${error ? " is-error" : ""}`}
@@ -629,6 +496,6 @@ export function MineflayerStorageGroups({
           </p>
         )}
       </div>
-    </ExpandablePanel>
+    </section>
   );
 }

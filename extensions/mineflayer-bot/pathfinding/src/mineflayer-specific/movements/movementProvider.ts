@@ -10,6 +10,7 @@ import { Vec3 } from 'vec3'
 import { Vec3Properties } from '../../types'
 import { BlockInfo } from '../world/cacheWorld'
 import { COST_INF } from './costs'
+import type { TrafficAwareBot } from '../../traffic'
 
 /**
  * Movement provider.
@@ -208,7 +209,7 @@ export class MovementHandler implements AMovementProvider<Move> {
   /** Real terrain read by this search, including physics simulations. */
   readonly readBlocks: Set<string>
 
-  constructor (bot: Bot, world: World, recMovement: MovementProvider[], readBlocks = new Set<string>()) {
+  constructor (private readonly bot: TrafficAwareBot, world: World, recMovement: MovementProvider[], readBlocks = new Set<string>()) {
     this.world = world
     this.recognizedMovements = recMovement
     this.readBlocks = readBlocks
@@ -441,6 +442,18 @@ export class MovementHandler implements AMovementProvider<Move> {
 
     // console.log(moves.length, moves.map(m=>m.moveType.constructor.name))
 
+    const traffic = this.bot.launcherTraffic
+    if (traffic != null) for (let i = 0; i < moves.length; i++) {
+      const move = moves[i]
+      const extra = traffic.cost(currentMove.exitPos, move.exitPos)
+      if (extra <= 0 || !Number.isFinite(extra)) continue
+      const priced = new Move(move.x, move.y, move.z, move.toPlace, move.toBreak,
+        move.remainingBlocks, move.cost + extra, move.moveType, move.entryPos,
+        move.entryVel, move.exitPos, move.exitVel, move.parent)
+      priced.metadata = move.metadata
+      priced.optimizedExecutor = move.optimizedExecutor
+      moves[i] = priced
+    }
     return moves
 
     // for differences less than 1 block, we only supply best movement to said block.

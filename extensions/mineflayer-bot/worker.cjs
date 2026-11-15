@@ -44,8 +44,11 @@ const { createProductionController } = require('./production.cjs')
 const { COMMANDS: PRODUCTION_COMMANDS, handleProductionCommand } = require('./production-commands.cjs')
 const { createWorkflowController } = require('./workflow.cjs')
 const { createCrewLink } = require('./fleet-crew.cjs')
+const { createFleetNavigation } = require('./fleet-navigation.cjs')
 const { createChaoticMovementController } = require('./chaotic-movement.cjs')
 const { createInventoryActions } = require('./inventory-actions.cjs')
+const { createStorageInspection } = require('./storage-inspection.cjs')
+const { assignStorage } = require('./storage-scan.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
 const { Vec3 } = require('vec3')
 
@@ -435,7 +438,7 @@ function createCommandQueue (handler) {
   }
 }
 
-async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
+async function handleLauncherMessages (lines, getBot, sendEvent = emit, configureNavigation = null) {
   const pendingDrops = new Set()
   for await (const line of lines) {
     if (!line.trim()) continue
@@ -446,10 +449,46 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit) {
       sendEvent('log', { message: 'invalid launcher message' })
       continue
     }
-    if (!['chat', 'command', 'storage_config', 'workflow', 'inventory_drop'].includes(request?.type) || typeof request.requestId !== 'string') continue
+    if (request?.type === 'navigation_config' && typeof request.enabled === 'boolean') {
+      configureNavigation?.(request.enabled)
+      continue
+    }
+    if (!['chat', 'command', 'storage_config', 'storage_probe', 'storage_scan', 'storage_assign', 'workflow', 'inventory_drop'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
       const bot = getBot()
       if (!bot) throw new Error('Бот не подключён к серверу')
+      if (request.type === 'storage_assign') {
+        if (!Array.isArray(request.records) || request.records.length > 512) throw new Error('Некорректные результаты проверки складов')
+        sendEvent('chat_result', { requestId: request.requestId, result: assignStorage(request.records, []) })
+        continue
+      }
+      if (request.type === 'storage_probe') {
+        if (!bot.launcherStorageInspection) throw new Error('Обновите расширение и переподключите бота для поиска складов')
+        sendEvent('chat_result', { requestId: request.requestId, result: bot.launcherStorageInspection.probe() })
+        continue
+      }
+      if (request.type === 'storage_scan') {
+        if (!bot.launcherStorageInspection) throw new Error('Поиск складов ещё не готов')
+        if (!['start', 'stop', 'discover', 'inspect', 'snapshot'].includes(request.action)) throw new Error('Неизвестное действие поиска складов')
+        if (request.action === 'snapshot') {
+          sendEvent('chat_result', { requestId: request.requestId, result: bot.launcherStorageInspection.snapshot() })
+          continue
+        }
+        if (request.action === 'stop') {
+          await bot.launcherStorageInspection.stop(request.token)
+          sendEvent('chat_result', { requestId: request.requestId, message: 'Поиск складов остановлен' })
+        } else {
+          const operation = bot.launcherStorageInspection.run(request.radius, request.token, {
+            phase: request.action, blocks: request.blocks, origin: request.origin, teamSize: request.teamSize, teamTotal: request.teamTotal
+          }).then(
+            result => sendEvent('chat_result', { requestId: request.requestId, result }),
+            error => sendEvent('chat_result', { requestId: request.requestId, error: error.message || String(error) })
+          )
+          pendingDrops.add(operation)
+          void operation.finally(() => pendingDrops.delete(operation))
+        }
+        continue
+      }
       if (request.type === 'inventory_drop') {
         if (!bot.launcherInventoryActions) throw new Error('Перезапустите бота, чтобы включить управление инвентарём')
         // Keep reading stdin while a batch is running so stop can cancel it.
@@ -725,6 +764,7 @@ async function main () {
 
     async function stopMovement (cancelGathering = true, cancelWorkflow = true) {
       const generation = ++goalGeneration
+      await bot.launcherStorageInspection?.stop()
       chaoticMovement?.stop()
       if (cancelWorkflow) await workflow?.stop()
       combat?.stop(true)
@@ -742,6 +782,7 @@ async function main () {
 
     function startGoal (goal, label, destination, kind, radius) {
       if (!bot.pathfinder) throw new Error('Bot is not ready to move yet')
+      bot.launcherTraffic?.adaptGoal(goal, kind)
       chaoticMovement?.stop()
       const generation = ++goalGeneration
       combat?.stop(true)
@@ -1042,6 +1083,7 @@ async function main () {
       reconnectAttempts = 0
       try {
         configurePathfinder(bot, config.movement, config.behavior)
+        createFleetNavigation(bot, crew, { enabled: config.crowdAvoidance !== false })
         createSurvivalController(bot, config.survival, {
           onStatus: message => emit('status', { state: 'connected', message }),
           onError: error => emit('error', { error: `survival: ${error.message || String(error)}` })
@@ -1088,6 +1130,15 @@ async function main () {
           config.gathering = { ...config.gathering, storageGroups: normalized }
           return normalized
         }
+        createStorageInspection(bot, { gathering, production, stopMovement: async () => {
+          goalGeneration++
+          chaoticMovement?.stop()
+          combat?.stop(true)
+          await combat?.idleTask
+          await travel?.stop()
+          await bot.pathfinder.stop()
+          currentGoal = 'storage inspection'
+        } })
         bot.launcherInventoryActions = createInventoryActions(bot, {
           prepare: () => stopMovement(),
           onChange: () => bot.emit('launcherInventoryChanged')
@@ -1209,6 +1260,8 @@ async function main () {
       if (ended) return
       ended = true
       bot.launcherInventoryActions?.dispose()
+      bot.launcherTraffic?.dispose()
+      bot.launcherStorageInspection?.dispose()
       chaoticMovement?.dispose()
       void workflow?.stop().catch(error => emit('log', { message: `scenario shutdown: ${error.message}` }))
       void production?.dispose().catch(error => emit('log', { message: `production shutdown: ${error.message}` }))
@@ -1235,6 +1288,8 @@ async function main () {
     reconnectTimer = null
     if (activeBot) {
       activeBot.launcherInventoryActions?.dispose()
+      activeBot.launcherTraffic?.dispose()
+      activeBot.launcherStorageInspection?.dispose()
       activeBot.launcherChaoticMovement?.dispose()
       void activeBot.launcherWorkflow?.stop().catch(error => emit('log', { message: error.message }))
       void activeBot.launcherProduction?.dispose().catch(error => emit('log', { message: error.message }))
@@ -1251,7 +1306,10 @@ async function main () {
   process.on('SIGINT', () => requestShutdown('SIGINT'))
   process.on('SIGTERM', () => requestShutdown('SIGTERM'))
 
-  void handleLauncherMessages(input, () => chatReady && !stopping ? activeBot : null)
+  void handleLauncherMessages(input, () => chatReady && !stopping ? activeBot : null, emit, enabled => {
+    config.crowdAvoidance = enabled
+    activeBot?.launcherTraffic?.setEnabled(enabled)
+  })
     .catch(error => emit('error', { error: `launcher input: ${error.message || String(error)}` }))
 
   startConnection(false)

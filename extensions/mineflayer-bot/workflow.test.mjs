@@ -93,6 +93,7 @@ function fixture({ finishGathering = true, productionOutcome = "complete" } = {}
     },
   });
   return {
+    bot,
     controller,
     gathering,
     production,
@@ -104,6 +105,19 @@ function fixture({ finishGathering = true, productionOutcome = "complete" } = {}
 }
 const ore = { kind: "mine", item: "iron", count: 9, radius: 32 };
 const sticks = { kind: "craft", item: "stick", count: 8, mode: "auto" };
+
+test("a borrowed storage scanner cannot advance the scenario until inspection releases it", async () => {
+  const f = fixture({ finishGathering: false });
+  f.bot.launcherStorageInspection = { busy: true };
+  await f.controller.start([ore, sticks]);
+  f.gathering.finish();
+  for (let i = 0; i < 5; i++) await delay();
+  assert.equal(f.events.some(event => event.startsWith("craft:")), false);
+  f.bot.launcherStorageInspection.busy = false;
+  await f.controller.task;
+  assert.equal(f.controller.snapshot().phase, "complete");
+  assert.equal(f.events.filter(event => event === "craft:stick").length, 1);
+});
 
 test("waits for gathering before resolving future recipes and runs mixed actions in order", async () => {
   const f = fixture({ finishGathering: false });

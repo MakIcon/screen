@@ -153,6 +153,8 @@ export const DEFAULT_DISCORD_RPC_SETTINGS: DiscordRpcPluginSettings = {
 };
 
 export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
+  crowdAvoidance: true,
+  connectionIntervalMs: 250,
   bots: [],
   enabled: false,
   host: "",
@@ -299,13 +301,25 @@ export function normalizeMineflayerBotSettings(
               return [];
             ids.add(bot.id);
             const settings = normalizeMineflayerBotSettings(bot.settings, false);
-            const { bots: _nested, ...configuration } = settings;
+            const {
+              bots: _nested,
+              crowdAvoidance: _crowdAvoidance,
+              connectionIntervalMs: _interval,
+              ...configuration
+            } = settings;
             return [{ id: bot.id, settings: configuration }];
           })
           .slice(0, 99)
       : [];
   return {
     bots,
+    crowdAvoidance: normalizeBoolean(draft.crowdAvoidance, defaults.crowdAvoidance),
+    connectionIntervalMs: normalizeInteger(
+      draft.connectionIntervalMs,
+      defaults.connectionIntervalMs,
+      0,
+      10000,
+    ),
     enabled: normalizeBoolean(draft.enabled, defaults.enabled),
     host: normalizeText(draft.host, defaults.host),
     port: normalizeInteger(draft.port, defaults.port, 1, 65535),

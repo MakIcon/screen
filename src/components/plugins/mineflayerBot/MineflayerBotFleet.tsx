@@ -15,6 +15,8 @@ import { MineflayerFleetControl } from "./MineflayerFleetControl";
 import { toErrorDetails, toErrorMessage } from "../../../utils/errors";
 import { BotSessionContext } from "./BotSessionContext";
 import { BotFleetContext } from "./BotFleetContext";
+import { ElementToggle } from "../../inputs/ElementToggle";
+import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { botConfiguration, createBotProfiles, DEFAULT_BOT_ID } from "./botFleet";
 import {
   dispatchFleetRequests,
@@ -49,6 +51,7 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
     [prefix, setPrefix] = useState("SCREEN_BOT");
   const [lifecycle, setLifecycle] = useState("");
   const [dispatching, setDispatching] = useState(false);
+  const [storageBusy, setStorageBusy] = useState(false);
   const [receipts, setReceipts] = useState<FleetReceipt[]>([]);
   const [lastAction, setLastAction] = useState("");
   const [error, setError] = useState("");
@@ -84,7 +87,16 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
   const packageReady = Boolean(
     monitor.snapshot?.optionalExtensions.find((item) => item.id === "mineflayer-bot")?.installed,
   );
-  const locked = Boolean(lifecycle) || dispatching;
+  const locked =
+    Boolean(lifecycle) ||
+    dispatching ||
+    storageBusy ||
+    statuses.some(
+      (status) =>
+        status.running &&
+        status.inventory?.production?.storageScan?.originMode === "owner" &&
+        status.inventory.production.storageScan.state === "running",
+    );
   const nameFor = (bot: MineflayerBotProfile) =>
     statusFor(bot.id)?.botUsername ||
     (bot.settings.botAccountMode === "microsoft"
@@ -96,7 +108,13 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
   const save = (mineflayerBot: MineflayerBotPluginSettings) =>
     onChange({ ...plugins, mineflayerBot });
   const updateActive = (next: MineflayerBotPluginSettings) => {
-    if (active.id === DEFAULT_BOT_ID) save({ ...next, bots: root.bots });
+    if (active.id === DEFAULT_BOT_ID)
+      save({
+        ...next,
+        crowdAvoidance: root.crowdAvoidance,
+        connectionIntervalMs: root.connectionIntervalMs,
+        bots: root.bots,
+      });
     else
       save({
         ...root,
@@ -161,7 +179,8 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
     const failures: string[] = [];
     try {
       await flushPluginSettings();
-      for (const [index, bot] of recipients.entries()) {
+      const pending = recipients.filter((bot) => !statusFor(bot.id)?.running);
+      for (const [index, bot] of pending.entries()) {
         if (cancelledStartup.current || generation !== startupGeneration.current) break;
         if (statusFor(bot.id)?.running) continue;
         try {
@@ -175,11 +194,12 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
           failures.push(`${nameFor(bot)}: ${diagnostic(cause)}`);
         }
         if (
-          index < recipients.length - 1 &&
+          root.connectionIntervalMs > 0 &&
+          index < pending.length - 1 &&
           !cancelledStartup.current &&
           generation === startupGeneration.current
         )
-          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          await new Promise((resolve) => window.setTimeout(resolve, root.connectionIntervalMs));
       }
       if (generation === startupGeneration.current) setError(failures.join("\n"));
     } catch (cause) {
@@ -325,6 +345,15 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               <p className="mf-workspace-note">{tr("bot.workspaceNew.deleteHint")}</p>
             </div>
           </details>
+          <div className="mf-sidebar-section mf-sidebar-section-body">
+            <ElementToggle
+              title={tr("bot.workspaceNew.crowdAvoidance")}
+              note={tr("bot.workspaceNew.crowdAvoidanceHint")}
+              enabled={root.crowdAvoidance}
+              onToggle={() => save({ ...root, crowdAvoidance: !root.crowdAvoidance })}
+              size="small"
+            />
+          </div>
         </aside>
         <main className="mf-workspace-main">
           <header className="mf-workspace-header">
@@ -383,6 +412,42 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               </button>
             </div>
           </header>
+          <details className="mf-fleet-connection-speed">
+            <summary>
+              {tr("bot.fleetSpeed.title")}{" "}
+              <span>{tr("bot.fleetSpeed.current", { value: root.connectionIntervalMs })}</span>
+            </summary>
+            <div className="mf-fleet-connection-speed-body">
+              <label className="mineflayer-bot-field">
+                <span>{tr("bot.fleetSpeed.interval")}</span>
+                <CustomNumberInput
+                  ariaLabel={tr("bot.fleetSpeed.interval")}
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={root.connectionIntervalMs}
+                  disabled={locked}
+                  background="transparent"
+                  onChange={(connectionIntervalMs) => save({ ...root, connectionIntervalMs })}
+                />
+              </label>
+              <div className="mf-fleet-connection-presets">
+                {([0, 250, 1000] as const).map((value) => (
+                  <button
+                    type="button"
+                    className="mf-button"
+                    key={value}
+                    disabled={locked}
+                    aria-pressed={root.connectionIntervalMs === value}
+                    onClick={() => save({ ...root, connectionIntervalMs: value })}
+                  >
+                    {tr(`bot.fleetSpeed.preset.${value}`)}
+                  </button>
+                ))}
+              </div>
+              <p>{tr("bot.fleetSpeed.hint")}</p>
+            </div>
+          </details>
           <div
             className="mf-workspace-quick"
             role="group"
@@ -460,9 +525,11 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
           )}
           <BotFleetContext.Provider
             value={{
+              profiles,
               recipients,
               statuses,
               busy: locked,
+              setStorageBusy,
               focusId: active.id,
               focus: setFocusId,
               nameFor,
@@ -473,7 +540,13 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               <RuntimeMonitorScope controller={controller}>
                 <fieldset className="mf-fleet-editor" disabled={Boolean(lifecycle)}>
                   {renderEditor(
-                    { ...active.settings, enabled: root.enabled, bots: [] },
+                    {
+                      ...active.settings,
+                      enabled: root.enabled,
+                      crowdAvoidance: root.crowdAvoidance,
+                      connectionIntervalMs: root.connectionIntervalMs,
+                      bots: [],
+                    },
                     updateActive,
                   )}
                 </fieldset>

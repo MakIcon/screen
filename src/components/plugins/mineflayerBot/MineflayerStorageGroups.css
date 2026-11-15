@@ -223,10 +223,30 @@
 .mineflayer-storage-count.is-empty {
   color: var(--accent);
 }
-.mineflayer-storage-chevron {
+.mineflayer-storage button.mineflayer-storage-expand {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  width: 28px;
+  padding: 0;
   color: var(--text-alt);
   font-size: 18px;
   font-weight: 400;
+}
+.mineflayer-storage button.mineflayer-storage-delete {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-alt);
+}
+.mineflayer-storage button.mineflayer-storage-delete:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 .mineflayer-storage button.mineflayer-storage-enable {
   display: flex;

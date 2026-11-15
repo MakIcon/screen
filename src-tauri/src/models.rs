@@ -1247,9 +1247,13 @@ impl Default for DiscordRpcPluginSettings {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MineflayerBotPluginSettings {
+    #[serde(default = "default_mineflayer_connection_interval_ms")]
+    pub connection_interval_ms: u32,
+    #[serde(default = "default_true")]
+    pub crowd_avoidance: bool,
     #[serde(flatten)]
     pub configuration: MineflayerBotConfiguration,
     #[serde(default)]
@@ -1268,6 +1272,21 @@ impl std::ops::Deref for MineflayerBotPluginSettings {
     fn deref(&self) -> &Self::Target {
         &self.configuration
     }
+}
+
+impl Default for MineflayerBotPluginSettings {
+    fn default() -> Self {
+        Self {
+            connection_interval_ms: default_mineflayer_connection_interval_ms(),
+            crowd_avoidance: true,
+            configuration: MineflayerBotConfiguration::default(),
+            bots: Vec::new(),
+        }
+    }
+}
+
+fn default_mineflayer_connection_interval_ms() -> u32 {
+    250
 }
 
 impl std::ops::DerefMut for MineflayerBotPluginSettings {
@@ -1571,6 +1590,34 @@ mod loader_schema_tests {
         InstanceExportData, InstanceItem, InstanceSource, LauncherSettings, MascotSettings,
         MineflayerBotPluginSettings,
     };
+
+    #[test]
+    fn fleet_login_interval_defaults_to_250_and_preserves_zero() {
+        let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(legacy.connection_interval_ms, 250);
+        let fast: MineflayerBotPluginSettings =
+            serde_json::from_str(r#"{"connectionIntervalMs":0}"#).unwrap();
+        assert_eq!(
+            serde_json::to_value(fast).unwrap()["connectionIntervalMs"],
+            0
+        );
+    }
+
+    #[test]
+    fn shared_crowd_avoidance_defaults_on_and_persists_off() {
+        assert!(MineflayerBotPluginSettings::default().crowd_avoidance);
+        let legacy: MineflayerBotPluginSettings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.crowd_avoidance);
+        let disabled: MineflayerBotPluginSettings =
+            serde_json::from_str(r#"{"crowdAvoidance":false}"#).unwrap();
+        let saved = serde_json::to_value(&disabled).unwrap();
+        assert_eq!(saved["crowdAvoidance"], false);
+        assert!(
+            !serde_json::from_value::<MineflayerBotPluginSettings>(saved)
+                .unwrap()
+                .crowd_avoidance
+        );
+    }
 
     #[test]
     fn instance_source_defaults_for_legacy_builds_and_persists_imported_builds() {

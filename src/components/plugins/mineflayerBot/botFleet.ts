@@ -20,7 +20,12 @@ export function chaoticMovementTargets(statuses: MineflayerBotStatus[], enabled:
 export function botConfiguration(
   settings: MineflayerBotPluginSettings,
 ): MineflayerBotConfiguration {
-  const { bots: _bots, ...configuration } = settings;
+  const {
+    bots: _bots,
+    crowdAvoidance: _crowdAvoidance,
+    connectionIntervalMs: _interval,
+    ...configuration
+  } = settings;
   return configuration;
 }
 

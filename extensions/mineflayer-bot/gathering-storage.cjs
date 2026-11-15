@@ -1,5 +1,6 @@
 const { isDeepStrictEqual } = require("node:util");
 const FILTERS = require("./storage-filters.json");
+const MAX_STORAGE_GROUPS = 100;
 const categories = new Set(FILTERS.map((entry) => entry.name));
 const materials = new Set([
   "coal",
@@ -40,8 +41,8 @@ const stones =
 const key = (point) => `${point.x},${point.y},${point.z}`;
 
 function normalizeStorageGroups(input = []) {
-  if (!Array.isArray(input) || input.length > 32)
-    throw new Error("Можно добавить до 32 групп сундуков");
+  if (!Array.isArray(input) || input.length > MAX_STORAGE_GROUPS)
+    throw new Error("Можно добавить до 100 складов");
   const ids = new Set();
   return input.map((group, index) => {
     if (
@@ -204,6 +205,7 @@ function containerCapacity(window, item, registry) {
     );
 }
 module.exports = {
+  MAX_STORAGE_GROUPS,
   FILTERS,
   normalizeStorageGroups,
   storageGroupForItem,

@@ -5890,6 +5890,7 @@ var require_movementProvider = __commonJS({
     exports2.MovementProvider = MovementProvider;
     var MovementHandler = class _MovementHandler {
       constructor(bot, world, recMovement, readBlocks = /* @__PURE__ */ new Set()) {
+        this.bot = bot;
         this.boundaries = [19, 19, 7];
         this.halfway = [Math.floor(this.boundaries[0] / 2), Math.floor(this.boundaries[1] / 2), Math.floor(this.boundaries[2] / 2)];
         this.boundaryX = this.boundaries[0];
@@ -6071,6 +6072,18 @@ var require_movementProvider = __commonJS({
             }
           }
         }
+        const traffic = this.bot.launcherTraffic;
+        if (traffic != null)
+          for (let i = 0; i < moves.length; i++) {
+            const move = moves[i];
+            const extra = traffic.cost(currentMove.exitPos, move.exitPos);
+            if (extra <= 0 || !Number.isFinite(extra))
+              continue;
+            const priced = new move_12.Move(move.x, move.y, move.z, move.toPlace, move.toBreak, move.remainingBlocks, move.cost + extra, move.moveType, move.entryPos, move.entryVel, move.exitPos, move.exitVel, move.parent);
+            priced.metadata = move.metadata;
+            priced.optimizedExecutor = move.optimizedExecutor;
+            moves[i] = priced;
+          }
         return moves;
       }
     };
@@ -10822,6 +10835,14 @@ var require_pathExecutor = __commonJS({
           if (stoppingAt != null && tickInFlight && bot.entity.onGround)
             adjustStop(stoppingAt);
           const interaction = this.getCurrentExecutor()?.cI;
+          const trafficMove = this.getCurrentMove() ?? localPath[currentIndex];
+          if (!tickInFlight && !recoveryInFlight && interaction == null && trafficMove != null && this.getCurrentExecutor()?.canInterrupt !== false && bot.entity.onGround && (runnerStage === "align" || runnerStage === "perform") && bot.launcherTraffic?.pause(trafficMove) === true) {
+            lastProgressAt = performance.now();
+            productiveAt = lastProgressAt;
+            lastProgressPosition = bot.entity.position.clone();
+            collisionTicks = 0;
+            return;
+          }
           const block = bot.targetDigBlock;
           const now = performance.now();
           if (interaction instanceof interactionUtils_1.BreakHandler && interaction.isPerforming && block?.position.equals(interaction.vec)) {

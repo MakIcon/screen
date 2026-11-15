@@ -628,6 +628,101 @@ test("cancelling a chest scan leaves existing groups intact and marks a partial 
   assert.equal(f.production.busy, false);
 });
 
+test("owner scan discovers chests after arrival, uses the player's center and defers applying groups", async t => {
+  const f = fixture();
+  t.after(() => f.production.dispose());
+  const player = { position: new Vec3(20, 64, 0) };
+  const scans = [], discover = f.bot.findBlocks;
+  f.bot.findBlocks = options => { scans.push(options.point.clone()); return discover(options); };
+  f.bot.pathfinder.goto = async goal => {
+    if (goal.refVec) {
+      assert.ok(goal.refVec.equals(player.position));
+      f.bot.entity.position = player.position.offset(-3, 0, 0);
+      f.block("chest", 22); // Only loaded after moving to the player.
+    } else f.bot.entity.position = new Vec3(goal.x, goal.y, goal.z + 2);
+  };
+  f.bot.launcherConfigureStorage = () => assert.fail("runner's personal storage must not be overwritten");
+  scanContainerWindows(f, { 22: [{ name: "diamond", count: 2 }] });
+  const plan = f.production.prepareStorageScan(8, () => player, "near-owner");
+  assert.equal(scans.length, 0);
+  f.production.scanStorage(plan);
+  await f.production.task;
+  const scan = f.production.snapshot().storageScan;
+  assert.equal(scan.state, "complete", f.production.status);
+  assert.deepEqual(scans, [player.position]);
+  assert.equal(scan.total, 1);
+  assert.equal(scan.records[0].category, "#valuable");
+  assert.equal(scan.originMode, "owner");
+  assert.equal(scan.token, "near-owner");
+});
+
+test("team discovery opens no containers and workers inspect only their assigned containers without local allocation", async t => {
+  const f = fixture();
+  t.after(() => f.production.dispose());
+  const player = { position: new Vec3(0, 64, 0) };
+  f.block("chest", 4); f.block("barrel", 8);
+  f.bot.pathfinder.goto = async goal => {
+    f.bot.entity.position = goal.refVec ? player.position.clone() : new Vec3(goal.x, goal.y, goal.z);
+  };
+  f.bot.activateBlock = () => assert.fail("discovery must only list containers");
+  f.bot.launcherConfigureStorage = () => assert.fail("sections must be classified together by the coordinator");
+  f.production.scanStorage(f.production.prepareStorageScan(16, () => player, "team", { phase: "discover" }));
+  await f.production.task;
+  const discovery = f.production.snapshot().storageScan;
+  assert.equal(discovery.phase, "discovered");
+  assert.equal(discovery.blocks.length, 2);
+  assert.deepEqual(discovery.records, []);
+  scanContainerWindows(f, { 8: [{ name: "diamond", count: 4 }] });
+  f.production.scanStorage(f.production.prepareStorageScan(16, null, "team", {
+    phase: "inspect", origin: discovery.origin, blocks: [discovery.blocks.find(block => block.position.x === 8)], teamSize: 2, teamTotal: 2,
+  }));
+  await f.production.task;
+  const section = f.production.snapshot().storageScan;
+  assert.equal(section.state, "complete", f.production.status);
+  assert.equal(section.records.length, 1);
+  assert.equal(section.records[0].position.x, 8);
+  assert.equal(section.records[0].contents[0].name, "diamond");
+  assert.equal(section.teamSize, 2);
+  assert.equal(section.teamTotal, 2);
+  assert.deepEqual(section.groups, []);
+});
+
+test("a worker retry keeps its previous checks while opening only its new assignment", async t => {
+  const f = fixture(); t.after(() => f.production.dispose());
+  f.block("barrel", 2); f.block("barrel", 8);
+  scanContainerWindows(f, {});
+  const opened = [], activate = f.bot.activateBlock;
+  f.bot.activateBlock = async block => { opened.push(block.position.x); return activate(block); };
+  const origin = { x:0, y:64, z:0 };
+  const inspect = async (x, token) => {
+    const position = { x, y:64, z:0 };
+    f.production.scanStorage(f.production.prepareStorageScan(16, null, token, { phase:"inspect", origin, blocks:[{ name:"barrel", position, positions:[position] }], teamSize:5, teamTotal:60 }));
+    await f.production.task;
+  };
+  await inspect(2, "same-scan"); await inspect(8, "same-scan");
+  assert.deepEqual(opened, [2,8]);
+  assert.deepEqual(f.production.snapshot().storageScan.records.map(r => r.position.x), [2,8]);
+  await inspect(8, "another-scan");
+  assert.equal(f.production.snapshot().storageScan.records.length, 1);
+});
+
+for (const phase of ["discover", "inspect"]) test(`stopping team ${phase} cancels a navigator whose old promise never settles`, { timeout: 1000 }, async t => {
+  const f = fixture();
+  t.after(() => f.production.dispose());
+  const origin = { x: 0, y: 64, z: 0 };
+  const position = { x: 8, y: 64, z: 0 };
+  const player = { position: new Vec3(0, 64, 0) };
+  f.bot.pathfinder.goto = () => new Promise(() => {});
+  f.bot.blockAt = () => null;
+  f.production.scanStorage(f.production.prepareStorageScan(16, phase === "discover" ? () => player : null, "cancel-team", {
+    phase, origin, blocks: phase === "inspect" ? [{ name: "barrel", position, positions: [position] }] : undefined,
+  }));
+  await new Promise(resolve => setImmediate(resolve));
+  await f.production.stop();
+  assert.equal(f.production.snapshot().storageScan.state, "cancelled");
+  assert.equal(f.production.busy, false);
+});
+
 test("invalid scan requests keep the active task and ordinary stash commands keep their handler", async (t) => {
   const f = fixture();
   t.after(() => f.production.dispose());

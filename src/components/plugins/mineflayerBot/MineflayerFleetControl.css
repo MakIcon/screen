@@ -642,3 +642,39 @@
     justify-content: flex-start;
   }
 }
+.mf-fleet-connection-speed {
+  border: 1px solid var(--line);
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  font-size: 12px;
+}
+.mf-fleet-connection-speed summary {
+  cursor: pointer;
+}
+.mf-fleet-connection-speed summary span {
+  margin-left: 10px;
+  color: var(--text-alt);
+}
+.mf-fleet-connection-speed > div {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.mf-fleet-connection-speed .mineflayer-bot-field {
+  max-width: 260px;
+}
+.mf-fleet-connection-speed p {
+  color: var(--text-alt);
+  line-height: 1.65;
+  margin: 0;
+}
+.mf-fleet-connection-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mf-fleet-connection-presets [aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}

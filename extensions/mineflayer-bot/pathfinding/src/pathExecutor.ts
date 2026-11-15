@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, no-unmodified-loop-condition, @typescript-eslint/no-throw-literal, @typescript-eslint/strict-boolean-expressions */
 import { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
+import type { TrafficAwareBot } from './traffic'
 import { getAttributeValue } from '@nxg-org/mineflayer-physics-util/dist/physics/info/attributes'
 import { Path } from './mineflayer-specific/algs'
 import * as goals from './mineflayer-specific/goals'
@@ -600,6 +601,19 @@ export class PathExecutor {
       // correction through the target and oscillating on both sides of it.
       if (stoppingAt != null && tickInFlight && bot.entity.onGround) adjustStop(stoppingAt)
       const interaction = this.getCurrentExecutor()?.cI
+      const trafficMove = this.getCurrentMove() ?? localPath[currentIndex]
+      if (!tickInFlight && !recoveryInFlight && interaction == null && trafficMove != null &&
+          this.getCurrentExecutor()?.canInterrupt !== false && bot.entity.onGround &&
+          (runnerStage === 'align' || runnerStage === 'perform') &&
+          (bot as TrafficAwareBot).launcherTraffic?.pause(trafficMove) === true) {
+        // Yielding is intentional progress. Keep the route and goal alive,
+        // without letting movement/stall timers punish a bot for its queue.
+        lastProgressAt = performance.now()
+        productiveAt = lastProgressAt
+        lastProgressPosition = bot.entity.position.clone()
+        collisionTicks = 0
+        return
+      }
       const block = bot.targetDigBlock
       const now = performance.now()
       if (interaction instanceof BreakHandler && interaction.isPerforming && block?.position.equals(interaction.vec)) {

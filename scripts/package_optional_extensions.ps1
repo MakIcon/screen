@@ -28,6 +28,7 @@ if (Test-Path -LiteralPath $stageDirectory) {
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "storage-inspection.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "inventory-actions.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "chaotic-movement.cjs") -Destination $stageDirectory
 foreach ($file in @("fabric.cjs", "mineflayer-fabric.cjs", "FABRIC.md", "FABRIC-LICENSE", "FABRIC-NOTICE")) {
@@ -46,7 +47,7 @@ foreach ($file in @("combat-brain.cjs", "combat-footwork.cjs", "combat-utilities
 foreach ($file in @("auto-buff.cjs", "potion-data.cjs")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
-foreach ($file in @("gathering.cjs", "gathering-defense.cjs", "gathering-storage.cjs", "storage-filters.json", "gathering-plan.cjs", "gathering-defaults.json", "gathering-scan.cjs", "gathering-commands.cjs", "fleet-crew.cjs", "web-inventory.cjs", "GATHERING.md")) {
+foreach ($file in @("gathering.cjs", "gathering-defense.cjs", "gathering-storage.cjs", "storage-filters.json", "gathering-plan.cjs", "gathering-defaults.json", "gathering-scan.cjs", "gathering-commands.cjs", "fleet-crew.cjs", "fleet-navigation.cjs", "web-inventory.cjs", "GATHERING.md")) {
     Copy-Item -LiteralPath (Join-Path $sourceDirectory $file) -Destination $stageDirectory
 }
 foreach ($file in @("pearls.cjs", "crystals.cjs", "crystal-movement.cjs", "bow-defense.cjs", "combat-inventory.cjs", "armor-manager.cjs", "melee-shield.cjs", "mace.cjs", "knockback.cjs", "auto-eat.cjs", "emergency-mlg.cjs", "survival.cjs", "survival-defaults.json", "SURVIVAL.md", "AUTO-EAT-LICENSE")) {

@@ -3,9 +3,11 @@ import type { MineflayerBotProfile, MineflayerBotStatus } from "../../../types";
 import type { FleetRequest } from "./fleetControl";
 
 export type BotFleetWorkspace = {
+  profiles: MineflayerBotProfile[];
   recipients: MineflayerBotProfile[];
   statuses: MineflayerBotStatus[];
   busy: boolean;
+  setStorageBusy: (busy: boolean) => void;
   focusId: string;
   focus: (id: string) => void;
   nameFor: (bot: MineflayerBotProfile) => string;

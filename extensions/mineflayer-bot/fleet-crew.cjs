@@ -39,6 +39,8 @@ function createHub({ now = Date.now } = {}) {
   const scanned = new Map();
   const discoveries = new Map();
   const leases = new Map();
+  const targets = new Map();
+  const traffic = new Map();
   // Floors of passages dug by the crew: `${dim}|x,y,z` -> { seq, name }.
   // Bots fetch the entries added since their cursor and never dig them out.
   const floors = new Map();
@@ -97,6 +99,8 @@ function createHub({ now = Date.now } = {}) {
     return claim;
   }
   function drop(name) {
+    targets.delete(name);
+    traffic.delete(name);
     const entry = members.get(name);
     if (!entry) return;
     for (const full of entry.held.values()) {
@@ -117,6 +121,8 @@ function createHub({ now = Date.now } = {}) {
       if (!claim.owners.size) claims.delete(full);
     }
     for (const [lease, value] of leases) if (value.until <= time) leases.delete(lease);
+    for (const [name, value] of targets) if (value.until <= time) targets.delete(name);
+    for (const [name, value] of traffic) if (time - value.at > 1800) traffic.delete(name);
     for (const map of scanned.values())
       for (const [chunk, at] of map) if (time - at > SCAN_TTL) map.delete(chunk);
     for (const map of discoveries.values())
@@ -134,11 +140,54 @@ function createHub({ now = Date.now } = {}) {
       : `${Math.floor(pos.x / 16)}:${Math.floor(pos.z / 16)}`;
 
   const ops = {
+    // Physical blocks are reserved across job scopes: iron and coal jobs may
+    // share a vein, and two helpers at one tree must still pick different logs.
+    target(name, input = {}) {
+      const dim = String(input.dim || "");
+      const choices = (Array.isArray(input.positions) ? input.positions : []).filter(finite).slice(0, 256);
+      const chosen = choices.find(pos => ![...targets].some(([owner, held]) =>
+        owner !== name && held.dim === dim && held.until > now() && hypot3(held, pos) < 0.1));
+      if (!chosen) { targets.delete(name); return { pos: null }; }
+      targets.set(name, { ...point(chosen), dim, until: now() + SITE_TTL });
+      return { pos: point(chosen) };
+    },
+    traffic(name, input = {}) {
+      const dim = String(input.dim || "");
+      if (input.enabled === false || !finite(input.pos)) {
+        traffic.delete(name);
+        return { peers: [], allowed: true };
+      }
+      const previous = traffic.get(name);
+      const route = (Array.isArray(input.route) ? input.route : []).filter(finite).slice(0, 16).map(point);
+      const corridor = (Array.isArray(input.corridor) ? input.corridor : []).filter(finite).slice(0, 96).map(point);
+      const pos = point(input.pos);
+      const sameCell = (a, b) => Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 0.8 && Math.abs(a.z - b.z) < 0.8;
+      const near = [...traffic.values()].filter(peer => peer.name !== name && peer.dim === dim && now() - peer.at < 1800);
+      const direction = route.length ? { x: route[0].x - pos.x, z: route[0].z - pos.z } : { x: 0, z: 0 };
+      const blockers = near.filter(peer => {
+        if (peer.until <= now()) return false;
+        // Convoys may share a corridor; opposing flows take turns. Reserve
+        // only the immediate step in open areas, so crossing paths can clear.
+        const opposing = direction.x * peer.direction.x + direction.z * peer.direction.z < -0.1;
+        return (opposing && corridor.some(cell => peer.corridor.some(other => sameCell(cell, other)))) ||
+          route.slice(0, 1).some(cell => peer.route.slice(0, 1).some(other => sameCell(cell, other)));
+      });
+      const entry = { name, dim, pos, route, corridor, direction, at: now(),
+        until: blockers.length ? 0 : now() + 1200,
+        waitingSince: blockers.length ? previous?.waitingSince || now() : null };
+      traffic.set(name, entry);
+      return { allowed: !blockers.length, blocker: blockers[0]?.name || null,
+        peers: near.filter(peer => hypot3(peer.pos, pos) < 64).map(peer => ({
+          name: peer.name, pos: peer.pos, route: peer.route, moving: peer.route.length > 0,
+        })) };
+    },
     beat(name, input = {}) {
       const entry = member(name);
       if (finite(input.pos)) entry.pos = point(input.pos);
       entry.dim = String(input.dim || "");
       entry.scope = input.scope || null;
+      if (finite(input.target)) targets.set(name, { ...point(input.target), dim: entry.dim, until: now() + SITE_TTL });
+      else targets.delete(name);
       const held = Array.isArray(input.held) ? input.held.slice(0, 4) : [];
       const keep = new Set();
       for (const site of held) {
@@ -253,7 +302,14 @@ function createHub({ now = Date.now } = {}) {
           full++;
           continue;
         }
-        let score = (Number(site.d) || hypot3(site, entry.pos || site)) + taken * 10;
+        let score = (Number(site.d) || hypot3(site, entry.pos || site)) + taken * 18;
+        // Avoid sending a distant worker across a colleague's route to take
+        // that colleague's only nearby free site. Retain existing assignments.
+        if (current !== id && !taken) for (const other of near) {
+          if (other.scope !== scope || other.held.has(scope)) continue;
+          const theirs = hypot3(other.pos, site), ours = hypot3(entry.pos || site, site);
+          if (theirs + 6 < ours) score += Math.min(24, (ours - theirs) * 0.6);
+        }
         for (const other of near)
           if (!claim?.owners.has(other.name) && hypot3(other.pos, site) < 6) score += 18;
         const zoned = (zones.get(zoneOf(site, zone)) || []).filter((value) => value !== id).length;

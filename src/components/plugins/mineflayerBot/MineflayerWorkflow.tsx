@@ -6,6 +6,7 @@ import { botStorageKey, useBotId, useBotInvoke } from "./BotSessionContext";
 import { useBotFleet } from "./BotFleetContext";
 import { fleetWorkflowRequests, workflowIsRunning } from "./fleetControl";
 import { MineflayerFleetProgress } from "./MineflayerFleetProgress";
+import { MineflayerWorkSettings } from "./MineflayerWorkSettings";
 import type {
   MinecraftCatalog,
   MineflayerBotStatus,
@@ -115,6 +116,7 @@ export function MineflayerWorkflow({
   connected,
   status,
   gatheringSettings,
+  onGatheringSettingsChange,
   refresh,
   onOpenConnection,
   onOpenStorage,
@@ -122,6 +124,7 @@ export function MineflayerWorkflow({
   connected: boolean;
   status: MineflayerBotStatus | null;
   gatheringSettings: MineflayerGatheringSettings;
+  onGatheringSettingsChange: (settings: MineflayerGatheringSettings) => void;
   refresh: () => Promise<unknown>;
   onOpenConnection: () => void;
   onOpenStorage: () => void;
@@ -943,6 +946,11 @@ export function MineflayerWorkflow({
           {error}
         </p>
       )}
+      <MineflayerWorkSettings
+        settings={gatheringSettings}
+        onChange={onGatheringSettingsChange}
+        connected={Boolean(status?.running && status.state === "connected")}
+      />
       <details className="mf-workflow-footnote">
         <summary>{tr("bot.workflow.whatTheIronTools")}</summary>
         <p>{tr("bot.workflow.ironToolsNeedA")}</p>

@@ -9,6 +9,72 @@ type EnglishMessages = {
 
 /** English interface text. Keys mirror `ru.ts`. */
 export const en: EnglishMessages = {
+  "bot.warehouse.expandGroup": "Expand storage {name}",
+  "bot.warehouse.collapseGroup": "Collapse storage {name}",
+  "bot.warehouse.partialReady":
+    "Inspected {checked} of {total} containers. Inspected chests are listed below; click Apply to save them. Run another search to inspect the rest.",
+  "bot.warehouse.stoppedProgress": "Search stopped. Inspected {checked} of {total} containers.",
+  "bot.warehouse.incompleteProgress": "Inspection incomplete: {checked} of {total} containers.",
+  "bot.warehouse.blockTotal": "Chest blocks: {count} (a double chest is one container).",
+  "bot.fleetSpeed.title": "Connection speed",
+  "bot.fleetSpeed.current": "{value} ms between bots",
+  "bot.fleetSpeed.interval": "Login interval, ms",
+  "bot.fleetSpeed.preset.0": "No delay",
+  "bot.fleetSpeed.preset.250": "Fast · 250 ms",
+  "bot.fleetSpeed.preset.1000": "Gentle · 1 s",
+  "bot.fleetSpeed.hint":
+    "Shared setting for connecting selected bots. The default is 250 ms. Increase the interval if the server limits frequent logins. Authentication and server loading take additional time.",
+  "bot.warehouse.clearAll": "Delete all storage for recipients",
+  "bot.warehouse.clearConfirm":
+    "Delete all saved storage and drafts for the selected bots ({count})? In-game chests and items will remain in place.",
+  "bot.warehouse.clearConfirmAction": "Yes, delete storage",
+  "bot.warehouse.clearCancel": "Cancel",
+  "bot.warehouse.clearing": "Deleting storage…",
+  "bot.warehouse.cleared": "Storage deleted for {count} bots.",
+  "bot.warehouse.team": "Bots inspecting: {count}",
+  "bot.warehouse.title": "Storage",
+  "bot.warehouse.description":
+    "Chests and resource sorting rules. Start gathering and unloading tasks from scenarios.",
+  "bot.warehouse.recipients": "Apply storage to",
+  "bot.warehouse.scope.one": "One bot",
+  "bot.warehouse.scope.group": "Selected group · {count}",
+  "bot.warehouse.scope.all": "All bots · {count}",
+  "bot.warehouse.chooseBot": "Bot to configure storage for",
+  "bot.warehouse.groupHint":
+    "Recipients are checked bots in the list on the left. You can select a saved group.",
+  "bot.warehouse.allHint": "Storage will be saved for every profile, including disconnected bots.",
+  "bot.warehouse.different":
+    "Recipients have different storage. Showing {name}'s list; Apply replaces the recipients' lists with this one.",
+  "bot.warehouse.discoveryEyebrow": "Automatic setup",
+  "bot.warehouse.discovery": "Find chests near me",
+  "bot.warehouse.discoveryHint":
+    "The nearest available bot will find chests near the player. Large warehouses get helpers: roughly one bot per 12 chests, up to eight bots. Each inspects its own section; results are saved for the selected recipients.",
+  "bot.warehouse.radius": "Radius around the player, blocks",
+  "bot.warehouse.find": "Send bots to inspect",
+  "bot.warehouse.scanning": "Finding storage…",
+  "bot.warehouse.connectHint":
+    "Connect at least one bot on this server and move close enough for it to see the player.",
+  "bot.warehouse.discoveryPreserves":
+    "Manual storage is preserved. Double chests count once. Helpers are available bots on this server that can see the same player. They resume gathering after inspection.",
+  "bot.warehouse.selecting": "Choosing the nearest bot that can see the player…",
+  "bot.warehouse.result": "Search result",
+  "bot.warehouse.approaching": "Approaching the player…",
+  "bot.warehouse.inspecting": "Chests checked: {checked} of {total}",
+  "bot.warehouse.complete": "Checked: {total}. Assigned to storage: {added}.",
+  "bot.warehouse.cancelled": "Search stopped. Saved storage was not changed.",
+  "bot.warehouse.failed": "Inspection could not be completed. Saved storage was not changed.",
+  "bot.warehouse.results": "Inspected chests · {count}",
+  "bot.warehouse.unsaved": "You have unsaved changes",
+  "bot.warehouse.ready": "Storage list is ready to apply",
+  "bot.warehouse.applyHint":
+    "Connected bots receive storage immediately. Offline bots receive it on their next start. Scenarios use this same storage.",
+  "bot.warehouse.apply": "Apply · {count}",
+  "bot.warehouse.applied":
+    "Saved for {saved} bots. Applied now: {applied}; on connection: {offline}.",
+  "bot.warehouse.workSettings": "Gathering settings: defense, passages and lighting",
+  "bot.workspaceNew.crowdAvoidance": "Avoid crowding",
+  "bot.workspaceNew.crowdAvoidanceHint":
+    "All bots avoid each other and take turns in narrow passages. Turn off to restore previous movement.",
   "bot.workspaceNew.team": "Team",
   "bot.workspaceNew.control": "Workspace",
   "bot.workspaceNew.search": "Find a bot…",
@@ -880,7 +946,7 @@ export const en: EnglishMessages = {
 
   // bot.storageGroups
   "bot.storageGroups.sharedStorage": "Shared storage",
-  "bot.storageGroups.newGroup": "New group",
+  "bot.storageGroups.newGroup": "New storage",
   "bot.storageGroups.thisChestIsAlready": "This chest is already in the group.",
   "bot.storageGroups.aGroupCanHold": "A group can hold up to 32 chests",
   "bot.storageGroups.chestAddedTo": "Chest {chest} added to “{group}”.",
@@ -891,8 +957,8 @@ export const en: EnglishMessages = {
     "The bot is checking the chest contents. Discovered assignments are saved automatically.",
   "bot.storageGroups.chestsAndSorting": "CHESTS AND SORTING",
   "bot.storageGroups.lootStorage": "LOOT STORAGE",
-  "bot.storageGroups.groups": "Groups",
-  "bot.storageGroups.addGroup": "ADD GROUP",
+  "bot.storageGroups.groups": "Storage groups",
+  "bot.storageGroups.addGroup": "Add storage",
   "bot.storageGroups.autoScanChests": "AUTO-SCAN CHESTS",
   "bot.storageGroups.theBotFindsChests":
     "The bot finds chests, barrels, and shulker boxes, walks up to them, and decides their purpose from the contents. Empty ones get more room for bulk blocks and junk, with a separate storage for valuables. Groups you configured are kept.",
@@ -922,9 +988,9 @@ export const en: EnglishMessages = {
   "bot.storageGroups.addSelectedChest": "ADD SELECTED CHEST",
   "bot.storageGroups.chooseResources": "Choose resources",
   "bot.storageGroups.noChests": "No chests",
-  "bot.storageGroups.disableGroup": "Disable group",
-  "bot.storageGroups.enableGroup": "Enable group",
-  "bot.storageGroups.groupName": "GROUP NAME",
+  "bot.storageGroups.disableGroup": "Disable storage",
+  "bot.storageGroups.enableGroup": "Enable storage",
+  "bot.storageGroups.groupName": "Storage name",
   "bot.storageGroups.forExampleWoodAt": "For example, wood at base",
   "bot.storageGroups.resourceGroups": "Resource groups",
   "bot.storageGroups.whatToStore": "WHAT TO STORE",
@@ -933,7 +999,7 @@ export const en: EnglishMessages = {
   "bot.storageGroups.itemsAndBlocks": "Items and blocks",
   "bot.storageGroups.anItemABlock": "An item, a block, or several resources",
   "bot.storageGroups.removeResource": "Remove resource",
-  "bot.storageGroups.chestsInGroup": "CHESTS IN GROUP",
+  "bot.storageGroups.chestsInGroup": "Storage chests",
   "bot.storageGroups.filledInOrder": "Filled in order",
   "bot.storageGroups.unloaded": "Unloaded",
   "bot.storageGroups.full": "Full",
@@ -949,7 +1015,7 @@ export const en: EnglishMessages = {
   "bot.storageGroups.groupPriority": "Group priority",
   "bot.storageGroups.moveGroupUp": "Move group up",
   "bot.storageGroups.moveGroupDown": "Move group down",
-  "bot.storageGroups.deleteGroup": "DELETE GROUP",
+  "bot.storageGroups.deleteGroup": "Delete storage",
   "bot.storageGroups.groupsAreSavedIn":
     "Groups are saved in the launcher. Specific resources are checked from top to bottom; “Everything else” is used for the remaining loot. If a chest is full or unavailable, the bot tries the next one in the same group. It keeps tools and food.",
   "bot.storageGroups.applying": "APPLYING…",
@@ -2136,7 +2202,7 @@ export const en: EnglishMessages = {
   "bot.settingsSection.behavior": "Movement",
   "bot.settingsSection.survival": "Survival",
   "bot.settingsSection.combat": "Combat and items",
-  "bot.settingsSection.gathering": "Gathering and storage",
+  "bot.settingsSection.gathering": "Storage",
   "bot.settingsSection.commands": "Commands",
 
   // bot.movementPreset.safe

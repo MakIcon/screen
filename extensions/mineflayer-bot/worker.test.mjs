@@ -10,6 +10,17 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("shared navigation settings apply even while a worker is connecting", async () => {
+  const changes = [];
+  await worker.handleLauncherMessages([
+    JSON.stringify({ type: "navigation_config", enabled: false }),
+    JSON.stringify({ type: "navigation_config", enabled: "true" }),
+    JSON.stringify({ type: "navigation_config", enabled: true }),
+  ], () => null, () => assert.fail("Navigation settings must not send chat or require a connected bot"),
+  enabled => changes.push(enabled));
+  assert.deepEqual(changes, [false, true]);
+});
+
 test('modern movement packets include the actual horizontal collision even when flags already exist', () => {
   const packets = [];
   const bot = { registry: require('minecraft-data')('26.1.2'),

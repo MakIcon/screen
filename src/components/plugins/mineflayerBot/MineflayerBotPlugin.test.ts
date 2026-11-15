@@ -2,6 +2,35 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MINEFLAYER_BOT_SETTINGS, normalizeMineflayerBotSettings } from "../pluginSettings";
 
 describe("normalizeMineflayerBotSettings", () => {
+  it("uses a shared 250 ms login interval, preserves zero and bounds saved values", () => {
+    expect(normalizeMineflayerBotSettings({}).connectionIntervalMs).toBe(250);
+    const saved = normalizeMineflayerBotSettings({
+      connectionIntervalMs: 0,
+      bots: [{ id: "miner", settings: { connectionIntervalMs: 5000 } }],
+    });
+    expect(
+      normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(saved))).connectionIntervalMs,
+    ).toBe(0);
+    expect(saved.bots[0].settings).not.toHaveProperty("connectionIntervalMs");
+    expect(
+      normalizeMineflayerBotSettings({ connectionIntervalMs: -100 }).connectionIntervalMs,
+    ).toBe(0);
+    expect(
+      normalizeMineflayerBotSettings({ connectionIntervalMs: 99999 }).connectionIntervalMs,
+    ).toBe(10000);
+  });
+  it("enables shared crowd avoidance for old profiles and persists disabling it", () => {
+    expect(DEFAULT_MINEFLAYER_BOT_SETTINGS.crowdAvoidance).toBe(true);
+    expect(normalizeMineflayerBotSettings({}).crowdAvoidance).toBe(true);
+    const saved = normalizeMineflayerBotSettings({
+      crowdAvoidance: false,
+      bots: [{ id: "miner", settings: { crowdAvoidance: true } }],
+    });
+    expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(saved))).crowdAvoidance).toBe(
+      false,
+    );
+    expect(saved.bots[0].settings).not.toHaveProperty("crowdAvoidance");
+  });
   it("preserves independent PvP bucket and web switches through saved settings", () => {
     const keys = [
       "lavaBucket",

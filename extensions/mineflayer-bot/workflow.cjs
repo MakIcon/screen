@@ -142,6 +142,7 @@ function createWorkflowController({
       const id = gathering.enqueue(step);
       for (;;) {
         check(token);
+        if (bot.launcherStorageInspection?.busy) { await sleep(); continue; }
         const snapshot = gathering.snapshot;
         const result = snapshot.history.find((entry) => entry.id === id);
         if (result) {

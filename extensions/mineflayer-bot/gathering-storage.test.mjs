@@ -76,7 +76,9 @@ test("storage configuration deduplicates destinations and rejects invalid or ove
     () => normalizeStorageGroups([{ ...draft, chests: [{ x: 0.5, y: 64, z: 0 }] }]),
     /целые/,
   );
-  assert.throws(() => normalizeStorageGroups(Array(33).fill(draft)), /32/);
+  const hundred = Array.from({ length: 100 }, (_, i) => group(`storage-${i}`, ["#wood"]));
+  assert.deepEqual(normalizeStorageGroups(hundred), hundred);
+  assert.throws(() => normalizeStorageGroups([...hundred, group("overflow", ["#wood"])]), /100/);
 });
 
 test("container capacity includes free slots and compatible partial stacks, preserving NBT and components", () => {

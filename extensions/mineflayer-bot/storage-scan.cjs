@@ -1,4 +1,4 @@
-const { key, matchesFilter, normalizeStorageGroups } = require("./gathering-storage.cjs");
+const { key, matchesFilter, normalizeStorageGroups, MAX_STORAGE_GROUPS } = require("./gathering-storage.cjs");
 
 const STORAGE_NAMES = /^(?:chest|trapped_chest|barrel|(?:[a-z_]+_)?shulker_box)$/;
 const CATEGORIES = ["#valuable", "#ores", "#wood", "#food", "#bulk", "#all"];
@@ -12,6 +12,7 @@ const LABELS = {
   mixed: "Смешанный склад",
 };
 const isStorage = (name) => STORAGE_NAMES.test(name);
+const MAX_SCAN_CHESTS = 512;
 const point = ({ x, y, z }) => ({ x, y, z });
 
 function chestPartner(bot, block) {
@@ -44,8 +45,8 @@ function chestPartner(bot, block) {
     : null;
 }
 
-function discoverBlocks(bot, names, radius, count = 128) {
-  const origin = bot.entity.position.clone();
+function discoverBlocks(bot, names, radius, count = 128, center = bot.entity.position) {
+  const origin = center.clone();
   const matching = Object.values(bot.registry.blocksByName)
     .filter((block) => names(block.name))
     .map((block) => block.id);
@@ -113,8 +114,8 @@ function assignStorage(records, configured = []) {
             : group.filters.includes(category)),
     );
     if (!group) {
-      if (groups.length + generated.size >= 32) {
-        warnings.push("Достигнут лимит 32 групп; часть сундуков не добавлена");
+      if (groups.length + generated.size >= MAX_STORAGE_GROUPS) {
+        warnings.push("Достигнут лимит 100 складов; часть сундуков не добавлена");
         return false;
       }
       const base = `auto-scan-${category.replace(/^#/, "")}`,
@@ -218,4 +219,24 @@ function assignStorage(records, configured = []) {
   };
 }
 
-module.exports = { isStorage, discoverBlocks, inspectContents, assignStorage, chestPartner };
+function normalizeScanAssignment(blocks, origin, radius) {
+  if (!Array.isArray(blocks) || blocks.length > MAX_SCAN_CHESTS ||
+      !origin || ![origin.x, origin.y, origin.z].every(Number.isFinite))
+    throw new Error("Некорректный список сундуков для совместной проверки");
+  const seen = new Set();
+  return blocks.flatMap(block => {
+    const valid = p => p && [p.x, p.y, p.z].every(value => Number.isSafeInteger(value) && Math.abs(value) <= 30000000);
+    if (!block || !isStorage(block.name) || !valid(block.position) ||
+        !Array.isArray(block.positions) || block.positions.length < 1 || block.positions.length > 2 ||
+        block.positions.some(p => !valid(p) || Math.abs(p.x - block.position.x) + Math.abs(p.y - block.position.y) + Math.abs(p.z - block.position.z) > 1) ||
+        Math.hypot(block.position.x - origin.x, block.position.y - origin.y, block.position.z - origin.z) > radius + 0.01)
+      throw new Error("Некорректные координаты сундука в совместной проверке");
+    const identity = block.positions.map(key).sort()[0];
+    if (seen.has(identity)) return [];
+    seen.add(identity);
+    return [{ name: block.name, position: point(block.position), positions: block.positions.map(point),
+      distance: Math.round(Math.hypot(block.position.x - origin.x, block.position.y - origin.y, block.position.z - origin.z) * 10) / 10 }];
+  });
+}
+
+module.exports = { isStorage, discoverBlocks, inspectContents, assignStorage, chestPartner, normalizeScanAssignment, MAX_SCAN_CHESTS };

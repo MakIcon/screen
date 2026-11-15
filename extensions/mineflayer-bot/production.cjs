@@ -11,7 +11,7 @@ const {
   inventoryItems,
   emptySlots,
 } = require("./production-plan.cjs");
-const { isStorage, discoverBlocks, inspectContents, assignStorage } = require("./storage-scan.cjs");
+const { isStorage, discoverBlocks, inspectContents, assignStorage, normalizeScanAssignment, MAX_SCAN_CHESTS } = require("./storage-scan.cjs");
 
 const STATIONS = new Set([
   "crafting_table",
@@ -689,39 +689,101 @@ function createProductionController(bot, hooks = {}) {
     else onStatus(text);
     return text;
   }
-  function prepareStorageScan(radius = 32) {
+  function prepareStorageScan(radius = 32, owner = null, token = null, options = {}) {
     available();
     radius = integer(radius, "Радиус", 4, 64);
     return {
       radius,
-      origin: { ...bot.entity.position },
-      blocks: discoverBlocks(bot, isStorage, radius, 64),
+      origin: options.origin || { ...bot.entity.position },
+      blocks: options.blocks ? normalizeScanAssignment(options.blocks, options.origin, radius)
+        : owner ? [] : discoverBlocks(bot, isStorage, radius, 64),
+      owner,
+      token,
+      discoveryOnly: options.phase === "discover",
+      recordsOnly: options.phase === "inspect",
+      deferApply: Boolean(owner) || options.phase === "inspect",
+      originMode: owner || options.phase === "inspect" ? "owner" : "bot",
+      teamSize: options.teamSize || 1,
+      teamTotal: options.teamTotal || 0,
     };
   }
+  async function scanTravel(goal, signal, timeoutMessage) {
+    let timer, rejectNavigation;
+    const interrupted = new Promise((_, reject) => { rejectNavigation = reject; });
+    const cancel = () => { void bot.pathfinder.stop(); rejectNavigation(new Cancelled()); };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      await Promise.race([
+        atomic(() => bot.pathfinder.goto(goal), signal),
+        interrupted,
+        new Promise((_, reject) => { timer = setTimeout(() => {
+          void bot.pathfinder.stop(); reject(new Error(timeoutMessage));
+        }, moveTimeoutMs); }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+      await bot.pathfinder.stop();
+    }
+  }
   function scanStorage(plan) {
+    const assignedKeys = new Set(plan.blocks.flatMap(block => block.positions.map(p => `${p.x},${p.y},${p.z}`)));
+    const previous = plan.recordsOnly && storageScan?.token === plan.token
+      ? storageScan.records.filter(record => !record.positions.some(p => assignedKeys.has(`${p.x},${p.y},${p.z}`))) : [];
     const scan = {
       id: ++scanSequence,
       state: "running",
+      startedAt: Date.now(),
       saved: false,
       radius: plan.radius,
       origin: plan.origin,
-      total: plan.blocks.length,
-      records: [],
+      total: plan.blocks.length + previous.length,
+      records: previous,
       groups: [],
       added: 0,
       warnings: [],
+      originMode: plan.originMode,
+      teamSize: plan.teamSize,
+      teamTotal: plan.teamTotal,
+      token: plan.token,
+      phase: plan.owner ? "approaching" : "inspecting",
     };
     const accepted = start(`Сканирую сундуки: найдено ${scan.total}`, async (signal) => {
       try {
-        for (const [index, found] of plan.blocks.entries()) {
+        if (plan.owner) {
+          const player = plan.owner();
+          if (!player || player.isValid === false) throw new Error("Игрок не виден; подойдите к ботам");
+          phase = "scan_storage";
+          report("Подхожу к игроку, чтобы проверить склады рядом с ним");
+          await scanTravel(goals.GoalFollowEntity.fromEntity(player, 3, { dynamic: true }), signal, "Не удалось подойти к игроку за минуту");
+          guard(signal);
+          const arrived = plan.owner();
+          if (!arrived || arrived.isValid === false || arrived.position.distanceTo(bot.entity.position) > 5)
+            throw new Error("Игрок отошёл или перестал быть виден; повторите поиск рядом с ним");
+          const origin = arrived.position.clone();
+          scan.origin = { x: origin.x, y: origin.y, z: origin.z };
+          plan.blocks = discoverBlocks(bot, isStorage, plan.radius, MAX_SCAN_CHESTS, origin);
+          scan.total = plan.blocks.length;
+          if (plan.discoveryOnly) {
+            Object.assign(scan, { state: "complete", phase: "discovered", blocks: plan.blocks, teamTotal: scan.total });
+            return;
+          }
+          scan.phase = "inspecting";
+        }
+        plan.blocks.sort((a, b) => bot.entity.position.distanceTo(new Vec3(a.position.x, a.position.y, a.position.z)) - bot.entity.position.distanceTo(new Vec3(b.position.x, b.position.y, b.position.z)));
+        for (const found of plan.blocks) {
           guard(signal);
           report(
-            `Проверяю сундук ${index + 1}/${scan.total}: ${found.position.x} ${found.position.y} ${found.position.z}`,
+            `Проверяю сундук ${scan.records.length + 1}/${scan.total}: ${found.position.x} ${found.position.y} ${found.position.z}`,
           );
           try {
-            const block = bot.blockAt(
-              new Vec3(found.position.x, found.position.y, found.position.z),
-            );
+            const target = new Vec3(found.position.x, found.position.y, found.position.z);
+            let block = bot.blockAt(target);
+            if (!block && plan.recordsOnly) {
+              await scanTravel(goals.GoalNear.fromVec(target, 3), signal, "Не удалось подойти к сундуку за минуту");
+              guard(signal);
+              block = bot.blockAt(target);
+            }
             if (!block || block.name !== found.name)
               throw new Error("Контейнер исчез или не загружен");
             const window = await openAt(block, signal);
@@ -736,11 +798,16 @@ function createProductionController(bot, hooks = {}) {
           phase = "scan_storage";
         }
         guard(signal);
+        if (plan.recordsOnly) {
+          scan.state = "complete";
+          report(`Проверка участка завершена: ${scan.records.length} сундуков`);
+          return;
+        }
         const result = assignStorage(
           scan.records,
-          bot.launcherGathering?.settings.storageGroups || [],
+          plan.owner ? [] : bot.launcherGathering?.settings.storageGroups || [],
         );
-        if (result.added && bot.launcherConfigureStorage)
+        if (!plan.deferApply && result.added && bot.launcherConfigureStorage)
           bot.launcherConfigureStorage(result.groups);
         Object.assign(scan, result, { state: "complete" });
         const unavailable = scan.records.filter((record) => record.error).length;

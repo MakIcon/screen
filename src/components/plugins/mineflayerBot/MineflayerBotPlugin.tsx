@@ -15,7 +15,7 @@ import { CustomScrollArea } from "../../layout/CustomScrollArea";
 import { ElementToggle } from "../../inputs/ElementToggle";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
-import { MineflayerGatheringControls } from "./MineflayerGatheringControls";
+import { MineflayerStorageWorkspace } from "./MineflayerStorageWorkspace";
 import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
 import { MineflayerProductionControls } from "./MineflayerProductionControls";
 import { MineflayerWorkflow } from "./MineflayerWorkflow";
@@ -145,7 +145,13 @@ function MineflayerBotSettingsEditor({
   const savedScan = useRef("");
   const storageScan = chatConnected ? status?.inventory?.production?.storageScan : null;
   useEffect(() => {
-    if (!storageScan || storageScan.state !== "complete" || storageScan.saved) return;
+    if (
+      !storageScan ||
+      storageScan.originMode === "owner" ||
+      storageScan.state !== "complete" ||
+      storageScan.saved
+    )
+      return;
     const key = `${status?.pid}:${storageScan.id}`;
     if (savedScan.current === key) return;
     savedScan.current = key;
@@ -423,32 +429,35 @@ function MineflayerBotSettingsEditor({
         ))}
       </nav>
 
-      {fleet && fleet.recipients.length > 1 && activeView !== "scenario" && (
-        <div className="mf-workspace-inspector">
-          <label>
-            <span>{tr("bot.workspaceNew.inspectBot")}</span>
-            <SearchableSelect
-              label={tr("bot.workspaceNew.inspectBot")}
-              value={fleet.focusId}
-              allowEmpty={false}
-              variant="field"
-              disabled={fleet.busy}
-              onChange={fleet.focus}
-              options={fleet.recipients.map((bot) => ({
-                value: bot.id,
-                label: fleet.nameFor(bot),
-              }))}
-            />
-          </label>
-          <p>
-            {tr(
-              activeView === "control"
-                ? "bot.workspaceNew.journalScope"
-                : "bot.workspaceNew.personalScope",
-            )}
-          </p>
-        </div>
-      )}
+      {fleet &&
+        fleet.recipients.length > 1 &&
+        activeView !== "scenario" &&
+        activeSection !== "gathering" && (
+          <div className="mf-workspace-inspector">
+            <label>
+              <span>{tr("bot.workspaceNew.inspectBot")}</span>
+              <SearchableSelect
+                label={tr("bot.workspaceNew.inspectBot")}
+                value={fleet.focusId}
+                allowEmpty={false}
+                variant="field"
+                disabled={fleet.busy}
+                onChange={fleet.focus}
+                options={fleet.recipients.map((bot) => ({
+                  value: bot.id,
+                  label: fleet.nameFor(bot),
+                }))}
+              />
+            </label>
+            <p>
+              {tr(
+                activeView === "control"
+                  ? "bot.workspaceNew.journalScope"
+                  : "bot.workspaceNew.personalScope",
+              )}
+            </p>
+          </div>
+        )}
 
       <div hidden={activeView !== "scenario"}>
         <MineflayerWorkflow
@@ -466,6 +475,7 @@ function MineflayerBotSettingsEditor({
           }
           status={status}
           gatheringSettings={settings.gathering}
+          onGatheringSettingsChange={(gathering) => update({ gathering })}
           refresh={monitor.refresh}
           onOpenConnection={() => openSettings("connection")}
           onOpenStorage={() => openSettings("gathering")}
@@ -488,14 +498,10 @@ function MineflayerBotSettingsEditor({
       )}
       <div className="mineflayer-bot-section" key={activeSection}>
         {activeSection === "gathering" && (
-          <MineflayerGatheringControls
-            key={botId}
-            connected={chatConnected}
+          <MineflayerStorageWorkspace
             refresh={monitor.refresh}
             status={status}
-            settings={settings.gathering}
-            onSettingsChange={(gathering) => update({ gathering })}
-            onOpenInventory={() => setActiveView("inventory")}
+            settings={settings}
           />
         )}
         {activeSection === "inventory" && (

@@ -3,6 +3,8 @@ import { translate } from "../../../i18n/locale";
 import { localizeStorageFilter } from "./catalogLocalization";
 import filters from "../../../../extensions/mineflayer-bot/storage-filters.json";
 
+export const MAX_STORAGE_GROUPS = 100;
+
 export const STORAGE_FILTERS = filters as Array<{
   name: string;
   displayName: string;
@@ -19,7 +21,7 @@ export const storagePositionKey = (point: { x: number; y: number; z: number }) =
 export function normalizeStorageGroups(value: unknown): MineflayerStorageGroup[] {
   if (!Array.isArray(value)) return [];
   const ids = new Set<string>();
-  return value.slice(0, 32).flatMap((entry, index) => {
+  return value.slice(0, MAX_STORAGE_GROUPS).flatMap((entry, index) => {
     if (!entry || typeof entry !== "object") return [];
     const group = entry as Partial<MineflayerStorageGroup>;
     const id =
@@ -118,10 +120,25 @@ export function mergeScannedStorageGroups(
   for (const discovered of normalizeStorageGroups(scanned)) {
     const chests = discovered.chests.filter((point) => !owned.has(storagePositionKey(point)));
     if (!chests.length) continue;
-    const existing = groups.find((group) => group.id === discovered.id);
-    if (existing) existing.chests.push(...chests.slice(0, 32 - existing.chests.length));
-    else if (groups.length < 32) groups.push({ ...discovered, chests });
-    for (const point of chests) owned.add(storagePositionKey(point));
+    const existing = groups.find(
+      (group) =>
+        group.enabled &&
+        group.id === discovered.id &&
+        JSON.stringify(group.filters) === JSON.stringify(discovered.filters),
+    );
+    if (existing) {
+      const moved = chests.splice(0, 32 - existing.chests.length);
+      existing.chests.push(...moved);
+      for (const point of moved) owned.add(storagePositionKey(point));
+    }
+    while (chests.length && groups.length < MAX_STORAGE_GROUPS) {
+      let id = discovered.id,
+        suffix = 2;
+      while (groups.some((group) => group.id === id)) id = `${discovered.id}-${suffix++}`;
+      const moved = chests.splice(0, 32);
+      groups.push({ ...discovered, id, chests: moved });
+      for (const point of moved) owned.add(storagePositionKey(point));
+    }
   }
   const precious = groups.filter(
     (group) => group.id.startsWith("auto-scan-") && group.filters.includes("#valuable"),

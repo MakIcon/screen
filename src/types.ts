@@ -486,6 +486,8 @@ export type MineflayerBotProfile = {
 };
 
 export type MineflayerBotPluginSettings = MineflayerBotConfiguration & {
+  crowdAvoidance: boolean;
+  connectionIntervalMs: number;
   bots: MineflayerBotProfile[];
 };
 
@@ -590,6 +592,14 @@ export type MineflayerStorageScan = {
   state: "running" | "complete" | "cancelled" | "error";
   saved: boolean;
   radius: number;
+  originMode?: "owner" | "bot";
+  token?: string | null;
+  phase?: "approaching" | "discovered" | "inspecting";
+  teamSize?: number;
+  teamTotal?: number;
+  blockTotal?: number;
+  partial?: boolean;
+  startedAt?: number;
   total: number;
   added: number;
   groups: MineflayerStorageGroup[];

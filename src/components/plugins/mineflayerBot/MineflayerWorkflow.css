@@ -1034,3 +1034,15 @@
     display: none;
   }
 }
+.mf-workflow-work-settings {
+  padding: 14px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.mf-workflow-work-settings > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.mf-workflow-work-settings[open] > summary {
+  margin-bottom: 16px;
+}

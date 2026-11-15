@@ -19,12 +19,15 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::oneshot;
 
+#[path = "mineflayer_storage.rs"]
+pub mod storage;
+
 use crate::{
     commands::auth::{read_accounts, refresh_account_if_expired},
     models::{
         MicrosoftAccount, MineflayerBotConfiguration, MineflayerBotStatus, MineflayerCombatSettings,
     },
-    paths::read_settings,
+    paths::{edit_settings, read_settings},
 };
 
 #[cfg(windows)]
@@ -32,6 +35,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const MAX_LOG_LINES: usize = 80;
 const STATUS_EVENT: &str = "mineflayer-bot-status";
 const WORKFLOW_STEP_LIMIT: usize = 100;
+const MAX_STORAGE_GROUPS: usize = 100;
 // Progress snapshots (logs, inventory, work) carry the bot's whole state. With a
 // fleet they arrive many times a second from every worker, so they are
 // coalesced per bot; the interval grows with the number of running workers.
@@ -45,6 +49,8 @@ pub struct MineflayerBotState {
     inner: Arc<Mutex<MineflayerBotRuntime>>,
     bots: Arc<Mutex<HashMap<String, Arc<Mutex<MineflayerBotRuntime>>>>>,
     startup: Arc<tokio::sync::Mutex<()>>,
+    storage_scan: Arc<tokio::sync::Mutex<()>>,
+    storage_scan_job: Arc<Mutex<Option<storage::StorageScanJob>>>,
 }
 
 struct MineflayerBotRuntime {
@@ -61,7 +67,7 @@ struct MineflayerBotRuntime {
     server: Option<String>,
     last_error: Option<String>,
     logs: Vec<String>,
-    pending_chat: HashMap<String, oneshot::Sender<Result<(), CommandError>>>,
+    pending_chat: HashMap<String, oneshot::Sender<Result<serde_json::Value, CommandError>>>,
     inventory_url: Option<String>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
@@ -128,6 +134,8 @@ impl MineflayerBotState {
             inner,
             bots: self.bots.clone(),
             startup: self.startup.clone(),
+            storage_scan: self.storage_scan.clone(),
+            storage_scan_job: self.storage_scan_job.clone(),
         })
     }
 
@@ -145,6 +153,7 @@ impl MineflayerBotState {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerConfig {
+    crowd_avoidance: bool,
     server: WorkerServerConfig,
     owner_name: String,
     account: WorkerAccountConfig,
@@ -236,6 +245,7 @@ struct WorkerEvent {
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
     catalog: Option<serde_json::Value>,
+    result: Option<serde_json::Value>,
 }
 
 fn write_worker_message(
@@ -438,9 +448,10 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         "chat_result" => {
             if let Some(request_id) = event.request_id {
                 if let Some(reply) = runtime.pending_chat.remove(&request_id) {
-                    let result = event.error.map_or(Ok(()), |detail| {
-                        Err(CommandError::new(ErrorCode::Unknown, detail))
-                    });
+                    let result = event.error.map_or(
+                        Ok(event.result.unwrap_or(serde_json::Value::Null)),
+                        |detail| Err(CommandError::new(ErrorCode::Unknown, detail)),
+                    );
                     let _ = reply.send(result);
                 }
             }
@@ -689,6 +700,33 @@ fn node_executable() -> &'static str {
     }
 }
 
+// Settings changes reach every worker, including workers still connecting.
+pub fn sync_crowd_avoidance(state: &MineflayerBotState, enabled: bool) -> Result<(), CommandError> {
+    let mut failure = None;
+    for runtime in state.runtimes()? {
+        let mut runtime = runtime
+            .lock()
+            .map_err(|_| CommandError::new(ErrorCode::Unknown, "Bot state lock poisoned"))?;
+        refresh_child_state(&mut runtime);
+        if let Some(stdin) = runtime
+            .child
+            .as_mut()
+            .and_then(|child| child.stdin.as_mut())
+        {
+            if let Err(error) = write_worker_message(
+                stdin,
+                &serde_json::json!({ "type": "navigation_config", "enabled": enabled }),
+            ) {
+                failure = Some(error);
+            }
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
 #[tauri::command]
 pub async fn get_mineflayer_bot_status(
     state: State<'_, MineflayerBotState>,
@@ -823,7 +861,7 @@ pub async fn configure_mineflayer_bot_storage(
     groups: Vec<crate::models::MineflayerStorageGroup>,
 ) -> Result<(), CommandError> {
     let result: Result<_, CommandError> = async {
-        if groups.len() > 32
+        if groups.len() > MAX_STORAGE_GROUPS
             || groups.iter().any(|group| {
                 group.chests.len() > 32
                     || group.filters.len() > 64
@@ -832,7 +870,7 @@ pub async fn configure_mineflayer_bot_storage(
         {
             return Err(CommandError::new(
                 ErrorCode::InvalidInput,
-                "Можно задать до 32 групп, по 32 сундука и 64 ресурса в каждой",
+                "Можно задать до 100 складов, по 32 сундука и 64 ресурса в каждом",
             ));
         }
         send_worker_request(
@@ -854,9 +892,32 @@ async fn send_worker_request(
 
 async fn send_worker_request_with_timeout(
     state: &MineflayerBotState,
-    mut payload: serde_json::Value,
+    payload: serde_json::Value,
     timeout: Duration,
 ) -> Result<(), CommandError> {
+    send_worker_request_data(state, payload, timeout)
+        .await
+        .map(|_| ())
+}
+
+struct PendingWorkerReply {
+    runtime: Arc<Mutex<MineflayerBotRuntime>>,
+    request_id: String,
+}
+
+impl Drop for PendingWorkerReply {
+    fn drop(&mut self) {
+        if let Ok(mut runtime) = self.runtime.lock() {
+            runtime.pending_chat.remove(&self.request_id);
+        }
+    }
+}
+
+async fn send_worker_request_data(
+    state: &MineflayerBotState,
+    mut payload: serde_json::Value,
+    timeout: Duration,
+) -> Result<serde_json::Value, CommandError> {
     let request_id = uuid::Uuid::new_v4().to_string();
     payload["requestId"] = serde_json::json!(request_id);
     let (reply, response) = oneshot::channel();
@@ -884,6 +945,11 @@ async fn send_worker_request_with_timeout(
         write_worker_message(stdin, &payload)?;
         runtime.pending_chat.insert(request_id.clone(), reply);
     }
+    // Also remove the reply slot when a fleet operation cancels this future.
+    let _pending = PendingWorkerReply {
+        runtime: state.inner.clone(),
+        request_id,
+    };
 
     match tokio::time::timeout(timeout, response).await {
         Ok(Ok(result)) => result,
@@ -891,15 +957,10 @@ async fn send_worker_request_with_timeout(
             ErrorCode::Network,
             "Бот отключился до подтверждения отправки",
         )),
-        Err(_) => {
-            if let Ok(mut runtime) = state.inner.lock() {
-                runtime.pending_chat.remove(&request_id);
-            }
-            Err(CommandError::new(
-                ErrorCode::InvalidInput,
-                "Бот не подтвердил отправку сообщения. Проверьте журнал событий",
-            ))
-        }
+        Err(_) => Err(CommandError::new(
+            ErrorCode::InvalidInput,
+            "Бот не подтвердил отправку сообщения. Проверьте журнал событий",
+        )),
     }
 }
 
@@ -1087,6 +1148,7 @@ pub async fn start_mineflayer_bot(
         let state = state.for_bot(Some(id))?;
         let version = clean_player_name(&plugin.version, "");
         let config = WorkerConfig {
+            crowd_avoidance: saved.crowd_avoidance,
             combat: plugin.combat.clone(),
             server: WorkerServerConfig {
                 host,
@@ -1327,6 +1389,7 @@ mod tests {
                 const rl = require('node:readline').createInterface({ input: process.stdin });
                 rl.on('line', line => {
                     const request = JSON.parse(line);
+                    if (request.type === 'test_hang') return;
                     process.stdout.write(JSON.stringify({ type: 'chat_result', requestId: request.requestId, message: request.message }) + '\n');
                 });
             "#).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
@@ -1351,6 +1414,25 @@ mod tests {
                 serde_json::json!({ "type": "command", "message": "only farmer" })
             )
         );
+        let pending_state = first.clone();
+        let pending = tokio::spawn(async move {
+            super::send_worker_request_data(
+                &pending_state,
+                serde_json::json!({"type":"test_hang"}),
+                std::time::Duration::from_secs(1800),
+            )
+            .await
+        });
+        let registered = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while first.inner.lock().unwrap().pending_chat.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .is_ok();
+        pending.abort();
+        let _ = pending.await;
+        let cancelled_reply_removed = first.inner.lock().unwrap().pending_chat.is_empty();
         // Stop the processes even if a transport assertion below fails.
         let stopped = super::stop_runtime(&first.inner).unwrap();
         let other = super::current_status(&second).unwrap();
@@ -1362,6 +1444,8 @@ mod tests {
         super::stop_runtime(&second.inner).unwrap();
         left.unwrap();
         right.unwrap();
+        assert!(registered);
+        assert!(cancelled_reply_removed);
         sent_after_stop.unwrap();
         assert_eq!(stopped.bot_id, "miner");
         assert!(!stopped.running);
@@ -1610,7 +1694,7 @@ mod tests {
         }))
         .unwrap();
         update_from_worker_event(&mut runtime, result);
-        assert_eq!(first_rx.try_recv().unwrap(), Ok(()));
+        assert_eq!(first_rx.try_recv().unwrap(), Ok(serde_json::Value::Null));
         assert!(runtime.pending_chat.is_empty());
         assert!(runtime.logs.last().unwrap().ends_with("chat sent: Привет"));
     }

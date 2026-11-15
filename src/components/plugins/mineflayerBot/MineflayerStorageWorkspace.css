@@ -1,0 +1,173 @@
+.mf-warehouses {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.mf-warehouses .mineflayer-bot-chat-feedback {
+  white-space: pre-wrap;
+}
+.mf-warehouse-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mf-warehouse-heading h2 {
+  margin: 0 0 5px;
+  font-size: 21px;
+}
+.mf-warehouse-heading p,
+.mf-warehouse-scope p,
+.mf-warehouse-discovery p,
+.mf-warehouse-apply p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-alt);
+}
+.mf-warehouse-mark {
+  display: block;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.mf-warehouse-scope {
+  display: grid;
+  gap: 11px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+.mf-warehouse-scope > strong {
+  font-size: 11px;
+}
+.mf-warehouse-clear {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.mf-warehouse-clear > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mf-warehouse-scope-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mf-warehouse-scope-options button {
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-alt);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.mf-warehouse-scope-options button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.mf-warehouse-scope-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.mf-warehouse-recipient-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.mf-warehouse-recipient-list span {
+  padding: 4px 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 10px;
+}
+.mf-warehouse-scope .mf-warehouse-notice {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.mf-warehouse-discovery {
+  display: grid;
+  gap: 13px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-panel);
+}
+.mf-warehouse-discovery h3 {
+  margin: 6px 0;
+  font-size: 16px;
+}
+.mf-warehouse-discovery-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 210px) minmax(170px, 1fr);
+  align-items: end;
+  gap: 12px;
+}
+.mf-warehouse-discovery-controls .mf-button {
+  min-height: 37px;
+}
+.mf-warehouse-discovery small {
+  color: var(--text-alt);
+  line-height: 1.6;
+  font-size: 11px;
+}
+.mf-warehouse-primary {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line)) !important;
+  color: var(--accent) !important;
+}
+.mf-warehouse-scan-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.mf-warehouse-scan-summary span {
+  flex: 1;
+  min-width: 130px;
+  color: var(--text-alt);
+}
+.mf-warehouse-results {
+  font-size: 12px;
+}
+.mf-warehouse-results summary {
+  cursor: pointer;
+  padding: 7px 0;
+}
+.mf-warehouse-apply {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-panel);
+}
+.mf-warehouse-apply strong {
+  font-size: 12px;
+}
+.mf-warehouse-apply p {
+  margin-top: 5px;
+  max-width: 600px;
+}
+@container (max-width: 520px) {
+  .mf-warehouse-discovery-controls {
+    grid-template-columns: 1fr;
+  }
+  .mf-warehouse-apply > button {
+    width: 100%;
+  }
+}

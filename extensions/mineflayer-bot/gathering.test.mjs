@@ -193,6 +193,24 @@ async function until(f, predicate, timeout = 3000) {
   assert.ok(predicate(), JSON.stringify(f.work.snapshot));
 }
 
+test("storage inspection holds the same gathering task across physics ticks and resumes it", async t => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.items.push(f.item("iron_pickaxe"));
+  f.put("iron_ore", 2);
+  const id = f.work.enqueue({ kind: "mine", blocks: "iron", count: 1, radius: 8 });
+  const release = await f.work.suspendForStorageInspection();
+  for (let i = 0; i < 20; i++) { f.bot.emit("physicsTick"); await delay(2); }
+  assert.equal(f.work.snapshot.active.id, id);
+  assert.equal(f.work.snapshot.history.length, 0);
+  assert.equal(f.work.snapshot.automaticPause, true);
+  assert.throws(() => f.work.resume(), /проверяет склады/);
+  release();
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].id, id);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+});
+
 function addWorkCombat(f, settings = {}) {
   const { bot } = f, attacks = [];
   bot.username = "Bot";

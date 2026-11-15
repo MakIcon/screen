@@ -7,6 +7,8 @@ import {
   inspectContents,
   assignStorage,
   chestPartner,
+  normalizeScanAssignment,
+  MAX_SCAN_CHESTS,
 } from "./storage-scan.cjs";
 import { matchesFilter, storageGroupForItem } from "./gathering-storage.cjs";
 
@@ -14,6 +16,14 @@ const require = createRequire(import.meta.url);
 const { Vec3 } = require("vec3");
 const registry = require("minecraft-data")("26.1.2");
 const point = (index) => ({ x: index, y: 64, z: 0 });
+test("team assignments validate radius, deduplicate both halves and support large warehouses", () => {
+  const blocks = Array.from({ length: 100 }, (_, i) => ({ name: "barrel", position: { x: i % 10, y: 64, z: Math.floor(i / 10) }, positions: [{ x: i % 10, y: 64, z: Math.floor(i / 10) }] }));
+  assert.equal(normalizeScanAssignment(blocks, point(0), 32).length, 100);
+  const double = { name: "chest", position: point(1), positions: [point(1), point(2)] };
+  assert.equal(normalizeScanAssignment([double, { ...double, position: point(2), positions: [point(2), point(1)] }], point(0), 32).length, 1);
+  assert.throws(() => normalizeScanAssignment([{ ...double, position: point(50) }], point(0), 32), /координаты/);
+  assert.throws(() => normalizeScanAssignment(Array(MAX_SCAN_CHESTS + 1).fill(double), point(0), 64), /список/);
+});
 function record(index, items = [], slots = 27) {
   const position = point(index);
   return {
@@ -140,7 +150,7 @@ test("repeat scans are idempotent and extend automatic groups without creating d
 });
 
 test("unavailable containers are excluded and capacity limits never drop saved groups", () => {
-  const known = Array.from({ length: 32 }, (_, index) => ({
+  const known = Array.from({ length: 100 }, (_, index) => ({
     id: `manual${index}`,
     name: "Склад",
     enabled: true,
@@ -148,9 +158,9 @@ test("unavailable containers are excluded and capacity limits never drop saved g
     chests: [point(index + 100)],
   }));
   const result = assignStorage([{ ...record(0), error: "Закрыт" }, record(1), record(2)], known);
-  assert.equal(result.groups.length, 32);
+  assert.equal(result.groups.length, 100);
   assert.equal(result.added, 0);
-  assert.ok(result.warnings.some((value) => value.includes("32 групп")));
+  assert.ok(result.warnings.some((value) => value.includes("100 складов")));
   assert.deepEqual(result.groups, known);
 });
 

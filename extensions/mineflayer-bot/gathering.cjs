@@ -144,6 +144,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     chestWindow = null,
     reportAt = 0;
   let deliveryContext = null;
+  let storageInspectionPaused = false;
   let clearCancelledOpen = () => {};
   let storagePick = null, transferTask = Promise.resolve();
   const storageStatus = new Map();
@@ -515,6 +516,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         false,
         true,
         () => {
+          if (bot.launcherTraffic?.waiting) return timeout;
           if (entered() || completed) { completed = false; return timeout; }
           const block = bot.targetDigBlock;
           const digKey = block && `${plan.key(block.position)}:${block.type}`;
@@ -727,7 +729,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     task.mineVein = null;
     return candidates;
   }
-  function chooseTarget(candidates) {
+  async function chooseTarget(candidates) {
+    const choosingTask = task;
     candidates = veinTargets(candidates);
     const reachable = new Set(
       candidates
@@ -743,7 +746,13 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           : a.position.distanceTo(bot.entity.position) -
             b.position.distanceTo(bot.entity.position)),
     );
-    const chosen = candidates[0];
+    let chosen = candidates[0];
+    if (crewEnabled() && candidates.length) {
+      const reply = await crew.request("target", { dim: crewTools.dimensionOf(bot),
+        positions: candidates.slice(0, 256).map(block => block.position) });
+      if (task !== choosingTask || disposed) return null;
+      chosen = reply?.pos ? candidates.find(block => plan.key(block.position) === plan.key(reply.pos)) : null;
+    }
     if (chosen && task.kind === "mine" && !task.area && plan.isOre(chosen.name) && !task.mineVein) {
       task.mineVein = new Map([[plan.key(chosen.position), chosen.position.clone()]]);
       extendVein(candidates);
@@ -1062,9 +1071,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         task.candidates = chosen.positions;
         const candidates = nearbyTargets();
         if (candidates.length) {
-          target = chooseTarget(candidates);
-          desired = "move";
-          return true;
+          target = await chooseTarget(candidates);
+          guard(signal);
+          if (target) { desired = "move"; return true; }
         }
       }
     }
@@ -1327,7 +1336,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       );
       return;
     }
-    target = task.area ? result.candidates[0] : chooseTarget(result.candidates);
+    target = task.area ? result.candidates[0] : await chooseTarget(result.candidates);
+    guard(signal);
+    if (!target) { task.rescanAt = 0; desired = "scan"; return; }
     desired = "move";
   }
   async function move(signal) {
@@ -1516,7 +1527,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const next =
       !task.area &&
       (!task.count || task.mined < task.count) &&
-      chooseTarget(nearbyTargets());
+      await chooseTarget(nearbyTargets());
+    guard(signal);
     if (next && !plan.supportBlock(bot, next) && visibleFace(next)) {
       target = next;
       desired = "equip";
@@ -1979,7 +1991,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   machine.active = true;
   machine.onStateEntered();
   function tick() {
-    if (disposed) return;
+    if (disposed || storageInspectionPaused) return;
     const ownerEntity = bot.players?.[bot.launcherOwnerName]?.entity;
     rememberOwner(ownerEntity);
     defense.tick();
@@ -2047,6 +2059,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   function resume(clearFailures = true) {
     if (disposed) throw new Error("Бот отключён");
+    if (storageInspectionPaused) throw new Error("Бот проверяет склады; дождитесь завершения или остановите поиск");
     if (pending) throw new Error("Дождитесь остановки текущей операции");
     if (bot.launcherSurvival?.busy) throw new Error("Бот занят едой или спасением");
     if (bot.launcherDefendingBow) throw new Error("Бот защищается от стрел");
@@ -2125,6 +2138,25 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     },
     get task() {
       return work;
+    },
+    async suspendForStorageInspection() {
+      if (storageInspectionPaused) throw new Error("Бот уже проверяет склады");
+      const previous = task, shouldResume = Boolean(task && !pauseRequested);
+      storageInspectionPaused = true;
+      if (shouldResume) requestPause("Проверка складов рядом с игроком", true);
+      releaseSite();
+      try {
+        await defense.stop();
+        await halt();
+        await work;
+        restoreMovement();
+      } catch (error) { storageInspectionPaused = false; throw error; }
+      return () => {
+        storageInspectionPaused = false;
+        if (!disposed && task === previous && shouldResume && survivalPaused && pauseRequested &&
+            bot.health > settings.minHealth && !bot.launcherSurvival?.busy && !bot.launcherDefendingBow)
+          resume(false);
+      };
     },
     get snapshot() {
       return {
@@ -2232,6 +2264,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     },
     resumeAfterSurvival() {
       if (
+        !storageInspectionPaused &&
         survivalPaused &&
         !pending &&
         !bot.launcherSurvival?.busy &&
@@ -2335,7 +2368,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   bot.on("blockPlaced", blockPlaced);
   crew?.setBeat(() => {
     if (disposed || !bot.entity?.position) return null;
-    const active = task?.kind === "deliver" ? deliveryContext?.task : task;
+    const active = storageInspectionPaused ? null : task?.kind === "deliver" ? deliveryContext?.task : task;
     const dim = crewTools.dimensionOf(bot);
     if (dim !== floorCursor.dim) {
       // Floors are per dimension: reread them after a portal.
@@ -2346,6 +2379,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       pos: crewPosition(),
       dim,
       scope: active && active.kind !== "deposit" ? crewTools.scopeOf(active) : null,
+      target: active && target?.position && !target.getDroppedItem ? target.position : null,
       held: site ? [{ scope: site.scope, key: site.key, x: site.x, y: site.y, z: site.z, cap: site.cap }] : [],
       floors: floorOutbox.splice(0, 512),
       floorSeq: floorCursor.seq,
