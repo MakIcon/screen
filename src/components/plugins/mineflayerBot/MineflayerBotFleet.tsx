@@ -15,7 +15,6 @@ import { MineflayerFleetControl } from "./MineflayerFleetControl";
 import { toErrorDetails, toErrorMessage } from "../../../utils/errors";
 import { BotSessionContext } from "./BotSessionContext";
 import { BotFleetContext } from "./BotFleetContext";
-import { ElementToggle } from "../../inputs/ElementToggle";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { botConfiguration, createBotProfiles, DEFAULT_BOT_ID } from "./botFleet";
 import {
@@ -345,15 +344,6 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               <p className="mf-workspace-note">{tr("bot.workspaceNew.deleteHint")}</p>
             </div>
           </details>
-          <div className="mf-sidebar-section mf-sidebar-section-body">
-            <ElementToggle
-              title={tr("bot.workspaceNew.crowdAvoidance")}
-              note={tr("bot.workspaceNew.crowdAvoidanceHint")}
-              enabled={root.crowdAvoidance}
-              onToggle={() => save({ ...root, crowdAvoidance: !root.crowdAvoidance })}
-              size="small"
-            />
-          </div>
         </aside>
         <main className="mf-workspace-main">
           <header className="mf-workspace-header">
@@ -529,6 +519,8 @@ export function MineflayerBotFleet({ plugins, onChange, context, renderEditor }:
               recipients,
               statuses,
               busy: locked,
+              crowdAvoidance: root.crowdAvoidance,
+              setCrowdAvoidance: (crowdAvoidance) => save({ ...root, crowdAvoidance }),
               setStorageBusy,
               focusId: active.id,
               focus: setFocusId,

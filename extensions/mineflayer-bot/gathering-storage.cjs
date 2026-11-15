@@ -211,5 +211,6 @@ module.exports = {
   storageGroupForItem,
   matchesFilter,
   containerCapacity,
+  sameStack,
   key,
 };

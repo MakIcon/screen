@@ -1369,6 +1369,14 @@ test(
       ),
     );
     const digs = [];
+    const trace = [];
+    rig.bot.on("physicsTick", () => {
+      const move = rig.bot.pathfinder?.currentMove;
+      trace.push({ pos: rig.bot.entity.position.toString(), velocity: rig.bot.entity.velocity.toString(), onGround: rig.bot.entity.onGround,
+        controls: Object.fromEntries(["forward", "back", "jump", "sneak"].map(key => [key, rig.bot.getControlState(key)])),
+        move: move?.moveType.constructor.name, mode: move?.metadata?.climbMode, exit: move?.exitPos.toString() });
+      if (trace.length > 15) trace.shift();
+    });
     const dig = rig.bot.dig;
     rig.bot.dig = (block, ...args) => {
       digs.push(block.position.clone());
@@ -1381,7 +1389,8 @@ test(
         canDig: true,
         maxDropDown: 3,
       });
-      await navigator.goto(new pathfinder.goals.GoalBlock(2, 68, 0));
+      try { await navigator.goto(new pathfinder.goals.GoalBlock(2, 68, 0)); }
+      catch (error) { throw new Error(JSON.stringify({ routes, trace }), { cause: error }); }
       assert.ok(
         rig.bot.entity.position.floored().equals(new Vec3(2, 68, 0)),
         String(rig.bot.entity.position),

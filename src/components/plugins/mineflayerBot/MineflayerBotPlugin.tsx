@@ -21,14 +21,16 @@ import { MineflayerProductionControls } from "./MineflayerProductionControls";
 import { MineflayerWorkflow } from "./MineflayerWorkflow";
 import { mergeScannedStorageGroups } from "./storageGroups";
 import { MineflayerBotFleet } from "./MineflayerBotFleet";
+import { MineflayerBotsOverview } from "./MineflayerBotsOverview";
 import { flushPluginSettings } from "../pluginSettingsSync";
 import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
 type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "gathering";
-type WorkspaceView = "scenario" | "inventory" | "production" | "settings" | "control";
+type WorkspaceView = "bots" | "scenario" | "inventory" | "production" | "settings" | "control";
 
 const WORKSPACE_VIEWS: WorkspaceView[] = [
+  "bots",
   "scenario",
   "inventory",
   "production",
@@ -432,6 +434,7 @@ function MineflayerBotSettingsEditor({
       {fleet &&
         fleet.recipients.length > 1 &&
         activeView !== "scenario" &&
+        activeView !== "bots" &&
         activeSection !== "gathering" && (
           <div className="mf-workspace-inspector">
             <label>
@@ -497,6 +500,7 @@ function MineflayerBotSettingsEditor({
         </nav>
       )}
       <div className="mineflayer-bot-section" key={activeSection}>
+        {activeSection === "bots" && <MineflayerBotsOverview />}
         {activeSection === "gathering" && (
           <MineflayerStorageWorkspace
             refresh={monitor.refresh}

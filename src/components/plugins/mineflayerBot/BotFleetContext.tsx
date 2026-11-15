@@ -7,6 +7,8 @@ export type BotFleetWorkspace = {
   recipients: MineflayerBotProfile[];
   statuses: MineflayerBotStatus[];
   busy: boolean;
+  crowdAvoidance: boolean;
+  setCrowdAvoidance: (enabled: boolean) => void;
   setStorageBusy: (busy: boolean) => void;
   focusId: string;
   focus: (id: string) => void;

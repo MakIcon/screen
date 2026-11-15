@@ -12,6 +12,8 @@ require("ts-node").register({
 });
 const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
+const { createHub } = require("../fleet-crew.cjs");
+const { createFleetNavigation } = require("../fleet-navigation.cjs");
 
 async function waitForJob(controller, timeout = 12000) {
   const until = Date.now() + timeout;
@@ -20,7 +22,7 @@ async function waitForJob(controller, timeout = 12000) {
   assert.equal(controller.snapshot.phase === "paused", false, JSON.stringify(controller.snapshot));
   assert.equal(controller.busy, false, JSON.stringify(controller.snapshot));
 }
-function prepare(version, world, realDigging = false, position = new Vec3(0.5, 64, 0.5), movement = {}) {
+function prepare(version, world, realDigging = false, position = new Vec3(0.5, 64, 0.5), movement = {}, hooks = {}) {
   const { rig } = createCacheWorld(version, position.y, position, { world });
   const bot = rig.bot;
   bot.health = 20;
@@ -47,10 +49,186 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
   const controller = gathering.createGatheringController(
     bot,
     { dropWaitMs: 0, operationTimeoutMs: 8000 },
-    { onStatus: (message) => messages.push(message) },
+    { onStatus: (message) => messages.push(message), ...hooks },
   );
   return { rig, bot, controller, messages };
 }
+
+for (const depth of [4, 10]) test(`escapes a ${depth}-block quarry directly underneath the warehouse without digging its floor`, { timeout: 50000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  for (let x = -16; x <= 16; x++) for (let z = -16; z <= 16; z++)
+    if (Math.abs(x) > 3 || Math.abs(z) > 3)
+      for (let y = 64; y < 64 + depth; y++) world.setBlock(new Vec3(x, y, z), "sandstone");
+  const level = 64 + depth + 1;
+  for (let x = -1; x <= 6; x++) for (let z = -1; z <= 1; z++)
+    world.setBlock(new Vec3(x, level - 1, z), "white_wool");
+  const chest = world.setBlock(new Vec3(0, level, 0), "chest");
+  const { rig, bot, controller, messages } = prepare("26.1.2", world);
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  t.signal.addEventListener("abort", () => { void bot.pathfinder.stop(); }, { once: true });
+  const Item = require("prismarine-item")(bot.registry);
+  for (const [name, slot] of [["diamond", 36], ["diamond_pickaxe", 37]]) {
+    const item = new Item(bot.registry.itemsByName[name].id, 1); item.slot = slot; bot.inventory.slots[slot] = item;
+  }
+  bot.updateHeldItem(); bot.pathingUtil.refresh();
+  let dug = 0, opened = false;
+  const dig = bot.dig;
+  bot.dig = (block, ...args) => { dug++; assert.equal(block.name, "sandstone", "only excavates terrain, preserving the warehouse"); return dig(block, ...args); };
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => {
+    opened = true;
+    assert.ok(bot.entity.position.y >= level - 3, `must climb to a genuinely reachable chest face: ${bot.entity.position}`);
+    return { close() {}, async deposit() { bot.inventory.slots[36] = null; bot.updateHeldItem(); } };
+  };
+  controller.configureStorage([{ id: "overhead", name: "Склад над карьером", filters: ["#all"], chests: [chest.position] }]);
+  controller.enqueue({ kind: "deposit" });
+  await waitForJob(controller, 45000);
+  assert.equal(opened, true, messages.join("\n"));
+  assert.ok(dug > 0);
+  assert.equal(world.getBlock(chest.position.offset(0, -1, 0)).name, "white_wool");
+});
+
+for (const supplies of [false, true]) test(`unloads from a closed three-block desert pit ${supplies ? "with building supplies" : "without building supplies"}`, { timeout: 35000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  for (let x = -12; x <= 24; x++) for (let z = -12; z <= 12; z++)
+    if (Math.abs(x) > 2 || Math.abs(z) > 2)
+      for (let y = 64; y <= 66; y++) world.setBlock(new Vec3(x, y, z), "sandstone");
+  const chest = world.setBlock(new Vec3(18, 67, 0), "chest");
+  const { rig, bot, controller, messages } = prepare("26.1.2", world);
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  t.signal.addEventListener("abort", () => { void bot.pathfinder.stop(); }, { once: true });
+  const Item = require("prismarine-item")(bot.registry);
+  const put = (name, count, slot) => { const item = new Item(bot.registry.itemsByName[name].id, count); item.slot = slot; bot.inventory.slots[slot] = item; };
+  put("diamond", 5, 36);
+  put("diamond_pickaxe", 1, 38);
+  if (supplies) put("cobblestone", 32, 37);
+  bot.updateHeldItem(); bot.pathingUtil.refresh();
+  let edits = 0, opened = false;
+  bot.on("diggingCompleted", block => {
+    edits++;
+    assert.ok(block.position.xzDistanceTo(chest.position) >= 9, "preserve the warehouse");
+  });
+  bot.on("blockPlaced", () => edits++);
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => {
+    opened = true;
+    assert.ok(bot.entity.position.y >= 67, `must escape before opening: ${bot.entity.position}`);
+    return { close() {}, async deposit(type) {
+      for (let slot = 0; slot < bot.inventory.slots.length; slot++)
+        if (bot.inventory.slots[slot]?.type === type) bot.inventory.slots[slot] = null;
+      bot.updateHeldItem();
+    } };
+  };
+  controller.configureStorage([{ id: "pit-store", name: "Склад", filters: ["#all"], chests: [chest.position] }]);
+  controller.enqueue({ kind: "deposit" });
+  await waitForJob(controller, 32000);
+  assert.equal(opened, true, JSON.stringify({ messages, snapshot: controller.snapshot }));
+  assert.ok(edits > 0, "actually digs or builds out of the closed pit");
+  assert.ok(controller.snapshot.history[0]?.deposited >= 5);
+});
+
+for (const overhead of [false, true]) test(`four workers escape the same enclosed quarry and unload in turn${overhead ? " with the warehouse directly overhead" : ""}`, { timeout: 75000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  world.setMaxListeners(32);
+  for (let x = -12; x <= 24; x++) for (let z = -12; z <= 12; z++)
+    if (Math.abs(x) > 3 || Math.abs(z) > 3)
+      for (let y = 64; y <= 67; y++) world.setBlock(new Vec3(x, y, z), "sandstone");
+  if (overhead) for (let x = -1; x <= 6; x++) for (let z = -1; z <= 1; z++)
+    world.setBlock(new Vec3(x, 68, z), "white_wool");
+  const chest = world.setBlock(new Vec3(overhead ? 0 : 18, overhead ? 69 : 68, 0), "chest");
+  const hub = createHub(), workers = [], navs = [], arrivals = [];
+  let opened = 0, digs = 0;
+  for (let i = 0; i < 4; i++) {
+    const name = `quarry-${i}`;
+    const crew = { request: async (op, input) => hub.handle(name, op, input), setBeat() {} };
+    const entry = prepare("26.1.2", world, false, new Vec3(-1.5, 64, -2.5 + i * 1.6), {}, { crew });
+    workers.push(entry);
+    const { bot, controller } = entry;
+    bot.entity.username = name;
+    navs.push(createFleetNavigation(bot, crew, { pollMs: 80 }));
+    const Item = require("prismarine-item")(bot.registry);
+    for (const [slot, name, count] of [[36, "diamond", 5], [37, "diamond_pickaxe", 1]]) {
+      const item = new Item(bot.registry.itemsByName[name].id, count); item.slot = slot; bot.inventory.slots[slot] = item;
+    }
+    bot.updateHeldItem(); bot.pathingUtil.refresh();
+    bot.on("diggingCompleted", () => digs++);
+    bot.activateBlock = undefined;
+    bot.openContainer = async () => {
+      assert.equal(opened++, 0, "only one worker accesses storage");
+      assert.ok(bot.entity.position.y >= (overhead ? 66 : 68), "climbed to a reachable warehouse approach");
+      arrivals.push(i);
+      return { close() { opened--; }, async deposit() { bot.inventory.slots[36] = null; bot.updateHeldItem(); } };
+    };
+    controller.configureStorage([{ id: "quarry", name: "Склад", filters: ["#all"], chests: [chest.position] }]);
+  }
+  for (const { bot } of workers) workers.forEach(({ bot: other }, i) => { if (bot !== other) bot.entities[100 + i] = other.entity; });
+  t.signal.addEventListener("abort", () => { for (const { bot } of workers) void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => {
+    navs.forEach(nav => nav.dispose());
+    await Promise.all(workers.map(async ({ controller, bot, rig }) => {
+      await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics();
+    }));
+  });
+  workers.forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
+  await Promise.all(workers.map(({ controller }) => waitForJob(controller, 70000)));
+  assert.deepEqual(arrivals, [0, 1, 2, 3]);
+  assert.ok(digs > 0, "the first worker cuts an actual exit");
+  assert.ok(workers.every(({ controller }) => controller.snapshot.history[0]?.deposited === 5));
+});
+
+for (const crowded of [false, true]) test(`three workers queue, use existing warehouse steps and leave without building bridges${crowded ? " from a crowded entrance" : ""}`, { timeout: 60000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  for (let x = 0; x <= 6; x++) for (let z = -2; z <= 2; z++)
+    for (let y = 64; y <= 64 + x; y++) world.setBlock(new Vec3(x, y, z), "white_wool");
+  const chest = world.setBlock(new Vec3(6, 71, 0), "chest");
+  const hub = createHub(), order = [], workers = [], navigators = [];
+  let opened = 0, edits = 0;
+  for (let i = 0; i < 3; i++) {
+    const name = `worker-${i}`;
+    const crew = { request: async (op, input) => hub.handle(name, op, input), setBeat() {} };
+    const entry = prepare("26.1.2", world, false, new Vec3(crowded ? -0.5 : -12.5, 64, (i - 1) * (crowded ? 1 : 3) + 0.5), {}, { crew });
+    workers.push(entry);
+    const { bot, controller } = entry;
+    bot.entity.username = name;
+    navigators.push(createFleetNavigation(bot, crew, { pollMs: 80 }));
+    const Item = require("prismarine-item")(bot.registry);
+    const diamonds = new Item(bot.registry.itemsByName.diamond.id, 5);
+    diamonds.slot = 36; bot.inventory.slots[36] = diamonds; bot.updateHeldItem();
+    bot.pathingUtil.refresh();
+    bot.on("blockPlaced", () => edits++);
+    bot.on("diggingCompleted", () => edits++);
+    bot.on("pathGenerated", path => {
+      assert.ok(path.path.every(move => !move.toPlace.length && !move.toBreak.length), "uses the prepared stair route");
+    });
+    bot.activateBlock = undefined;
+    bot.openContainer = async () => {
+      assert.equal(opened, 0, "only the queue owner opens a chest");
+      if (order.length) {
+        const previous = workers[order[order.length - 1]].bot.entity.position;
+        assert.ok(previous.xzDistanceTo(chest.position) >= 9, `previous worker cleared the steps: ${previous}`);
+      }
+      opened++; order.push(i);
+      let closed = false;
+      return { close() { if (!closed) { opened--; closed = true; } },
+        async deposit() { bot.inventory.slots[36] = null; bot.updateHeldItem(); } };
+    };
+    controller.configureStorage([{ id: "gems", name: "Склад", filters: ["#all"], chests: [chest.position] }]);
+  }
+  for (const { bot } of workers) for (const [i, other] of workers.entries())
+    if (bot !== other.bot) bot.entities[100 + i] = other.bot.entity;
+  t.signal.addEventListener("abort", () => { for (const { bot } of workers) void bot.pathfinder.stop(); }, { once: true });
+  t.after(async () => {
+    navigators.forEach(nav => nav.dispose());
+    await Promise.all(workers.map(async ({ controller, bot, rig }) => {
+      await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics();
+    }));
+  });
+  workers.forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
+  await Promise.all(workers.map(({ controller }) => waitForJob(controller, 55000)));
+  assert.deepEqual(order, [0, 1, 2]);
+  assert.equal(edits, 0);
+  assert.ok(workers.every(({ controller }) => controller.snapshot.history[0]?.deposited === 5));
+});
 
 for (const version of ['1.20.4', '26.1.2'])
   test(`mining collects coal from a raised niche under a low ceiling on ${version}`, { timeout: 20000 }, async (t) => {

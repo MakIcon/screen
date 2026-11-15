@@ -1,6 +1,7 @@
 "use strict";
 
 const { Vec3 } = require("vec3");
+const { availableParallelism } = require("node:os");
 const { dimensionOf } = require("./fleet-crew.cjs");
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const near = (a, b, radius) => Math.abs(a.y - b.y) < 1.5 && flat(a, b) < radius;
@@ -34,7 +35,7 @@ function bodySpace(bot, p) {
   return true;
 }
 
-function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, pollMs = 180 } = {}) {
+function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, pollMs = 180, cpuCount = availableParallelism() } = {}) {
   let disposed = false, pending = false, peers = [], allowed = true, blocker = null;
   let updatedAt = -Infinity, published = [], yieldPath = [], yielded = false;
   let waitingAt = null, nextYieldAt = 0, lastResetAt = -Infinity, refuge = null;
@@ -42,6 +43,10 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   let revision = 0, dimension = dimensionOf(bot);
   let entityCacheAt = -Infinity;
   const entities = new Map();
+  let fleetSize = 1;
+  let costAt = -Infinity;
+  const costCells = new Map();
+  const costKey = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
   const activePeers = () => enabled && now() - updatedAt < 1800 ? peers : [];
   const peerPosition = peer => {
     if (now() - entityCacheAt >= 40) {
@@ -126,6 +131,8 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         route: points, corridor: enabled ? corridorFor(points) : [] });
       if (disposed || version !== revision || dimensionOf(bot) !== dim || !reply) return;
       peers = Array.isArray(reply.peers) ? reply.peers : [];
+      costAt = -Infinity;
+      fleetSize = Math.max(1, Number(reply.members) || peers.length + 1);
       allowed = reply.allowed !== false;
       blocker = reply.blocker;
       updatedAt = now();
@@ -195,6 +202,18 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     const pos = bot.entity.position, to = move.exitPos || move;
     const ahead = list.find(peer => {
       const p = peerPosition(peer), dx = to.x - pos.x, dz = to.z - pos.z;
+      // At a tunnel mouth another worker can cross the lane diagonally.
+      // Waiting until its centre enters the lane leaves too little braking
+      // distance: clearing controls still coasts for several physics ticks.
+      const velocity = entities.get(peer.name)?.velocity;
+      const ownVelocity = bot.entity.velocity;
+      const length = Math.max(0.01, Math.hypot(dx, dz));
+      const rx = p.x - pos.x, rz = p.z - pos.z;
+      const vx = ((velocity?.x || 0) - (ownVelocity?.x || 0)) * 3 - dx / length * 0.3;
+      const vz = ((velocity?.z || 0) - (ownVelocity?.z || 0)) * 3 - dz / length * 0.3;
+      const closing = rx * vx + rz * vz;
+      const closest = Math.max(0, Math.min(1, -closing / Math.max(0.0001, vx * vx + vz * vz)));
+      if (Math.abs(p.y - pos.y) < 1.5 && closing < -0.0001 && Math.hypot(rx + vx * closest, rz + vz * closest) < 1.15) return true;
       const projection = ((p.x - pos.x) * dx + (p.z - pos.z) * dz) / Math.max(0.01, dx * dx + dz * dz);
       const lateral = flat(p, { x: pos.x + dx * projection, z: pos.z + dz * projection });
       return near(pos, p, 2.3) && projection > 0 && projection <= 1.1 && lateral < 0.95;
@@ -218,7 +237,12 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     const opposing = other?.route?.length &&
       (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
       (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) < -0.1;
-    if (other && denied && (opposing || !other.moving) && now() - waitingAt > 350) retreat(other);
+    const ownName = String(bot.entity.username || bot.username || "").toLowerCase();
+    const crossing = other?.route?.length &&
+      (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
+      (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) <= 0.1;
+    const localYield = ahead && crossing && ownName > String(other?.name || "");
+    if (other && (denied && (opposing || !other.moving) || localYield) && now() - waitingAt > 350) retreat(other);
     if (!denied && now() - waitingAt > 1400 && !yieldPath.length) replan();
     return true;
   }
@@ -240,11 +264,31 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   bot.on("pathGenerated", pathGenerated);
   bot.on("physicsTick", idleYield);
   const controller = {
+    // Leave CPU room for protocol/physics threads and the Minecraft client.
+    // Each worker searches in 5ms slices; oversubscribed fleets rest between
+    // slices instead of 100 independent setImmediate loops saturating the CPU.
+    get workDelayMs() { return now() - updatedAt < 1800 ? Math.min(80,
+      Math.max(0, Math.ceil(5 * (fleetSize / Math.max(1, cpuCount * 0.35) - 1)))) : 0; },
+    get enabled() { return enabled; },
     pause,
     cost(from, to) {
+      if (now() - costAt >= 40) {
+        costAt = now(); costCells.clear();
+        for (const peer of activePeers()) {
+          const entry = { peer, pos: peerPosition(peer) };
+          for (const p of [entry.pos, ...peer.route.slice(0, 6)]) {
+            for (let x = Math.floor((p.x - 2) / 4); x <= Math.floor((p.x + 2) / 4); x++)
+              for (let y = Math.floor((p.y - 2) / 4); y <= Math.floor((p.y + 2) / 4); y++)
+                for (let z = Math.floor((p.z - 2) / 4); z <= Math.floor((p.z + 2) / 4); z++) {
+                  const id = `${x},${y},${z}`;
+                  if (!costCells.has(id)) costCells.set(id, new Set());
+                  costCells.get(id).add(entry);
+                }
+          }
+        }
+      }
       let cost = 0;
-      for (const peer of activePeers()) {
-        const p = peerPosition(peer);
+      for (const { peer, pos: p } of costCells.get(costKey(to)) || []) {
         if (near(to, p, 1.1)) cost += 60;
         else if (near(to, p, 2)) cost += 8;
         // Short route prefixes discourage duplicate approaches, while finite
@@ -276,6 +320,7 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     setEnabled(value) {
       if (enabled === (value !== false)) return;
       enabled = value !== false; revision++; peers = []; allowed = true;
+      costAt = -Infinity;
       waitingAt = null; yieldPath = []; refuge = null;
       if (yielded) clearControls();
       yielded = false;

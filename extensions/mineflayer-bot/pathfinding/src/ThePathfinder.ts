@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/consistent-type-assertions, @typescript-eslint/strict-boolean-expressions, @typescript-eslint/restrict-template-expressions, no-unmodified-loop-condition */
 import { Bot, BotEvents } from 'mineflayer'
+import type { TrafficAwareBot } from './traffic'
 import { installLowCeilingJumps } from './mineflayer-specific/lowCeilingJumps'
 import { AStarBackOff as AAStar } from './abstract/algorithms/astar'
 import { AStar, Path, PathProducer } from './mineflayer-specific/algs'
@@ -154,6 +155,15 @@ interface PerformOpts extends RouteOpts {
 }
 
 export class ThePathfinder {
+  private async yieldSearch (context?: AStar): Promise<void> {
+    const delay = Math.min(80, Math.max(0, (this.bot as TrafficAwareBot).launcherTraffic?.workDelayMs ?? 0))
+    const started = performance.now()
+    if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay))
+    else await new Promise<void>(resolve => setImmediate(resolve))
+    // Fleet pacing is deliberately idle time, not exhausted search budget.
+    // Otherwise large crews time out before receiving their CPU share.
+    if (context != null) context.startTime += performance.now() - started
+  }
   public get navigationRevision (): number { return this.goalRequestId }
   private readonly rejectedPlacements = new Set<string>()
   private readonly traversalMemory = new TraversalMemory()
@@ -769,7 +779,7 @@ export class ThePathfinder {
         res = producer.advance()
         if (this.abortCalculation || this.disposed) res.result.status = 'canceled'
         if (res.result.status !== 'partial') break
-        await new Promise<void>(resolve => setImmediate(resolve))
+        await this.yieldSearch(res.astarContext)
       } while (true)
       return res
     }
@@ -1023,7 +1033,7 @@ export class ThePathfinder {
       yield { result, astarContext }
 
       if (result.status === 'partial' || result.status === 'partialSuccess') {
-        await new Promise<void>(resolve => setImmediate(resolve))
+        await this.yieldSearch(astarContext)
       }
     } while (result.status === 'partial' || result.status === 'partialSuccess')
 
@@ -1123,7 +1133,7 @@ export class ThePathfinder {
     const result = (async (): Promise<Path | undefined> => {
       try {
         while (!invalid()) {
-          await new Promise<void>(resolve => setImmediate(resolve))
+          await this.yieldSearch(context)
           if (invalid()) return
           const advanced = suffix?.advance()
           if (advanced != null) context = advanced.astarContext

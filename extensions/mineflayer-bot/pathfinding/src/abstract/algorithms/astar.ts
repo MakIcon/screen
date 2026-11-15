@@ -20,7 +20,7 @@ export class AStar<Data extends PathData, MProvider extends MovementProvider<Dat
   bestNode: PathNode<Data>
   maxCost: number
 
-  checkInterval = 7
+  checkInterval = 0
   maxVisitedNodes = 50000
   nodeConsiderCount = 0
 
@@ -207,7 +207,7 @@ export class AStarBackOff<Data extends PathData, MProv extends MovementProvider<
   x5 = 1 / 5
   x6 = 1 / 10
 
-  checkInterval = 7
+  checkInterval = 0
   nodeConsiderCount = 0
   moveConsiderCount = 0
 

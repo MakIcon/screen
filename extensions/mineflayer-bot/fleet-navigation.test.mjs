@@ -25,7 +25,7 @@ function fixture(t, { enabled = true, peers = [], allowed = true, blocker = null
   bot.pathfinder = { isPathing: true, currentIndex: 0, currentPath: [], reset: async () => {} };
   const requests = [];
   const link = { request: async (op, input) => { requests.push({ op, input }); return { peers, allowed, blocker }; } };
-  const nav = fleet.createFleetNavigation(bot, link, { enabled, now: () => time, pollMs: 100000 });
+  const nav = fleet.createFleetNavigation(bot, link, { enabled, now: () => time, pollMs: 100000, cpuCount: 8 });
   t.after(() => nav.dispose());
   return { bot, nav, requests, advance: ms => { time += ms; } };
 }
@@ -39,6 +39,36 @@ test("solo navigation preserves goals and never pauses", async t => {
   assert.equal(goal.distance, 1);
   assert.equal(nav.cost(p(0.5), p(1.5)), 0);
   assert.equal(nav.pause({ exitPos: p(1.5) }), false);
+});
+
+test("fleet planning yields more CPU as workers join and ignores stale load", async t => {
+  const peers = Array.from({ length: 99 }, (_, i) => ({ name: `worker-${i}`, pos: p(i * 4), route: [] }));
+  const { nav, advance } = fixture(t, { peers });
+  await flush();
+  assert.ok(nav.workDelayMs > 0 && nav.workDelayMs <= 80);
+  advance(2000);
+  assert.equal(nav.workDelayMs, 0);
+});
+
+test("route costs index local workers instead of scanning the whole fleet for every node", async t => {
+  let reads = 0;
+  const peers = Array.from({ length: 100 }, (_, i) => ({ name: `worker-${i}`, pos: p(100 + i * 4),
+    get route() { reads++; return [p(101 + i * 4)]; } }));
+  peers.push({ name: "nearby", pos: p(1.5), route: [] });
+  const { nav } = fixture(t, { peers });
+  await flush();
+  for (let i = 0; i < 5000; i++) assert.equal(nav.cost(p(0.5), p(1.5)), 60);
+  assert.ok(reads <= 100, `distant route reads=${reads}`);
+});
+
+test("crossing workers brake before momentum carries them together at a tunnel exit", async t => {
+  const peer = { name: "crossing", pos: p(1.5, 1.6), route: [], moving: true };
+  const { bot, nav } = fixture(t, { peers: [peer] });
+  bot.entity.velocity = new Vec3(0.22, 0, 0);
+  bot.entities[1] = { username: "crossing", position: peer.pos, velocity: new Vec3(0, 0, -0.22) };
+  await flush();
+  assert.equal(nav.pause({ exitPos: p(5.5) }), true);
+  assert.equal(bot.controls.forward, false);
 });
 
 test("merged routes publish the current exit ahead rather than a passed raw waypoint", async t => {

@@ -4468,7 +4468,7 @@ var require_movementExecutors = __commonJS({
           return false;
         }
         const clearExit = (0, navigationGeometry_1.clearBodySegment)(this.world, pos, move.exitPos, 0.599) && (0, navigationGeometry_1.supportedWalkSegment)(this.world, pos, move.exitPos);
-        if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.08 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.025)
+        if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.12 && clearExit && !(0, navigationGeometry_1.needsWalkSneak)(this.world, pos, this.bot.entity.velocity))
           this.cornerTarget = void 0;
         if (clearExit && this.cornerTarget == null) {
           if (this.cornerSneaking) {
@@ -4488,7 +4488,7 @@ var require_movementExecutors = __commonJS({
           throw new exceptions_12.CancelError("Forward: cannot recenter at a blocked corner");
         this.cornerTarget = center;
         await this.lookAtPathPos(center);
-        (0, controls_1.steerToPosition)(this.bot, center, 0.1, 0.04);
+        (0, controls_1.steerToPosition)(this.bot, center, 0.2, 0.04, true);
         this.bot.setControlState("sprint", false);
         this.bot.setControlState("jump", false);
         this.cornerSneaking = (0, navigationGeometry_1.needsWalkSneak)(this.world, this.bot.entity.position, this.bot.entity.velocity);
@@ -4882,6 +4882,15 @@ var require_movementExecutors = __commonJS({
         if (this.doWaterLogic()) {
           this.swimming = true;
           return true;
+        }
+        if (this.adjacentStep(move) && move.toPlace.length === 0 && this.bot.entity.onGround && Math.abs(this.bot.entity.position.y - move.entryPos.y) < 0.15) {
+          const direction = move.exitPos.minus(move.entryPos);
+          direction.y = 0;
+          direction.normalize();
+          const pos = this.bot.entity.position;
+          const side = Math.abs((pos.x - move.exitPos.x) * direction.z - (pos.z - move.exitPos.z) * direction.x);
+          if (pos.xzDistanceTo(move.exitPos) <= 1.25 && side <= 0.2)
+            return true;
         }
         if (move.toPlace.length > 0 && this.bot.entity.onGround) {
           const dir = move.exitPos.minus(move.entryPos);
@@ -9552,7 +9561,7 @@ var require_astar = __commonJS({
     var node_1 = require_node();
     var AStar = class {
       constructor(start, movements, goal, timeout, tickTimeout = 40, searchRadius = -1, differential = 0) {
-        this.checkInterval = 7;
+        this.checkInterval = 0;
         this.maxVisitedNodes = 5e4;
         this.nodeConsiderCount = 0;
         this.lastAmt = 0;
@@ -9666,7 +9675,7 @@ var require_astar = __commonJS({
         this.x4 = 1 / 4;
         this.x5 = 1 / 5;
         this.x6 = 1 / 10;
-        this.checkInterval = 7;
+        this.checkInterval = 0;
         this.nodeConsiderCount = 0;
         this.moveConsiderCount = 0;
       }
@@ -12167,6 +12176,16 @@ var require_ThePathfinder = __commonJS({
     var DEFAULT_SETUP = new Map(DEFAULT_PROVIDER_EXECUTORS);
     var DEFAULT_OPTIMIZATION = new Map(DEFAULT_OPTIMIZERS);
     var ThePathfinder = class {
+      async yieldSearch(context) {
+        const delay = Math.min(80, Math.max(0, this.bot.launcherTraffic?.workDelayMs ?? 0));
+        const started = performance.now();
+        if (delay > 0)
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        else
+          await new Promise((resolve) => setImmediate(resolve));
+        if (context != null)
+          context.startTime += performance.now() - started;
+      }
       get navigationRevision() {
         return this.goalRequestId;
       }
@@ -12681,7 +12700,7 @@ var require_ThePathfinder = __commonJS({
               res.result.status = "canceled";
             if (res.result.status !== "partial")
               break;
-            await new Promise((resolve) => setImmediate(resolve));
+            await this.yieldSearch(res.astarContext);
           } while (true);
           return res;
         };
@@ -12890,7 +12909,7 @@ var require_ThePathfinder = __commonJS({
           }
           yield { result, astarContext };
           if (result.status === "partial" || result.status === "partialSuccess") {
-            await new Promise((resolve) => setImmediate(resolve));
+            await this.yieldSearch(astarContext);
           }
         } while (result.status === "partial" || result.status === "partialSuccess");
         log("Path generation ended with status: %s", result.status);
@@ -12986,7 +13005,7 @@ var require_ThePathfinder = __commonJS({
         const result = (async () => {
           try {
             while (!invalid()) {
-              await new Promise((resolve) => setImmediate(resolve));
+              await this.yieldSearch(context);
               if (invalid())
                 return;
               const advanced = suffix?.advance();

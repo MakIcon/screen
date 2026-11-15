@@ -13,6 +13,7 @@ import {
 import type {
   MineflayerBotStatus,
   MineflayerInventory,
+  MineflayerInventoryItem,
   MineflayerWorkflowStatus,
   RuntimeMonitorSnapshot,
   MineflayerStorageGroup,
@@ -30,6 +31,7 @@ const qa = {
   release: () => {},
   setLocale: saveLocale,
   workflow: (_id: string, _phase: MineflayerWorkflowStatus["phase"]) => {},
+  inventory: (_id: string, _slots: Array<MineflayerInventoryItem | null>) => {},
   applyStorage: (_ids: string[], _groups: MineflayerStorageGroup[], _scanToken?: string) => ({
     saved: 0,
     applied: 0,
@@ -317,6 +319,7 @@ function Fixture() {
               inventory: {
                 ...bot.inventory!,
                 workflow: {
+                  name: "Добыча и разгрузка",
                   phase,
                   message: `${phase} · ${bot.botUsername}`,
                   current: 0,
@@ -331,6 +334,17 @@ function Fixture() {
                   ],
                 },
               },
+            },
+      ),
+    );
+  qa.inventory = (id, slots) =>
+    setStatuses((previous) =>
+      previous.map((bot) =>
+        bot.botId !== id
+          ? bot
+          : {
+              ...bot,
+              inventory: { ...bot.inventory!, slots },
             },
       ),
     );

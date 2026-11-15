@@ -52,8 +52,8 @@ export class NewForwardExecutor extends MovementExecutor {
       return false
     }
     const clearExit = clearBodySegment(this.world, pos, move.exitPos, 0.599) && supportedWalkSegment(this.world, pos, move.exitPos)
-    if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.08 &&
-        Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.025) this.cornerTarget = undefined
+    if (this.cornerTarget != null && pos.xzDistanceTo(this.cornerTarget) < 0.12 && clearExit &&
+        !needsWalkSneak(this.world, pos, this.bot.entity.velocity)) this.cornerTarget = undefined
     if (clearExit && this.cornerTarget == null) {
       if (this.cornerSneaking) { this.bot.setControlState('sneak', false); this.cornerSneaking = false }
       return false
@@ -75,7 +75,9 @@ export class NewForwardExecutor extends MovementExecutor {
     // back to the exit as soon as one ray clears causes repeated wall taps.
     this.cornerTarget = center
     await this.lookAtPathPos(center)
-    steerToPosition(this.bot, center, 0.1, 0.04)
+    // A corner approach is walking, with braking near its target. Precision
+    // taps coast after each input and crawl along every bend in a jagged rim.
+    steerToPosition(this.bot, center, 0.2, 0.04, true)
     this.bot.setControlState('sprint', false)
     this.bot.setControlState('jump', false)
     this.cornerSneaking = needsWalkSneak(this.world, this.bot.entity.position, this.bot.entity.velocity)
@@ -546,6 +548,16 @@ export class NewForwardJumpExecutor extends ForwardJumpExecutor {
 
   override async align (move: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
     if (this.doWaterLogic()) { this.swimming = true; return true }
+    if (this.adjacentStep(move) && move.toPlace.length === 0 && this.bot.entity.onGround &&
+        Math.abs(this.bot.entity.position.y - move.entryPos.y) < 0.15) {
+      const direction = move.exitPos.minus(move.entryPos); direction.y = 0; direction.normalize()
+      const pos = this.bot.entity.position
+      const side = Math.abs((pos.x - move.exitPos.x) * direction.z - (pos.z - move.exitPos.z) * direction.x)
+      // A ladder crest can support the actual body on its thin top while the
+      // cell centre has no floor. Recentring there with sneak held prevents
+      // takeoff forever. The adjacent-step controller owns the grounded jump.
+      if (pos.xzDistanceTo(move.exitPos) <= 1.25 && side <= 0.2) return true
+    }
     if (move.toPlace.length > 0 && this.bot.entity.onGround) {
       const dir = move.exitPos.minus(move.entryPos); dir.y = 0; dir.normalize()
       const center = move.entryPos.floored().offset(0.5, 0, 0.5)

@@ -7,5 +7,6 @@ export interface TrafficAwareBot extends Bot {
     cost: (from: Vec3, to: Vec3) => number
     pause: (move: Move) => boolean
     readonly waiting: boolean
+    readonly workDelayMs?: number
   }
 }

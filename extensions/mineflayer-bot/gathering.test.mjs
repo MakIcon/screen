@@ -193,6 +193,22 @@ async function until(f, predicate, timeout = 3000) {
   assert.ok(predicate(), JSON.stringify(f.work.snapshot));
 }
 
+test("warehouse queue detail survives periodic work reports instead of becoming a generic deposit status", async t => {
+  const f = fixture("26.1.2", { crew: { setBeat() {}, request: async (op, input) =>
+    op === "storage" && !input.release ? { allowed: false, ahead: 52, parking: [] } : { ok: true } } });
+  t.after(() => f.work.dispose());
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  f.work.configureStorage([{ id: "queue", name: "Склад", filters: ["#all"], chests: [new Vec3(30, 64, 0)] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.status.includes("передо мной 52"));
+  await delay(1050);
+  f.bot.emit("physicsTick");
+  assert.match(f.work.status, /Очередь на разгрузку: передо мной 52/);
+  assert.match(f.progress.at(-1).message, /передо мной 52/);
+  await f.work.stop();
+  assert.doesNotMatch(f.work.status, /передо мной 52/);
+});
+
 test("storage inspection holds the same gathering task across physics ticks and resumes it", async t => {
   const f = fixture();
   t.after(() => f.work.dispose());

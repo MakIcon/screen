@@ -16,6 +16,7 @@ const { createGatheringDefense } = require("./gathering-defense.cjs");
 const storage = require("./gathering-storage.cjs");
 const farming = require("./farming.cjs");
 const crewTools = require("./fleet-crew.cjs");
+const { withStorageTurn } = require("./fleet-storage.cjs");
 
 const SAPLING_SOIL = new Set([
   "dirt", "grass_block", "podzol", "coarse_dirt", "rooted_dirt", "mud", "moss_block", "pale_moss_block",
@@ -47,6 +48,10 @@ class InventoryFull extends NavigationTaskError {
   }
 }
 const CONTAINER_REACH = 4;
+const ESCAPE_TERRAIN = new Set([
+  "sand", "red_sand", "sandstone", "red_sandstone", "gravel", "dirt", "grass_block", "coarse_dirt",
+  "stone", "deepslate", "tuff", "andesite", "diorite", "granite", "clay", "terracotta", "netherrack",
+]);
 
 // Scouting only needs to arrive above or below the place: the horizontal
 // distance decides. Being a GoalNear keeps distant-goal prefix routing, so a
@@ -145,6 +150,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     reportAt = 0;
   let deliveryContext = null;
   let storageInspectionPaused = false;
+  let storageWalking = false;
+  let depositDetail = "";
+  let cachedStorageGroups = null, cachedChest = null, cachedStoragePositions = [];
   let clearCancelledOpen = () => {};
   let storagePick = null, transferTask = Promise.resolve();
   const storageStatus = new Map();
@@ -232,6 +240,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       machine.activeState === states.deposit;
   }
   function routeBreakReason(block) {
+    if ((travelRouting() || storageWalking) && protectsStorageBlock(block)) return "Готовый подход к складу";
     const travel = travelRouting();
     if (!travel && (!task?.routeDig || !plan.insideTask(task, block.position)))
       return "Блок вне области добычи";
@@ -383,6 +392,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         ? `вспахано ${task.tilled || 0}; посажено ${task.planted || 0}; урожай ${task.harvested || 0}; подобрано ${task.collected}; `
         : `блоки ${task.mined}${task.count ? `/${task.count}` : ""}; подобрано ${task.collected}; `) +
       `выгружено ${task.deposited}; очередь ${queue.length}` +
+      (depositDetail ? `; ${depositDetail}` : "") +
       (site && !site.pending && site.team > 1 ? `; ботов на цели: ${site.team}` : "") +
       (pausedReason ? `; ${pausedReason}` : "")
     );
@@ -587,7 +597,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         // Task guards and break exclusions still validate any route excavation.
         onStatus("Путь прервался; строю маршрут заново из текущей позиции");
         guard(signal);
-        bot.pathfinder.setMoveOptions?.({ canDig: true });
+        bot.pathfinder.setMoveOptions?.({ canDig: true, canPlace: true, allow1by1towers: true });
         try {
           return await navigateOnce(goal, signal, timeout);
         } catch (failure) {
@@ -793,7 +803,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       ],
       exclusionAreasPlace: [
         ...(movementSettings.exclusionAreasPlace || []),
-        (block) => (task && (travelRouting() || plan.insideTask(task, block.position)) ? 0 : 1000000),
+        (block) => (task && !protectsStoragePlacement(block.position) && (travelRouting() || plan.insideTask(task, block.position)) ? 0 : 1000000),
       ],
       allowWaterDrop: false,
       allowBucketWaterDrop: false,
@@ -913,7 +923,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             remaining++;
             if (allowed(block)) candidates.push(block);
           }
-          if (++scanned % 512 === 0) await wait(0, signal);
+          if (++scanned % 256 === 0) await wait(bot.launcherTraffic?.workDelayMs || 0, signal);
         }
       }
       if (candidates.length) break;
@@ -1206,7 +1216,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       }
       target = await farming.scanFarming(bot, task, {
         inside: plan.insideTask, maxAttempts: settings.maxAttempts, scanLimit: settings.scanLimit,
-        yieldControl: () => wait(0, signal).then(() => guard(signal)),
+        yieldControl: () => wait(bot.launcherTraffic?.workDelayMs || 0, signal).then(() => guard(signal)),
         pick: crewEnabled() ? (actions) => pickFarmAction(actions, signal) : undefined,
       });
       guard(signal);
@@ -1254,7 +1264,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             limit: settings.scanLimit,
             index: mineIndex,
             allowed,
-            yieldControl: () => wait(0, signal).then(() => guard(signal)),
+            yieldControl: () => wait(bot.launcherTraffic?.workDelayMs || 0, signal).then(() => guard(signal)),
           });
           task.candidates = found.candidates.map((block) => block.position);
           task.mineCandidates = task.candidates;
@@ -1607,6 +1617,71 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   async function deposit(signal) {
     if (!hasStorage()) throw new WorkError("Добавьте сундук или группу сундуков во вкладке «Добыча»");
+    const depositOnly = task.kind === "deposit";
+    const depositRevision = revision;
+    const positions = storagePositions();
+    let unmatched;
+    try {
+      unmatched = await withStorageTurn(bot, crew, positions, {
+        signal, wait, status: setDepositDetail,
+        walk: (position, moveSignal = signal) => walkAtStorage(new goals.GoalNear(position.x, position.y, position.z, 0.4), moveSignal),
+        onStalled: () => { closeStorageWindow(); void halt().catch(() => {}); },
+      }, async (leave, turnSignal = signal) => {
+        try { return await depositInventory(turnSignal); }
+        finally {
+          if (revision === depositRevision) closeStorageWindow();
+          if (leave && !turnSignal.aborted && task && bot.health > 0) {
+            try { await leave(); }
+            catch (error) { if (signal.aborted) throw error; onStatus(`Не удалось отойти от склада: ${error.message}`); }
+          }
+        }
+      });
+    } finally { depositDetail = ""; }
+    if (depositOnly) finish("готово", unmatched ? `Без подходящей группы у бота осталось ${unmatched} предметов` : "");
+  }
+  function storagePositions() {
+    if (cachedStorageGroups !== settings.storageGroups || cachedChest !== chest) {
+      cachedStorageGroups = settings.storageGroups;
+      cachedChest = chest;
+      cachedStoragePositions = [...(chest ? [chest] : []), ...settings.storageGroups.filter(group => group.enabled).flatMap(group => group.chests)];
+    }
+    return cachedStoragePositions;
+  }
+  function nearStorage(position) {
+    return storagePositions().some(p => Math.hypot(p.x - position.x, p.z - position.z) < 9 && Math.abs(p.y - position.y) < 16);
+  }
+  function protectsStorageBlock(block) {
+    if (!nearStorage(block.position)) return false;
+    // A warehouse above a quarry must not turn the whole excavation into a
+    // protected cylinder. Escape through natural terrain below access level;
+    // retain built floors/stairs and the immediate support of every container.
+    if (!ESCAPE_TERRAIN.has(block.name)) return true;
+    return storagePositions().some(p => Math.hypot(p.x - block.position.x, p.z - block.position.z) < 9 &&
+      Math.abs(p.y - block.position.y) < 16 &&
+      (bot.entity.position.y >= p.y - 1 || block.position.y >= p.y ||
+       (Math.abs(p.x - block.position.x) <= 1 && Math.abs(p.z - block.position.z) <= 1 && block.position.y >= p.y - 1)));
+  }
+  function protectsStoragePlacement(position) {
+    return storagePositions().some(p => Math.hypot(p.x - position.x, p.z - position.z) < 9 &&
+      Math.abs(p.y - position.y) < 16 && position.y >= p.y - 1);
+  }
+  function setDepositDetail(message) {
+    depositDetail = message;
+    report(true);
+  }
+  async function walkAtStorage(goal, signal) {
+    const previous = { ...bot.pathfinder.defaultMoveSettings };
+    storageWalking = true;
+    bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
+    try { return await navigate(goal, signal); }
+    finally {
+      storageWalking = false;
+      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(previous);
+    }
+  }
+  async function depositInventory(signal) {
+    const depositRevision = revision;
+    if (!hasStorage()) throw new WorkError("Добавьте сундук или группу сундуков во вкладке «Добыча»");
     const before = bot.inventory.emptySlotCount();
     const groups = settings.storageGroups.length ? storage.normalizeStorageGroups(settings.storageGroups) :
       [{ id: "legacy", name: "Сундук", enabled: true, filters: ["#all"], chests: [chest] }];
@@ -1636,7 +1711,20 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         const statusKey = `${group.id}:${storage.key(position)}`;
         try {
           await approachStorage(position, signal);
-          onStatus(`Выгружаю: ${group.name} · ${storage.key(position)}`);
+          // The route may consume building supplies while escaping a pit.
+          // Reconcile planned transfers with live inventory, allocating each
+          // stack once, so used blocks are not reported as a full warehouse.
+          const stock = bot.inventory.items().map(item => ({ item, count: item.count }));
+          for (const entry of entries) {
+            let available = 0;
+            for (const stack of stock) {
+              if (!storage.sameStack(stack.item, entry.item)) continue;
+              const taken = Math.min(stack.count, entry.remaining - available);
+              available += taken; stack.count -= taken;
+            }
+            entry.remaining = available;
+          }
+          setDepositDetail(`Выгружаю: ${group.name} · ${storage.key(position)}`);
           for (const entry of entries) {
             guard(signal);
             const amount = Math.min(entry.remaining, storage.containerCapacity(chestWindow, entry.item, bot.registry));
@@ -1660,7 +1748,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           storageStatus.set(statusKey, { state: "unavailable", message: error.message });
           failures.push(`${storage.key(position)}: ${error.message}`);
           onStatus(`${group.name}: ${error.message}; пробую следующий сундук`);
-        } finally { closeStorageWindow(); report(true); }
+        } finally { if (revision === depositRevision) closeStorageWindow(); report(true); }
       }
       const left = entries.reduce((count, entry) => count + entry.remaining, 0);
       if (left) {
@@ -1672,8 +1760,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     if (blocked.length) throw new WorkError(`Не удалось выгрузить ${blocked.join("; ")}. После устранения причины продолжите задачу`);
     if (task.kind === "deposit") {
-      finish("готово", unmatched ? `Без подходящей группы у бота осталось ${unmatched} предметов` : "");
-      return;
+      return unmatched;
     }
     if (bot.inventory.emptySlotCount() <= before || inventoryFull())
       throw new WorkError(unmatched ? `Нет места: ${unmatched} предметов без подходящей группы сундуков` :
@@ -1686,6 +1773,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (window && (!bot.currentWindow || bot.currentWindow === window)) window.close();
   }
   async function approachStorage(position, signal) {
+    setDepositDetail("Прокладываю путь к складу, ищу выход из выработки");
     const chestPosition = plan.position(position);
     let block = bot.blockAt(chestPosition);
     if (!block || bot.entity.position.distanceTo(chestPosition) > 6) {
@@ -1701,7 +1789,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     // exits and chunk-frontier routing still work if the chest is above us.
     // Chests have inset collision shapes; arrival requires a clickable surface.
     const goal = new GoalContainerAccess(block.position, (feet) => Boolean(containerClick(block, feet)));
-    await navigate(goal, signal);
+    await walkAtStorage(goal, signal);
     bot.clearControlStates?.();
     bot.setControlState?.("sneak", false);
     // Sneaking with a tool suppresses container interaction. Give Mineflayer

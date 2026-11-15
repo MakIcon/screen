@@ -169,6 +169,10 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
         include_str!("../../../extensions/mineflayer-bot/fleet-navigation.cjs"),
     ),
     (
+        "fleet-storage.cjs",
+        include_str!("../../../extensions/mineflayer-bot/fleet-storage.cjs"),
+    ),
+    (
         "GATHERING.md",
         include_str!("../../../extensions/mineflayer-bot/GATHERING.md"),
     ),

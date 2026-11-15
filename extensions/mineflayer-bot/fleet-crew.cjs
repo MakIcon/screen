@@ -33,6 +33,39 @@ const finite = (value) => value && ["x", "y", "z"].every((axis) => Number.isFini
 const point = (value) => ({ x: Number(value.x), y: Number(value.y ?? 0), z: Number(value.z) });
 const chunkCenter = (cx, cz) => ({ x: cx * 16 + 8, z: cz * 16 + 8 });
 
+// Traffic is published several times a second by every worker. Index lane
+// samples once per publication instead of comparing 96 x 96 points for each
+// pair of workers on every request.
+function laneIndex(points) {
+  const cells = new Map();
+  cells.bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
+  for (const p of points) {
+    for (const axis of ["X", "Y", "Z"]) {
+      const value = p[axis.toLowerCase()];
+      cells.bounds[`min${axis}`] = Math.min(cells.bounds[`min${axis}`], value);
+      cells.bounds[`max${axis}`] = Math.max(cells.bounds[`max${axis}`], value);
+    }
+    const id = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+    if (!cells.has(id)) cells.set(id, []);
+    cells.get(id).push(p);
+  }
+  return cells;
+}
+function lanesTouch(points, cells, bounds) {
+  const other = cells.bounds;
+  if (bounds.minX >= other.maxX + 0.8 || other.minX >= bounds.maxX + 0.8 ||
+      bounds.minY >= other.maxY + 1 || other.minY >= bounds.maxY + 1 ||
+      bounds.minZ >= other.maxZ + 0.8 || other.minZ >= bounds.maxZ + 0.8) return false;
+  for (const p of points) {
+    for (let x = Math.floor(p.x - 0.8); x <= Math.floor(p.x + 0.8); x++)
+      for (let y = Math.floor(p.y - 1); y <= Math.floor(p.y + 1); y++)
+        for (let z = Math.floor(p.z - 0.8); z <= Math.floor(p.z + 0.8); z++)
+          for (const q of cells.get(`${x},${y},${z}`) || [])
+            if (Math.abs(p.y - q.y) < 1 && Math.abs(p.x - q.x) < 0.8 && Math.abs(p.z - q.z) < 0.8) return true;
+  }
+  return false;
+}
+
 function createHub({ now = Date.now } = {}) {
   const members = new Map();
   const claims = new Map();
@@ -41,6 +74,8 @@ function createHub({ now = Date.now } = {}) {
   const leases = new Map();
   const targets = new Map();
   const traffic = new Map();
+  const storageQueue = new Map();
+  let storageSequence = 0;
   // Floors of passages dug by the crew: `${dim}|x,y,z` -> { seq, name }.
   // Bots fetch the entries added since their cursor and never dig them out.
   const floors = new Map();
@@ -99,6 +134,7 @@ function createHub({ now = Date.now } = {}) {
     return claim;
   }
   function drop(name) {
+    storageQueue.delete(name);
     targets.delete(name);
     traffic.delete(name);
     const entry = members.get(name);
@@ -123,6 +159,7 @@ function createHub({ now = Date.now } = {}) {
     for (const [lease, value] of leases) if (value.until <= time) leases.delete(lease);
     for (const [name, value] of targets) if (value.until <= time) targets.delete(name);
     for (const [name, value] of traffic) if (time - value.at > 1800) traffic.delete(name);
+    for (const [name, value] of storageQueue) if (time - value.at > 5000) storageQueue.delete(name);
     for (const map of scanned.values())
       for (const [chunk, at] of map) if (time - at > SCAN_TTL) map.delete(chunk);
     for (const map of discoveries.values())
@@ -140,6 +177,30 @@ function createHub({ now = Date.now } = {}) {
       : `${Math.floor(pos.x / 16)}:${Math.floor(pos.z / 16)}`;
 
   const ops = {
+    storage(name, input = {}) {
+      const previous = storageQueue.get(name);
+      if (input.release) {
+        if (previous?.token === input.token) storageQueue.delete(name);
+        return { allowed: false };
+      }
+      const dim = String(input.dim || "");
+      const positions = (Array.isArray(input.positions) ? input.positions : []).filter(finite).slice(0, 2048).map(point);
+      if (!positions.length || typeof input.token !== "string") return { allowed: false };
+      const proposedParking = finite(input.parking) ? point(input.parking) : null;
+      const parkingTaken = proposedParking && [...storageQueue.values()].some(other => other.name !== name && other.dim === dim &&
+        now() - other.at <= 5000 && other.parking && hypot2(other.parking, proposedParking) < 2 && Math.abs(other.parking.y - proposedParking.y) < 2);
+      const entry = { name, token: input.token, dim, positions, at: now(),
+        order: previous?.token === input.token && previous.dim === dim ? previous.order : ++storageSequence,
+        parking: parkingTaken ? null : proposedParking };
+      storageQueue.set(name, entry);
+      // Reserve the approach to the whole nearby warehouse, including other
+      // halves of double chests and chests on higher shelves.
+      const neighbours = [...storageQueue.values()].filter(other => other.name !== name && other.dim === dim &&
+        now() - other.at <= 5000 && positions.some(p => other.positions.some(q => hypot2(p, q) < 16 && Math.abs(p.y - q.y) < 16)));
+      const ahead = neighbours.filter(other => other.order < entry.order);
+      return { allowed: !ahead.length, ahead: ahead.length, bay: entry.parking,
+        parking: neighbours.filter(other => other.parking).map(other => other.parking) };
+    },
     // Physical blocks are reserved across job scopes: iron and coal jobs may
     // share a vein, and two helpers at one tree must still pick different logs.
     target(name, input = {}) {
@@ -160,6 +221,7 @@ function createHub({ now = Date.now } = {}) {
       const previous = traffic.get(name);
       const route = (Array.isArray(input.route) ? input.route : []).filter(finite).slice(0, 16).map(point);
       const corridor = (Array.isArray(input.corridor) ? input.corridor : []).filter(finite).slice(0, 96).map(point);
+      const laneCells = laneIndex(corridor);
       const pos = point(input.pos);
       const sameCell = (a, b) => Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 0.8 && Math.abs(a.z - b.z) < 0.8;
       const near = [...traffic.values()].filter(peer => peer.name !== name && peer.dim === dim && now() - peer.at < 1800);
@@ -169,14 +231,14 @@ function createHub({ now = Date.now } = {}) {
         // Convoys may share a corridor; opposing flows take turns. Reserve
         // only the immediate step in open areas, so crossing paths can clear.
         const opposing = direction.x * peer.direction.x + direction.z * peer.direction.z < -0.1;
-        return (opposing && corridor.some(cell => peer.corridor.some(other => sameCell(cell, other)))) ||
-          route.slice(0, 1).some(cell => peer.route.slice(0, 1).some(other => sameCell(cell, other)));
+        return (opposing && lanesTouch(corridor, peer.laneCells, laneCells.bounds)) ||
+          (route.length > 0 && peer.route.length > 0 && sameCell(route[0], peer.route[0]));
       });
-      const entry = { name, dim, pos, route, corridor, direction, at: now(),
+      const entry = { name, dim, pos, route, corridor, laneCells, direction, at: now(),
         until: blockers.length ? 0 : now() + 1200,
         waitingSince: blockers.length ? previous?.waitingSince || now() : null };
       traffic.set(name, entry);
-      return { allowed: !blockers.length, blocker: blockers[0]?.name || null,
+      return { members: Math.max(members.size, traffic.size), allowed: !blockers.length, blocker: blockers[0]?.name || null,
         peers: near.filter(peer => hypot3(peer.pos, pos) < 64).map(peer => ({
           name: peer.name, pos: peer.pos, route: peer.route, moving: peer.route.length > 0,
         })) };
@@ -613,15 +675,18 @@ function createCrewLink({
       socket.write(`${JSON.stringify({ id, name, op, input })}\n`);
     });
   }
+  let beatPending = false;
   async function sendBeat() {
+    if (beatPending || disposed) return;
     const input = beat?.();
     if (!input) return;
+    beatPending = true;
     try {
       const reply = await request("beat", input);
       if (reply) beatReply?.(reply);
     } catch {
       // A heartbeat is advisory.
-    }
+    } finally { beatPending = false; }
   }
   const heartbeat = setInterval(() => void sendBeat(), beatMs);
   heartbeat.unref?.();
