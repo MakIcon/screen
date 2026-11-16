@@ -6,6 +6,20 @@ import { createCacheWorld } from '../setup'
 
 type ControlName = 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sneak' | 'sprint'
 
+function sampleAfterTicks(bot: ReturnType<typeof createCacheWorld>['rig']['bot'], ticks: number) {
+  return new Promise<{ position: Vec3, onGround: boolean, pose: number }>(resolve => {
+    let remaining = ticks
+    const sample = () => {
+      if (--remaining > 0) return
+      bot.off('physicsTick', sample)
+      // Capture inside the event: a loaded timer can run several catch-up ticks
+      // before waitForTicks' continuation gets to read the mutable entity.
+      resolve({ position: bot.entity.position.clone(), onGround: bot.entity.onGround, pose: bot.entity.pose })
+    }
+    bot.on('physicsTick', sample)
+  })
+}
+
 function prepareLiveRig() {
   const { world, rig } = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0))
   const { bot, playerCtx } = rig
@@ -43,9 +57,7 @@ async function moveWithControls(controls: ControlName[], ticks = 3) {
       bot.setControlState(control, true)
     }
 
-    await bot.waitForTicks(ticks)
-
-    const end = bot.entity.position.clone()
+    const { position: end } = await sampleAfterTicks(bot, ticks)
 
     for (const control of controls) {
       bot.setControlState(control, false)
@@ -77,21 +89,21 @@ test('physics rig handles jump, sprint, and sneak controls', async () => {
   try {
     jumpRig.bot.setControlState('jump', true)
     const jumpStart = jumpRig.bot.entity.position.clone()
-    await jumpRig.bot.waitForTicks(3)
-    const jumpEnd = jumpRig.bot.entity.position.clone()
+    const jump = await sampleAfterTicks(jumpRig.bot, 3)
+    const jumpEnd = jump.position
     jumpRig.bot.setControlState('jump', false)
 
     const sneakRig = prepareLiveRig()
     try {
       sneakRig.bot.setControlState('sneak', true)
-      await sneakRig.bot.waitForTicks(2)
-      const sneakEnd = sneakRig.bot.entity.position.clone()
-      const sneakPose = (sneakRig.bot.entity as any).pose
+      const sneak = await sampleAfterTicks(sneakRig.bot, 2)
+      const sneakEnd = sneak.position
+      const sneakPose = sneak.pose
       sneakRig.bot.setControlState('sneak', false)
 
       assert(sprint.end.z < walk.end.z, `expected sprint to travel farther than walk, got walk=${walk.end} sprint=${sprint.end}`)
       assert(jumpEnd.y > jumpStart.y, `expected jump to raise y, got start=${jumpStart} end=${jumpEnd}`)
-      assert.equal(jumpRig.bot.entity.onGround, false)
+      assert.equal(jump.onGround, false)
       assert.notEqual(sneakPose, 0, 'expected sneak to change the player pose')
       assert.equal(sneakEnd.x, 0)
       assert.equal(sneakEnd.z, 0)

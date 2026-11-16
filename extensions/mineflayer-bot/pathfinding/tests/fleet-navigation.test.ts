@@ -61,7 +61,12 @@ test('four bots receiving come reach separate places around the same owner', { t
   bots[0].rig.bot.on('physicsTick', () => bots.forEach((a, i) => bots.slice(i + 1).forEach(b => {
     separation = Math.min(separation, a.rig.bot.entity.position.distanceTo(b.rig.bot.entity.position))
   })))
-  t.signal.addEventListener('abort', () => { bots.forEach(({ rig }) => { void rig.bot.pathfinder.stop() }) }, { once: true })
+  t.signal.addEventListener('abort', () => {
+    if (bots.some(({ rig }) => rig.bot.pathfinder.isPathing)) t.diagnostic(JSON.stringify(bots.map(({ rig }, i) => ({ pos: rig.bot.entity.position, pathing: rig.bot.pathfinder.isPathing,
+      move: rig.bot.pathfinder.currentMove?.exitPos, waiting: navs[i].waiting,
+      controls: Object.fromEntries(['forward', 'back', 'left', 'right'].map(key => [key, rig.bot.getControlState(key)])) }))))
+    bots.forEach(({ rig }) => { void rig.bot.pathfinder.stop() })
+  }, { once: true })
   const owner = new Vec3(0.5, 64, 0.5)
   try {
     await new Promise(resolve => setTimeout(resolve, 80))

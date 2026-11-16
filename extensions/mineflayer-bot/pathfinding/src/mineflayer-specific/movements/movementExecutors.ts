@@ -12,7 +12,7 @@ import { ControlStateHandler, EPhysicsCtx } from '@nxg-org/mineflayer-physics-ut
 import { printBotControls } from '../../utils'
 import type { Block, RayType } from '../../types'
 import { botSmartMovement, botStrafeMovement, steerToPosition } from './controls'
-import { clearBodySegment, supportedWalkSegment, needsWalkSneak } from '../navigationGeometry'
+import { clearBodySegment, supportedWalkSegment, needsWalkSneak, safeStepDownSegment } from '../navigationGeometry'
 import { getSupportedStartPos } from '../../utils'
 
 const debug = require('debug')
@@ -688,6 +688,14 @@ export class ForwardDropDownExecutor extends MovementExecutor {
         Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02
     }
     const pos = this.bot.entity.position
+    if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 &&
+        safeStepDownSegment(this.world, pos, thisMove.exitPos)) {
+      // Own this safe descent immediately, including a pushed/off-centre rim.
+      // Generic walking alignment can hold crouch against this very step.
+      this.bot.clearControlStates()
+      await this.lookAtPathPos(thisMove.exitPos)
+      return true
+    }
     const direction = thisMove.exitPos.minus(thisMove.entryPos)
     const length = Math.hypot(direction.x, direction.z)
     if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 &&

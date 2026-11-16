@@ -6,7 +6,7 @@ export class NavigationTaskError extends Error {}
 
 /** A route can be retried from real terrain after a movement/placement failure. */
 export class NavigationError extends Error {
-  constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery' | 'placement', message: string) {
+  constructor (public readonly reason: 'noPath' | 'timeout' | 'stalled' | 'recovery' | 'placement' | 'oscillation', message: string) {
     super(message)
     this.name = 'NavigationError'
   }

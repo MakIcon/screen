@@ -173,6 +173,10 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
         include_str!("../../../extensions/mineflayer-bot/fleet-storage.cjs"),
     ),
     (
+        "warehouse-geometry.cjs",
+        include_str!("../../../extensions/mineflayer-bot/warehouse-geometry.cjs"),
+    ),
+    (
         "GATHERING.md",
         include_str!("../../../extensions/mineflayer-bot/GATHERING.md"),
     ),
@@ -769,6 +773,8 @@ mod tests {
         for name in [
             "inventory-actions.cjs",
             "chaotic-movement.cjs",
+            "fleet-storage.cjs",
+            "warehouse-geometry.cjs",
             "fabric.cjs",
             "mineflayer-fabric.cjs",
             "FABRIC.md",
@@ -778,10 +784,18 @@ mod tests {
             assert!(directory.join(name).is_file(), "missing {name}");
         }
         fs::write(directory.join("mineflayer-fabric.cjs"), "stale library").unwrap();
+        fs::write(
+            directory.join("warehouse-geometry.cjs"),
+            "stale warehouse geometry",
+        )
+        .unwrap();
         sync_mineflayer_worker(&directory).unwrap();
         let library = fs::read_to_string(directory.join("mineflayer-fabric.cjs")).unwrap();
         assert!(library.contains("mineflayer-fabric 0.2.1"));
         assert!(library.contains("blockCollisionShapes"));
+        assert!(fs::read_to_string(directory.join("warehouse-geometry.cjs"))
+            .unwrap()
+            .contains("leaveContainerTop"));
         assert!(fs::read_to_string(directory.join("worker.cjs"))
             .unwrap()
             .contains("installFabricSupport(bot, emit)"));

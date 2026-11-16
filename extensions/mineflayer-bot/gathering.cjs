@@ -17,6 +17,7 @@ const storage = require("./gathering-storage.cjs");
 const farming = require("./farming.cjs");
 const crewTools = require("./fleet-crew.cjs");
 const { withStorageTurn } = require("./fleet-storage.cjs");
+const { containerClick: warehouseClick, blockingPlayers, leaveContainerTop } = require("./warehouse-geometry.cjs");
 
 const SAPLING_SOIL = new Set([
   "dirt", "grass_block", "podzol", "coarse_dirt", "rooted_dirt", "mud", "moss_block", "pale_moss_block",
@@ -152,6 +153,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   let storageInspectionPaused = false;
   let storageWalking = false;
   let depositDetail = "";
+  let storageTurn = null;
   let cachedStorageGroups = null, cachedChest = null, cachedStoragePositions = [];
   let clearCancelledOpen = () => {};
   let storagePick = null, transferTask = Promise.resolve();
@@ -517,6 +519,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       return true;
     };
     entered();
+    // No route starts on a chest lid: step down to real footing first.
+    if (bot.entity.onGround && !bot.pathfinder.isPathing) await leaveContainerTop(bot, { signal });
+    guard(signal);
     bot.on("diggingCompleted", dug);
     try {
       return await operation(
@@ -1620,13 +1625,18 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     const depositOnly = task.kind === "deposit";
     const depositRevision = revision;
     const positions = storagePositions();
+    const firstLoot = bot.inventory.items().find(item => !plan.keepItem(bot, item));
+    const preferred = firstLoot && storage.storageGroupForItem(settings.storageGroups, firstLoot, bot.registry)?.chests[0];
     let unmatched;
     try {
       unmatched = await withStorageTurn(bot, crew, positions, {
         signal, wait, status: setDepositDetail,
-        walk: (position, moveSignal = signal) => walkAtStorage(new goals.GoalNear(position.x, position.y, position.z, 0.4), moveSignal),
+        preferred,
+        approach: (position, moveSignal) => navigate(new goals.GoalNear(position.x, position.y, position.z, 8), moveSignal),
+        walk: (position, moveSignal = signal, radius = 0.22) => walkAtStorage(new goals.GoalNear(position.x, position.y, position.z, radius), moveSignal),
         onStalled: () => { closeStorageWindow(); void halt().catch(() => {}); },
-      }, async (leave, turnSignal = signal) => {
+      }, async (leave, turnSignal = signal, turn) => {
+        storageTurn = turn || null;
         try { return await depositInventory(turnSignal); }
         finally {
           if (revision === depositRevision) closeStorageWindow();
@@ -1636,7 +1646,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           }
         }
       });
-    } finally { depositDetail = ""; }
+    } finally { depositDetail = ""; storageTurn = null; }
     if (depositOnly) finish("готово", unmatched ? `Без подходящей группы у бота осталось ${unmatched} предметов` : "");
   }
   function storagePositions() {
@@ -1671,12 +1681,18 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   async function walkAtStorage(goal, signal) {
     const previous = { ...bot.pathfinder.defaultMoveSettings };
+    const walkingRevision = revision;
+    const cancelWalk = () => {
+      if (walkingRevision === revision) void bot.pathfinder.stop().catch(() => {});
+    };
+    signal.addEventListener("abort", cancelWalk, { once: true });
     storageWalking = true;
     bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
     try { return await navigate(goal, signal); }
     finally {
+      signal.removeEventListener("abort", cancelWalk);
       storageWalking = false;
-      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(previous);
+      if (!abort.signal.aborted && walkingRevision === revision) bot.pathfinder.setMoveOptions?.(previous);
     }
   }
   async function depositInventory(signal) {
@@ -1774,6 +1790,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   async function approachStorage(position, signal) {
     setDepositDetail("Прокладываю путь к складу, ищу выход из выработки");
+    if (storageTurn) await storageTurn.enterChest(position);
     const chestPosition = plan.position(position);
     let block = bot.blockAt(chestPosition);
     if (!block || bot.entity.position.distanceTo(chestPosition) > 6) {
@@ -1789,7 +1806,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     // exits and chunk-frontier routing still work if the chest is above us.
     // Chests have inset collision shapes; arrival requires a clickable surface.
     const goal = new GoalContainerAccess(block.position, (feet) => Boolean(containerClick(block, feet)));
-    await walkAtStorage(goal, signal);
+    if (!storageTurn) await walkAtStorage(goal, signal);
     bot.clearControlStates?.();
     bot.setControlState?.("sneak", false);
     // Sneaking with a tool suppresses container interaction. Give Mineflayer
@@ -1798,7 +1815,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     block = bot.blockAt(chestPosition);
     if (!block || !/(?:chest|barrel|shulker_box)$/.test(block.name))
       throw new Error("Контейнер исчез во время подхода");
-    const click = containerClick(block);
+    let click = containerClick(block);
+    // A colleague can move into the ray or push us during the handoff. Ask it
+    // to clear the approach and retry the reserved bay before failing a task.
+    for (let retry = 0; !click && retry < 3 && bot.launcherTraffic?.enabled !== false; retry++) {
+      const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0);
+      const blockers = blockingPlayers(bot, eye, block.position.offset(0.5, 0.5, 0.5));
+      bot.launcherTraffic?.requestClearance?.(blockers.map(e => e.username));
+      setDepositDetail(blockers.length ? "Освобождаю подход: другие боты отходят от сундука" : "Поправляю позицию у сундука");
+      await wait(350, signal);
+      if (storageTurn) await storageTurn.enterChest(position);
+      else await walkAtStorage(goal, signal);
+      click = containerClick(block);
+    }
     if (!click) throw new Error(`Нет доступной грани сундука в пределах ${CONTAINER_REACH} блоков`);
     if (bot.currentWindow) throw new Error("Закройте открытое окно перед выгрузкой");
     const opening = new AbortController();
@@ -1816,22 +1845,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
   }
   function containerClick(block, feet = bot.entity.position) {
-    if (!block) return null;
-    const eye = feet.offset(0, bot.entity.eyeHeight || 1.62, 0);
-    const center = block.position.offset(0.5, 0.5, 0.5);
-    const delta = center.minus(eye), length = delta.norm();
-    if (!bot.world?.raycast) {
-      if (length > CONTAINER_REACH) return null;
-      const face = new Vec3(0, 0, 0);
-      const axis = ["x", "y", "z"].sort((a, b) => Math.abs(delta[b]) - Math.abs(delta[a]))[0];
-      face[axis] = -Math.sign(delta[axis]) || 1;
-      return { face, cursor: new Vec3(0.5, 0.5, 0.5) };
-    }
-    const hit = bot.world.raycast(eye, delta.normalize(), Math.min(CONTAINER_REACH, length + 0.1));
-    if (!hit?.position.equals(block.position) || !hit.intersect) return null;
-    const faces = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1),
-      new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)];
-    return faces[hit.face] ? { face: faces[hit.face], cursor: hit.intersect.minus(block.position) } : null;
+    return warehouseClick(bot, block, feet);
   }
   async function openContainer(block, click, signal) {
     // Mineflayer's openContainer leaves its windowOpen listener alive after a
@@ -2207,6 +2221,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       const keys = new Set(groups.flatMap((group) => group.chests.map((point) => `${group.id}:${storage.key(point)}`)));
       for (const key of storageStatus.keys()) if (!keys.has(key)) storageStatus.delete(key);
       settings.storageGroups = groups;
+      bot.launcherTraffic?.setWarehouse?.(storagePositions());
       report(true);
       return groups;
     },
@@ -2364,6 +2379,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     },
     setChest(value) {
       chest = value ? plan.position(value) : null;
+      bot.launcherTraffic?.setWarehouse?.(storagePositions());
       report(true);
       return chest;
     },
@@ -2488,6 +2504,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
   });
   bot.launcherGathering = controller;
+  bot.launcherTraffic?.setWarehouse?.(storagePositions());
   return controller;
 }
 

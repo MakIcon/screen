@@ -24,6 +24,112 @@ test("100 bots unload FIFO across neighbouring chests and higher shelves", () =>
   }
 });
 
+function warehouse(count, time = { now: 1000 }) {
+  const hub = createHub({ now: () => time.now });
+  const positions = [position, position.offset(3, 0, 0), position.offset(6, 0, 0), position.offset(9, 0, 0)];
+  const bays = positions.map(p => ({ ...p.offset(0.5, 0, -1.5), chest: p }));
+  const stages = Array.from({ length: count }, (_, i) => position.offset(i * 2 + 0.5, 0, 8.5));
+  const input = (i, extra = {}) => ({ token: `wave-${i}`, dim: "overworld", positions, batch: true, bays, stages,
+    pos: stages[i], ready: true, ...extra });
+  const ask = (i, extra) => hub.handle(`worker-${i}`, "storage", input(i, extra));
+  const leave = i => hub.handle(`worker-${i}`, "storage", { token: `wave-${i}`, release: true });
+  return { hub, time, positions, bays, stages, ask, leave };
+}
+
+test("53 workers continuously refill independent bays while a slow customer stays at its chest", () => {
+  const { time, bays, ask, leave } = warehouse(53);
+  for (let i = 0; i < 53; i++) ask(i, { ready: false });
+  for (let i = 0; i < 53; i++) ask(i);
+  const first = Array.from({ length: 53 }, (_, i) => ask(i));
+  assert.deepEqual(first.map((r, i) => r.allowed ? i : -1).filter(i => i >= 0), [0, 1, 2, 3], "four physical places are available");
+  assert.equal(new Set(first.filter(r => r.allowed).map(r => `${r.service.x},${r.service.z}`)).size, 4);
+  assert.equal(new Set(first.map(r => `${r.stage.x},${r.stage.z}`)).size, 53, "everyone else waits at a place of its own");
+  time.now += 1000;
+  // Transferring items alone must not put a replacement inside the old body.
+  for (let i = 0; i < 4; i++) ask(i, { done: true, pos: bays[i] });
+  assert.equal(ask(4).allowed, false, "all four places still have a body");
+  ask(0, { done: true });
+  assert.equal(ask(4).allowed, true);
+  assert.equal(ask(5).allowed, false, "only the one free bay was refilled");
+  // Three slow workers keep their places while the other fifty finish FIFO.
+  for (let i = 4; i < 53; i++) {
+    assert.equal(ask(i).allowed, true, `worker ${i} takes the independently freed bay`);
+    assert.deepEqual(ask(i).service, first[0].service);
+    leave(i);
+  }
+  for (let i = 0; i < 4; i++) leave(i);
+});
+
+test("an early worker and later arrivals use free bays without a bell or a batch deadline", () => {
+  const { time, ask } = warehouse(6);
+  for (let i = 0; i < 6; i++) ask(i, { ready: false });
+  assert.equal(ask(0).allowed, true, "the first ready worker starts immediately");
+  time.now += 1000;
+  assert.equal(ask(2).allowed, true);
+  time.now += 1600;
+  assert.equal(ask(1, { ready: false }).allowed, false);
+  time.now += 300;
+  assert.equal(ask(1).allowed, true);
+  time.now += 1000;
+  assert.equal(ask(3).allowed, true, "the fourth place still works after the old wave deadline");
+});
+
+test("walking along the chest wall frees the old bay but keeps the body at another chest reserved", () => {
+  const { time, ask, bays, positions } = warehouse(8);
+  for (let i = 0; i < 8; i++) ask(i, { ready: i < 4 });
+  time.now += 1000;
+  for (let i = 1; i < 4; i++) ask(i, { done: true });
+  ask(0, { done: true, pos: bays[2] });
+  const replies = [ask(4), ask(5), ask(6), ask(7)];
+  assert.equal(replies.filter(r => r.allowed).length, 3);
+  assert.ok(replies.filter(r => r.allowed).every(r => Math.hypot(r.service.x - bays[2].x, r.service.z - bays[2].z) >= 1.3));
+  ask(0, { done: true, pos: positions[2].offset(0, 0, 6) });
+  assert.equal(ask(7).allowed, true, "the last place opens when its body is clear");
+});
+
+test("a failed or disconnected customer releases only its own bay", () => {
+  const { time, ask, leave, bays } = warehouse(8);
+  for (let i = 0; i < 8; i++) ask(i);
+  time.now += 1000;
+  leave(0); // error: the ticket is released from the chest itself
+  for (let i = 1; i < 3; i++) ask(i, { done: true });
+  ask(3, { pos: bays[3] }); // stops answering while still unloading
+  for (let i = 4; i < 7; i++) assert.equal(ask(i).allowed, true, "one slow colleague cannot hold other bays");
+  assert.equal(ask(7).allowed, false);
+  time.now += 5100;
+  // Its own ticket lapsed as well: it lines up again and goes.
+  assert.equal(ask(7, { pos: ask(7).stage }).allowed, true, "an expired ticket frees its bay");
+});
+
+test("waiting places skip a paused colleague standing there without a ticket", () => {
+  const { hub, stages, ask } = warehouse(4);
+  hub.handle("failed", "traffic", { enabled: true, dim: "overworld", pos: stages[0], route: [] });
+  hub.handle("passing", "traffic", { enabled: true, dim: "overworld", pos: stages[1], route: [stages[2]] });
+  const reply = ask(0, { ready: false, pos: stages[3] });
+  assert.deepEqual([reply.stage.x, reply.stage.z], [stages[1].x, stages[1].z], "a bot merely walking past does not reserve the place");
+});
+
+test("crossing entrance/exit corridors cannot be assigned to two workers at once", () => {
+  const { ask, leave, bays } = warehouse(3);
+  const horizontal = { ...bays[0], inbound: [position.offset(-4, 0, -1.5)], outbound: [position.offset(6, 0, -1.5)] };
+  const vertical = { ...bays[2], inbound: [position.offset(3, 0, -5)], outbound: [position.offset(3, 0, 4)] };
+  assert.equal(ask(0, { bays: [horizontal] }).allowed, true);
+  assert.equal(ask(1, { bays: [vertical] }).allowed, false, "the corridors cross between their endpoints");
+  leave(0);
+  assert.equal(ask(1, { bays: [vertical] }).allowed, true);
+});
+
+test("a paused body still blocks its bay after its expired ticket is removed", () => {
+  const { hub, time, ask, bays } = warehouse(2);
+  ask(0, { bays: [bays[0]] });
+  time.now += 5100;
+  hub.handle("worker-0", "traffic", { enabled: true, dim: "overworld", pos: bays[0], route: [] });
+  const stage = ask(1, { bays: [bays[0]], ready: false }).stage;
+  assert.equal(ask(1, { bays: [bays[0]], pos: stage }).allowed, false);
+  hub.handle("worker-0", "traffic", { enabled: true, dim: "overworld", pos: position.offset(0, 0, 7), route: [] });
+  assert.equal(ask(1, { bays: [bays[0]], pos: stage }).allowed, true);
+});
+
 test("storage queues are isolated by warehouse and dimension, and stale releases cannot cancel a new ticket", () => {
   const hub = createHub();
   hub.handle("a", "storage", ticket("old"));

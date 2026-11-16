@@ -46,6 +46,11 @@ type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform'
 export class PathExecutor {
   private cancelActive?: () => Promise<void>
   private currentExecutionId = 0
+  // Supported cells entered recently, across recoveries, replans and the
+  // caller's own retries: each of those starts another goto for the same goal.
+  private cellTrail: Array<{ cell: string, y: number, at: number }> = []
+  private trailCell = ''
+  private oscillationGuard = true
   private currentIndex = 0
   private currentPath?: Move[]
   private currentMove?: Move
@@ -105,6 +110,12 @@ export class PathExecutor {
 
   public clearResetReason (): void {
     delete this.resetReason
+  }
+
+  /** Follow goals may pace back and forth with their target. */
+  public setOscillationGuard (enabled: boolean): void {
+    if (!enabled) { this.cellTrail = []; this.trailCell = '' }
+    this.oscillationGuard = enabled
   }
 
   public async cancelExecution (): Promise<void> {
@@ -613,6 +624,37 @@ export class PathExecutor {
         lastProgressPosition = bot.entity.position.clone()
         collisionTicks = 0
         return
+      }
+      // Two ledges one step apart (or a chest lid beside a bridge) can make
+      // every replan send the bot back where it came from. Each jump is real
+      // motion, so the stall timers below never fire. Four round trips between
+      // the same two heights, without entering a third cell, end the goto.
+      if (this.oscillationGuard && bot.entity.onGround && interaction == null) {
+        const p = bot.entity.position
+        const fx = p.x - Math.floor(p.x); const fz = p.z - Math.floor(p.z)
+        // Ignore braking jitter across a cell boundary: count interior stands.
+        if (fx > 0.1 && fx < 0.9 && fz > 0.1 && fz < 0.9) {
+          const cell = `${Math.floor(p.x)},${Math.round(p.y * 2)},${Math.floor(p.z)}`
+          // A fast hop can leave the next landing on its first grounded tick.
+          // Debouncing for three ticks misses those loops. Verify the actual
+          // supporting shape instead: onGround alone survives a rim for a tick.
+          const support = cell !== this.trailCell ? this.host.world.getBlockInfo(p.offset(0, -0.05, 0)) : null
+          const grounded = support?.physical && support.getBBs().some(box => Math.abs(box.maxY - p.y) < 0.04 &&
+            p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ)
+          if (grounded && cell !== this.trailCell) {
+            this.trailCell = cell
+            const at = performance.now()
+            const trail = this.cellTrail = this.cellTrail.filter(entry => at - entry.at < 30000)
+            trail.push({ cell, y: p.y, at })
+            if (trail.length > 9) trail.shift()
+            // Level pacing is ordinary work (collect a drop, return to the face).
+            if (trail.length === 9 && Math.abs(trail[0].y - trail[1].y) > 0.4 && trail.every((entry, i) => entry.cell === trail[i % 2].cell)) {
+              this.cellTrail = []
+              void fail(new NavigationError('oscillation', 'Movement stalled: moving back and forth between the same two positions.'))
+              return
+            }
+          }
+        }
       }
       const block = bot.targetDigBlock
       const now = performance.now()

@@ -612,6 +612,7 @@ var require_navigationGeometry = __commonJS({
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.supportedWalkSegment = supportedWalkSegment;
     exports2.needsWalkSneak = needsWalkSneak;
+    exports2.safeStepDownSegment = safeStepDownSegment;
     exports2.clearBodySegment = clearBodySegment;
     var vec3_1 = require("vec3");
     function supportedWalkSegment(world, from, to) {
@@ -634,6 +635,42 @@ var require_navigationGeometry = __commonJS({
     }
     function needsWalkSneak(world, pos, velocity) {
       return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3));
+    }
+    function safeStepDownSegment(world, from, to) {
+      const drop = from.y - to.y;
+      if (drop <= 0.05 || drop > 1.05 || from.xzDistanceTo(to) > 1.8 || !supportedWalkSegment(world, to, to))
+        return false;
+      const steps = Math.max(1, Math.ceil(from.xzDistanceTo(to) * 10));
+      let previous = from.clone();
+      for (let i = 0; i <= steps; i++) {
+        const p = from.plus(to.minus(from).scaled(i / steps));
+        let height = to.y;
+        for (const [dx, dz] of [[-0.2995, -0.2995], [-0.2995, 0.2995], [0.2995, -0.2995], [0.2995, 0.2995]]) {
+          let supported = false;
+          for (let y = Math.floor(from.y - 0.05); y >= Math.floor(to.y - 0.05); y--) {
+            const sample = new vec3_1.Vec3(p.x + dx, y, p.z + dz);
+            const block = world.getBlockInfo(sample);
+            if (block.isInvalid || !block.safe)
+              return false;
+            for (const box of block.getBBs()) {
+              if (box.maxY > from.y + 0.05 || box.maxY < to.y - 0.05 || sample.x < box.minX || sample.x > box.maxX || sample.z < box.minZ || sample.z > box.maxZ)
+                continue;
+              height = Math.max(height, box.maxY);
+              supported = true;
+            }
+          }
+          if (!supported)
+            return false;
+        }
+        if (height > previous.y + 0.05)
+          return false;
+        p.y = height;
+        const lip = new vec3_1.Vec3(p.x, previous.y, p.z);
+        if (!clearBodySegment(world, previous, lip, 0.599) || !clearBodySegment(world, lip, p, 0.599))
+          return false;
+        previous = p;
+      }
+      return true;
     }
     function clearBodySegment(world, from, to, width = 0.62, height = 1.8) {
       const radius = width / 2;
@@ -5029,6 +5066,11 @@ var require_movementExecutors = __commonJS({
           return this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(center) < 0.1 && Math.hypot(this.bot.entity.velocity.x, this.bot.entity.velocity.z) < 0.02;
         }
         const pos = this.bot.entity.position;
+        if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 && (0, navigationGeometry_1.safeStepDownSegment)(this.world, pos, thisMove.exitPos)) {
+          this.bot.clearControlStates();
+          await this.lookAtPathPos(thisMove.exitPos);
+          return true;
+        }
         const direction = thisMove.exitPos.minus(thisMove.entryPos);
         const length = Math.hypot(direction.x, direction.z);
         if (!this.doWaterLogic() && this.bot.entity.onGround && this.toBreakLen() === 0 && this.toPlaceLen() === 0 && length > 0 && pos.y <= thisMove.entryPos.y + 0.15 && pos.y > thisMove.exitPos.y + 0.15) {
@@ -10386,6 +10428,9 @@ var require_pathExecutor = __commonJS({
         this.bot = bot;
         this.host = host;
         this.currentExecutionId = 0;
+        this.cellTrail = [];
+        this.trailCell = "";
+        this.oscillationGuard = true;
         this.currentIndex = 0;
       }
       bumpExecutionId() {
@@ -10427,6 +10472,14 @@ var require_pathExecutor = __commonJS({
       }
       clearResetReason() {
         delete this.resetReason;
+      }
+      /** Follow goals may pace back and forth with their target. */
+      setOscillationGuard(enabled) {
+        if (!enabled) {
+          this.cellTrail = [];
+          this.trailCell = "";
+        }
+        this.oscillationGuard = enabled;
       }
       async cancelExecution() {
         await this.cancelActive?.();
@@ -10851,6 +10904,29 @@ var require_pathExecutor = __commonJS({
             lastProgressPosition = bot.entity.position.clone();
             collisionTicks = 0;
             return;
+          }
+          if (this.oscillationGuard && bot.entity.onGround && interaction == null) {
+            const p = bot.entity.position;
+            const fx = p.x - Math.floor(p.x);
+            const fz = p.z - Math.floor(p.z);
+            if (fx > 0.1 && fx < 0.9 && fz > 0.1 && fz < 0.9) {
+              const cell = `${Math.floor(p.x)},${Math.round(p.y * 2)},${Math.floor(p.z)}`;
+              const support = cell !== this.trailCell ? this.host.world.getBlockInfo(p.offset(0, -0.05, 0)) : null;
+              const grounded = support?.physical && support.getBBs().some((box) => Math.abs(box.maxY - p.y) < 0.04 && p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ);
+              if (grounded && cell !== this.trailCell) {
+                this.trailCell = cell;
+                const at = performance.now();
+                const trail = this.cellTrail = this.cellTrail.filter((entry2) => at - entry2.at < 3e4);
+                trail.push({ cell, y: p.y, at });
+                if (trail.length > 9)
+                  trail.shift();
+                if (trail.length === 9 && Math.abs(trail[0].y - trail[1].y) > 0.4 && trail.every((entry2, i) => entry2.cell === trail[i % 2].cell)) {
+                  this.cellTrail = [];
+                  void fail(new exceptions_12.NavigationError("oscillation", "Movement stalled: moving back and forth between the same two positions."));
+                  return;
+                }
+              }
+            }
           }
           const block = bot.targetDigBlock;
           const now = performance.now();
@@ -13049,6 +13125,7 @@ var require_ThePathfinder = __commonJS({
         const canceled = () => requestId !== this.goalRequestId || this.disposed || this.resetReason === "goalReassignment";
         const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic;
         const doForever = dynamic && goal.neverfinish;
+        this.executionRunner.setOscillationGuard(!dynamic);
         let shore;
         let continuation;
         let failures = 0;
@@ -13131,6 +13208,20 @@ var require_ThePathfinder = __commonJS({
                   return;
                 if (res.result.status === "success")
                   path = res.result;
+                const flight = res.result.path[0];
+                if (res.result.status === "partial" && flight?.metadata?.momentumEdge != null && this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(searchOrigin) < 0.4 && this.bot.entity.velocity.xzDistanceTo(new vec3_1.Vec3(0, 0, 0)) > 0.32 && !(0, momentum_1.isIceBlock)(this.world.getBlockInfo(flight.exitPos.offset(0, -0.05, 0)).block?.name) && routingGoal.heuristic(flight) < routingGoal.heuristic({
+                  ...flight,
+                  exitPos: searchOrigin,
+                  x: Math.floor(searchOrigin.x),
+                  y: Math.floor(searchOrigin.y),
+                  z: Math.floor(searchOrigin.z)
+                })) {
+                  path = { ...res.result, path: [flight] };
+                  executionGoal = goals.GoalBlock.fromVec(flight.exitPos);
+                  prefix = true;
+                  this.bot.emit("pathGenerated", path);
+                  break;
+                }
                 const opts = this.pathfinderSettings;
                 const miningPrefix = performOpts.allowMiningPrefix === true;
                 const swimmingPrefix = this.world.getBlockInfo(searchOrigin).water;
@@ -13283,7 +13374,7 @@ var require_ThePathfinder = __commonJS({
             await this.pendingReset;
             if (canceled())
               return;
-            if (!(error instanceof exceptions_12.NavigationError) || performOpts.errorOnReset || !doForever && failures >= 2)
+            if (!(error instanceof exceptions_12.NavigationError) || performOpts.errorOnReset || error.reason === "oscillation" || !doForever && failures >= 2)
               throw error;
             failures++;
             if (shore != null && error.reason === "noPath") {

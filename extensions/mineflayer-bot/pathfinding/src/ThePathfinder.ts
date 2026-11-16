@@ -1087,6 +1087,7 @@ export class ThePathfinder {
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)
 
+
     this._gotoMappings = this.snapshotMappings()
 
     let completed = false
@@ -1182,6 +1183,7 @@ export class ThePathfinder {
     const canceled = (): boolean => requestId !== this.goalRequestId || this.disposed || this.resetReason === 'goalReassignment'
     const dynamic = goal instanceof goals.GoalDynamic && goal.dynamic
     const doForever = dynamic && goal.neverfinish
+    this.executionRunner.setOscillationGuard(!dynamic)
     let shore: goals.Goal | undefined
     let continuation: Path | undefined
     let failures = 0
@@ -1259,6 +1261,22 @@ export class ThePathfinder {
         else for await (const res of this.getPathTo(routingGoal, this.defaultMoveSettings, Math.min(3, failures + 1), performOpts)) {
           if (canceled()) return
           if (res.result.status === 'success') path = res.result
+          // A verified flight is already a safe executable segment. Waiting
+          // for the route after its dry landing consumes incoming ice speed
+          // during catch-up ticks, before the flight executor owns controls.
+          const flight = res.result.path[0]
+          if (res.result.status === 'partial' && flight?.metadata?.momentumEdge != null &&
+              this.bot.entity.onGround && this.bot.entity.position.xzDistanceTo(searchOrigin) < 0.4 &&
+              this.bot.entity.velocity.xzDistanceTo(new Vec3(0, 0, 0)) > 0.32 &&
+              !isIceBlock(this.world.getBlockInfo(flight.exitPos.offset(0, -0.05, 0)).block?.name) &&
+              routingGoal.heuristic(flight) < routingGoal.heuristic({ ...flight, exitPos: searchOrigin,
+                x: Math.floor(searchOrigin.x), y: Math.floor(searchOrigin.y), z: Math.floor(searchOrigin.z) } as Move)) {
+            path = { ...res.result, path: [flight] }
+            executionGoal = goals.GoalBlock.fromVec(flight.exitPos)
+            prefix = true
+            this.bot.emit('pathGenerated', path)
+            break
+          }
           const opts = this.pathfinderSettings
           const miningPrefix = performOpts.allowMiningPrefix === true
           const swimmingPrefix = this.world.getBlockInfo(searchOrigin).water
@@ -1427,7 +1445,9 @@ export class ThePathfinder {
       } catch (error) {
         await this.pendingReset
         if (canceled()) return
-        if (!(error instanceof NavigationError) || performOpts.errorOnReset || (!doForever && failures >= 2)) throw error
+        // Another replan from the same two ledges repeats the same hops.
+        if (!(error instanceof NavigationError) || performOpts.errorOnReset || error.reason === 'oscillation' ||
+            (!doForever && failures >= 2)) throw error
         failures++
         if (shore != null && error.reason === 'noPath') {
           // A usable ascent is still useless when its bank cannot be reached

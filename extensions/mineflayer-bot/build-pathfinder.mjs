@@ -107,6 +107,7 @@ for (const file of [
   "fleet-crew.cjs",
   "fleet-navigation.cjs",
   "fleet-storage.cjs",
+  "warehouse-geometry.cjs",
   "fleet-storage.test.mjs",
   "fleet-navigation.test.mjs",
   "fleet-crew.test.mjs",

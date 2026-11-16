@@ -3,6 +3,7 @@
 const { Vec3 } = require("vec3");
 const { availableParallelism } = require("node:os");
 const { dimensionOf } = require("./fleet-crew.cjs");
+const { warehouseLayout, safeStand, leaveContainerTop } = require("./warehouse-geometry.cjs");
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const near = (a, b, radius) => Math.abs(a.y - b.y) < 1.5 && flat(a, b) < radius;
 const key = p => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
@@ -44,6 +45,12 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   let entityCacheAt = -Infinity;
   const entities = new Map();
   let fleetSize = 1;
+  let warehouse = [], storagePhase = "idle", serviceBay = null;
+  let clearanceUntil = 0, clearRequests = [], clearSentAt = -Infinity;
+  let evacuation = null, evacuationAbort = null, nextEvacuationAt = 0;
+  let evacuationError = "";
+  let parkingSequence = 0;
+  let adaptedArrival = null, finishedArrival = null;
   let costAt = -Infinity;
   const costCells = new Map();
   const costKey = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
@@ -128,7 +135,9 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     const version = revision;
     try {
       const reply = await crew.request("traffic", { enabled, dim, pos: bot.entity.position,
-        route: points, corridor: enabled ? corridorFor(points) : [] });
+        route: points, corridor: enabled ? corridorFor(points) : [],
+        storage: warehouse.length ? { phase: storagePhase, positions: warehouse, bay: serviceBay } : null,
+        clear: now() - clearSentAt < 1800 ? clearRequests : [] });
       if (disposed || version !== revision || dimensionOf(bot) !== dim || !reply) return;
       peers = Array.isArray(reply.peers) ? reply.peers : [];
       costAt = -Infinity;
@@ -136,6 +145,10 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
       allowed = reply.allowed !== false;
       blocker = reply.blocker;
       updatedAt = now();
+      if (reply.clearance?.length) {
+        clearanceUntil = now() + 1800;
+        if (!warehouse.length) warehouse = reply.clearance.flatMap(r => r.positions || []).slice(0, 128);
+      }
     } catch { /* IPC is advisory; normal navigation works while reconnecting. */ }
     finally { pending = false; }
   }
@@ -161,6 +174,10 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         const p = entry.p.offset(dx, 0, dz), id = key(p);
         if (seen.has(id)) continue;
         seen.add(id);
+        // A completed come may yield to the next arriving worker, but it must
+        // stay inside the arrival area rather than walking away from its owner.
+        if (!bot.pathfinder?.isPathing && finishedArrival &&
+            (Math.abs(p.y - finishedArrival.y) > 1.5 || flat(p, finishedArrival) > finishedArrival.radius)) continue;
         if (!safeCell(bot, p) || occupied(p, 1.05)) continue;
         const path = [...entry.path, p];
         queue.push({ p, path });
@@ -200,8 +217,14 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
       waitingAt = null; yieldPath = []; refuge = null; return false;
     }
     const pos = bot.entity.position, to = move.exitPos || move;
+    const ownName = String(bot.entity.username || bot.username || "").toLowerCase();
     const ahead = list.find(peer => {
       const p = peerPosition(peer), dx = to.x - pos.x, dz = to.z - pos.z;
+      // Reserve an upper landing before takeoff, including a colleague above
+      // our current feet height. Airborne steering cannot stop an entity push.
+      // Only a jump needs it: on level ground the checks below stop us beside
+      // a standing colleague instead of far away at the start of a long leg.
+      if (to.y - pos.y > 0.4 && Math.abs(p.y - to.y) < 1.8 && flat(p, to) < 1.2 && flat(pos, p) < 6) return true;
       // At a tunnel mouth another worker can cross the lane diagonally.
       // Waiting until its centre enters the lane leaves too little braking
       // distance: clearing controls still coasts for several physics ticks.
@@ -227,6 +250,7 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     if (waitingAt == null) { waitingAt = now(); queueProgressAt = now(); queuePeer = null; }
     clearControls();
     const other = list.find(peer => peer.name === blocker) || ahead;
+    if (other && !other.moving) controller.requestClearance([other.name]);
     if (other) {
       const pos = peerPosition(other);
       if (!queuePeer || queuePeer.name !== other.name || !near(queuePeer, pos, 0.2)) {
@@ -237,19 +261,31 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     const opposing = other?.route?.length &&
       (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
       (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) < -0.1;
-    const ownName = String(bot.entity.username || bot.username || "").toLowerCase();
     const crossing = other?.route?.length &&
       (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
       (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) <= 0.1;
     const localYield = ahead && crossing && ownName > String(other?.name || "");
-    if (other && (denied && (opposing || !other.moving) || localYield) && now() - waitingAt > 350) retreat(other);
+    // Two workers walking the same way side by side each see the other
+    // closing in and both stop: a group heading for the warehouse steps
+    // freezes in pairs until a timeout. Once neither has moved for a while,
+    // one of the pair steps aside and its partner walks on.
+    const stalemate = ahead && other === ahead && other.moving && now() - queueProgressAt > 1500 &&
+      ownName > String(other.name || "");
+    if (other && (denied && (opposing || !other.moving) || localYield || stalemate) && now() - waitingAt > 350) retreat(other);
     if (!denied && now() - waitingAt > 1400 && !yieldPath.length) replan();
     return true;
   }
   function idleYield() {
     if (disposed || !enabled || bot.health <= 0 || bot.isAlive === false || bot.pathfinder?.isPathing || !bot.entity?.onGround ||
+        evacuation || storagePhase !== "idle" ||
         bot.targetDigBlock || bot.currentWindow || bot.launcherPearling || bot.launcherSurvival?.busy ||
         (bot.launcherCombat?.status && bot.launcherCombat.status !== "idle" && bot.launcherCombat.status !== "hostile mobs")) return;
+    const working = bot.launcherGathering?.busy && bot.launcherGathering?.snapshot?.phase !== "paused";
+    const nearWarehouse = warehouse.some(p => Math.abs(p.y - bot.entity.position.y) < 4 && flat(p, bot.entity.position) < 4.8);
+    if (!working && warehouse.length && (nearWarehouse || now() < clearanceUntil) && now() >= nextEvacuationAt) {
+      // Asked to move while already parked: the nearest place is this one.
+      void evacuateWarehouse(!nearWarehouse); return;
+    }
     const approaching = activePeers().find(peer => peer.moving &&
       near(peerPosition(peer), bot.entity.position, 3) && peer.route.some(p => near(p, bot.entity.position, 0.9)));
     if (approaching) retreat(approaching);
@@ -259,11 +295,30 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     published = path.path || [];
     void publish();
   }
+  function goalSet(goal) { if (goal !== adaptedArrival) finishedArrival = null; }
+  function goalFinished(goal) {
+    if (goal !== adaptedArrival || !Number.isFinite(goal.x) || !Number.isFinite(goal.z)) return;
+    finishedArrival = { x: goal.x, y: goal.y, z: goal.z,
+      radius: Math.max(0.5, goal.distance ?? Math.sqrt(goal.sqDist ?? 1)) + 0.2 };
+    yieldPath = []; refuge = null; yielded = false; waitingAt = null;
+  }
   const timer = setInterval(() => void publish(), pollMs);
   timer.unref?.();
   bot.on("pathGenerated", pathGenerated);
   bot.on("physicsTick", idleYield);
+  bot.on("goalSet", goalSet); bot.on("goalFinished", goalFinished);
   const controller = {
+    get warehouseState() { return { phase: storagePhase, places: warehouse.length, evacuating: Boolean(evacuation), error: evacuationError }; },
+    setWarehouse(positions) { warehouse = positions.slice(0, 128); },
+    setStoragePhase(phase, positions, bay = null) {
+      if (phase !== "idle") evacuationAbort?.abort();
+      storagePhase = phase; if (positions?.length) warehouse = positions.slice(0, 128); serviceBay = bay;
+      void publish();
+    },
+    requestClearance(names) {
+      if (!enabled || !names.length || now() - clearSentAt < 600) return;
+      clearRequests = names.map(s => s.toLowerCase()); clearSentAt = now(); void publish();
+    },
     // Leave CPU room for protocol/physics threads and the Minecraft client.
     // Each worker searches in 5ms slices; oversubscribed fleets rest between
     // slices instead of 100 independent setImmediate loops saturating the CPU.
@@ -300,6 +355,7 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     },
     adaptGoal(goal, kind) {
       if (!["come", "follow", "goto"].includes(kind)) return goal;
+      adaptedArrival = goal; finishedArrival = null;
       const original = goal.isEnd.bind(goal), distance = goal.distance, sqDist = goal.sqDist;
       goal.isEnd = node => {
         if (!enabled || !activePeers().length) {
@@ -332,12 +388,56 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     get waiting() { return waitingAt != null && now() - queueProgressAt < 15000; },
     dispose() {
       disposed = true; revision++; clearInterval(timer);
+      evacuationAbort?.abort();
       bot.off("pathGenerated", pathGenerated); bot.off("physicsTick", idleYield);
+      bot.off("goalSet", goalSet); bot.off("goalFinished", goalFinished);
       if (yielded) clearControls();
       void crew.request("traffic", { enabled: false }).catch(() => {});
       if (bot.launcherTraffic === controller) delete bot.launcherTraffic;
     },
   };
+  async function evacuateWarehouse(aside = false) {
+    if (evacuation || !bot.pathfinder?.goto) return;
+    nextEvacuationAt = now() + 3000;
+    const abort = new AbortController(); evacuationAbort = abort;
+    const parkingToken = `clear-${++parkingSequence}`;
+    evacuation = (async () => {
+      const previous = { ...bot.pathfinder.defaultMoveSettings };
+      const stop = () => { void bot.pathfinder.stop?.().catch(() => {}); };
+      abort.signal.addEventListener("abort", stop, { once: true });
+      const deadline = setTimeout(() => abort.abort(), 7000);
+      try {
+        await leaveContainerTop(bot, { signal: abort.signal });
+        bot.setControlState("sneak", true);
+        const layout = await warehouseLayout(bot, warehouse, { signal: abort.signal,
+          reserved: activePeers().map(peerPosition) });
+        if (aside) {
+          // Step out of the colleagues' way: off this spot and off their routes.
+          const here = bot.entity.position.clone(), routes = activePeers().flatMap(peer => peer.route || []);
+          layout.stages = layout.stages.filter(p => flat(p, here) >= 3 && !routes.some(q => near(p, q, 2)));
+        }
+        if (!layout.stages.length) nextEvacuationAt = now() + 10000;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (abort.signal.aborted || disposed || storagePhase !== "idle") break;
+          const reservation = await crew.request("storagePark", { token: parkingToken, dim: dimensionOf(bot), candidates: layout.stages.slice(attempt) });
+          if (!reservation?.parking) break;
+          const p = reservation.parking, target = new Vec3(p.x, p.y, p.z);
+          if (!safeStand(bot, target, true)) continue;
+          bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
+          const { goals } = require("./pathfinder.cjs");
+          try { await bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, 0.22)); break; }
+          catch (error) { evacuationError = error.message; if (abort.signal.aborted) break; }
+        }
+      } catch (error) { evacuationError = error.message; }
+      finally {
+        clearTimeout(deadline); abort.signal.removeEventListener("abort", stop);
+        await crew.request("storagePark", { token: parkingToken, release: true }).catch(() => {});
+        if (!disposed && storagePhase === "idle") bot.pathfinder.setMoveOptions?.(previous);
+        if (!bot.pathfinder.isPathing) clearControls();
+      }
+    })().finally(() => { evacuation = null; evacuationAbort = null; });
+    return evacuation;
+  }
   bot.launcherTraffic = controller;
   void publish();
   return controller;

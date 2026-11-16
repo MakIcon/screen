@@ -31,6 +31,27 @@ const hypot2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const hypot3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const finite = (value) => value && ["x", "y", "z"].every((axis) => Number.isFinite(value[axis]));
 const point = (value) => ({ x: Number(value.x), y: Number(value.y ?? 0), z: Number(value.z) });
+const lanePoints = bay => bay ? [...(bay.inbound || []), bay, ...(bay.outbound || [])] : [];
+function nearLane(p, bay, radius) {
+  const lane = lanePoints(bay);
+  for (let i = 1; i < lane.length; i++) {
+    const a = lane[i - 1], b = lane[i], dx = b.x - a.x, dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / Math.max(0.0001, dx * dx + dz * dz)));
+    if (Math.abs(p.y - a.y - (b.y - a.y) * t) < 2 && Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t) < radius) return true;
+  }
+  return false;
+}
+function lanesConflict(a, b) {
+  const lane = lanePoints(a);
+  for (let i = 1; i < lane.length; i++) {
+    const from = lane[i - 1], to = lane[i], steps = Math.max(1, Math.ceil(hypot3(from, to) * 2));
+    for (let step = 0; step <= steps; step++) {
+      const t = step / steps;
+      if (nearLane({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, z: from.z + (to.z - from.z) * t }, b, 0.85)) return true;
+    }
+  }
+  return false;
+}
 const chunkCenter = (cx, cz) => ({ x: cx * 16 + 8, z: cz * 16 + 8 });
 
 // Traffic is published several times a second by every worker. Index lane
@@ -75,6 +96,17 @@ function createHub({ now = Date.now } = {}) {
   const targets = new Map();
   const traffic = new Map();
   const storageQueue = new Map();
+  const storageParking = new Map();
+  // Geometry stays unchanged between heartbeats. Cache corridor conflicts so
+  // fifty waiting workers do not repeat the same body sweeps four times/sec.
+  const storageConflicts = new WeakMap();
+  const serviceConflict = (a, b) => {
+    let cached = storageConflicts.get(a);
+    if (!cached) storageConflicts.set(a, (cached = new WeakMap()));
+    if (!cached.has(b)) cached.set(b, Math.abs(a.y - b.y) < 2 &&
+      (hypot2(a, b) < 1.8 || nearLane(a, b, 1.3) || nearLane(b, a, 1.3) || lanesConflict(a, b)));
+    return cached.get(b);
+  };
   let storageSequence = 0;
   // Floors of passages dug by the crew: `${dim}|x,y,z` -> { seq, name }.
   // Bots fetch the entries added since their cursor and never dig them out.
@@ -134,6 +166,7 @@ function createHub({ now = Date.now } = {}) {
     return claim;
   }
   function drop(name) {
+    storageParking.delete(name);
     storageQueue.delete(name);
     targets.delete(name);
     traffic.delete(name);
@@ -160,6 +193,7 @@ function createHub({ now = Date.now } = {}) {
     for (const [name, value] of targets) if (value.until <= time) targets.delete(name);
     for (const [name, value] of traffic) if (time - value.at > 1800) traffic.delete(name);
     for (const [name, value] of storageQueue) if (time - value.at > 5000) storageQueue.delete(name);
+    for (const [name, value] of storageParking) if (value.until <= time) storageParking.delete(name);
     for (const map of scanned.values())
       for (const [chunk, at] of map) if (time - at > SCAN_TTL) map.delete(chunk);
     for (const map of discoveries.values())
@@ -177,6 +211,22 @@ function createHub({ now = Date.now } = {}) {
       : `${Math.floor(pos.x / 16)}:${Math.floor(pos.z / 16)}`;
 
   const ops = {
+    storagePark(name, input = {}) {
+      const previous = storageParking.get(name);
+      if (input.release) {
+        if (previous?.token === input.token) storageParking.delete(name);
+        return { parking: null };
+      }
+      const dim = String(input.dim || "");
+      const candidates = (Array.isArray(input.candidates) ? input.candidates : []).filter(finite).slice(0, 256);
+      const occupied = p => [...storageParking.values()].some(e => e.name !== name && e.dim === dim && e.until > now() && hypot3(e.pos, p) < 1.9) ||
+        [...storageQueue.values()].some(e => e.name !== name && e.dim === dim && e.stage && hypot3(e.stage, p) < 1.9) ||
+        [...traffic.values()].some(e => e.name !== name && e.dim === dim && now() - e.at < 1800 && Math.abs(e.pos.y - p.y) < 2 && hypot2(e.pos, p) < 1.8);
+      const p = candidates.find(p => !occupied(p));
+      if (!p || typeof input.token !== "string") return { parking: null };
+      storageParking.set(name, { name, dim, pos: point(p), token: input.token, until: now() + 10000 });
+      return { parking: point(p) };
+    },
     storage(name, input = {}) {
       const previous = storageQueue.get(name);
       if (input.release) {
@@ -197,6 +247,52 @@ function createHub({ now = Date.now } = {}) {
       // halves of double chests and chests on higher shelves.
       const neighbours = [...storageQueue.values()].filter(other => other.name !== name && other.dim === dim &&
         now() - other.at <= 5000 && positions.some(p => other.positions.some(q => hypot2(p, q) < 16 && Math.abs(p.y - q.y) < 16)));
+      if (input.batch) {
+        const same = previous?.token === input.token && previous.dim === dim;
+        entry.batch = true;
+        entry.pos = finite(input.pos) ? point(input.pos) : previous?.pos;
+        entry.bays = Array.isArray(input.bays) ? input.bays.filter(finite).slice(0, 192).map(p => ({ ...point(p), chest: finite(p.chest) ? point(p.chest) : null,
+          inbound: (Array.isArray(p.inbound) ? p.inbound : []).filter(finite).slice(0, 4).map(point),
+          outbound: (Array.isArray(p.outbound) ? p.outbound : []).filter(finite).slice(0, 4).map(point) })) : same ? previous.bays || [] : [];
+        entry.stages = Array.isArray(input.stages) ? input.stages.filter(finite).slice(0, 256).map(point) : same ? previous.stages || [] : [];
+        // A paused or idle colleague without a ticket still fills its cell.
+        const occupied = p => [...storageParking.values()].some(e => e.name !== name && e.dim === dim && e.until > now() && hypot3(e.pos, p) < 1.9) || neighbours.some(e =>
+          (e.stage && hypot2(e.stage, p) < 1.9 && Math.abs(e.stage.y - p.y) < 2) ||
+          (e.service && !e.cleared && (hypot2(e.service, p) < 2.2 && Math.abs(e.service.y - p.y) < 2 || nearLane(p, e.service, 1.2)))) ||
+          [...traffic.values()].some(e => e.name !== name && e.dim === dim && now() - e.at < 1800 && !e.route.length &&
+            !storageQueue.has(e.name) && Math.abs(e.pos.y - p.y) < 2 && hypot2(e.pos, p) < 1.2);
+        entry.stage = same && previous.stage && !input.reselect ? previous.stage : entry.stages.find(p => !occupied(p)) || null;
+        entry.ready = Boolean(input.ready && entry.stage && entry.pos && hypot3(entry.pos, entry.stage) < 0.9);
+        entry.active = same && previous.active && !input.requeue;
+        entry.service = entry.active ? previous.service : null;
+        entry.done = Boolean(input.done);
+        // Free this service point as soon as its bot has stepped away. Other
+        // chests continue working even if one customer is slow or blocked.
+        entry.cleared = entry.active && (previous.cleared || Boolean(input.done && entry.pos && entry.service &&
+          (hypot2(entry.pos, entry.service) > 2.2 || Math.abs(entry.pos.y - entry.service.y) > 2)));
+        if (input.requeue) entry.order = ++storageSequence;
+        const group = [entry, ...neighbours.filter(e => e.batch)].sort((a, b) => a.order - b.order);
+        const active = group.filter(e => e.active && !e.cleared);
+        {
+          // Work-conserving FIFO: skip workers still walking to their waiting
+          // places and fill every physically independent bay immediately.
+          for (const candidate of group) {
+            if (candidate.active || !candidate.ready) continue;
+            const bay = candidate.bays.find(p => !active.some(e => serviceConflict(p, e.service)) &&
+              !group.some(e => e !== candidate && ((e.stage && Math.abs(e.stage.y - p.y) < 2 &&
+                (hypot2(e.stage, p) < 2.2 || nearLane(e.stage, p, 1.2))) ||
+                (e.pos && Math.abs(e.pos.y - p.y) < 2 && (hypot2(e.pos, p) < 1.3 || nearLane(e.pos, p, 0.9))))) &&
+              ![...traffic.values()].some(e => e.name !== candidate.name && e.dim === dim && now() - e.at < 1800 &&
+                Math.abs(e.pos.y - p.y) < 2 && hypot2(e.pos, p) < 1.3));
+            if (!bay) continue;
+            candidate.active = true; candidate.service = bay;
+            active.push(candidate);
+          }
+        }
+        return { allowed: Boolean(entry.active), ahead: group.filter(e => e.order < entry.order && !e.active).length,
+          batchSize: active.length, stage: entry.stage, service: entry.service,
+          parking: group.filter(e => e !== entry && e.stage).map(e => e.stage) };
+      }
       const ahead = neighbours.filter(other => other.order < entry.order);
       return { allowed: !ahead.length, ahead: ahead.length, bay: entry.parking,
         parking: neighbours.filter(other => other.parking).map(other => other.parking) };
@@ -234,13 +330,21 @@ function createHub({ now = Date.now } = {}) {
         return (opposing && lanesTouch(corridor, peer.laneCells, laneCells.bounds)) ||
           (route.length > 0 && peer.route.length > 0 && sameCell(route[0], peer.route[0]));
       });
-      const entry = { name, dim, pos, route, corridor, laneCells, direction, at: now(),
+      const storage = input.storage && Array.isArray(input.storage.positions) ? {
+        phase: String(input.storage.phase || "idle"), positions: input.storage.positions.filter(finite).slice(0, 128).map(point),
+        bay: finite(input.storage.bay) ? point(input.storage.bay) : null,
+      } : null;
+      const clear = Array.isArray(input.clear) ? input.clear.filter(s => typeof s === "string").slice(0, 32) : [];
+      const entry = { name, dim, pos, route, corridor, laneCells, direction, storage, clear, at: now(),
         until: blockers.length ? 0 : now() + 1200,
         waitingSince: blockers.length ? previous?.waitingSince || now() : null };
       traffic.set(name, entry);
       return { members: Math.max(members.size, traffic.size), allowed: !blockers.length, blocker: blockers[0]?.name || null,
+        clearance: near.filter(peer => peer.clear?.includes(name)).slice(0, 4).map(peer => ({
+          from: peer.name, positions: peer.storage?.positions || [],
+        })),
         peers: near.filter(peer => hypot3(peer.pos, pos) < 64).map(peer => ({
-          name: peer.name, pos: peer.pos, route: peer.route, moving: peer.route.length > 0,
+          name: peer.name, pos: peer.pos, route: peer.route, moving: peer.route.length > 0, storage: peer.storage && { phase: peer.storage.phase, bay: peer.storage.bay },
         })) };
     },
     beat(name, input = {}) {

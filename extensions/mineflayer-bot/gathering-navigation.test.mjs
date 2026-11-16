@@ -14,6 +14,8 @@ const { createCacheWorld, createFlatWorld } = require("./tests/setup.ts");
 const { Vec3 } = require("vec3");
 const { createHub } = require("../fleet-crew.cjs");
 const { createFleetNavigation } = require("../fleet-navigation.cjs");
+const { withStorageTurn } = require("../fleet-storage.cjs");
+const { blockingPlayers, containerClick, lidExit, leaveContainerTop, warehouseLayout, safeStand } = require("../warehouse-geometry.cjs");
 
 async function waitForJob(controller, timeout = 12000) {
   const until = Date.now() + timeout;
@@ -53,6 +55,457 @@ function prepare(version, world, realDigging = false, position = new Vec3(0.5, 6
   );
   return { rig, bot, controller, messages };
 }
+
+test("a stalled departure is stopped and releases the wave without losing a completed transfer", { timeout: 3000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chest = world.setBlock(new Vec3(0, 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world);
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub();
+  let transferred = false, stopWalk = null, stopped = false;
+  const result = await withStorageTurn(bot, { request: async (op, input) => hub.handle("departing", op, input) }, [chest.position], {
+    signal: new AbortController().signal, status() {}, stallMs: 70,
+    wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async position => {
+      if (!transferred) { bot.entity.position = position.clone(); return; }
+      await new Promise(resolve => { stopWalk = resolve; });
+    },
+    onStalled() { stopped = true; stopWalk?.(); },
+  }, async leave => { transferred = true; await leave(); return "transferred"; });
+  assert.equal(result, "transferred");
+  assert.equal(stopped, true, "stops the underlying walk, not only its waiter");
+  assert.equal(hub.handle("next", "storage", { token: "next", positions: [chest.position], dim: "overworld" }).allowed, true);
+});
+
+test("a service turn follows separate entrance and exit lanes and clicks nearby sorted chests without requeueing", { timeout: 5000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chests = [0, 2].map(x => world.setBlock(new Vec3(x, 64, 0), "chest").position);
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(-10.5, 64, 0.5));
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub(), walks = [];
+  let service;
+  await withStorageTurn(bot, { request: async (op, input) => hub.handle("flow", op, input) }, chests, {
+    signal: new AbortController().signal, status() {}, wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async p => { walks.push(p.clone()); bot.entity.position = p.clone(); },
+  }, async (leave, _signal, turn) => {
+    await turn.enterChest(chests[0]); service = turn.service;
+    assert.equal(service.inbound.length, 2); assert.equal(service.outbound.length, 2);
+    const count = walks.length;
+    await turn.enterChest({ ...chests[1] });
+    assert.equal(walks.length, count, "a reachable neighbouring chest needs no extra lap");
+    await leave();
+  });
+  const lane = [...service.inbound, service, ...service.outbound];
+  assert.deepEqual(walks.slice(-lane.length).map(p => [p.x, p.y, p.z]), lane.map(p => [p.x, p.y, p.z]));
+  assert.ok(new Vec3(service.inbound[0].x, 64, service.inbound[0].z).distanceTo(new Vec3(service.outbound[1].x, 64, service.outbound[1].z)) >= 3);
+  assert.ok(chests.every(p => bot.entity.position.xzDistanceTo(p) >= 4.6));
+  assert.equal(hub.handle("next", "storage", { token: "next", positions: chests, dim: "overworld" }).allowed, true);
+});
+
+test("the real movement executor completes a separate entrance and exit loop on a broad warehouse floor", { timeout: 15000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chest = world.setBlock(new Vec3(0, 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(-5.5, 64, -5.5));
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub(), walks = [];
+  await withStorageTurn(bot, { request: async (op, input) => hub.handle("walking-flow", op, input) }, [chest.position], {
+    signal: t.signal, status() {}, wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async (p, _signal, radius = 0.22) => {
+      walks.push(p.clone());
+      const { goals } = require("../pathfinder.cjs");
+      await bot.pathfinder.goto(new goals.GoalNear(p.x, p.y, p.z, radius));
+    },
+  }, async (leave, _signal, turn) => {
+    await turn.enterChest(chest.position);
+    assert.equal(turn.service.inbound.length, 2, "uses the validated loop, not a fallback bay");
+    assert.ok(containerClick(bot, chest));
+    await leave();
+  });
+  assert.ok(walks.length >= 6, "stage, two entry points, service, two exit points");
+  assert.ok(bot.entity.position.xzDistanceTo(chest.position) >= 4.3);
+});
+
+test("changing to a distant chest clears the old service point before waiting for the next one", { timeout: 5000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chests = [0, 10].map(x => world.setBlock(new Vec3(x, 64, 0), "chest").position);
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(-10.5, 64, 0.5));
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub(); let oldBay = null, changed = false;
+  await withStorageTurn(bot, { request: async (op, input) => {
+    if (oldBay && input.requeue) {
+      assert.ok(bot.entity.position.xzDistanceTo(oldBay) > 2.2, "cannot surrender a bay while still standing there"); changed = true;
+    }
+    return hub.handle("sorting", op, input);
+  } }, chests, {
+    signal: new AbortController().signal, status() {}, wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async p => { bot.entity.position = p.clone(); },
+  }, async (leave, _signal, turn) => {
+    await turn.enterChest(chests[0]); oldBay = new Vec3(turn.service.x, turn.service.y, turn.service.z);
+    await turn.enterChest({ ...chests[1] }); await leave();
+  });
+  assert.equal(changed, true);
+});
+
+test("53 workers reserve distinct safe waiting places on the actual warehouse floor", { timeout: 10000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  const chests = [0, 3, 6, 9].map(x => world.setBlock(new Vec3(x, 64, 0), "chest").position);
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(-15.5, 64, 0.5));
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const layout = await warehouseLayout(bot, chests, { targets: [chests[0]] });
+  const hub = createHub(), places = [];
+  for (let i = 0; i < 53; i++) {
+    const reply = hub.handle(`worker-${i}`, "storage", { token: `floor-${i}`, dim: "overworld", batch: true,
+      positions: chests, pos: bot.entity.position, bays: layout.bays, stages: layout.stages, ready: false });
+    assert.ok(reply.stage, `worker ${i + 1}/53 has a safe nearby place; candidates=${layout.stages.length}`);
+    const point = new Vec3(reply.stage.x, reply.stage.y, reply.stage.z);
+    assert.ok(safeStand(bot, point, true));
+    assert.ok(places.every(other => point.distanceTo(other) >= 1.9));
+    assert.ok(chests.every(chest => point.xzDistanceTo(chest) >= 5));
+    places.push(point);
+  }
+});
+
+test("a blocked service bay is cancelled and replaced before the warehouse ticket stalls", { timeout: 5000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chest = world.setBlock(new Vec3(0, 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world);
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub(), parent = new AbortController(), approaches = [];
+  const messages = [];
+  let cancelled = false;
+  const result = await withStorageTurn(bot, { request: async (op, input) => hub.handle("retrying", op, input) }, [chest.position], {
+    signal: parent.signal, status: message => messages.push(message), stallMs: 2000, approachStallMs: 60,
+    wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async (position, signal, radius) => {
+      if (radius === 0.4 || radius === 0.3) { bot.entity.position = position.clone(); return; }
+      approaches.push(position.clone());
+      if (approaches.length === 1) {
+        await new Promise((_, reject) => signal.addEventListener("abort", () => {
+          cancelled = true; reject(new Error("occupied service bay"));
+        }, { once: true }));
+      }
+      bot.entity.position = position.clone();
+    },
+    onStalled() { assert.fail("a local approach failure must not stall the entire ticket"); },
+  }, async (_leave, _signal, turn) => { await turn.enterChest(chest.position); return "unloaded"; });
+  assert.equal(result, "unloaded");
+  assert.equal(cancelled, true, "cancels the original movement before starting another");
+  assert.equal(approaches.length, 2);
+  assert.ok(approaches[0].distanceTo(approaches[1]) > 0.5, "chooses another physical place");
+  assert.ok(messages.some(message => message.includes("беру другое место")));
+  assert.equal(hub.handle("next", "storage", { token: "next", positions: [chest.position], dim: "overworld" }).allowed, true);
+});
+
+for (const raised of [false, true]) test(`a paused worker autonomously clears a ${raised ? "raised" : "level"} warehouse landing`, { timeout: 12000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  if (raised) for (let x = 0; x <= 5; x++) for (let z = -3; z <= 3; z++)
+    for (let y = 64; y < (x === 0 ? 65 : 66); y++) world.setBlock(new Vec3(x, y, z), "white_wool");
+  const chest = world.setBlock(new Vec3(4, raised ? 66 : 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(3.5, raised ? 66 : 64, 0.5));
+  const hub = createHub();
+  const nav = createFleetNavigation(bot, { request: async (op, input) => hub.handle("paused", op, input) });
+  nav.setWarehouse([chest.position]);
+  bot.launcherGathering = { busy: true, snapshot: { phase: "paused" } };
+  t.after(async () => { nav.dispose(); await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const until = Date.now() + 9000;
+  while (bot.entity.position.xzDistanceTo(chest.position) < 4.8 && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.ok(bot.entity.position.xzDistanceTo(chest.position) >= 4.8, JSON.stringify({ state: nav.warehouseState,
+    position: bot.entity.position, onGround: bot.entity.onGround, pathing: bot.pathfinder.isPathing }));
+});
+
+test("warehouse waves pass a failed worker, stacked chest faces and a quarry edge under server collision pushes", { timeout: 120000 }, async t => {
+  const world = createFlatWorld("26.1.2", 58, { renderDistance: 2 });
+  world.setMaxListeners(64);
+  for (let x = -20; x < 0; x++) for (let z = -20; z <= 20; z++)
+    for (let y = 58; y < 64; y++) world.setBlock(new Vec3(x, y, z), "stone");
+  for (let x = 0; x <= 5; x++) for (let z = -6; z <= 6; z++)
+    for (let y = 58; y < (x === 0 ? 65 : 66); y++) world.setBlock(new Vec3(x, y, z), "white_wool");
+  const resources = ["diamond", "iron_ingot", "gold_ingot"];
+  const chests = [-3, 0, 3].map(z => world.setBlock(new Vec3(4, 66, z), "chest"));
+  for (const chest of chests) for (const dy of [1, 2]) world.setBlock(chest.position.offset(0, dy, 0), "chest");
+  const hub = createHub(), workers = [], navs = [], arrivals = [];
+  let opened = 0, maximumOpened = 0, movedTogether = 0, edits = 0, lowest = 64, minDistance = Infinity;
+  for (let i = 0; i < 7; i++) {
+    const name = `wave-${i}`;
+    const crew = { request: async (op, input) => hub.handle(name, op, input), setBeat() {} };
+    const entry = prepare("26.1.2", world, false, new Vec3(-11.5, 64, -6.5 + i * 2), {}, { crew });
+    workers.push(entry);
+    const { bot, controller } = entry;
+    bot.entity.username = name;
+    navs.push(createFleetNavigation(bot, crew, { pollMs: 70 }));
+    const Item = require("prismarine-item")(bot.registry);
+    const item = new Item(bot.registry.itemsByName[resources[i % 3]].id, 5); item.slot = 36;
+    bot.inventory.slots[36] = item; bot.updateHeldItem(); bot.pathingUtil.refresh();
+    controller.configureStorage(chests.map((chest, index) => ({ id: `shelf-${index}`, name: resources[index],
+      filters: [resources[index]], chests: [chest.position] })));
+    bot.on("diggingCompleted", () => edits++); bot.on("blockPlaced", () => edits++);
+    bot.activateBlock = undefined;
+    bot.openContainer = async block => {
+      if (i === 6) throw new Error("simulated server rejection before transfer");
+      const eye = bot.entity.position.offset(0, 1.62, 0);
+      assert.equal(blockingPlayers(bot, eye, block.position.offset(0.5, 0.5, 0.5)).length, 0, "no colleague in the click corridor");
+      if (!arrivals.length) movedTogether = workers.slice(0, 6).filter(e => e.bot.entity.position.x > -9).length;
+      arrivals.push(i); opened++; maximumOpened = Math.max(maximumOpened, opened);
+      let closed = false;
+      return { close() { if (!closed) { opened--; closed = true; } }, async deposit() {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        bot.inventory.slots[36] = null; bot.updateHeldItem();
+      } };
+    };
+  }
+  for (const { bot } of workers) workers.forEach(({ bot: other }, i) => { if (other !== bot) bot.entities[200 + i] = other.entity; });
+  // Mineflayer's client physics does not receive player pushes in this rig.
+  // Model server-side pushes explicitly when player bodies overlap, making
+  // crowding on the two-block steps and at the cliff capable of causing falls.
+  workers[0].bot.on("physicsTick", () => {
+    for (let i = 0; i < workers.length; i++) {
+      const a = workers[i].bot.entity;
+      lowest = Math.min(lowest, a.position.y);
+      for (let j = i + 1; j < workers.length; j++) {
+        const b = workers[j].bot.entity;
+        if (Math.abs(a.position.y - b.position.y) > 1.7) continue;
+        const d = a.position.xzDistanceTo(b.position); minDistance = Math.min(minDistance, d);
+        if (d > 0 && d < 0.62) {
+          const dx = (a.position.x - b.position.x) / d * 0.05, dz = (a.position.z - b.position.z) / d * 0.05;
+          a.velocity.x += dx; a.velocity.z += dz; b.velocity.x -= dx; b.velocity.z -= dz;
+        }
+      }
+    }
+  });
+  t.signal.addEventListener("abort", () => workers.forEach(({ bot }) => { void bot.pathfinder.stop(); }), { once: true });
+  t.after(async () => {
+    navs.forEach(nav => nav.dispose());
+    await Promise.all(workers.map(async ({ controller, bot, rig }) => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }));
+  });
+  const failed = workers[6];
+  failed.controller.enqueue({ kind: "deposit" });
+  const until = Date.now() + 25000;
+  while (failed.controller.snapshot.phase !== "paused" && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(failed.controller.snapshot.phase, "paused", "a rejected transfer remains an actionable error");
+  // Reproduce an already failed bot left on the narrow approach, as in the
+  // screenshot, before the other workers arrive at that landing.
+  failed.bot.entity.position.set(3.5, 66, 0.5); failed.bot.entity.velocity.set(0, 0, 0);
+  workers.slice(0, 6).forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
+  await Promise.all(workers.slice(0, 6).map(({ controller }) => waitForJob(controller, 85000)));
+  assert.equal(new Set(arrivals).size, 6);
+  assert.ok(maximumOpened >= 2, `unloads concurrently, maximum=${maximumOpened}`);
+  assert.ok(movedTogether >= 4, `${movedTogether}/6 approached before the first transfer`);
+  t.diagnostic(`parallel=${maximumOpened}, together=${movedTogether}, separation=${minDistance}, lowest=${lowest}, failed=${failed.bot.entity.position}, phase=${failed.controller.snapshot.phase}`);
+  assert.ok(failed.bot.entity.position.xzDistanceTo(chests[1].position) >= 4.8, `the failed worker vacates the approach: ${failed.bot.entity.position}; ${JSON.stringify(navs[6].warehouseState)}; ground=${failed.bot.entity.onGround}; path=${failed.bot.pathfinder.isPathing}`);
+  assert.ok(lowest >= 63.99, `no worker is pushed into the quarry: lowest=${lowest}`);
+  assert.ok(minDistance > 0.6, `player bodies stay separated: ${minDistance}`);
+  assert.equal(edits, 0, "uses the prepared warehouse without altering it");
+  t.diagnostic(`parallel unloaders=${maximumOpened}, simultaneous approaches=${movedTogether}, minimum separation=${minDistance.toFixed(2)}, lowest=${lowest}`);
+});
+
+// The warehouse of the screenshots: two rows of chests hanging over a pit, a
+// two-block ledge in front of them and a single flight of steps up to it.
+function chestWall(world) {
+  for (let x = 1; x <= 9; x++) for (let z = -8; z <= 8; z++)
+    for (let y = 57; y < 64; y++) world.setBlock(new Vec3(x, y, z), y === 57 ? "sand" : "air");
+  for (let step = 0; step < 3; step++) for (let z = -1; z <= 1; z++)
+    world.setBlock(new Vec3(step - 1, 64 + step, z), "white_wool");
+  for (let x = 2; x <= 3; x++) for (let z = -5; z <= 5; z++) world.setBlock(new Vec3(x, 66, z), "white_wool");
+  const chests = [];
+  for (let z = -4; z <= 4; z++) for (const y of [67, 68]) chests.push(world.setBlock(new Vec3(4, y, z), "chest"));
+  return chests;
+}
+function crewWorker(world, hub, name, position, navs) {
+  const crew = { request: async (op, input) => hub.handle(name, op, input), setBeat() {} };
+  const entry = prepare("26.1.2", world, false, position, {}, { crew });
+  entry.bot.entity.username = name;
+  entry.nav = createFleetNavigation(entry.bot, crew, { pollMs: 70 });
+  navs.push(entry.nav);
+  return entry;
+}
+function give(bot, name, count = 5) {
+  const Item = require("prismarine-item")(bot.registry);
+  const item = new Item(bot.registry.itemsByName[name].id, count); item.slot = 36;
+  bot.inventory.slots[36] = item; bot.updateHeldItem(); bot.pathingUtil.refresh();
+}
+// Mineflayer's client physics receives no player pushes in this rig. Model
+// the server's: overlapping bodies shove each other apart, also off a ledge.
+function serverPushes(workers, stats) {
+  workers[0].bot.on("physicsTick", () => {
+    for (let i = 0; i < workers.length; i++) {
+      const a = workers[i].bot.entity;
+      for (let j = i + 1; j < workers.length; j++) {
+        const b = workers[j].bot.entity;
+        if (Math.abs(a.position.y - b.position.y) > 1.7) continue;
+        const d = a.position.xzDistanceTo(b.position);
+        stats.minDistance = Math.min(stats.minDistance, d);
+        if (d > 0 && d < 0.62) {
+          const dx = (a.position.x - b.position.x) / d * 0.05, dz = (a.position.z - b.position.z) / d * 0.05;
+          a.velocity.x += dx; a.velocity.z += dz; b.velocity.x -= dx; b.velocity.z -= dz;
+        }
+      }
+    }
+  });
+}
+
+test("a worker standing on a chest lid steps down across the lids and unloads instead of failing every route", { timeout: 30000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chests = chestWall(world);
+  // On the upper row, in the middle of the wall: lids on both sides, the pit
+  // behind, the ledge two blocks down in front.
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(4.5, 68.875, 0.5));
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.ok(bot.entity.onGround && Math.abs(bot.entity.position.y - 68.875) < 0.01, `stands on the lid: ${bot.entity.position}`);
+  const exit = lidExit(bot);
+  assert.ok(exit?.length, "finds real footing next to the wall");
+  assert.equal(exit[exit.length - 1].y, 67, "the ledge, not another lid");
+  give(bot, "diamond");
+  let opened = 0;
+  bot.activateBlock = undefined;
+  bot.openContainer = async () => { opened++; return { close() {}, async deposit() { bot.inventory.slots[36] = null; bot.updateHeldItem(); } }; };
+  controller.configureStorage([{ id: "wall", name: "Склад", filters: ["#all"], chests: [chests[2].position] }]);
+  controller.enqueue({ kind: "deposit" });
+  await waitForJob(controller, 25000);
+  assert.equal(opened, 1);
+  assert.equal(controller.snapshot.history[0]?.deposited, 5);
+  assert.ok(bot.entity.position.y >= 66.99 && bot.entity.position.y < 67.5, `unloads from the ledge: ${bot.entity.position}`);
+});
+
+test("leaving a lid crosses a row of chests over a pit and refuses a drop into it", { timeout: 15000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  for (let x = 1; x <= 9; x++) for (let z = -6; z <= 6; z++)
+    for (let y = 58; y < 64; y++) world.setBlock(new Vec3(x, y, z), "air");
+  // A row of chests bridging the pit from the bank at x=0; nothing beside it.
+  for (let x = 1; x <= 5; x++) world.setBlock(new Vec3(x, 63, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(4.5, 63.875, 0.5));
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  let lowest = Infinity;
+  bot.on("physicsTick", () => { lowest = Math.min(lowest, bot.entity.position.y); });
+  assert.equal(await leaveContainerTop(bot), true);
+  assert.ok(bot.entity.position.x < 1 && Math.abs(bot.entity.position.y - 64) < 0.01, `back on the bank: ${bot.entity.position}`);
+  assert.ok(lowest >= 63.87, `never dropped into the pit: ${lowest}`);
+  assert.equal(lidExit(bot), null, "ordinary ground needs no step-off");
+});
+
+test("a colleague in front of the chest blocks the straight click, and the click moves to a free part of the chest", { timeout: 10000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chest = world.setBlock(new Vec3(4, 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(1.5, 64, 0.5));
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const colleague = { username: "blocker", position: new Vec3(2.9, 64, 0.5), width: 0.6, height: 1.8 };
+  bot.entities[77] = colleague;
+  const eye = bot.entity.position.offset(0, 1.62, 0);
+  assert.equal(blockingPlayers(bot, eye, chest.position.offset(0.5, 0.5, 0.5)).length, 1);
+  assert.equal(containerClick(bot, chest), null, "a body filling the whole approach leaves no click");
+  // Half a block aside the same colleague only covers part of the chest.
+  colleague.position.z = 0.95;
+  const click = containerClick(bot, chest);
+  assert.ok(click, "clicks past the colleague");
+  assert.equal(blockingPlayers(bot, eye, chest.position.plus(click.cursor)).length, 0);
+  delete bot.entities[77];
+  assert.ok(containerClick(bot, chest));
+});
+
+test("a colleague entering a planned lid exit is waited for instead of being pushed into the pit", { timeout: 10000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  for (let x = 1; x <= 6; x++) for (let z = -3; z <= 3; z++)
+    for (let y = 58; y < 64; y++) world.setBlock(new Vec3(x, y, z), "air");
+  for (let x = 1; x <= 3; x++) world.setBlock(new Vec3(x, 63, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(2.5, 63.875, 0.5));
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  await bot.waitForTicks(2);
+  const look = bot.look.bind(bot);
+  let injected = false, requests = 0, lowest = Infinity;
+  bot.launcherTraffic = { requestClearance(names) { assert.deepEqual(names, ["crossing"]); requests++; } };
+  bot.look = (...args) => {
+    if (!injected) {
+      injected = true;
+      bot.entities[77] = { username: "crossing", position: new Vec3(1.5, 63.875, 0.5), width: 0.6, height: 1.8 };
+    }
+    return look(...args);
+  };
+  bot.on("physicsTick", () => { lowest = Math.min(lowest, bot.entity.position.y); });
+  const walking = leaveContainerTop(bot);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 160));
+    assert.ok(requests > 0, "asks the colleague to clear the newly blocked step");
+    assert.equal(bot.getControlState("forward"), false);
+    assert.equal(bot.getControlState("sneak"), true);
+  } finally { delete bot.entities[77]; }
+  assert.equal(await walking, true);
+  assert.ok(lowest >= 63.87, `no shove or fall into the pit: ${lowest}`);
+});
+
+test("a chest wall over a pit: waves unload from a narrow ledge while failed workers at the chest, on a lid and in the pit get out of the way", { timeout: 150000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
+  world.setMaxListeners(64);
+  const chests = chestWall(world);
+  const resources = ["diamond", "iron_ingot", "gold_ingot"];
+  const groups = resources.map((name, index) => ({ id: `row-${index}`, name, filters: [name],
+    chests: chests.filter((_, i) => Math.floor(i / 6) === index).map(chest => chest.position) }));
+  const hub = createHub(), navs = [], workers = [], arrivals = [];
+  const stats = { minDistance: Infinity };
+  let opened = 0, maximumOpened = 0, edits = 0, lowest = Infinity, waitedTogether = 0;
+  for (let i = 0; i < 8; i++) {
+    const entry = crewWorker(world, hub, `unloader-${i}`, new Vec3(-13.5, 64, -7 + i * 2 + 0.5), navs);
+    workers.push(entry);
+    const { bot, controller } = entry;
+    give(bot, resources[i % 3]);
+    controller.configureStorage(groups);
+    bot.on("diggingCompleted", () => edits++); bot.on("blockPlaced", () => edits++);
+    bot.activateBlock = undefined;
+    bot.openContainer = async block => {
+      const eye = bot.entity.position.offset(0, 1.62, 0);
+      assert.equal(blockingPlayers(bot, eye, block.position.offset(0.5, 0.5, 0.5)).length, 0, "no colleague stands in the crosshair");
+      assert.ok(bot.entity.position.y >= 66.99, "unloads from the ledge");
+      if (!arrivals.length) waitedTogether = workers.filter(e => e.bot.entity.position.x > -12.5).length;
+      arrivals.push(i); opened++; maximumOpened = Math.max(maximumOpened, opened);
+      let closed = false;
+      return { close() { if (!closed) { opened--; closed = true; } }, async deposit() {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        bot.inventory.slots[36] = null; bot.updateHeldItem();
+      } };
+    };
+  }
+  // Three workers whose unloading already failed, where the screenshots show
+  // them: in front of a chest, on top of the wall, at the bottom of the pit.
+  const stranded = [new Vec3(3.5, 67, 0.5), new Vec3(4.5, 68.875, -2.5), new Vec3(6.5, 58, 2.5)].map((position, i) => {
+    const entry = crewWorker(world, hub, `failed-${i}`, position, navs);
+    entry.bot.launcherGathering = { busy: true, snapshot: { phase: "paused" } };
+    entry.nav.setWarehouse(chests.map(chest => chest.position));
+    return entry;
+  });
+  const everyone = [...workers, ...stranded];
+  for (const { bot } of everyone) everyone.forEach(({ bot: other }, i) => { if (other !== bot) bot.entities[300 + i] = other.entity; });
+  serverPushes(everyone, stats);
+  workers[0].bot.on("physicsTick", () => { for (const { bot } of workers) lowest = Math.min(lowest, bot.entity.position.y); });
+  t.signal.addEventListener("abort", () => everyone.forEach(({ bot }) => { void bot.pathfinder.stop(); }), { once: true });
+  t.after(async () => {
+    navs.forEach(nav => nav.dispose());
+    await Promise.all(everyone.map(async ({ controller, bot, rig }) => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); }));
+  });
+  workers.forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
+  const snapshot = () => everyone.map(({ bot, controller, nav, messages }) => `${bot.entity.username}:${controller.snapshot.phase}/${nav.warehouseState.phase}@${bot.entity.position.floored()}${nav.waiting ? " waiting" : ""}${bot.pathfinder.isPathing ? ` to ${bot.pathfinder.currentPath?.at(-1)?.exitPos?.floored?.() ?? "?"}` : ""} ${String(messages[messages.length - 1] ?? "").split("; ").pop().slice(0, 48)}`).join(" | ");
+  const trace = process.env.WAREHOUSE_TRACE && setInterval(() => console.log("T " + snapshot()), 2500);
+  t.after(() => clearInterval(trace));
+  try { await Promise.all(workers.map(({ controller }) => waitForJob(controller, 130000))); }
+  catch (error) { t.diagnostic(snapshot()); throw error; }
+  t.diagnostic(`open at once=${maximumOpened}, together=${waitedTogether}, separation=${stats.minDistance.toFixed(2)}, lowest=${lowest}, stranded=${stranded.map(e => e.bot.entity.position.floored())}`);
+  assert.equal(new Set(arrivals).size, 8, "every worker unloads");
+  assert.ok(workers.every(({ controller }) => controller.snapshot.history[0]?.deposited === 5));
+  // How many chests are open at the same instant depends on walking times;
+  // Every ready worker gets an independent service turn, without a group bell.
+  assert.ok(workers.every(({ messages }) => messages.some(m => String(m).includes("Свободный подход"))));
+  assert.ok(waitedTogether >= 7, `${waitedTogether}/8 were already walking up when the first chest opened, not waiting far away for a turn`);
+  assert.ok(lowest >= 63.99, `nobody is pushed off the ledge or the steps: lowest=${lowest}`);
+  assert.equal(edits, 0, "the warehouse is used as built");
+  const [atChest, onLid, inPit] = stranded.map(e => e.bot.entity.position);
+  assert.ok(inPit.y >= 57.99 && inPit.y < 64, `the worker in the pit is not dragged anywhere: ${inPit}`);
+  assert.ok(chests.every(chest => atChest.xzDistanceTo(chest.position) >= 4.8), `the failed worker left the chests: ${atChest}`);
+  assert.ok(onLid.y < 68 && chests.every(chest => onLid.xzDistanceTo(chest.position) >= 4.8), `the worker on the lid left the wall: ${onLid}`);
+});
 
 for (const depth of [4, 10]) test(`escapes a ${depth}-block quarry directly underneath the warehouse without digging its floor`, { timeout: 50000 }, async t => {
   const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
@@ -154,7 +607,7 @@ for (const overhead of [false, true]) test(`four workers escape the same enclose
     bot.on("diggingCompleted", () => digs++);
     bot.activateBlock = undefined;
     bot.openContainer = async () => {
-      assert.equal(opened++, 0, "only one worker accesses storage");
+      assert.ok(opened++ < 4, "one wave of workers accesses storage");
       assert.ok(bot.entity.position.y >= (overhead ? 66 : 68), "climbed to a reachable warehouse approach");
       arrivals.push(i);
       return { close() { opened--; }, async deposit() { bot.inventory.slots[36] = null; bot.updateHeldItem(); } };
@@ -170,8 +623,14 @@ for (const overhead of [false, true]) test(`four workers escape the same enclose
     }));
   });
   workers.forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
-  await Promise.all(workers.map(({ controller }) => waitForJob(controller, 70000)));
-  assert.deepEqual(arrivals, [0, 1, 2, 3]);
+  try { await Promise.all(workers.map(({ controller }) => waitForJob(controller, 70000))); }
+  catch (error) {
+    t.diagnostic(JSON.stringify(workers.map(({ bot, controller, messages }, i) => ({ name: bot.entity.username,
+      pos: bot.entity.position, phase: controller.snapshot.phase, state: navs[i].warehouseState,
+      move: bot.pathfinder.currentMove?.exitPos, waiting: navs[i].waiting, status: messages.slice(-2) }))));
+    throw error;
+  }
+  assert.deepEqual([...arrivals].sort(), [0, 1, 2, 3]);
   assert.ok(digs > 0, "the first worker cuts an actual exit");
   assert.ok(workers.every(({ controller }) => controller.snapshot.history[0]?.deposited === 5));
 });
@@ -202,11 +661,7 @@ for (const crowded of [false, true]) test(`three workers queue, use existing war
     });
     bot.activateBlock = undefined;
     bot.openContainer = async () => {
-      assert.equal(opened, 0, "only the queue owner opens a chest");
-      if (order.length) {
-        const previous = workers[order[order.length - 1]].bot.entity.position;
-        assert.ok(previous.xzDistanceTo(chest.position) >= 9, `previous worker cleared the steps: ${previous}`);
-      }
+      assert.ok(opened < 4, "bounded group uses separate physical approaches");
       opened++; order.push(i);
       let closed = false;
       return { close() { if (!closed) { opened--; closed = true; } },
@@ -225,7 +680,7 @@ for (const crowded of [false, true]) test(`three workers queue, use existing war
   });
   workers.forEach(({ controller }) => controller.enqueue({ kind: "deposit" }));
   await Promise.all(workers.map(({ controller }) => waitForJob(controller, 55000)));
-  assert.deepEqual(order, [0, 1, 2]);
+  assert.deepEqual([...order].sort(), [0, 1, 2]);
   assert.equal(edits, 0);
   assert.ok(workers.every(({ controller }) => controller.snapshot.history[0]?.deposited === 5));
 });

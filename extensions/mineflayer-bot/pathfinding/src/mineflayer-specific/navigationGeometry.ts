@@ -29,6 +29,42 @@ export function needsWalkSneak (world: World, pos: Vec3, velocity: Vec3): boolea
   return !supportedWalkSegment(world, pos, pos.offset(velocity.x * 3, 0, velocity.z * 3))
 }
 
+/** A loaded one-block step may be left from any point on its lip, not just
+ * the planner's centre line. Verify the full foot/body corridor before letting
+ * the descent controller release crouch; gaps, hazards and walls still fail. */
+export function safeStepDownSegment (world: World, from: Vec3, to: Vec3): boolean {
+  const drop = from.y - to.y
+  if (drop <= 0.05 || drop > 1.05 || from.xzDistanceTo(to) > 1.8 || !supportedWalkSegment(world, to, to)) return false
+  const steps = Math.max(1, Math.ceil(from.xzDistanceTo(to) * 10))
+  let previous = from.clone()
+  for (let i = 0; i <= steps; i++) {
+    const p = from.plus(to.minus(from).scaled(i / steps))
+    let height = to.y
+    for (const [dx, dz] of [[-0.2995, -0.2995], [-0.2995, 0.2995], [0.2995, -0.2995], [0.2995, 0.2995]]) {
+      let supported = false
+      for (let y = Math.floor(from.y - 0.05); y >= Math.floor(to.y - 0.05); y--) {
+        const sample = new Vec3(p.x + dx, y, p.z + dz)
+        const block = world.getBlockInfo(sample)
+        if (block.isInvalid || !block.safe) return false
+        for (const box of block.getBBs()) {
+          if (box.maxY > from.y + 0.05 || box.maxY < to.y - 0.05 ||
+              sample.x < box.minX || sample.x > box.maxX || sample.z < box.minZ || sample.z > box.maxZ) continue
+          height = Math.max(height, box.maxY); supported = true
+        }
+      }
+      if (!supported) return false
+    }
+    if (height > previous.y + 0.05) return false
+    p.y = height
+    // Walk across at the old support height, then fall vertically. A sloping
+    // body sweep would incorrectly intersect the old step's vertical face.
+    const lip = new Vec3(p.x, previous.y, p.z)
+    if (!clearBodySegment(world, previous, lip, 0.599) || !clearBodySegment(world, lip, p, 0.599)) return false
+    previous = p
+  }
+  return true
+}
+
 /** Sweep the player's body, including its sides, through actual block shapes. */
 export function clearBodySegment (world: World, from: Vec3, to: Vec3, width = 0.62, height = 1.8): boolean {
   const radius = width / 2
