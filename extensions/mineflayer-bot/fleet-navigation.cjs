@@ -3,13 +3,26 @@
 const { Vec3 } = require("vec3");
 const { availableParallelism } = require("node:os");
 const { dimensionOf } = require("./fleet-crew.cjs");
-const { warehouseLayout, safeStand, leaveContainerTop } = require("./warehouse-geometry.cjs");
+const { warehouseLayout, safeStand, leaveContainerTop, storageMoveOptions } = require("./warehouse-geometry.cjs");
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const near = (a, b, radius) => Math.abs(a.y - b.y) < 1.5 && flat(a, b) < radius;
 const key = p => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
 const center = p => new Vec3(Math.floor(p.x) + 0.5, Math.floor(p.y), Math.floor(p.z) + 0.5);
 const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const dangerous = /lava|water|fire|cactus|magma|campfire|berry_bush|powder_snow|portal|cobweb/;
+
+function routeDistance(p, origin, route) {
+  let distance = Math.abs(p.y - origin.y) < 1.5 ? flat(p, origin) : Infinity;
+  let a = origin;
+  for (const b of route) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / Math.max(0.001, dx * dx + dz * dz)));
+    if (Math.abs(p.y - a.y - (b.y - a.y) * t) < 1.5)
+      distance = Math.min(distance, Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t));
+    a = b;
+  }
+  return distance;
+}
 
 // Only level, loaded, dry ground is used for yielding. Normal navigation
 // remains responsible for stairs, jumps, swimming, digging and placement.
@@ -40,6 +53,8 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   let disposed = false, pending = false, peers = [], allowed = true, blocker = null;
   let updatedAt = -Infinity, published = [], yieldPath = [], yielded = false;
   let waitingAt = null, nextYieldAt = 0, lastResetAt = -Infinity, refuge = null;
+  let bypass = false, bypassUntil = 0, nextBypassAt = 0;
+  let idleYieldOrigin = null;
   let queueProgressAt = 0, queuePeer = null;
   let revision = 0, dimension = dimensionOf(bot);
   let entityCacheAt = -Infinity;
@@ -129,14 +144,18 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     const dim = dimensionOf(bot);
     if (dim !== dimension) {
       dimension = dim; peers = []; yieldPath = []; published = []; updatedAt = -Infinity;
+      if (yielded) clearControls();
+      bypass = false; refuge = null; yielded = false; waitingAt = null; idleYieldOrigin = null;
     }
     const points = enabled ? route() : [];
     pending = true;
     const version = revision;
     try {
       const reply = await crew.request("traffic", { enabled, dim, pos: bot.entity.position,
-        route: points, corridor: enabled ? corridorFor(points) : [],
-        storage: warehouse.length ? { phase: storagePhase, positions: warehouse, bay: serviceBay } : null,
+        route: points, motion: yieldPath.length ? yieldPath : refuge ? [] : points,
+        corridor: enabled ? corridorFor(bypass ? yieldPath : points) : [],
+        urgency: bot.launcherGathering?.retreating || bot.launcherCombat?.retreating ? "escape" : "normal",
+        storage: warehouse.length ? { phase: evacuation ? "leaving" : storagePhase, positions: warehouse, bay: serviceBay } : null,
         clear: now() - clearSentAt < 1800 ? clearRequests : [] });
       if (disposed || version !== revision || dimensionOf(bot) !== dim || !reply) return;
       peers = Array.isArray(reply.peers) ? reply.peers : [];
@@ -156,12 +175,72 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     for (const control of ["forward", "back", "left", "right", "sprint", "jump"]) bot.setControlState(control, false);
   }
   function replan() {
-    if (now() - lastResetAt < 2000 || !bot.pathfinder?.isPathing) return;
+    if (now() - lastResetAt < 600 || !bot.pathfinder?.isPathing) return;
     lastResetAt = now();
     void bot.pathfinder.reset?.("goalUpdated").catch(() => {});
   }
   function occupied(p, radius = 0.95) {
     return activePeers().some(peer => near(p, peerPosition(peer), radius));
+  }
+  function safeSegment(from, to) {
+    const steps = Math.max(1, Math.ceil(flat(from, to) / 0.2));
+    for (let i = 1; i <= steps; i++) {
+      const p = from.plus(to.minus(from).scaled(i / steps));
+      if (!safeCell(bot, center(p)) || !bodySpace(bot, p) || occupied(p, 0.95)) return false;
+    }
+    return true;
+  }
+  // A bounded local search, used only after braking. No world edits, diagonal
+  // corner cuts or repeated full path searches on every physics tick.
+  function findBypass(to) {
+    const origin = bot.entity.position, start = center(origin);
+    if (Math.abs(to.y - origin.y) > 0.4) return [];
+    const length = flat(origin, to);
+    if (length < 0.8) return [];
+    const dx = (to.x - origin.x) / length, dz = (to.z - origin.z) / length;
+    const crowd = activePeers().filter(peer => near(origin, peerPosition(peer), 12));
+    const seen = new Set([key(start)]), queue = [{ p: start, path: [] }];
+    const safe = new Map();
+    const traversable = p => {
+      const id = key(p);
+      if (!safe.has(id)) safe.set(id, safeCell(bot, p) && !occupied(p, 1.2));
+      return safe.get(id);
+    };
+    let best = null;
+    const ordered = [...directions].sort((a, b) => (-dz * b[0] + dx * b[1]) - (-dz * a[0] + dx * a[1]));
+    for (let i = 0; i < queue.length && i < 160; i++) {
+      const entry = queue[i];
+      if (entry.path.length >= 8) continue;
+      for (const [x, z] of ordered) {
+        const p = entry.p.offset(x, 0, z), id = key(p);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const progress = (p.x - origin.x) * dx + (p.z - origin.z) * dz;
+        const side = -(p.x - origin.x) * dz + (p.z - origin.z) * dx;
+        if (progress < -1 || progress > Math.min(4, length + 0.4) || Math.abs(side) > 3 || !traversable(p)) continue;
+        // Leave the original lane sideways; subsequent steps stay clear of
+        // the whole moving crowd, not just the first opposing worker.
+        if (crowd.some(peer => routeDistance(p, peerPosition(peer), peer.route || []) < 0.9)) continue;
+        const path = [...entry.path, p];
+        queue.push({ p, path });
+        if (progress < Math.min(2, length) || Math.abs(side) < 1.1) continue;
+        const score = progress * 3 - path.length - Math.abs(side) * 0.5 + (side > 0 ? 0.25 : 0);
+        if (!best || score > best.score) best = { path, score };
+      }
+    }
+    return best?.path || [];
+  }
+  function walkYieldPath() {
+    while (yieldPath.length && flat(bot.entity.position, yieldPath[0]) < 0.15) yieldPath.shift();
+    const next = yieldPath[0];
+    clearControls();
+    if (!next) return false;
+    if (!safeSegment(bot.entity.position, next)) { yieldPath = []; refuge = null; return false; }
+    const dx = next.x - bot.entity.position.x, dz = next.z - bot.entity.position.z;
+    void bot.look(Math.atan2(-dx, -dz), 0, true)?.catch(() => {});
+    bot.setControlState("forward", true);
+    yielded = true;
+    return true;
   }
   function findRefuge(other) {
     const start = center(bot.entity.position), queue = [{ p: start, path: [] }], seen = new Set([key(start)]);
@@ -183,7 +262,8 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         queue.push({ p, path });
         // A bay outside the other route is preferable to backing up. If the
         // tunnel has no bay yet, retreat away from the approaching worker.
-        const clearance = Math.min(4, ...dangerPath.map(q => flat(p, q)));
+        const clearance = Math.min(4, routeDistance(p, peerPosition(other), dangerPath),
+          ...activePeers().filter(peer => peer !== other).map(peer => routeDistance(p, peerPosition(peer), peer.route || [])));
         const away = flat(p, peerPosition(other)) - flat(start, peerPosition(other));
         const score = (clearance >= 1.1 ? 50 : 0) + Math.min(away, 2) * 2 - path.length * 3;
         if ((clearance >= 1.1 || away >= 1.5) && (!best || score > best.score)) best = { path, score };
@@ -194,29 +274,24 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   function retreat(other) {
     if (refuge && near(bot.entity.position, refuge, 0.2)) { clearControls(); return; }
     if (!yieldPath.length && now() >= nextYieldAt) {
-      nextYieldAt = now() + 900;
+      nextYieldAt = now() + 400;
       yieldPath = findRefuge(other);
       const last = yieldPath[yieldPath.length - 1];
-      refuge = last && !(other.route || []).some(p => near(p, last, 1.1)) ? last : null;
+      refuge = last && activePeers().every(peer => routeDistance(last, peerPosition(peer), peer.route || []) >= 1.1) ? last : null;
     }
-    while (yieldPath.length && flat(bot.entity.position, yieldPath[0]) < 0.15) yieldPath.shift();
-    const next = yieldPath[0];
-    if (!next || !safeCell(bot, next) || occupied(next, 0.9)) { clearControls(); return; }
-    // Never cut a corner or cross a missing floor after another bot digs it.
-    const midpoint = bot.entity.position.plus(next).scaled(0.5);
-    if (!safeCell(bot, center(midpoint))) { yieldPath = []; clearControls(); return; }
-    clearControls();
-    const dx = next.x - bot.entity.position.x, dz = next.z - bot.entity.position.z;
-    void bot.look(Math.atan2(-dx, -dz), 0, true)?.catch(() => {});
-    bot.setControlState("forward", true);
-    yielded = true;
+    walkYieldPath();
   }
   function pause(move) {
     const list = activePeers();
     if (!list.length || !bot.entity.onGround || bot.targetDigBlock || bot.launcherPearling) {
-      waitingAt = null; yieldPath = []; refuge = null; return false;
+      waitingAt = null; yieldPath = []; refuge = null; bypass = false; return false;
     }
     const pos = bot.entity.position, to = move.exitPos || move;
+    if (bypass) {
+      if (now() < bypassUntil && walkYieldPath()) return true;
+      bypass = false; yieldPath = []; yielded = false; waitingAt = null;
+      clearControls(); replan(); void publish(); return true;
+    }
     const ownName = String(bot.entity.username || bot.username || "").toLowerCase();
     const ahead = list.find(peer => {
       const p = peerPosition(peer), dx = to.x - pos.x, dz = to.z - pos.z;
@@ -249,6 +324,14 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     }
     if (waitingAt == null) { waitingAt = now(); queueProgressAt = now(); queuePeer = null; }
     clearControls();
+    if (now() - waitingAt >= 120 && now() >= nextBypassAt) {
+      nextBypassAt = now() + 500;
+      const path = findBypass(to);
+      if (path.length) {
+        yieldPath = path; refuge = null; bypass = true; bypassUntil = now() + 3000;
+        walkYieldPath(); void publish(); return true;
+      }
+    }
     const other = list.find(peer => peer.name === blocker) || ahead;
     if (other && !other.moving) controller.requestClearance([other.name]);
     if (other) {
@@ -258,44 +341,62 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         queueProgressAt = now();
       }
     }
-    const opposing = other?.route?.length &&
-      (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
-      (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) < -0.1;
-    const crossing = other?.route?.length &&
-      (other.route[0].x - peerPosition(other).x) * (to.x - pos.x) +
-      (other.route[0].z - peerPosition(other).z) * (to.z - pos.z) <= 0.1;
-    const localYield = ahead && crossing && ownName > String(other?.name || "");
+    const intent = other?.intent || other?.route;
+    const opposing = intent?.length &&
+      (intent[0].x - peerPosition(other).x) * (to.x - pos.x) +
+      (intent[0].z - peerPosition(other).z) * (to.z - pos.z) < -0.1;
+    const crossing = intent?.length &&
+      (intent[0].x - peerPosition(other).x) * (to.x - pos.x) +
+      (intent[0].z - peerPosition(other).z) * (to.z - pos.z) <= 0.1;
+    const priority = peer => peer.urgency === "escape" ? 2 : peer.storage?.phase === "leaving" ? 1 : 0;
+    const ownPriority = bot.launcherGathering?.retreating || bot.launcherCombat?.retreating ? 2 :
+      storagePhase === "leaving" || evacuation ? 1 : 0;
+    const localYield = ahead && crossing && other?.allowed !== false &&
+      (ownPriority < priority(other) || ownPriority === priority(other) && ownName > String(other?.name || ""));
     // Two workers walking the same way side by side each see the other
     // closing in and both stop: a group heading for the warehouse steps
     // freezes in pairs until a timeout. Once neither has moved for a while,
     // one of the pair steps aside and its partner walks on.
     const stalemate = ahead && other === ahead && other.moving && now() - queueProgressAt > 1500 &&
       ownName > String(other.name || "");
-    if (other && (denied && (opposing || !other.moving) || localYield || stalemate) && now() - waitingAt > 350) retreat(other);
-    if (!denied && now() - waitingAt > 1400 && !yieldPath.length) replan();
+    if (other && (denied && (opposing || !other.moving) || localYield || stalemate) && now() - waitingAt > 180) retreat(other);
+    if ((!denied || now() - queueProgressAt > 1200 && !refuge) && now() - waitingAt > 700 && !yieldPath.length) replan();
     return true;
   }
   function idleYield() {
     if (disposed || !enabled || bot.health <= 0 || bot.isAlive === false || bot.pathfinder?.isPathing || !bot.entity?.onGround ||
-        evacuation || storagePhase !== "idle" ||
+        evacuation || !["idle", "gathering"].includes(storagePhase) ||
         bot.targetDigBlock || bot.currentWindow || bot.launcherPearling || bot.launcherSurvival?.busy ||
         (bot.launcherCombat?.status && bot.launcherCombat.status !== "idle" && bot.launcherCombat.status !== "hostile mobs")) return;
     const working = bot.launcherGathering?.busy && bot.launcherGathering?.snapshot?.phase !== "paused";
     const nearWarehouse = warehouse.some(p => Math.abs(p.y - bot.entity.position.y) < 4 && flat(p, bot.entity.position) < 4.8);
-    if (!working && warehouse.length && (nearWarehouse || now() < clearanceUntil) && now() >= nextEvacuationAt) {
+    if (storagePhase === "idle" && !working && warehouse.length && (nearWarehouse || now() < clearanceUntil) && now() >= nextEvacuationAt) {
       // Asked to move while already parked: the nearest place is this one.
       void evacuateWarehouse(!nearWarehouse); return;
     }
+    // Hold the temporary refuge until the OLD place is clear. Testing only
+    // our new position would pull a storage waiter straight back into the exit.
+    const origin = idleYieldOrigin || bot.entity.position;
     const approaching = activePeers().find(peer => peer.moving &&
-      near(peerPosition(peer), bot.entity.position, 3) && peer.route.some(p => near(p, bot.entity.position, 0.9)));
-    if (approaching) retreat(approaching);
-    else if (yielded) { clearControls(); yielded = false; yieldPath = []; refuge = null; }
+      near(peerPosition(peer), origin, 4) && routeDistance(origin, peerPosition(peer), peer.route || []) < 0.9);
+    if (approaching) {
+      idleYieldOrigin ||= bot.entity.position.clone();
+      retreat(approaching);
+    } else {
+      idleYieldOrigin = null;
+      if (yielded) { clearControls(); yielded = false; yieldPath = []; refuge = null; }
+    }
   }
   function pathGenerated(path) {
     published = path.path || [];
     void publish();
   }
-  function goalSet(goal) { if (goal !== adaptedArrival) finishedArrival = null; }
+  function goalSet(goal) {
+    if (goal !== adaptedArrival) finishedArrival = null;
+    if (yielded) clearControls();
+    bypass = false; yieldPath = []; refuge = null; yielded = false; waitingAt = null;
+    idleYieldOrigin = null;
+  }
   function goalFinished(goal) {
     if (goal !== adaptedArrival || !Number.isFinite(goal.x) || !Number.isFinite(goal.z)) return;
     finishedArrival = { x: goal.x, y: goal.y, z: goal.z,
@@ -312,6 +413,13 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     setWarehouse(positions) { warehouse = positions.slice(0, 128); },
     setStoragePhase(phase, positions, bay = null) {
       if (phase !== "idle") evacuationAbort?.abort();
+      if (phase !== storagePhase) {
+        // idleYield no longer runs during service/leaving. Release the inputs
+        // it owns before that handoff, even if no new goto is needed at the bay.
+        if (yielded) clearControls();
+        bypass = false; yieldPath = []; refuge = null; yielded = false; waitingAt = null;
+        idleYieldOrigin = null;
+      }
       storagePhase = phase; if (positions?.length) warehouse = positions.slice(0, 128); serviceBay = bay;
       void publish();
     },
@@ -325,6 +433,7 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     get workDelayMs() { return now() - updatedAt < 1800 ? Math.min(80,
       Math.max(0, Math.ceil(5 * (fleetSize / Math.max(1, cpuCount * 0.35) - 1)))) : 0; },
     get enabled() { return enabled; },
+    get clearing() { return yielded && !bot.pathfinder?.isPathing; },
     pause,
     cost(from, to) {
       if (now() - costAt >= 40) {
@@ -377,7 +486,8 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
       if (enabled === (value !== false)) return;
       enabled = value !== false; revision++; peers = []; allowed = true;
       costAt = -Infinity;
-      waitingAt = null; yieldPath = []; refuge = null;
+      waitingAt = null; yieldPath = []; refuge = null; bypass = false;
+      idleYieldOrigin = null;
       if (yielded) clearControls();
       yielded = false;
       void publish();
@@ -423,7 +533,7 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
           if (!reservation?.parking) break;
           const p = reservation.parking, target = new Vec3(p.x, p.y, p.z);
           if (!safeStand(bot, target, true)) continue;
-          bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
+          bot.pathfinder.setMoveOptions?.(storageMoveOptions(bot, previous));
           const { goals } = require("./pathfinder.cjs");
           try { await bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, 0.22)); break; }
           catch (error) { evacuationError = error.message; if (abort.signal.aborted) break; }

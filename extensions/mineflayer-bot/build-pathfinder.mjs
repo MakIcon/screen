@@ -120,6 +120,7 @@ for (const file of [
   "storage-filters.json",
   "gathering-commands.cjs",
   "gathering.test.mjs",
+  "gathering-storage-protocol.test.mjs",
   "gathering-storage.test.mjs",
   "gathering-container.test.mjs",
   "gathering-navigation.test.mjs",

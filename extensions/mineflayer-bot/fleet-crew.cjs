@@ -87,6 +87,57 @@ function lanesTouch(points, cells, bounds) {
   return false;
 }
 
+const TRAFFIC_BATCH_SIZE = 3;
+const TRAFFIC_BATCH_MS = 1800;
+const TRAFFIC_MAX_WAIT_MS = 3000;
+const sameTrafficCell = (a, b) => Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 0.8 && Math.abs(a.z - b.z) < 0.8;
+const aligned = (a, b) => a.direction.x * b.direction.x + a.direction.z * b.direction.z > 0.1;
+const sharedCorridor = (a, b) => lanesTouch(a.corridor, b.laneCells, a.laneCells.bounds);
+function trafficConflict(a, b) {
+  return (!aligned(a, b) && sharedCorridor(a, b)) ||
+    (a.route.length > 0 && b.route.length > 0 && sameTrafficCell(a.route[0], b.route[0]));
+}
+
+// Waves survive their first member's departure. Closing one stops new
+// admissions; workers already inside drain the passage before it reverses.
+function admitTraffic(entry, previous, peers, time) {
+  const conflicts = peers.filter(peer => trafficConflict(entry, peer));
+  const leaders = peers.filter(peer => peer.until > time && aligned(entry, peer) && sharedCorridor(entry, peer));
+  entry.wave = previous?.wave || leaders[0]?.wave;
+  entry.until = previous?.until || 0;
+  const rank = candidate => {
+    // A jammed occupant must eventually back out rather than renewing a
+    // permanent veto. Ordinary moving occupants retain their right to exit.
+    const committed = candidate.until > time && time - candidate.progressAt < 1800 &&
+      candidate.corridor.some(p => sameTrafficCell(p, candidate.pos));
+    const aged = candidate.waitingSince != null && time - candidate.waitingSince >= TRAFFIC_MAX_WAIT_MS;
+    const priority = candidate.urgency === "escape" ? 2 : candidate.storage?.phase === "leaving" ? 1 : 0;
+    const batch = candidate.wave && time - candidate.wave.started < TRAFFIC_BATCH_MS &&
+      (candidate.wave.admitted.has(candidate.name) || candidate.wave.admitted.size < TRAFFIC_BATCH_SIZE);
+    return [Number(committed), Number(aged), aged ? -candidate.waitingSince : priority,
+      Number(Boolean(batch)), -(candidate.waitingSince ?? candidate.requestedAt)];
+  };
+  const ours = rank(entry);
+  const blocker = conflicts.filter(peer => {
+    const theirs = rank(peer);
+    for (let i = 0; i < ours.length; i++) if (ours[i] !== theirs[i]) return theirs[i] > ours[i];
+    return peer.name < entry.name;
+  }).sort((a, b) => (a.waitingSince ?? a.requestedAt) - (b.waitingSince ?? b.requestedAt) || a.name.localeCompare(b.name))[0];
+  if (blocker) {
+    entry.until = 0;
+    entry.waitingSince ??= time;
+  } else {
+    entry.until = entry.route.length ? time + 1200 : 0;
+    entry.waitingSince = null;
+    if (entry.route.length && entry.corridor.length) {
+      if (!entry.wave || (!conflicts.length && time - entry.wave.started >= TRAFFIC_BATCH_MS))
+        entry.wave = { started: time, admitted: new Set() };
+      entry.wave.admitted.add(entry.name);
+    }
+  }
+  return blocker;
+}
+
 function createHub({ now = Date.now } = {}) {
   const members = new Map();
   const claims = new Map();
@@ -314,37 +365,37 @@ function createHub({ now = Date.now } = {}) {
         traffic.delete(name);
         return { peers: [], allowed: true };
       }
-      const previous = traffic.get(name);
+      let previous = traffic.get(name);
       const route = (Array.isArray(input.route) ? input.route : []).filter(finite).slice(0, 16).map(point);
       const corridor = (Array.isArray(input.corridor) ? input.corridor : []).filter(finite).slice(0, 96).map(point);
       const laneCells = laneIndex(corridor);
       const pos = point(input.pos);
-      const sameCell = (a, b) => Math.abs(a.y - b.y) < 1 && Math.abs(a.x - b.x) < 0.8 && Math.abs(a.z - b.z) < 0.8;
       const near = [...traffic.values()].filter(peer => peer.name !== name && peer.dim === dim && now() - peer.at < 1800);
       const direction = route.length ? { x: route[0].x - pos.x, z: route[0].z - pos.z } : { x: 0, z: 0 };
-      const blockers = near.filter(peer => {
-        if (peer.until <= now()) return false;
-        // Convoys may share a corridor; opposing flows take turns. Reserve
-        // only the immediate step in open areas, so crossing paths can clear.
-        const opposing = direction.x * peer.direction.x + direction.z * peer.direction.z < -0.1;
-        return (opposing && lanesTouch(corridor, peer.laneCells, laneCells.bounds)) ||
-          (route.length > 0 && peer.route.length > 0 && sameCell(route[0], peer.route[0]));
-      });
       const storage = input.storage && Array.isArray(input.storage.positions) ? {
         phase: String(input.storage.phase || "idle"), positions: input.storage.positions.filter(finite).slice(0, 128).map(point),
         bay: finite(input.storage.bay) ? point(input.storage.bay) : null,
       } : null;
       const clear = Array.isArray(input.clear) ? input.clear.filter(s => typeof s === "string").slice(0, 32) : [];
       const entry = { name, dim, pos, route, corridor, laneCells, direction, storage, clear, at: now(),
-        until: blockers.length ? 0 : now() + 1200,
-        waitingSince: blockers.length ? previous?.waitingSince || now() : null };
+        urgency: input.urgency === "escape" ? "escape" : "normal",
+        motion: Array.isArray(input.motion) ? input.motion.filter(finite).slice(0, 16).map(point) : route };
+      if (previous && (previous.dim !== dim || now() - previous.at >= 1800 || !aligned(entry, previous) ||
+          (!sharedCorridor(entry, previous) && !sameTrafficCell(route[0] || pos, previous.route[0] || previous.pos)))) previous = null;
+      entry.requestedAt = previous?.requestedAt ?? now();
+      entry.waitingSince = previous?.waitingSince ?? null;
+      const progressed = !previous || hypot3(pos, previous.progressPos) >= 0.2;
+      entry.progressAt = progressed ? now() : previous.progressAt;
+      entry.progressPos = progressed ? pos : previous.progressPos;
+      const blocker = admitTraffic(entry, previous, near, now());
       traffic.set(name, entry);
-      return { members: Math.max(members.size, traffic.size), allowed: !blockers.length, blocker: blockers[0]?.name || null,
+      return { members: Math.max(members.size, traffic.size), allowed: !blocker, blocker: blocker?.name || null,
         clearance: near.filter(peer => peer.clear?.includes(name)).slice(0, 4).map(peer => ({
           from: peer.name, positions: peer.storage?.positions || [],
         })),
         peers: near.filter(peer => hypot3(peer.pos, pos) < 64).map(peer => ({
-          name: peer.name, pos: peer.pos, route: peer.route, moving: peer.route.length > 0, storage: peer.storage && { phase: peer.storage.phase, bay: peer.storage.bay },
+          name: peer.name, pos: peer.pos, route: peer.motion, intent: peer.route, urgency: peer.urgency, allowed: peer.until > now(),
+          moving: peer.route.length > 0, storage: peer.storage && { phase: peer.storage.phase, bay: peer.storage.bay },
         })) };
     },
     beat(name, input = {}) {

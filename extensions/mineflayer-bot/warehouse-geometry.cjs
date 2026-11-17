@@ -4,6 +4,22 @@ const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const container = /chest|barrel|shulker_box/;
 const hazard = /lava|water|fire|cactus|magma|campfire|berry_bush|powder_snow|portal|cobweb/;
 
+// Container lids are inset and are not warehouse walkways. Keep normal
+// one-block stairs available, but don't sprint/jump between service shelves.
+function storageMoveOptions(bot, previous = bot.pathfinder.defaultMoveSettings) {
+  return {
+    canDig: false, canPlace: false, allow1by1towers: false,
+    allowSprinting: false, allowParkour: false, allowJumpSprint: false, allowLowCeilingJumps: false,
+    maxDropDown: Math.min(1, previous.maxDropDown ?? 1),
+    allowWaterDrop: false, allowBucketWaterDrop: false,
+    exclusionAreasStep: [...(previous.exclusionAreasStep || []), block => {
+      const p = block.position;
+      return [bot.blockAt(p), bot.blockAt(p.offset(0, -1, 0))]
+        .some(b => b && container.test(b.name)) ? 1000000 : 0;
+    }],
+  };
+}
+
 function safeStand(bot, p, waiting = false) {
   const floor = bot.blockAt(p.offset(0, -1, 0)), feet = bot.blockAt(p), head = bot.blockAt(p.offset(0, 1, 0));
   if (!floor || !feet || !head || floor.boundingBox !== "block" || container.test(floor.name) ||
@@ -60,6 +76,44 @@ function containerClick(bot, block, feet = bot.entity.position, avoidPlayers = t
     return { face: faces[hit.face], cursor: hit.intersect.minus(block.position) };
   }
   return null;
+}
+
+async function activateContainer(bot, block, click, guard = () => {}) {
+  // activateBlock always looks at the block centre and waits for smooth aim.
+  // Aim at the chosen visible face and recheck it after that asynchronous turn.
+  if (!bot._client?.write || !bot.supportFeature || !bot.lookAt)
+    return bot.activateBlock(block, click.face, click.cursor);
+  const point = block.position.plus(click.cursor);
+  await bot.lookAt(point, true);
+  // A forced look changes local rotation immediately; the next physics tick
+  // publishes it. Send use-block only after that rotation reaches the wire.
+  if (bot.waitForTicks) await bot.waitForTicks(1);
+  guard();
+  const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0);
+  const delta = point.minus(eye), length = delta.norm();
+  const hit = bot.world?.raycast?.(eye, delta.normalize(), length + 0.01);
+  if (!container.test(bot.blockAt(block.position)?.name || "") || length > 4 ||
+      (bot.world?.raycast && (!hit?.position.equals(block.position) || hit.intersect.distanceTo(point) > 0.06)) ||
+      Math.hypot(bot.entity.velocity?.x || 0, bot.entity.velocity?.z || 0) > 0.08 ||
+      blockingPlayers(bot, eye, point).length || bot.getControlState?.("sneak")) {
+    throw Object.assign(new Error("Позиция у сундука изменилась: нужно снова подойти к доступной грани"), { retryStorage: true });
+  }
+  const face = click.face;
+  const direction = face.y < 0 ? 0 : face.y > 0 ? 1 : face.z < 0 ? 2 : face.z > 0 ? 3 : face.x < 0 ? 4 : 5;
+  const packet = { location: block.position, direction };
+  if (bot.supportFeature("blockPlaceHasHeldItem")) {
+    const native = require("node:module").createRequire(require.resolve("mineflayer"));
+    const Item = native("prismarine-item")(bot.registry);
+    Object.assign(packet, { heldItem: Item.toNotch(bot.heldItem) });
+  } else packet.hand = 0;
+  const scale = bot.supportFeature("blockPlaceHasHeldItem") || bot.supportFeature("blockPlaceHasHandAndIntCursor") ? 16 : 1;
+  const coordinate = value => scale === 16 ? Math.floor(value * scale) : value;
+  Object.assign(packet, { cursorX: coordinate(click.cursor.x), cursorY: coordinate(click.cursor.y), cursorZ: coordinate(click.cursor.z) });
+  if (bot.supportFeature("blockPlaceHasInsideBlock"))
+    Object.assign(packet, { insideBlock: false, sequence: 0, worldBorderHit: false });
+  // No await between the reach check and sending the interaction.
+  bot._client.write("block_place", packet);
+  bot.swingArm();
 }
 
 // A small clockwise loop: enter on one side of a service point, leave on the
@@ -217,4 +271,4 @@ async function leaveContainerTop(bot, { signal, timeoutMs = 2500 } = {}) {
     return true;
   } finally { for (const control of controls) bot.setControlState(control, false); }
 }
-module.exports = { safeStand, containerClick, blockingPlayers, segmentHitsBody, warehouseLayout, flat, lidExit, leaveContainerTop };
+module.exports = { safeStand, containerClick, activateContainer, blockingPlayers, segmentHitsBody, warehouseLayout, flat, lidExit, leaveContainerTop, storageMoveOptions };

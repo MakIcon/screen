@@ -32,6 +32,7 @@ function pushMove(
  * but adds the corner wall checks needed for the turn.
  */
 export class AroundCornerDiagonal extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.diagonalDirs
 
   static allowOffsetDiagonals = true

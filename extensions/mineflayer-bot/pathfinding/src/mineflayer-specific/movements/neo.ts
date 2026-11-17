@@ -28,6 +28,7 @@ function steering (headingYaw: number, lookYaw: number, jumping = false): Steeri
 
 /** Geometry from Rewrite's examples/neos, with both escape sides checked independently. */
 export class NeoProvider extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.cardinalDirs
 
   provideMovements(node: Move, storage: Move[], _goal: Goal, closed: Set<string>): void {

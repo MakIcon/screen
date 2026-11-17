@@ -627,6 +627,47 @@ test("grouped storage splits a stack over full and free chests, sorts resources 
   assert.equal([...s.stores.values()].every((store) => store.opened === store.closed), true);
 });
 
+test("a resolved deposit without moved items is retried and never reported as unloading", async t => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  setupStorage(f, [[2, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  const open = f.bot.openContainer;
+  let attempts = 0;
+  f.bot.openContainer = async block => {
+    const window = await open(block);
+    window.deposit = async () => { attempts++; };
+    return window;
+  };
+  f.work.configureStorage([{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 2, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.phase === "paused");
+  assert.equal(attempts, 2);
+  assert.equal(f.work.snapshot.active.deposited, 0);
+  assert.equal(f.items[0].count, 5);
+  assert.match(f.work.snapshot.reason, /не подтвердил передачу/);
+});
+
+test("partial transfers are counted once and only the remaining items are retried", async t => {
+  const f = fixture(); t.after(() => f.work.dispose());
+  const s = setupStorage(f, [[2, Array(27).fill(null)]]);
+  f.items.push({ ...f.item("diamond"), count: 5 });
+  const open = f.bot.openContainer;
+  let first = true;
+  f.bot.openContainer = async block => {
+    const window = await open(block), deposit = window.deposit;
+    window.deposit = async (type, metadata, count) => {
+      await deposit(type, metadata, first ? 2 : count);
+      first = false;
+    };
+    return window;
+  };
+  f.work.configureStorage([{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 2, y: 64, z: 0 }] }]);
+  f.work.enqueue({ kind: "deposit" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(s.transfers.map(t => t.count), [2, 3]);
+  assert.equal(f.work.snapshot.history[0].deposited, 5);
+});
+
 test("a missing chest falls through to the next destination in its group; configuration errors preserve the old groups", async (t) => {
   const f = fixture(); t.after(() => f.work.dispose());
   const s = setupStorage(f, [[5, Array(27).fill(null)]]);
@@ -652,7 +693,7 @@ test("a saved chest outside loaded chunks is approached before its container blo
   f.work.configureStorage([{ id: "gems", name: "Алмазы", filters: ["diamond"], chests: [{ x: 5, y: 64, z: 0 }] }]);
   f.work.enqueue({ kind: "deposit" });
   await until(f, () => f.work.snapshot.history.length === 1);
-  assert.equal(moves, 2);
+  assert.equal(moves, 1, "loading the chest already puts it in reach; no redundant approach is needed");
   assert.equal(s.transfers[0].count, 5);
 });
 

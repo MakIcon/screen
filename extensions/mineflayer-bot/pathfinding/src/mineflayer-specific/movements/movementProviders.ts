@@ -477,6 +477,7 @@ export class StraightUp extends MovementProvider {
 }
 
 export class ParkourForward extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.cardinalDirs
 
   provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
@@ -579,6 +580,7 @@ export class ParkourForward extends MovementProvider {
 }
 
 export class ParkourDiagonal extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.diagonalDirs
 
   // default: preserve current behavior

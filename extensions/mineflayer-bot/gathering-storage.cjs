@@ -193,6 +193,15 @@ function sameStack(left, right) {
     isDeepStrictEqual(left?.components ?? [], right?.components ?? [])
   );
 }
+function carriedItems(bot, window) {
+  // Mineflayer copies a container's player slots to bot.inventory only when
+  // closing it. While open, count its player section (and the cursor).
+  if (window?.slots && Number.isInteger(window.inventoryStart) &&
+      Number.isInteger(window.inventoryEnd) && window.inventoryEnd <= window.slots.length)
+    return [...window.slots.slice(window.inventoryStart, window.inventoryEnd), window.selectedItem].filter(Boolean);
+  return [...bot.inventory.items(), window?.selectedItem].filter(Boolean);
+}
+const stackCount = (items, item) => items.reduce((sum, stack) => sum + (sameStack(stack, item) ? stack.count : 0), 0);
 function containerCapacity(window, item, registry) {
   if (!window.slots || !Number.isInteger(window.inventoryStart)) return item.count;
   const limit = item.stackSize || registry.itemsByName[item.name]?.stackSize || 64;
@@ -212,5 +221,7 @@ module.exports = {
   matchesFilter,
   containerCapacity,
   sameStack,
+  carriedItems,
+  stackCount,
   key,
 };

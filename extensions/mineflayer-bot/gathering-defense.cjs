@@ -334,6 +334,7 @@ function createGatheringDefense(
     get busy() {
       return Boolean(session) || pending;
     },
+    get retreating() { return Boolean(session && shouldFlee(session.entity)); },
     get task() {
       return task;
     },

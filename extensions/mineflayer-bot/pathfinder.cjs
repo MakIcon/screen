@@ -2750,6 +2750,7 @@ var require_movement = __commonJS({
     var climbablePhysics_12 = require_climbablePhysics();
     exports2.DEFAULT_MOVEMENT_OPTS = {
       allowJumpSprint: true,
+      allowParkour: true,
       walkOnly: false,
       allowAirStrafe: false,
       canOpenDoors: true,
@@ -5803,6 +5804,7 @@ var require_movementProvider = __commonJS({
       constructor(bot, world, settings = {}) {
         super(bot, world, settings);
         this.supportsWalkOnly = false;
+        this.requiresParkour = false;
         this.excavationFloors = /* @__PURE__ */ new Set();
         this.orgX = 0;
         this.orgY = 0;
@@ -6109,6 +6111,8 @@ var require_movementProvider = __commonJS({
         for (const newMove of this.recognizedMovements) {
           if (newMove.settings.walkOnly && !newMove.supportsWalkOnly)
             continue;
+          if (!newMove.settings.allowParkour && newMove.requiresParkour)
+            continue;
           newMove.loadMove(currentMove);
           newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear, this.excavationFloors);
           const first = moves.length;
@@ -6171,6 +6175,7 @@ var require_neo = __commonJS({
     var NeoProvider = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(node, storage, _goal, closed) {
@@ -6756,6 +6761,7 @@ var require_momentum = __commonJS({
     var MomentumJump = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(node, storage, goal, closed) {
@@ -7643,6 +7649,7 @@ var require_ladder_provider = __commonJS({
     var LadderForward = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -7737,6 +7744,7 @@ var require_ladder_provider = __commonJS({
     var LadderDiagonal = class _LadderDiagonal extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.diagonalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -7877,6 +7885,7 @@ var require_ladder_provider = __commonJS({
     var LadderLandingForward = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -7958,6 +7967,7 @@ var require_ladder_provider = __commonJS({
     var LadderLandingDiagonal = class _LadderLandingDiagonal extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.diagonalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -8108,6 +8118,7 @@ var require_around_corner_provider = __commonJS({
     var AroundCornerDiagonal = class _AroundCornerDiagonal extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.diagonalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -8695,6 +8706,7 @@ var require_movementProviders = __commonJS({
     var ParkourForward = class extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.cardinalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -8778,6 +8790,7 @@ var require_movementProviders = __commonJS({
     var ParkourDiagonal = class _ParkourDiagonal extends movementProvider_1.MovementProvider {
       constructor() {
         super(...arguments);
+        this.requiresParkour = true;
         this.movementDirs = movement_1.Movement.diagonalDirs;
       }
       provideMovements(start, storage, goal, closed) {
@@ -10898,7 +10911,7 @@ var require_pathExecutor = __commonJS({
             adjustStop(stoppingAt);
           const interaction = this.getCurrentExecutor()?.cI;
           const trafficMove = this.getCurrentMove() ?? localPath[currentIndex];
-          if (!tickInFlight && !recoveryInFlight && interaction == null && trafficMove != null && this.getCurrentExecutor()?.canInterrupt !== false && bot.entity.onGround && (runnerStage === "align" || runnerStage === "perform") && bot.launcherTraffic?.pause(trafficMove) === true) {
+          if (!tickInFlight && !recoveryInFlight && stoppingAt == null && !isAtGoal() && interaction == null && trafficMove != null && this.getCurrentExecutor()?.canInterrupt !== false && bot.entity.onGround && (runnerStage === "align" || runnerStage === "perform") && bot.launcherTraffic?.pause(trafficMove) === true) {
             lastProgressAt = performance.now();
             productiveAt = lastProgressAt;
             lastProgressPosition = bot.entity.position.clone();

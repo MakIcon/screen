@@ -613,7 +613,9 @@ export class PathExecutor {
       if (stoppingAt != null && tickInFlight && bot.entity.onGround) adjustStop(stoppingAt)
       const interaction = this.getCurrentExecutor()?.cI
       const trafficMove = this.getCurrentMove() ?? localPath[currentIndex]
-      if (!tickInFlight && !recoveryInFlight && interaction == null && trafficMove != null &&
+      // Arrival/braking owns the last few centimetres. Traffic must not send
+      // an already arrived worker on a detour before the route can finish.
+      if (!tickInFlight && !recoveryInFlight && stoppingAt == null && !isAtGoal() && interaction == null && trafficMove != null &&
           this.getCurrentExecutor()?.canInterrupt !== false && bot.entity.onGround &&
           (runnerStage === 'align' || runnerStage === 'perform') &&
           (bot as TrafficAwareBot).launcherTraffic?.pause(trafficMove) === true) {

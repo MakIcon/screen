@@ -181,6 +181,174 @@ test("traffic stays in its dimension and does not block the only exit permanentl
   assert.equal(hub.handle("c", "traffic", input).allowed, true);
 });
 
+test("escape and warehouse departure outrank entry, but an occupied passage drains first", () => {
+  let time = 1000;
+  const hub = crew.createHub({ now: () => time });
+  const corridor = [p(1.5), p(2.5), p(3.5)];
+  const incoming = { dim: "overworld", pos: p(0.5), route: [p(1.5)], corridor };
+  const outgoing = { dim: "overworld", pos: p(4.5), route: [p(3.5)], corridor,
+    storage: { phase: "leaving", positions: [p(5.5)] } };
+  assert.equal(hub.handle("entry", "traffic", incoming).allowed, true);
+  assert.equal(hub.handle("exit", "traffic", outgoing).allowed, true);
+  assert.equal(hub.handle("entry", "traffic", incoming).allowed, false);
+  const escape = { ...incoming, urgency: "escape" };
+  assert.equal(hub.handle("entry", "traffic", escape).allowed, true);
+  assert.equal(hub.handle("exit", "traffic", outgoing).allowed, false);
+  hub.handle("entry", "traffic", { ...escape, pos: p(1.5), route: [p(2.5)] });
+  time += 100;
+  assert.equal(hub.handle("exit", "traffic", { ...outgoing, urgency: "escape" }).allowed, false,
+    "priority never reverses a lane through an admitted occupant");
+});
+
+test("three-member waves close to new arrivals and retain the opposing wait across heartbeats", () => {
+  let time = 0;
+  const hub = crew.createHub({ now: () => time });
+  const corridor = [p(1.5), p(2.5), p(3.5)];
+  const east = x => ({ dim: "overworld", pos: p(x), route: [p(x + 1)], corridor });
+  const west = { dim: "overworld", pos: p(5.5), route: [p(4.5)], corridor };
+  assert.equal(hub.handle("a", "traffic", east(0.5)).allowed, true);
+  assert.equal(hub.handle("west", "traffic", west).allowed, false);
+  time = 100;
+  assert.equal(hub.handle("b", "traffic", east(-1.5)).allowed, true);
+  assert.equal(hub.handle("c", "traffic", east(-3.5)).allowed, true);
+  assert.equal(hub.handle("d", "traffic", east(-5.5)).allowed, false);
+  for (time = 200; time <= 3200; time += 100) {
+    hub.handle("a", "traffic", east(0.5));
+    hub.handle("b", "traffic", east(-1.5));
+    hub.handle("c", "traffic", east(-3.5));
+    hub.handle("west", "traffic", west);
+  }
+  assert.equal(hub.handle("west", "traffic", west).allowed, true);
+  assert.equal(hub.handle("late", "traffic", east(-7.5)).allowed, false);
+  assert.equal(hub.handle("a", "traffic", east(0.5)).allowed, false);
+});
+
+test("an aged waiter closes entry while admitted workers finish crossing", () => {
+  let time = 0;
+  const hub = crew.createHub({ now: () => time });
+  const corridor = [p(1.5), p(2.5), p(3.5)];
+  const east = { dim: "overworld", pos: p(1.5), route: [p(2.5)], corridor };
+  const west = { dim: "overworld", pos: p(5.5), route: [p(4.5)], corridor };
+  hub.handle("inside", "traffic", east);
+  for (; time <= 3200; time += 100) {
+    assert.equal(hub.handle("west", "traffic", west).allowed, false);
+    east.pos = p(1.5 + time / 2000);
+    east.route = [p(east.pos.x + 1)];
+    assert.equal(hub.handle("inside", "traffic", east).allowed, true);
+  }
+  assert.equal(hub.handle("late", "traffic", { ...east, pos: p(-1.5), route: [p(-0.5)] }).allowed, false);
+  hub.handle("inside", "traffic", { ...east, pos: p(4.5), route: [p(6.5)], corridor: [] });
+  assert.equal(hub.handle("west", "traffic", west).allowed, true);
+});
+
+test("a motionless occupant cannot renew its right of way indefinitely", () => {
+  let time = 0;
+  const hub = crew.createHub({ now: () => time });
+  const corridor = [p(1.5), p(2.5), p(3.5)];
+  const stopped = { dim: "overworld", pos: p(1.5), route: [p(2.5)], corridor };
+  const west = { dim: "overworld", pos: p(5.5), route: [p(4.5)], corridor };
+  hub.handle("stopped", "traffic", stopped);
+  for (; time <= 3200; time += 100) {
+    hub.handle("west", "traffic", west);
+    hub.handle("stopped", "traffic", stopped);
+  }
+  assert.equal(hub.handle("west", "traffic", west).allowed, true);
+  assert.equal(hub.handle("stopped", "traffic", stopped).allowed, false);
+});
+
+test("a blocked walker promptly goes around the whole crowd and resumes its goal", async t => {
+  const peers = [2.5, 4.5, 6.5].map((x, i) => ({ name: `crowd${i}`, pos: p(x), route: [p(x - 1), p(x - 2)], moving: true }));
+  const { bot, nav, advance, requests } = fixture(t, { peers });
+  let yaw = 0, resets = 0, widest = 0;
+  bot.look = async value => { yaw = value; };
+  bot.pathfinder.reset = async () => { resets++; };
+  bot.pathfinder.currentPath = [{ exitPos: p(8.5) }];
+  await flush();
+  assert.equal(nav.pause({ exitPos: p(8.5) }), true);
+  advance(150);
+  assert.equal(nav.pause({ exitPos: p(8.5) }), true);
+  assert.equal(bot.controls.forward, true, "starts the detour within 150ms");
+  for (let step = 0; step < 55 && !resets; step++) {
+    if (bot.controls.forward) bot.entity.position = bot.entity.position.offset(-Math.sin(yaw) * 0.14, 0, -Math.cos(yaw) * 0.14);
+    widest = Math.max(widest, Math.abs(bot.entity.position.z - 0.5));
+    assert.ok(peers.every(peer => bot.entity.position.distanceTo(peer.pos) > 0.9));
+    advance(50);
+    bot.emit("pathGenerated", { path: bot.pathfinder.currentPath });
+    await flush();
+    nav.pause({ exitPos: p(8.5) });
+  }
+  assert.ok(widest > 1.5, `uses the free shoulder: ${widest}`);
+  assert.ok(bot.entity.position.x > 3.5, "advances alongside the crowd");
+  assert.ok(resets > 0, "replans from the detour endpoint toward the existing goal");
+  assert.ok(requests.some(r => r.input.motion?.some(point => point.z > 1.5)), "publishes its real maneuver to peers");
+});
+
+test("waiting storage workers temporarily step out of an exit lane", async t => {
+  const peer = { name: "leaving", pos: p(2.5), route: [p(1.5), p(0.5)], moving: true };
+  const { bot, nav } = fixture(t, { peers: [peer] });
+  await flush();
+  bot.pathfinder.isPathing = false;
+  nav.setStoragePhase("gathering", [p(5.5)]);
+  bot.emit("physicsTick");
+  assert.equal(bot.controls.forward, true);
+  assert.equal(nav.warehouseState.phase, "gathering", "the waiting storage operation is retained");
+  bot.entity.position = p(0.5, 2.5);
+  bot.emit("physicsTick");
+  assert.equal(nav.clearing, true, "stays aside while the original waiting place is on the exit route");
+  peer.pos = p(-3.5); peer.route = [p(-4.5)];
+  bot.emit("physicsTick");
+  assert.equal(nav.clearing, false, "the storage task can rejoin once the exiting bot has passed");
+});
+
+test("a storage service handoff releases an idle yielding worker's movement immediately", async t => {
+  const peer = { name: "leaving", pos: p(2.5), route: [p(1.5), p(0.5)], moving: true };
+  const { bot, nav } = fixture(t, { peers: [peer] });
+  await flush();
+  bot.pathfinder.isPathing = false;
+  nav.setStoragePhase("gathering", [p(5.5)]);
+  bot.emit("physicsTick");
+  assert.equal(bot.controls.forward, true, "yielding has started");
+  nav.setStoragePhase("service", [p(5.5)], p(0.5));
+  assert.equal(bot.controls.forward, false, "opening a chest must not inherit W from yielding");
+  assert.equal(nav.clearing, false);
+  bot.emit("physicsTick");
+  assert.equal(bot.controls.forward, false);
+});
+
+test("a detour stops immediately when its floor is removed", async t => {
+  const { bot, nav, advance } = fixture(t, { peers: [{ name: "crowd", pos: p(2.5), route: [p(1.5)], moving: true }] });
+  await flush();
+  nav.pause({ exitPos: p(8.5) }); advance(150); nav.pause({ exitPos: p(8.5) });
+  assert.equal(bot.controls.forward, true);
+  bot.blockAt = () => ({ name: "air", boundingBox: "empty", shapes: [] });
+  nav.pause({ exitPos: p(8.5) });
+  assert.equal(bot.controls.forward, false);
+});
+
+test("one hundred traffic participants keep arbitration local and bounded", t => {
+  let time = 0;
+  const hub = crew.createHub({ now: () => time });
+  const corridor = Array.from({ length: 20 }, (_, i) => p(i + 0.5));
+  const started = performance.now();
+  for (let round = 0; round < 10; round++, time += 180) for (let i = 0; i < 100; i++) {
+    const direction = i % 2 ? 1 : -1, x = direction > 0 ? -1.5 - i : 22.5 + i;
+    const reply = hub.handle(`worker${i}`, "traffic", { dim: "overworld", pos: p(x), route: [p(x + direction)], corridor });
+    assert.equal(typeof reply.allowed, "boolean");
+    assert.ok(reply.peers.length <= 99);
+  }
+  t.diagnostic(`1000 traffic publications: ${Math.round(performance.now() - started)}ms`);
+});
+
+test("traffic publishes structured escape and departure intent", async t => {
+  const { bot, nav, requests } = fixture(t);
+  await flush();
+  bot.launcherGathering = { retreating: true };
+  nav.setStoragePhase("leaving", [p(5.5)]);
+  await flush();
+  assert.equal(requests.at(-1).input.urgency, "escape");
+  assert.equal(requests.at(-1).input.storage.phase, "leaving");
+});
+
 test("helpers reserve different physical blocks even for different resources", () => {
   const hub = crew.createHub();
   const positions = [p(1), p(2)];

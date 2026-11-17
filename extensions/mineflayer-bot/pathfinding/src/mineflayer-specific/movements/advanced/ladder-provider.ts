@@ -84,6 +84,7 @@ function pushMoveLandingOnLadder(
  * forward variants.
  */
 export class LadderForward extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.cardinalDirs
 
   provideMovements(start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
@@ -256,6 +257,7 @@ export class LadderForward extends MovementProvider {
  * when a ladder is present on the approach block.
  */
 export class LadderDiagonal extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.diagonalDirs
 
   static allowOffsetDiagonals = true
@@ -484,6 +486,7 @@ export class LadderDiagonal extends MovementProvider {
  * and behind it.
  */
 export class LadderLandingForward extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.cardinalDirs
 
   provideMovements(start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
@@ -632,6 +635,7 @@ export class LadderLandingForward extends MovementProvider {
  * and behind it.
  */
 export class LadderLandingDiagonal extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.diagonalDirs
 
   static allowOffsetDiagonals = true

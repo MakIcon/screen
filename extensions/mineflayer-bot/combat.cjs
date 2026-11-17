@@ -1783,6 +1783,7 @@ function createCombatController(
       autoEnabled = enabled;
       nextActionAt = now() + settings.reactionMs;
     },
+    get retreating() { return Boolean(recovery || ["retreat", "escape"].includes(decision?.action)); },
     get status() {
       return target
         ? `${utilities.status || mode || "preparing"} ${target.username || target.name || target.id}${decision ? `; ${decision.action}; hp ${decision.health}; enemy hp ${decision.enemyHealth ?? "unknown"}` : ""}`

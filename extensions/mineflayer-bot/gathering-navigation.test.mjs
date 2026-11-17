@@ -149,6 +149,26 @@ test("changing to a distant chest clears the old service point before waiting fo
   assert.equal(changed, true);
 });
 
+test("correcting a push at the chest does not repeat the entrance loop", { timeout: 5000 }, async t => {
+  const world = createFlatWorld("26.1.2", 64, { renderDistance: 1 });
+  const chest = world.setBlock(new Vec3(0, 64, 0), "chest");
+  const { rig, bot, controller } = prepare("26.1.2", world, false, new Vec3(-10.5, 64, 0.5));
+  bot.physicsEnabled = false;
+  t.after(async () => { await controller.dispose(); await bot.pathfinder.destroy(); rig.stopPassivePhysics(); });
+  const hub = createHub(), walks = [];
+  await withStorageTurn(bot, { request: async (op, input) => hub.handle("pushed", op, input) }, [chest.position], {
+    signal: t.signal, status() {}, wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    walk: async p => { walks.push(p.clone()); bot.entity.position = p.clone(); },
+  }, async (_leave, _signal, turn) => {
+    await turn.enterChest(chest.position);
+    const count = walks.length, bay = bot.entity.position.clone();
+    assert.equal(turn.service.inbound.length, 2);
+    bot.entity.position.x += 0.5;
+    await turn.enterChest(chest.position);
+    assert.deepEqual(walks.slice(count), [bay], "correct directly to the assigned bay, without revisiting entry waypoints");
+  });
+});
+
 test("53 workers reserve distinct safe waiting places on the actual warehouse floor", { timeout: 10000 }, async t => {
   const world = createFlatWorld("26.1.2", 64, { renderDistance: 2 });
   const chests = [0, 3, 6, 9].map(x => world.setBlock(new Vec3(x, 64, 0), "chest").position);

@@ -15,6 +15,8 @@ import { ClimbAwarePhysics } from '../climbablePhysics'
 export interface MovementOptions {
   allowDiagonalBridging: boolean
   allowJumpSprint: boolean
+  /** Gap/parkour jumps; ordinary one-block stairs remain available. */
+  allowParkour: boolean
   /** Grounded walking only, without jumping, falling, climbing or swimming. */
   walkOnly: boolean
   allowAirStrafe: boolean
@@ -79,6 +81,7 @@ export interface MovementOptions {
 
 export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowJumpSprint: true,
+  allowParkour: true,
   walkOnly: false,
   allowAirStrafe: false,
   canOpenDoors: true,

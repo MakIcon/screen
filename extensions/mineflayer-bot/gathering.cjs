@@ -17,7 +17,7 @@ const storage = require("./gathering-storage.cjs");
 const farming = require("./farming.cjs");
 const crewTools = require("./fleet-crew.cjs");
 const { withStorageTurn } = require("./fleet-storage.cjs");
-const { containerClick: warehouseClick, blockingPlayers, leaveContainerTop } = require("./warehouse-geometry.cjs");
+const { containerClick: warehouseClick, activateContainer, blockingPlayers, leaveContainerTop, storageMoveOptions } = require("./warehouse-geometry.cjs");
 
 const SAPLING_SOIL = new Set([
   "dirt", "grass_block", "podzol", "coarse_dirt", "rooted_dirt", "mud", "moss_block", "pale_moss_block",
@@ -1687,7 +1687,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     };
     signal.addEventListener("abort", cancelWalk, { once: true });
     storageWalking = true;
-    bot.pathfinder.setMoveOptions?.({ canDig: false, canPlace: false, allow1by1towers: false });
+    bot.pathfinder.setMoveOptions?.(storageMoveOptions(bot, previous));
     try { return await navigate(goal, signal); }
     finally {
       signal.removeEventListener("abort", cancelWalk);
@@ -1725,12 +1725,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         guard(signal);
         if (!entries.some((entry) => entry.remaining)) break;
         const statusKey = `${group.id}:${storage.key(position)}`;
-        try {
+        for (let attempt = 0; attempt < 2; attempt++) try {
           await approachStorage(position, signal);
           // The route may consume building supplies while escaping a pit.
           // Reconcile planned transfers with live inventory, allocating each
           // stack once, so used blocks are not reported as a full warehouse.
-          const stock = bot.inventory.items().map(item => ({ item, count: item.count }));
+          const stock = storage.carriedItems(bot, chestWindow).map(item => ({ item, count: item.count }));
           for (const entry of entries) {
             let available = 0;
             for (const stack of stock) {
@@ -1741,29 +1741,22 @@ function createGatheringController(bot, options = {}, hooks = {}) {
             entry.remaining = available;
           }
           setDepositDetail(`Выгружаю: ${group.name} · ${storage.key(position)}`);
-          for (const entry of entries) {
-            guard(signal);
-            const amount = Math.min(entry.remaining, storage.containerCapacity(chestWindow, entry.item, bot.registry));
-            if (!amount) continue;
-            await operation(() => {
-              const job = task;
-              transferTask = Promise.resolve(chestWindow.deposit(entry.item.type, entry.item.metadata, amount, entry.item.nbt)).then(() => {
-                entry.remaining -= amount;
-                job.deposited += amount;
-              });
-              return transferTask;
-            }, signal);
-            report(true);
-          }
+          await transferStorage(entries, position, signal);
           const full = entries.some((entry) => entry.remaining);
           if (full) fullChests++;
           storageStatus.set(statusKey, { state: full ? "full" : "ok",
             message: full ? "Нет места для оставшейся добычи" : "Выгрузка выполнена" });
+          break;
         } catch (error) {
           if (signal.aborted || error instanceof Interrupted) throw error;
+          if (attempt === 0 && error.retryStorage) {
+            setDepositDetail("Выгрузка не подтверждена: проверяю доступ и повторяю оставшиеся предметы");
+            continue;
+          }
           storageStatus.set(statusKey, { state: "unavailable", message: error.message });
           failures.push(`${storage.key(position)}: ${error.message}`);
           onStatus(`${group.name}: ${error.message}; пробую следующий сундук`);
+          break;
         } finally { if (revision === depositRevision) closeStorageWindow(); report(true); }
       }
       const left = entries.reduce((count, entry) => count + entry.remaining, 0);
@@ -1788,6 +1781,61 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     chestWindow = null;
     if (window && (!bot.currentWindow || bot.currentWindow === window)) window.close();
   }
+  async function transferStorage(entries, position, signal) {
+    const window = chestWindow, job = task, groups = [];
+    const before = storage.carriedItems(bot, window);
+    for (const entry of entries) {
+      let group = groups.find(group => storage.sameStack(group.item, entry.item));
+      if (!group) {
+        group = { item: entry.item, before: storage.stackCount(before, entry.item), requested: 0, entries: [] };
+        groups.push(group);
+      }
+      group.entries.push(entry);
+    }
+    let failure;
+    for (const entry of entries) {
+      guard(signal);
+      const amount = Math.min(entry.remaining, storage.containerCapacity(window, entry.item, bot.registry));
+      if (!amount) continue;
+      const group = groups.find(group => storage.sameStack(group.item, entry.item));
+      try {
+        if (Number.isInteger(window.id) && (bot.currentWindow !== window ||
+            !warehouseClick(bot, bot.blockAt(plan.position(position)), bot.entity.position, false)))
+          throw Object.assign(new Error("Доступ к сундуку потерян до передачи предметов"), { retryStorage: true });
+        group.requested += amount;
+        await operation(() => {
+          transferTask = Promise.resolve(window.deposit(entry.item.type, entry.item.metadata, amount, entry.item.nbt));
+          return transferTask;
+        }, signal);
+      } catch (error) { failure = error; break; }
+    }
+    if (!groups.some(group => group.requested)) { if (failure) throw failure; return; }
+    // Modern inventory clicks are optimistic: a resolved deposit is not a
+    // server acknowledgement. Reopen while holding the same storage turn to
+    // obtain window_items with authoritative player slots before counting loot.
+    if (bot._client && Number.isInteger(window.id) && Number.isInteger(window.inventoryEnd) &&
+        bot.supportFeature?.("transactionPacketExists") === false) {
+      guard(signal);
+      closeStorageWindow();
+      setDepositDetail("Проверяю подтверждение выгрузки сервером");
+      await approachStorage(position, signal);
+    }
+    const after = storage.carriedItems(bot, chestWindow);
+    let missing = 0;
+    for (const group of groups) {
+      let confirmed = Math.min(group.requested, Math.max(0, group.before - storage.stackCount(after, group.item)));
+      missing += group.requested - confirmed;
+      job.deposited += confirmed;
+      for (const entry of group.entries) {
+        const amount = Math.min(entry.remaining, confirmed);
+        entry.remaining -= amount; confirmed -= amount;
+      }
+    }
+    report(true);
+    guard(signal);
+    if (missing) throw Object.assign(new Error(`Сервер не подтвердил передачу ${missing} предметов; лут не засчитан как выгруженный`), { retryStorage: true });
+    if (failure) throw failure;
+  }
   async function approachStorage(position, signal) {
     setDepositDetail("Прокладываю путь к складу, ищу выход из выработки");
     if (storageTurn) await storageTurn.enterChest(position);
@@ -1806,7 +1854,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     // exits and chunk-frontier routing still work if the chest is above us.
     // Chests have inset collision shapes; arrival requires a clickable surface.
     const goal = new GoalContainerAccess(block.position, (feet) => Boolean(containerClick(block, feet)));
-    if (!storageTurn) await walkAtStorage(goal, signal);
+    if (!storageTurn && !goal.isEnd({ exitPos: bot.entity.position })) await walkAtStorage(goal, signal);
     bot.clearControlStates?.();
     bot.setControlState?.("sneak", false);
     // Sneaking with a tool suppresses container interaction. Give Mineflayer
@@ -1824,8 +1872,15 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       bot.launcherTraffic?.requestClearance?.(blockers.map(e => e.username));
       setDepositDetail(blockers.length ? "Освобождаю подход: другие боты отходят от сундука" : "Поправляю позицию у сундука");
       await wait(350, signal);
-      if (storageTurn) await storageTurn.enterChest(position);
-      else await walkAtStorage(goal, signal);
+      // A body in the click ray is not a bad standing position. Moving back
+      // through the entrance while it passes creates a loop on narrow bridges.
+      if (!blockers.length) {
+        if (storageTurn) await storageTurn.enterChest(position);
+        else await walkAtStorage(goal, signal);
+      }
+      bot.clearControlStates?.();
+      bot.setControlState?.("sneak", false);
+      if (bot.waitForTicks) await operation(() => bot.waitForTicks(1), signal);
       click = containerClick(block);
     }
     if (!click) throw new Error(`Нет доступной грани сундука в пределах ${CONTAINER_REACH} блоков`);
@@ -1837,7 +1892,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     try {
       chestWindow = await operation(() => openContainer(block, click, opening.signal), signal, settings.operationTimeoutMs + 1000);
     } catch (error) {
-      if (opening.signal.aborted && !signal.aborted) throw new Error("Сундук не открылся: проверьте крышку и доступ на сервере", { cause: error });
+      if (opening.signal.aborted && !signal.aborted) throw Object.assign(
+        new Error("Сундук не открылся: проверьте крышку и доступ на сервере", { cause: error }), { retryStorage: true });
       throw error;
     } finally {
       clearTimeout(timer);
@@ -1884,7 +1940,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     });
     const activation = Promise.resolve().then(() => {
       guard(signal);
-      return bot.activateBlock(block, click.face, click.cursor);
+      return activateContainer(bot, block, click, () => guard(signal));
     });
     try {
       const [window] = await Promise.all([opening, activation]);
@@ -2261,6 +2317,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           resume(false);
       };
     },
+    get retreating() { return defense.retreating; },
     get snapshot() {
       return {
         phase: machine.activeState?.stateName,

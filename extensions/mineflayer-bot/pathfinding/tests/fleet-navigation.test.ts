@@ -33,6 +33,32 @@ test('traffic costs make the real planner walk around an occupied approach', asy
   } finally { nav.dispose(); await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
 })
 
+test('a crowd appearing after planning is bypassed on the shoulder without waiting for it to leave', { timeout: 12000 }, async t => {
+  const { rig } = setup()
+  let visible = false, firstMotionAt = 0, waitedAt = 0, side = 0, separation = Infinity
+  const crowd = [3.5, 5.5, 7.5].map((x, i) => ({ name: `crowd${i}`, pos: new Vec3(x, 64, 0.5),
+    route: [new Vec3(x - 1, 64, 0.5), new Vec3(x - 2, 64, 0.5)], moving: true }))
+  const nav = createFleetNavigation(rig.bot, { request: async () => ({ peers: visible ? crowd : [], allowed: true }) }, { pollMs: 60 })
+  rig.bot.once('pathGenerated', () => { visible = true })
+  rig.bot.on('physicsTick', () => {
+    const p = rig.bot.entity.position
+    side = Math.max(side, Math.abs(p.z - 0.5))
+    for (const peer of crowd) separation = Math.min(separation, p.distanceTo(peer.pos))
+    if (nav.waiting && !waitedAt) waitedAt = performance.now()
+    if (waitedAt && Math.abs(p.z - 0.5) > 0.3 && !firstMotionAt) firstMotionAt = performance.now()
+  })
+  t.signal.addEventListener('abort', () => { void rig.bot.pathfinder.stop() }, { once: true })
+  try {
+    await flush()
+    await rig.bot.pathfinder.goto(new goals.GoalNear(10.5, 64, 0.5, 0.3))
+    assert.ok(waitedAt && firstMotionAt - waitedAt < 1000, `reaction=${firstMotionAt - waitedAt}ms`)
+    assert.ok(side > 1.5, `shoulder distance=${side}`)
+    assert.ok(separation > 0.75, `minimum separation=${separation}`)
+    assert.ok(rig.bot.entity.position.x > 10)
+    t.diagnostic(`crowd bypass: reaction=${Math.round(firstMotionAt - waitedAt)}ms, separation=${separation.toFixed(2)}`)
+  } finally { nav.dispose(); await rig.bot.pathfinder.destroy(); rig.stopPassivePhysics() }
+})
+
 test('the real executor resumes after a traffic queue longer than its stall timeout', { timeout: 10000 }, async () => {
   const { rig } = setup()
   let waiting = true, holds = 0
@@ -121,5 +147,40 @@ test('opposing workers take turns through the same one-block cave exit', { timeo
     a.dispose(); b.dispose()
     await Promise.all([left.rig.bot.pathfinder.destroy(), right.rig.bot.pathfinder.destroy()])
     left.rig.stopPassivePhysics(); right.rig.stopPassivePhysics()
+  }
+})
+
+test('one worker and an oncoming group pass on open ground without a long standstill', { timeout: 16000 }, async t => {
+  const bots = [-5.5, 2.5, 5.5, 8.5].map(x => setup(new Vec3(x, 64, 0.5)))
+  const hub = createHub()
+  bots.forEach(({ rig }, i) => { rig.bot.entity.username = `walker${i}` })
+  const navs = bots.map(({ rig }, i) => createFleetNavigation(rig.bot,
+    { request: async (op: string, input: unknown) => hub.handle(`walker${i}`, op, input) }, { pollMs: 60 }))
+  bots.forEach(({ rig }, i) => bots.forEach(({ rig: other }, j) => {
+    if (i !== j) rig.bot.entities[100 + j] = other.bot.entity
+  }))
+  let separation = Infinity, stopped = 0
+  const progress = bots.map(({ rig }) => ({ pos: rig.bot.entity.position.clone(), at: performance.now() }))
+  bots[0].rig.bot.on('physicsTick', () => {
+    bots.forEach(({ rig }, i) => {
+      for (const { rig: other } of bots.slice(i + 1))
+        separation = Math.min(separation, rig.bot.entity.position.distanceTo(other.bot.entity.position))
+      if (!navs[i].waiting || rig.bot.entity.position.distanceTo(progress[i].pos) > 0.15)
+        progress[i] = { pos: rig.bot.entity.position.clone(), at: performance.now() }
+      else stopped = Math.max(stopped, performance.now() - progress[i].at)
+    })
+  })
+  t.signal.addEventListener('abort', () => bots.forEach(({ rig }) => { void rig.bot.pathfinder.stop() }), { once: true })
+  try {
+    await flush()
+    await Promise.all(bots.map(({ rig }, i) => rig.bot.pathfinder.goto(
+      new goals.GoalNear(i ? -8.5 : 12.5, 64, i ? (i - 2) * 3 + 0.5 : 0.5, 0.3))))
+    assert.ok(separation > 0.7, `minimum separation=${separation}`)
+    assert.ok(stopped < 2200, `longest standstill=${stopped}ms`)
+    t.diagnostic(`moving crowd: separation=${separation.toFixed(2)}, longest standstill=${Math.round(stopped)}ms`)
+  } finally {
+    navs.forEach((nav: any) => nav.dispose())
+    await Promise.all(bots.map(({ rig }) => rig.bot.pathfinder.destroy()))
+    bots.forEach(({ rig }) => rig.stopPassivePhysics())
   }
 })

@@ -214,6 +214,7 @@ function flightExclusionCost (movement: Movement, steps: Step[]): number {
 }
 
 export class MomentumJump extends MovementProvider {
+  readonly requiresParkour = true
   movementDirs = Movement.cardinalDirs
   provideMovements (node: Move, storage: Move[], goal: Goal, closed: Set<string>): void {
     if (!this.settings.allowSprinting || !this.settings.allowJumpSprint) return

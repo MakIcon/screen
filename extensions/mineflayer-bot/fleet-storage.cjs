@@ -64,6 +64,7 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
   let parking = null, reply, pending = null, closed = false, nextParkingAt = 0;
   let layout = null, desired = preferred || positions[0], ready = false, requeue = false, reselect = false;
   let layoutDirty = true, phase = "gathering", departed = false;
+  let enteredBay = null;
   let announced = false;
   const setPhase = value => { phase = value; bot.launcherTraffic?.setStoragePhase?.(value, positions); };
   let rejectStopped, deadline = Date.now() + stallMs;
@@ -139,6 +140,12 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
         let failures = 0;
         while (!reply?.allowed) {
           if (signal.aborted) throw new Error("Подход к складу прерван");
+          // An idle waiter may be stepping out for a departing customer.
+          // Keep its ticket, but do not pull it back into that exit mid-step.
+          if (bot.launcherTraffic?.clearing) {
+            ready = false; await pending; await refresh();
+            await wait(150, signal); continue;
+          }
           const stage = reply?.stage && new Vec3(reply.stage.x, reply.stage.y, reply.stage.z);
           if (!stage) throw new Error("Нет свободного безопасного места ожидания у склада");
           if (flat(bot.entity.position, stage) > 0.45 || Math.abs(bot.entity.position.y - stage.y) > 0.5) {
@@ -182,7 +189,7 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
           if (!bay) throw new Error("Координатор не выделил место разгрузки");
           bot.launcherTraffic?.setStoragePhase?.("service", positions, bay);
           const target = new Vec3(bay.x, bay.y, bay.z);
-          if (bot.entity.position.distanceTo(target) <= 0.25) return;
+          if (bot.entity.position.distanceTo(target) <= 0.25) { enteredBay = target; return; }
           const approachAbort = new AbortController();
           const cancelApproach = () => approachAbort.abort();
           signal.addEventListener("abort", cancelApproach, { once: true });
@@ -194,8 +201,12 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
             if (Date.now() >= approachDeadline) { stalled = true; approachAbort.abort(); }
           }, 200);
           try {
-            for (const p of bay.inbound || []) await walk(new Vec3(p.x, p.y, p.z), approachAbort.signal, 0.3);
-            await walk(target, approachAbort.signal); return;
+            // A push during opening only needs a local correction. Replaying
+            // the entrance sends a bot away from the chest it already reached.
+            const correcting = enteredBay?.equals(target) && flat(bot.entity.position, target) < 1.5 &&
+              Math.abs(bot.entity.position.y - target.y) < 0.5;
+            if (!correcting) for (const p of bay.inbound || []) await walk(new Vec3(p.x, p.y, p.z), approachAbort.signal, 0.3);
+            await walk(target, approachAbort.signal); enteredBay = target; return;
           }
           catch (error) {
             // One closed approach is not an unreachable chest: give the place
@@ -214,6 +225,7 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
       };
       const leave = async (leaveSignal = signal) => {
         if (departed) return;
+        enteredBay = null;
         setPhase("leaving");
         // The way back runs over cells already visited on the way in.
         visited.clear(); progress();
@@ -279,6 +291,7 @@ async function withStorageTurn(bot, crew, positions, { signal: parentSignal, wai
     }
     status("Моя очередь: подхожу к складу");
     return await action(async () => {
+      setPhase("leaving");
       // Clear the shared steps before allowing the next bot to approach.
       const failed = [];
       for (let attempt = 0; attempt < 3 && !outsideStorage(bot.entity.position, positions); attempt++) {
