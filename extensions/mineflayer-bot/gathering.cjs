@@ -1643,7 +1643,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           if (revision === depositRevision) closeStorageWindow();
           if (leave && !turnSignal.aborted && task && bot.health > 0) {
             try { await leave(); }
-            catch (error) { if (signal.aborted) throw error; onStatus(`Не удалось отойти от склада: ${error.message}`); }
+            catch (error) {
+              // Cancellation must propagate even when unloading already completed.
+              // eslint-disable-next-line no-unsafe-finally
+              if (signal.aborted) throw error;
+              onStatus(`Не удалось отойти от склада: ${error.message}`);
+            }
           }
         }
       });

@@ -174,7 +174,7 @@ test("parking search services protocol callbacks and cancels before scanning a w
     examined++;
     // Deterministic costly block reads model loaded collision data.
     const until = performance.now() + 0.02;
-    while (performance.now() < until) {}
+    while (performance.now() < until) { /* Simulate synchronous collision reads. */ }
     return null;
   };
   await assert.rejects(parkingCellAsync(bot, [position], [], { signal: abort.signal,
