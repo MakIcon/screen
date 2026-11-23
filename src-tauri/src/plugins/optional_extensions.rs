@@ -169,6 +169,14 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
         include_str!("../../../extensions/mineflayer-bot/fleet-navigation.cjs"),
     ),
     (
+        "fleet-work.cjs",
+        include_str!("../../../extensions/mineflayer-bot/fleet-work.cjs"),
+    ),
+    (
+        "fleet-routes.cjs",
+        include_str!("../../../extensions/mineflayer-bot/fleet-routes.cjs"),
+    ),
+    (
         "fleet-storage.cjs",
         include_str!("../../../extensions/mineflayer-bot/fleet-storage.cjs"),
     ),
@@ -774,6 +782,8 @@ mod tests {
             "inventory-actions.cjs",
             "chaotic-movement.cjs",
             "fleet-storage.cjs",
+            "fleet-work.cjs",
+            "fleet-routes.cjs",
             "warehouse-geometry.cjs",
             "fabric.cjs",
             "mineflayer-fabric.cjs",

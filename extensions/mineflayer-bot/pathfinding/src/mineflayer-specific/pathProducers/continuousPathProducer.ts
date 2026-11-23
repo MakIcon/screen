@@ -7,6 +7,7 @@ import type { ExecutorMap, MovementOptions } from '../movements'
 import { MovementHandler } from '../movements'
 import { World } from '../world/worldInterface'
 import { AdvanceRes } from '.'
+import type { TrafficAwareBot } from '../../traffic'
 
 export class ContinuousPathProducer implements PathProducer {
   private readonly start: Move
@@ -57,6 +58,8 @@ export class ContinuousPathProducer implements PathProducer {
       this.astarContext.maxVisitedNodes = this.limits?.maxVisitedNodes ?? opts.maxVisitedNodes * this.searchScale
     }
 
+    this.astarContext.tickTimeout = Math.min(this.bot.pathfinder.pathfinderSettings.tickTimeoutMs,
+      (this.bot as TrafficAwareBot).launcherTraffic?.workSliceMs ?? Infinity)
     const result = this.astarContext.compute()
     this._currentPath = result.path
 

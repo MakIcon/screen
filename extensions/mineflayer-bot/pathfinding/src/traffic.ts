@@ -8,5 +8,7 @@ export interface TrafficAwareBot extends Bot {
     pause: (move: Move) => boolean
     readonly waiting: boolean
     readonly workDelayMs?: number
+    readonly workSliceMs?: number
+    routeFrom?: (start: Vec3, isEnd: (point: import('./sharedRoute').RoutePoint) => boolean) => import('./sharedRoute').RoutePoint[] | null
   }
 }

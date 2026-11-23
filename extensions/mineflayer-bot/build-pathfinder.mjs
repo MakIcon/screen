@@ -7,6 +7,7 @@ const require = createRequire(new URL("./pathfinding/package.json", import.meta.
 const { build } = require("esbuild");
 
 await build({
+  absWorkingDir: fileURLToPath(new URL("../../", import.meta.url)),
   entryPoints: [fileURLToPath(new URL("./vendor/mineflayer-fabric/index.js", import.meta.url))],
   outfile: fileURLToPath(new URL("./mineflayer-fabric.cjs", import.meta.url)),
   bundle: true,
@@ -105,6 +106,11 @@ for (const file of [
   "gathering-scan.cjs",
   "gathering.cjs",
   "fleet-crew.cjs",
+  "fleet-work.cjs",
+  "fleet-work.test.mjs",
+  "fleet-benchmark.mjs",
+  "fleet-routes.cjs",
+  "fleet-routes.test.mjs",
   "fleet-navigation.cjs",
   "fleet-storage.cjs",
   "warehouse-geometry.cjs",

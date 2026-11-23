@@ -99,5 +99,6 @@ export type { ExclusionArea } from './mineflayer-specific/movements/exclusionZon
 export { MovementOptimizer } from './mineflayer-specific/post'
 export type { BuildableMoveOptimizer, OptimizationSetup, OptimizationMap } from './mineflayer-specific/post'
 export { Move } from './mineflayer-specific/move'
+export { routeProfile } from './sharedRoute'
 
 export * as movementProviders from './mineflayer-specific/movements/movementProviders'

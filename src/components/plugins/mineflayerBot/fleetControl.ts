@@ -95,7 +95,7 @@ export async function dispatchFleetRequests(
 ) {
   let cursor = 0;
   await Promise.all(
-    Array.from({ length: Math.min(4, jobs.length) }, async () => {
+    Array.from({ length: Math.min(16, jobs.length) }, async () => {
       while (cursor < jobs.length) {
         const job = jobs[cursor++];
         let receipt: FleetReceipt = { botId: job.botId, name: job.name, state: "accepted" };

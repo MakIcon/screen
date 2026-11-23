@@ -72,6 +72,7 @@ import { LadderForwardExecutor, LadderDiagonalExecutor, LadderLandingForwardExec
 import { AroundCornerDiagonal } from './mineflayer-specific/movements/advanced/around-corner-provider'
 import { AroundCornerDiagonalExecutor } from './mineflayer-specific/movements/advanced/around-corner-executor'
 import { start } from 'node:repl'
+import { replaySharedRoute } from './sharedRoute'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:main')
@@ -740,6 +741,25 @@ export class ThePathfinder {
           (block: BlockInfo) => this.rejectedPlacements.has(block.position.toString()) ? Infinity : 0] }
       : protectedSettings
 
+    // No IPC wait on the movement path: fleet navigation keeps completed
+    // routes locally. Rebuild steps rather than reusing foreign Move objects.
+    if ((goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear) && !(goal instanceof goals.GoalFollowEntity) && !goal.isEnd(startMove)) {
+      const hints = (this.bot as TrafficAwareBot).launcherTraffic?.routeFrom?.(startPos,
+        p => goal.isEnd({ exitPos: new Vec3(p.x, p.y, p.z), x: p.x, y: p.y, z: p.z } as Move))
+      if (hints != null) {
+        const reused = await replaySharedRoute(this.bot, this.world, movements, routeSettings, startMove, goal, hints,
+          () => this.abortCalculation || this.disposed, async () => await this.yieldSearch())
+        if (reused != null && !this.abortCalculation && !this.disposed) {
+          this._currentProducer = { getAstarContext: () => reused.context, getCurrentPath: () => reused.path,
+            advance: () => ({ result: reused, astarContext: reused.context }) }
+          this.bot.emit('pathGenerated', reused)
+          const result = { result: reused, astarContext: reused.context }
+          yield result
+          return result
+        }
+      }
+    }
+
     const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4
     const target = positionedGoal ? new Vec3(goal.x, goal.y, goal.z) : undefined
     const horizontalDistance = target == null ? Infinity : startPos.xzDistanceTo(target)
@@ -1138,6 +1158,8 @@ export class ThePathfinder {
           if (invalid()) return
           const advanced = suffix?.advance()
           if (advanced != null) context = advanced.astarContext
+          context.tickTimeout = Math.min(this.pathfinderSettings.tickTimeoutMs,
+            (this.bot as TrafficAwareBot).launcherTraffic?.workSliceMs ?? Infinity)
           const next = advanced?.result ?? context.compute()
           if (next.status === 'partial') continue
           // A better branch may diverge from the steps already executed. Never

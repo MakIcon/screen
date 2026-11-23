@@ -1,7 +1,8 @@
 "use strict";
 
 const { Vec3 } = require("vec3");
-const { availableParallelism } = require("node:os");
+const { createWorkBudget } = require("./fleet-work.cjs");
+const { createRouteCache } = require("./fleet-routes.cjs");
 const { dimensionOf } = require("./fleet-crew.cjs");
 const { warehouseLayout, safeStand, leaveContainerTop, storageMoveOptions } = require("./warehouse-geometry.cjs");
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -49,8 +50,13 @@ function bodySpace(bot, p) {
   return true;
 }
 
-function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, pollMs = 180, cpuCount = availableParallelism() } = {}) {
+function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, pollMs = 180, workBudget = createWorkBudget() } = {}) {
   let disposed = false, pending = false, peers = [], allowed = true, blocker = null;
+  let republish = false, wireState = null, wireEpoch = null;
+  const routeCache = createRouteCache({ now });
+  const invalidRoutes = new Set();
+  let completedRoutes = [], routeSeq = 0, invalidRouteSeq = 0, routeEpoch = null, candidateRoute = null;
+  let corridorCache = null;
   let updatedAt = -Infinity, published = [], yieldPath = [], yielded = false;
   let waitingAt = null, nextYieldAt = 0, lastResetAt = -Infinity, refuge = null;
   let bypass = false, bypassUntil = 0, nextBypassAt = 0;
@@ -59,7 +65,6 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   let revision = 0, dimension = dimensionOf(bot);
   let entityCacheAt = -Infinity;
   const entities = new Map();
-  let fleetSize = 1;
   let warehouse = [], storagePhase = "idle", serviceBay = null;
   let clearanceUntil = 0, clearRequests = [], clearSentAt = -Infinity;
   let evacuation = null, evacuationAbort = null, nextEvacuationAt = 0;
@@ -106,6 +111,10 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     return points;
   }
   function corridorFor(points) {
+    if (!points.length) return [];
+    const origin = bot.entity.position;
+    const signature = `${dimensionOf(bot)}|${origin.x},${origin.y},${origin.z}|${JSON.stringify(points)}`;
+    if (corridorCache?.signature === signature) return corridorCache.points;
     const cells = new Map();
     const checked = new Map();
     const safe = p => {
@@ -137,13 +146,17 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         }
       }
     }
-    return [...cells.values()].slice(0, 96);
+    const result = [...cells.values()].slice(0, 96);
+    corridorCache = { signature, points: result };
+    return result;
   }
   async function publish() {
-    if (disposed || pending || !bot.entity?.position) return;
+    if (disposed || !bot.entity?.position) return;
+    if (pending) { republish = true; return; }
     const dim = dimensionOf(bot);
     if (dim !== dimension) {
       dimension = dim; peers = []; yieldPath = []; published = []; updatedAt = -Infinity;
+      routeCache.clear(); invalidRoutes.clear(); completedRoutes = []; candidateRoute = null; routeSeq = 0; routeEpoch = null; wireState = null;
       if (yielded) clearControls();
       bypass = false; refuge = null; yielded = false; waitingAt = null; idleYieldOrigin = null;
     }
@@ -151,16 +164,38 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     pending = true;
     const version = revision;
     try {
-      const reply = await crew.request("traffic", { enabled, dim, pos: bot.entity.position,
+      const full = { enabled, dim, pos: bot.entity.position,
         route: points, motion: yieldPath.length ? yieldPath : refuge ? [] : points,
         corridor: enabled ? corridorFor(bypass ? yieldPath : points) : [],
         urgency: bot.launcherGathering?.retreating || bot.launcherCombat?.retreating ? "escape" : "normal",
         storage: warehouse.length ? { phase: evacuation ? "leaving" : storagePhase, positions: warehouse, bay: serviceBay } : null,
-        clear: now() - clearSentAt < 1800 ? clearRequests : [] });
+        clear: now() - clearSentAt < 1800 ? clearRequests : [],
+        routes: completedRoutes.slice(0, 2), routeSeq, routeEpoch, invalidRouteSeq,
+        ...(invalidRoutes.size ? { invalidRoutes: [...invalidRoutes] } : {}) };
+      const signatures = Object.fromEntries(["route", "motion", "corridor", "storage"].map(key => [key, JSON.stringify(full[key])]));
+      const input = { ...full };
+      if (wireState && wireEpoch) {
+        input.delta = true; input.epoch = wireEpoch;
+        for (const key of Object.keys(signatures)) if (signatures[key] === wireState[key]) delete input[key];
+      }
+      let reply = await crew.request("traffic", input);
+      if (reply?.resync) reply = await crew.request("traffic", full);
       if (disposed || version !== revision || dimensionOf(bot) !== dim || !reply) return;
+      if (reply.epoch) { wireState = signatures; wireEpoch = reply.epoch; }
+      completedRoutes.splice(0, full.routes.length);
+      for (const id of full.invalidRoutes || []) invalidRoutes.delete(id);
+      if (reply.epoch && routeEpoch !== reply.epoch) {
+        routeCache.clear(); routeEpoch = reply.epoch;
+        for (const route of full.routes) routeCache.put(dim, route);
+      }
+      routeSeq = reply.routeSeq ?? routeSeq;
+      // Missing old invalidations require a fresh snapshot of route hints.
+      if (reply.clearRoutes) { routeCache.clear(); routeSeq = 0; }
+      for (const id of reply.invalidRoutes || []) routeCache.remove(id);
+      invalidRouteSeq = reply.invalidRouteSeq ?? invalidRouteSeq;
+      for (const route of reply.routes || []) routeCache.put(dim, route);
       peers = Array.isArray(reply.peers) ? reply.peers : [];
       costAt = -Infinity;
-      fleetSize = Math.max(1, Number(reply.members) || peers.length + 1);
       allowed = reply.allowed !== false;
       blocker = reply.blocker;
       updatedAt = now();
@@ -169,7 +204,10 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
         if (!warehouse.length) warehouse = reply.clearance.flatMap(r => r.positions || []).slice(0, 128);
       }
     } catch { /* IPC is advisory; normal navigation works while reconnecting. */ }
-    finally { pending = false; }
+    finally {
+      pending = false;
+      if (republish && !disposed) { republish = false; setImmediate(() => void publish()); }
+    }
   }
   function clearControls() {
     for (const control of ["forward", "back", "left", "right", "sprint", "jump"]) bot.setControlState(control, false);
@@ -389,7 +427,31 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
   }
   function pathGenerated(path) {
     published = path.path || [];
+    candidateRoute = published.length >= 2 && published.length < 256 && published.every(move =>
+      move.entryPos && move.exitPos && !move.toBreak?.length && !move.toPlace?.length &&
+      !move.moveType?.requiresParkour && !/Water|StraightDown|StraightUp/.test(move.moveType?.constructor.name || ""))
+      ? [{ x: published[0].entryPos.x, y: published[0].entryPos.y, z: published[0].entryPos.z,
+        profile: published[0].moveType.settings ? require("./pathfinder.cjs").routeProfile(published[0].moveType.settings) : undefined },
+        ...published.map(move => ({ x: move.exitPos.x, y: move.exitPos.y, z: move.exitPos.z,
+          kind: move.moveType.constructor.name, cost: move.cost }))] : null;
     void publish();
+  }
+  function invalidateRoutes(_old, block) {
+    corridorCache = null;
+    if (block?.position && (!_old || _old.stateId !== block.stateId)) {
+      const ids = routeCache.invalidate(dimensionOf(bot), block.position);
+      for (const id of ids) invalidRoutes.add(id);
+      while (invalidRoutes.size > 128) invalidRoutes.delete(invalidRoutes.values().next().value);
+      if (ids.length) completedRoutes = [];
+    }
+    candidateRoute = null;
+  }
+  function abortRoute() { candidateRoute = null; }
+  function invalidateCorridor() { corridorCache = null; }
+  function unloadRoutes(column) {
+    corridorCache = null;
+    routeCache.invalidateColumn(dimensionOf(bot), column);
+    candidateRoute = null;
   }
   function goalSet(goal) {
     if (goal !== adaptedArrival) finishedArrival = null;
@@ -398,16 +460,31 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     idleYieldOrigin = null;
   }
   function goalFinished(goal) {
+    if (candidateRoute) {
+      routeCache.put(dimensionOf(bot), candidateRoute);
+      completedRoutes.push(candidateRoute);
+      if (completedRoutes.length > 8) completedRoutes.shift();
+      candidateRoute = null;
+      void publish();
+    }
     if (goal !== adaptedArrival || !Number.isFinite(goal.x) || !Number.isFinite(goal.z)) return;
     finishedArrival = { x: goal.x, y: goal.y, z: goal.z,
       radius: Math.max(0.5, goal.distance ?? Math.sqrt(goal.sqDist ?? 1)) + 0.2 };
     yieldPath = []; refuge = null; yielded = false; waitingAt = null;
   }
-  const timer = setInterval(() => void publish(), pollMs);
-  timer.unref?.();
+  // A stable phase spreads housekeeping without delaying a bot's first move.
+  const phase = [...String(bot.username || bot.entity?.username || process.pid)].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0) % pollMs;
+  let timer;
+  const initialTimer = setTimeout(() => {
+    void publish(); timer = setInterval(() => void publish(), pollMs); timer.unref?.();
+  }, phase || pollMs);
+  initialTimer.unref?.();
   bot.on("pathGenerated", pathGenerated);
   bot.on("physicsTick", idleYield);
   bot.on("goalSet", goalSet); bot.on("goalFinished", goalFinished);
+  bot.on("blockUpdate", invalidateRoutes); bot.on("goalAborted", abortRoute); bot.on("resetPath", abortRoute);
+  bot.on("chunkColumnUnload", unloadRoutes);
+  bot.on("chunkColumnLoad", invalidateCorridor); bot.on("respawn", abortRoute);
   const controller = {
     get warehouseState() { return { phase: storagePhase, places: warehouse.length, evacuating: Boolean(evacuation), error: evacuationError }; },
     setWarehouse(positions) { warehouse = positions.slice(0, 128); },
@@ -427,11 +504,9 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
       if (!enabled || !names.length || now() - clearSentAt < 600) return;
       clearRequests = names.map(s => s.toLowerCase()); clearSentAt = now(); void publish();
     },
-    // Leave CPU room for protocol/physics threads and the Minecraft client.
-    // Each worker searches in 5ms slices; oversubscribed fleets rest between
-    // slices instead of 100 independent setImmediate loops saturating the CPU.
-    get workDelayMs() { return now() - updatedAt < 1800 ? Math.min(80,
-      Math.max(0, Math.ceil(5 * (fleetSize / Math.max(1, cpuCount * 0.35) - 1)))) : 0; },
+    get workDelayMs() { return workBudget.delayMs; },
+    get workSliceMs() { return workBudget.sliceMs; },
+    routeFrom(start, isEnd) { return routeCache.find(dimensionOf(bot), start, isEnd); },
     get enabled() { return enabled; },
     get clearing() { return yielded && !bot.pathfinder?.isPathing; },
     pause,
@@ -497,10 +572,14 @@ function createFleetNavigation(bot, crew, { enabled = true, now = Date.now, poll
     // let gathering's normal timeout report an unreachable destination.
     get waiting() { return waitingAt != null && now() - queueProgressAt < 15000; },
     dispose() {
-      disposed = true; revision++; clearInterval(timer);
+      if (disposed) return;
+      disposed = true; revision++; clearInterval(timer); clearTimeout(initialTimer); workBudget.dispose(); routeCache.clear();
       evacuationAbort?.abort();
       bot.off("pathGenerated", pathGenerated); bot.off("physicsTick", idleYield);
       bot.off("goalSet", goalSet); bot.off("goalFinished", goalFinished);
+      bot.off("blockUpdate", invalidateRoutes); bot.off("goalAborted", abortRoute); bot.off("resetPath", abortRoute);
+      bot.off("chunkColumnUnload", unloadRoutes);
+      bot.off("chunkColumnLoad", invalidateCorridor); bot.off("respawn", abortRoute);
       if (yielded) clearControls();
       void crew.request("traffic", { enabled: false }).catch(() => {});
       if (bot.launcherTraffic === controller) delete bot.launcherTraffic;

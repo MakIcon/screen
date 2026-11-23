@@ -9989,6 +9989,7 @@ var require_continuousPathProducer = __commonJS({
           this.astarContext = new algs_1.AStar(this.start, moveHandler, this.goal, this.limits?.timeoutMs ?? opts.searchTimeoutMs * this.searchScale, opts.tickTimeoutMs, -1, 0);
           this.astarContext.maxVisitedNodes = this.limits?.maxVisitedNodes ?? opts.maxVisitedNodes * this.searchScale;
         }
+        this.astarContext.tickTimeout = Math.min(this.bot.pathfinder.pathfinderSettings.tickTimeoutMs, this.bot.launcherTraffic?.workSliceMs ?? Infinity);
         const result = this.astarContext.compute();
         this._currentPath = result.path;
         return { result, astarContext: this.astarContext };
@@ -10065,6 +10066,7 @@ var require_partialPathProducer = __commonJS({
       advance() {
         if (this._lastContext == null)
           this._lastContext = this.generateAstarContext();
+        this._lastContext.tickTimeout = Math.min(this.bot.pathfinder.pathfinderSettings.tickTimeoutMs, this.bot.launcherTraffic?.workSliceMs ?? Infinity);
         const result = this._lastContext.compute();
         let status = result.status;
         log("AStar compute returned status: %s, Path length: %d (Max: %d)", status, result.path.length, this.maxPathLength);
@@ -12147,6 +12149,76 @@ var require_around_corner_executor = __commonJS({
   }
 });
 
+// extensions/mineflayer-bot/pathfinding/dist/sharedRoute.js
+var require_sharedRoute = __commonJS({
+  "extensions/mineflayer-bot/pathfinding/dist/sharedRoute.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.routeProfile = routeProfile;
+    exports2.replaySharedRoute = replaySharedRoute;
+    var vec3_1 = require("vec3");
+    var movements_12 = require_movements();
+    var algs_1 = require_algs();
+    var node_1 = require_node();
+    function routeProfile(settings) {
+      return JSON.stringify([
+        "allowJumpSprint",
+        "allowParkour",
+        "walkOnly",
+        "allowAirStrafe",
+        "allowSprinting",
+        "allowLowCeilingJumps",
+        "canOpenDoors",
+        "maxDropDown",
+        "liquidCost",
+        "jumpCost",
+        "velocityKillCost"
+      ].map((key) => settings[key]));
+    }
+    async function replaySharedRoute(bot, world, movements, settings, start, goal, points, canceled, yieldControl) {
+      if (points.length < 2 || points.length > 256)
+        return;
+      if (points[0].profile != null && points[0].profile !== routeProfile(settings))
+        return;
+      const handler = movements_12.MovementHandler.create(bot, world, movements, { ...settings, canDig: false, canPlace: false });
+      handler.loadGoal(goal);
+      const providers = handler.recognizedMovements;
+      const context = new algs_1.AStar(start, handler, goal, 20, 5);
+      let node = new node_1.CPathNode(0, goal.heuristic(start), start);
+      const closed = /* @__PURE__ */ new Set();
+      let cpuMs = 0, sliceStart = performance.now();
+      for (const point of points.slice(1)) {
+        if (canceled())
+          return;
+        const before = performance.now();
+        handler.recognizedMovements = point.kind == null ? providers : providers.filter((p) => p.constructor.name === point.kind);
+        if (handler.recognizedMovements.length === 0)
+          return;
+        const expected = new vec3_1.Vec3(point.x, point.y, point.z);
+        const previous = node.data;
+        const move = handler.getNeighbors(previous, closed).find((move2) => move2.exitPos.distanceTo(expected) < 0.05 && move2.toBreak.length === 0 && move2.toPlace.length === 0 && !move2.moveType.requiresParkour);
+        if (move == null || point.cost != null && move.cost > point.cost + 1e-3 || (bot.launcherTraffic?.cost(previous.exitPos, move.exitPos) ?? 0) > 0)
+          return;
+        closed.add(previous.hash);
+        node = new node_1.CPathNode(node.g + move.cost, goal.heuristic(move), move, node);
+        cpuMs += performance.now() - before;
+        if (cpuMs > 20)
+          return;
+        if (goal.isEnd(move)) {
+          handler.recognizedMovements = providers;
+          const result = context.makeResult("success", node);
+          context.visitedChunks = new Set(result.path.map((move2) => `${move2.x >> 4},${move2.z >> 4}`));
+          return result;
+        }
+        if (performance.now() - sliceStart >= (bot.launcherTraffic?.workSliceMs ?? 5)) {
+          await yieldControl();
+          sliceStart = performance.now();
+        }
+      }
+    }
+  }
+});
+
 // extensions/mineflayer-bot/pathfinding/dist/ThePathfinder.js
 var require_ThePathfinder = __commonJS({
   "extensions/mineflayer-bot/pathfinding/dist/ThePathfinder.js"(exports2) {
@@ -12222,6 +12294,7 @@ var require_ThePathfinder = __commonJS({
     var ladder_executor_1 = require_ladder_executor();
     var around_corner_provider_1 = require_around_corner_provider();
     var around_corner_executor_1 = require_around_corner_executor();
+    var sharedRoute_12 = require_sharedRoute();
     var debug = require("debug");
     var log = debug("minecraft-pathfinding:main");
     var DEFAULT_PATHFINDER_OPTS = {
@@ -12731,6 +12804,23 @@ var require_ThePathfinder = __commonJS({
           ...protectedSettings.exclusionAreasPlace,
           (block) => this.rejectedPlacements.has(block.position.toString()) ? Infinity : 0
         ] } : protectedSettings;
+        if ((goal instanceof goals.GoalBlock || goal instanceof goals.GoalNear) && !(goal instanceof goals.GoalFollowEntity) && !goal.isEnd(startMove)) {
+          const hints = this.bot.launcherTraffic?.routeFrom?.(startPos, (p) => goal.isEnd({ exitPos: new vec3_1.Vec3(p.x, p.y, p.z), x: p.x, y: p.y, z: p.z }));
+          if (hints != null) {
+            const reused = await (0, sharedRoute_12.replaySharedRoute)(this.bot, this.world, movements, routeSettings, startMove, goal, hints, () => this.abortCalculation || this.disposed, async () => await this.yieldSearch());
+            if (reused != null && !this.abortCalculation && !this.disposed) {
+              this._currentProducer = {
+                getAstarContext: () => reused.context,
+                getCurrentPath: () => reused.path,
+                advance: () => ({ result: reused, astarContext: reused.context })
+              };
+              this.bot.emit("pathGenerated", reused);
+              const result2 = { result: reused, astarContext: reused.context };
+              yield result2;
+              return result2;
+            }
+          }
+        }
         const elevatedGoal = positionedGoal && goal.y >= startPos.y + 4;
         const target = positionedGoal ? new vec3_1.Vec3(goal.x, goal.y, goal.z) : void 0;
         const horizontalDistance = target == null ? Infinity : startPos.xzDistanceTo(target);
@@ -13100,6 +13190,7 @@ var require_ThePathfinder = __commonJS({
               const advanced = suffix?.advance();
               if (advanced != null)
                 context = advanced.astarContext;
+              context.tickTimeout = Math.min(this.pathfinderSettings.tickTimeoutMs, this.bot.launcherTraffic?.workSliceMs ?? Infinity);
               const next = advanced?.result ?? context.compute();
               if (next.status === "partial")
                 continue;
@@ -13708,7 +13799,7 @@ var __importDefault = exports && exports.__importDefault || function(mod) {
   return mod && mod.__esModule ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.movementProviders = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installLowCeilingJumps = exports.installSurfaceSwimming = exports.NavigationTaskError = exports.NavigationError = exports.ThePathfinder = void 0;
+exports.movementProviders = exports.routeProfile = exports.Move = exports.MovementOptimizer = exports.MovementProvider = exports.MovementExecutor = exports.goals = exports.waterDrop = exports.installItemEnchantmentCompatibility = exports.normalizeEnchantments = exports.getItemEnchantments = exports.miningBlock = exports.installMiningToolMaterials = exports.waitForMiningGround = exports.installLowCeilingJumps = exports.installSurfaceSwimming = exports.NavigationTaskError = exports.NavigationError = exports.ThePathfinder = void 0;
 exports.createPlugin = createPlugin;
 var cacheWorld_1 = require_cacheWorld();
 var ThePathfinder_1 = require_ThePathfinder();
@@ -13810,5 +13901,9 @@ Object.defineProperty(exports, "MovementOptimizer", { enumerable: true, get: fun
 var move_1 = require_move();
 Object.defineProperty(exports, "Move", { enumerable: true, get: function() {
   return move_1.Move;
+} });
+var sharedRoute_1 = require_sharedRoute();
+Object.defineProperty(exports, "routeProfile", { enumerable: true, get: function() {
+  return sharedRoute_1.routeProfile;
 } });
 exports.movementProviders = __importStar(require_movementProviders());

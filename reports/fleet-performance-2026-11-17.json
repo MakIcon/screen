@@ -1,0 +1,188 @@
+{
+  "date": "2026-11-17T19:01:25.021Z",
+  "description": "100-member local coordinator; live planner; simulated 20 Hz Minecraft physics (not 100 connected server clients)",
+  "runs": {
+    "before": {
+      "sparse": {
+        "ms": {
+          "median": 0.018700000000080763,
+          "p95": 0.03440000000000509
+        },
+        "requestBytes": {
+          "median": 1211,
+          "p95": 1211
+        }
+      },
+      "dense": {
+        "ms": {
+          "median": 0.07349999999996726,
+          "p95": 0.1268999999999778
+        },
+        "requestBytes": {
+          "median": 1156,
+          "p95": 1170
+        }
+      },
+      "publications": {
+        "roundOf100Ms": {
+          "median": 11.05340000000001,
+          "p95": 11.65359999999987
+        },
+        "requestBytes": {
+          "median": 2109.91,
+          "p95": 2109.91
+        },
+        "terrainReadsPerRound": {
+          "median": 34800,
+          "p95": 34800
+        }
+      },
+      "search": {
+        "ms": {
+          "median": 2.3267000000000735,
+          "p95": 3.5989999999999327
+        },
+        "visited": {
+          "median": 159,
+          "p95": 159
+        },
+        "steps": 20
+      },
+      "warehouse": [
+        {
+          "elapsedMs": 7913.081099999999,
+          "approachTicks": 108,
+          "transferTicks": 3,
+          "departureTicks": 47,
+          "totalTicks": 158
+        },
+        {
+          "elapsedMs": 7611.956699999999,
+          "approachTicks": 102,
+          "transferTicks": 3,
+          "departureTicks": 47,
+          "totalTicks": 152
+        },
+        {
+          "elapsedMs": 7440.035199999998,
+          "approachTicks": 99,
+          "transferTicks": 2,
+          "departureTicks": 47,
+          "totalTicks": 148
+        },
+        {
+          "elapsedMs": 7569.474300000002,
+          "approachTicks": 102,
+          "transferTicks": 2,
+          "departureTicks": 47,
+          "totalTicks": 151
+        },
+        {
+          "elapsedMs": 7865.447400000005,
+          "approachTicks": 107,
+          "transferTicks": 3,
+          "departureTicks": 47,
+          "totalTicks": 157
+        },
+        {
+          "elapsedMs": 7775.0821,
+          "approachTicks": 103,
+          "transferTicks": 2,
+          "departureTicks": 50,
+          "totalTicks": 155
+        }
+      ]
+    },
+    "after": {
+      "sparse": {
+        "ms": {
+          "median": 0.005699999999933425,
+          "p95": 0.009400000000141517
+        },
+        "requestBytes": {
+          "median": 89,
+          "p95": 89
+        }
+      },
+      "dense": {
+        "ms": {
+          "median": 0.066899999999805,
+          "p95": 0.11519999999995889
+        },
+        "requestBytes": {
+          "median": 87,
+          "p95": 88
+        }
+      },
+      "publications": {
+        "roundOf100Ms": {
+          "median": 1.9282000000000608,
+          "p95": 2.663000000000011
+        },
+        "requestBytes": {
+          "median": 206.88,
+          "p95": 206.88
+        },
+        "terrainReadsPerRound": {
+          "median": 0,
+          "p95": 0
+        }
+      },
+      "search": {
+        "ms": {
+          "median": 0.28880000000026484,
+          "p95": 0.3275000000003274
+        },
+        "visited": {
+          "median": 0,
+          "p95": 0
+        },
+        "steps": 20
+      },
+      "warehouse": [
+        {
+          "elapsedMs": 7805.257099999999,
+          "approachTicks": 104,
+          "transferTicks": 2,
+          "departureTicks": 50,
+          "totalTicks": 156
+        },
+        {
+          "elapsedMs": 7637.762999999999,
+          "approachTicks": 99,
+          "transferTicks": 2,
+          "departureTicks": 51,
+          "totalTicks": 152
+        },
+        {
+          "elapsedMs": 7639.690499999997,
+          "approachTicks": 100,
+          "transferTicks": 2,
+          "departureTicks": 50,
+          "totalTicks": 152
+        },
+        {
+          "elapsedMs": 7563.139999999999,
+          "approachTicks": 102,
+          "transferTicks": 2,
+          "departureTicks": 47,
+          "totalTicks": 151
+        },
+        {
+          "elapsedMs": 8394.350000000006,
+          "approachTicks": 111,
+          "transferTicks": 2,
+          "departureTicks": 54,
+          "totalTicks": 167
+        },
+        {
+          "elapsedMs": 7457.084999999992,
+          "approachTicks": 99,
+          "transferTicks": 2,
+          "departureTicks": 48,
+          "totalTicks": 149
+        }
+      ]
+    }
+  }
+}

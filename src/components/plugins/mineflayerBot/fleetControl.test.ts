@@ -125,7 +125,7 @@ describe("fleet dispatch", () => {
       peak = 0;
     const receipts: FleetReceipt[] = [];
     await dispatchFleetRequests(
-      Array.from({ length: 12 }, (_, index) => job(`bot-${index}`)),
+      Array.from({ length: 100 }, (_, index) => job(`bot-${index}`)),
       async () => {
         peak = Math.max(peak, ++inFlight);
         await new Promise((resolve) => setTimeout(resolve, 1));
@@ -133,8 +133,8 @@ describe("fleet dispatch", () => {
       },
       options(receipts),
     );
-    expect(peak).toBe(4);
-    expect(receipts).toHaveLength(12);
+    expect(peak).toBe(16);
+    expect(receipts).toHaveLength(100);
   });
 });
 

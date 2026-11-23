@@ -436,13 +436,14 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     return new Promise((resolve, reject) => {
       if (signal.aborted) return reject(new Interrupted());
       const cancel = () => {
-        clearTimeout(timer);
+        if (ms > 0) clearTimeout(timer); else clearImmediate(timer);
         reject(new Interrupted());
       };
-      const timer = setTimeout(() => {
+      const done = () => {
         signal.removeEventListener("abort", cancel);
         resolve();
-      }, ms);
+      };
+      const timer = ms > 0 ? setTimeout(done, ms) : setImmediate(done);
       signal.addEventListener("abort", cancel, { once: true });
     });
   }

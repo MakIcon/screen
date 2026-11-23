@@ -146,6 +146,69 @@ function createHub({ now = Date.now } = {}) {
   const leases = new Map();
   const targets = new Map();
   const traffic = new Map();
+  const trafficCells = new Map();
+  const clearRequesters = new Map();
+  const sharedRoutes = new Map();
+  let routeSequence = 0;
+  const invalidRouteLog = [];
+  let invalidRouteSequence = 0;
+  const trafficKey = (dim, p) => `${dim}|${Math.floor(p.x / 32)},${Math.floor(p.z / 32)}`;
+  function removeTraffic(name) {
+    for (const target of traffic.get(name)?.clear || []) {
+      const bucket = clearRequesters.get(target);
+      bucket?.delete(name);
+      if (!bucket?.size) clearRequesters.delete(target);
+    }
+    for (const key of traffic.get(name)?.cells || []) {
+      const bucket = trafficCells.get(key);
+      bucket?.delete(name);
+      if (!bucket?.size) trafficCells.delete(key);
+    }
+    traffic.delete(name);
+  }
+  function indexTraffic(entry) {
+    const old = traffic.get(entry.name);
+    const sameGeometry = old && entry.route === old.route && entry.corridor === old.corridor &&
+      trafficKey(entry.dim, entry.pos) === trafficKey(old.dim, old.pos);
+    const cells = sameGeometry ? old.cells : new Set([entry.pos, ...entry.route, ...entry.corridor].map(p => trafficKey(entry.dim, p)));
+    for (const target of old?.clear || []) {
+      const bucket = clearRequesters.get(target);
+      bucket?.delete(entry.name);
+      if (!bucket?.size) clearRequesters.delete(target);
+    }
+    if (old?.cells.size === cells.size && [...cells].every(key => old.cells.has(key))) {
+      entry.cells = old.cells;
+      traffic.set(entry.name, entry);
+      for (const target of entry.clear) {
+        if (!clearRequesters.has(target)) clearRequesters.set(target, new Set());
+        clearRequesters.get(target).add(entry.name);
+      }
+      return;
+    }
+    removeTraffic(entry.name);
+    entry.cells = cells;
+    for (const key of cells) {
+      if (!trafficCells.has(key)) trafficCells.set(key, new Set());
+      trafficCells.get(key).add(entry.name);
+    }
+    traffic.set(entry.name, entry);
+    for (const target of entry.clear) {
+      if (!clearRequesters.has(target)) clearRequesters.set(target, new Set());
+      clearRequesters.get(target).add(entry.name);
+    }
+  }
+  function nearbyTraffic(name, dim, pos, corridor) {
+    const names = new Set();
+    const visit = (p, radius) => {
+      for (let x = Math.floor((p.x - radius) / 32); x <= Math.floor((p.x + radius) / 32); x++)
+        for (let z = Math.floor((p.z - radius) / 32); z <= Math.floor((p.z + radius) / 32); z++)
+          for (const other of trafficCells.get(`${dim}|${x},${z}`) || []) names.add(other);
+    };
+    visit(pos, 64);
+    for (const p of corridor) if (Math.abs(p.x - pos.x) > 63 || Math.abs(p.z - pos.z) > 63) visit(p, 1);
+    return [...names].map(other => traffic.get(other)).filter(peer =>
+      peer.name !== name && peer.dim === dim && now() - peer.at < 1800);
+  }
   const storageQueue = new Map();
   const storageParking = new Map();
   // Geometry stays unchanged between heartbeats. Cache corridor conflicts so
@@ -220,7 +283,7 @@ function createHub({ now = Date.now } = {}) {
     storageParking.delete(name);
     storageQueue.delete(name);
     targets.delete(name);
-    traffic.delete(name);
+    removeTraffic(name);
     const entry = members.get(name);
     if (!entry) return;
     for (const full of entry.held.values()) {
@@ -242,7 +305,8 @@ function createHub({ now = Date.now } = {}) {
     }
     for (const [lease, value] of leases) if (value.until <= time) leases.delete(lease);
     for (const [name, value] of targets) if (value.until <= time) targets.delete(name);
-    for (const [name, value] of traffic) if (time - value.at > 1800) traffic.delete(name);
+    for (const [name, value] of traffic) if (time - value.at > 1800) removeTraffic(name);
+    for (const [id, route] of sharedRoutes) if (time - route.at > 120000) sharedRoutes.delete(id);
     for (const [name, value] of storageQueue) if (time - value.at > 5000) storageQueue.delete(name);
     for (const [name, value] of storageParking) if (value.until <= time) storageParking.delete(name);
     for (const map of scanned.values())
@@ -362,24 +426,28 @@ function createHub({ now = Date.now } = {}) {
     traffic(name, input = {}) {
       const dim = String(input.dim || "");
       if (input.enabled === false || !finite(input.pos)) {
-        traffic.delete(name);
+        removeTraffic(name);
         return { peers: [], allowed: true };
       }
       let previous = traffic.get(name);
-      const route = (Array.isArray(input.route) ? input.route : []).filter(finite).slice(0, 16).map(point);
-      const corridor = (Array.isArray(input.corridor) ? input.corridor : []).filter(finite).slice(0, 96).map(point);
-      const laneCells = laneIndex(corridor);
+      if (input.delta && (!previous || previous.dim !== dim || input.epoch !== epoch)) return { resync: true, epoch };
+      const route = input.delta && !Object.hasOwn(input, "route") ? previous.route :
+        (Array.isArray(input.route) ? input.route : []).filter(finite).slice(0, 16).map(point);
+      const corridor = input.delta && !Object.hasOwn(input, "corridor") ? previous.corridor :
+        (Array.isArray(input.corridor) ? input.corridor : []).filter(finite).slice(0, 96).map(point);
+      const laneCells = corridor === previous?.corridor ? previous.laneCells : laneIndex(corridor);
       const pos = point(input.pos);
-      const near = [...traffic.values()].filter(peer => peer.name !== name && peer.dim === dim && now() - peer.at < 1800);
+      const near = nearbyTraffic(name, dim, pos, [...corridor, ...route.slice(0, 1)]);
       const direction = route.length ? { x: route[0].x - pos.x, z: route[0].z - pos.z } : { x: 0, z: 0 };
-      const storage = input.storage && Array.isArray(input.storage.positions) ? {
+      const storage = input.delta && !Object.hasOwn(input, "storage") ? previous.storage : input.storage && Array.isArray(input.storage.positions) ? {
         phase: String(input.storage.phase || "idle"), positions: input.storage.positions.filter(finite).slice(0, 128).map(point),
         bay: finite(input.storage.bay) ? point(input.storage.bay) : null,
       } : null;
       const clear = Array.isArray(input.clear) ? input.clear.filter(s => typeof s === "string").slice(0, 32) : [];
       const entry = { name, dim, pos, route, corridor, laneCells, direction, storage, clear, at: now(),
         urgency: input.urgency === "escape" ? "escape" : "normal",
-        motion: Array.isArray(input.motion) ? input.motion.filter(finite).slice(0, 16).map(point) : route };
+        motion: input.delta && !Object.hasOwn(input, "motion") ? previous.motion :
+          Array.isArray(input.motion) ? input.motion.filter(finite).slice(0, 16).map(point) : route };
       if (previous && (previous.dim !== dim || now() - previous.at >= 1800 || !aligned(entry, previous) ||
           (!sharedCorridor(entry, previous) && !sameTrafficCell(route[0] || pos, previous.route[0] || previous.pos)))) previous = null;
       entry.requestedAt = previous?.requestedAt ?? now();
@@ -388,9 +456,39 @@ function createHub({ now = Date.now } = {}) {
       entry.progressAt = progressed ? now() : previous.progressAt;
       entry.progressPos = progressed ? pos : previous.progressPos;
       const blocker = admitTraffic(entry, previous, near, now());
-      traffic.set(name, entry);
-      return { members: Math.max(members.size, traffic.size), allowed: !blocker, blocker: blocker?.name || null,
-        clearance: near.filter(peer => peer.clear?.includes(name)).slice(0, 4).map(peer => ({
+      indexTraffic(entry);
+      for (const id of (Array.isArray(input.invalidRoutes) ? input.invalidRoutes : []).slice(0, 128)) {
+        if (typeof id !== "string" || !id.startsWith(`${dim}|`) || !sharedRoutes.delete(id)) continue;
+        invalidRouteLog.push({ id, dim, seq: ++invalidRouteSequence });
+        if (invalidRouteLog.length > 128) invalidRouteLog.shift();
+      }
+      for (const candidate of (Array.isArray(input.routes) ? input.routes : []).slice(0, 2)) {
+        if (!Array.isArray(candidate) || candidate.length < 3 || candidate.length > 256 || !candidate.every(finite)) continue;
+        const cell = p => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+        const id = `${dim}|${cell(candidate[0])}|${cell(candidate.at(-1))}`;
+        sharedRoutes.delete(id);
+        sharedRoutes.set(id, { seq: ++routeSequence, dim, name, at: now(), points: candidate.map(p => ({ ...point(p),
+          ...(typeof p.kind === "string" ? { kind: p.kind.slice(0, 64) } : {}),
+          ...(Number.isFinite(p.cost) ? { cost: p.cost } : {}),
+          ...(typeof p.profile === "string" ? { profile: p.profile.slice(0, 512) } : {}) })) });
+        if (sharedRoutes.size > 128) sharedRoutes.delete(sharedRoutes.keys().next().value);
+      }
+      const cursor = input.routeEpoch === epoch ? Number(input.routeSeq) || 0 : 0;
+      const routes = [];
+      let seen = cursor;
+      for (const shared of sharedRoutes.values()) {
+        if (shared.seq <= cursor) continue;
+        seen = shared.seq;
+        if (shared.name !== name && shared.dim === dim) routes.push(shared.points);
+        if (routes.length >= 4) break;
+      }
+      if (routes.length < 4) seen = routeSequence;
+      const invalidCursor = input.routeEpoch === epoch ? Number(input.invalidRouteSeq) || 0 : 0;
+      return { epoch, routes, routeSeq: seen, invalidRouteSeq: invalidRouteSequence,
+        invalidRoutes: invalidRouteLog.filter(e => e.seq > invalidCursor && e.dim === dim).map(e => e.id),
+        clearRoutes: invalidCursor < (invalidRouteLog[0]?.seq ?? 1) - 1,
+        members: Math.max(members.size, traffic.size), allowed: !blocker, blocker: blocker?.name || null,
+        clearance: [...(clearRequesters.get(name) || [])].map(other => traffic.get(other)).filter(peer => peer && peer.name !== name && peer.dim === dim && now() - peer.at < 1800).slice(0, 4).map(peer => ({
           from: peer.name, positions: peer.storage?.positions || [],
         })),
         peers: near.filter(peer => hypot3(peer.pos, pos) < 64).map(peer => ({
@@ -685,8 +783,32 @@ function createCrewLink({
   const peers = new Set();
 
   function lines(stream, onLine) {
-    let buffer = "";
+    let buffer = "", scheduled = false;
     stream.setEncoding("utf8");
+    function pump() {
+      scheduled = false;
+      if (stream.destroyed) { buffer = ""; return; }
+      const started = performance.now();
+      let processed = 0;
+      for (let index; (index = buffer.indexOf("\n")) >= 0; ) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (line.trim()) {
+          try {
+            onLine(JSON.parse(line));
+          } catch {
+            // Ignore malformed peer input.
+          }
+        }
+        if (++processed >= 32 || performance.now() - started >= 2) {
+          scheduled = true;
+          stream.pause?.();
+          setImmediate(pump);
+          return;
+        }
+      }
+      stream.resume?.();
+    }
     stream.on("data", (chunk) => {
       buffer += chunk;
       if (buffer.length > 4 * 1024 * 1024) {
@@ -694,16 +816,7 @@ function createCrewLink({
         stream.destroy();
         return;
       }
-      for (let index; (index = buffer.indexOf("\n")) >= 0; ) {
-        const line = buffer.slice(0, index);
-        buffer = buffer.slice(index + 1);
-        if (!line.trim()) continue;
-        try {
-          onLine(JSON.parse(line));
-        } catch {
-          // Ignore malformed peer input.
-        }
-      }
+      if (!scheduled) pump();
     });
   }
   function serve(peer) {

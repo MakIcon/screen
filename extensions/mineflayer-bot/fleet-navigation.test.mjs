@@ -41,13 +41,76 @@ test("solo navigation preserves goals and never pauses", async t => {
   assert.equal(nav.pause({ exitPos: p(1.5) }), false);
 });
 
-test("fleet planning yields more CPU as workers join and ignores stale load", async t => {
+test("a healthy 100-bot fleet does not get an artificial search delay", async t => {
   const peers = Array.from({ length: 99 }, (_, i) => ({ name: `worker-${i}`, pos: p(i * 4), route: [] }));
   const { nav, advance } = fixture(t, { peers });
   await flush();
-  assert.ok(nav.workDelayMs > 0 && nav.workDelayMs <= 80);
+  assert.equal(nav.workDelayMs, 0);
   advance(2000);
   assert.equal(nav.workDelayMs, 0);
+});
+
+test("traffic sends deltas, retries a missing hub snapshot and republishes changes that arrive in flight", async t => {
+  const { bot, nav } = fixture(t);
+  await flush();
+  const calls = [];
+  let release, held = false;
+  const hub = crew.createHub();
+  const link = { request: async (op, input) => {
+    calls.push(input);
+    if (held) { held = false; await new Promise(resolve => { release = resolve; }); }
+    return hub.handle("delta-worker", op, input);
+  } };
+  nav.dispose();
+  const current = fleet.createFleetNavigation(bot, link, { pollMs: 100000 });
+  t.after(() => current.dispose());
+  await flush();
+  current.setStoragePhase("gathering", [p(10)]);
+  await flush();
+  const bytes = JSON.stringify(calls.at(-1)).length;
+  current.setStoragePhase("gathering", [p(10)]);
+  await flush();
+  assert.equal(calls.at(-1).delta, true);
+  assert.equal(Object.hasOwn(calls.at(-1), "storage"), false);
+  assert.ok(JSON.stringify(calls.at(-1)).length < bytes);
+  hub.drop("delta-worker");
+  current.setStoragePhase("gathering", [p(10)]);
+  await flush();
+  assert.equal(calls.at(-2).delta, true);
+  assert.equal(calls.at(-1).delta, undefined, "resync immediately sends a full snapshot");
+  held = true;
+  current.setStoragePhase("gathering", [p(10)]);
+  current.setStoragePhase("leaving", [p(10)]);
+  release();
+  await flush(); await flush();
+  assert.equal(calls.at(-1).storage.phase, "leaving", "does not lose a new departure while an older request is in flight");
+});
+
+test("only completed routes are shared, and received routes disappear after a terrain update", async t => {
+  const hub = crew.createHub();
+  const { bot, nav } = fixture(t);
+  nav.dispose();
+  bot.username = "route-worker";
+  const current = fleet.createFleetNavigation(bot, { request: async (op, input) => hub.handle("route-worker", op, input) }, { pollMs: 100000 });
+  t.after(() => current.dispose());
+  await flush();
+  const Forward = class Forward {};
+  const path = Array.from({ length: 8 }, (_, i) => ({ entryPos: p(i + 0.5), exitPos: p(i + 1.5),
+    toBreak: [], toPlace: [], moveType: new Forward() }));
+  bot.emit("pathGenerated", { path });
+  await flush();
+  assert.equal(hub.handle("observer", "traffic", { dim: "overworld", pos: p(0.5) }).routes.length, 0);
+  bot.emit("goalFinished", {});
+  await flush();
+  const seen = hub.handle("observer", "traffic", { dim: "overworld", pos: p(0.5) });
+  assert.equal(seen.routes.length, 1);
+  assert.ok(current.routeFrom(p(2.5), q => q.x === 8.5));
+  bot.emit("blockUpdate", null, { position: p(5.5) });
+  assert.equal(current.routeFrom(p(2.5), q => q.x === 8.5), null);
+  current.setStoragePhase("gathering", []);
+  await flush();
+  assert.equal(hub.handle("late-observer", "traffic", { dim: "overworld", pos: p(0.5) }).routes.length, 0,
+    "the terrain invalidation reaches the shared coordinator");
 });
 
 test("route costs index local workers instead of scanning the whole fleet for every node", async t => {

@@ -189,3 +189,57 @@ test("passage floors are shared with the other bots of the same dimension", () =
   const stale = beat("b", { floorSeq: 999, floorEpoch: "old" });
   assert.equal(stale.floors.length, 3);
 });
+
+test("traffic deltas retain geometry, resync after failover and expire normally", () => {
+  let time = 1000;
+  const hub = createHub({ now: () => time });
+  const input = { dim: "overworld", pos: at(0.5, 64, 0.5), route: [at(1.5, 64, 0.5)],
+    corridor: [at(1.5, 64, 0.5)], motion: [at(1.5, 64, 0.5)], storage: null };
+  const initial = hub.handle("a", "traffic", input);
+  const update = { delta: true, epoch: initial.epoch, dim: input.dim, pos: at(0.7, 64, 0.5) };
+  assert.equal(hub.handle("a", "traffic", update).resync, undefined);
+  const other = hub.handle("b", "traffic", { ...input, pos: at(5, 64, 0.5) });
+  assert.deepEqual(other.peers.find(p => p.name === "a").route, input.route);
+  assert.equal(createHub().handle("a", "traffic", update).resync, true);
+  time += 2000;
+  assert.equal(hub.handle("a", "traffic", update).resync, true);
+  assert.equal(hub.handle("a", "traffic", input).resync, undefined);
+  assert.equal(hub.handle("a", "traffic", { ...update, dim: "nether" }).resync, true);
+});
+
+test("completed routes use cursors, retain movement kinds and stay in their dimension", () => {
+  const hub = createHub();
+  const input = { dim: "overworld", pos: at(0, 64, 0) };
+  const path = Array.from({ length: 9 }, (_, x) => ({ ...at(x + 0.5, 64, 0.5), kind: "Forward" }));
+  hub.handle("a", "traffic", { ...input, routes: [path] });
+  const seen = hub.handle("b", "traffic", input);
+  assert.deepEqual(seen.routes, [path]);
+  assert.equal(hub.handle("c", "traffic", { ...input, dim: "nether" }).routes.length, 0);
+  assert.equal(hub.handle("b", "traffic", { ...input, routeSeq: seen.routeSeq, routeEpoch: seen.epoch }).routes.length, 0);
+  assert.equal(hub.handle("b", "traffic", { ...input, routeSeq: seen.routeSeq, routeEpoch: "stale" }).routes.length, 1);
+  const id = "overworld|0,64,0|8,64,0";
+  hub.handle("a", "traffic", { ...input, invalidRoutes: [id] });
+  const removed = hub.handle("b", "traffic", { ...input, routeSeq: seen.routeSeq, routeEpoch: seen.epoch });
+  assert.deepEqual(removed.invalidRoutes, [id], "existing members receive invalidations too");
+  assert.equal(hub.handle("new", "traffic", input).routes.length, 0, "new members cannot fetch a stale detour");
+  assert.equal(hub.handle("b", "traffic", { ...input, routeEpoch: seen.epoch, invalidRouteSeq: removed.invalidRouteSeq }).invalidRoutes.length, 0);
+});
+
+test("100 independent crew channels drain simultaneous requests without losing replies or reservations", { timeout: 10000 }, async t => {
+  const key = `hundred-${randomUUID()}`;
+  const links = [];
+  t.after(() => links.forEach(link => link.dispose()));
+  links.push(createCrewLink({ key, name: "worker-0", beatMs: 100000 }));
+  for (let i = 0; i < 40 && links[0].role !== "leader"; i++) await delay(25);
+  assert.equal(links[0].role, "leader");
+  for (let i = 1; i < 100; i++) links.push(createCrewLink({ key, name: `worker-${i}`, beatMs: 100000 }));
+  for (let i = 0; i < 120 && links.some(link => !["leader", "member"].includes(link.role)); i++) await delay(25);
+  assert.ok(links.every(link => ["leader", "member"].includes(link.role)));
+  const positions = Array.from({ length: 100 }, (_, i) => at(i, 64, 0));
+  const replies = await Promise.all(links.map(link => link.request("target", { dim: "overworld", positions })));
+  assert.equal(new Set(replies.map(reply => reply.pos.x)).size, 100);
+  // More than one parser slice over the same connection, preserving order.
+  const burst = await Promise.all(Array.from({ length: 100 }, () => links[1].request("beat", { dim: "overworld", pos: at(1, 64, 0) })));
+  assert.equal(burst.length, 100);
+  assert.ok(burst.every(reply => reply.floorEpoch));
+});

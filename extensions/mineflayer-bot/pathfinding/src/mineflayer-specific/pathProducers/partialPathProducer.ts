@@ -7,6 +7,7 @@ import type { ExecutorMap, MovementOptions } from '../movements'
 import { MovementHandler } from '../movements'
 import { World } from '../world/worldInterface'
 import { AdvanceRes } from '.'
+import type { TrafficAwareBot } from '../../traffic'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfindng:pathProducer')
@@ -97,6 +98,8 @@ export class PartialPathProducer implements PathProducer {
   advance (): AdvanceRes {
     if (this._lastContext == null) this._lastContext = this.generateAstarContext()
 
+    this._lastContext.tickTimeout = Math.min(this.bot.pathfinder.pathfinderSettings.tickTimeoutMs,
+      (this.bot as TrafficAwareBot).launcherTraffic?.workSliceMs ?? Infinity)
     const result = this._lastContext.compute()
     let status = result.status
 
