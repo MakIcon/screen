@@ -1894,6 +1894,12 @@ export const ru = {
   "pluginCard.availableToInstall": "Доступно для установки",
 
   // proxy
+  "proxy.indicatorConnected": "Прокси подключён",
+  "proxy.indicatorChecking": "Подключение к прокси…",
+  "proxy.indicatorUnavailable": "Нет соединения с прокси",
+  "proxy.indicatorDirect": "Прокси не используется",
+  "proxy.indicatorLatency": "Задержка: {latency} мс",
+  "proxy.openSettings": "Открыть настройки прокси",
   "proxy.footerHint": "Настройте подключение и нажмите «Применить»",
   "proxy.httpStatus": "HTTP {status}",
   "proxy.connection": "Подключение",

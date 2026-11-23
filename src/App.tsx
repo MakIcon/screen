@@ -163,6 +163,7 @@ import type { AppearanceElementTarget } from "./appearance/types";
 import { useMainAppearanceRuntime } from "./appearance/useMainAppearanceRuntime";
 import { CanvasUiLauncher } from "./appearance/CanvasUiLauncher";
 import { CanvasUiElementEffects } from "./appearance/CanvasUiElementEffects";
+import { ProxyConnectionIndicator } from "./components/plugins/proxy/ProxyConnectionIndicator";
 
 const MicrosoftAccountsModal = lazy(() =>
   import("./components/modals/MicrosoftAccountsModal").then((module) => ({
@@ -2543,12 +2544,22 @@ export default function App() {
       <header
         className="gallery-header"
         onMouseDown={(e) => {
-          if ((e.target as HTMLElement).tagName !== "BUTTON") {
+          if (!(e.target as Element).closest("button")) {
             void win.startDragging();
           }
         }}
       >
         <div className="nav-brand">{tr("ui.brand")}</div>
+        <ProxyConnectionIndicator
+          settings={launcherSettings?.plugins.proxy}
+          onOpenSettings={() => {
+            setSettingsCommandTarget((current) => ({
+              id: "plugin:proxy",
+              sequence: (current?.sequence ?? 0) + 1,
+            }));
+            setTabAnimated("settings");
+          }}
+        />
         <div className="nav-controls">
           <CommandPalette
             commands={quickCommands}

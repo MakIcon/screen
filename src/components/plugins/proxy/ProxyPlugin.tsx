@@ -23,13 +23,7 @@ import {
   type ProxyFields,
 } from "./proxyAddress";
 import "./ProxyPlugin.css";
-
-type ProxyTestResult = {
-  ok: boolean;
-  status?: number | null;
-  latencyMs: number;
-  failure?: "timeout" | "authentication" | "http" | "connection" | null;
-};
+import type { ProxyTestResult } from "./proxyConnection";
 
 const GLYPHS = {
   route: "M3 5h5l8 14h5M3 19h5l8-14h5M18 2l3 3-3 3M18 16l3 3-3 3",

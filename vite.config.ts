@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
@@ -28,7 +27,8 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Match Tauri's devUrl without depending on localhost's IPv6 resolution.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

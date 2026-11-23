@@ -1847,6 +1847,12 @@ export const en: EnglishMessages = {
   "pluginCard.availableToInstall": "Available to install",
 
   // proxy
+  "proxy.indicatorConnected": "Proxy connected",
+  "proxy.indicatorChecking": "Connecting to proxy…",
+  "proxy.indicatorUnavailable": "Proxy unavailable",
+  "proxy.indicatorDirect": "Proxy not in use",
+  "proxy.indicatorLatency": "Latency: {latency} ms",
+  "proxy.openSettings": "Open proxy settings",
   "proxy.footerHint": "Configure the connection, then select Apply",
   "proxy.httpStatus": "HTTP {status}",
   "proxy.connection": "Connection",
