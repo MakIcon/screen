@@ -52,6 +52,7 @@ for (const file of [
   "FABRIC-LICENSE",
   "FABRIC-NOTICE",
   "worker.cjs",
+  "player-control.cjs",
   "worker.test.mjs",
   "workflow.cjs",
   "workflow.test.mjs",

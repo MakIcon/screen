@@ -933,6 +933,143 @@ for (const version of ["1.20.4", "26.1.2"])
     assert.equal(controller.snapshot.history[0].outcome, "готово");
   });
 
+for (const version of ["1.20.4", "26.1.2"]) test(`pickup uses the ground beside a drop on a fence on ${version}`, { timeout: 17000 }, async (t) => {
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  const fence = new Vec3(4, 64, 0);
+  world.setBlock(fence, "oak_fence");
+  const { rig, bot, controller } = prepare(version, world);
+  t.after(async () => {
+    await controller.dispose();
+    await bot.pathfinder.destroy();
+    rig.stopPassivePhysics();
+  });
+  controller.settings.pickupTimeoutMs = 2000;
+  const drop = { id: 995, position: fence.offset(0.5, 1.65, 0.5), isValid: true,
+    getDroppedItem: () => ({ name: "diamond", count: 2 }) };
+  bot.entities[drop.id] = drop;
+  let atPickup;
+  bot.on("physicsTick", () => {
+    const feet = bot.entity.position;
+    if (!drop.isValid || Math.abs(feet.x - drop.position.x) > 1.15 ||
+        Math.abs(feet.z - drop.position.z) > 1.15 || drop.position.y - feet.y > 1.85) return;
+    atPickup = feet.clone();
+    bot.emit("playerCollect", bot.entity, drop);
+    drop.isValid = false;
+    delete bot.entities[drop.id];
+    bot.emit("entityGone", drop);
+  });
+  controller.enqueue({ kind: "collect", item: "diamond", radius: 8 });
+  await waitForJob(controller, 12000);
+  assert.equal(controller.snapshot.history[0].collected, 2);
+  assert.equal(controller.snapshot.history[0].missedDrops, 0);
+  assert.ok(atPickup?.y === 64 && atPickup.xzDistanceTo(drop.position) > 0.75, `pickup from the ground: ${atPickup}`);
+  assert.equal(bot.blockAt(fence).name, "oak_fence");
+});
+
+for (const version of ["1.20.4", "26.1.2"]) test(`forest chops below the gap and collects logs through foliage on ${version}`, { timeout: 18000 }, async (t) => {
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  const base = new Vec3(4, 64, 0), high = base.offset(0, 2, 0);
+  const leaves = base.offset(-1, 0, 0);
+  world.setBlock(base, "oak_log");
+  world.setBlock(high, "oak_log");
+  const leafType = world.mcData.blocksByName.oak_leaves;
+  const dryLeaves = Array.from({ length: leafType.maxStateId - leafType.minStateId + 1 }, (_, index) => leafType.minStateId + index)
+    .find(state => world.createBlock(leaves, state).getProperties().waterlogged !== true);
+  assert.ok(dryLeaves != null);
+  world.setBlock(leaves, dryLeaves);
+  world.setBlock(leaves.offset(0, 1, 0), dryLeaves);
+  const { rig, bot, controller, messages } = prepare(version, world, false, undefined, { allowParkour: true, allowSprinting: true });
+  t.after(async () => {
+    await controller.dispose();
+    await bot.pathfinder.destroy();
+    rig.stopPassivePhysics();
+  });
+  controller.settings.scanLimit = 1;
+  bot.findBlocks = ({ matching, count }) => [high, base]
+    .filter(position => matching.includes(bot.blockAt(position).type)).slice(0, count);
+  const order = [], spawned = [];
+  const logCells = new Set([base.toString(), high.toString()]);
+  bot.on("diggingCompleted", (block) => {
+    const position = block.position;
+    if (!logCells.has(position.toString())) return;
+    order.push(position.y);
+    const drop = { id: 996 + spawned.length, position: position.offset(0.5, 0.6, 0.5), isValid: true,
+      getDroppedItem: () => ({ name: "oak_log", count: 1 }) };
+    spawned.push(drop);
+    bot.entities[drop.id] = drop;
+    bot.emit("itemDrop", drop);
+  });
+  let highest = bot.entity.position.y, sprintTicks = 0;
+  bot.on("physicsTick", () => {
+    const feet = bot.entity.position;
+    highest = Math.max(highest, feet.y);
+    if (bot.getControlState("sprint")) sprintTicks++;
+    for (const drop of spawned) {
+      if (!drop.isValid) continue;
+      if (drop.position.y > 64.125 && bot.blockAt(drop.position.offset(0, -0.2, 0))?.boundingBox === "empty") {
+        drop.position.y = Math.max(64.125, drop.position.y - 0.18);
+        bot.emit("entityMoved", drop);
+      }
+      if (feet.xzDistanceTo(drop.position) > 0.75 || drop.position.y - feet.y > 1.5) continue;
+      bot.emit("playerCollect", bot.entity, drop);
+      drop.isValid = false;
+      delete bot.entities[drop.id];
+      bot.emit("entityGone", drop);
+    }
+  });
+  controller.enqueue({ kind: "forest", radius: 8, scaffold: false });
+  await waitForJob(controller, 15000);
+  assert.deepEqual(order, [64, 66], messages.join("\n"));
+  assert.equal(controller.snapshot.history[0].collected, 2, messages.join("\n"));
+  assert.equal(sprintTicks, 0);
+  assert.ok(highest < 65, `the bot stayed below the foliage: ${highest}`);
+});
+
+test("logging clears the exact leaf holding up its loot and collects it from below", { timeout: 18000 }, async (t) => {
+  const version = "26.1.2";
+  const world = createFlatWorld(version, 64, { renderDistance: 1 });
+  const log = new Vec3(3, 64, 0), leaf = new Vec3(3, 66, 0), neighbor = leaf.offset(0, 0, 1);
+  world.setBlock(log, "oak_log");
+  world.setBlock(leaf, "oak_leaves");
+  world.setBlock(neighbor, "oak_leaves");
+  const { rig, bot, controller } = prepare(version, world);
+  t.after(async () => {
+    await controller.dispose();
+    await bot.pathfinder.destroy();
+    rig.stopPassivePhysics();
+  });
+  bot.findBlocks = ({ matching }) => matching.includes(bot.blockAt(log).type) ? [log] : [];
+  const drop = { id: 998, position: leaf.offset(0.5, 1.125, 0.5), isValid: true,
+    getDroppedItem: () => ({ name: "oak_log", count: 1 }) };
+  const broken = [];
+  bot.on("diggingCompleted", (block) => {
+    broken.push(block.position);
+    if (!block.position.equals(log)) return;
+    bot.entities[drop.id] = drop;
+    bot.emit("itemDrop", drop);
+  });
+  let collectedOnGround = false;
+  bot.on("physicsTick", () => {
+    if (!bot.entities[drop.id] || bot.blockAt(leaf).name !== "air") return;
+    drop.position.y = Math.max(64.125, drop.position.y - 0.28);
+    bot.emit("entityMoved", drop);
+    const feet = bot.entity.position;
+    if (feet.xzDistanceTo(drop.position) > 0.75 || drop.position.y - feet.y > 1.5) return;
+    collectedOnGround = feet.y <= 64.1 && drop.position.y < 65.5;
+    bot.emit("playerCollect", bot.entity, drop);
+    drop.isValid = false;
+    delete bot.entities[drop.id];
+    bot.emit("entityGone", drop);
+  });
+  controller.enqueue({ kind: "forest", radius: 8, count: 1, scaffold: false });
+  await waitForJob(controller, 15000);
+  assert.deepEqual(broken, [log, leaf]);
+  assert.equal(bot.blockAt(neighbor).name, "oak_leaves");
+  assert.equal(collectedOnGround, true);
+  assert.equal(controller.snapshot.history[0].mined, 1);
+  assert.equal(controller.snapshot.history[0].collected, 1);
+});
+
 test(
   "ore mining lands before Mineflayer fixes the dig duration",
   { timeout: 6000 },
@@ -1203,10 +1340,18 @@ for (const automatic of [false, true]) test(`storage replans its original destin
   if (automatic) assert.ok(bot.entity.position.x > 75, 'unloading is independent of the two-block mining radius');
 });
 
-test("forest reaches a tall trunk using inventory scaffolding", { timeout: 35000 }, async (t) => {
+for (const canopy of [false, true]) test(
+  canopy ? "forest clears a tall trunk through a dense canopy from below" : "forest reaches a tall trunk using inventory scaffolding",
+  { timeout: 35000 }, async (t) => {
   const version = "26.1.2";
   const world = createFlatWorld(version, 64, { renderDistance: 2 });
-  for (let y = 64; y <= 71; y++) world.setBlock(new Vec3(5, y, 0), "oak_log");
+  const height = canopy ? 10 : 8;
+  for (let y = 64; y < 64 + height; y++) world.setBlock(new Vec3(5, y, 0), "oak_log");
+  if (canopy) {
+    for (let y = 69; y <= 74; y++) for (let x = 3; x <= 7; x++) for (let z = -2; z <= 2; z++) {
+      if (y === 74 || x !== 5 || z !== 0) world.setBlock(new Vec3(x, y, z), "oak_leaves");
+    }
+  }
   const { rig, bot, controller, messages } = prepare(version, world);
   t.after(async () => {
     await controller.dispose();
@@ -1228,7 +1373,7 @@ test("forest reaches a tall trunk using inventory scaffolding", { timeout: 35000
   bot.updateHeldItem();
   bot.pathingUtil.refresh();
   bot.findBlocks = (options) =>
-    Array.from({ length: 8 }, (_, i) => new Vec3(5, 64 + i, 0)).filter((pos) => {
+    Array.from({ length: height }, (_, i) => new Vec3(5, 64 + i, 0)).filter((pos) => {
       const block = bot.blockAt(pos);
       return (
         options.matching.includes(block.type) &&
@@ -1236,17 +1381,20 @@ test("forest reaches a tall trunk using inventory scaffolding", { timeout: 35000
       );
     });
   let placements = 0;
+  let maxY = bot.entity.position.y;
   bot.on("blockPlaced", () => {
     placements++;
   });
+  bot.on("physicsTick", () => { maxY = Math.max(maxY, bot.entity.position.y); });
   controller.enqueue({ kind: "forest", radius: 16, count: 0, scaffold: true });
   await waitForJob(controller, 30000);
   assert.equal(
     controller.snapshot.history[0].mined,
-    8,
+    height,
     JSON.stringify({ snapshot: controller.snapshot, messages, position: bot.entity.position }),
   );
   assert.ok(placements > 0);
+  if (canopy) assert.ok(maxY < 74, `stay below the top of the crown: ${maxY}`);
   assert.ok(bot.entity.position.y <= 64.1, `return to ground: ${bot.entity.position}`);
   assert.equal(bot.entity.onGround, true);
 });

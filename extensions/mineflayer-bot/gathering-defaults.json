@@ -8,5 +8,7 @@
   "defendMobs": true,
   "defendPlayers": true,
   "defendArrows": true,
+  "smoothAim": false,
+  "smoothAimSpeed": 100,
   "storageGroups": []
 }

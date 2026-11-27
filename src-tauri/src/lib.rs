@@ -126,6 +126,7 @@ pub fn run() {
             plugins::mineflayer_bot::send_mineflayer_bot_chat,
             plugins::mineflayer_bot::drop_mineflayer_bot_items,
             plugins::mineflayer_bot::control_mineflayer_bot_workflow,
+            plugins::mineflayer_bot::set_mineflayer_player_control,
             plugins::mineflayer_bot::configure_mineflayer_bot_storage,
             plugins::mineflayer_bot::storage::apply_mineflayer_storage,
             plugins::mineflayer_bot::storage::scan_mineflayer_storage_near_player,

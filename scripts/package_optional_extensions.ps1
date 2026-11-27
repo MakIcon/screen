@@ -28,6 +28,7 @@ if (Test-Path -LiteralPath $stageDirectory) {
 New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "worker.cjs") -Destination $stageDirectory
+Copy-Item -LiteralPath (Join-Path $sourceDirectory "player-control.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "storage-inspection.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "inventory-actions.cjs") -Destination $stageDirectory
 Copy-Item -LiteralPath (Join-Path $sourceDirectory "chaotic-movement.cjs") -Destination $stageDirectory

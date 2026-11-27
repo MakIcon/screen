@@ -711,6 +711,12 @@
   gap: 12px;
   padding: 0 16px 16px 44px;
 }
+.mf-step-editor > .settings-toggle-row {
+  align-items: center;
+}
+.mf-step-editor > .settings-toggle-row .settings-toggle-title {
+  margin-bottom: 0;
+}
 .mf-step-editor > p {
   margin: 0;
   color: var(--text-alt);

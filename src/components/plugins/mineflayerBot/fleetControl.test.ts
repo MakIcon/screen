@@ -28,6 +28,8 @@ describe("one workflow for a fleet", () => {
     const farmer = structuredClone(profiles[1]);
     farmer.settings.gathering.defendMobs = !miner.settings.gathering.defendMobs;
     farmer.settings.gathering.tunnelWidth = 3;
+    farmer.settings.gathering.smoothAim = true;
+    farmer.settings.gathering.smoothAimSpeed = 65;
     farmer.settings.gathering.storageGroups = [
       { id: "farm", name: "Farm", enabled: true, filters: [], chests: [{ x: 10, y: 64, z: 12 }] },
     ];
@@ -46,6 +48,8 @@ describe("one workflow for a fleet", () => {
     expect(requests[1][0].args.groups).toEqual(farmer.settings.gathering.storageGroups);
     expect(requests[0][1].args.message).not.toBe(requests[1][1].args.message);
     expect(requests[1][2].args.message).toMatch(/^work tunnels 3 /);
+    expect(requests[0][3].args.message).toBe("work aim off 100");
+    expect(requests[1][3].args.message).toBe("work aim on 65");
   });
 
   it("pauses, resumes and stops without configuring or restarting work", () => {

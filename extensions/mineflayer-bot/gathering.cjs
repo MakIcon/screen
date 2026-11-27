@@ -49,6 +49,10 @@ class InventoryFull extends NavigationTaskError {
   }
 }
 const CONTAINER_REACH = 4;
+const FOREST_STALL_MS = 4000;
+const PICKUP_SETTLE_MS = 750;
+const NO_SPRINT = { allowSprinting: false, allowJumpSprint: false, allowLowCeilingJumps: false };
+const FOREST_WALK = { ...NO_SPRINT, allowParkour: false };
 const ESCAPE_TERRAIN = new Set([
   "sand", "red_sand", "sandstone", "red_sandstone", "gravel", "dirt", "grass_block", "coarse_dirt",
   "stone", "deepslate", "tuff", "andesite", "diorite", "granite", "clay", "terracotta", "netherrack",
@@ -109,7 +113,8 @@ const LABELS = {
 };
 
 function createGatheringController(bot, options = {}, hooks = {}) {
-  const settings = { ...plan.DEFAULTS, ...options, ...plan.passageSettings(options), ...plan.defenseSettings(options) };
+  const settings = { ...plan.DEFAULTS, ...options, ...plan.passageSettings(options),
+    ...plan.defenseSettings(options), ...plan.aimSettings(options) };
   settings.storageGroups = storage.normalizeStorageGroups(options.storageGroups);
   const onStatus = hooks.onStatus || (() => {});
   const onProgress = hooks.onProgress || (() => {});
@@ -248,6 +253,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       return "Блок вне области добычи";
     if (!travel && task.kind === "forest" && !plan.isWood(block.name) && !plan.isLeaves(block.name))
       return "Блок не относится к дереву";
+    if (!travel && task.kind === "forest" && machine.activeState === states.move &&
+        plan.isWood(target?.name || "") && plan.isWood(block.name))
+      return "Бревно обрабатывается отдельно от расчистки прохода";
     if (!travel && passageFloors.get(plan.key(block.position)) === block.type) return "Пол готового прохода";
     const unsafe = plan.safetyReason(bot, block);
     if (unsafe) return unsafe;
@@ -293,7 +301,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       });
     trackDig(block);
     const loose = plan.FALLING.test(bot.blockAt(block.position.offset(0, 1, 0))?.name || "");
-    await originalDig(block, true, visibleFace(block) || args[1] || "raycast");
+    await digWithAim(block, visibleFace(block) || args[1] || "raycast", signal);
     guard(signal);
     if (!travel && matchesTarget(block)) task.mined++;
     if (loose) await settleFalling(block.position, signal);
@@ -313,7 +321,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       if (!landed || plan.safetyReason(bot, landed) || !bot.canDigBlock(landed)) return;
       await selectTool(landed, signal);
       trackDig(landed);
-      await originalDig(landed, true, visibleFace(landed) || "raycast");
+      await digWithAim(landed, visibleFace(landed) || "raycast", signal);
       guard(signal);
     }
   }
@@ -349,7 +357,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           });
         trackDig(live);
         const loose = plan.FALLING.test(bot.blockAt(live.position.offset(0, 1, 0))?.name || "");
-        await operation(() => originalDig(live, true, visibleFace(live) || "raycast"), signal,
+        await operation(() => digWithAim(live, visibleFace(live) || "raycast", signal), signal,
           Math.max(settings.operationTimeoutMs, tool.getDigTime(live, bot.heldItem) + 5000));
         if (!travelRouting() && matchesTarget(live)) task.mined++;
         if (loose) await settleFalling(live.position, signal);
@@ -446,6 +454,67 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       const timer = ms > 0 ? setTimeout(done, ms) : setImmediate(done);
       signal.addEventListener("abort", cancel, { once: true });
     });
+  }
+  function angleDifference(target, start) {
+    const difference = target - start;
+    return Math.atan2(Math.sin(difference), Math.cos(difference));
+  }
+  async function turnCamera(targetYaw, targetPitch, steps, interval, signal) {
+    const { yaw, pitch } = bot.entity;
+    const turn = angleDifference(targetYaw, yaw);
+    const tilt = targetPitch - pitch;
+    for (let step = 1; step <= steps; step++) {
+      await wait(interval, signal);
+      guard(signal);
+      if (!settings.smoothAim) return false;
+      const t = step / steps;
+      // Flash & Hogan (1985): zero velocity and acceleration at either end.
+      // https://pmc.ncbi.nlm.nih.gov/articles/PMC6565116/
+      const progress = t * t * t * (10 + t * (6 * t - 15));
+      await bot.look(yaw + turn * progress, pitch + tilt * progress, true);
+    }
+    return true;
+  }
+  async function aimAtBlock(block, face, signal) {
+    if (!settings.smoothAim || typeof bot.look !== "function") return;
+    guard(signal);
+    const { position, yaw, pitch, eyeHeight } = bot.entity;
+    if (![yaw, pitch].every(Number.isFinite)) return;
+    const point = block.position.offset(
+      0.5 + (face?.x ?? 0) * 0.5,
+      0.5 + (face?.y ?? 0) * 0.5,
+      0.5 + (face?.z ?? 0) * 0.5,
+    );
+    const offset = point.minus(position.offset(0, eyeHeight || 1.62, 0));
+    const targetYaw = Math.atan2(-offset.x, -offset.z);
+    const targetPitch = Math.atan2(offset.y, Math.hypot(offset.x, offset.z));
+    const turn = angleDifference(targetYaw, yaw);
+    const tilt = targetPitch - pitch;
+    const angle = Math.max(Math.abs(turn), Math.abs(tilt));
+    if (angle < Math.PI / 90) return;
+    const duration = Math.max(80, 720 * (angle / Math.PI) * 100 / settings.smoothAimSpeed);
+    const steps = Math.max(3, Math.ceil(duration / 40));
+    const interval = duration / steps;
+    if (angle < Math.PI / 12 || steps < 6) {
+      await turnCamera(targetYaw, targetPitch, steps, interval, signal);
+      return;
+    }
+    // Mouse pointing uses a rapid initial movement and terminal corrections.
+    // Leave a small undershoot and correct it from the camera's actual angle.
+    // https://pubmed.ncbi.nlm.nih.gov/11345495/
+    const correctionSteps = Math.round(steps / 4);
+    const shortfall = Math.min(0.08, (Math.PI / 90) / angle);
+    const approachYaw = yaw + turn * (1 - shortfall);
+    const approachPitch = pitch + tilt * (1 - shortfall);
+    if (await turnCamera(approachYaw, approachPitch, steps - correctionSteps, interval, signal))
+      await turnCamera(targetYaw, targetPitch, correctionSteps, interval, signal);
+  }
+  async function digWithAim(block, face, signal, digBlock = originalDig) {
+    await aimAtBlock(block, face, signal);
+    guard(signal);
+    if (settings.smoothAim && bot.blockAt(block.position)?.type !== block.type)
+      throw new Error("Блок изменился во время наведения");
+    return digBlock(block, true, face);
   }
   async function operation(
     factory,
@@ -617,7 +686,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   // A trunk can hide the center of its lower log while the side is exposed.
   // Test the same face we will actually aim at instead of requiring a center ray.
-  function visibleFace(block, feet = bot.entity.position) {
+  function visibleFace(block, feet = bot.entity.position, leafPath = null) {
     if (!block) return null;
     if (!bot.world?.raycast)
       return bot.canDigBlock(block) && bot.canSeeBlock?.(block) !== false ? "raycast" : null;
@@ -633,8 +702,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       const aim = center.plus(face.scaled(0.499));
       const distance = eye.distanceTo(aim);
       if (distance > settings.digReach) continue;
-      const hit = bot.world.raycast(eye, aim.minus(eye).normalize(), distance + 0.01);
-      if (hit?.position.equals(block.position)) return face;
+      const leaves = leafPath && [];
+      const hit = bot.world.raycast(eye, aim.minus(eye).normalize(), distance + 0.01,
+        leafPath && ((obstruction, ray) => {
+          if (!ray.intersect(obstruction.shapes, obstruction.position)) return false;
+          if (!plan.isLeaves(obstruction.name) || obstruction.position.equals(block.position) ||
+              routeBreakReason(obstruction) || crewProtected(obstruction)) return true;
+          leaves.push(obstruction);
+          return false;
+        }));
+      if (hit?.position.equals(block.position)) {
+        leafPath?.push(...leaves);
+        return face;
+      }
     }
     return null;
   }
@@ -647,6 +727,91 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       goal.onFinish = async () => {};
     }
     return goal;
+  }
+  async function climbTrunkColumn(block, canReach, signal, timeout) {
+    if (!task.scaffold || !bot.entity.onGround) return false;
+    const blocks = bot.inventory.items().reduce((total, item) =>
+      total + (plan.SCAFFOLD_ITEMS.has(item.name) ? item.count : 0), 0);
+    if (!blocks) return false;
+    const feet = bot.entity.position.floored();
+    const base = new Vec3(block.position.x, feet.y, block.position.z);
+    if (feet.xzDistanceTo(base) > settings.digReach || bot.blockAt(base.offset(0, -1, 0))?.boundingBox !== "block")
+      return false;
+    for (let rise = 0; rise <= blocks && base.y + rise <= block.position.y - 2; rise++) {
+      const step = base.offset(0, rise, 0);
+      if (![step, step.offset(0, 1, 0)].every((pos) => plan.AIR.has(bot.blockAt(pos)?.name))) break;
+      if (!canReach(step.offset(0.5, 0, 0.5))) continue;
+      const movement = { ...bot.pathfinder.defaultMoveSettings };
+      try {
+        bot.pathfinder.setMoveOptions?.({ exclusionAreasPlace: [
+          ...(movement.exclusionAreasPlace || []),
+          ({ position }) => position.x === base.x && position.z === base.z &&
+            position.y >= base.y && position.y < step.y ? 0 : Infinity,
+        ] });
+        await navigateOnce(new goals.GoalBlock(step.x, step.y, step.z), signal, timeout);
+        return canReach(bot.entity.position);
+      } catch (error) {
+        guard(signal);
+        if (!(error instanceof NavigationError)) throw error;
+        return false;
+      } finally {
+        if (!signal.aborted) bot.pathfinder.setMoveOptions?.(movement);
+      }
+    }
+    return false;
+  }
+  async function approachTrunk(block, signal) {
+    const position = block.position;
+    const startY = Math.floor(bot.entity.position.y);
+    // A log can be chopped from several blocks below its crown. Aim the
+    // search at that height so it doesn't climb onto the leaves to reach it.
+    const lowY = Math.max(Math.min(startY, position.y), position.y - Math.floor(settings.digReach));
+    const goal = new goals.GoalNear(position.x + 0.5, lowY, position.z + 0.5, 0);
+    const canReach = (feet) => {
+      if (feet.y > Math.max(startY, position.y + 1)) return false;
+      if (plan.supportBlock(bot, block, feet)) return false;
+      const leaves = task.routeDig ? [] : null;
+      return Boolean(visibleFace(block, feet, leaves)) && !leaves?.some((leaf) => plan.supportBlock(bot, leaf, feet));
+    };
+    goal.isEnd = (node) => {
+      const feet = node.exitPos || new Vec3(node.x + 0.5, node.y, node.z + 0.5);
+      const floor = bot.blockAt(feet.offset(0, -0.05, 0));
+      return !plan.isLeaves(floor?.name) && canReach(feet);
+    };
+    const timeout = Math.min(settings.moveTimeoutMs, FOREST_STALL_MS);
+    const high = position.y - startY >= Math.floor(settings.digReach + (bot.entity.eyeHeight || 1.62));
+    if (!canReach(bot.entity.position) && !(high && await climbTrunkColumn(block, canReach, signal, timeout))) {
+      const movement = { ...bot.pathfinder.defaultMoveSettings };
+      try {
+        bot.pathfinder.setMoveOptions?.({ canPlace: false });
+        await navigateOnce(goal, signal, timeout, task.routeDig);
+      } catch (error) {
+        guard(signal);
+        if (!(error instanceof NavigationError)) throw error;
+        if (await clearWayToward(position, signal)) {
+          await navigateOnce(goal, signal, timeout, task.routeDig);
+        } else {
+          bot.pathfinder.setMoveOptions?.(movement);
+          if (high || !await climbTrunkColumn(block, canReach, signal, timeout)) throw error;
+        }
+      } finally {
+        if (!signal.aborted) bot.pathfinder.setMoveOptions?.(movement);
+      }
+    }
+    if (!allowed(bot.blockAt(position))) return;
+    // Clear only foliage intersecting a reachable face, checking the live
+    // world again after each dig. The last ray is the one used for mining.
+    for (let attempt = 0; attempt < Math.ceil(settings.digReach) && !visibleFace(block); attempt++) {
+      const leaves = [];
+      if (!task.routeDig || !visibleFace(block, bot.entity.position, leaves) || !leaves.length) break;
+      const leaf = leaves[0];
+      if (task.count && task.mined >= task.count) return;
+      await operation(() => routeDig(leaf, true, visibleFace(leaf) || "raycast"), signal,
+        Math.max(settings.operationTimeoutMs, tool.getDigTime(leaf, bot.heldItem) + 5000));
+      if (bot.blockAt(leaf.position)?.type === leaf.type) break;
+    }
+    if (!visibleFace(block) || plan.supportBlock(bot, block))
+      throw new NavigationError("noPath", "Не удалось открыть доступную грань ствола");
   }
   async function lightPassage(signal) {
     guard(signal);
@@ -690,10 +855,16 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       await operation(() => bot.equip(item, "hand"), signal);
       guard(signal);
       if (!plan.AIR.has(bot.blockAt(choice.destination)?.name)) return;
-      await operation(() => bot._placeBlockWithOptions
-        ? bot._placeBlockWithOptions(choice.wall, choice.face, { forceLook: true, swingArm: "right" })
-        : bot.placeBlock(choice.wall, choice.face), signal,
-        Math.max(settings.operationTimeoutMs, 6500));
+      await operation(async () => {
+        await aimAtBlock(choice.wall, choice.face, signal);
+        guard(signal);
+        if (!plan.AIR.has(bot.blockAt(choice.destination)?.name)) return;
+        if (bot._placeBlockWithOptions) {
+          await bot._placeBlockWithOptions(choice.wall, choice.face, { forceLook: true, swingArm: "right" });
+        } else {
+          await bot.placeBlock(choice.wall, choice.face);
+        }
+      }, signal, Math.max(settings.operationTimeoutMs, 6500));
       if (/^(wall_)?torch$/.test(bot.blockAt(choice.destination)?.name || ""))
         torchSites.set(plan.key(choice.destination), { position: choice.destination, feet: foot });
     } catch (error) {
@@ -711,6 +882,55 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   function nearbyTargets() {
     return (task.candidates || []).map((pos) => bot.blockAt(pos)).filter(allowed);
+  }
+  function forestSiteIncludes(position) {
+    return !crewEnabled() || site?.key === crewTools.siteKey(crewTools.layoutFor(task), crewTools.dimensionOf(bot), position);
+  }
+  function focusTrunk(block) {
+    // Keep connected logs even after the lower part has been removed. Crew
+    // workers can look past their scan batch within their leased column.
+    const positions = [block.position];
+    const trunk = new Set([plan.key(block.position)]);
+    const limit = Math.max(512, settings.scanLimit * 4);
+    const include = (next) => {
+      const key = plan.key(next);
+      if (positions.length >= limit || trunk.has(key) || !forestSiteIncludes(next) ||
+          !plan.insideTask(task, next) || bot.blockAt(next)?.name !== block.name) return;
+      trunk.add(key);
+      positions.push(next);
+    };
+    for (let index = 0; index < positions.length && positions.length < limit; index++) {
+      const pos = positions[index];
+      for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++)
+        include(pos.offset(x, y, z));
+      // Resume a partially chopped column across a single missing log.
+      for (const y of [-1, 1])
+        if (plan.AIR.has(bot.blockAt(pos.offset(0, y, 0))?.name)) include(pos.offset(0, y * 2, 0));
+    }
+    task.forestTrunk = positions;
+  }
+  function trunkTargets() {
+    return (task.forestTrunk || []).map((pos) => bot.blockAt(pos))
+      .filter((block) => allowed(block) && plan.isWood(block.name));
+  }
+  function retryExposedLogs(removed) {
+    for (const position of task.forestTrunk) {
+      const key = plan.key(position);
+      if (!task.failed.has(key) || position.y >= removed.y || position.distanceTo(removed) > 2) continue;
+      const log = bot.blockAt(position);
+      if (log && plan.isWood(log.name) && !plan.supportBlock(bot, log) && visibleFace(log)) task.failed.delete(key);
+    }
+  }
+  function lowestLogs(candidates) {
+    const lowest = new Map();
+    for (const block of candidates) {
+      if (!plan.isWood(block.name)) continue;
+      const { x, y, z } = block.position;
+      const column = `${x},${z}`;
+      lowest.set(column, Math.min(y, lowest.get(column) ?? y));
+    }
+    return candidates.filter(({ name, position: { x, y, z } }) =>
+      !plan.isWood(name) || y === lowest.get(`${x},${z}`));
   }
   // Keep the connected ore component, including cells already mined away:
   // removing its middle must not make the remaining half look like a new vein.
@@ -745,23 +965,26 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     task.mineVein = null;
     return candidates;
   }
-  async function chooseTarget(candidates) {
-    const choosingTask = task;
-    candidates = veinTargets(candidates);
+  function rankTargets(candidates) {
     const reachable = new Set(
       candidates
         .filter((block) => !plan.supportBlock(bot, block) && visibleFace(block))
         .map((block) => plan.key(block.position)),
     );
+    const feet = bot.entity.position;
     candidates.sort(
       (a, b) =>
         Number(plan.supportBlock(bot, a)) - Number(plan.supportBlock(bot, b)) ||
         Number(reachable.has(plan.key(b.position))) - Number(reachable.has(plan.key(a.position))) ||
-        (task.kind === "forest" && a.position.x === b.position.x && a.position.z === b.position.z
-          ? a.position.y - b.position.y
-          : a.position.distanceTo(bot.entity.position) -
-            b.position.distanceTo(bot.entity.position)),
+        a.position.distanceTo(feet) - b.position.distanceTo(feet) ||
+        (task.forestTrunk ? a.position.y - b.position.y : 0),
     );
+    return candidates;
+  }
+  async function chooseTarget(candidates) {
+    const choosingTask = task;
+    candidates = veinTargets(candidates);
+    candidates = rankTargets(task.kind === "forest" ? lowestLogs(candidates) : candidates);
     let chosen = candidates[0];
     if (crewEnabled() && candidates.length) {
       const reply = await crew.request("target", { dim: crewTools.dimensionOf(bot),
@@ -772,6 +995,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (chosen && task.kind === "mine" && !task.area && plan.isOre(chosen.name) && !task.mineVein) {
       task.mineVein = new Map([[plan.key(chosen.position), chosen.position.clone()]]);
       extendVein(candidates);
+    }
+    if (chosen && task.kind === "forest" && plan.isWood(chosen.name) && !task.forestTrunk) {
+      focusTrunk(chosen);
+      const focused = lowestLogs(trunkTargets());
+      if (!crewEnabled()) chosen = rankTargets(focused)[0];
+      else if (!focused.some(block => block.position.equals(chosen.position))) return chooseTarget(focused);
     }
     return chosen;
   }
@@ -823,8 +1052,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   }
   async function halt() {
     bot.stopDigging?.();
-    await bot.pathfinder?.stop();
     bot.clearControlStates?.();
+    try {
+      await bot.pathfinder?.stop();
+    } finally {
+      bot.clearControlStates?.();
+    }
     // Finish an already issued inventory click sequence before another
     // controller can close its window and take ownership of the inventory.
     await transferTask.catch(() => {});
@@ -963,6 +1196,86 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position),
       );
   }
+  function dropSupport({ position }) {
+    const layer = position.offset(0, -0.5, 0);
+    const cell = layer.floored();
+    const solid = (point) => {
+      const block = bot.blockAt(point);
+      return block?.boundingBox === "block" && position.y >= block.position.y + 0.95 ? block : null;
+    };
+    const center = solid(cell);
+    if (center) return center;
+    // An item can hang over a block edge with its centre in the air cell.
+    for (const dx of [-0.125, 0.125]) for (const dz of [-0.125, 0.125]) {
+      const corner = layer.offset(dx, 0, dz).floored();
+      if (corner.equals(cell)) continue;
+      const support = solid(corner);
+      if (support) return support;
+    }
+    return null;
+  }
+  function logsUnderDrops(entities) {
+    const logs = new Map();
+    for (const entity of entities) {
+      const block = dropSupport(entity);
+      if (!block || !plan.isWood(block.name) || !allowed(block)) continue;
+      if (forestSiteIncludes(block.position)) logs.set(plan.key(block.position), block);
+    }
+    return [...logs.values()];
+  }
+  function leafUnderDrop(entity) {
+    const leaf = dropSupport(entity);
+    if (!/_leaves$/.test(leaf?.name) || routeBreakReason(leaf) || crewProtected(leaf)) return null;
+    if (plan.FLUIDS.has(bot.blockAt(leaf.position.offset(0, -1, 0))?.name)) return null;
+    const occupied = Object.values(bot.entities || {}).some((player) =>
+      player.type === "player" && player.isValid !== false && player.position &&
+      plan.supportBlock(bot, leaf, player.position));
+    return occupied ? null : leaf;
+  }
+  async function clearDropFoliage(entity, done, signal) {
+    if (!task.routeDig || !trackedDrops.has(entity.id)) return;
+    // A log item may still be falling when the work phase hands over to pickup.
+    for (let poll = 0; poll < 6 && !done() && entity.position.y - bot.entity.position.y > 1.5 &&
+        !dropSupport(entity); poll++) await wait(50, signal);
+    for (let layer = 0; layer < 4 && !done(); layer++) {
+      const leaf = leafUnderDrop(entity);
+      if (!leaf) return;
+      if (!visibleFace(leaf)) {
+        const goal = miningGoal(leaf);
+        const isEnd = goal.isEnd.bind(goal);
+        goal.isEnd = (node) => {
+          const feet = node.exitPos || new Vec3(node.x + 0.5, node.y, node.z + 0.5);
+          return !plan.supportBlock(bot, leaf, feet) && isEnd(node);
+        };
+        const movement = { ...bot.pathfinder.defaultMoveSettings };
+        try {
+          bot.pathfinder.setMoveOptions?.({ ...FOREST_WALK, canDig: false, canPlace: false });
+          await navigateOnce(goal, signal, Math.min(settings.pickupTimeoutMs, FOREST_STALL_MS));
+        } catch (error) {
+          if (!(error instanceof NavigationError)) throw error;
+          return;
+        } finally {
+          if (!signal.aborted) bot.pathfinder.setMoveOptions?.(movement);
+        }
+      }
+      if (done() || !leafUnderDrop(entity)?.position.equals(leaf.position) || !bot.canDigBlock(leaf)) return;
+      const face = visibleFace(leaf);
+      if (!face) return;
+      await selectTool(leaf, signal);
+      if (bot.setControlState)
+        await waitForMiningGround(bot, () => { guard(signal); return false; });
+      await operation(async () => {
+        await aimAtBlock(leaf, face, signal);
+        guard(signal);
+        if (done() || !leafUnderDrop(entity)?.position.equals(leaf.position)) return;
+        trackDig(leaf);
+        await originalDig(leaf, true, face);
+      }, signal, Math.max(settings.operationTimeoutMs, tool.getDigTime(leaf, bot.heldItem) + 5000));
+      if (bot.blockAt(leaf.position)?.type === leaf.type) return;
+      // Wait for the item to land before checking for a second layer of leaves.
+      for (let poll = 0; poll < 16 && !done() && !dropSupport(entity); poll++) await wait(50, signal);
+    }
+  }
   async function descendScaffold(signal, scaffoldTask = task) {
     const feet = bot.entity.position.floored();
     const support = bot.blockAt(feet.offset(0, -1, 0));
@@ -981,7 +1294,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     bot.clearControlStates();
     await selectTool(support, signal);
     trackDig(support);
-    await operation(() => originalDig(support, true, visibleFace(support) || "raycast"), signal);
+    await operation(() => digWithAim(support, visibleFace(support) || "raycast", signal), signal);
     scaffoldTask.scaffolds.delete(plan.key(support.position));
     const until = now() + 3000;
     while (bot.entity.position.y > feet.y - 0.9 || !bot.entity.onGround) {
@@ -989,6 +1302,23 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       await wait(50, signal);
     }
     return true;
+  }
+  async function leaveForestHeight(signal) {
+    while (task.scaffold && await descendScaffold(signal)) guard(signal);
+    const footing = task.forestFooting;
+    task.forestFooting = null;
+    if (!footing || bot.entity.position.y < footing.y + 2) return;
+    const phaseSettings = { ...bot.pathfinder.defaultMoveSettings };
+    try {
+      bot.pathfinder.setMoveOptions?.({ ...FOREST_WALK, canDig: false, canPlace: false, maxDropDown: 3 });
+      await navigateOnce(new goals.GoalBlock(footing.x, footing.y, footing.z), signal,
+        Math.min(settings.moveTimeoutMs, FOREST_STALL_MS));
+    } catch (error) {
+      guard(signal);
+      if (!(error instanceof NavigationError)) throw error;
+    } finally {
+      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(phaseSettings);
+    }
   }
   // --- Crew coordination -------------------------------------------------
   function crewEnabled() {
@@ -1002,6 +1332,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     if (!site) return;
     const { scope, key } = site;
     site = null;
+    if (task?.kind === "forest") task.rescanAt = 0;
     void Promise.resolve(crew?.request("release", { scope, key, done, unreachable })).catch(() => {});
   }
   async function claimSite(groups, chunks, signal, force = false) {
@@ -1110,16 +1441,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       : `Разведка: иду в неисследованный чанк ${Math.floor(goal.x / 16)} ${Math.floor(goal.z / 16)}`);
     report(true);
     const scout = new GoalScout(goal.x, bot.entity.position.y, goal.z, goal.type === "site" ? 3 : 6);
-    const digging = Boolean(bot.pathfinder.defaultMoveSettings?.canDig);
+    const movement = { ...bot.pathfinder.defaultMoveSettings };
     try {
       // Walk through existing caves and tunnels first. A scout digs its own
       // passage only when there is no way on foot, so the crew does not riddle
       // the ground with one tunnel per bot.
-      bot.pathfinder.setMoveOptions?.({ canDig: false });
+      bot.pathfinder.setMoveOptions?.({
+        ...(task.kind === "forest" ? { ...FOREST_WALK, canPlace: false } : {}),
+        canDig: false,
+      });
       try {
         await navigateOnce(scout, signal, settings.moveTimeoutMs);
       } catch (error) {
-        if (!(error instanceof NavigationError) || !digging) throw error;
+        if (!(error instanceof NavigationError) || !movement.canDig) throw error;
         guard(signal);
         bot.pathfinder.setMoveOptions?.({ canDig: true });
         await navigate(scout, signal, settings.moveTimeoutMs, goal);
@@ -1132,7 +1466,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       else void Promise.resolve(crew?.request("skip", { scope: crewTools.scopeOf(task), chunk: goal.chunk })).catch(() => {});
       onStatus(`Разведка: не дошёл (${error.message}); выбираю другое направление`);
     } finally {
-      if (!signal.aborted) bot.pathfinder.setMoveOptions?.({ canDig: digging });
+      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(movement);
     }
     guard(signal);
     desired = "scan";
@@ -1158,9 +1492,17 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         if (bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).distanceTo(top) > settings.digReach - 0.5)
           await navigate(new goals.GoalNear(top.x, entry.position.y + 1, top.z, 2), signal);
         await operation(() => bot.equip(item, "hand"), signal);
-        await operation(() => bot.placeBlock(bot.blockAt(entry.position), new Vec3(0, 1, 0)), signal);
-        task.planted = (task.planted || 0) + 1;
-        onStatus(`Посажен ${entry.sapling} на месте срубленного дерева`);
+        await operation(async () => {
+          const block = bot.blockAt(entry.position);
+          if (!SAPLING_SOIL.has(block?.name)) return;
+          const face = new Vec3(0, 1, 0);
+          await aimAtBlock(block, face, signal);
+          guard(signal);
+          if (!plan.AIR.has(bot.blockAt(entry.position.offset(0, 1, 0))?.name)) return;
+          await bot.placeBlock(block, face);
+          task.planted = (task.planted || 0) + 1;
+          onStatus(`Посажен ${entry.sapling} на месте срубленного дерева`);
+        }, signal);
       } catch (error) {
         if (error instanceof Interrupted || error instanceof WorkError || error instanceof InventoryFull) throw error;
         onStatus(`Саженец не посажен: ${error.message}`);
@@ -1238,7 +1580,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       return;
     }
     if (task.count && task.mined >= task.count) {
-      while (task.scaffold && (await descendScaffold(signal))) guard(signal);
+      if (task.kind === "forest") await leaveForestHeight(signal);
       await awaitDrops(signal);
       if (drops().length) {
         pickupOnly = false;
@@ -1249,7 +1591,42 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       finish(task.missedDrops ? "частично" : "готово");
       return;
     }
-    if (drops().length) {
+    if (task.forestTrunk) {
+      const focused = !crewEnabled() || site ? trunkTargets() : [];
+      const next = await chooseTarget(focused);
+      guard(signal);
+      if (next) {
+        target = next;
+        desired = "move";
+        return;
+      }
+      if (focused.length) {
+        // Another worker reserved the lower log. Let it release the target
+        // before re-entering the scan state, keeping our place at the trunk.
+        await wait(250, signal);
+        desired = "idle";
+        return;
+      }
+      task.forestTrunk = null;
+      await leaveForestHeight(signal);
+      await awaitDrops(signal);
+    }
+    const loose = drops();
+    if (task.kind === "forest" && loose.length) {
+      const support = await chooseTarget(logsUnderDrops(loose));
+      guard(signal);
+      if (support) {
+        target = support;
+        desired = "move";
+        return;
+      }
+      if (task.forestTrunk) {
+        await wait(250, signal);
+        desired = "idle";
+        return;
+      }
+    }
+    if (loose.length) {
       pickupOnly = false;
       desired = "pickup";
       return;
@@ -1280,14 +1657,19 @@ function createGatheringController(bot, options = {}, hooks = {}) {
           // A crew bot scouts away from the start point: scan around the bot,
           // still limited to the task radius by allowed().
           const from = bot.entity.position.floored();
-          const reach = crew ? Math.ceil(task.radius + from.distanceTo(task.origin)) : task.radius;
-          task.candidates = bot.findBlocks({
-            point: crew ? from : task.origin,
+          const localScan = crew || task.kind === "forest";
+          const reach = localScan ? Math.ceil(task.radius + from.distanceTo(task.origin)) : task.radius;
+          const find = (names) => bot.findBlocks({
+            point: localScan ? from : task.origin,
             maxDistance: reach,
             count: settings.scanLimit,
-            matching: task.names.map((name) => bot.registry.blocksByName[name].id),
+            matching: names.map((name) => bot.registry.blocksByName[name].id),
             useExtraInfo: (block) => allowed(block),
           });
+          if (task.kind === "forest" && task.leaves) {
+            task.candidates = find(task.names.filter(plan.isWood));
+            if (!task.candidates.length) task.candidates = find(task.names.filter(plan.isLeaves));
+          } else task.candidates = find(task.names);
           if (crewEnabled()) {
             const farthest = task.candidates.length >= settings.scanLimit
               ? Math.max(...task.candidates.map((pos) => pos.distanceTo(from)))
@@ -1319,7 +1701,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
         throw new WorkError(
           `Область не закончена: осталось ${result.remaining} блоков; не загружено ${result.unloaded}. Уберите препятствия и продолжите`,
         );
-      while (task.scaffold && (await descendScaffold(signal))) guard(signal);
+      if (task.kind === "forest") await leaveForestHeight(signal);
       await awaitDrops(signal);
       if (drops().length) {
         pickupOnly = false;
@@ -1352,9 +1734,14 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       );
       return;
     }
-    target = task.area ? result.candidates[0] : await chooseTarget(result.candidates);
+    target = task.area && task.kind !== "forest" ? result.candidates[0] : await chooseTarget(result.candidates);
     guard(signal);
-    if (!target) { task.rescanAt = 0; desired = "scan"; return; }
+    if (!target) {
+      task.rescanAt = 0;
+      await wait(250, signal);
+      desired = "idle";
+      return;
+    }
     desired = "move";
   }
   async function move(signal) {
@@ -1370,6 +1757,25 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       (await descendScaffold(signal))
     )
       guard(signal);
+    if (task.kind === "forest" && plan.isWood(block.name) && bot.world?.raycast) {
+      const feet = bot.entity.position.floored();
+      const floor = bot.blockAt(feet.offset(0, -1, 0));
+      if (!task.forestFooting && bot.entity.onGround && floor?.boundingBox === "block" &&
+          !plan.isWood(floor.name) && !plan.isLeaves(floor.name) && !task.scaffolds.has(plan.key(floor.position)))
+        task.forestFooting = feet;
+      const phaseSettings = { ...bot.pathfinder.defaultMoveSettings };
+      try {
+        bot.pathfinder.setMoveOptions?.(FOREST_WALK);
+        await approachTrunk(block, signal);
+      } catch (error) {
+        if (error instanceof NavigationError) await leaveForestHeight(signal);
+        throw error;
+      } finally {
+        if (!signal.aborted) bot.pathfinder.setMoveOptions?.(phaseSettings);
+      }
+      desired = allowed(bot.blockAt(block.position)) ? "equip" : "scan";
+      return;
+    }
     if (plan.supportBlock(bot, block)) {
       const foot = bot.entity.position.floored();
       const exits = [
@@ -1446,6 +1852,8 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     await farming.executeFarming(bot, task, target, {
       guard: () => guard(signal),
       operation: (factory) => operation(factory, signal),
+      aim: (block, face) => aimAtBlock(block, face, signal),
+      dig: (block) => digWithAim(block, (settings.smoothAim && visibleFace(block)) || "raycast", signal, bot.dig.bind(bot)),
       approach: async (block, top) => {
         if (!reachable(block, top))
           await navigate(new GoalContainerAccess(block.position, (feet) => reachable(block, top, feet)), signal);
@@ -1468,14 +1876,18 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     report(true);
   }
   async function selectTool(block, signal) {
-    const candidates = bot.inventory
+    let candidates = bot.inventory
       .items()
       .filter(
         (item) =>
           plan.remainingDurability(bot, item) > settings.minToolDurability &&
           block.canHarvest(item.type),
       );
-    if (block.canHarvest(null)) candidates.push(null);
+    if (plan.isWood(block.name)) {
+      const axes = candidates.filter((item) => item.name.endsWith("_axe"));
+      if (axes.length) candidates = axes;
+      else if (block.canHarvest(null)) candidates = [null];
+    } else if (block.canHarvest(null)) candidates.push(null);
     candidates.sort((a, b) => tool.getDigTime(block, a) - tool.getDigTime(block, b));
     if (!candidates.length)
       throw new WorkError(
@@ -1527,7 +1939,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       });
     trackDig(block);
     await operation(
-      () => bot.dig(block, true, face),
+      () => digWithAim(block, face, signal, bot.dig.bind(bot)),
       signal,
       Math.max(settings.operationTimeoutMs, tool.getDigTime(block, bot.heldItem) + 5000),
     );
@@ -1539,21 +1951,100 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       throw new Error("Сервер не подтвердил разрушение блока");
     task.mined++;
     task.failed.delete(plan.key(block.position));
+    if (task.forestTrunk && plan.isWood(block.name)) retryExposedLogs(block.position);
     if (task.kind === "mine" || task.area) await lightPassage(signal);
     const next =
-      !task.area &&
+      (!task.area || task.forestTrunk) &&
       (!task.count || task.mined < task.count) &&
-      await chooseTarget(nearbyTargets());
+      await chooseTarget(task.forestTrunk ? trunkTargets() : nearbyTargets());
     guard(signal);
-    if (next && !plan.supportBlock(bot, next) && visibleFace(next)) {
+    const reachable = next && !plan.supportBlock(bot, next) && visibleFace(next);
+    if (reachable || (next && task.forestTrunk)) {
       target = next;
-      desired = "equip";
+      desired = reachable ? "equip" : "move";
+      return;
+    }
+    if (task.forestTrunk) {
+      desired = "scan";
       return;
     }
     await awaitDrops(signal);
     pickupOnly = false;
     desired = "pickup";
     report();
+  }
+  function dropGoal(entity, nearby = false, previousFeet = null) {
+    const radius = nearby ? 1.15 : 0.75;
+    const below = nearby ? 0.5 : 0.25;
+    const above = nearby ? 1.85 : 1.5;
+    const goal = goals.GoalFollowEntity.fromEntity(entity, radius, { dynamic: true });
+    const horizontal = nearby
+      ? (dx, dz) => Math.max(Math.abs(dx), Math.abs(dz))
+      : Math.hypot;
+    goal.distHeuristic = (node) => {
+      const pos = node.exitPos ?? node;
+      const dy = entity.position.y - pos.y;
+      return Math.hypot(horizontal(entity.position.x - pos.x, entity.position.z - pos.z), Math.max(0, -dy - below, dy - above));
+    };
+    goal.isEnd = (node) => {
+      const pos = node.exitPos ?? node;
+      const { x, y, z } = entity.position;
+      const dx = x - pos.x, dy = y - pos.y, dz = z - pos.z;
+      // A nearby stance can still overlap the pickup box at a corner or on a ledge.
+      return horizontal(dx, dz) <= radius && dy >= -below && dy <= above &&
+        (!previousFeet || previousFeet.distanceTo(pos) >= 0.4);
+    };
+    goal.hasChanged = (_event, moved) => moved === entity &&
+      Math.hypot(goal.x - entity.position.x, goal.y - entity.position.y, goal.z - entity.position.z) >= 0.5;
+    return goal;
+  }
+  async function approachDrop(entity, done, signal) {
+    const forest = task.kind === "forest";
+    const timeout = forest ? Math.min(settings.pickupTimeoutMs, FOREST_STALL_MS) : settings.pickupTimeoutMs;
+    const phaseSettings = { ...bot.pathfinder.defaultMoveSettings };
+    const waitForPickup = async (until) => {
+      while (!done() && now() < until) await wait(50, signal);
+    };
+    let waitUntil = 0;
+    let previousFeet = null;
+    try {
+      const goal = dropGoal(entity);
+      try {
+        if (phaseSettings.canDig) {
+          await navigate(goal, signal, timeout, () => entity.position);
+        } else {
+          bot.pathfinder.setMoveOptions?.({ ...NO_SPRINT, allowParkour: false, canDig: false, canPlace: false });
+          await navigateOnce(goal, signal, timeout);
+        }
+        if (!done() && goal.isEnd({ exitPos: bot.entity.position })) {
+          waitUntil = now() + timeout;
+          const arrival = entity.position.clone();
+          await waitForPickup(Math.min(waitUntil, now() + PICKUP_SETTLE_MS));
+          if (!done() && arrival.distanceTo(entity.position) < 0.5) previousFeet = bot.entity.position.clone();
+        }
+      } catch (error) {
+        guard(signal);
+        if (!done() && !(error instanceof NavigationError)) throw error;
+      }
+      if (done()) return;
+
+      bot.pathfinder.setMoveOptions?.({
+        ...phaseSettings,
+        ...(forest ? FOREST_WALK : previousFeet ? NO_SPRINT : {}),
+        canDig: false,
+      });
+      try {
+        await navigateOnce(dropGoal(entity, true, previousFeet), signal, timeout);
+        await waitForPickup(Math.max(waitUntil, now() + timeout));
+      } catch (error) {
+        guard(signal);
+        if (!done() && !(error instanceof NavigationError)) throw error;
+        // The first stance can still work after the server's pickup delay.
+        await waitForPickup(waitUntil);
+      }
+    } finally {
+      if (!signal.aborted) bot.pathfinder.setMoveOptions?.(phaseSettings);
+    }
   }
   async function pickup(signal) {
     for (const entity of pickupOnly ? [target] : drops()) {
@@ -1573,35 +2064,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       };
       bot.on("playerCollect", collectedEvent);
       try {
-        // Reach the item's cell; a one-block stopping distance can leave the
-        // bot outside pickup range. Falling items can be collected by the body
-        // above the feet, so do not require standing at their fractional Y.
-        // 0.75 also includes a valid cell centre for items on cell corners
-        // (the furthest centre is sqrt(0.5^2 + 0.5^2) blocks away).
-        const goal = goals.GoalFollowEntity.fromEntity(entity, 0.75, { dynamic: true });
-        goal.distHeuristic = (node) => {
-          const pos = node.exitPos ?? node;
-          const dy = entity.position.y - pos.y;
-          return Math.hypot(entity.position.x - pos.x, entity.position.z - pos.z,
-            Math.max(0, -dy - 0.5, dy - 1.5));
-        };
-        // Vertical pickup bounds are independent of the horizontal radius.
-        // Adding that radius to the lower bound accepts a full block above
-        // an item, leaving the player crouched at the edge forever.
-        goal.isEnd = (node) => {
-          const pos = node.exitPos ?? node;
-          const dy = entity.position.y - pos.y;
-          return dy >= -0.25 && dy <= 1.5 &&
-            Math.hypot(entity.position.x - pos.x, entity.position.z - pos.z) <= 0.75;
-        };
-        await navigate(
-          goal,
-          signal,
-          settings.pickupTimeoutMs,
-          () => entity.position,
-        );
-        const until = now() + settings.pickupTimeoutMs;
-        while (!collected && entity.isValid !== false && now() < until) await wait(50, signal);
+        const done = () => collected || picked.has(entity.id) || entity.isValid === false;
+        await clearDropFoliage(entity, done, signal);
+        if (!done()) await approachDrop(entity, done, signal);
         if (!collected && !picked.has(entity.id)) {
           failedDrop(entity);
         }
@@ -2076,6 +2541,7 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     }
     if (!task || pending) return;
     const travel = ["deliver", "return", "deposit"].includes(name);
+    const forestPickup = task.kind === "forest" && name === "pickup";
     const passage = ["move", "explore"].includes(name) && (task.kind === "mine" || task.tunnel) && task.routeDig;
     bot.pathfinder.setMoveOptions?.({
       allowExcavatedDescent: name === "move" && task.kind === "mine" && task.routeDig,
@@ -2084,9 +2550,9 @@ function createGatheringController(bot, options = {}, hooks = {}) {
       excavationStairWidth: passage ? settings.stairWidth : 0,
       excavationStairHeight: settings.stairHeight,
       ...(travel ? travelMoveOptions() : {
-        canDig: ["move", "pickup", "explore"].includes(name) && task.routeDig,
-        canPlace: Boolean(task.scaffold),
-        allow1by1towers: Boolean(task.scaffold),
+        canDig: !forestPickup && ["move", "pickup", "explore"].includes(name) && task.routeDig,
+        canPlace: !forestPickup && Boolean(task.scaffold),
+        allow1by1towers: !forestPickup && Boolean(task.scaffold),
         maxDropDown: passage ? 1 : Math.min(2, movementSettings?.maxDropDown ?? 2),
         allowWaterDrop: false,
         allowBucketWaterDrop: false,
@@ -2268,6 +2734,12 @@ function createGatheringController(bot, options = {}, hooks = {}) {
   const controller = {
     machine,
     settings,
+    configureAim(input) {
+      const aim = plan.aimSettings(input, settings);
+      Object.assign(settings, aim);
+      hooks.onAimChange?.(aim);
+      return aim;
+    },
     configurePassages(input) {
       Object.assign(settings, plan.passageSettings(input, settings));
       torchAttempt = null;
@@ -2304,11 +2776,11 @@ function createGatheringController(bot, options = {}, hooks = {}) {
     get task() {
       return work;
     },
-    async suspendForStorageInspection() {
+    async suspendForStorageInspection(reason = "Проверка складов рядом с игроком") {
       if (storageInspectionPaused) throw new Error("Бот уже проверяет склады");
       const previous = task, shouldResume = Boolean(task && !pauseRequested);
       storageInspectionPaused = true;
-      if (shouldResume) requestPause("Проверка складов рядом с игроком", true);
+      if (shouldResume) requestPause(reason, true);
       releaseSite();
       try {
         await defense.stop();

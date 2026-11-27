@@ -204,6 +204,7 @@ for (const version of ["1.20.4", "26.1.2"]) {
         { dropWaitMs: 0, operationTimeoutMs: 8000 },
         { onStatus: (message) => messages.push(message) },
       );
+      if (version === "1.20.4") work.configureAim({ smoothAim: true });
       t.after(async () => {
         await work.dispose();
         await bot.pathfinder.destroy();

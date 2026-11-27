@@ -51,6 +51,7 @@ function createSurvivalController(bot, value, { now = Date.now, onStatus = () =>
     void bot.armorManager?.equipAll().catch(onError);
   }
   function tick() {
+    if (bot.launcherPlayerControl?.busy) return;
     if (!alive()) return;
     const entity = bot.entity, pos = entity.position;
     const climb = /^(ladder|vine|twisting_vines|weeping_vines)(?:_plant)?$/.test(bot.blockAt(pos)?.name ?? '');

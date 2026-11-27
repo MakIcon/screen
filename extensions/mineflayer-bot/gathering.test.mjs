@@ -963,6 +963,93 @@ test("pickup reaches the item's horizontal cell and allows collection above the 
   assert.equal(f.work.snapshot.history[0].collected, 2);
 });
 
+test("pickup repositions after reaching a stance where the server did not collect", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const drop = { id: 91, position: new Vec3(4.5, 64.2, 0.5), isValid: true,
+    getDroppedItem: () => ({ name: "diamond", count: 2 }) };
+  f.bot.entities[drop.id] = drop;
+  const initial = new Vec3(4.5, 64, 0.5), side = initial.offset(1, 0, 1);
+  const goals = [];
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    goals.push(goal);
+    if (goals.length === 1) { f.bot.entity.position = initial; return; }
+    f.bot.entity.position = side;
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: "collect", item: "diamond" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(goals.length, 2);
+  assert.equal(goals[0].isEnd({ exitPos: initial }), true);
+  assert.equal(goals[1].isEnd({ exitPos: initial }), false);
+  assert.equal(goals[1].isEnd({ exitPos: side }), true);
+  assert.equal(goals[1].isEnd({ exitPos: side.offset(0, 1, 0) }), false);
+  assert.equal(goals[1].isEnd({ exitPos: side.offset(0, -2, 0) }), false);
+  assert.equal(f.work.snapshot.history[0].collected, 2);
+});
+
+for (const kind of ["collect", "mine", "quarry"]) test(`${kind} pickup preserves route permissions when seeking another stance`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.bot.pathfinder.defaultMoveSettings.allowParkour = true;
+  const target = f.put("dirt", 3);
+  if (kind === "collect") {
+    const drop = { id: 92, position: target.position.offset(0.5, 0.1, 0.5), isValid: true,
+      getDroppedItem: () => ({ name: "dirt", count: 1 }) };
+    f.bot.entities[drop.id] = drop;
+  }
+  const passes = [];
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) {
+      const { canDig, canPlace, allowParkour } = f.bot.pathfinder.defaultMoveSettings;
+      passes.push({ canDig, canPlace, allowParkour });
+      if (passes.length <= (kind === "mine" ? 2 : 1)) throw new NavigationError("noPath", "No direct pickup path");
+    }
+    return goto(goal);
+  };
+  f.work.enqueue({ kind, blocks: "dirt", count: 1, ...(kind === "quarry" &&
+    { area: { min: target.position, max: target.position } }) });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(passes, [
+    { canDig: kind === "mine", canPlace: false, allowParkour: kind === "mine" },
+    ...(kind === "mine" ? [{ canDig: false, canPlace: false, allowParkour: true }] : []),
+    { canDig: false, canPlace: false, allowParkour: true },
+  ]);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+  assert.equal(f.work.snapshot.history[0].missedDrops, 0);
+});
+
+test("a falling drop replans on a sub-block displacement and a vanished drop lets the next one run", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.maxAttempts = 1;
+  const getDroppedItem = () => ({ name: "diamond", count: 1 });
+  const falling = { id: 93, position: new Vec3(2.5, 66, 0.5), isValid: true, getDroppedItem };
+  const next = { id: 94, position: new Vec3(5.5, 64, 0.5), isValid: true, getDroppedItem };
+  f.bot.entities = { [falling.id]: falling, [next.id]: next };
+  const goto = f.bot.pathfinder.goto;
+  const visited = [];
+  let changed, unrelated;
+  f.bot.pathfinder.goto = async (goal) => {
+    visited.push(goal.trackedEntity.id);
+    if (goal.trackedEntity !== falling) return goto(goal);
+    falling.position.y -= 0.6;
+    changed = goal._hasChanged("entityMoved", falling);
+    unrelated = goal._hasChanged("entityMoved", next);
+    falling.isValid = false;
+    throw new Error("Goal invalidated: entityGone");
+  };
+  f.work.enqueue({ kind: "collect", item: "diamond" });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(visited, [falling.id, next.id]);
+  assert.equal(changed, true);
+  assert.equal(unrelated, false);
+  assert.equal(f.work.snapshot.history[0].missedDrops, 1);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+});
+
 test("validates cuboids, aliases, dimensions and exact block counts before execution", () => {
   const f = fixture();
   assert.equal(plan.bounds(new Vec3(2, -3, 4), new Vec3(0, -1, 3)).volume, 18);
@@ -1780,6 +1867,31 @@ for (const reserved of [false, true]) test(`mining continues across crew cells w
     (reserved ? [first, other] : [first, next, other]).map(block => plan.key(block.position)));
 });
 
+for (const hasAxe of [true, false]) test(`wood harvesting never treats a stick as a tool on 26.3, axe=${hasAxe}`, async (t) => {
+  const f = fixture("26.3");
+  t.after(() => f.work.dispose());
+  f.bot.game.gameMode = "creative"; // Every item has the same dig time.
+  const stick = f.item("stick");
+  f.items.push(stick);
+  f.bot.heldItem = stick;
+  if (hasAxe) f.items.push(f.item("iron_axe"));
+  f.put("oak_log", 2);
+  f.work.enqueue({ kind: "forest", count: 1, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.dug[0].hand, hasAxe ? "iron_axe" : undefined);
+});
+
+test("a connected forest keeps chopping the nearby branch before following a lower distant branch", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const first = f.put("oak_log", 1);
+  const nearby = f.put("oak_log", 2, 65);
+  f.put("oak_log", 3);
+  f.work.enqueue({ kind: "forest", count: 2, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map(({ position }) => position), [first.position, nearby.position]);
+});
+
 test("reachable tree logs are chopped together with one axe selection before chasing drops", async (t) => {
   const f = fixture();
   t.after(() => f.work.dispose());
@@ -1801,6 +1913,340 @@ test("reachable tree logs are chopped together with one axe selection before cha
   assert.equal(f.work.snapshot.history[0].collected, 3);
   assert.deepEqual(f.equipped, ["iron_axe"]);
   assert.equal(scans, 1, "reuse the loaded targets while chopping the tree");
+});
+
+test("forest resumes an out-of-reach trunk before picking up drops or cutting leaves", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.scanLimit = 2;
+  f.put("spruce_leaves", 1);
+  f.put("spruce_leaves", 1, 64, 1);
+  for (let y = 64; y <= 68; y++) f.put("spruce_log", 2, y);
+  f.bot.canDigBlock = (block) => Math.abs(block.position.y - f.bot.entity.position.y) <= 2;
+  const goto = f.bot.pathfinder.goto;
+  const digsAtPickup = [];
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) {
+      digsAtPickup.push(f.dug.length);
+      return goto(goal);
+    }
+    f.bot.entity.position = new Vec3(1.5, Math.floor(goal.y) - 2, 0.5);
+  };
+  f.work.enqueue({ kind: "forest", radius: 8, leaves: true, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map((block) => block.name), [...Array(5).fill("spruce_log"), "spruce_leaves", "spruce_leaves"]);
+  assert.equal(digsAtPickup[0], 5);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+for (const gap of [false, true]) test(`forest starts below a visible upper log${gap ? " across an old gap" : " behind foliage"}`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.scanLimit = 1;
+  f.put("oak_log", 4, 66);
+  if (!gap) f.put("oak_log", 4, 65);
+  f.put("oak_log", 4, 64);
+  let opened = false;
+  const approaches = [];
+  f.bot.canDigBlock = block => block.position.y > 64 || opened;
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) return goto(goal);
+    approaches.push(goal.y);
+    opened = true;
+  };
+  f.work.enqueue({ kind: "forest", radius: 8, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(approaches, [64.5]);
+  assert.deepEqual(f.dug.map(({ position }) => position.y), gap ? [64, 66] : [64, 65, 66]);
+  assert.equal(f.work.snapshot.history[0].collected, gap ? 2 : 3);
+});
+
+test("forest retries a skipped lower log when removing the upper log exposes it", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.maxAttempts = 1;
+  const bottom = f.put("oak_log", 4, 64);
+  const top = f.put("oak_log", 4, 65);
+  f.bot.canDigBlock = (block) => block.position.equals(top.position) || f.bot.blockAt(top.position).name === "air";
+  const goto = f.bot.pathfinder.goto;
+  const digsAtPickup = [];
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) {
+      digsAtPickup.push(f.dug.length);
+      return goto(goal);
+    }
+    throw new NavigationError("noPath", "The bottom log is still hidden");
+  };
+  f.work.enqueue({ kind: "forest", radius: 8, scaffold: false, routeDig: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map(({ position }) => position), [top.position, bottom.position]);
+  assert.deepEqual(digsAtPickup, [2, 2]);
+  assert.equal(f.work.snapshot.history[0].outcome, "готово");
+});
+
+for (const count of [0, 1]) test(`forest handles a drop on another eligible log with count=${count}`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const first = f.put("oak_log", 2, 65);
+  let onLog;
+  f.bot.once("itemDrop", (entity) => {
+    onLog = f.put("oak_log", 4, 65);
+    entity.position = onLog.position.offset(0.5, 1.125, 0.5);
+  });
+  const supportsAtPickup = [];
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) supportsAtPickup.push(f.bot.blockAt(onLog.position).name);
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: "forest", radius: 8, count, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map(({ position }) => position), count ? [first.position] : [first.position, onLog.position]);
+  assert.deepEqual(supportsAtPickup, count ? ["oak_log"] : ["air", "air"]);
+  assert.equal(f.work.snapshot.history[0].collected, count || 2);
+});
+
+for (const [label, layers, routeDig, occupied, overhang, falling] of [
+  ["one leaf under the loot after reaching the log quota", 1, true, false, false],
+  ["two layers supporting an item over the edge", 2, true, false, true],
+  ["cleanup disabled by route permissions", 1, false, false, false],
+  ["leaf supporting another player", 1, true, true, false],
+  ["loot still falling towards a leaf when pickup starts", 1, true, false, false, true],
+]) test(`forest handles ${label}`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  const log = f.put("oak_log", 2, 67);
+  const leaves = Array.from({ length: layers }, (_, index) => f.put("oak_leaves", 3, 66 - index));
+  const untouched = f.put("oak_leaves", 3, 66, 1);
+  f.put("dirt", 3, 63);
+  if (overhang) f.put("dirt", 4, 63);
+  if (occupied) f.bot.entities[99] = { type: "player", position: new Vec3(3.5, 67, 0.5) };
+  const x = overhang ? 4.04 : 3.5;
+  let loot;
+  f.bot.on("itemDrop", (entity) => {
+    if (!loot) {
+      loot = entity;
+      loot.position = new Vec3(x, 67.125, 0.5);
+      if (falling) {
+        loot.position.y += 0.75;
+        setTimeout(() => { loot.position.y = 67.125; }, 30);
+      }
+    } else if (entity.getDroppedItem().name === "oak_leaves") {
+      const support = leaves.find(leaf => f.bot.blockAt(leaf.position).name === "oak_leaves");
+      loot.position.y = support ? support.position.y + 1.125 : 64.125;
+      entity.isValid = false;
+    }
+  });
+  const goto = f.bot.pathfinder.goto;
+  let heightAtPickup;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity === loot) heightAtPickup = loot.position.y;
+    return goto(goal);
+  };
+  f.work.enqueue({ kind: "forest", count: 1, radius: 8, scaffold: false, routeDig });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  const clear = routeDig && !occupied;
+  assert.deepEqual(f.dug.map(({ position }) => position), [log, ...(clear ? leaves : [])].map(block => block.position));
+  assert.equal(heightAtPickup, clear ? 64.125 : 67.125);
+  assert.equal(f.bot.blockAt(untouched.position).name, "oak_leaves");
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+  assert.equal(f.work.snapshot.history[0].collected, 1);
+});
+
+for (const [kind, smoothAimSpeed, smoothAim] of [
+  ["forest", 100, true], ["mine", 200, true], ["forest", 100, false],
+]) test(`${kind} uses work aim before breaking a block at speed ${smoothAimSpeed}, enabled=${smoothAim}`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configureAim({ smoothAim, smoothAimSpeed });
+  f.work.settings.operationTimeoutMs = 2000;
+  f.put(kind === "forest" ? "oak_log" : "dirt", 2);
+  f.bot.entity.yaw = Math.PI / 2;
+  f.bot.entity.pitch = 0;
+  const angles = [];
+  f.bot.look = async (yaw, pitch, force) => {
+    assert.equal(force, true);
+    assert.equal(f.dug.length, 0, "the action waits until aiming ends");
+    angles.push(yaw);
+    Object.assign(f.bot.entity, { yaw, pitch });
+  };
+  f.work.enqueue({ kind, blocks: "dirt", count: 1, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.work.snapshot.history[0].mined, 1);
+  assert.equal(angles.length, !smoothAim ? 0 : smoothAimSpeed === 100 ? 18 : 9);
+  if (smoothAim) {
+    assert.ok(Math.abs(Math.cos(angles.at(-1))) < 1e-9 && Math.sin(angles.at(-1)) < -0.99);
+    const progress = [Math.PI / 2, ...angles];
+    const steps = progress.slice(1).map((angle, index) => Math.abs(angle - progress[index]));
+    assert.ok(steps[0] < Math.max(...steps) && steps.at(-1) < Math.max(...steps));
+    const correctionSteps = Math.round(angles.length / 4);
+    const remaining = angles.at(-correctionSteps - 1) - angles.at(-1);
+    assert.ok(remaining > 0 && remaining <= Math.PI / 90 + 1e-9);
+    const mainSteps = angles.length - correctionSteps;
+    const first = 1 / mainSteps;
+    const minimumJerk = 10 * first ** 3 - 15 * first ** 4 + 6 * first ** 5;
+    const expected = progress[0] + (angles[mainSteps - 1] - progress[0]) * minimumJerk;
+    assert.ok(Math.abs(angles[0] - expected) < 1e-9, "the main movement follows minimum jerk");
+  }
+});
+
+test("a short turn crosses the yaw boundary by the shortest arc", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configureAim({ smoothAim: true });
+  f.put("oak_log", 0, 64, 3);
+  const initialYaw = Math.PI * 179 / 180;
+  f.bot.entity.position.x = 0.4;
+  f.bot.entity.yaw = initialYaw;
+  f.bot.entity.pitch = Math.atan2(-1.12, Math.hypot(0.1, 3));
+  const angles = [];
+  f.bot.look = async (yaw, pitch) => {
+    angles.push(yaw);
+    Object.assign(f.bot.entity, { yaw, pitch });
+  };
+  f.work.enqueue({ kind: "forest", count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.dug.length, 1);
+  assert.equal(angles.length, 3);
+  assert.ok(angles.every(yaw => yaw > initialYaw && yaw - initialYaw < Math.PI / 45));
+  assert.ok(Math.abs(angles.at(-1) - (Math.atan2(-0.1, -3) + 2 * Math.PI)) < 1e-9);
+});
+
+test("the final correction starts from the camera's actual yaw", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configureAim({ smoothAim: true });
+  f.put("oak_log", 2);
+  f.bot.entity.yaw = Math.PI / 2;
+  f.bot.entity.pitch = 0;
+  const angles = [];
+  let actualYaw;
+  f.bot.look = async (yaw, pitch) => {
+    angles.push(yaw);
+    // Model a camera correction from the game just as the main movement ends.
+    if (angles.length === 13) actualYaw = yaw + Math.PI / 180;
+    Object.assign(f.bot.entity, { yaw: angles.length === 13 ? actualYaw : yaw, pitch });
+  };
+  f.work.enqueue({ kind: "forest", count: 1 });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(f.dug.length, 1);
+  assert.ok(Math.abs(angles[13] - actualYaw) < 0.005);
+  assert.ok(Math.abs(angles.at(-1) + Math.PI / 2) < 1e-9);
+});
+
+test("stopping during smooth work aim cancels the turn and the block action", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configureAim({ smoothAim: true });
+  f.put("oak_log", 2);
+  f.bot.entity.yaw = Math.PI / 2;
+  f.bot.entity.pitch = 0;
+  let turns = 0, stopping;
+  f.bot.look = async () => {
+    turns++;
+    stopping ??= f.work.stop();
+  };
+  f.work.enqueue({ kind: "forest", count: 1 });
+  await until(f, () => Boolean(stopping));
+  await stopping;
+  assert.equal(turns, 1);
+  assert.equal(f.dug.length, 0);
+});
+
+test("work aim applies immediately without stopping the task and validates the slider range", async (t) => {
+  const changed = [];
+  const f = fixture("26.1.2", { onAimChange: (aim) => changed.push(aim) });
+  t.after(() => f.work.dispose());
+  const apply = (...args) => commands.handleGatheringCommand(f.bot, f.work, "work", ["aim", ...args], {
+    prepare: () => assert.fail("aim setting should not interrupt work"),
+    reply: () => {},
+  });
+  assert.equal(f.work.settings.smoothAim, false);
+  await apply("on", "150");
+  await assert.rejects(apply("on", "201"), /Скорость наведения/);
+  await apply("off", "75");
+  assert.deepEqual(changed, [{ smoothAim: true, smoothAimSpeed: 150 }, { smoothAim: false, smoothAimSpeed: 75 }]);
+});
+
+test("a forest area keeps its trunk focus below the layer selected by the area scan", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  for (let y = 64; y <= 67; y++) f.put("spruce_log", 2, y);
+  f.work.enqueue({ kind: "forest", scaffold: false,
+    area: { min: new Vec3(2, 65, 0), max: new Vec3(2, 67, 0) } });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map(({ position }) => position.y), [65, 66, 67]);
+  assert.equal(f.bot.blockAt(new Vec3(2, 64, 0)).name, "spruce_log");
+});
+
+test("a stationary forest approach stops its movement, clears foliage and retries on foot", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.moveTimeoutMs = 30;
+  f.bot.pathfinder.defaultMoveSettings.allowSprinting = true;
+  f.bot.pathfinder.defaultMoveSettings.allowParkour = true;
+  f.put("oak_leaves", 1, 65);
+  f.put("oak_log", 4, 64);
+  let walking = false, release, stopped = 0;
+  const movementOptions = [];
+  f.bot.clearControlStates = () => { walking = false; };
+  f.bot.pathfinder.stop = async () => {
+    if (!release) return;
+    assert.equal(walking, false, "forward and sprint are released before waiting for the path to stop");
+    stopped++;
+    release();
+    release = null;
+  };
+  f.bot.world = { raycast: () => f.bot.entity.position.x > 2 ? f.bot.blockAt(new Vec3(4, 64, 0)) : null };
+  const goto = f.bot.pathfinder.goto;
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.trackedEntity) return goto(goal);
+    const { allowSprinting, allowParkour, canPlace } = f.bot.pathfinder.defaultMoveSettings;
+    movementOptions.push({ allowSprinting, allowParkour, canPlace });
+    if (movementOptions.length === 1) {
+      walking = true;
+      await new Promise(resolve => { release = resolve; });
+    } else {
+      f.bot.entity.position = new Vec3(2.5, 64, 0.5);
+    }
+  };
+  f.work.enqueue({ kind: "forest", count: 1, radius: 8, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(stopped, 1);
+  assert.deepEqual(movementOptions, Array.from({ length: 2 }, () =>
+    ({ allowSprinting: false, allowParkour: false, canPlace: false })));
+  assert.deepEqual(f.dug.map(({ name }) => name), ["oak_leaves", "oak_log"]);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.allowSprinting, true);
+  assert.equal(f.bot.pathfinder.defaultMoveSettings.allowParkour, true);
+});
+
+test("forest retreats to its footing when the approach stalls on leaves", async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.settings.moveTimeoutMs = 30;
+  f.work.settings.maxAttempts = 1;
+  f.put("dirt", 0, 63);
+  f.put("spruce_leaves", 2, 67);
+  f.put("spruce_log", 4, 71);
+  f.bot.world = { raycast: () => null };
+  let stopWalk;
+  let returned = false;
+  f.bot.pathfinder.stop = async () => stopWalk?.();
+  f.bot.pathfinder.goto = async (goal) => {
+    if (goal.x === 0 && goal.y === 64 && goal.z === 0) {
+      returned = !f.bot.pathfinder.defaultMoveSettings.canPlace;
+      f.bot.entity.position = new Vec3(0.5, 64, 0.5);
+      return;
+    }
+    f.bot.entity.position = new Vec3(2.5, 68, 0.5);
+    await new Promise((resolve) => { stopWalk = resolve; });
+  };
+  f.work.enqueue({ kind: "forest", radius: 16, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.equal(returned, true);
+  assert.equal(f.bot.entity.position.y, 64);
+  assert.equal(f.work.snapshot.history[0].outcome, "частично");
 });
 
 test("a stalled approach is stopped and skipped, and the next queued task still runs", async (t) => {
@@ -2098,7 +2544,37 @@ test("a crew bot takes a free tree first and helps a staffed one only at the end
   assert.equal(f.work.snapshot.history[0].outcome, "готово");
 });
 
-test("a felled tree is replaced with a sapling of its kind", async (t) => {
+for (const held of [false, true]) test(`crew logging honours the lowest log beyond the scan batch with held=${held}`, async (t) => {
+  const hub = fleetCrew.createHub();
+  let blocked = 0;
+  const f = fixture(undefined, { crew: {
+    ...crewFor(hub, "a"),
+    request(op, input) {
+      const reply = hub.handle("a", op, input);
+      if (op === "target" && !reply.pos) {
+        blocked++;
+        hub.handle("b", "target", { dim: "overworld", positions: [] });
+      }
+      return Promise.resolve(reply);
+    },
+  } });
+  t.after(() => f.work.dispose());
+  f.work.settings.scanLimit = 1;
+  const top = f.put("oak_log", 3, 66);
+  const bottom = f.put("oak_log", 3, 64);
+  const adjacentSite = f.put("oak_log", 4, 65);
+  if (held) hub.handle("b", "target", { dim: "overworld", positions: [bottom.position] });
+  f.work.enqueue({ kind: "forest", count: 2, radius: 8, scaffold: false });
+  await until(f, () => f.work.snapshot.history.length === 1);
+  assert.deepEqual(f.dug.map(({ position }) => position), [bottom.position, top.position]);
+  assert.equal(f.bot.blockAt(adjacentSite.position).name, "oak_log");
+  assert.equal(blocked, held ? 1 : 0);
+  assert.equal(f.work.snapshot.history[0].collected, 2);
+});
+
+for (const replant of [undefined, false]) test(
+  replant === false ? "a forest step can leave the felled tree unplanted" : "a felled tree is replaced with a sapling of its kind",
+  async (t) => {
   const f = fixture(undefined, { crew: crewFor(fleetCrew.createHub(), "a") });
   t.after(() => f.work.dispose());
   f.put("grass_block", 2, 63);
@@ -2110,10 +2586,11 @@ test("a felled tree is replaced with a sapling of its kind", async (t) => {
     planted.push({ soil: soil.position, face, held: f.bot.heldItem?.name });
     f.put("birch_sapling", soil.position.x, soil.position.y + 1, soil.position.z);
   };
-  f.work.enqueue({ kind: "forest", radius: 8, count: 0, scaffold: false });
+  f.work.enqueue({ kind: "forest", radius: 8, count: 0, scaffold: false, replant });
   await until(f, () => f.work.snapshot.history.length === 1);
-  assert.equal(planted.length, 1);
-  assert.deepEqual([planted[0].soil.x, planted[0].soil.y, planted[0].held], [2, 63, "birch_sapling"]);
+  assert.equal(f.work.snapshot.history[0].mined, 2);
+  assert.deepEqual(planted.map(({ soil, held }) => [soil.x, soil.y, held]),
+    replant === false ? [] : [[2, 63, "birch_sapling"]]);
 });
 
 test("a crew bot never routes through another bot's passage floor or the block under a player", async (t) => {

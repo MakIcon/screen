@@ -160,12 +160,26 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.engine).toBe("custom");
     expect(normalized.combat.autoTarget).toBe("manual");
     expect(normalized.combat.smoothAimSpeed).toBe(100);
+    expect(normalized.gathering.smoothAim).toBe(false);
+    expect(normalized.gathering.smoothAimSpeed).toBe(100);
     expect(normalized.combat.pearlChase).toBe(false);
     expect(normalized.combat.adaptiveCombat).toBe(true);
     expect(normalized.combat.combatHealing).toBe(true);
     expect(normalized.combat.pearlEscape).toBe(true);
     expect(normalized.survival.autoEat).toBe(true);
     expect(normalized.survival.emergencyMlg).toBe(true);
+  });
+
+  it("keeps work aim separate from combat and limits its speed to the slider range", () => {
+    const normalized = normalizeMineflayerBotSettings({
+      gathering: { smoothAim: true, smoothAimSpeed: 230 },
+      combat: { smoothAim: false, smoothAimSpeed: 70 },
+    });
+    expect(normalized.gathering.smoothAim).toBe(true);
+    expect(normalized.gathering.smoothAimSpeed).toBe(200);
+    expect(normalized.combat.smoothAim).toBe(false);
+    expect(normalized.combat.smoothAimSpeed).toBe(70);
+    expect(normalizeMineflayerBotSettings({ gathering: { smoothAimSpeed: 0 } }).gathering.smoothAimSpeed).toBe(25);
   });
 
   it("keeps explicit director permissions and reaction settings when loading existing bots", () => {
@@ -273,6 +287,8 @@ describe("normalizeMineflayerBotSettings", () => {
       defendMobs: true,
       defendPlayers: true,
       defendArrows: true,
+      smoothAim: false,
+      smoothAimSpeed: 100,
       storageGroups: [],
     });
     const saved = normalizeMineflayerBotSettings({
@@ -298,6 +314,8 @@ describe("normalizeMineflayerBotSettings", () => {
       defendMobs: false,
       defendPlayers: false,
       defendArrows: false,
+      smoothAim: false,
+      smoothAimSpeed: 100,
       storageGroups: [],
     });
     expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);

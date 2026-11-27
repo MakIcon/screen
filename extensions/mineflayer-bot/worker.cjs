@@ -32,6 +32,9 @@ function loadMineflayer () {
 }
 
 const { mineflayer, compatibilityVersion } = loadMineflayer()
+const { createRequire } = require('node:module')
+const minecraft263Version = '26.3'
+const minecraft263Protocol = 777
 const { installFabricSupport } = require('./fabric.cjs')
 const { createPlugin, goals, movementProviders, installSurfaceSwimming } = require('./pathfinder.cjs')
 const { normalizeCombat, createCombatController } = require('./combat.cjs')
@@ -46,7 +49,7 @@ const { createWorkflowController } = require('./workflow.cjs')
 const { createCrewLink } = require('./fleet-crew.cjs')
 const { createFleetNavigation } = require('./fleet-navigation.cjs')
 const { createChaoticMovementController } = require('./chaotic-movement.cjs')
-const { createInventoryActions } = require('./inventory-actions.cjs')
+const { configureHashedInventory, createInventoryActions } = require('./inventory-actions.cjs')
 const { createStorageInspection } = require('./storage-inspection.cjs')
 const { assignStorage } = require('./storage-scan.cjs')
 const { startWebInventory, startInventoryTelemetry } = require('./web-inventory.cjs')
@@ -265,18 +268,17 @@ function compatibleTimePlugin (bot) {
       ? packet.clockUpdates
       : []
     const clock =
-      clockUpdates.find((entry) => Number(entry?.id) === 0) ||
+      clockUpdates.find((entry) => Number(entry?.clockId ?? entry?.id) === 0) ||
       clockUpdates[0] ||
       null
     const usesWorldClocks = packet.time === undefined && clock !== null
     const rawTime = usesWorldClocks ? clock.totalTicks : packet.time
 
-    // A valid 26.1 packet can contain no clock updates. Keep the last known
-    // values in that case instead of letting Mineflayer crash on packet.time.
+    // World-clock packets may contain no clock updates. Keep the last known values.
     if (rawTime === undefined || rawTime === null) return
 
     const time = protocolLongToBigInt(rawTime)
-    const age = protocolLongToBigInt(packet.age, bot.time.bigAge || 0n)
+    const age = protocolLongToBigInt(packet.gameTime ?? packet.age, bot.time.bigAge || 0n)
     const rate = usesWorldClocks ? Number(clock.rate) : null
     const doDaylightCycle = usesWorldClocks
       ? !Number.isFinite(rate) || rate !== 0
@@ -294,7 +296,7 @@ function compatibleTimePlugin (bot) {
     bot.time.moonPhase = bot.time.day % 8
     bot.time.bigAge = age
     bot.time.age = Number(age)
-    bot.time.clockId = usesWorldClocks ? Number(clock.id) : null
+    bot.time.clockId = usesWorldClocks ? Number(clock.clockId ?? clock.id) : null
     bot.time.partialTick = usesWorldClocks && Number.isFinite(Number(clock.partialTick))
       ? Number(clock.partialTick)
       : 0
@@ -336,7 +338,7 @@ function parseConfig (raw) {
   }
 
   config.commands = {
-    prefix: '!',
+    prefix: '.',
     source: 'both',
     extraOwners: [],
     cooldownMs: 500,
@@ -345,6 +347,8 @@ function parseConfig (raw) {
     allowQuit: true,
     ...(config.commands || {})
   }
+  const configuredPrefix = String(config.commands.prefix ?? '').trim()
+  config.commands.prefix = ['', '!', ','].includes(configuredPrefix) ? '.' : configuredPrefix
   config.movement = {
     followDistance: 3,
     gotoRadius: 1,
@@ -438,7 +442,7 @@ function createCommandQueue (handler) {
   }
 }
 
-async function handleLauncherMessages (lines, getBot, sendEvent = emit, configureNavigation = null) {
+async function handleLauncherMessages (lines, getBot, sendEvent = emit, configureNavigation = null, receiveSession = null) {
   const pendingDrops = new Set()
   for await (const line of lines) {
     if (!line.trim()) continue
@@ -453,10 +457,21 @@ async function handleLauncherMessages (lines, getBot, sendEvent = emit, configur
       configureNavigation?.(request.enabled)
       continue
     }
-    if (!['chat', 'command', 'storage_config', 'storage_probe', 'storage_scan', 'storage_assign', 'workflow', 'inventory_drop'].includes(request?.type) || typeof request.requestId !== 'string') continue
+    if (request?.type === 'minecraft_session') {
+      receiveSession?.(request)
+      continue
+    }
+    if (!['chat', 'command', 'storage_config', 'storage_probe', 'storage_scan', 'storage_assign', 'workflow', 'inventory_drop', 'player_control'].includes(request?.type) || typeof request.requestId !== 'string') continue
     try {
-      const bot = getBot()
+      const bot = getBot(request.type)
       if (!bot) throw new Error('Бот не подключён к серверу')
+      if (request.type === 'player_control') {
+        if (!bot.launcherPlayerControl) throw new Error('Управление из Minecraft выключено')
+        await bot.launcherPlayerControl.switchMode(request.action)
+        sendEvent('chat_result', { requestId: request.requestId })
+        continue
+      }
+      if (bot.launcherPlayerControl?.busy) throw new Error('Верните управление боту перед запуском команд')
       if (request.type === 'storage_assign') {
         if (!Array.isArray(request.records) || request.records.length > 512) throw new Error('Некорректные результаты проверки складов')
         sendEvent('chat_result', { requestId: request.requestId, result: assignStorage(request.records, []) })
@@ -601,12 +616,21 @@ function createBotOptions (config) {
   }
 
   if (config.account.mode === 'microsoft') {
-    options.session = {
-      accessToken: config.account.accessToken,
-      selectedProfile: {
-        id: normalizeUuid(config.account.uuid),
-        name: config.account.username
-      }
+    const accessToken = config.account.accessToken
+    const profile = { id: normalizeUuid(config.account.uuid), name: config.account.username }
+    if (typeof accessToken !== 'string' || !accessToken || !/^[0-9a-f]{32}$/i.test(profile.id)) {
+      throw new Error('Invalid session for Minecraft. Sign in again in ScreenLauncher.')
+    }
+    options.username = profile.name
+    options.auth = (client, protocolOptions) => {
+      // minecraft-protocol ignores a supplied session in its default offline branch.
+      const session = { accessToken, selectedProfile: profile }
+      client.session = session
+      client.username = profile.name
+      protocolOptions.accessToken = accessToken
+      protocolOptions.haveCredentials = true
+      client.emit('session', session)
+      protocolOptions.connect(client)
     }
   } else {
     options.username = config.account.username
@@ -614,6 +638,25 @@ function createBotOptions (config) {
   }
 
   return options
+}
+
+async function selectMineflayer (options) {
+  if (options.version && options.version !== minecraft263Version) return mineflayer
+
+  if (!options.version) {
+    const protocol = createRequire(require.resolve('@wp2508/mineflayer'))('minecraft-protocol')
+    const status = await protocol.ping({
+      host: options.host,
+      port: options.port,
+      version: minecraft263Version,
+      closeTimeout: options.checkTimeoutInterval,
+      noPongTimeout: 1000
+    })
+    if (status.version?.protocol !== minecraft263Protocol) return mineflayer
+    options.version = minecraft263Version
+  }
+
+  return require('@wp2508/mineflayer')
 }
 
 async function main () {
@@ -643,6 +686,8 @@ async function main () {
   let reconnectTimer = null
   let reconnectAttempts = 0
   let stopping = false
+  let nextSessionRequest = 0
+  let pendingSession = null
 
   if (compatibilityVersion) {
     emit('status', {
@@ -663,6 +708,24 @@ async function main () {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     setTimeout(() => process.exit(code), 50)
+  }
+
+  function receiveSession ({ requestId, accessToken, error }) {
+    if (!pendingSession || pendingSession.id !== requestId) return
+    const { resolve, reject, timer } = pendingSession
+    pendingSession = null
+    clearTimeout(timer)
+    if (typeof accessToken === 'string' && accessToken) resolve(accessToken)
+    else reject(new Error(typeof error === 'string' ? error : 'Minecraft session is unavailable'))
+  }
+
+  function requestSession () {
+    return new Promise((resolve, reject) => {
+      const id = `reconnect-${++nextSessionRequest}`
+      const timer = setTimeout(() => receiveSession({ requestId: id, error: 'Timed out refreshing the Minecraft session' }), 30_000)
+      pendingSession = { id, resolve, reject, timer }
+      emit('minecraft_session_request', { requestId: id })
+    })
   }
 
   function scheduleReconnect (reason) {
@@ -710,11 +773,11 @@ async function main () {
 
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
-      startConnection(true)
+      void startConnection(true)
     }, config.connection.reconnectDelayMs)
   }
 
-  function startConnection (isReconnect = false) {
+  async function startConnection (isReconnect = false) {
     if (stopping) return
     chatReady = false
 
@@ -725,8 +788,18 @@ async function main () {
 
     let bot
     try {
-      bot = mineflayer.createBot(createBotOptions(config))
+      if (isReconnect && config.account.mode === 'microsoft') {
+        config.account.accessToken = await requestSession()
+      }
+      if (stopping) return
+      const options = createBotOptions(config)
+      const engine = await selectMineflayer(options)
+      if (stopping) return
+      if (config.playerControl && engine === mineflayer) throw new Error('Unsupported protocol version: управление из Minecraft требует Java 26.3')
+      bot = engine.createBot(options)
+      bot.prependOnceListener('inject_allowed', () => configureHashedInventory(bot))
     } catch (error) {
+      if (stopping) return
       emit('error', { error: error.message || String(error) })
       scheduleReconnect(error.message || String(error))
       return
@@ -743,6 +816,13 @@ async function main () {
     let production = null
     let workflow = null
     let chaoticMovement = null
+    const playerControl = config.playerControl ? require('./player-control.cjs').createPlayerControl(bot, {
+      accountUuid: config.account.uuid,
+      prepare: preparePlayerControl,
+      onStatus: playerControl => emit('player_control', { playerControl }),
+      onError: error => emit('error', { error: `Управление из Minecraft: ${error.message}` })
+    }) : null
+    bot.launcherPlayerControl = playerControl
     bot.launcherOwnerName = ownerName
 
     function reply (username, source, text) {
@@ -778,6 +858,33 @@ async function main () {
       bot.clearControlStates()
       currentGoal = 'idle'
       return true
+    }
+
+    async function preparePlayerControl () {
+      if (bot.isAlive === false || bot.launcherSurvival?.busy || bot.launcherInventoryActions?.busy) {
+        throw new Error('Дождитесь возрождения или завершения текущего действия')
+      }
+      await bot.launcherStorageInspection?.stop()
+      if (workflow?.busy && !gathering?.busy && workflow.snapshot().phase !== 'paused') {
+        throw new Error('Поставьте сценарий на паузу после текущего шага')
+      }
+      const follow = currentGoal.startsWith('follow ') ? currentGoal.slice(7) : null
+      const automaticCombat = combat?.status === 'hostile mobs'
+      const resumeGathering = await gathering.suspendForStorageInspection('Ручное управление')
+      const resume = () => {
+        if (ended || stopping) return
+        resumeGathering()
+        if (automaticCombat) combat.auto(true)
+        if (follow) startFollowingOwner(false, follow, 'launcher')
+        if (bot.isAlive === false && config.connection.autoRespawn) bot.respawn()
+      }
+      try {
+        if (!(await stopMovement(false, false))) throw new Error('Бот отключился во время переключения')
+      } catch (error) {
+        resume()
+        throw error
+      }
+      return resume
     }
 
     function startGoal (goal, label, destination, kind, radius) {
@@ -874,14 +981,16 @@ async function main () {
 
       const [commandRaw, ...args] = body.split(/\s+/)
       const command = commandRaw.toLowerCase()
+      const stationScan = command === 'station' && args[0] === 'scan'
 
       try {
+        if (playerControl?.busy) throw new Error('Верните управление боту перед запуском команд')
         if (bot.launcherInventoryActions?.busy) {
           if (['stop', 'quit'].includes(command)) bot.launcherInventoryActions.cancel()
-          else if (!['status', 'where', 'help', 'inventory'].includes(command))
+          else if (!stationScan && !['status', 'where', 'help', 'inventory'].includes(command))
             throw new Error('Бот выбрасывает предметы. Дождитесь завершения действия')
         }
-        if (workflow?.busy && !['stop', 'status', 'where', 'help', 'inventory'].includes(command) && !(command === 'chaos' && args[0]?.toLowerCase() === 'off')) {
+        if (workflow?.busy && !stationScan && !['stop', 'status', 'where', 'help', 'inventory'].includes(command) && !(command === 'chaos' && args[0]?.toLowerCase() === 'off')) {
           throw new Error('Бот выполняет сценарий. Остановите его перед другой командой')
         }
         if (command === 'chaos') {
@@ -1113,6 +1222,7 @@ async function main () {
         gathering = createGatheringController(bot, config.gathering, {
           isOwner,
           crew,
+          onAimChange: aim => { config.gathering = { ...config.gathering, ...aim } },
           onStatus: onlyChanges(message => emit('status', { state: 'connected', message })),
           onProgress: onlyChanges(gathering => emit('gathering', { gathering }))
         })
@@ -1160,8 +1270,11 @@ async function main () {
       chatReady = true
       emit('ready', {
         botUsername: bot.username,
-        message: `connected as ${bot.username}; navigation minecraft-pathfinding-2026; owners ${allowedOwners.join(', ')}; prefix ${prefix}; source ${config.commands.source}`
+        message: `connected as ${bot.username} on Minecraft ${bot.version}; navigation minecraft-pathfinding-2026; owners ${allowedOwners.join(', ')}; prefix ${prefix}; source ${config.commands.source}`
       })
+      if (playerControl) {
+        try { playerControl.start() } catch (error) { emit('error', { error: `Управление из Minecraft: ${error.message}` }) }
+      }
 
       if (config.behavior.announceOnSpawn && config.behavior.spawnMessage) {
         const message = renderTemplate(config.behavior.spawnMessage, {
@@ -1259,6 +1372,7 @@ async function main () {
     bot.on('end', (reason) => {
       if (ended) return
       ended = true
+      playerControl?.close()
       bot.launcherInventoryActions?.dispose()
       bot.launcherTraffic?.dispose()
       bot.launcherStorageInspection?.dispose()
@@ -1283,10 +1397,12 @@ async function main () {
     if (stopping) return
     stopping = true
     chatReady = false
+    if (pendingSession) receiveSession({ requestId: pendingSession.id, error: 'Worker stopped' })
     emit('status', { state: 'stopping', message: `received ${signal}` })
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = null
     if (activeBot) {
+      activeBot.launcherPlayerControl?.close()
       activeBot.launcherInventoryActions?.dispose()
       activeBot.launcherTraffic?.dispose()
       activeBot.launcherStorageInspection?.dispose()
@@ -1306,13 +1422,13 @@ async function main () {
   process.on('SIGINT', () => requestShutdown('SIGINT'))
   process.on('SIGTERM', () => requestShutdown('SIGTERM'))
 
-  void handleLauncherMessages(input, () => chatReady && !stopping ? activeBot : null, emit, enabled => {
+  void handleLauncherMessages(input, type => !stopping && (chatReady || type === 'player_control') ? activeBot : null, emit, enabled => {
     config.crowdAvoidance = enabled
     activeBot?.launcherTraffic?.setEnabled(enabled)
-  })
+  }, receiveSession)
     .catch(error => emit('error', { error: `launcher input: ${error.message || String(error)}` }))
 
-  startConnection(false)
+  await startConnection(false)
 }
 
 if (require.main === module) {
@@ -1330,6 +1446,7 @@ module.exports = {
   parseConfig,
   configurePathfinder,
   compatibleTimePlugin,
+  createBotOptions,
   describeKickReason,
   flattenStructuredText,
   formatReason,

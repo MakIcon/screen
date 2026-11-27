@@ -1,4 +1,5 @@
 import { ProgressBar } from "../../display/ProgressBar";
+import { ElementToggle } from "../../inputs/ElementToggle";
 import { TextField } from "../../inputs/TextField";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -7,6 +8,7 @@ import { useBotFleet } from "./BotFleetContext";
 import { fleetWorkflowRequests, workflowIsRunning } from "./fleetControl";
 import { MineflayerFleetProgress } from "./MineflayerFleetProgress";
 import { MineflayerWorkSettings } from "./MineflayerWorkSettings";
+import { workAimCommand } from "../pluginSettings";
 import type {
   MinecraftCatalog,
   MineflayerBotStatus,
@@ -375,6 +377,10 @@ export function MineflayerWorkflow({
           message: `work tunnels ${gatheringSettings.tunnelWidth} ${gatheringSettings.tunnelHeight} ${gatheringSettings.stairWidth} ${gatheringSettings.stairHeight} ${gatheringSettings.placeTorches ? "on" : "off"} ${gatheringSettings.torchInterval}`,
           command: true,
         });
+        await invoke("send_mineflayer_bot_chat", {
+          message: workAimCommand(gatheringSettings),
+          command: true,
+        });
       }
       await invoke("control_mineflayer_bot_workflow", {
         action,
@@ -410,7 +416,11 @@ export function MineflayerWorkflow({
         radius: step.radius ?? 0,
       });
     if (step.kind === "forest")
-      return tr("bot.workflow.forestDetail", { count: step.count ?? 0, radius: step.radius ?? 0 });
+      return tr("bot.workflow.forestDetail", {
+        count: step.count ?? 0,
+        radius: step.radius ?? 0,
+        replant: tr(step.replant === false ? "common.off" : "common.on"),
+      });
     if (FARMING_KINDS.includes(step.kind))
       return `${step.kind === "till" ? tr("bot.workflow.bedsNextToWater") : farmCropLabel(step.item)} · ${step.count ? tr("bot.workflow.upToActions", { count: step.count }) : tr("bot.workflow.allAvailable")} · ${tr("bot.workflow.radiusValue", { radius: step.radius ?? 0 })}${["harvest", "farm"].includes(step.kind) ? (step.replant === false ? ` · ${tr("bot.workflow.noReplanting")}` : ` · ${tr("bot.workflow.withReplanting")}`) : ""}`;
     if (step.kind === "collect")
@@ -812,19 +822,18 @@ export function MineflayerWorkflow({
                         {["mine", "forest", "collect", ...FARMING_KINDS].includes(step.kind) &&
                           number(step, "radius", tr("bot.workflow.radiusBlocks"), 256)}
                       </div>
-                      {["harvest", "farm"].includes(step.kind) && (
-                        <label className="mineflayer-bot-field">
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={step.replant !== false}
-                              onChange={(event) =>
-                                patch(step.id, { replant: event.target.checked })
-                              }
-                            />{" "}
-                            {tr("bot.workflow.replantAfterHarvest")}
-                          </span>
-                        </label>
+                      {["forest", "harvest", "farm"].includes(step.kind) && (
+                        <ElementToggle
+                          size={0.75}
+                          title={tr(
+                            step.kind === "forest"
+                              ? "bot.workflow.replantSaplings"
+                              : "bot.workflow.replantAfterHarvest",
+                          )}
+                          note=""
+                          enabled={step.replant !== false}
+                          onToggle={() => patch(step.id, { replant: step.replant === false })}
+                        />
                       )}
                       {["craft", "smelt"].includes(step.kind) && (
                         <div className="mf-step-mode">

@@ -43,6 +43,9 @@ function installCombatProtocol(bot) {
   const types = bot.registry?.protocol?.play?.toServer?.types;
   const write = client.write.bind(client);
   client.write = (name, packet) => {
+    if (name === "arm_animation" && types?.packet_punch && !types.packet_arm_animation) {
+      return write("punch", {});
+    }
     if (name === "attack" || (name === "use_entity" && packet.mouse === 1)) {
       // physicsTick runs before Mineflayer publishes the updated rotation.
       // Publish the aimed view first so other players see it before the strike.
@@ -992,6 +995,8 @@ function createCombatController(
       await Promise.all([bot.pathfinder.stop(), crystalMovement.task]);
       if (revision !== generation || !target) return;
       bot.clearControlStates();
+      await bot.armorManager?.equipAll();
+      if (revision !== generation || !target) return;
       const items = carriedItems(bot);
       const current = () => revision === generation && target && !bot.launcherDefendingBow;
       if (nextMode === "ranged") {

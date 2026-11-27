@@ -17,7 +17,7 @@ import { PluginSettingsGroup } from "../PluginSettingsGroup";
 import { MineflayerCombatSettingsEditor } from "./MineflayerCombatSettings";
 import { MineflayerStorageWorkspace } from "./MineflayerStorageWorkspace";
 import { MineflayerInventoryPanel } from "./MineflayerInventoryPanel";
-import { MineflayerProductionControls } from "./MineflayerProductionControls";
+import { MineflayerPlayerControl } from "./MineflayerPlayerControl";
 import { MineflayerWorkflow } from "./MineflayerWorkflow";
 import { mergeScannedStorageGroups } from "./storageGroups";
 import { MineflayerBotFleet } from "./MineflayerBotFleet";
@@ -27,13 +27,13 @@ import "./MineflayerBotPlugin.css";
 
 type CommandSource = MineflayerBotPluginSettings["commandSource"];
 type SettingsSection = "connection" | "behavior" | "survival" | "combat" | "commands" | "gathering";
-type WorkspaceView = "bots" | "scenario" | "inventory" | "production" | "settings" | "control";
+type WorkspaceView = "bots" | "scenario" | "inventory" | "player" | "settings" | "control";
 
 const WORKSPACE_VIEWS: WorkspaceView[] = [
   "bots",
   "scenario",
   "inventory",
-  "production",
+  "player",
   "settings",
   "control",
 ];
@@ -186,6 +186,7 @@ function MineflayerBotSettingsEditor({
     (account) => account.id === settings.botMicrosoftAccountId,
   );
   const sameAsLauncherAccount =
+    !settings.playerControl &&
     settings.botAccountMode === "microsoft" &&
     context.launcherAccountType === "MICROSOFT" &&
     Boolean(settings.botMicrosoftAccountId) &&
@@ -196,6 +197,7 @@ function MineflayerBotSettingsEditor({
     if (settings.botAccountMode === "microsoft" && !settings.botMicrosoftAccountId) {
       return false;
     }
+    if (settings.playerControl && settings.botAccountMode !== "microsoft") return false;
     return !sameAsLauncherAccount;
   }, [busyAction, packageInstalled, sameAsLauncherAccount, settings, status?.running]);
 
@@ -515,12 +517,20 @@ function MineflayerBotSettingsEditor({
             onOpenTasks={() => setActiveView("scenario")}
           />
         )}
-        {activeSection === "production" && (
-          <MineflayerProductionControls
+        {activeSection === "player" && (
+          <MineflayerPlayerControl
             key={botId}
-            connected={chatConnected}
-            refresh={monitor.refresh}
             status={status}
+            enabled={settings.playerControl}
+            accountName={settings.botAccountMode === "microsoft" ? activeBotMsAccount?.username : undefined}
+            onToggle={() => update({ playerControl: !settings.playerControl })}
+            onUseActiveAccount={context.launcherMsAccountId &&
+              (settings.botAccountMode !== "microsoft" || settings.botMicrosoftAccountId !== context.launcherMsAccountId) ? () => update({
+              playerControl: true,
+              botAccountMode: "microsoft",
+              botMicrosoftAccountId: context.launcherMsAccountId,
+            }) : undefined}
+            onOpenAccount={() => openSettings("connection")}
           />
         )}
         {activeSection === "connection" && (
@@ -985,7 +995,7 @@ function MineflayerBotSettingsEditor({
           <MineflayerCombatSettingsEditor
             settings={settings.combat}
             onChange={(combat) => update({ combat })}
-            commandPrefix={settings.commandPrefix || "!"}
+            commandPrefix={settings.commandPrefix || "."}
           />
         )}
 
@@ -1112,15 +1122,15 @@ function MineflayerBotSettingsEditor({
                   "station close",
                 ].map((command) => (
                   <span key={command}>
-                    {settings.commandPrefix || "!"}
+                    {settings.commandPrefix || "."}
                     {command}
                   </span>
                 ))}
                 <span className={!settings.allowSayCommand ? "disabled" : ""}>
-                  {settings.commandPrefix || "!"}say text
+                  {settings.commandPrefix || "."}say text
                 </span>
                 <span className={!settings.allowQuitCommand ? "disabled" : ""}>
-                  {settings.commandPrefix || "!"}quit
+                  {settings.commandPrefix || "."}quit
                 </span>
               </div>
             </PluginSettingsGroup>

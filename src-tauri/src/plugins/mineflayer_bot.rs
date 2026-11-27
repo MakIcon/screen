@@ -69,6 +69,7 @@ struct MineflayerBotRuntime {
     logs: Vec<String>,
     pending_chat: HashMap<String, oneshot::Sender<Result<serde_json::Value, CommandError>>>,
     inventory_url: Option<String>,
+    player_control: Option<serde_json::Value>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
     catalog: Option<serde_json::Value>,
@@ -94,6 +95,7 @@ impl Default for MineflayerBotRuntime {
             logs: Vec::new(),
             pending_chat: HashMap::new(),
             inventory_url: None,
+            player_control: None,
             inventory: None,
             gathering: None,
             catalog: None,
@@ -154,6 +156,7 @@ impl MineflayerBotState {
 #[serde(rename_all = "camelCase")]
 struct WorkerConfig {
     crowd_avoidance: bool,
+    player_control: bool,
     server: WorkerServerConfig,
     owner_name: String,
     account: WorkerAccountConfig,
@@ -242,6 +245,7 @@ struct WorkerEvent {
     error: Option<String>,
     request_id: Option<String>,
     inventory_url: Option<String>,
+    player_control: Option<serde_json::Value>,
     inventory: Option<serde_json::Value>,
     gathering: Option<serde_json::Value>,
     catalog: Option<serde_json::Value>,
@@ -318,6 +322,7 @@ fn snapshot_status(runtime: &MineflayerBotRuntime) -> MineflayerBotStatus {
         last_error: runtime.last_error.clone(),
         logs: runtime.logs.clone(),
         inventory_url: runtime.inventory_url.clone(),
+        player_control: runtime.player_control.clone(),
         inventory: runtime.inventory.clone(),
         gathering: runtime.gathering.clone(),
     }
@@ -425,6 +430,7 @@ fn refresh_child_state(runtime: &mut MineflayerBotRuntime) {
         runtime.pid = None;
         runtime.state = "stopped".to_string();
         runtime.inventory_url = None;
+        runtime.player_control = None;
         runtime.inventory = None;
         runtime.gathering = None;
         runtime.catalog = None;
@@ -438,10 +444,11 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
     let previous_state = runtime.state.clone();
     let lifecycle = matches!(
         event.event_type.as_str(),
-        "ready" | "end" | "inventory" | "production_started"
+        "ready" | "end" | "inventory" | "player_control" | "production_started"
     );
     match event.event_type.as_str() {
         "inventory" => runtime.inventory_url = event.inventory_url,
+        "player_control" => runtime.player_control = event.player_control,
         "gathering" => runtime.gathering = event.gathering,
         "bot_inventory" => runtime.inventory = event.inventory,
         "minecraft_catalog" => runtime.catalog = event.catalog,
@@ -497,6 +504,7 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
         }
         "end" => {
             runtime.inventory_url = None;
+            runtime.player_control = None;
             runtime.inventory = None;
             runtime.gathering = None;
             runtime.catalog = None;
@@ -521,12 +529,20 @@ fn update_from_worker_event(runtime: &mut MineflayerBotRuntime, event: WorkerEve
     }
 }
 
-fn apply_worker_line(runtime: &mut MineflayerBotRuntime, line: &str, label: &str, generation: u64) {
+fn apply_worker_line(
+    runtime: &mut MineflayerBotRuntime,
+    line: &str,
+    label: &str,
+    generation: u64,
+) -> Option<String> {
     // Output from a stopped worker must not overwrite a newer connection.
     if runtime.generation != generation {
-        return;
+        return None;
     }
     if let Ok(event) = serde_json::from_str::<WorkerEvent>(line) {
+        if label == "stdout" && event.event_type == "minecraft_session_request" {
+            return event.request_id;
+        }
         update_from_worker_event(runtime, event);
     } else {
         push_log(runtime, format!("{label}: {line}"));
@@ -535,6 +551,7 @@ fn apply_worker_line(runtime: &mut MineflayerBotRuntime, line: &str, label: &str
         }
         publish_progress(runtime);
     }
+    None
 }
 
 fn spawn_log_reader<R>(
@@ -555,9 +572,48 @@ fn spawn_log_reader<R>(
                 continue;
             }
 
-            if let Ok(mut runtime) = state.lock() {
-                apply_worker_line(&mut runtime, trimmed, label, generation);
+            let request = state.lock().ok().and_then(|mut runtime| {
+                let request_id = apply_worker_line(&mut runtime, trimmed, label, generation)?;
+                Some((request_id, runtime.account_id.clone()?))
+            });
+            if let Some((request_id, account_id)) = request {
+                refresh_worker_session(state.clone(), generation, request_id, account_id);
             }
+        }
+    });
+}
+
+fn refresh_worker_session(
+    state: Arc<Mutex<MineflayerBotRuntime>>,
+    generation: u64,
+    request_id: String,
+    account_id: String,
+) {
+    tauri::async_runtime::spawn(async move {
+        let payload = match microsoft_account_by_id(&account_id).await {
+            Ok(account) => serde_json::json!({
+                "type": "minecraft_session",
+                "requestId": request_id,
+                "accessToken": account.access_token,
+            }),
+            Err(_) => serde_json::json!({
+                "type": "minecraft_session",
+                "requestId": request_id,
+                "error": "Could not refresh the Minecraft session. Check the account in ScreenLauncher.",
+            }),
+        };
+        let Ok(mut runtime) = state.lock() else {
+            return;
+        };
+        if runtime.generation != generation {
+            return;
+        }
+        if let Some(stdin) = runtime
+            .child
+            .as_mut()
+            .and_then(|child| child.stdin.as_mut())
+        {
+            let _ = write_worker_message(stdin, &payload);
         }
     });
 }
@@ -659,7 +715,8 @@ async fn resolve_bot_account(
                 )
             })?;
 
-        if launcher_account_type.eq_ignore_ascii_case("MICROSOFT")
+        if !plugin.player_control
+            && launcher_account_type.eq_ignore_ascii_case("MICROSOFT")
             && launcher_ms_account_id
                 .map(|id| id == bot_account_id)
                 .unwrap_or(false)
@@ -830,6 +887,22 @@ pub async fn control_mineflayer_bot_workflow(
     result
 }
 
+#[tauri::command]
+pub async fn set_mineflayer_player_control(
+    state: State<'_, MineflayerBotState>,
+    bot_id: Option<String>,
+    action: String,
+) -> Result<(), CommandError> {
+    let bot = state.for_bot(bot_id.as_deref())?;
+    send_worker_request_data(
+        &bot,
+        serde_json::json!({"type": "player_control", "action": action}),
+        Duration::from_secs(20),
+    )
+    .await?;
+    Ok(())
+}
+
 fn validate_workflow_request(
     action: &str,
     steps: Option<&serde_json::Value>,
@@ -991,6 +1064,7 @@ fn stop_runtime(
     runtime.pid = None;
     runtime.state = "stopped".into();
     runtime.inventory_url = None;
+    runtime.player_control = None;
     runtime.inventory = None;
     runtime.gathering = None;
     runtime.catalog = None;
@@ -1090,7 +1164,23 @@ pub async fn start_mineflayer_bot(
             ));
         }
 
-        let command_prefix = clean_player_name(&plugin.command_prefix, "!");
+        if plugin.player_control
+            && !plugin
+                .bot_account_mode
+                .trim()
+                .eq_ignore_ascii_case("microsoft")
+        {
+            return Err(CommandError::new(
+                ErrorCode::InvalidInput,
+                "Выберите Microsoft-аккаунт для управления ботом из Minecraft",
+            ));
+        }
+
+        let command_prefix = match plugin.command_prefix.trim() {
+            "" | "!" | "," => ".",
+            prefix => prefix,
+        }
+        .to_string();
         let command_source = match plugin.command_source.trim().to_ascii_lowercase().as_str() {
             "chat" => "chat",
             "whisper" => "whisper",
@@ -1149,6 +1239,7 @@ pub async fn start_mineflayer_bot(
         let version = clean_player_name(&plugin.version, "");
         let config = WorkerConfig {
             crowd_avoidance: saved.crowd_avoidance,
+            player_control: plugin.player_control,
             combat: plugin.combat.clone(),
             server: WorkerServerConfig {
                 host,
@@ -1200,6 +1291,8 @@ pub async fn start_mineflayer_bot(
             },
             survival: plugin.survival.clone(),
             gathering: crate::models::MineflayerGatheringSettings {
+                smooth_aim: plugin.gathering.smooth_aim,
+                smooth_aim_speed: plugin.gathering.smooth_aim_speed.clamp(25, 200),
                 tunnel_width: plugin.gathering.tunnel_width.clamp(1, 3),
                 tunnel_height: plugin.gathering.tunnel_height.clamp(2, 4),
                 stair_width: plugin.gathering.stair_width.clamp(1, 3),
@@ -1300,6 +1393,7 @@ pub async fn start_mineflayer_bot(
         runtime.last_error = None;
         runtime.logs.clear();
         runtime.inventory_url = None;
+        runtime.player_control = None;
         runtime.inventory = None;
         runtime.gathering = None;
         runtime.catalog = None;

@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useTranslation } from "../../../i18n/locale";
 import type { MineflayerGatheringSettings } from "../../../types";
 import { ElementToggle } from "../../inputs/ElementToggle";
+import { ElementSlider } from "../../inputs/ElementSlider";
 import { CustomNumberInput } from "../../inputs/CustomNumberInput";
 import { PluginSettingsGroup } from "../PluginSettingsGroup";
+import { DEFAULT_MINEFLAYER_GATHERING_SETTINGS, workAimCommand } from "../pluginSettings";
 import { useBotInvoke } from "./BotSessionContext";
 import { toErrorMessage } from "../../../utils/errors";
 
@@ -59,6 +61,36 @@ export function MineflayerWorkSettings({
   return (
     <details className="mf-workflow-work-settings">
       <summary>{tr("bot.warehouse.workSettings")}</summary>
+      <PluginSettingsGroup
+        title={tr("bot.gathering.smoothAim")}
+        description={tr("bot.gathering.smoothAimDescription")}
+        collapsible={false}
+        enabled={settings.smoothAim}
+        onToggle={() => updatePassages({ smoothAim: !settings.smoothAim })}
+      >
+        <ElementSlider
+          className="mineflayer-bot-slider"
+          label={tr("bot.gathering.smoothAimSpeed")}
+          min={25}
+          max={200}
+          step={1}
+          value={settings.smoothAimSpeed}
+          defaultValue={DEFAULT_MINEFLAYER_GATHERING_SETTINGS.smoothAimSpeed}
+          showDefaultMarker
+          valueEditable
+          showValueBorder={false}
+          valueBackground="transparent"
+          tickMode="custom"
+          customTicks={[25, 50, 100, 150, 200]}
+          disabled={!settings.smoothAim}
+          onChange={(smoothAimSpeed) => updatePassages({ smoothAimSpeed })}
+        />
+        <div className="mineflayer-bot-controls mineflayer-bot-gathering-actions">
+          <button type="button" disabled={disabled} onClick={() => void send(workAimCommand(settings))}>
+            {tr("bot.gathering.applyToBot")}
+          </button>
+        </div>
+      </PluginSettingsGroup>
       <PluginSettingsGroup
         title={tr("bot.gathering.defenseWhileGathering")}
         description={tr("bot.gathering.selfDefenseWhileMining")}

@@ -444,6 +444,7 @@ export type MineflayerBotConfiguration = {
   host: string;
   port: number;
   version: string;
+  playerControl: boolean;
   commandPrefix: string;
   commandSource: "chat" | "whisper" | "both";
   extraOwners: string;
@@ -492,6 +493,8 @@ export type MineflayerBotPluginSettings = MineflayerBotConfiguration & {
 };
 
 export type MineflayerGatheringSettings = {
+  smoothAim: boolean;
+  smoothAimSpeed: number;
   tunnelWidth: number;
   tunnelHeight: number;
   stairWidth: number;
@@ -710,6 +713,11 @@ export type MineflayerBotStatus = {
   lastError?: string | null;
   logs: string[];
   inventoryUrl?: string | null;
+  playerControl?: {
+    address?: string | null;
+    mode: "bot" | "camera" | "player";
+    switching: boolean;
+  } | null;
   inventory?: MineflayerInventory | null;
   gathering?: {
     phase: string;

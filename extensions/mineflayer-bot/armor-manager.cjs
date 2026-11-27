@@ -1,65 +1,90 @@
 const { queueInventoryTask } = require("./combat-inventory.cjs");
+const { getItemEnchantments } = require("./pathfinder.cjs");
+const { findArmorDestination } = require("mineflayer-armor-manager/dist/lib/invUtil");
 
 const installed = Symbol("launcherArmorManager");
+const materials = ["leather", "golden", "chainmail", "copper", "iron", "turtle", "diamond", "netherite"];
+const destinations = ["head", "torso", "legs", "feet"];
+
+function armorRank(item) {
+  return materials.indexOf(item?.name?.split("_")[0]);
+}
+
+function isArmor(item) {
+  return Boolean(item?.name) && destinations.includes(findArmorDestination(item));
+}
 
 function installArmorManager(bot, onError = () => {}) {
   if (bot[installed]) return bot[installed];
-  const armorManager = require("mineflayer-armor-manager");
-  const { isNewArmorBetter } = require("mineflayer-armor-manager/dist/lib/invUtil");
   let disposed = false;
+  let dirty = false;
+  let queued = false;
   let task = Promise.resolve();
-  const collectListeners = [];
-  // Keep the plugin's armour ranking and pickup handling, while the combat
-  // controller retains ownership of the offhand (shield/bow/crystals).
-  const managedBot = Object.create(bot);
-  managedBot.on = (name, listener) => {
-    bot.on(name, listener);
-    collectListeners.push([name, listener]);
-    return managedBot;
-  };
-  managedBot.equip = (item, destination) => {
-    if (destination === "off-hand" || disposed) return Promise.resolve();
-    return queueInventoryTask(bot, async () => {
-      if (
-        disposed ||
-        bot.launcherInventoryActions?.busy ||
-        bot.health <= 0 ||
-        bot.launcherSurvival?.busy ||
-        bot.launcherProduction?.busy ||
-        bot.launcherCombatUtility
-      )
-        return;
-      const available = bot.inventory.items().find((entry) => entry.type === item.type);
-      const equipped = bot.inventory.slots[bot.getEquipmentDestSlot(destination)];
-      if (available && (!equipped || isNewArmorBetter(equipped, available)))
-        await bot.equip(available, destination);
-    }).catch(onError);
-  };
-  armorManager(managedBot);
-  bot.armorManager = managedBot.armorManager;
-  const equipAll = bot.armorManager.equipAll;
-  bot.armorManager.equipAll = () => {
-    task = task.then(() => (disposed ? undefined : equipAll())).catch(onError);
+  const inventory = bot.inventory;
+  function ready() {
+    return !disposed && bot.health > 0 && bot.isAlive !== false &&
+      !bot.launcherInventoryActions?.busy && !bot.launcherSurvival?.busy &&
+      !bot.launcherProduction?.busy && !bot.launcherGathering?.busy &&
+      !bot.launcherCombatUtility && !bot.launcherPlayerControl?.busy &&
+      (!bot.currentWindow || bot.currentWindow === inventory) && !inventory?.selectedItem;
+  }
+  function equipAll() {
+    dirty = true;
+    if (queued || !ready() || !inventory?.slots || !bot.getEquipmentDestSlot) return task;
+    queued = true;
+    task = queueInventoryTask(bot, async () => {
+      if (!ready()) return;
+      dirty = false;
+      for (const destination of destinations) {
+        if (!ready()) { dirty = true; return; }
+        const equipped = inventory.slots[bot.getEquipmentDestSlot(destination)];
+        if (equipped && !["creative", 1].includes(bot.game?.gameMode) &&
+            getItemEnchantments(equipped, bot.registry).some(({ name }) => name === "binding_curse")) continue;
+        const rank = armorRank(equipped);
+        const best = inventory.items().filter((item) => (!equipped || armorRank(item) > rank) &&
+          findArmorDestination(item) === destination).sort((a, b) => armorRank(b) - armorRank(a))[0];
+        if (best) {
+          try {
+            await bot.equip(best, destination);
+          } catch (error) {
+            onError(error);
+          }
+        }
+      }
+    }).catch(onError).finally(() => { queued = false; });
     return task;
-  };
-  function spawn() {
-    void bot.armorManager.equipAll();
+  }
+  bot.armorManager = { equipAll };
+  function onSlot(slot, previous, item) {
+    if (slot >= 9 && slot < 45 && item !== previous && isArmor(item)) void equipAll();
+  }
+  function onCollect(collector, entity) {
+    if ((collector.id === bot.entity?.id || collector.username === bot.username) &&
+        isArmor(entity.getDroppedItem?.())) void equipAll();
+  }
+  function tick() {
+    if (dirty && !queued && ready()) void equipAll();
   }
   function dispose() {
     disposed = true;
-    bot.off("spawn", spawn);
+    bot.off("spawn", equipAll);
+    bot.off("physicsTick", tick);
+    bot.off("playerCollect", onCollect);
     bot.off("end", dispose);
-    for (const [name, listener] of collectListeners) bot.off(name, listener);
+    inventory?.off?.("updateSlot", onSlot);
   }
-  bot.on("spawn", spawn);
+  bot.on("spawn", equipAll);
+  bot.on("physicsTick", tick);
+  bot.on("playerCollect", onCollect);
   bot.on("end", dispose);
+  inventory?.on?.("updateSlot", onSlot);
   bot[installed] = {
     dispose,
     get task() {
       return task;
     },
   };
-  spawn(); // Combat is initialized during the first spawn event.
+  void equipAll(); // Combat is initialized during the first spawn event.
   return bot[installed];
 }
 

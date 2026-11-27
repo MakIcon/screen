@@ -106,6 +106,23 @@ function fixture({ finishGathering = true, productionOutcome = "complete" } = {}
 const ore = { kind: "mine", item: "iron", count: 9, radius: 32 };
 const sticks = { kind: "craft", item: "stick", count: 8, mode: "auto" };
 
+test("forest scenario steps pass their sapling choice to gathering and retain it in history", async () => {
+  const f = fixture();
+  const enqueued = [];
+  const enqueue = f.gathering.enqueue.bind(f.gathering);
+  f.gathering.enqueue = (step) => {
+    enqueued.push(step.replant);
+    return enqueue(step);
+  };
+  const forest = { kind: "forest", count: 4, radius: 16 };
+  await f.controller.start([{ ...forest, replant: false }, { ...forest, replant: true }, forest]);
+  await f.controller.task;
+  const { phase, history } = f.controller.snapshot();
+  assert.equal(phase, "complete");
+  assert.deepEqual(enqueued, [false, true, undefined]);
+  assert.deepEqual(history[0].steps.map((step) => step.replant), enqueued);
+});
+
 test("a borrowed storage scanner cannot advance the scenario until inspection releases it", async () => {
   const f = fixture({ finishGathering: false });
   f.bot.launcherStorageInspection = { busy: true };

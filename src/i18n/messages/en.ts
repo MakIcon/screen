@@ -106,7 +106,7 @@ export const en: EnglishMessages = {
   "bot.warehouse.apply": "Apply · {count}",
   "bot.warehouse.applied":
     "Saved for {saved} bots. Applied now: {applied}; on connection: {offline}.",
-  "bot.warehouse.workSettings": "Gathering settings: defense, passages and lighting",
+  "bot.warehouse.workSettings": "Gathering settings",
   "bot.workspaceNew.crowdAvoidance": "Avoid crowding",
   "bot.workspaceNew.crowdAvoidanceHint":
     "All bots avoid each other, yield in narrow passages and unload in order. Waiting bots stay clear of storage; existing steps and approaches are preserved.",
@@ -714,6 +714,9 @@ export const en: EnglishMessages = {
   "bot.gathering.usesTheCurrentMelee":
     "Uses the current melee settings. At low health, without a weapon, or near a creeper it retreats along a safe path. After the danger passes it continues the same task. A manual pause is kept. These settings also apply when automatic PvP is off.",
   "bot.gathering.applyToBot": "APPLY TO BOT",
+  "bot.gathering.smoothAim": "Smooth aiming",
+  "bot.gathering.smoothAimDescription": "Turns the camera before chopping, mining, tilling, planting, and harvesting.",
+  "bot.gathering.smoothAimSpeed": "TURN SPEED · %",
   "bot.gathering.tunnelsAndLighting": "TUNNELS AND LIGHTING",
   "bot.gathering.passageSizeWhenMining": "Passage size when mining, stairs, and wall torches",
   "bot.gathering.tunnelWidthBlocks": "TUNNEL WIDTH · BLOCKS",
@@ -921,6 +924,7 @@ export const en: EnglishMessages = {
     "Finds workstations and containers in the loaded area around the bot. Pick a found block and the bot walks over and opens it.",
   "bot.production.scanRadiusBlocks": "SCAN RADIUS · BLOCKS",
   "bot.production.scanWorkstations": "Scan workstations",
+  "bot.production.workstationScanHint": "Find crafting tables, furnaces, and other workstations in the loaded area around the selected bot.",
   "bot.production.workstationsFound": "Workstations found",
   "bot.production.walkOverAndOpen": "WALK OVER AND OPEN",
   "bot.production.noWorkstationsFoundWithin":
@@ -1119,6 +1123,7 @@ export const en: EnglishMessages = {
   "bot.workflow.itemCount": "ITEM COUNT",
   "bot.workflow.radiusBlocks": "RADIUS · BLOCKS",
   "bot.workflow.replantAfterHarvest": "REPLANT AFTER HARVEST",
+  "bot.workflow.replantSaplings": "Replant saplings after chopping",
   "bot.workflow.craftingSpot": "CRAFTING SPOT",
   "bot.workflow.furnaceType": "FURNACE TYPE",
   "bot.workflow.craftingSpot2": "Crafting spot",
@@ -1148,7 +1153,7 @@ export const en: EnglishMessages = {
   "bot.workflow.ironToolsNeedA":
     "Iron tools need a stone pickaxe, reachable ores, trees, and an empty furnace near the start point. After mining, the bot returns to the start. It makes planks and a crafting table from wood.",
   "bot.workflow.mineDetail": "{item} · blocks: {count} · radius {radius}",
-  "bot.workflow.forestDetail": "Logs: {count} · radius {radius}",
+  "bot.workflow.forestDetail": "Logs: {count} · radius {radius} · Replanting: {replant}",
   "bot.workflow.stepLabel": "{label}, step {index}",
   "bot.workflow.radiusValue": "radius {radius}",
 
@@ -2234,7 +2239,26 @@ export const en: EnglishMessages = {
   // bot.workspace
   "bot.workspace.scenario": "Scenario",
   "bot.workspace.inventory": "Inventory",
-  "bot.workspace.production": "Workstations",
+  "bot.workspace.player": "Player and bot",
+  "bot.player.title": "Control from Minecraft",
+  "bot.player.description": "Connect from Minecraft Java 26.3 to watch the bot or take control of its character.",
+  "bot.player.enable": "Enable local connection",
+  "bot.player.disable": "Disable local connection",
+  "bot.player.useAccount": "Use launcher account",
+  "bot.player.chooseAccount": "Choose Microsoft account",
+  "bot.player.accountRequired": "Choose the Microsoft account the bot will use to join the server.",
+  "bot.player.startBot": "Start the bot. Its local address appears after it joins the server.",
+  "bot.player.address": "Direct connection address",
+  "bot.player.copy": "Copy address",
+  "bot.player.copied": "Address copied",
+  "bot.player.join": "Open Direct Connection in Minecraft under {account} and enter this address.",
+  "bot.player.switching": "Switching control…",
+  "bot.player.mode.bot": "Bot in control. Waiting for Minecraft to connect.",
+  "bot.player.mode.camera": "Bot in control. Minecraft is spectating.",
+  "bot.player.mode.player": "Player in control.",
+  "bot.player.action.take": "Take control",
+  "bot.player.action.bot": "Return control to bot",
+  "bot.player.action.camera": "Move camera to bot",
   "bot.workspace.settings": "Settings",
   "bot.workspace.control": "Log and chat",
 

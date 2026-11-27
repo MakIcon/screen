@@ -105,7 +105,7 @@ export const ru = {
   "bot.warehouse.apply": "Применить · {count}",
   "bot.warehouse.applied":
     "Склады сохранены. Получателей: {saved}; применено сейчас: {applied}; при подключении: {offline}.",
-  "bot.warehouse.workSettings": "Настройки добычи: защита, проходы и освещение",
+  "bot.warehouse.workSettings": "Настройки добычи",
   "bot.workspaceNew.crowdAvoidance": "Не толпиться",
   "bot.workspaceNew.crowdAvoidanceHint":
     "Для всей команды: обходить друг друга, пропускать в узких проходах и разгружаться по очереди. Ожидающие держатся в стороне от склада; ступени и подходы сохраняются.",
@@ -726,6 +726,9 @@ export const ru = {
   "bot.gathering.usesTheCurrentMelee":
     "Использует текущие настройки ближнего боя. При низком здоровье, без оружия или рядом с крипером отходит по безопасному пути. После опасности продолжает ту же задачу. Ручная пауза сохраняется. Настройки действуют и при выключенном автоматическом PvP.",
   "bot.gathering.applyToBot": "ПРИМЕНИТЬ К БОТУ",
+  "bot.gathering.smoothAim": "Плавное наведение",
+  "bot.gathering.smoothAimDescription": "Поворот камеры перед рубкой, добычей, вспашкой, посадкой и сбором урожая.",
+  "bot.gathering.smoothAimSpeed": "СКОРОСТЬ ПОВОРОТА · %",
   "bot.gathering.tunnelsAndLighting": "ТОННЕЛИ И ОСВЕЩЕНИЕ",
   "bot.gathering.passageSizeWhenMining":
     "Размер проходов при добыче руды, лестницы и факелы на стенах",
@@ -938,6 +941,7 @@ export const ru = {
     "Находит рабочие блоки и контейнеры в загруженной области вокруг бота. Выберите найденный блок, чтобы бот подошёл и открыл его.",
   "bot.production.scanRadiusBlocks": "РАДИУС СКАНИРОВАНИЯ · БЛОКОВ",
   "bot.production.scanWorkstations": "Сканировать рабочие блоки",
+  "bot.production.workstationScanHint": "Ищет верстаки, печи и другие рабочие блоки в загруженной области вокруг выбранного бота.",
   "bot.production.workstationsFound": "Найденные рабочие блоки",
   "bot.production.walkOverAndOpen": "ПОДОЙТИ И ОТКРЫТЬ",
   "bot.production.noWorkstationsFoundWithin":
@@ -1145,6 +1149,7 @@ export const ru = {
   "bot.workflow.itemCount": "КОЛИЧЕСТВО ПРЕДМЕТОВ",
   "bot.workflow.radiusBlocks": "РАДИУС · БЛОКОВ",
   "bot.workflow.replantAfterHarvest": "ПЕРЕСАЖИВАТЬ ПОСЛЕ СБОРА",
+  "bot.workflow.replantSaplings": "Сажать саженцы после рубки",
   "bot.workflow.craftingSpot": "МЕСТО КРАФТА",
   "bot.workflow.furnaceType": "ТИП ПЕЧИ",
   "bot.workflow.craftingSpot2": "Место крафта",
@@ -1174,7 +1179,7 @@ export const ru = {
   "bot.workflow.ironToolsNeedA":
     "Для заготовки железных инструментов нужны каменная кирка, доступные руды, деревья и пустая печь рядом с местом запуска. После добычи бот вернётся к старту. Доски и верстак изготовит из дерева.",
   "bot.workflow.mineDetail": "{item} · блоков: {count} · радиус {radius}",
-  "bot.workflow.forestDetail": "Брёвна: {count} · радиус {radius}",
+  "bot.workflow.forestDetail": "Брёвна: {count} · радиус {radius} · Посадка: {replant}",
   "bot.workflow.stepLabel": "{label}, шаг {index}",
   "bot.workflow.radiusValue": "радиус {radius}",
 
@@ -2284,7 +2289,26 @@ export const ru = {
   // bot.workspace
   "bot.workspace.scenario": "Сценарий",
   "bot.workspace.inventory": "Инвентарь",
-  "bot.workspace.production": "Рабочие блоки",
+  "bot.workspace.player": "Игрок и бот",
+  "bot.player.title": "Управление из Minecraft",
+  "bot.player.description": "Подключитесь к боту из Minecraft Java 26.3, чтобы наблюдать за ним или взять управление его персонажем.",
+  "bot.player.enable": "Включить локальное подключение",
+  "bot.player.disable": "Выключить локальное подключение",
+  "bot.player.useAccount": "Использовать аккаунт лаунчера",
+  "bot.player.chooseAccount": "Выбрать Microsoft-аккаунт",
+  "bot.player.accountRequired": "Выберите Microsoft-аккаунт, с которым бот войдёт на сервер.",
+  "bot.player.startBot": "Запустите бота. Адрес появится после подключения к серверу.",
+  "bot.player.address": "Адрес для прямого подключения",
+  "bot.player.copy": "Копировать адрес",
+  "bot.player.copied": "Адрес скопирован",
+  "bot.player.join": "Откройте «Прямое подключение» в Minecraft под аккаунтом {account} и введите этот адрес.",
+  "bot.player.switching": "Передаём управление…",
+  "bot.player.mode.bot": "Бот управляет персонажем. Ожидаем подключения Minecraft.",
+  "bot.player.mode.camera": "Бот управляет персонажем. Minecraft в режиме наблюдения.",
+  "bot.player.mode.player": "Персонажем управляет игрок.",
+  "bot.player.action.take": "Взять управление",
+  "bot.player.action.bot": "Вернуть боту",
+  "bot.player.action.camera": "Камера к боту",
   "bot.workspace.settings": "Настройки",
   "bot.workspace.control": "Журнал и чат",
 

@@ -38,6 +38,7 @@ function validateWorkflow(steps, { bot, gathering }) {
                   radius: integer(step.radius, "Радиус", 4, 256),
                   leaves: false,
                   scaffold: true,
+                  replant: step.replant,
                 }
               : kind === "collect"
                 ? { kind, radius: integer(step.radius, "Радиус", 4, 256) }

@@ -181,6 +181,8 @@ async function executeFarming(bot, task, action, ctx) {
     guard,
     operation,
     approach,
+    aim,
+    dig,
     confirm,
     fail,
     remainingDurability,
@@ -215,34 +217,42 @@ async function executeFarming(bot, task, action, ctx) {
     // Never harvest with seeds, a hoe or a Silk Touch tool in hand.
     if (action.kind === "harvest" && bot.heldItem) await operation(() => bot.unequip("hand"));
   };
+  function stillCurrent(block) {
+    const current = actionFor(
+      bot,
+      action.replant ? { ...task, kind: "plant", crop: action.crop.name, restoringCrop: true } : task,
+      block,
+    );
+    return current &&
+      current.kind === action.kind &&
+      (!action.crop || current.crop?.name === action.crop.name);
+  }
   await supplies();
   let block = bot.blockAt(action.position);
   await approach(block, action.kind !== "harvest");
   guard();
   block = bot.blockAt(action.position);
-  const current = actionFor(
-    bot,
-    action.replant ? { ...task, kind: "plant", crop: action.crop.name, restoringCrop: true } : task,
-    block,
-  );
-  if (
-    !current ||
-    current.kind !== action.kind ||
-    (action.crop && current.crop?.name !== action.crop.name)
-  )
-    return;
+  if (!stillCurrent(block)) return;
   // Inventory may have changed during navigation or survival actions.
   await supplies();
   guard();
+  const up = new Vec3(0, 1, 0);
+  if (action.kind !== "harvest") {
+    // activateBlock looks at the centre, while placeBlock looks at the face.
+    await aim(block, action.kind === "plant" ? up : null);
+    guard();
+    block = bot.blockAt(action.position);
+    if (!stillCurrent(block)) return;
+  }
   if (action.kind === "till") {
-    await operation(() => bot.activateBlock(block, new Vec3(0, 1, 0), new Vec3(0.5, 1, 0.5)));
+    await operation(() => bot.activateBlock(block, up, new Vec3(0.5, 1, 0.5)));
     await confirm(
       () => bot.blockAt(action.position)?.name === "farmland",
       "Сервер не подтвердил вспашку",
     );
     task.tilled = (task.tilled || 0) + 1;
   } else if (action.kind === "plant") {
-    await operation(() => bot.placeBlock(block, new Vec3(0, 1, 0)));
+    await operation(() => bot.placeBlock(block, up));
     await confirm(
       () => bot.blockAt(action.position.offset(0, 1, 0))?.name === action.crop.block,
       "Сервер не подтвердил посадку",
@@ -252,7 +262,7 @@ async function executeFarming(bot, task, action, ctx) {
   } else {
     if (!bot.canDigBlock(block)) throw new Error("Урожай вне досягаемости");
     trackDig(block);
-    await operation(() => bot.dig(block, true, "raycast"));
+    await operation(() => dig(block));
     await confirm(
       () => bot.blockAt(action.position)?.type !== block.type,
       "Сервер не подтвердил сбор урожая",

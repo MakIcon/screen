@@ -9,6 +9,17 @@ import {
 } from "./workflowDraft";
 
 describe("scenario drafts", () => {
+  it("preserves a forest step's sapling choice and defaults old drafts to planting", () => {
+    const original = workflowPayload([
+      { ...newWorkflowStep("forest"), replant: false },
+      { ...newWorkflowStep("forest"), replant: true },
+      newWorkflowStep("forest"),
+    ]);
+    const restored = readWorkflowDraft(JSON.stringify(original));
+    expect(workflowPayload(restored)).toEqual(original);
+    expect(restored.map((step) => step.replant !== false)).toEqual([false, true, true]);
+  });
+
   it("restores farming's all-actions limit, chosen crop and disabled replanting", () => {
     const steps = [
       newWorkflowStep("till"),

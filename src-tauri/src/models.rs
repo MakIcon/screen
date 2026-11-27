@@ -544,6 +544,8 @@ pub struct MineflayerBotConfiguration {
     pub port: u16,
     #[serde(default)]
     pub version: String,
+    #[serde(default)]
+    pub player_control: bool,
     #[serde(default = "default_mineflayer_bot_command_prefix")]
     pub command_prefix: String,
     #[serde(default = "default_mineflayer_bot_command_source")]
@@ -617,6 +619,8 @@ pub struct MineflayerBotConfiguration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MineflayerGatheringSettings {
+    pub smooth_aim: bool,
+    pub smooth_aim_speed: u32,
     pub tunnel_width: u32,
     pub tunnel_height: u32,
     pub stair_width: u32,
@@ -656,6 +660,8 @@ pub struct MineflayerStoragePosition {
 impl Default for MineflayerGatheringSettings {
     fn default() -> Self {
         Self {
+            smooth_aim: false,
+            smooth_aim_speed: 100,
             tunnel_width: 2,
             tunnel_height: 2,
             stair_width: 2,
@@ -1009,6 +1015,7 @@ pub struct MineflayerBotStatus {
     pub last_error: Option<String>,
     pub logs: Vec<String>,
     pub inventory_url: Option<String>,
+    pub player_control: Option<serde_json::Value>,
     pub inventory: Option<serde_json::Value>,
     pub gathering: Option<serde_json::Value>,
 }
@@ -1302,6 +1309,7 @@ impl Default for MineflayerBotConfiguration {
             host: String::new(),
             port: default_mineflayer_bot_port(),
             version: String::new(),
+            player_control: false,
             command_prefix: default_mineflayer_bot_command_prefix(),
             command_source: default_mineflayer_bot_command_source(),
             extra_owners: String::new(),
@@ -1428,7 +1436,7 @@ fn default_mineflayer_bot_port() -> u16 {
 }
 
 fn default_mineflayer_bot_command_prefix() -> String {
-    "!".to_string()
+    ".".to_string()
 }
 
 fn default_mineflayer_bot_command_source() -> String {
@@ -1827,6 +1835,7 @@ mod loader_schema_tests {
         let parsed: MineflayerBotPluginSettings = serde_json::from_value(serde_json::json!({
             "gathering": { "placeTorches": true, "tunnelWidth": 3, "torchInterval": 12,
                 "defendMobs": false, "defendPlayers": true, "defendArrows": false,
+                "smoothAim": true, "smoothAimSpeed": 65,
                 "storageGroups": [{ "id": "wood", "name": "Древесина", "filters": ["#wood"],
                     "chests": [{ "x": -12, "y": 64, "z": 3 }, { "x": 4, "y": 65, "z": 5 }] }] }
         }))
@@ -1839,6 +1848,8 @@ mod loader_schema_tests {
         assert_eq!(saved["gathering"]["defendMobs"], false);
         assert_eq!(saved["gathering"]["defendPlayers"], true);
         assert_eq!(saved["gathering"]["defendArrows"], false);
+        assert_eq!(saved["gathering"]["smoothAim"], true);
+        assert_eq!(saved["gathering"]["smoothAimSpeed"], 65);
         assert_eq!(saved["gathering"]["storageGroups"][0]["enabled"], true);
         assert_eq!(
             saved["gathering"]["storageGroups"][0]["filters"][0],

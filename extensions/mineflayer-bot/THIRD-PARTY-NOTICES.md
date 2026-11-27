@@ -2,6 +2,10 @@ This standalone Mineflayer worker and its combined Pathfinder are distributed
 under GPL-3.0-only. The complete license is in COPYING. The launcher communicates
 with this separate worker over standard input/output.
 
+Minecraft 26.3 uses @wp2508/mineflayer 4.42.10, an MIT-licensed fork of
+PrismarineJS Mineflayer maintained by wupengabc. The runtime uses the matching
+@wp2508/minecraft-data 3.111.8 registry and ships the dependency license files.
+
 Gathering integrations added in 1.9.0 use mineflayer-statemachine 1.7.0 and
 mineflayer-tool 1.2.0 (PrismarineJS / TheDudeFromCI, MIT). Their license files
 remain in the installed dependency packages. mineflayer-collectblock and the

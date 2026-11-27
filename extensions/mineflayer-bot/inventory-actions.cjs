@@ -2,6 +2,16 @@ const { createHash } = require("node:crypto");
 const { queueInventoryTask } = require("./combat-inventory.cjs");
 const { getItemEnchantments } = require("./pathfinder.cjs");
 
+function configureHashedInventory(bot) {
+  const registry = bot.registry;
+  if (![776, 777].includes(registry?.version?.version) || !registry.protocol?.types?.HashedSlot) return;
+  const supportFeature = registry.supportFeature.bind(registry);
+  // prismarine-item initializes undamaged items with legacy NBT, including
+  // items decoded from modern slots and copies made by prismarine-windows.
+  // A missing damage component already means zero wear.
+  registry.supportFeature = (feature) => feature !== "explicitMaxDurability" && supportFeature(feature);
+}
+
 function inventoryItemFingerprint(item) {
   if (!item) return null;
   const identity = JSON.stringify(
@@ -148,6 +158,7 @@ function createInventoryActions(
 }
 
 module.exports = {
+  configureHashedInventory,
   createInventoryActions,
   inventoryItemFingerprint,
   playerInventorySlots,

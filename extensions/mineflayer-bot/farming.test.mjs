@@ -174,6 +174,37 @@ function fixture(version = "26.1.2", hooks = {}) {
   };
 }
 
+for (const [kind, resultKey, action] of [
+  ["till", "tilled", "till:"],
+  ["plant", "planted", "plant:"],
+  ["harvest", "harvested", "harvest:"],
+]) test(`work aim turns before farm action ${kind}`, async (t) => {
+  const f = fixture();
+  t.after(() => f.work.dispose());
+  f.work.configureAim({ smoothAim: true, smoothAimSpeed: 200 });
+  f.work.settings.operationTimeoutMs = 2000;
+  f.bot.entity.yaw = Math.PI / 2;
+  f.bot.entity.pitch = 0;
+  const turns = [];
+  f.bot.look = async (yaw, pitch) => {
+    assert.ok(!f.events.some(event => event.startsWith(action)));
+    turns.push(yaw);
+    Object.assign(f.bot.entity, { yaw, pitch });
+  };
+  if (kind === "till") {
+    f.put("dirt", 2);
+    f.put("water", 3);
+    f.addItem("iron_hoe");
+  } else {
+    f.put("farmland", 2, 63, 0, { moisture: 7 });
+    if (kind === "harvest") f.put("wheat", 2, 64, 0, { age: 7 });
+    else f.addItem("wheat_seeds");
+  }
+  f.work.enqueue({ kind, crop: "wheat", count: 1, replant: false });
+  assert.equal((await f.finish())[resultKey], 1);
+  assert.ok(turns.length >= 3);
+});
+
 for (const version of ["1.20.4", "26.1.2"]) {
   test(`uses actual growth states and keeps immature crops on ${version}`, async () => {
     const f = fixture(version);

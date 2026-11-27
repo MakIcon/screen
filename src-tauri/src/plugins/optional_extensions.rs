@@ -65,6 +65,10 @@ const MINEFLAYER_FILES: &[(&str, &str)] = &[
     ),
     ("worker.cjs", MINEFLAYER_WORKER),
     (
+        "player-control.cjs",
+        include_str!("../../../extensions/mineflayer-bot/player-control.cjs"),
+    ),
+    (
         "inventory-actions.cjs",
         include_str!("../../../extensions/mineflayer-bot/inventory-actions.cjs"),
     ),
@@ -528,6 +532,7 @@ pub(crate) async fn ensure_mineflayer_dependencies(runtime_dir: &Path) -> Result
     // Existing installations are synchronized on startup. A new worker also
     // needs its newly introduced dependencies before Node loads it.
     for (name, version) in [
+        ("@wp2508/mineflayer", "4.42.10"),
         ("mineflayer-statemachine", "1.7.0"),
         ("mineflayer-tool", "1.2.0"),
         ("mineflayer-web-inventory", "1.8.5"),
@@ -780,6 +785,7 @@ mod tests {
         write_mineflayer_scaffold(&directory).await.unwrap();
         for name in [
             "inventory-actions.cjs",
+            "player-control.cjs",
             "chaotic-movement.cjs",
             "fleet-storage.cjs",
             "fleet-work.cjs",
@@ -794,6 +800,7 @@ mod tests {
             assert!(directory.join(name).is_file(), "missing {name}");
         }
         fs::write(directory.join("mineflayer-fabric.cjs"), "stale library").unwrap();
+        fs::write(directory.join("player-control.cjs"), "stale relay").unwrap();
         fs::write(
             directory.join("warehouse-geometry.cjs"),
             "stale warehouse geometry",
@@ -803,6 +810,9 @@ mod tests {
         let library = fs::read_to_string(directory.join("mineflayer-fabric.cjs")).unwrap();
         assert!(library.contains("mineflayer-fabric 0.2.1"));
         assert!(library.contains("blockCollisionShapes"));
+        assert!(fs::read_to_string(directory.join("player-control.cjs"))
+            .unwrap()
+            .contains("CONFIGURATION_PACKETS"));
         assert!(fs::read_to_string(directory.join("warehouse-geometry.cjs"))
             .unwrap()
             .contains("leaveContainerTop"));

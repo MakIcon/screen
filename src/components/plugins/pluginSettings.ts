@@ -34,8 +34,14 @@ export function normalizeMineflayerGatheringSettings(value: unknown): Mineflayer
     defendMobs: normalizeBoolean(draft.defendMobs, defaults.defendMobs),
     defendPlayers: normalizeBoolean(draft.defendPlayers, defaults.defendPlayers),
     defendArrows: normalizeBoolean(draft.defendArrows, defaults.defendArrows),
+    smoothAim: normalizeBoolean(draft.smoothAim, defaults.smoothAim),
+    smoothAimSpeed: normalizeInteger(draft.smoothAimSpeed, defaults.smoothAimSpeed, 25, 200),
     storageGroups: normalizeStorageGroups(draft.storageGroups),
   };
+}
+
+export function workAimCommand(settings: MineflayerGatheringSettings): string {
+  return `work aim ${settings.smoothAim ? "on" : "off"} ${settings.smoothAimSpeed}`;
 }
 
 export function normalizeMineflayerSurvivalSettings(value: unknown): MineflayerSurvivalSettings {
@@ -160,7 +166,8 @@ export const DEFAULT_MINEFLAYER_BOT_SETTINGS: MineflayerBotPluginSettings = {
   host: "",
   port: 25565,
   version: "",
-  commandPrefix: "!",
+  commandPrefix: ".",
+  playerControl: false,
   commandSource: "both",
   extraOwners: "",
   commandCooldownMs: 500,
@@ -311,6 +318,7 @@ export function normalizeMineflayerBotSettings(
           })
           .slice(0, 99)
       : [];
+  const commandPrefix = normalizeText(draft.commandPrefix, defaults.commandPrefix);
   return {
     bots,
     crowdAvoidance: normalizeBoolean(draft.crowdAvoidance, defaults.crowdAvoidance),
@@ -324,7 +332,8 @@ export function normalizeMineflayerBotSettings(
     host: normalizeText(draft.host, defaults.host),
     port: normalizeInteger(draft.port, defaults.port, 1, 65535),
     version: normalizeText(draft.version, defaults.version),
-    commandPrefix: normalizeText(draft.commandPrefix, defaults.commandPrefix),
+    playerControl: normalizeBoolean(draft.playerControl, defaults.playerControl),
+    commandPrefix: ["!", ","].includes(commandPrefix) ? defaults.commandPrefix : commandPrefix,
     commandSource:
       draft.commandSource === "chat" || draft.commandSource === "whisper"
         ? draft.commandSource

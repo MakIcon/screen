@@ -1,14 +1,119 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { createRequire } from "node:module";
+import { createServer as createTcpServer } from "node:net";
+import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import worker from "./worker.cjs";
 import { installCombatProtocol } from "./combat.cjs";
 
 const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
+
+async function assertLauncherMicrosoftLogin(version, protocol, t) {
+  const profileId = "0123456789abcdef0123456789abcdef";
+  const accessToken = "test-launcher-token";
+  const joined = [];
+  const sessions = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    joined.push({ path: request.url, ...JSON.parse(Buffer.concat(chunks)) });
+    response.writeHead(204).end();
+  });
+  sessions.listen(0, "127.0.0.1");
+  t.after(() => sessions.close());
+  await once(sessions, "listening");
+
+  const server = new protocol.Server(version);
+  server.listen(0, "127.0.0.1");
+  t.after(() => server.close());
+  await once(server, "listening");
+  const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 1024 });
+  const encrypted = new Promise((resolve, reject) => {
+    server.once("connection", client => {
+      client.once("error", reject);
+      client.once("set_protocol", () => { client.state = protocol.states.LOGIN; });
+      client.once("login_start", ({ username }) => {
+        client.once("encryption_begin", () => resolve(username));
+        client.write("encryption_begin", {
+          serverId: "localhost",
+          publicKey: publicKey.export({ type: "spki", format: "der" }),
+          verifyToken: randomBytes(4),
+          shouldAuthenticate: true,
+        });
+      });
+    });
+  });
+  const config = worker.parseConfig(JSON.stringify({
+    server: { host: "127.0.0.1", port: server.socketServer.address().port, version },
+    account: { mode: "microsoft", username: "TestOwner", uuid: profileId, accessToken },
+  }));
+  const client = protocol.createClient({
+    ...worker.createBotOptions(config),
+    sessionServer: `http://127.0.0.1:${sessions.address().port}`,
+  });
+  t.after(() => client.end());
+  assert.equal(await Promise.race([
+    encrypted,
+    once(client, "error").then(([error]) => { throw error; }),
+  ]), "TestOwner");
+  assert.deepEqual(joined, [{
+    path: "/session/minecraft/join",
+    accessToken,
+    selectedProfile: profileId,
+    serverId: joined[0]?.serverId,
+  }]);
+  assert.match(joined[0].serverId, /^-?[0-9a-f]+$/);
+}
+
+test("uses the launcher Microsoft session during the encrypted Minecraft login", { timeout: 5000 }, async t => {
+  await assertLauncherMicrosoftLogin("26.1.2", minecraftProtocol, t);
+});
+
+test("uses the launcher Microsoft session during the encrypted Minecraft 26.3 login", { timeout: 5000 }, async t => {
+  const require263 = createRequire(require.resolve("@wp2508/mineflayer"));
+  await assertLauncherMicrosoftLogin("26.3", require263("minecraft-protocol"), t);
+});
+
+test("a Microsoft reconnect waits for a replacement session from the launcher", { timeout: 8000 }, async t => {
+  let connections = 0;
+  const server = createTcpServer(socket => {
+    if (++connections === 1) socket.end();
+    else socket.on("data", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  t.after(() => server.close());
+  await once(server, "listening");
+
+  const child = spawn(process.execPath, [fileURLToPath(new URL("./worker.cjs", import.meta.url))], {
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  const lines = createInterface({ input: child.stdout });
+  t.after(() => { lines.close(); child.kill(); });
+  child.stdin.write(`${JSON.stringify({
+    server: { host: "127.0.0.1", port: server.address().port, version: "26.1.2" },
+    account: { mode: "microsoft", username: "TestOwner", uuid: "0123456789abcdef0123456789abcdef", accessToken: "old-token" },
+    connection: { autoReconnect: true, reconnectDelayMs: 1000 },
+  })}\n`);
+  for await (const line of lines) {
+    const event = JSON.parse(line);
+    if (event.type !== "minecraft_session_request") continue;
+    assert.equal(connections, 1);
+    const reconnected = once(server, "connection");
+    child.stdin.write(`${JSON.stringify({ type: "minecraft_session", requestId: event.requestId, accessToken: "new-token" })}\n`);
+    const [socket] = await reconnected;
+    socket.destroy();
+    assert.equal(connections, 2);
+    return;
+  }
+  assert.fail("Worker stopped before requesting a refreshed session");
+});
 
 test("shared navigation settings apply even while a worker is connecting", async () => {
   const changes = [];
@@ -52,6 +157,16 @@ test("routes owner chat to a specific bot, several named bots or everyone before
   assert.equal(body("mine stone 64"), "mine stone 64");
   assert.equal(body("Hello Miner"), null);
   assert.equal(body("!@Miner"), null);
+});
+
+test("uses the dot prefix for existing default profiles and preserves other custom prefixes", () => {
+  for (const [before, after] of [[undefined, "."], ["!", "."], [",", "."], ["#", "#"]]) {
+    const config = worker.parseConfig(JSON.stringify({
+      server: { host: "localhost" }, account: { username: "TestBot" }, commands: { prefix: before },
+    }));
+    assert.equal(config.commands.prefix, after);
+    assert.equal(worker.commandBodyForBot(`${after}help`, config.commands.prefix, "TestBot"), "help");
+  }
 });
 
 test("explicit commands accept an optional prefix and explicit game chat remains literal", async () => {
@@ -394,16 +509,16 @@ test("reads Minecraft 26.1 world clock time packets", () => {
   assert.equal(bot.time.rate, 1);
 });
 
-test("reads the actual protocol 775 update_time wire format", async () => {
-  const serializer = minecraftProtocol.createSerializer({
+async function assertClockPacket(protocol, version, ageField, idField, ticks) {
+  const serializer = protocol.createSerializer({
     state: "play",
     isServer: true,
-    version: "26.1.2",
+    version,
   });
-  const deserializer = minecraftProtocol.createDeserializer({
+  const deserializer = protocol.createDeserializer({
     state: "play",
     isServer: false,
-    version: "26.1.2",
+    version,
   });
   serializer.pipe(deserializer);
 
@@ -411,8 +526,11 @@ test("reads the actual protocol 775 update_time wire format", async () => {
   serializer.write({
     name: "update_time",
     params: {
-      age: [0, 12345],
-      clockUpdates: [{ id: 0, totalTicks: 6000, partialTick: 0.5, rate: 1 }],
+      [ageField]: [0, 12345],
+      clockUpdates: [
+        { [idField]: 1, totalTicks: ticks[0], partialTick: 0, rate: 1 },
+        { [idField]: 0, totalTicks: ticks[1], partialTick: 0.5, rate: 1 },
+      ],
     },
   });
   const [parsed] = await packetPromise;
@@ -423,10 +541,20 @@ test("reads the actual protocol 775 update_time wire format", async () => {
   compatibleTimePlugin(bot);
   client.emit(parsed.data.name, parsed.data.params);
 
-  assert.equal(protocolLongToBigInt(parsed.data.params.age), 12345n);
+  assert.equal(protocolLongToBigInt(parsed.data.params[ageField]), 12345n);
   assert.equal(bot.time.bigTime, 6000n);
   assert.equal(bot.time.bigAge, 12345n);
+  assert.equal(bot.time.clockId, 0);
   assert.equal(bot.time.partialTick, 0.5);
+}
+
+test("reads the actual protocol 775 update_time wire format", async () => {
+  await assertClockPacket(minecraftProtocol, "26.1.2", "age", "id", [50, 6000]);
+});
+
+test("reads the actual protocol 777 update_time wire format", async () => {
+  const require263 = createRequire(require.resolve("@wp2508/mineflayer"));
+  await assertClockPacket(require263("minecraft-protocol"), "26.3", "gameTime", "clockId", [50n, 6000n]);
 });
 
 test("keeps legacy Mineflayer time packets compatible", () => {

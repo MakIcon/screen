@@ -36,6 +36,14 @@ function passageSettings(input = {}, defaults = DEFAULTS) {
   result.placeTorches = input.placeTorches ?? defaults.placeTorches;
   return result;
 }
+function aimSettings(input = {}, defaults = DEFAULTS) {
+  if (input.smoothAim != null && typeof input.smoothAim !== "boolean")
+    throw new Error("Плавное наведение: включено или выключено");
+  return {
+    smoothAim: input.smoothAim ?? defaults.smoothAim,
+    smoothAimSpeed: integer(input.smoothAimSpeed ?? defaults.smoothAimSpeed, "Скорость наведения", 25, 200),
+  };
+}
 function defenseSettings(input = {}, defaults = DEFAULTS) {
   const result = {};
   for (const key of ["defendMobs", "defendPlayers", "defendArrows"]) {
@@ -137,6 +145,9 @@ function resolveBlocks(registry, input = "ores") {
 function normalizeTask(bot, input, settings = DEFAULTS) {
   if (!input || !["mine", "forest", "quarry", "collect", "deposit", ...farming.KINDS].includes(input.kind))
     throw new Error("Задача: mine, forest, quarry, collect, deposit, till, plant, harvest или farm");
+  const replantSaplings = input.replantSaplings ?? input.replant;
+  if (input.kind === "forest" && replantSaplings != null && typeof replantSaplings !== "boolean")
+    throw new Error("Посадка саженцев: включено или выключено");
   const task = {
     kind: input.kind,
     origin: position(input.origin || bot.entity.position),
@@ -149,7 +160,7 @@ function normalizeTask(bot, input, settings = DEFAULTS) {
     ),
     leaves: input.leaves === true,
     scaffold: input.kind === "forest" && input.scaffold !== false,
-    replantSaplings: input.kind === "forest" && input.replantSaplings !== false,
+    replantSaplings: input.kind === "forest" && replantSaplings !== false,
     routeDig: ["mine", "forest"].includes(input.kind) && input.routeDig !== false,
     tunnel: input.kind === "quarry" && input.tunnel === true,
   };
@@ -225,8 +236,7 @@ function overhead(bot, block) {
     Math.abs(block.position.z + 0.5 - feet.z) < 0.8
   );
 }
-function supportBlock(bot, block) {
-  const feet = bot.entity.position;
+function supportBlock(bot, block, feet = bot.entity.position) {
   // Include both blocks when standing across their boundary.
   return (
     block.position.y === Math.floor(feet.y) - 1 &&
@@ -252,6 +262,7 @@ function keepItem(bot, item) {
 module.exports = {
   DEFAULTS,
   passageSettings,
+  aimSettings,
   defenseSettings,
   SCAFFOLD_ITEMS,
   AIR,

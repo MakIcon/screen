@@ -24,6 +24,7 @@ import {
   storagePositionKey,
 } from "./storageGroups";
 import { MineflayerStorageGroups } from "./MineflayerStorageGroups";
+import { MineflayerProductionControls } from "./MineflayerProductionControls";
 import "./MineflayerStorageWorkspace.css";
 
 type Scope = "one" | "group" | "all";
@@ -581,6 +582,12 @@ export function MineflayerStorageWorkspace({
         )}
       </div>
       <BotSessionContext.Provider value={source.id}>
+        <MineflayerProductionControls
+          key={source.id}
+          connected={Boolean(editorStatus?.running && editorStatus.state === "connected")}
+          status={editorStatus ?? null}
+          refresh={refresh}
+        />
         <MineflayerStorageGroups
           groups={groups}
           onChange={(next) => setDrafts((current) => ({ ...current, [scopeKey]: next }))}

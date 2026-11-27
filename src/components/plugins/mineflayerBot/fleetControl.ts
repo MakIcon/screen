@@ -3,6 +3,7 @@ import type {
   MineflayerBotStatus,
   MineflayerWorkflowStep,
 } from "../../../types";
+import { workAimCommand } from "../pluginSettings";
 
 export type FleetRequest = { command: string; args: Record<string, unknown> };
 export type FleetReceipt = {
@@ -46,6 +47,10 @@ export function fleetWorkflowRequests(
               command: true,
               message: `work tunnels ${settings.tunnelWidth} ${settings.tunnelHeight} ${settings.stairWidth} ${settings.stairHeight} ${settings.placeTorches ? "on" : "off"} ${settings.torchInterval}`,
             },
+          },
+          {
+            command: "send_mineflayer_bot_chat",
+            args: { command: true, message: workAimCommand(settings) },
           },
         ]
       : []),

@@ -28,6 +28,9 @@ const STATIONS = new Set([
   "grindstone",
   "loom",
   "cartography_table",
+  "crafter",
+]);
+const OPENABLE_CONTAINERS = new Set([
   "chest",
   "trapped_chest",
   "ender_chest",
@@ -36,9 +39,8 @@ const STATIONS = new Set([
   "dispenser",
   "dropper",
   "shulker_box",
-  "crafter",
 ]);
-const supported = (name) => STATIONS.has(name) || /_shulker_box$/.test(name);
+const supported = (name) => STATIONS.has(name) || OPENABLE_CONTAINERS.has(name) || /_shulker_box$/.test(name);
 class Cancelled extends Error {
   constructor() {
     super("Работа остановлена");
@@ -682,7 +684,7 @@ function createProductionController(bot, hooks = {}) {
   function scanStations(radius = 32) {
     if (disposed || !bot.entity?.position) throw new Error("Бот отключён");
     radius = integer(radius, "Радиус", 4, 64);
-    const blocks = discoverBlocks(bot, supported, radius);
+    const blocks = discoverBlocks(bot, (name) => STATIONS.has(name), radius);
     nearbyScan = { id: ++scanSequence, radius, origin: { ...bot.entity.position }, blocks };
     const text = `Найдено рабочих блоков: ${blocks.length}; радиус ${radius}`;
     if (!job) report(text);

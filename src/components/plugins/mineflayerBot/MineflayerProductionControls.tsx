@@ -68,7 +68,7 @@ export function MineflayerProductionControls({
   const [choice, setChoice] = useState(0),
     [name, setName] = useState("");
   const [scanRadius, setScanRadius] = useState(32);
-  const [sending, setSending] = useState(false),
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null),
     [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const sendingRef = useRef(false);
@@ -83,7 +83,7 @@ export function MineflayerProductionControls({
   );
   const progress = connected ? status?.inventory?.production : null;
   const active = progress?.station;
-  const disabled = !connected || sending;
+  const disabled = !connected || pendingCommand !== null;
   const working = disabled || Boolean(progress?.busy);
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +101,7 @@ export function MineflayerProductionControls({
   async function send(command: string) {
     if (!connected || sendingRef.current) return;
     sendingRef.current = true;
-    setSending(true);
+    setPendingCommand(command);
     setError("");
     setFeedback("");
     try {
@@ -112,7 +112,7 @@ export function MineflayerProductionControls({
       setError(toErrorMessage(failure));
     } finally {
       sendingRef.current = false;
-      setSending(false);
+      setPendingCommand(null);
     }
   }
   const number = (
@@ -138,22 +138,23 @@ export function MineflayerProductionControls({
   );
   return (
     <>
-      <PluginSettingsGroup
-        title={tr("bot.production.blocksAroundTheBot")}
-        description={tr("bot.production.findsWorkstationsAndContainers")}
-        collapsible={false}
-      >
-        <div className="mineflayer-bot-grid">
+      <section className="mf-warehouse-discovery" aria-label={tr("bot.production.blocksAroundTheBot")}>
+        <div>
+          <h3>{tr("bot.production.blocksAroundTheBot")}</h3>
+          <p>{tr("bot.production.workstationScanHint")}</p>
+        </div>
+        <div className="mf-warehouse-discovery-controls">
           {number(tr("bot.production.scanRadiusBlocks"), scanRadius, setScanRadius, 4, 64)}
-          <div className="mineflayer-coordinate-actions">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => void send(`station scan ${scanRadius}`)}
-            >
-              {tr("bot.production.scanWorkstations")}
-            </button>
-          </div>
+          <button
+            className="mf-button mf-warehouse-primary"
+            type="button"
+            disabled={disabled}
+            onClick={() => void send(`station scan ${scanRadius}`)}
+          >
+            {pendingCommand?.startsWith("station scan ")
+              ? tr("bot.warehouse.scanning")
+              : tr("bot.production.scanWorkstations")}
+          </button>
         </div>
         {progress?.nearbyScan && (
           <>
@@ -198,11 +199,10 @@ export function MineflayerProductionControls({
             )}
           </>
         )}
-      </PluginSettingsGroup>
+      </section>
       <PluginSettingsGroup
         title={tr("bot.production.automaticCrafting")}
         description={tr("bot.production.theBotCraftsIntermediate")}
-        collapsible={false}
       >
         <div className="mineflayer-bot-grid">
           <MinecraftSearchField

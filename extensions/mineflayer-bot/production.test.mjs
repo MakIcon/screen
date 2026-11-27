@@ -534,6 +534,7 @@ test("station scan identifies nearby types without opening blocks or interruptin
   f.block("crafting_table", 2);
   f.block("furnace", 3);
   f.block("barrel", 5);
+  f.block("chest", 6);
   f.block("stone", 4);
   f.block("anvil", 40);
   f.bot.activateBlock = () => assert.fail("discovery must not open a block");
@@ -546,7 +547,7 @@ test("station scan identifies nearby types without opening blocks or interruptin
   assert.equal(prepared, false);
   assert.deepEqual(
     f.production.snapshot().nearbyScan.blocks.map((block) => block.name),
-    ["crafting_table", "furnace", "barrel"],
+    ["crafting_table", "furnace"],
   );
   assert.equal(f.production.busy, false);
 });

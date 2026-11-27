@@ -142,6 +142,13 @@ async function handleGatheringCommand(bot, work, command, args, { prepare, reply
   }
   if (command === "work") {
     const action = args[0] || "status";
+    if (action === "aim") {
+      if (args.length !== 3 || !["on", "off"].includes(args[1]))
+        throw new Error("work aim on|off скорость 25–200");
+      work.configureAim({ smoothAim: args[1] === "on", smoothAimSpeed: args[2] });
+      reply("Наведение при добыче настроено");
+      return true;
+    }
     if (action === "defense") {
       if (args.length !== 4 || !args.slice(1).every((value) => ["on", "off"].includes(value)))
         throw new Error("work defense on|off on|off on|off — мобы, игроки, стрелы");

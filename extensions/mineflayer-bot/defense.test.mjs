@@ -25,6 +25,27 @@ const { PlayerState } = mineflayerRequire("prismarine-physics");
 const protocol = mineflayerRequire("minecraft-protocol");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+for (const version of ["1.20.4", "26.3"]) test(`custom PvP serializes the attack and the native swing on ${version}`, () => {
+  const dependencies = version === "26.3" ? createRequire(runtime.resolve("@wp2508/mineflayer")) : mineflayerRequire;
+  const protocol = dependencies("minecraft-protocol");
+  const serializer = protocol.createSerializer({ state: "play", isServer: false, version });
+  const parser = protocol.createDeserializer({ state: "play", isServer: true, version });
+  const packets = [];
+  const bot = {
+    registry: dependencies("prismarine-registry")(version),
+    entity: { yaw: 0, pitch: 0, onGround: true },
+    getControlState: () => false,
+    _client: { state: "play", write(name, params) {
+      packets.push(parser.parsePacketBuffer(serializer.createPacketBuffer({ name, params })).data);
+    } },
+  };
+  installCombatProtocol(bot);
+  runtime("@nxg-org/mineflayer-custom-pvp/lib/util/customAttack").attack(bot, { id: 42 });
+  assert.deepEqual(packets.map(({ name }) => name), version === "26.3"
+    ? ["look", "attack", "punch"] : ["look", "use_entity", "arm_animation"]);
+  assert.equal(packets[1].params.entityId ?? packets[1].params.target, 42);
+});
+
 function fixture(version) {
   const { rig, world } = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5));
   const bot = rig.bot;
@@ -982,8 +1003,8 @@ for (const version of ["1.8.8", "1.20.4", "26.1.2"]) {
       if (shield) assert.equal(bot.inventory.slots[45], shield);
       const pickup = f.item(14, "diamond_boots");
       bot.emit("playerCollect", { username: bot.username }, { getDroppedItem: () => pickup });
-      await new Promise((resolve) => setTimeout(resolve, 130));
-      assert.equal(bot.inventory.slots[8], pickup, "published plugin handles armour pickup");
+      await armor.task;
+      assert.equal(bot.inventory.slots[8], pickup, "picked-up armour is equipped");
       const respawnHelmet = f.item(15, "diamond_helmet");
       bot.inventory.slots[5] = null;
       bot.emit("spawn");
