@@ -1,6 +1,6 @@
 {
   "productName": "ScreenLauncher",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "identifier": "com.makar.screen",
   "build": {
     "beforeDevCommand": "pnpm icons && pnpm dev",
