@@ -33,6 +33,8 @@ function loadMineflayer () {
 
 const { mineflayer, compatibilityVersion } = loadMineflayer()
 const { createRequire } = require('node:module')
+const dns = require('node:dns/promises')
+const { createConnection, isIP } = require('node:net')
 const minecraft263Version = '26.3'
 const minecraft263Protocol = 777
 const { installFabricSupport } = require('./fabric.cjs')
@@ -599,10 +601,52 @@ function getPlayerEntity (bot, username) {
   return match?.[1]?.entity || null
 }
 
-function createBotOptions (config) {
+const defaultServerPort = 25565
+
+function serverAddress ({ host, port }) {
+  const input = String(host || '').trim()
+  // Colons inside an unbracketed IPv6 address belong to the host.
+  const inline = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(input)
+  const hostname = inline ? (inline[1] || inline[2]) : input.replace(/^\[([^\]]+)\]$/, '$1')
+  const configuredPort = Number(inline ? inline[3] : port ?? 0)
+  if (!hostname || /[\s/[\]]/.test(hostname) || (hostname.includes(':') && isIP(hostname) !== 6)) {
+    throw new Error('Invalid server address. Use a hostname, IP address or host:port.')
+  }
+  if (!Number.isInteger(configuredPort) || configuredPort < (inline ? 1 : 0) || configuredPort > 65535) {
+    throw new Error('Server port must be between 1 and 65535')
+  }
+  return {
+    host: hostname,
+    port: configuredPort || defaultServerPort,
+    // Saved profiles used 25565 for the automatic port before the field
+    // could be left empty. host:25565 explicitly asks for a direct connection.
+    useSrv: !inline && (configuredPort === 0 || configuredPort === defaultServerPort),
+    label: inline || !configuredPort ? input : `${isIP(hostname) === 6 ? `[${hostname}]` : hostname}:${configuredPort}`
+  }
+}
+
+async function configureServerConnection (options, address) {
+  if (address.port !== defaultServerPort || isIP(address.host)) return
+  let endpoint = address
+  if (address.useSrv && !/^localhost\.?$/i.test(address.host)) {
+    try {
+      const records = await dns.resolveSrv(`_minecraft._tcp.${address.host}`)
+      const target = records.sort((a, b) => a.priority - b.priority)
+        .find(record => record.name && record.name !== '.' && record.port > 0)
+      if (target) endpoint = { host: target.name, port: target.port }
+    } catch {
+      // Domains without an SRV record use the normal Minecraft port.
+    }
+  }
+  // Keep the hostname the player entered in the protocol handshake. Both
+  // minecraft-protocol versions otherwise replace it with the SRV backend.
+  options.connect = client => client.setSocket(createConnection(endpoint.port, endpoint.host))
+}
+
+function createBotOptions (config, address = serverAddress(config.server)) {
   const options = {
-    host: config.server.host,
-    port: Number(config.server.port) || 25565,
+    host: address.host,
+    port: address.port,
     checkTimeoutInterval: config.connection.checkTimeoutIntervalMs,
     respawn: Boolean(config.connection.autoRespawn),
     hideErrors: true,
@@ -648,6 +692,7 @@ async function selectMineflayer (options) {
     const status = await protocol.ping({
       host: options.host,
       port: options.port,
+      connect: options.connect,
       version: minecraft263Version,
       closeTimeout: options.checkTimeoutInterval,
       noPongTimeout: 1000
@@ -671,12 +716,15 @@ async function main () {
   const config = parseConfig(firstLine.value)
   const prefix = config.commands.prefix
   const ownerName = config.ownerName
-  const serverLabel = `${config.server.host}:${config.server.port}`
+  const address = serverAddress(config.server)
+  const serverLabel = address.label
+  const canonicalHost = address.host.toLowerCase()
+  const crewHost = isIP(canonicalHost) === 6 ? `[${canonicalHost}]` : canonicalHost
   const allowedOwners = [ownerName, ...config.commands.extraOwners]
   const commandTimestamps = new Map()
   // One crew link per worker: it outlives reconnects, so leases survive them.
   const crew = createCrewLink({
-    key: `${String(config.server.host).toLowerCase()}:${config.server.port || 25565}`,
+    key: `${crewHost}:${address.port}`,
     name: String(config.account.username).toLowerCase(),
     log: message => emit('log', { message })
   })
@@ -792,7 +840,9 @@ async function main () {
         config.account.accessToken = await requestSession()
       }
       if (stopping) return
-      const options = createBotOptions(config)
+      const options = createBotOptions(config, address)
+      await configureServerConnection(options, address)
+      if (stopping) return
       const engine = await selectMineflayer(options)
       if (stopping) return
       if (config.playerControl && engine === mineflayer) throw new Error('Unsupported protocol version: управление из Minecraft требует Java 26.3')
@@ -1447,6 +1497,7 @@ module.exports = {
   configurePathfinder,
   compatibleTimePlugin,
   createBotOptions,
+  serverAddress,
   describeKickReason,
   flattenStructuredText,
   formatReason,

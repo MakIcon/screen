@@ -16,6 +16,23 @@ const require = createRequire(import.meta.url);
 const mineflayerRequire = createRequire(require.resolve("mineflayer"));
 const minecraftProtocol = mineflayerRequire("minecraft-protocol");
 
+test("server address supports automatic ports, inline ports and IPv6", () => {
+  assert.deepEqual(worker.serverAddress({ host: " play.example.test " }), {
+    host: "play.example.test", port: 25565, useSrv: true, label: "play.example.test",
+  });
+  assert.equal(worker.serverAddress({ host: "play.example.test", port: 25565 }).useSrv, true);
+  assert.deepEqual(worker.serverAddress({ host: "play.example.test:25565", port: 1234 }), {
+    host: "play.example.test", port: 25565, useSrv: false, label: "play.example.test:25565",
+  });
+  assert.equal(worker.serverAddress({ host: "play.example.test", port: 25570 }).useSrv, false);
+  assert.equal(worker.serverAddress({ host: "::1", port: 0 }).host, "::1");
+  assert.deepEqual(worker.serverAddress({ host: "[::1]:25570" }), {
+    host: "::1", port: 25570, useSrv: false, label: "[::1]:25570",
+  });
+  assert.throws(() => worker.serverAddress({ host: "play.example.test:65536" }), /Server port/);
+  assert.throws(() => worker.serverAddress({ host: "https://play.example.test" }), /Invalid server address/);
+});
+
 async function assertLauncherMicrosoftLogin(version, protocol, t) {
   const profileId = "0123456789abcdef0123456789abcdef";
   const accessToken = "test-launcher-token";

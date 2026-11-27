@@ -15,8 +15,8 @@ const { CHANNELS } = require('./mineflayer-fabric.cjs');
 const fixtureFeatures = { features: ['minecraft:vanilla'] };
 const fixtureTags = { tags: [{ tagType: 'minecraft:block', tags: [{ tagName: 'minecraft:infiniburn_overworld', entries: [1] }] }] };
 
-function launchWorker(t, port, connection = {}, version, settings = {}) {
-  const child = spawn(process.execPath, ['--no-deprecation', process.env.SCREEN_MINEFLAYER_WORKER || fileURLToPath(new URL('./worker.cjs', import.meta.url))], {
+function launchWorker(t, port, connection = {}, version, settings = {}, nodeArgs = []) {
+  const child = spawn(process.execPath, ['--no-deprecation', ...nodeArgs, process.env.SCREEN_MINEFLAYER_WORKER || fileURLToPath(new URL('./worker.cjs', import.meta.url))], {
     stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
   });
   const events = [], output = new EventEmitter();
@@ -147,6 +147,35 @@ for (const configuredVersion of ['26.3', undefined]) {
     assert.equal(gameClient.protocolVersion, 777);
     assert.equal(gameClient.username, 'FabricBot');
     assert.ok(running.events.some(e => e.type === 'minecraft_catalog' && e.catalog.version === '26.3'));
+    assert.deepEqual(running.events.filter(e => e.type === 'error'), []);
+    assert.deepEqual(errors, []);
+  });
+}
+
+for (const configuredVersion of ['26.3', undefined]) {
+  test(`the Java 26.3 worker joins an SRV domain without a port (${configuredVersion ? 'explicit game version' : 'version detection'})`, { timeout: 15000 }, async t => {
+    const host = 'play.screen.test';
+    const { server, port, errors } = await startJava263(t, () => {});
+    const handshakes = [];
+    server.on('connection', client => {
+      client.on('set_protocol', packet => handshakes.push(packet));
+    });
+    const preload = `data:text/javascript,${encodeURIComponent(`
+      import dns from 'node:dns/promises';
+      let queries = 0;
+      dns.resolveSrv = async name => {
+        if (name !== '_minecraft._tcp.${host}' || ++queries !== 1) process.exit(71);
+        return [
+          { name: '127.0.0.1', port: 1, priority: 20 },
+          { name: '127.0.0.1', port: ${port}, priority: 0 },
+        ];
+      };
+    `)}`;
+    const running = launchWorker(t, port, {}, configuredVersion,
+      { server: { host, port: 0, version: configuredVersion } }, ['--import', preload]);
+    await running.waitFor(events => events.some(e => e.type === 'ready'));
+    assert.deepEqual(handshakes.map(packet => [packet.serverHost, packet.serverPort, packet.nextState]),
+      (configuredVersion ? [2] : [1, 2]).map(state => [host, 25565, state]));
     assert.deepEqual(running.events.filter(e => e.type === 'error'), []);
     assert.deepEqual(errors, []);
   });

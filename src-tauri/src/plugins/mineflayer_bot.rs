@@ -1157,13 +1157,6 @@ pub async fn start_mineflayer_bot(
             ));
         }
 
-        if plugin.port == 0 {
-            return Err(CommandError::new(
-                ErrorCode::InvalidInput,
-                "Server port must be between 1 and 65535",
-            ));
-        }
-
         if plugin.player_control
             && !plugin
                 .bot_account_mode
@@ -1200,7 +1193,16 @@ pub async fn start_mineflayer_bot(
         )
         .await?;
         let bot_username = account.username.clone();
-        let server_label = format!("{}:{}", host, plugin.port);
+        let unbracketed_host = host.trim_matches(['[', ']']);
+        let server_label = if plugin.port == 0 {
+            host.clone()
+        } else if unbracketed_host.parse::<std::net::Ipv6Addr>().is_ok() {
+            format!("[{}]:{}", unbracketed_host, plugin.port)
+        } else if host.contains(':') {
+            host.clone()
+        } else {
+            format!("{}:{}", host, plugin.port)
+        };
         if current_statuses(&state)?
             .iter()
             .filter(|bot| bot.running)

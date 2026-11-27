@@ -39,7 +39,7 @@ type Application = {
   scan?: MineflayerStorageScan | null;
 };
 const serverKey = (settings: { host: string; port: number }) =>
-  `${settings.host.trim().toLowerCase()}:${settings.port}`;
+  `${settings.host.trim().toLowerCase()}:${settings.port || 25565}`;
 
 export function MineflayerStorageWorkspace({
   settings,

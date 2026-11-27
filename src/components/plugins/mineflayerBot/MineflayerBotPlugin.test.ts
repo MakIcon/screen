@@ -147,6 +147,7 @@ describe("normalizeMineflayerBotSettings", () => {
 
     expect(normalized.host).toBe("localhost");
     expect(normalized.followDistance).toBe(5);
+    expect(normalized.port).toBe(0);
     expect(normalized.autoReconnect).toBe(true);
     expect(normalized.canDig).toBe(false);
     expect(normalized.allowAirStrafe).toBe(false);
@@ -168,6 +169,13 @@ describe("normalizeMineflayerBotSettings", () => {
     expect(normalized.combat.pearlEscape).toBe(true);
     expect(normalized.survival.autoEat).toBe(true);
     expect(normalized.survival.emergencyMlg).toBe(true);
+  });
+
+  it("keeps automatic and custom server ports when saving a profile", () => {
+    for (const port of [0, 25565, 51234]) {
+      const settings = normalizeMineflayerBotSettings({ host: "play.example.test", port });
+      expect(normalizeMineflayerBotSettings(JSON.parse(JSON.stringify(settings))).port).toBe(port);
+    }
   });
 
   it("keeps work aim separate from combat and limits its speed to the slider range", () => {

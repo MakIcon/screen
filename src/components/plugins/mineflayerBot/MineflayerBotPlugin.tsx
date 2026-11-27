@@ -388,7 +388,7 @@ function MineflayerBotSettingsEditor({
                       : tr("bot.main.notConnected")}
                 <span aria-hidden="true"> · </span>
                 {settings.host || tr("bot.main.noServerSet")}
-                {settings.host ? `:${settings.port}` : ""}
+                {settings.host && !settings.host.includes(":") && settings.port ? `:${settings.port}` : ""}
               </span>
             </div>
           </div>
@@ -549,13 +549,17 @@ function MineflayerBotSettingsEditor({
 
                 <label className="mineflayer-bot-field">
                   <span>{tr("bot.main.port")}</span>
-                  <CustomNumberInput
-                    ariaLabel={tr("bot.main.port")}
-                    background="transparent"
-                    min={1}
-                    max={65535}
-                    value={settings.port}
-                    onChange={(port) => update({ port })}
+                  <TextField
+                    aria-label={tr("bot.main.port")}
+                    inputMode="numeric"
+                    placeholder={tr("bot.main.automaticPort")}
+                    value={settings.port ? String(settings.port) : ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (/^\d{0,5}$/.test(value) && Number(value) <= 65535) {
+                        update({ port: Number(value) });
+                      }
+                    }}
                   />
                 </label>
 

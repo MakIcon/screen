@@ -540,7 +540,7 @@ pub struct MineflayerBotConfiguration {
     pub enabled: bool,
     #[serde(default)]
     pub host: String,
-    #[serde(default = "default_mineflayer_bot_port")]
+    #[serde(default)]
     pub port: u16,
     #[serde(default)]
     pub version: String,
@@ -1307,7 +1307,7 @@ impl Default for MineflayerBotConfiguration {
         Self {
             enabled: false,
             host: String::new(),
-            port: default_mineflayer_bot_port(),
+            port: 0,
             version: String::new(),
             player_control: false,
             command_prefix: default_mineflayer_bot_command_prefix(),
@@ -1429,10 +1429,6 @@ fn default_discord_rpc_large_image_text_template() -> String {
 
 fn default_discord_rpc_small_image_text_template() -> String {
     "Minecraft %build_version%".to_string()
-}
-
-fn default_mineflayer_bot_port() -> u16 {
-    25565
 }
 
 fn default_mineflayer_bot_command_prefix() -> String {
